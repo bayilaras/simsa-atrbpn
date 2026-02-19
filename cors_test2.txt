@@ -1,0 +1,14 @@
+﻿Status: 204
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Content-Type,Authorization,X-Requested-With,Accept,X-CSRF-Token
+Access-Control-Allow-Methods: GET,POST,PUT,DELETE,PATCH,OPTIONS
+Access-Control-Allow-Origin: https://simsa-frontend.vercel.app
+Access-Control-Max-Age: 86400
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+Vary: Origin
+X-Vercel-Cache: MISS
+X-Vercel-Id: sin1::iad1::25rqq-1771510759717-78575b62ec5d
+Cache-Control: public, max-age=0, must-revalidate
+Date: Thu, 19 Feb 2026 14:19:24 GMT
+Server: Vercel
+X-Powered-By: Express

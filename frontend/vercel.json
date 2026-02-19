@@ -1,6 +1,14 @@
 {
     "rewrites": [
         {
+            "source": "/api/:path*",
+            "destination": "https://simsa-backend.vercel.app/api/:path*"
+        },
+        {
+            "source": "/health",
+            "destination": "https://simsa-backend.vercel.app/health"
+        },
+        {
             "source": "/(.*)",
             "destination": "/index.html"
         }

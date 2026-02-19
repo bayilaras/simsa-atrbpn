@@ -1,8 +1,8 @@
 import { pgTable, uuid, varchar, text, integer, timestamp, date } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { arsip } from './arsip';
-import { users } from './users';
-import { autentikasi } from './autentikasi';
+import { arsip } from './arsip.js';
+import { users } from './users.js';
+import { autentikasi } from './autentikasi.js';
 
 /**
  * Arsip Elektronik — extended metadata for digitized/electronic archives
