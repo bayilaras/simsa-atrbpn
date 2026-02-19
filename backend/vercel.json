@@ -1,9 +1,11 @@
 {
     "version": 2,
+    "buildCommand": "npm run build",
+    "outputDirectory": "public",
     "rewrites": [
         {
             "source": "/(.*)",
-            "destination": "/api/index.ts"
+            "destination": "/api/index.js"
         }
     ]
 }
