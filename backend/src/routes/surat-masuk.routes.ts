@@ -207,8 +207,8 @@ router.put('/:id', validateIdParam(),
             const id = req.params.id as string;
             const file = req.file;
 
-            log.info('[PUT /surat-masuk/:id] Request received', { id, hasFile: !!file });
-            log.info('[PUT /surat-masuk/:id] Body keys:', Object.keys(req.body));
+            log.info({ id, hasFile: !!file }, '[PUT /surat-masuk/:id] Request received');
+            log.info({ bodyKeys: Object.keys(req.body) }, '[PUT /surat-masuk/:id] Body keys');
 
             const existing = await suratMasukService.findById(id);
 
@@ -219,9 +219,9 @@ router.put('/:id', validateIdParam(),
             // Validate and strip unknown fields from body
             const bodyValidation = updateSuratMasukSchema.safeParse(req.body);
 
-            log.info('[PUT /surat-masuk/:id] Validation result:', bodyValidation.success);
+            log.info({ valid: bodyValidation.success }, '[PUT /surat-masuk/:id] Validation result');
             if (!bodyValidation.success) {
-                log.info('[PUT /surat-masuk/:id] Validation errors:', JSON.stringify(bodyValidation.error.issues));
+                log.info({ errors: bodyValidation.error.issues }, '[PUT /surat-masuk/:id] Validation errors');
             }
 
             // Use validated data if valid, otherwise manually pick known fields
@@ -253,7 +253,7 @@ router.put('/:id', validateIdParam(),
                 updateData.fileOriginalName = file.originalname;
             }
 
-            log.info('[PUT /surat-masuk/:id] Update data keys:', Object.keys(updateData));
+            log.info({ updateKeys: Object.keys(updateData) }, '[PUT /surat-masuk/:id] Update data keys');
 
             const result = await suratMasukService.update(id, updateData);
 
