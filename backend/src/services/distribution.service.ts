@@ -1,0 +1,360 @@
+import { db } from '../config/database';
+import { suratDistributions, NewSuratDistribution, SuratDistribution, suratMasuk, unitKerja, users } from '../db/schema';
+import { eq, and, desc, sql, or } from 'drizzle-orm';
+
+export interface DistributionFilters {
+    unitKerjaId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+}
+
+export class DistributionService {
+    /**
+     * Create a new distribution (send surat from Ditjen to target unit)
+     */
+    async distribute(data: {
+        suratMasukId: string;
+        sourceUnitId: string;
+        targetUnitId: string;
+        instruction?: string;
+        ccUnits?: string[];
+        sentBy?: string;
+    }) {
+        // Check if already distributed to this target
+        const [existing] = await db
+            .select()
+            .from(suratDistributions)
+            .where(and(
+                eq(suratDistributions.suratMasukId, data.suratMasukId),
+                eq(suratDistributions.targetUnitId, data.targetUnitId)
+            ))
+            .limit(1);
+
+        if (existing) {
+            throw new Error('Surat sudah didistribusikan ke unit ini');
+        }
+
+        const [result] = await db
+            .insert(suratDistributions)
+            .values({
+                suratMasukId: data.suratMasukId,
+                sourceUnitId: data.sourceUnitId,
+                targetUnitId: data.targetUnitId,
+                instruction: data.instruction,
+                ccUnits: data.ccUnits ? JSON.stringify(data.ccUnits) : null,
+                sentBy: data.sentBy,
+                status: 'sent',
+                sentAt: new Date(),
+            })
+            .returning();
+
+        return result;
+    }
+
+    /**
+     * Get inbox (incoming distributions for a unit)
+     */
+    async findInbox(unitKerjaId: string, filters: DistributionFilters = {}) {
+        const { status, page = 1, limit = 20 } = filters;
+        const offset = (page - 1) * limit;
+
+        const conditions = [eq(suratDistributions.targetUnitId, unitKerjaId)];
+        if (status) {
+            conditions.push(eq(suratDistributions.status, status));
+        }
+
+        const [{ count }] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(suratDistributions)
+            .where(and(...conditions));
+
+        const data = await db
+            .select({
+                distribution: suratDistributions,
+                surat: {
+                    id: suratMasuk.id,
+                    nomorSurat: suratMasuk.nomorSurat,
+                    perihal: suratMasuk.perihal,
+                    dari: suratMasuk.dari,
+                    tanggalSurat: suratMasuk.tanggalSurat,
+                    sifatSurat: suratMasuk.sifatSurat,
+                },
+                sourceUnit: {
+                    id: unitKerja.id,
+                    name: unitKerja.name,
+                },
+            })
+            .from(suratDistributions)
+            .innerJoin(suratMasuk, eq(suratDistributions.suratMasukId, suratMasuk.id))
+            .innerJoin(unitKerja, eq(suratDistributions.sourceUnitId, unitKerja.id))
+            .where(and(...conditions))
+            .orderBy(desc(suratDistributions.sentAt))
+            .limit(limit)
+            .offset(offset);
+
+        return {
+            data: data.map(d => ({
+                ...d.distribution,
+                surat: d.surat,
+                sourceUnit: d.sourceUnit,
+            })),
+            pagination: {
+                page,
+                limit,
+                total: count,
+                totalPages: Math.ceil(count / limit),
+            },
+        };
+    }
+
+    /**
+     * Get outbox (sent distributions from a unit)
+     */
+    async findOutbox(unitKerjaId: string, filters: DistributionFilters = {}) {
+        const { status, page = 1, limit = 20 } = filters;
+        const offset = (page - 1) * limit;
+
+        const conditions = [eq(suratDistributions.sourceUnitId, unitKerjaId)];
+        if (status) {
+            conditions.push(eq(suratDistributions.status, status));
+        }
+
+        const [{ count }] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(suratDistributions)
+            .where(and(...conditions));
+
+        const data = await db
+            .select({
+                distribution: suratDistributions,
+                surat: {
+                    id: suratMasuk.id,
+                    nomorSurat: suratMasuk.nomorSurat,
+                    perihal: suratMasuk.perihal,
+                    dari: suratMasuk.dari,
+                    tanggalSurat: suratMasuk.tanggalSurat,
+                },
+                targetUnit: {
+                    id: unitKerja.id,
+                    name: unitKerja.name,
+                },
+            })
+            .from(suratDistributions)
+            .innerJoin(suratMasuk, eq(suratDistributions.suratMasukId, suratMasuk.id))
+            .innerJoin(unitKerja, eq(suratDistributions.targetUnitId, unitKerja.id))
+            .where(and(...conditions))
+            .orderBy(desc(suratDistributions.sentAt))
+            .limit(limit)
+            .offset(offset);
+
+        return {
+            data: data.map(d => ({
+                ...d.distribution,
+                surat: d.surat,
+                targetUnit: d.targetUnit,
+            })),
+            pagination: {
+                page,
+                limit,
+                total: count,
+                totalPages: Math.ceil(count / limit),
+            },
+        };
+    }
+
+    /**
+     * Mark distribution as received by target unit
+     */
+    async receive(distributionId: string, receivedBy: string) {
+        const [distribution] = await db
+            .select()
+            .from(suratDistributions)
+            .where(eq(suratDistributions.id, distributionId))
+            .limit(1);
+
+        if (!distribution) {
+            throw new Error('Distribution not found');
+        }
+        if (distribution.status !== 'sent') {
+            throw new Error('Distribution sudah diterima atau diproses');
+        }
+
+        const [result] = await db
+            .update(suratDistributions)
+            .set({
+                status: 'received',
+                receivedAt: new Date(),
+                receivedBy,
+                updatedAt: new Date(),
+            })
+            .where(eq(suratDistributions.id, distributionId))
+            .returning();
+
+        return result;
+    }
+
+    /**
+     * Mark distribution as processed/completed
+     */
+    async process(distributionId: string) {
+        const [distribution] = await db
+            .select()
+            .from(suratDistributions)
+            .where(eq(suratDistributions.id, distributionId))
+            .limit(1);
+
+        if (!distribution) {
+            throw new Error('Distribution not found');
+        }
+        if (distribution.status === 'processed') {
+            throw new Error('Distribution sudah selesai diproses');
+        }
+
+        const [result] = await db
+            .update(suratDistributions)
+            .set({
+                status: 'processed',
+                processedAt: new Date(),
+                updatedAt: new Date(),
+            })
+            .where(eq(suratDistributions.id, distributionId))
+            .returning();
+
+        return result;
+    }
+
+    /**
+     * Reject distribution (return to sender)
+     */
+    async reject(distributionId: string, reason: string) {
+        const [distribution] = await db
+            .select()
+            .from(suratDistributions)
+            .where(eq(suratDistributions.id, distributionId))
+            .limit(1);
+
+        if (!distribution) {
+            throw new Error('Distribution not found');
+        }
+        if (distribution.status === 'processed' || distribution.status === 'rejected') {
+            throw new Error('Distribution tidak bisa ditolak');
+        }
+
+        const [result] = await db
+            .update(suratDistributions)
+            .set({
+                status: 'rejected',
+                rejectionReason: reason,
+                updatedAt: new Date(),
+            })
+            .where(eq(suratDistributions.id, distributionId))
+            .returning();
+
+        return result;
+    }
+
+    /**
+     * Get distribution by ID with full details
+     */
+    async findById(id: string) {
+        const [result] = await db
+            .select({
+                distribution: suratDistributions,
+                surat: suratMasuk,
+            })
+            .from(suratDistributions)
+            .innerJoin(suratMasuk, eq(suratDistributions.suratMasukId, suratMasuk.id))
+            .where(eq(suratDistributions.id, id))
+            .limit(1);
+
+        return result ? { ...result.distribution, surat: result.surat } : null;
+    }
+
+    /**
+     * Get statistics for dashboard
+     */
+    async getStats(unitKerjaId: string) {
+        // Inbox stats (as target)
+        const inboxStats = await db
+            .select({
+                total: sql<number>`count(*)::int`,
+                pending: sql<number>`count(*) filter (where ${suratDistributions.status} = 'sent')::int`,
+                received: sql<number>`count(*) filter (where ${suratDistributions.status} = 'received')::int`,
+                processed: sql<number>`count(*) filter (where ${suratDistributions.status} = 'processed')::int`,
+                rejected: sql<number>`count(*) filter (where ${suratDistributions.status} = 'rejected')::int`,
+            })
+            .from(suratDistributions)
+            .where(eq(suratDistributions.targetUnitId, unitKerjaId));
+
+        // Outbox stats (as source)
+        const outboxStats = await db
+            .select({
+                total: sql<number>`count(*)::int`,
+                pending: sql<number>`count(*) filter (where ${suratDistributions.status} = 'sent')::int`,
+                processed: sql<number>`count(*) filter (where ${suratDistributions.status} = 'processed')::int`,
+                rejected: sql<number>`count(*) filter (where ${suratDistributions.status} = 'rejected')::int`,
+            })
+            .from(suratDistributions)
+            .where(eq(suratDistributions.sourceUnitId, unitKerjaId));
+
+        return {
+            inbox: inboxStats[0],
+            outbox: outboxStats[0],
+        };
+    }
+
+    /**
+     * Get distributable units (units that can receive distributions)
+     */
+    async getDistributableUnits(excludeUnitId?: string) {
+        const conditions = [eq(unitKerja.canReceiveDistribution, true)];
+        if (excludeUnitId) {
+            conditions.push(sql`${unitKerja.id} != ${excludeUnitId}`);
+        }
+
+        const units = await db
+            .select({
+                id: unitKerja.id,
+                name: unitKerja.name,
+                unitType: unitKerja.unitType,
+            })
+            .from(unitKerja)
+            .where(and(...conditions))
+            .orderBy(unitKerja.name);
+
+        return units;
+    }
+
+    /**
+     * Check if surat is already distributed
+     */
+    async isDistributed(suratMasukId: string) {
+        const [result] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(suratDistributions)
+            .where(eq(suratDistributions.suratMasukId, suratMasukId));
+
+        return result.count > 0;
+    }
+
+    /**
+     * Get distribution history for a surat
+     */
+    async getHistoryBySurat(suratMasukId: string) {
+        return await db
+            .select({
+                distribution: suratDistributions,
+                targetUnit: {
+                    id: unitKerja.id,
+                    name: unitKerja.name,
+                },
+            })
+            .from(suratDistributions)
+            .innerJoin(unitKerja, eq(suratDistributions.targetUnitId, unitKerja.id))
+            .where(eq(suratDistributions.suratMasukId, suratMasukId))
+            .orderBy(desc(suratDistributions.sentAt));
+    }
+}
+
+export const distributionService = new DistributionService();

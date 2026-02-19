@@ -1,0 +1,154 @@
+@import '../assets/styles/variables';
+
+.surat-masuk-page {
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: $spacing-4;
+
+        h1 {
+            font-size: $font-size-2xl;
+            font-weight: 700;
+            color: $color-gray-800;
+            margin: 0;
+
+            i {
+                margin-right: $spacing-3;
+                color: $color-primary;
+            }
+        }
+    }
+
+    // Form Card
+    .form-card {
+        border: none;
+        box-shadow: $shadow;
+        border-radius: $border-radius-lg;
+
+        .card-header {
+            background: $color-primary-50;
+            border-bottom: 1px solid $color-primary-100;
+
+            h5 {
+                color: $color-primary-dark;
+                font-weight: 600;
+            }
+        }
+
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: $spacing-3;
+            margin-top: $spacing-4;
+            padding-top: $spacing-4;
+            border-top: 1px solid $color-border;
+        }
+    }
+
+    // Filter Card
+    .filter-card {
+        border: none;
+        box-shadow: $shadow-sm;
+        border-radius: $border-radius;
+
+        .card-body {
+            padding: $spacing-4;
+        }
+
+        .filter-select {
+            border-color: $color-border;
+
+            &:focus {
+                border-color: $color-primary;
+                box-shadow: 0 0 0 2px rgba($color-primary, 0.1);
+            }
+        }
+    }
+
+    // Table Card
+    .table-card {
+        border: none;
+        box-shadow: $shadow;
+        border-radius: $border-radius-lg;
+        overflow: hidden;
+
+        .table {
+            margin-bottom: 0;
+
+            thead th {
+                background: $color-gray-100;
+                font-weight: 600;
+                font-size: $font-size-xs;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                color: $color-gray-600;
+                border-bottom: 2px solid $color-border;
+                padding: $spacing-3 $spacing-4;
+            }
+
+            tbody td {
+                padding: $spacing-3 $spacing-4;
+                vertical-align: middle;
+
+                code {
+                    background: $color-gray-100;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    font-size: $font-size-xs;
+                    color: $color-primary-dark;
+                }
+            }
+
+            tbody tr:hover {
+                background: $color-gray-50;
+            }
+        }
+
+        .perihal-cell {
+            max-width: 250px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: $spacing-1;
+
+            .btn {
+                padding: $spacing-1 $spacing-2;
+
+                &:hover {
+                    transform: translateY(-1px);
+                }
+            }
+        }
+    }
+
+    .table-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: $spacing-4;
+        border-top: 1px solid $color-border;
+        background: $color-gray-50;
+
+        .pagination {
+            .page-link {
+                border-radius: $border-radius-sm;
+                margin: 0 2px;
+                color: $color-primary;
+
+                &:hover {
+                    background: $color-primary-50;
+                }
+            }
+
+            .page-item.active .page-link {
+                background: $color-primary;
+                border-color: $color-primary;
+            }
+        }
+    }
+}

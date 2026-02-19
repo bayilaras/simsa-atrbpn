@@ -1,0 +1,139 @@
+// ATR/BPN Design System Variables
+// Kementerian ATR/BPN color palette
+
+// Primary Colors - Teal
+$color-primary: #008080;
+$color-primary-dark: #006666;
+$color-primary-light: #20a7a7;
+$color-primary-50: #e6f3f3;
+$color-primary-100: #b3d9d9;
+
+// Secondary Colors - Gold
+$color-secondary: #c5a54e;
+$color-secondary-dark: #a6892f;
+$color-secondary-light: #e0c86f;
+
+// Status Colors
+$color-success: #059669;
+$color-success-light: #d1fae5;
+$color-warning: #d97706;
+$color-warning-light: #fef3c7;
+$color-danger: #dc2626;
+$color-danger-light: #fee2e2;
+$color-info: #0ea5e9;
+$color-info-light: #e0f2fe;
+
+// Neutral Colors
+$color-gray-50: #f8fafc;
+$color-gray-100: #f1f5f9;
+$color-gray-200: #e2e8f0;
+$color-gray-300: #cbd5e1;
+$color-gray-400: #94a3b8;
+$color-gray-500: #64748b;
+$color-gray-600: #475569;
+$color-gray-700: #334155;
+$color-gray-800: #1e293b;
+$color-gray-900: #0f172a;
+
+// Semantic Colors
+$color-bg: $color-gray-50;
+$color-text: $color-gray-700;
+$color-text-muted: $color-gray-500;
+$color-border: $color-gray-200;
+
+// Gradients
+$gradient-header: linear-gradient(135deg, $color-primary 0%, $color-primary-dark 100%);
+$gradient-sidebar: linear-gradient(180deg, $color-primary-dark 0%, #005555 100%);
+
+// Typography
+$font-family-base: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+$font-size-xs: 0.75rem;   // 12px
+$font-size-sm: 0.875rem;  // 14px
+$font-size-base: 1rem;    // 16px
+$font-size-lg: 1.125rem;  // 18px
+$font-size-xl: 1.25rem;   // 20px
+$font-size-2xl: 1.5rem;   // 24px
+$font-size-3xl: 1.875rem; // 30px
+
+// Spacing
+$spacing-1: 0.25rem;  // 4px
+$spacing-2: 0.5rem;   // 8px
+$spacing-3: 0.75rem;  // 12px
+$spacing-4: 1rem;     // 16px
+$spacing-5: 1.25rem;  // 20px
+$spacing-6: 1.5rem;   // 24px
+$spacing-8: 2rem;     // 32px
+$spacing-10: 2.5rem;  // 40px
+$spacing-12: 3rem;    // 48px
+
+// Border Radius
+$border-radius-sm: 4px;
+$border-radius: 8px;
+$border-radius-lg: 12px;
+$border-radius-xl: 16px;
+$border-radius-full: 9999px;
+
+// Shadows
+$shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+$shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+$shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+$shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+// Transitions
+$transition-fast: 150ms ease;
+$transition-normal: 200ms ease;
+$transition-slow: 300ms ease;
+
+// Layout
+$sidebar-width: 260px;
+$sidebar-collapsed-width: 70px;
+$header-height: 64px;
+
+// Z-index layers
+$z-dropdown: 100;
+$z-sticky: 200;
+$z-fixed: 300;
+$z-modal-backdrop: 400;
+$z-modal: 500;
+$z-popover: 600;
+$z-tooltip: 700;
+
+// Breakpoints
+$breakpoint-sm: 640px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 1024px;
+$breakpoint-xl: 1280px;
+$breakpoint-2xl: 1536px;
+
+// Export as CSS custom properties for Bootstrap override
+:root {
+  // ATR/BPN Brand Colors
+  --bs-primary: #{$color-primary};
+  --bs-primary-rgb: 0, 128, 128;
+  --bs-secondary: #{$color-secondary};
+  --bs-secondary-rgb: 197, 165, 78;
+  
+  // Theme colors
+  --color-primary: #{$color-primary};
+  --color-primary-dark: #{$color-primary-dark};
+  --color-primary-light: #{$color-primary-light};
+  --color-secondary: #{$color-secondary};
+  --color-secondary-dark: #{$color-secondary-dark};
+  --color-secondary-light: #{$color-secondary-light};
+  
+  // Background & Text
+  --color-bg: #{$color-bg};
+  --color-text: #{$color-text};
+  --color-text-muted: #{$color-text-muted};
+  --color-border: #{$color-border};
+  
+  // Layout
+  --sidebar-width: #{$sidebar-width};
+  --header-height: #{$header-height};
+  
+  // Shadows
+  --shadow-sm: #{$shadow-sm};
+  --shadow: #{$shadow};
+  --shadow-md: #{$shadow-md};
+  --shadow-lg: #{$shadow-lg};
+}

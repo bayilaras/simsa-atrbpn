@@ -1,0 +1,204 @@
+@import '../assets/styles/variables';
+
+.dashboard-page {
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: $spacing-4;
+
+        h1 {
+            font-size: $font-size-2xl;
+            font-weight: 700;
+            color: $color-gray-800;
+            margin: 0;
+
+            i {
+                margin-right: $spacing-3;
+                color: $color-primary;
+            }
+        }
+    }
+
+    .unit-info {
+        .badge {
+            font-size: $font-size-sm;
+            font-weight: 500;
+            padding: $spacing-2 $spacing-4;
+        }
+
+        .bg-primary-soft {
+            background-color: $color-primary-50;
+            color: $color-primary-dark;
+        }
+    }
+
+    // Stat Cards
+    .stat-card {
+        border: none;
+        border-radius: $border-radius-lg;
+        box-shadow: $shadow;
+        transition: all $transition-normal;
+
+        &:hover {
+            transform: translateY(-4px);
+            box-shadow: $shadow-lg;
+        }
+
+        .card-body {
+            display: flex;
+            align-items: center;
+            padding: $spacing-5;
+        }
+
+        .stat-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: $border-radius-lg;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: $spacing-4;
+            font-size: 1.5rem;
+
+            &.primary {
+                background-color: rgba($color-primary, 0.1);
+                color: $color-primary;
+            }
+
+            &.success {
+                background-color: rgba($color-success, 0.1);
+                color: $color-success;
+            }
+
+            &.info {
+                background-color: rgba($color-info, 0.1);
+                color: $color-info;
+            }
+
+            &.warning {
+                background-color: rgba($color-warning, 0.1);
+                color: $color-warning;
+            }
+        }
+
+        .stat-content {
+            flex: 1;
+        }
+
+        .stat-label {
+            font-size: $font-size-sm;
+            color: $color-text-muted;
+            margin-bottom: $spacing-1;
+        }
+
+        .stat-value {
+            font-size: $font-size-3xl;
+            font-weight: 700;
+            color: $color-gray-800;
+            margin: 0;
+            line-height: 1;
+        }
+
+        .stat-change {
+            font-size: $font-size-xs;
+        }
+    }
+
+    // Chart Card
+    .chart-card {
+        .card-header {
+            background: white;
+            border-bottom: 1px solid $color-border;
+            padding: $spacing-4 $spacing-5;
+
+            h5 {
+                font-weight: 600;
+                color: $color-gray-700;
+            }
+        }
+
+        .chart-container {
+            height: 300px;
+            padding: $spacing-4;
+        }
+    }
+
+    // Notification Card
+    .notification-card {
+        .card-header {
+            background: white;
+            border-bottom: 1px solid $color-border;
+
+            h5 {
+                font-weight: 600;
+                color: $color-gray-700;
+            }
+        }
+
+        .notification-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .notification-item {
+            display: flex;
+            align-items: center;
+            padding: $spacing-4;
+            border-bottom: 1px solid $color-gray-100;
+            transition: background $transition-fast;
+
+            &:hover {
+                background: $color-gray-50;
+            }
+
+            &:last-child {
+                border-bottom: none;
+            }
+        }
+
+        .notification-indicator {
+            width: 4px;
+            height: 40px;
+            border-radius: 2px;
+            margin-right: $spacing-3;
+
+            &.danger {
+                background: $color-danger;
+            }
+
+            &.warning {
+                background: $color-warning;
+            }
+
+            &.info {
+                background: $color-info;
+            }
+        }
+
+        .notification-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .notification-title {
+            font-size: $font-size-sm;
+            color: $color-gray-700;
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .notification-days {
+            color: $color-text-muted;
+            font-size: $font-size-xs;
+        }
+
+        .card-footer {
+            background: $color-gray-50;
+            border-top: 1px solid $color-border;
+        }
+    }
+}

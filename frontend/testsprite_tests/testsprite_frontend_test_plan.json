@@ -1,0 +1,2253 @@
+[
+  {
+    "id": "TC001",
+    "title": "Dashboard loads KPI cards, charts, and recent activities for an authenticated user",
+    "description": "Verifies that an authenticated user can open the Dashboard and see key KPI cards, trend charts, and recent activity content rendered.",
+    "category": "Dashboard",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Dashboard\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Surat Masuk\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Aktivitas\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Dashboard shows mail and archive statistics cards",
+    "description": "Verifies that Dashboard statistic cards for incoming/outgoing mail and archives are visible after login.",
+    "category": "Dashboard",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Surat Masuk\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Surat Keluar\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Arsip\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Dashboard renders mail trend charts",
+    "description": "Verifies that the mail trend visualization area is visible on the Dashboard for an authenticated user.",
+    "category": "Dashboard",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Scroll to the charts section"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Tren\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Chart\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Dashboard shows recent activities list",
+    "description": "Verifies that the recent activities section is visible and appears populated on the Dashboard.",
+    "category": "Dashboard",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Scroll to the recent activities section"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Aktivitas\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Recent activities list\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Filter Dashboard by Unit Kerja updates visible KPI/charts context",
+    "description": "Verifies that selecting a Unit Kerja filter updates the Dashboard context and refreshed content is shown.",
+    "category": "Dashboard",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Unit Kerja\" filter control"
+      },
+      {
+        "type": "action",
+        "description": "Select the first available Unit Kerja option from the dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the selected Unit Kerja name is visible in the filter control"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Filter Dashboard by Unit Kerja and verify charts section remains visible after update",
+    "description": "Verifies that after changing Unit Kerja, the charts section remains visible (indicating re-render) and no error message is shown.",
+    "category": "Dashboard",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Unit Kerja\" filter control"
+      },
+      {
+        "type": "action",
+        "description": "Select the second available Unit Kerja option from the dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Scroll to the charts section"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Chart\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Dashboard shows loading skeletons before content appears",
+    "description": "Verifies that loading placeholders are shown initially and then the Dashboard content becomes visible.",
+    "category": "Dashboard",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Loading\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Wait for the dashboard content to appear"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Surat Masuk\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Search and filter incoming mail list",
+    "description": "Verifies that a user can search and apply filters on the incoming mail list and see the list update accordingly.",
+    "category": "Incoming Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Masuk\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk"
+      },
+      {
+        "type": "action",
+        "description": "Type a keyword from a visible mail row (for example, part of a subject/sender/nomor) into the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify at least one mail row is visible"
+      },
+      {
+        "type": "action",
+        "description": "Select a date range using the date filter controls"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the list updates and mail rows are still visible or a visible \"no results\" message is shown"
+      },
+      {
+        "type": "action",
+        "description": "Select a value from the status filter dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the list updates and matches the chosen filter or a visible \"no results\" message is shown"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Create a new incoming mail (without attachment)",
+    "description": "Verifies that a user can create a new incoming mail and see it appear in the incoming mail list.",
+    "category": "Incoming Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Masuk\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Tambah\" or \"Add\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk/tambah"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid \"Nomor Surat\" value into the \"Nomor Surat\" field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid value into the \"Tanggal Surat\" (or equivalent date) field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid value into the \"Pengirim\" (sender) field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid value into the \"Perihal\" (subject) field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" or \"Simpan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Nomor Surat\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Create a new incoming mail (attempt attachment upload if supported)",
+    "description": "Verifies that the attachment section is present on the create form and that the user can proceed with submission when attachments are optional.",
+    "category": "Incoming Mail Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Masuk\" menu item"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Tambah\" or \"Add\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk/tambah"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Lampiran\" or \"Attachment\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid \"Nomor Surat\" value into the \"Nomor Surat\" field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid value into the \"Perihal\" (subject) field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" or \"Simpan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Incoming mail list/table\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "View incoming mail details from list",
+    "description": "Verifies that a user can open an incoming mail detail view and see key detail information.",
+    "category": "Incoming Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Masuk\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first visible incoming mail row (or its \"Detail\" action)"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk/\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Detail Surat Masuk\" or \"Surat Masuk\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Nomor Surat\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Perihal\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Edit an existing incoming mail and verify updated values",
+    "description": "Verifies that a user can edit an incoming mail and see the updated values on the detail page.",
+    "category": "Incoming Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Masuk\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Edit\" action for the first visible mail item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk/edit/\""
+      },
+      {
+        "type": "action",
+        "description": "Fill a new unique value into the \"Perihal\" (subject) field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" or \"Simpan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk/\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated subject text is visible in the detail view"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Create incoming mail validation: missing required nomor surat",
+    "description": "Verifies that the form blocks submission and shows a validation error when required field Nomor Surat is missing.",
+    "category": "Incoming Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Masuk\" menu item"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Tambah\" or \"Add\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk/tambah"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid value into the \"Perihal\" (subject) field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" or \"Simpan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Nomor Surat\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"wajib\" or \"required\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk/tambah\""
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Delete an incoming mail from list (confirm deletion)",
+    "description": "Verifies that a user can delete an incoming mail after confirming the deletion dialog and the list reflects the deletion.",
+    "category": "Incoming Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Masuk\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk"
+      },
+      {
+        "type": "action",
+        "description": "Type a keyword from the first visible mail row into the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify at least one mail row is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Delete\" action for the first visible mail item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Konfirmasi\" or \"Are you sure\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Hapus\" or \"Confirm\" button in the confirmation dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the list updates and either the row is no longer visible or a visible success message is shown"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Delete an incoming mail but cancel in confirmation dialog",
+    "description": "Verifies that canceling the delete confirmation leaves the incoming mail item in the list.",
+    "category": "Incoming Mail Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Masuk\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/masuk"
+      },
+      {
+        "type": "action",
+        "description": "Type a keyword from the first visible mail row into the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify at least one mail row is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Delete\" action for the first visible mail item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Konfirmasi\" or \"Are you sure\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Batal\" or \"Cancel\" button in the confirmation dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify at least one mail row is still visible"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Search and filter outgoing mail from the outgoing mail list",
+    "description": "Verifies an authenticated user can open the outgoing mail list, use search/filter controls, and see the results update on screen.",
+    "category": "Outgoing Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Keluar\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"SURAT\" into the search field"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Create a new outgoing mail (without attachments) and confirm it appears in the list",
+    "description": "Verifies an authenticated user can create a new outgoing mail using the add flow and see it listed afterward.",
+    "category": "Outgoing Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Keluar\" menu item"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Tambah\" or \"Add\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar/tambah\"},{"
+      },
+      {
+        "type": "action",
+        "description": "Fill \"Nomor Surat\" with \"E2E-OUT-001\""
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "View outgoing mail details from the list",
+    "description": "Verifies an authenticated user can open an outgoing mail detail page and see the detail view content.",
+    "category": "Outgoing Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Keluar\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar\""
+      },
+      {
+        "type": "action",
+        "description": "Click on the first outgoing mail row in the list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar/\""
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Edit an existing outgoing mail and verify updated value is shown in details",
+    "description": "Verifies an authenticated user can edit an outgoing mail and see updated metadata on the detail view.",
+    "category": "Outgoing Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Keluar\" menu item"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Edit\" button for the first outgoing mail in the list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar/edit/\""
+      },
+      {
+        "type": "action",
+        "description": "Fill the \"Perihal\" (subject) field with \"Perihal Updated\""
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Validate create outgoing mail form rejects invalid date format",
+    "description": "Verifies the create outgoing mail form shows a visible validation error and remains on the create page when an invalid date format is submitted.",
+    "category": "Outgoing Mail Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Keluar\" menu item"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Tambah\" or \"Add\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar/tambah\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"32-13-2025\" into the \"Tanggal Surat\" (date) field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" or \"Simpan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Tanggal\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar/tambah\""
+      }
+    ]
+  },
+  {
+    "id": "TC021",
+    "title": "Delete an outgoing mail from the list and confirm it is removed",
+    "description": "Verifies an authenticated user can delete an outgoing mail via confirmation and sees it removed from the visible list (or an error message if deletion fails).",
+    "category": "Outgoing Mail Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Keluar\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar\"},{},{"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Delete\" button for the first outgoing mail in the list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Konfirmasi\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Confirm\" or \"Hapus\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Berhasil\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC022",
+    "title": "Search yields no results message on outgoing mail list",
+    "description": "Verifies the outgoing mail list provides a visible empty-state when the search query matches no mails.",
+    "category": "Outgoing Mail Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Keluar\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar\"},{},{"
+      },
+      {
+        "type": "action",
+        "description": "Type \"NO_MATCH_E2E_999999\" into the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Tidak ada\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC023",
+    "title": "Cancel deletion from confirmation dialog keeps the mail in the list",
+    "description": "Verifies that choosing cancel/close on the deletion confirmation does not remove the outgoing mail from the list.",
+    "category": "Outgoing Mail Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Surat Keluar\" menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/surat/keluar\"},{},{"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Delete\" button for the first outgoing mail in the list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Konfirmasi\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Batal\" or \"Cancel\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Outgoing mail list\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC024",
+    "title": "Switch between Masuk/Keluar tabs and verify list & pagination are visible",
+    "description": "Verifies an authenticated user can open the archive page, switch tabs, and see the list and pagination controls.",
+    "category": "Archive Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Arsip\" menu item in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Masuk\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"archive list\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"pagination\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Keluar\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"archive list\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC025",
+    "title": "Search archives and verify matching rows appear",
+    "description": "Verifies searching within the archive list returns matching results in the visible table/list.",
+    "category": "Archive Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Arsip\" menu item in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"archive list\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Type \"A\" into the \"Search\" field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"archive list\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"A\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC026",
+    "title": "Open an archive detail from the list and verify metadata & storage info are shown",
+    "description": "Verifies a user can navigate from the archive list to an archive detail page and see key information sections.",
+    "category": "Archive Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Arsip\" menu item in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"archive list\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the first archive row in the list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/arsip/detail/\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Metadata\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Klasifikasi\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Lokasi Penyimpanan\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC027",
+    "title": "Filter archives approaching retention deadline and select items for batch review",
+    "description": "Verifies retention-related filtering can be applied and that selecting items updates the selected count.",
+    "category": "Archive Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Arsip\" menu item in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"archive list\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Filter\" button"
+      },
+      {
+        "type": "action",
+        "description": "Select \"Mendekati Retensi\" from the retention status dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Terapkan\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"archive list\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the checkbox for the first archive row"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"1 selected\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC028",
+    "title": "Search with no matching results shows 'No results' message",
+    "description": "Verifies the archive list handles empty search results by displaying an explicit no-results state.",
+    "category": "Archive Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Arsip\" menu item in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"archive list\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Type \"NO_MATCH_123456789\" into the \"Search\" field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"No results\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC029",
+    "title": "Pagination changes the visible page of archives",
+    "description": "Verifies pagination controls allow navigating to another page of archives and the page indicator updates.",
+    "category": "Archive Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Arsip\" menu item in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"pagination\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Page 1\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Next\" pagination button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Page 2\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC030",
+    "title": "Open a non-existent archive detail via in-app ID entry and see 'not found' handling",
+    "description": "Verifies the UI shows an 'Archive not found' message or returns to the archive list when a non-existent ID is requested from within the app.",
+    "category": "Archive Management",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Arsip\" menu item in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Cari berdasarkan ID\" (Search by ID) control"
+      },
+      {
+        "type": "action",
+        "description": "Type \"999999999\" into the \"Archive ID\" field"
+      },
+      {
+        "type": "action",
+        "description": "Press \"Enter\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Archive not found\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC031",
+    "title": "Super admin can view the user list and search for an existing user",
+    "description": "Verifies that a super admin can open User Management, search, and see a matching user row in the list.",
+    "category": "User Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Users\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/users\""
+      },
+      {
+        "type": "action",
+        "description": "Type a known user name or email into the user search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a user row matching the search text is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC032",
+    "title": "Super admin can create a new user and see it appear in the list",
+    "description": "Verifies that a super admin can create a user via the Create New User flow and then find the created user in the user list.",
+    "category": "User Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Users\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/users\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Create new user\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Create\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Fill the Name field with \"E2E User SuperAdmin\""
+      },
+      {
+        "type": "action",
+        "description": "Fill the Email field with \"e2e.user.superadmin+1@example.test\""
+      },
+      {
+        "type": "action",
+        "description": "Select \"Staff\" from the Role dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select an available option from the Unit Kerja dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" or \"Save\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"e2e.user.superadmin+1@example.test\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC033",
+    "title": "Super admin can edit an existing user role and see the update reflected in the list",
+    "description": "Verifies that a super admin can edit a user, change role, save, and observe the updated role in the user list.",
+    "category": "User Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Users\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/users\""
+      },
+      {
+        "type": "action",
+        "description": "Type a known user name or email into the user search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify at least one user row is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Edit\" action for the first visible user row"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Edit\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Select a different option from the Role dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" or \"Save\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated role label is visible in the edited user row"
+      }
+    ]
+  },
+  {
+    "id": "TC034",
+    "title": "Super admin can edit an existing user unit kerja and see the update reflected",
+    "description": "Verifies that a super admin can update a user's unit assignment and see the new unit value displayed.",
+    "category": "User Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Users\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/users\""
+      },
+      {
+        "type": "action",
+        "description": "Type a known user name or email into the user search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify at least one user row is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Edit\" action for the first visible user row"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Unit Kerja\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Select a different option from the Unit Kerja dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" or \"Save\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated Unit Kerja value is visible in the edited user row"
+      }
+    ]
+  },
+  {
+    "id": "TC035",
+    "title": "Non-super admin is blocked from User Management",
+    "description": "Verifies that a non-super-admin user cannot access the Users page and sees an access denied state or is redirected away.",
+    "category": "User Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"non.superadmin.user@example.test\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"WrongPassword123!\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Invalid\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC036",
+    "title": "Authenticated non-super admin is denied access to /users via navigation",
+    "description": "Verifies that a logged-in non-super-admin user cannot open User Management from the UI and sees access denied or gets redirected to dashboard.",
+    "category": "User Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the user profile menu in the header"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Switch account\" or \"Logout\" if available"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/login\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"regular.user@example.test\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"RegularUserPassword!\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Users\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Access denied\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC037",
+    "title": "Super admin can deactivate a user and see deactivated status",
+    "description": "Verifies that a super admin can deactivate a user, confirm the action, and see the user marked as deactivated in the list.",
+    "category": "User Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Users\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/users\""
+      },
+      {
+        "type": "action",
+        "description": "Type a known active user name or email into the user search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a user row matching the search text is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Deactivate\" action for the matching user row"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Confirm\" button in the confirmation dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Deactivated\" is visible in the user row"
+      }
+    ]
+  },
+  {
+    "id": "TC038",
+    "title": "User search shows no results state when query does not match",
+    "description": "Verifies that searching with a non-existent query displays an empty state or no matching rows.",
+    "category": "User Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Users\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/users\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"no-such-user-xyz-12345\" into the user search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"No results\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC039",
+    "title": "Generate a report with valid filters and view results",
+    "description": "Verifies an authenticated user can generate a report with a selected type and valid date range and see results displayed.",
+    "category": "Reports",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Laporan\" (Reports) menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/laporan"
+      },
+      {
+        "type": "action",
+        "description": "Select a report type from the report type dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Set a valid start date in the start date filter"
+      },
+      {
+        "type": "action",
+        "description": "Set a valid end date (after the start date) in the end date filter"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Generate\" (Generate report) button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Report\" is visible on the results area"
+      }
+    ]
+  },
+  {
+    "id": "TC040",
+    "title": "Generate report without changing defaults (smoke)",
+    "description": "Verifies an authenticated user can generate a report using default selections and see results.",
+    "category": "Reports",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Laporan\" (Reports) menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/laporan"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Generate\" (Generate report) button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Report results\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC041",
+    "title": "Invalid date range shows validation and stays on Reports page",
+    "description": "Verifies the UI blocks generating a report when end date is before start date and shows a validation message.",
+    "category": "Reports",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Laporan\" (Reports) menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/laporan"
+      },
+      {
+        "type": "action",
+        "description": "Set the start date filter to a later date"
+      },
+      {
+        "type": "action",
+        "description": "Set the end date filter to an earlier date than the start date"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Generate\" (Generate report) button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"End date must be after start date\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/laporan\""
+      }
+    ]
+  },
+  {
+    "id": "TC042",
+    "title": "Loading indicator appears while generating a report",
+    "description": "Verifies a visible loading state is shown after clicking Generate and before results appear.",
+    "category": "Reports",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Laporan\" (Reports) menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/laporan"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Generate\" (Generate report) button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Loading\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Report results\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC043",
+    "title": "Changing report type changes the generated output context",
+    "description": "Verifies selecting a different report type impacts the displayed report results (by visible report title/header).",
+    "category": "Reports",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the email/username field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Laporan\" (Reports) menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/laporan"
+      },
+      {
+        "type": "action",
+        "description": "Select a specific report type (Type A) from the report type dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Generate\" (Generate report) button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Type A\" is visible in the report header"
+      },
+      {
+        "type": "action",
+        "description": "Select a different report type (Type B) from the report type dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Generate\" (Generate report) button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Type B\" is visible in the report header"
+      }
+    ]
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "loginUser": "tester@simsa.atrbpn.go.id",
+  "loginPassword": "Password123!@#",
+  "executionArgs": {
+    "projectName": "frontend",
+    "projectPath": "c:/Users/BPNSA/OneDrive/Desktop/Documents/Downloads/simsa-atrbpn/frontend",
+    "testIds": [
+      "TC008",
+      "TC009",
+      "TC011"
+    ],
+    "additionalInstruction": "Frontend React app on port 3000. Login: tester@simsa.atrbpn.go.id / Password123!@#. Login page /login, button text \"Masuk\". Run ONLY these 3 test cases.",
+    "envs": {
+      "API_KEY": "sk-user-w2wHanNAegRIj_Hn5k_JtmfD_Rb41s10kHYSs7IfxrNrOJhpZTbHO0a2cqyxll5afcKwR5D49OIrwkUlzfL1LeoTC526pKoAUEtRwpIeoTZ1wlfIIw5j2tYw4qdePNE4PHg"
+    }
+  },
+  "serverPort": 53981,
+  "proxy": "http://4932759f-c475-41cf-af00-2a174ca28fdd:Vaprlgi4SIHCjNdf7K6xYiJ9CpwpgbVu@tun.testsprite.com:8080"
+}

@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "authentication_sign_up_with_email_and_password",
+    "description": "Test user registration via POST /api/auth/sign-up/email with valid email and password, expect 201 Created and user record created."
+  },
+  {
+    "id": "TC002",
+    "title": "authentication_sign_in_with_email_and_password",
+    "description": "Test user login via POST /api/auth/sign-in/email with correct credentials, expect 200 OK and session cookie."
+  },
+  {
+    "id": "TC003",
+    "title": "authentication_sign_in_with_google_oauth",
+    "description": "Test social login via POST /api/auth/sign-in/social with valid Google OAuth token, expect 200 OK and session cookie."
+  },
+  {
+    "id": "TC004",
+    "title": "authentication_sign_out_and_session_invalidation",
+    "description": "Test sign out via POST /api/auth/sign-out, expect 204 No Content and subsequent GET /api/auth/get-session returns 401 Unauthorized."
+  },
+  {
+    "id": "TC005",
+    "title": "incoming_mail_create_with_attachments",
+    "description": "Test creating new incoming mail via POST /api/surat-masuk with required fields and attachments, expect 201 Created and mail ID returned."
+  },
+  {
+    "id": "TC006",
+    "title": "outgoing_mail_list_pagination",
+    "description": "Test listing outgoing mails via GET /api/surat-keluar with pagination parameters, expect paginated list of mails."
+  },
+  {
+    "id": "TC007",
+    "title": "archive_management_create_and_view",
+    "description": "Test creating new archive record via POST /api/arsip and viewing it via GET /api/arsip/:id, expect 201 Created and correct archive metadata."
+  },
+  {
+    "id": "TC008",
+    "title": "dashboard_view_statistics",
+    "description": "Test retrieving dashboard statistics via GET /api/dashboard, expect mail and archive KPIs and summary data."
+  },
+  {
+    "id": "TC009",
+    "title": "user_management_create_and_role_update",
+    "description": "Test creating a new user via POST /api/users and updating user role via PUT /api/users/:id, expect 201 Created and 200 OK respectively."
+  },
+  {
+    "id": "TC010",
+    "title": "classification_management_delete_in_use_code",
+    "description": "Test deleting a classification code that is currently in use via DELETE /api/klasifikasi/:id, expect 409 Conflict and error message 'classification in use'."
+  }
+]

@@ -1,0 +1,248 @@
+.bulk-upload-container {
+    padding: 1.5rem;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.bulk-upload-header {
+    margin-bottom: 1.5rem;
+}
+
+.bulk-upload-header .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--muted-foreground);
+    text-decoration: none;
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+}
+
+.bulk-upload-header .back-link:hover {
+    color: var(--foreground);
+}
+
+.bulk-upload-header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.bulk-upload-header p {
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+}
+
+/* Drop Zone */
+.drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 0.5rem;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--background);
+}
+
+.drop-zone:hover {
+    border-color: var(--primary);
+    background: hsl(var(--primary-hsl) / 0.05);
+}
+
+.drop-zone.active {
+    border-color: var(--primary);
+    background: hsl(var(--primary-hsl) / 0.1);
+}
+
+.drop-zone-icon {
+    width: 3rem;
+    height: 3rem;
+    margin: 0 auto 1rem;
+    color: var(--muted-foreground);
+}
+
+.drop-zone p {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.drop-zone-hint {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+}
+
+/* File List */
+.file-list {
+    margin-top: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.file-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.file-item .file-name {
+    flex: 1;
+    font-size: 0.875rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-item .file-size {
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+}
+
+/* Upload Actions */
+.upload-actions {
+    margin-top: 1.5rem;
+}
+
+/* Processing */
+.processing-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+}
+
+.processing-progress span {
+    font-size: 0.875rem;
+    color: var(--muted-foreground);
+}
+
+/* Results */
+.results-summary {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.results-summary .success {
+    color: hsl(142 76% 36%);
+    border-color: hsl(142 76% 36%);
+}
+
+.results-summary .error {
+    color: hsl(0 84% 60%);
+    border-color: hsl(0 84% 60%);
+}
+
+.results-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.result-item {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.result-item.completed {
+    border-color: hsl(142 76% 80%);
+}
+
+.result-item.failed {
+    border-color: hsl(0 84% 80%);
+}
+
+.result-item-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--muted);
+}
+
+.result-item-header .file-name {
+    flex: 1;
+    font-size: 0.875rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.result-item-content {
+    padding: 1rem;
+}
+
+.result-item-error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    color: hsl(0 84% 50%);
+    font-size: 0.875rem;
+}
+
+/* Metadata Preview */
+.metadata-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.metadata-row {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.metadata-row .label {
+    color: var(--muted-foreground);
+    min-width: 60px;
+}
+
+.metadata-row .value {
+    flex: 1;
+}
+
+/* Edit Form */
+.edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.edit-form .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.edit-form .form-row label {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+}
+
+/* Results Actions */
+.results-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}

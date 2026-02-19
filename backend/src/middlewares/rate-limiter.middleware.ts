@@ -1,0 +1,94 @@
+import rateLimit from 'express-rate-limit';
+import { env } from '../config/env';
+
+/**
+ * Rate Limiter Configuration
+ * Protects against brute force attacks and abuse
+ * Rate limiting is relaxed in development/test to avoid blocking automated tests.
+ */
+const isDev = env.NODE_ENV === 'development' || env.NODE_ENV === 'test';
+
+// General API rate limiter - 100 requests per 15 minutes
+export const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: isDev ? 10000 : 500, // Relaxed in dev/test; 500 per window in production
+    message: {
+        error: 'Too Many Requests',
+        message: 'Too many requests from this IP, please try again after 15 minutes',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Strict rate limiter for authentication endpoints - 5 attempts per 15 minutes
+export const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: isDev ? 10000 : 5, // Relaxed in dev/test; 5 per window in production
+    message: {
+        error: 'Too Many Attempts',
+        message: 'Too many login attempts from this IP, please try again after 15 minutes',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: true, // Don't count successful logins
+});
+
+// Rate limiter for signup - 3 attempts per hour
+export const signupLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: isDev ? 10000 : 3, // Relaxed in dev/test; 3 per hour in production
+    message: {
+        error: 'Too Many Signups',
+        message: 'Too many signup attempts from this IP, please try again after an hour',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Rate limiter for sensitive operations (e.g., delete, export) - 20 per 15 minutes
+export const sensitiveLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20,
+    message: {
+        error: 'Too Many Requests',
+        message: 'Too many sensitive operations from this IP, please try again later',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Export rate limiter - 5 exports per minute (prevents data dumping)
+export const exportLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 5,
+    message: {
+        error: 'Too Many Exports',
+        message: 'Terlalu banyak permintaan export. Coba lagi setelah 1 menit.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Upload rate limiter - 10 uploads per minute (prevents disk abuse)
+export const uploadLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 10,
+    message: {
+        error: 'Too Many Uploads',
+        message: 'Terlalu banyak upload. Coba lagi setelah 1 menit.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// OCR rate limiter - 3 requests per minute (CPU-intensive operation)
+export const ocrLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 3,
+    message: {
+        error: 'Too Many OCR Requests',
+        message: 'Terlalu banyak permintaan OCR. Coba lagi setelah 1 menit.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});

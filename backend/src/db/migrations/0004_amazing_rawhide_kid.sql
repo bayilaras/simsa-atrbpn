@@ -1,0 +1,1 @@
+ALTER TABLE "surat_masuk" ALTER COLUMN "disposisi" SET DATA TYPE text[] USING CASE WHEN "disposisi" IS NULL THEN NULL ELSE ARRAY["disposisi"] END;

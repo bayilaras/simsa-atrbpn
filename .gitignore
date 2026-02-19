@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+logs/
+adapter-debug.log
+
+# Debug files
+debug-*.ts
+check_*.ts
+cleanup-*.ts
+dump_*.ts
+inspect-*.ts
+reproduce_*.ts
+run_sql.ts
+seed-via-api.ts
+verify-*.ts
+verify_*.ts
+*-debug.log
+login-debug*.log
+server*.log
+debug-seed.log
+
+# Test output
+test-output*.txt
+tsc_errors*.txt
+reproduction_error*.txt
+schema-output.txt
+verify_output.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Uploads (user content)
+uploads/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Coverage
+coverage/
