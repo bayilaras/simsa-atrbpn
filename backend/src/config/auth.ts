@@ -21,6 +21,13 @@ export const auth = betterAuth({
             clientSecret: env.GOOGLE_CLIENT_SECRET,
         },
     },
+    account: {
+        // TEMP FIX: .vercel.app is a public suffix — browsers can't share cookies
+        // across subdomains (simsa-frontend.vercel.app ↔ simsa-backend.vercel.app).
+        // This causes state_mismatch on OAuth callback.
+        // Permanent fix: use custom domain (e.g., api.simsa.atrbpn.go.id).
+        skipStateCookieCheck: true,
+    },
     trustedOrigins: env.NODE_ENV === 'production'
         ? [env.FRONTEND_URL]
         : [env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001'],
@@ -38,6 +45,7 @@ export const auth = betterAuth({
         },
     },
     advanced: {
+        useSecureCookies: env.NODE_ENV === 'production',
         database: {
             generateId: 'uuid', // Use UUID for PostgreSQL
         },
