@@ -58,7 +58,22 @@ const app = express();
 
 // CORS - must be before everything
 app.use(cors({
-    origin: env.FRONTEND_URL,
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+
+        const allowedOrigin = env.FRONTEND_URL.replace(/\/$/, "");
+        if (origin === allowedOrigin || origin === allowedOrigin + '/') {
+            return callback(null, true);
+        }
+
+        // During development, allow localhost variations
+        if (env.NODE_ENV !== 'production' && origin.match(/^http:\/\/localhost:\d+$/)) {
+            return callback(null, true);
+        }
+
+        return callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-CSRF-Token'],
     credentials: true,
