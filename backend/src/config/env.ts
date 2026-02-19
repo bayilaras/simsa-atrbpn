@@ -30,6 +30,9 @@ export const env = {
 
     // Frontend
     FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
+
+    // Cookie domain (set to .yourdomain.com when using custom domain)
+    COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || '',
 };
 
 // Validate required env vars

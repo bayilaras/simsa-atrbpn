@@ -46,6 +46,17 @@ export const auth = betterAuth({
     },
     advanced: {
         useSecureCookies: env.NODE_ENV === 'production',
+        disableCSRFCheck: true, // We have our own CSRF middleware; Better Auth's check conflicts with Vercel proxy
+        defaultCookieAttributes: env.NODE_ENV === 'production'
+            ? {
+                sameSite: 'none' as const,   // Required for cross-domain cookies on .vercel.app (public suffix)
+                secure: true,
+                partitioned: true,           // Required by modern browsers for third-party cookies
+            }
+            : {},
+        crossSubDomainCookies: env.COOKIE_DOMAIN
+            ? { enabled: true, domain: env.COOKIE_DOMAIN }
+            : undefined,
         database: {
             generateId: 'uuid', // Use UUID for PostgreSQL
         },

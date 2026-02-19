@@ -37,10 +37,11 @@ export function csrfCookieSetter(req: Request, res: Response, next: NextFunction
         res.cookie(CSRF_COOKIE_NAME, token, {
             httpOnly: false,   // Must be readable by JavaScript
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+            partitioned: process.env.NODE_ENV === 'production', // Required for cross-domain cookies
             path: '/',
             maxAge: 8 * 60 * 60 * 1000, // 8 hours — tighter security for CSRF tokens
-        });
+        } as any);
     }
     next();
 }
