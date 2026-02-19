@@ -149,6 +149,13 @@ app.get('/api/health', (req: Request, res: Response) => {
 // This protects against brute force login attempts
 app.use('/api/auth', authLimiter);
 
+// Explicit OPTIONS preflight handler for auth routes
+// Better Auth's toNodeHandler may bypass Express cors() middleware on preflight requests
+// This ensures CORS headers are always returned for OPTIONS requests to /api/auth/*
+app.options('/api/auth/*splat', (req: Request, res: Response) => {
+    res.status(204).end();
+});
+
 // Better Auth handler - Express v5 uses /*splat pattern
 // MUST be before express.json()
 // Documentation: https://www.better-auth.com/docs/integrations/express
