@@ -153,6 +153,16 @@ app.use('/api/auth', authLimiter);
 // Better Auth's toNodeHandler may bypass Express cors() middleware on preflight requests
 // This ensures CORS headers are always returned for OPTIONS requests to /api/auth/*
 app.options('/api/auth/*splat', (req: Request, res: Response) => {
+    const origin = req.headers.origin;
+    const allowedOrigin = env.FRONTEND_URL.replace(/\/$/, '');
+    if (origin === allowedOrigin || origin === allowedOrigin + '/' ||
+        (env.NODE_ENV !== 'production' && origin?.match(/^http:\/\/localhost:\d+$/))) {
+        res.setHeader('Access-Control-Allow-Origin', origin!);
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, X-CSRF-Token');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Max-Age', '86400');
     res.status(204).end();
 });
 
@@ -162,6 +172,14 @@ app.options('/api/auth/*splat', (req: Request, res: Response) => {
 // Handle both patterns for compatibility
 const authHandler = toNodeHandler(auth);
 const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunction) => {
+    // Ensure CORS headers are set for auth responses since toNodeHandler may bypass Express cors()
+    const origin = req.headers.origin;
+    const allowedOrigin = env.FRONTEND_URL.replace(/\/$/, '');
+    if (!origin || origin === allowedOrigin || origin === allowedOrigin + '/' ||
+        (env.NODE_ENV !== 'production' && origin?.match(/^http:\/\/localhost:\d+$/))) {
+        res.setHeader('Access-Control-Allow-Origin', origin || allowedOrigin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
     try {
         await authHandler(req, res);
     } catch (error: any) {
