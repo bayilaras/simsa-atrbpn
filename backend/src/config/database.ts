@@ -1,17 +1,24 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { Pool, neonConfig } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-serverless';
 import { env } from './env';
 import * as schema from '../db/schema';
 
-// Create postgres connection
-const queryClient = postgres(env.DATABASE_URL, {
-    ssl: 'require',
-    max: 10,
-    idle_timeout: 20,
-    connect_timeout: 10,
-});
+// For Node.js environments (local dev), need websocket polyfill
+if (typeof WebSocket === 'undefined') {
+    // Dynamic import to avoid bundling ws in serverless
+    try {
+        const ws = require('ws');
+        neonConfig.webSocketConstructor = ws;
+    } catch {
+        // ws not available, likely running in edge/serverless with native WebSocket
+    }
+}
+
+// Create Neon serverless connection pool (works on both Vercel Serverless & local)
+const pool = new Pool({ connectionString: env.DATABASE_URL });
 
 // Create drizzle client
-export const db = drizzle(queryClient, { schema });
+export const db = drizzle({ client: pool, schema });
 
 export type Database = typeof db;
+
