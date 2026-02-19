@@ -5,13 +5,11 @@ import * as schema from '../db/schema';
 
 // For Node.js environments (local dev), need websocket polyfill
 if (typeof WebSocket === 'undefined') {
-    // Dynamic import to avoid bundling ws in serverless
-    try {
-        const ws = require('ws');
-        neonConfig.webSocketConstructor = ws;
-    } catch {
+    import('ws').then((ws) => {
+        neonConfig.webSocketConstructor = ws.default || ws;
+    }).catch(() => {
         // ws not available, likely running in edge/serverless with native WebSocket
-    }
+    });
 }
 
 // Create Neon serverless connection pool (works on both Vercel Serverless & local)

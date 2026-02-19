@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "SIMSA Backend API - Express + Drizzle + Better Auth",
   "main": "dist/index.js",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts src/app.ts --format cjs --dts",
+    "build": "tsup src/index.ts src/app.ts --format esm",
     "start": "node dist/index.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
