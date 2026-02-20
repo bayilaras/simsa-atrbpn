@@ -173,12 +173,12 @@ router.post('/',
                         mimeType: file.mimetype,
                         buffer: file.buffer,
                     });
-                    filePath = `gdrive:${driveFile.id} `;
+                    filePath = `gdrive:${driveFile.id}`;
                     fileOriginalName = file.originalname;
                     log.info({ driveFileId: driveFile.id, fileName: file.originalname }, 'File uploaded to Google Drive');
-                } catch (driveError) {
+                } catch (driveError: any) {
                     log.error({ err: driveError }, 'Failed to upload file to Google Drive');
-                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file ke Google Drive' });
+                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file ke Google Drive', message: driveError?.message || 'Unknown error' });
                 }
             }
 
@@ -265,12 +265,12 @@ router.put('/:id', validateIdParam(),
                         mimeType: file.mimetype,
                         buffer: file.buffer,
                     });
-                    updateData.filePath = `gdrive:${driveFile.id} `;
+                    updateData.filePath = `gdrive:${driveFile.id}`;
                     updateData.fileOriginalName = file.originalname;
                     log.info({ driveFileId: driveFile.id, fileName: file.originalname }, 'File uploaded to Google Drive (update)');
-                } catch (driveError) {
+                } catch (driveError: any) {
                     log.error({ err: driveError }, 'Failed to upload file to Google Drive');
-                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file ke Google Drive' });
+                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file ke Google Drive', message: driveError?.message || 'Unknown error' });
                 }
             }
 
