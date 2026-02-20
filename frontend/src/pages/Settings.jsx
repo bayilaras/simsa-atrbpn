@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,7 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { settingsService } from '@/services/settings.service';
-import { User, Building2, FileText, Palette, Save, Loader2, Settings2 } from 'lucide-react';
+import { User, Building2, FileText, Save, Loader2, Settings2 } from 'lucide-react';
 
 export default function Settings() {
     const { user, canWrite } = useAuth();
@@ -47,14 +46,6 @@ export default function Settings() {
         keluarFormat: '{noUrut}/{naskahDinas}/{bulan}/{tahun}',
     });
 
-    // Preferences state
-    const [preferences, setPreferences] = useState({
-        theme: 'light',
-        language: 'id',
-        notificationsEnabled: true,
-        emailNotifications: false,
-    });
-
     // Load data based on tab
     useEffect(() => {
         loadTabData();
@@ -83,10 +74,6 @@ export default function Settings() {
                     const tmpl = await settingsService.getSuratTemplates();
                     setTemplates(tmpl);
                     break;
-                case 'preferences':
-                    const prefs = await settingsService.getPreferences();
-                    setPreferences(prefs);
-                    break;
             }
         } catch (error) {
             console.error('Error loading settings:', error);
@@ -107,9 +94,10 @@ export default function Settings() {
                 description: 'Profil berhasil diperbarui',
             });
         } catch (error) {
+            console.error('Profile update error:', error);
             toast({
                 title: 'Error',
-                description: 'Gagal memperbarui profil',
+                description: error?.message || 'Gagal memperbarui profil. Silakan coba lagi.',
                 variant: 'destructive',
             });
         } finally {
@@ -140,7 +128,7 @@ export default function Settings() {
         } catch (error) {
             toast({
                 title: 'Error',
-                description: 'Gagal memperbarui unit kerja',
+                description: error?.message || 'Gagal memperbarui unit kerja',
                 variant: 'destructive',
             });
         } finally {
@@ -159,26 +147,7 @@ export default function Settings() {
         } catch (error) {
             toast({
                 title: 'Error',
-                description: 'Gagal memperbarui template',
-                variant: 'destructive',
-            });
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleSavePreferences = async () => {
-        setSaving(true);
-        try {
-            await settingsService.updatePreferences(preferences);
-            toast({
-                title: 'Berhasil',
-                description: 'Preferensi berhasil diperbarui',
-            });
-        } catch (error) {
-            toast({
-                title: 'Error',
-                description: 'Gagal memperbarui preferensi',
+                description: error?.message || 'Gagal memperbarui template',
                 variant: 'destructive',
             });
         } finally {
@@ -203,7 +172,7 @@ export default function Settings() {
                         <div>
                             <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Pengaturan</h1>
                             <p className="text-blue-100/80 text-lg">
-                                Kelola profil, unit kerja, dan preferensi aplikasi
+                                Kelola profil, unit kerja, dan template surat
                             </p>
                         </div>
                     </div>
@@ -211,7 +180,7 @@ export default function Settings() {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className="bg-white/50 backdrop-blur-sm border border-slate-200/60 p-1 h-auto rounded-xl shadow-sm grid w-full grid-cols-2 md:grid-cols-4 gap-1">
+                <TabsList className={`bg-white/50 backdrop-blur-sm border border-slate-200/60 p-1 h-auto rounded-xl shadow-sm grid w-full gap-1 ${isAdmin ? 'grid-cols-3' : 'grid-cols-1'}`}>
                     <TabsTrigger
                         value="profile"
                         className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
@@ -237,13 +206,6 @@ export default function Settings() {
                             </TabsTrigger>
                         </>
                     )}
-                    <TabsTrigger
-                        value="preferences"
-                        className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
-                    >
-                        <Palette className="h-4 w-4 mr-2" />
-                        <span>Preferensi</span>
-                    </TabsTrigger>
                 </TabsList>
 
                 {/* Profile Tab */}
@@ -336,8 +298,8 @@ export default function Settings() {
                                                     key={unit.id}
                                                     onClick={() => handleSelectUnitKerja(unit)}
                                                     className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 flex items-center justify-between group ${selectedUnitKerja?.id === unit.id
-                                                            ? 'bg-blue-50 text-blue-700 font-medium'
-                                                            : 'hover:bg-slate-50 text-slate-600'
+                                                        ? 'bg-blue-50 text-blue-700 font-medium'
+                                                        : 'hover:bg-slate-50 text-slate-600'
                                                         }`}
                                                 >
                                                     <span className="truncate">{unit.name}</span>
@@ -345,8 +307,8 @@ export default function Settings() {
                                                         <Badge
                                                             variant="outline"
                                                             className={`text-[10px] px-1.5 py-0.5 h-auto ${selectedUnitKerja?.id === unit.id
-                                                                    ? 'border-blue-200 bg-blue-100 text-blue-700'
-                                                                    : 'text-slate-500 border-slate-200 group-hover:border-slate-300'
+                                                                ? 'border-blue-200 bg-blue-100 text-blue-700'
+                                                                : 'text-slate-500 border-slate-200 group-hover:border-slate-300'
                                                                 }`}
                                                         >
                                                             {unit.unitType}
@@ -551,108 +513,6 @@ export default function Settings() {
                         </Card>
                     </TabsContent>
                 )}
-
-                {/* Preferences Tab */}
-                <TabsContent value="preferences" className="mt-0">
-                    <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200">
-                        <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
-                            <CardTitle className="text-xl text-slate-800">Preferensi Tampilan</CardTitle>
-                            <CardDescription className="text-slate-500">
-                                Sesuaikan tampilan dan notifikasi aplikasi
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-6 pt-6">
-                            {loading ? (
-                                <div className="space-y-4">
-                                    <Skeleton className="h-20 rounded-xl" />
-                                    <Skeleton className="h-20 rounded-xl" />
-                                </div>
-                            ) : (
-                                <div className="space-y-6">
-                                    <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 bg-white hover:border-slate-200 transition-colors">
-                                        <div className="space-y-0.5">
-                                            <Label className="text-base font-medium text-slate-800">Notifikasi Aplikasi</Label>
-                                            <p className="text-sm text-slate-500">
-                                                Tampilkan notifikasi popup di dalam aplikasi
-                                            </p>
-                                        </div>
-                                        <Switch
-                                            checked={preferences.notificationsEnabled}
-                                            onCheckedChange={(checked) =>
-                                                setPreferences({ ...preferences, notificationsEnabled: checked })
-                                            }
-                                            className="data-[state=checked]:bg-blue-600"
-                                        />
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 bg-white hover:border-slate-200 transition-colors">
-                                        <div className="space-y-0.5">
-                                            <Label className="text-base font-medium text-slate-800">Notifikasi Email</Label>
-                                            <p className="text-sm text-slate-500">
-                                                Terima ringkasan dan notifikasi penting via email
-                                            </p>
-                                        </div>
-                                        <Switch
-                                            checked={preferences.emailNotifications}
-                                            onCheckedChange={(checked) =>
-                                                setPreferences({ ...preferences, emailNotifications: checked })
-                                            }
-                                            className="data-[state=checked]:bg-blue-600"
-                                        />
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 bg-white hover:border-slate-200 transition-colors">
-                                        <div className="space-y-0.5">
-                                            <Label className="text-base font-medium text-slate-800">Tema Aplikasi</Label>
-                                            <p className="text-sm text-slate-500">
-                                                Pilih mode tampilan yang nyaman untuk mata Anda
-                                            </p>
-                                        </div>
-                                        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => setPreferences({ ...preferences, theme: 'light' })}
-                                                className={`rounded-md transition-all ${preferences.theme === 'light'
-                                                    ? 'bg-white text-blue-600 shadow-sm'
-                                                    : 'text-slate-500 hover:text-slate-700'
-                                                    }`}
-                                            >
-                                                Light
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => setPreferences({ ...preferences, theme: 'dark' })}
-                                                className={`rounded-md transition-all ${preferences.theme === 'dark'
-                                                    ? 'bg-slate-800 text-white shadow-sm'
-                                                    : 'text-slate-500 hover:text-slate-700'
-                                                    }`}
-                                            >
-                                                Dark
-                                            </Button>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex justify-end pt-4">
-                                        <Button
-                                            onClick={handleSavePreferences}
-                                            disabled={saving}
-                                            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow transition-all"
-                                        >
-                                            {saving ? (
-                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                            ) : (
-                                                <Save className="h-4 w-4 mr-2" />
-                                            )}
-                                            Simpan Preferensi
-                                        </Button>
-                                    </div>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </TabsContent>
             </Tabs>
         </div>
     );

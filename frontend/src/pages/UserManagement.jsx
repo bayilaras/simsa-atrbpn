@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban } from 'lucide-react';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,6 +78,12 @@ export default function UserManagement() {
     const [editingUser, setEditingUser] = useState(null);
     const [editData, setEditData] = useState({ role: '', unitKerjaId: '', isActive: true, jabatan: '', nip: '' });
     const [saving, setSaving] = useState(false);
+
+    // Add user dialog
+    const [addOpen, setAddOpen] = useState(false);
+    const [addData, setAddData] = useState({ email: '', name: '', role: 'user', unitKerjaId: '', jabatan: '', nip: '' });
+    const [creating, setCreating] = useState(false);
+    const [addError, setAddError] = useState('');
 
     // Check admin access
     const isAdmin = hasRole(['super_admin']);
@@ -172,6 +179,38 @@ export default function UserManagement() {
         }
     };
 
+    const handleAddUser = () => {
+        setAddData({ email: '', name: '', role: 'user', unitKerjaId: '', jabatan: '', nip: '' });
+        setAddError('');
+        setAddOpen(true);
+    };
+
+    const handleCreateUser = async () => {
+        if (!addData.email || !addData.name) {
+            setAddError('Email dan nama wajib diisi');
+            return;
+        }
+        try {
+            setCreating(true);
+            setAddError('');
+            await userManagementService.createUser({
+                email: addData.email,
+                name: addData.name,
+                role: addData.role,
+                unitKerjaId: addData.unitKerjaId || null,
+                jabatan: addData.jabatan || null,
+                nip: addData.nip || null,
+            });
+            setAddOpen(false);
+            loadUsers();
+        } catch (err) {
+            console.error('Failed to create user:', err);
+            setAddError(err.message || 'Gagal membuat user baru');
+        } finally {
+            setCreating(false);
+        }
+    };
+
     const handleDeactivate = async (user) => {
         if (user.id === currentUser?.id) {
             alert('Tidak dapat menonaktifkan akun sendiri');
@@ -233,10 +272,10 @@ export default function UserManagement() {
                         Kelola pengguna, penetapan role, dan akses unit kerja sistem
                     </p>
                 </div>
-                {/* <Button className="shadow-sm bg-indigo-600 hover:bg-indigo-700">
+                <Button className="shadow-sm bg-indigo-600 hover:bg-indigo-700" onClick={handleAddUser}>
                     <UserPlus className="mr-2 h-4 w-4" />
                     Tambah User
-                </Button> */}
+                </Button>
             </div>
 
             {/* Stats Overview */}
@@ -588,6 +627,113 @@ export default function UserManagement() {
                     </SheetFooter>
                 </SheetContent>
             </Sheet>
+
+            {/* Add User Dialog */}
+            <Dialog open={addOpen} onOpenChange={setAddOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <UserPlus className="h-5 w-5 text-indigo-600" />
+                            Tambah User Baru
+                        </DialogTitle>
+                        <DialogDescription>
+                            Buat akun user baru. User akan dapat login menggunakan email yang didaftarkan.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {addError && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700">
+                            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                            {addError}
+                        </div>
+                    )}
+
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-2">
+                            <Label>Email <span className="text-red-500">*</span></Label>
+                            <Input
+                                type="email"
+                                placeholder="user@example.com"
+                                value={addData.email}
+                                onChange={(e) => setAddData(d => ({ ...d, email: e.target.value }))}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Nama Lengkap <span className="text-red-500">*</span></Label>
+                            <Input
+                                placeholder="Nama lengkap pengguna"
+                                value={addData.name}
+                                onChange={(e) => setAddData(d => ({ ...d, name: e.target.value }))}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Role</Label>
+                            <Select value={addData.role} onValueChange={(v) => setAddData(d => ({ ...d, role: v }))}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Pilih Role" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {roles.map(role => (
+                                        <SelectItem key={role.value} value={role.value}>
+                                            {role.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Unit Kerja</Label>
+                            <Select value={addData.unitKerjaId || 'none'} onValueChange={(v) => setAddData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Pilih Unit Kerja" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none" className="text-muted-foreground opacity-50">Tidak ada unit kerja</SelectItem>
+                                    {unitKerjaList.map(unit => (
+                                        <SelectItem key={unit.id} value={unit.id}>
+                                            {unit.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Jabatan</Label>
+                                <Input
+                                    placeholder="Contoh: Arsiparis"
+                                    value={addData.jabatan}
+                                    onChange={(e) => setAddData(d => ({ ...d, jabatan: e.target.value }))}
+                                    maxLength={100}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>NIP</Label>
+                                <Input
+                                    placeholder="Nomor Induk Pegawai"
+                                    value={addData.nip}
+                                    onChange={(e) => setAddData(d => ({ ...d, nip: e.target.value }))}
+                                    maxLength={30}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setAddOpen(false)} disabled={creating}>
+                            Batal
+                        </Button>
+                        <Button onClick={handleCreateUser} disabled={creating} className="bg-indigo-600 hover:bg-indigo-700">
+                            {creating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            Tambah User
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

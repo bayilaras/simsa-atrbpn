@@ -27,5 +27,16 @@ export const userIdParamSchema = z.object({
     userId: z.string().uuid(),
 });
 
+// Create user body
+export const createUserSchema = z.object({
+    email: z.string().email('Email tidak valid'),
+    name: z.string().min(1, 'Nama wajib diisi').max(255),
+    role: z.enum(roles),
+    unitKerjaId: z.string().nullable().optional(),
+    jabatan: z.string().max(100).nullable().optional(),
+    nip: z.string().max(30).nullable().optional(),
+});
+
 export type ListUsersQuery = z.infer<typeof listUsersSchema>;
 export type UpdateUserBody = z.infer<typeof updateUserSchema>;
+export type CreateUserBody = z.infer<typeof createUserSchema>;

@@ -1,10 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { settingsService } from '../services/settings.service';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('SettingsRoutes');
 
 const router = Router();
+
+// Apply auth middleware to ALL settings routes
+router.use(authMiddleware as any);
 
 // ==================== PROFILE SETTINGS ====================
 
@@ -17,7 +21,6 @@ const router = Router();
  */
 router.get('/profile', async (req: Request, res: Response) => {
     try {
-        // Get user ID from session (assuming auth middleware sets this)
         const userId = (req as any).user?.id;
 
         if (!userId) {
@@ -56,6 +59,13 @@ router.put('/profile', async (req: Request, res: Response) => {
         }
 
         const { name, image } = req.body;
+
+        // Validate that at least one field is provided
+        if (!name && !image && name !== '') {
+            res.status(400).json({ error: 'At least name or image must be provided' });
+            return;
+        }
+
         const updated = await settingsService.updateProfile(userId, { name, image });
 
         if (!updated) {
@@ -241,64 +251,6 @@ router.put('/surat-templates', async (req: Request, res: Response) => {
     } catch (error) {
         log.error({ err: error }, 'Error updating surat templates:');
         res.status(500).json({ error: 'Failed to update templates' });
-    }
-});
-
-// ==================== USER PREFERENCES ====================
-
-/**
- * @swagger
- * /api/settings/preferences:
- *   get:
- *     summary: Get user preferences
- *     tags: [Settings]
- */
-router.get('/preferences', async (req: Request, res: Response) => {
-    try {
-        const userId = (req as any).user?.id;
-
-        if (!userId) {
-            res.status(401).json({ error: 'Unauthorized' });
-            return;
-        }
-
-        const preferences = await settingsService.getUserPreferences(userId);
-        res.json(preferences);
-    } catch (error) {
-        log.error({ err: error }, 'Error getting preferences:');
-        res.status(500).json({ error: 'Failed to get preferences' });
-    }
-});
-
-/**
- * @swagger
- * /api/settings/preferences:
- *   put:
- *     summary: Update user preferences
- *     tags: [Settings]
- */
-router.put('/preferences', async (req: Request, res: Response) => {
-    try {
-        const userId = (req as any).user?.id;
-
-        if (!userId) {
-            res.status(401).json({ error: 'Unauthorized' });
-            return;
-        }
-
-        const { theme, language, notificationsEnabled, emailNotifications } = req.body;
-
-        const updated = await settingsService.updateUserPreferences(userId, {
-            theme,
-            language,
-            notificationsEnabled,
-            emailNotifications,
-        });
-
-        res.json(updated);
-    } catch (error) {
-        log.error({ err: error }, 'Error updating preferences:');
-        res.status(500).json({ error: 'Failed to update preferences' });
     }
 });
 

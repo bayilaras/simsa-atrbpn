@@ -4,7 +4,7 @@ import { db } from '../config/database';
 import { users } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import userManagementService, { ADMIN_ROLES } from '../services/user-management.service';
-import { listUsersSchema, updateUserSchema, userIdParamSchema } from '../validations/user-management.validation';
+import { listUsersSchema, updateUserSchema, userIdParamSchema, createUserSchema } from '../validations/user-management.validation';
 import auditLogService from '../services/audit-log.service';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
@@ -105,6 +105,84 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
         res.json({ success: true, ...result });
     } catch (error) {
         log.error({ err: error }, 'List users error:');
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * @swagger
+ * /api/users:
+ *   post:
+ *     summary: Create a new user (Super Admin only)
+ *     tags: [User Management]
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, name, role]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               name:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [super_admin, admin_dirjen, admin_sesditjen, user]
+ *               unitKerjaId:
+ *                 type: string
+ *                 nullable: true
+ *               jabatan:
+ *                 type: string
+ *                 nullable: true
+ *               nip:
+ *                 type: string
+ *                 nullable: true
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *       400:
+ *         description: Validation error or email already exists
+ */
+router.post('/', requireAdmin, async (req: Request, res: Response) => {
+    try {
+        const bodyResult = createUserSchema.safeParse(req.body);
+        if (!bodyResult.success) {
+            return res.status(400).json({
+                error: 'Validation error',
+                details: bodyResult.error.issues
+            });
+        }
+
+        const newUser = await userManagementService.createUser(bodyResult.data);
+
+        // Log audit
+        const currentUser = (req as any).currentUser;
+        await auditLogService.logAction({
+            userId: currentUser.id,
+            userEmail: currentUser.email || '',
+            action: 'create',
+            entityType: 'user',
+            entityId: newUser?.id || '',
+            changes: {
+                after: {
+                    email: bodyResult.data.email,
+                    name: bodyResult.data.name,
+                    role: bodyResult.data.role,
+                }
+            },
+            ipAddress: req.ip,
+        });
+
+        res.status(201).json({ success: true, data: newUser });
+    } catch (error: any) {
+        log.error({ err: error }, 'Create user error:');
+        if (error.message?.includes('Email sudah terdaftar') || error.message?.includes('Invalid')) {
+            return res.status(400).json({ error: error.message });
+        }
         res.status(500).json({ error: 'Internal server error' });
     }
 });

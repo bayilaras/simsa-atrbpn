@@ -19,6 +19,15 @@ export interface UpdateUserData {
     nip?: string | null;
 }
 
+export interface CreateUserData {
+    email: string;
+    name: string;
+    role: string;
+    unitKerjaId?: string | null;
+    jabatan?: string | null;
+    nip?: string | null;
+}
+
 // Valid roles
 export const VALID_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'user'] as const;
 export type Role = typeof VALID_ROLES[number];
@@ -27,6 +36,60 @@ export type Role = typeof VALID_ROLES[number];
 export const ADMIN_ROLES: Role[] = ['super_admin'];
 
 export const userManagementService = {
+    /**
+     * Create a new user (by Super Admin)
+     */
+    async createUser(data: CreateUserData) {
+        // Validate role
+        if (!VALID_ROLES.includes(data.role as Role)) {
+            throw new Error(`Invalid role: ${data.role}`);
+        }
+
+        // Check if email already exists
+        const [existingUser] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.email, data.email))
+            .limit(1);
+
+        if (existingUser) {
+            throw new Error('Email sudah terdaftar');
+        }
+
+        // Validate unit kerja if provided
+        if (data.unitKerjaId) {
+            const [unit] = await db
+                .select({ id: unitKerja.id })
+                .from(unitKerja)
+                .where(eq(unitKerja.id, data.unitKerjaId))
+                .limit(1);
+
+            if (!unit) {
+                throw new Error(`Invalid unitKerjaId: ${data.unitKerjaId}`);
+            }
+        }
+
+        const [newUser] = await db
+            .insert(users)
+            .values({
+                email: data.email,
+                name: data.name,
+                role: data.role,
+                unitKerjaId: data.unitKerjaId || null,
+                jabatan: data.jabatan || null,
+                nip: data.nip || null,
+                isActive: true,
+                emailVerified: false,
+            })
+            .returning();
+
+        if (!newUser) {
+            throw new Error('Failed to create user');
+        }
+
+        return this.getUserById(newUser.id);
+    },
+
     /**
      * List users with filters and pagination
      */

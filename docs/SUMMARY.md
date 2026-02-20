@@ -49,3 +49,4 @@
 * [📝 Audit Log](administrasi/audit-log.md)
 * [👥 User Management](administrasi/user-management.md)
 * [📂 Master Data](administrasi/master-data.md)
+* [⚙️ Settings](administrasi/settings.md)

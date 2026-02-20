@@ -1,0 +1,18 @@
+﻿=== Unit Kerja: ditjen ===
+  SM: 1717 | SK: 1 | Arsip: 1
+=== Unit Kerja: sesditjen ===
+  SM: 0 | SK: 0 | Arsip: 0
+=== Unit Kerja: bagian-keuangan ===
+  SM: 0 | SK: 0 | Arsip: 0
+=== Unit Kerja: bagian-kepegawaian ===
+  SM: 0 | SK: 0 | Arsip: 0
+=== Unit Kerja: bagian-umum ===
+  SM: 0 | SK: 0 | Arsip: 0
+=== Unit Kerja: direktorat-bppt ===
+  SM: 0 | SK: 0 | Arsip: 0
+=== Unit Kerja: direktorat-ptep ===
+  SM: 0 | SK: 0 | Arsip: 0
+=== Unit Kerja: direktorat-ktpp ===
+  SM: 0 | SK: 0 | Arsip: 0
+=== Unit Kerja: direktorat-plp ===
+  SM: 0 | SK: 0 | Arsip: 0

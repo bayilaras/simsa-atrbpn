@@ -19,6 +19,14 @@ const userManagementService = {
     },
 
     /**
+     * Create a new user (Super Admin only)
+     */
+    async createUser(data) {
+        const response = await api.post('/api/users', data);
+        return response;
+    },
+
+    /**
      * Get user by ID
      */
     async getUserById(userId) {

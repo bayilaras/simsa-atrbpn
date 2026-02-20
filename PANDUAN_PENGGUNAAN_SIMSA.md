@@ -630,16 +630,32 @@ Mencatat semua aktivitas pengguna dalam sistem untuk keperluan audit dan keamana
 Mengelola akun pengguna sistem SIMSA.
 
 1. Klik **User Management** (🔒) pada sidebar.
-2. Lihat daftar pengguna terdaftar.
+2. Lihat daftar pengguna terdaftar beserta statistik (Total Users, Aktif, Nonaktif).
 3. **Menambah pengguna baru:**
-   - Klik **"+ Tambah User"**.
-   - Isi nama, email, dan pilih role.
-   - Pilih unit kerja.
-   - Klik **"Simpan"**.
+   - Klik tombol **"Tambah User"** (biru) di pojok kanan atas.
+   - Dialog form akan muncul, isi data berikut:
+
+| Field | Keterangan | Wajib |
+|-------|-----------|-------|
+| Email | Alamat email pengguna (untuk login Google) | ✅ |
+| Nama Lengkap | Nama lengkap pengguna | ✅ |
+| Role | Super Admin, Admin Dirjen, Admin Sesditjen, User | ✅ |
+| Unit Kerja | Pilih unit kerja dari dropdown | ❌ |
+| Jabatan | Jabatan/posisi (muncul di dokumen resmi) | ❌ |
+| NIP | Nomor Induk Pegawai (untuk tanda tangan) | ❌ |
+
+   - Klik **"Tambah User"** untuk menyimpan.
+
+> [!TIP]
+> User baru login menggunakan **Google** dengan email yang didaftarkan. Pastikan email yang dimasukkan adalah email Google aktif.
+
 4. **Mengubah role pengguna:**
-   - Klik ikon edit pada baris pengguna.
-   - Ubah role sesuai kebutuhan.
-   - Klik **"Simpan"**.
+   - Klik ikon **menu/edit** pada baris pengguna.
+   - Ubah role, unit kerja, jabatan, NIP, atau status akun.
+   - Klik **"Simpan Perubahan"**.
+5. **Menonaktifkan pengguna:**
+   - Klik ikon edit, ubah status ke **Nonaktif**.
+   - Pengguna yang dinonaktifkan tidak bisa login.
 
 > [!CAUTION]
 > Menu ini **hanya** tersedia untuk **Super Admin**. Perubahan role pengguna berdampak langsung pada hak akses mereka.
@@ -663,13 +679,36 @@ Mengelola data referensi utama yang digunakan di seluruh sistem.
 
 ### 9.5 Settings
 
-Pengaturan sistem SIMSA secara keseluruhan.
+Pengaturan sistem SIMSA, termasuk profil pengguna, unit kerja, dan template surat.
 
 1. Klik **Settings** (⚙️) di bagian bawah sidebar.
-2. Kelola konfigurasi umum sistem.
+
+#### Tab Profil
+
+Tab ini tersedia untuk **semua pengguna** yang login.
+
+1. Buka tab **Profil**.
+2. Ubah **Nama** Anda di kolom yang tersedia.
+3. Klik **"Simpan Perubahan"** untuk menyimpan.
 
 > [!NOTE]
-> Settings hanya tersedia untuk **Super Admin**.
+> Perubahan nama akan langsung berlaku di seluruh sistem.
+
+#### Tab Unit Kerja (Admin/Super Admin)
+
+1. Buka tab **Unit Kerja**.
+2. Lihat daftar unit kerja yang terdaftar.
+3. Klik **"Tambah"** untuk menambah unit kerja baru.
+4. Klik ikon **edit** untuk mengubah nama/kode unit kerja.
+5. Klik ikon **hapus** untuk menghapus unit kerja.
+
+#### Tab Template Surat (Admin/Super Admin)
+
+1. Buka tab **Template**.
+2. Lihat dan kelola template surat yang digunakan dalam sistem.
+
+> [!IMPORTANT]
+> Tab Unit Kerja dan Template hanya tersedia untuk **Admin** dan **Super Admin**.
 
 ---
 

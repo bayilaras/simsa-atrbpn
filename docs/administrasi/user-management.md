@@ -26,6 +26,34 @@ Tabel menampilkan semua pengguna yang terdaftar:
 
 ---
 
+## Tambah User Baru
+
+Fitur ini memungkinkan Super Admin membuat akun pengguna baru secara langsung dari halaman User Management.
+
+### Langkah-langkah
+
+1. Klik tombol **"Tambah User"** (biru) di pojok kanan atas halaman.
+2. Dialog form akan muncul. Isi data berikut:
+
+| Field | Keterangan | Wajib |
+|-------|-----------|-------|
+| Email | Alamat email pengguna (untuk login) | ✅ |
+| Nama Lengkap | Nama lengkap pengguna | ✅ |
+| Role | Pilih role dari dropdown (Super Admin, Admin Dirjen, Admin Sesditjen, User) | ✅ |
+| Unit Kerja | Pilih unit kerja dari dropdown | ❌ |
+| Jabatan | Jabatan/posisi (muncul di dokumen resmi) | ❌ |
+| NIP | Nomor Induk Pegawai (muncul di tanda tangan) | ❌ |
+
+3. Klik **"Tambah User"** untuk menyimpan.
+4. User baru akan muncul di daftar pengguna.
+
+> ⚠️ **Penting:**
+> - Email harus **unik** — tidak boleh sama dengan email yang sudah terdaftar.
+> - User baru **login dengan Google** menggunakan email yang didaftarkan. Pastikan email yang dimasukkan adalah email Google yang aktif.
+> - Jika ada error, pesan kesalahan akan ditampilkan di bagian atas dialog.
+
+---
+
 ## Mengelola Pengguna
 
 ### Mengubah Role
