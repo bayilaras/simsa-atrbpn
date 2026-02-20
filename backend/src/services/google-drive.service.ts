@@ -5,11 +5,38 @@ import { createLogger } from '../utils/logger';
 
 const log = createLogger('GoogleDriveService');
 
-// Fix private key: Vercel may store literal "\n" or "\\n" — both need to become actual newlines
-function formatPrivateKey(key: string): string {
-    if (!key) return key;
-    // Replace literal \n (stored as \\n in env vars) with actual newlines
-    return key.replace(/\\n/g, '\n');
+// Fix private key: Vercel env vars can mangle PEM keys in many ways
+function formatPrivateKey(key: string | undefined): string {
+    if (!key) return '';
+
+    // 1. Strip wrapping quotes (single or double)
+    let cleaned = key.replace(/^["']|["']$/g, '');
+
+    // 2. Replace literal \n (two chars: backslash + n) with actual newlines
+    cleaned = cleaned.replace(/\\n/g, '\n');
+
+    // 3. If there are now real newlines, the key should be valid
+    if (cleaned.includes('\n') && cleaned.includes('-----BEGIN')) {
+        log.info('Private key: restored via \\n replacement');
+        return cleaned;
+    }
+
+    // 4. If still no newlines, the key may be completely flattened — reconstruct PEM
+    const pemMatch = cleaned.match(/(-----BEGIN [A-Z ]+-----)([\s\S]*?)(-----END [A-Z ]+-----)/);
+    if (pemMatch) {
+        const header = pemMatch[1];
+        const body = pemMatch[2].replace(/\s/g, ''); // strip any spaces
+        const footer = pemMatch[3];
+        // PEM base64 body must have 64-char lines
+        const bodyLines = body.match(/.{1,64}/g) || [];
+        const reconstructed = [header, ...bodyLines, footer, ''].join('\n');
+        log.info({ headerFound: true, bodyLength: body.length, lineCount: bodyLines.length }, 'Private key: reconstructed PEM from flattened key');
+        return reconstructed;
+    }
+
+    // 5. Fallback: return as-is and hope for the best
+    log.warn('Private key: could not detect PEM structure, using as-is');
+    return cleaned;
 }
 
 const privateKey = formatPrivateKey(env.GOOGLE_PRIVATE_KEY);
@@ -19,8 +46,9 @@ log.info({
     hasServiceEmail: !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
     hasPrivateKey: !!privateKey,
     privateKeyLength: privateKey?.length || 0,
+    keyStartsWith: privateKey?.substring(0, 27) || 'N/A',
+    keyEndsWith: privateKey?.substring(privateKey.length - 25) || 'N/A',
     hasFolderId: !!env.GOOGLE_DRIVE_FOLDER_ID,
-    folderId: env.GOOGLE_DRIVE_FOLDER_ID?.substring(0, 8) + '...',
 }, 'Google Drive credentials status');
 
 // Initialize Google Drive API with service account
