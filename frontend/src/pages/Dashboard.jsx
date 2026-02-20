@@ -447,22 +447,39 @@ export default function Dashboard() {
                                     <CardTitle className="text-base font-semibold">Aksi Cepat</CardTitle>
                                 </CardHeader>
                                 <CardContent className="grid grid-cols-2 gap-3">
-                                    <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/masuk/tambah')}>
-                                        <MailOpen className="h-5 w-5" />
-                                        <span className="text-xs">Surat Masuk</span>
-                                    </Button>
-                                    <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/keluar/tambah')}>
-                                        <Send className="h-5 w-5" />
-                                        <span className="text-xs">Surat Keluar</span>
-                                    </Button>
+                                    {isAdmin ? (
+                                        <>
+                                            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/masuk/tambah')}>
+                                                <MailOpen className="h-5 w-5" />
+                                                <span className="text-xs">Surat Masuk</span>
+                                            </Button>
+                                            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/keluar/tambah')}>
+                                                <Send className="h-5 w-5" />
+                                                <span className="text-xs">Surat Keluar</span>
+                                            </Button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/masuk')}>
+                                                <MailOpen className="h-5 w-5" />
+                                                <span className="text-xs">Surat Masuk</span>
+                                            </Button>
+                                            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/keluar')}>
+                                                <Send className="h-5 w-5" />
+                                                <span className="text-xs">Surat Keluar</span>
+                                            </Button>
+                                        </>
+                                    )}
                                     <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/laporan')}>
                                         <FileBarChart className="h-5 w-5" />
                                         <span className="text-xs">Laporan</span>
                                     </Button>
-                                    <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/bulk-upload')}>
-                                        <FolderArchive className="h-5 w-5" />
-                                        <span className="text-xs">Upload</span>
-                                    </Button>
+                                    {isAdmin && (
+                                        <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/bulk-upload')}>
+                                            <FolderArchive className="h-5 w-5" />
+                                            <span className="text-xs">Upload</span>
+                                        </Button>
+                                    )}
                                 </CardContent>
                             </Card>
 

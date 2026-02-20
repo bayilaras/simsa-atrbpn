@@ -20,6 +20,8 @@ import {
     Lock,
     HardDrive,
     Link2,
+    BookOpen,
+    ExternalLink,
 } from 'lucide-react'
 
 import {
@@ -44,7 +46,13 @@ import {
 } from '@/components/ui/collapsible'
 import { Badge } from '@/components/ui/badge'
 
+// Role constants for menu access
+const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen']
+const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor']
+
 // Menu items grouped by section
+// allowedRoles: if set, only users with these roles can see the menu item
+// If not set, the item is visible to ALL authenticated users
 const menuGroups = [
     {
         label: 'Utama',
@@ -71,6 +79,7 @@ const menuGroups = [
                 title: 'Distribusi',
                 url: '/distribusi',
                 icon: ArrowLeftRight,
+                allowedRoles: ADMIN_ROLES,
             },
         ]
     },
@@ -90,73 +99,85 @@ const menuGroups = [
                 title: 'Pemberkasan (Dosir)',
                 url: '/dosir',
                 icon: FolderOpen,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'Jadwal Retensi',
-                url: '/master/jra', // Moved here for easier access
+                url: '/master/jra',
                 icon: Clock,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'Manajemen Retensi',
                 url: '/retention',
                 icon: FileBarChart,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'Penyusutan',
                 url: '/penyusutan',
                 icon: Scissors,
+                allowedRoles: ADMIN_ROLES,
             },
         ]
     },
     {
         label: 'Layanan & Fisik',
+        allowedRoles: ADMIN_ROLES,
         items: [
             {
                 title: 'Layanan Arsip',
                 url: '/layanan-arsip',
                 icon: ClipboardList,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'Peminjaman',
                 url: '/archive-lending',
                 icon: ArrowLeftRight,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'Lokasi Simpan',
                 url: '/storage-locations',
                 icon: MapPin,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'Arsip Vital',
                 url: '/arsip-vital',
                 icon: ShieldAlert,
-                adminOnly: true,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'Arsip Terjaga',
                 url: '/arsip-terjaga',
                 icon: Lock,
-                adminOnly: true,
+                allowedRoles: ADMIN_ROLES,
             },
         ]
     },
     {
         label: 'Media & Autentikasi',
+        allowedRoles: ADMIN_ROLES,
         items: [
             {
                 title: 'Arsip Elektronik',
                 url: '/arsip-elektronik',
                 icon: HardDrive,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'Autentikasi',
                 url: '/autentikasi',
                 icon: ShieldAlert,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'Tunjuk Silang',
                 url: '/tunjuk-silang',
                 icon: Link2,
+                allowedRoles: ADMIN_ROLES,
             },
         ]
     },
@@ -172,21 +193,21 @@ const menuGroups = [
                 title: 'Audit Log',
                 url: '/audit-log',
                 icon: ClipboardList,
+                allowedRoles: ADMIN_AND_AUDITOR,
             },
             {
                 title: 'User Management',
                 url: '/users',
                 icon: Users,
-                adminOnly: true,
+                allowedRoles: ['super_admin'],
             },
             {
                 title: 'Master Data',
                 icon: FolderTree,
-                adminOnly: true,
+                allowedRoles: ADMIN_ROLES,
                 subItems: [
                     { title: 'Klasifikasi Arsip', url: '/master/klasifikasi' },
-                    // JRA moved to Siklus Hidup for better access
-                    { title: 'Template Surat', url: '/settings' }, // Redirect to settings for now
+                    { title: 'Template Surat', url: '/settings' },
                 ],
             },
         ]
@@ -195,10 +216,19 @@ const menuGroups = [
 
 import { useAuth } from '@/context/AuthContext'
 
+// URL for the documentation/user guide
+const DOCS_URL = 'https://bayilaras.gitbook.io/panduan-simsa'
+
 export function AppSidebar() {
     const location = useLocation()
-    const { hasRole } = useAuth()
-    const isAdmin = hasRole(['super_admin'])
+    const { user } = useAuth()
+    const userRole = user?.role || 'user'
+
+    // Check if a menu item is visible to the current user
+    const isAllowed = (item) => {
+        if (!item.allowedRoles) return true
+        return item.allowedRoles.includes(userRole)
+    }
 
     const isActive = (url) => {
         if (url === '/') return location.pathname === '/'
@@ -232,64 +262,81 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                {menuGroups.map((group, groupIndex) => (
-                    <SidebarGroup key={group.label} className={groupIndex === 0 ? '' : 'mt-2'}>
-                        <SidebarGroupLabel className="text-[10px] uppercase tracking-widest font-semibold text-sidebar-foreground/50">{group.label}</SidebarGroupLabel>
-                        <SidebarGroupContent>
-                            <SidebarMenu>
-                                {group.items.filter(item => !item.adminOnly || isAdmin).map((item) => (
-                                    item.subItems ? (
-                                        <Collapsible key={item.title} defaultOpen={isParentActive(item)} className="group/collapsible">
-                                            <SidebarMenuItem>
-                                                <CollapsibleTrigger asChild>
-                                                    <SidebarMenuButton tooltip={item.title} isActive={isParentActive(item)} className="transition-all duration-200">
-                                                        <item.icon className="h-4 w-4" />
-                                                        <span className="font-medium">{item.title}</span>
-                                                        <ChevronDown className="ml-auto h-3 w-3 transition-transform group-data-[state=open]/collapsible:rotate-180 opacity-70" />
+                {menuGroups
+                    .filter(group => !group.allowedRoles || group.allowedRoles.includes(userRole))
+                    .map((group, groupIndex) => {
+                        const visibleItems = group.items.filter(isAllowed)
+                        if (visibleItems.length === 0) return null
+                        return (
+                            <SidebarGroup key={group.label} className={groupIndex === 0 ? '' : 'mt-2'}>
+                                <SidebarGroupLabel className="text-[10px] uppercase tracking-widest font-semibold text-sidebar-foreground/50">{group.label}</SidebarGroupLabel>
+                                <SidebarGroupContent>
+                                    <SidebarMenu>
+                                        {visibleItems.map((item) => (
+                                            item.subItems ? (
+                                                <Collapsible key={item.title} defaultOpen={isParentActive(item)} className="group/collapsible">
+                                                    <SidebarMenuItem>
+                                                        <CollapsibleTrigger asChild>
+                                                            <SidebarMenuButton tooltip={item.title} isActive={isParentActive(item)} className="transition-all duration-200">
+                                                                <item.icon className="h-4 w-4" />
+                                                                <span className="font-medium">{item.title}</span>
+                                                                <ChevronDown className="ml-auto h-3 w-3 transition-transform group-data-[state=open]/collapsible:rotate-180 opacity-70" />
+                                                            </SidebarMenuButton>
+                                                        </CollapsibleTrigger>
+                                                        <CollapsibleContent>
+                                                            <SidebarMenuSub>
+                                                                {item.subItems.map((subItem) => (
+                                                                    <SidebarMenuSubItem key={subItem.title}>
+                                                                        <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
+                                                                            <Link to={subItem.url}>{subItem.title}</Link>
+                                                                        </SidebarMenuSubButton>
+                                                                    </SidebarMenuSubItem>
+                                                                ))}
+                                                            </SidebarMenuSub>
+                                                        </CollapsibleContent>
+                                                    </SidebarMenuItem>
+                                                </Collapsible>
+                                            ) : (
+                                                <SidebarMenuItem key={item.title}>
+                                                    <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)} className="transition-all duration-200">
+                                                        <Link to={item.url}>
+                                                            <item.icon className="h-4 w-4" />
+                                                            <span className="font-medium">{item.title}</span>
+                                                            {/* Badge simulation for Surat Masuk */}
+                                                            {(item.title === 'Surat Masuk' || item.title === 'Distribusi') && !isActive(item.url) && (
+                                                                <div className="ml-auto h-1.5 w-1.5 rounded-full bg-sidebar-primary animate-pulse" />
+                                                            )}
+                                                        </Link>
                                                     </SidebarMenuButton>
-                                                </CollapsibleTrigger>
-                                                <CollapsibleContent>
-                                                    <SidebarMenuSub>
-                                                        {item.subItems.map((subItem) => (
-                                                            <SidebarMenuSubItem key={subItem.title}>
-                                                                <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
-                                                                    <Link to={subItem.url}>{subItem.title}</Link>
-                                                                </SidebarMenuSubButton>
-                                                            </SidebarMenuSubItem>
-                                                        ))}
-                                                    </SidebarMenuSub>
-                                                </CollapsibleContent>
-                                            </SidebarMenuItem>
-                                        </Collapsible>
-                                    ) : (
-                                        <SidebarMenuItem key={item.title}>
-                                            <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)} className="transition-all duration-200">
-                                                <Link to={item.url}>
-                                                    <item.icon className="h-4 w-4" />
-                                                    <span className="font-medium">{item.title}</span>
-                                                    {/* Badge simulation for Surat Masuk */}
-                                                    {(item.title === 'Surat Masuk' || item.title === 'Distribusi') && !isActive(item.url) && (
-                                                        <div className="ml-auto h-1.5 w-1.5 rounded-full bg-sidebar-primary animate-pulse" />
-                                                    )}
-                                                </Link>
-                                            </SidebarMenuButton>
-                                        </SidebarMenuItem>
-                                    )
-                                ))}
-                            </SidebarMenu>
-                        </SidebarGroupContent>
-                    </SidebarGroup>
-                ))}
+                                                </SidebarMenuItem>
+                                            )
+                                        ))}
+                                    </SidebarMenu>
+                                </SidebarGroupContent>
+                            </SidebarGroup>
+                        )
+                    })}
 
                 <SidebarGroup className="mt-auto">
                     <SidebarGroupContent>
                         <SidebarMenu>
+                            {userRole === 'super_admin' && (
+                                <SidebarMenuItem>
+                                    <SidebarMenuButton asChild tooltip="Settings" isActive={isActive('/settings')}>
+                                        <Link to="/settings">
+                                            <Settings className="h-4 w-4" />
+                                            <span>Settings</span>
+                                        </Link>
+                                    </SidebarMenuButton>
+                                </SidebarMenuItem>
+                            )}
                             <SidebarMenuItem>
-                                <SidebarMenuButton asChild tooltip="Settings" isActive={isActive('/settings')}>
-                                    <Link to="/settings">
-                                        <Settings className="h-4 w-4" />
-                                        <span>Settings</span>
-                                    </Link>
+                                <SidebarMenuButton asChild tooltip="Panduan Pengguna">
+                                    <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+                                        <BookOpen className="h-4 w-4" />
+                                        <span>Panduan</span>
+                                        <ExternalLink className="ml-auto h-3 w-3 opacity-50" />
+                                    </a>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
                         </SidebarMenu>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bell, Building2, Users, ChevronDown, LogOut, User, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw } from 'lucide-react'
+import { Bell, Building2, Users, ChevronDown, LogOut, User, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw, BookOpen, ExternalLink } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -295,8 +295,8 @@ export function AppHeader() {
                                                 </div>
                                                 {/* Category badge */}
                                                 <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md ${notif.category === 'surat-masuk'
-                                                        ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400'
-                                                        : 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400'
+                                                    ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400'
+                                                    : 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400'
                                                     }`}>
                                                     {notif.category === 'surat-masuk' ? 'Surat' : 'Retensi'}
                                                 </span>
@@ -352,6 +352,13 @@ export function AppHeader() {
                             <a href="/settings" className="flex items-center">
                                 <Settings className="mr-2 h-4 w-4 text-muted-foreground" />
                                 Pengaturan
+                            </a>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild className="cursor-pointer rounded-md">
+                            <a href="https://bayilaras.gitbook.io/panduan-simsa" target="_blank" rel="noopener noreferrer" className="flex items-center">
+                                <BookOpen className="mr-2 h-4 w-4 text-muted-foreground" />
+                                Panduan Pengguna
+                                <ExternalLink className="ml-auto h-3 w-3 opacity-50" />
                             </a>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
