@@ -9,7 +9,7 @@ Sebelum kamu mulai menggunakan **SIMSA**, ada beberapa hal penting yang harus ka
 Di SIMSA, akun kamu **terhubung ke email**. Artinya:
 
 - Kalau kamu **Login pakai Google** dengan Email A, lalu login lagi dengan **Email & Password** menggunakan Email A yang sama, kamu akan **masuk ke akun yang sama**.
-- Kalau sudah Login pakai Google, kamu **TIDAK perlu** Register lagi pakai email yang sama.
+- Akun kamu dibuat oleh **Super Admin** melalui menu User Management.
 
 ---
 
@@ -46,15 +46,13 @@ https://simsa-frontend.vercel.app/
 
 ---
 
-## 5️⃣ Password Harus Kuat
+## 5️⃣ Belum Punya Akun?
 
-Kalau kamu daftar dengan Email & Password, pastikan password kamu memenuhi kriteria:
+SIMSA **tidak menyediakan pendaftaran publik**. Jika belum punya akun:
 
-- ✅ Minimal **12 karakter**
-- ✅ Mengandung **huruf besar** (A-Z)
-- ✅ Mengandung **huruf kecil** (a-z)
-- ✅ Mengandung **angka** (0-9)
-- ✅ Mengandung **karakter spesial** (!@#$%^&*)
+1. Hubungi **Super Admin** di unit kerja kamu.
+2. Berikan nama lengkap, email, dan unit kerja kamu.
+3. Super Admin akan membuatkan akun dan mengatur role kamu.
 
 ---
 

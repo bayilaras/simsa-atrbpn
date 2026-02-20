@@ -1,87 +1,44 @@
-# 📧 Daftar Menggunakan Email
+# 🔒 Pembuatan Akun oleh Super Admin
 
-Cara membuat akun baru di SIMSA menggunakan Email dan Password.
-
----
-
-## Syarat:
-
-- ✅ Email yang **belum pernah** digunakan untuk Login di SIMSA (baik login biasa maupun via Google).
-- ✅ Email yang **valid** dan bisa kamu akses.
+Akun SIMSA **tidak dapat dibuat secara mandiri** oleh pengguna. Pembuatan akun hanya dilakukan oleh **Super Admin** melalui menu **User Management**.
 
 ---
 
-## Langkah 1: Buka Halaman Login
+## Mengapa Tidak Ada Pendaftaran Publik?
 
-1. Buka browser dan akses `https://simsa-frontend.vercel.app/`.
-2. Kamu akan melihat halaman login SIMSA.
+SIMSA adalah **sistem internal pemerintah** (Kementerian ATR/BPN) yang mengelola surat dan arsip resmi negara. Untuk menjaga keamanan data:
+
+- ✅ Hanya **Super Admin** yang dapat membuat akun baru
+- ✅ Setiap akun langsung diatur **role** dan **unit kerja**-nya
+- ✅ Tidak ada pengguna tanpa izin yang bisa mengakses sistem
 
 ---
 
-## Langkah 2: Klik Tab "Daftar"
+## Cara Mendapatkan Akun
 
-1. Di bagian atas form, ada dua tab: **Masuk** dan **Daftar**.
-2. Klik tab **"Daftar"** untuk berpindah ke form pendaftaran.
+1. **Hubungi Super Admin** di unit kerja Anda.
+2. Berikan informasi berikut:
+   - **Nama lengkap** Anda
+   - **Email** yang akan digunakan untuk login
+   - **Unit kerja** Anda (Dirjen PTPP / Sesditjen)
+3. Super Admin akan **membuat akun** dan **mengatur role** Anda melalui menu User Management.
+4. Setelah akun dibuat, Anda dapat login menggunakan:
+   - **Email & Password** yang diberikan oleh Super Admin, atau
+   - **Google** (jika email Google Anda yang didaftarkan)
+
+---
+
+## Alur Pembuatan Akun
 
 ```
-┌─────────────────────────────────┐
-│       Selamat Datang            │
-│  Silakan masuk untuk mengakses  │
-│           sistem                │
-│                                 │
-│  [ Masuk ]  [✅ Daftar]         │
-│                                 │
-│  Nama Lengkap: [__________]     │
-│  Email:        [__________]     │
-│  Password:     [__________]     │
-│                                 │
-│      [ 🔵 Daftar Akun ]        │
-│                                 │
-└─────────────────────────────────┘
+Super Admin → Menu User Management → + Tambah User →
+Isi Nama, Email, Role, Unit Kerja → Simpan →
+Pengguna baru bisa Login
 ```
 
 ---
 
-## Langkah 3: Isi Form Pendaftaran
-
-Isi setiap kolom dengan informasi kamu:
-
-### 1. Nama Lengkap
-Ketik nama lengkap kamu. Contoh: `Ahmad Budiman`
-
-### 2. Email
-Ketik alamat email yang valid. Contoh: `ahmad.budiman@email.com`
-
-### 3. Password
-Buat password yang kuat dengan aturan berikut:
-
-| Syarat | Contoh |
-|--------|--------|
-| Minimal 12 karakter | ✅ `P@ssw0rd2024!` |
-| Ada huruf besar (A-Z) | ✅ **P** |
-| Ada huruf kecil (a-z) | ✅ **ssw** |
-| Ada angka (0-9) | ✅ **0** dan **2024** |
-| Ada karakter spesial | ✅ **@** dan **!** |
-
-> ⚠️ **Perhatian:** Jika password kurang dari 12 karakter atau tidak memenuhi kriteria di atas, pendaftaran akan **gagal** dan muncul pesan error.
-
----
-
-## Langkah 4: Klik Tombol "Daftar Akun"
-
-1. Setelah semua kolom terisi dengan benar, klik tombol **"Daftar Akun"** berwarna biru.
-2. Tunggu proses pendaftaran (tombol akan berubah menjadi **"Memproses..."**).
-3. Jika berhasil, kamu akan **langsung diarahkan ke Dashboard**.
-
----
-
-## ❌ Jika Pendaftaran Gagal
-
-| Pesan Error | Penyebab | Solusi |
-|-------------|----------|--------|
-| "Password minimal 12 karakter..." | Password terlalu lemah | Buat password yang lebih kuat |
-| "Email sudah terdaftar" | Email sudah dipakai | Gunakan email lain atau login langsung |
-| "Pendaftaran gagal" | Error sistem | Coba lagi beberapa saat kemudian |
+> 💡 **Tips:** Jika Anda sudah memiliki akun Google dinas, minta Super Admin untuk mendaftarkan email tersebut agar Anda bisa login langsung dengan tombol **Google** tanpa perlu mengingat password tambahan.
 
 ---
 

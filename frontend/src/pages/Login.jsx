@@ -5,16 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 
 export default function Login() {
-    const { signInWithGoogle, signInWithEmail, signUp, loading, error, isAuthenticated } = useAuth();
+    const { signInWithGoogle, signInWithEmail, loading, error, isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [name, setName] = useState('');
     const [localError, setLocalError] = useState('');
 
     // Redirect to dashboard if already authenticated
@@ -30,21 +28,6 @@ export default function Login() {
             navigate('/', { replace: true });
         } catch (err) {
             setLocalError(err.message || 'Login gagal');
-        }
-    };
-
-    const handleSignUp = async (e) => {
-        e.preventDefault();
-        setLocalError('');
-        if (password.length < 12) {
-            setLocalError('Password minimal 12 karakter, harus mengandung huruf besar, huruf kecil, angka, dan karakter spesial');
-            return;
-        }
-        try {
-            await signUp(email, password, name);
-            navigate('/', { replace: true });
-        } catch (err) {
-            setLocalError(err.message || 'Pendaftaran gagal');
         }
     };
 
@@ -90,111 +73,44 @@ export default function Login() {
                             </div>
                         )}
 
-                        <Tabs defaultValue="login" className="w-full">
-                            <TabsList className="grid w-full grid-cols-2 mb-4 bg-muted/50 p-1">
-                                <TabsTrigger value="login" className="data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-300">Masuk</TabsTrigger>
-                                <TabsTrigger value="register" className="data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all duration-300">Daftar</TabsTrigger>
-                            </TabsList>
-
-                            <TabsContent value="login" className="space-y-4 focus-visible:outline-none animate-in fade-in slide-in-from-right-4 duration-300">
-                                <form onSubmit={handleEmailLogin} className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="email">Email</Label>
-                                        <Input
-                                            id="email"
-                                            type="email"
-                                            placeholder="nama@email.com"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            required
-                                            className="bg-background/50 focus:bg-background transition-colors"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <Label htmlFor="password">Password</Label>
-                                            <a href="#" className="text-xs text-primary hover:underline">Lupa password?</a>
-                                        </div>
-                                        <Input
-                                            id="password"
-                                            type="password"
-                                            placeholder="••••••••"
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            required
-                                            className="bg-background/50 focus:bg-background transition-colors"
-                                        />
-                                    </div>
-                                    <Button
-                                        type="submit"
-                                        className="w-full bg-primary hover:bg-primary/90 transition-all duration-300 shadow-md hover:shadow-lg"
-                                        disabled={loading}
-                                    >
-                                        {loading ? (
-                                            <>
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                Memproses...
-                                            </>
-                                        ) : 'Masuk'}
-                                    </Button>
-                                </form>
-                            </TabsContent>
-
-                            <TabsContent value="register" className="space-y-4 focus-visible:outline-none animate-in fade-in slide-in-from-left-4 duration-300">
-                                <form onSubmit={handleSignUp} className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="name">Nama Lengkap</Label>
-                                        <Input
-                                            id="name"
-                                            type="text"
-                                            placeholder="Nama Anda"
-                                            value={name}
-                                            onChange={(e) => setName(e.target.value)}
-                                            required
-                                            className="bg-background/50 focus:bg-background transition-colors"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="register-email">Email</Label>
-                                        <Input
-                                            id="register-email"
-                                            type="email"
-                                            placeholder="nama@email.com"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            required
-                                            className="bg-background/50 focus:bg-background transition-colors"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="register-password">Password</Label>
-                                        <Input
-                                            id="register-password"
-                                            type="password"
-                                            placeholder="Minimal 8 karakter"
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            required
-                                            minLength={8}
-                                            className="bg-background/50 focus:bg-background transition-colors"
-                                        />
-                                        <p className="text-[10px] text-muted-foreground">Minimal 8 karakter dengan kombinasi huruf dan angka</p>
-                                    </div>
-                                    <Button
-                                        type="submit"
-                                        className="w-full bg-primary hover:bg-primary/90 transition-all duration-300 shadow-md hover:shadow-lg"
-                                        disabled={loading}
-                                    >
-                                        {loading ? (
-                                            <>
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                Memproses...
-                                            </>
-                                        ) : 'Daftar Akun'}
-                                    </Button>
-                                </form>
-                            </TabsContent>
-                        </Tabs>
+                        <form onSubmit={handleEmailLogin} className="space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="email">Email</Label>
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    placeholder="nama@email.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    className="bg-background/50 focus:bg-background transition-colors"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="password">Password</Label>
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    className="bg-background/50 focus:bg-background transition-colors"
+                                />
+                            </div>
+                            <Button
+                                type="submit"
+                                className="w-full bg-primary hover:bg-primary/90 transition-all duration-300 shadow-md hover:shadow-lg"
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Memproses...
+                                    </>
+                                ) : 'Masuk'}
+                            </Button>
+                        </form>
 
                         <div className="relative py-2">
                             <div className="absolute inset-0 flex items-center">
@@ -230,7 +146,7 @@ export default function Login() {
                                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                                 />
                             </svg>
-                            {loading ? 'Memuat...' : 'Google Transisi'}
+                            {loading ? 'Memuat...' : 'Google'}
                         </Button>
                     </CardContent>
                     <CardFooter className="flex flex-col gap-2 pb-6 pt-2">

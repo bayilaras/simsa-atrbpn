@@ -6,7 +6,7 @@
 
 * [⚠️ Wajib BACA!](akses-simsa/wajib-baca.md)
 * [🔑 Login dengan Email & Password](akses-simsa/login-email-password.md)
-* [📧 Daftar Menggunakan Email](akses-simsa/daftar-email.md)
+* [🔒 Pembuatan Akun oleh Super Admin](akses-simsa/daftar-email.md)
 * [🌐 Login Dengan Google](akses-simsa/login-google.md)
 
 ## Tutorial Dasar
