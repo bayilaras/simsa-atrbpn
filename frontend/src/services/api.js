@@ -109,7 +109,8 @@ class ApiClient {
 
             // 500+ Server Error
             if (response.status >= 500) {
-                throw new Error('Terjadi kesalahan pada server. Silakan coba lagi nanti.');
+                const serverMsg = errorBody.message || errorBody.error || '';
+                throw new Error(serverMsg || 'Terjadi kesalahan pada server. Silakan coba lagi nanti.');
             }
 
             // Other errors

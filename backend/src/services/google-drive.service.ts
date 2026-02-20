@@ -5,11 +5,29 @@ import { createLogger } from '../utils/logger';
 
 const log = createLogger('GoogleDriveService');
 
+// Fix private key: Vercel may store literal "\n" or "\\n" — both need to become actual newlines
+function formatPrivateKey(key: string): string {
+    if (!key) return key;
+    // Replace literal \n (stored as \\n in env vars) with actual newlines
+    return key.replace(/\\n/g, '\n');
+}
+
+const privateKey = formatPrivateKey(env.GOOGLE_PRIVATE_KEY);
+
+// Log credential availability (NOT the actual values!)
+log.info({
+    hasServiceEmail: !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    hasPrivateKey: !!privateKey,
+    privateKeyLength: privateKey?.length || 0,
+    hasFolderId: !!env.GOOGLE_DRIVE_FOLDER_ID,
+    folderId: env.GOOGLE_DRIVE_FOLDER_ID?.substring(0, 8) + '...',
+}, 'Google Drive credentials status');
+
 // Initialize Google Drive API with service account
 const auth = new google.auth.GoogleAuth({
     credentials: {
         client_email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        private_key: env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        private_key: privateKey,
     },
     scopes: ['https://www.googleapis.com/auth/drive.file'],
 });

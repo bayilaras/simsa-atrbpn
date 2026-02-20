@@ -244,6 +244,38 @@ app.get('/api/drive-file/:fileId', authMiddleware as any, async (req: Request, r
     }
 });
 
+// Google Drive diagnostic — test that credentials and folder are working
+app.get('/api/drive-test', authMiddleware as any, async (req: Request, res: Response) => {
+    try {
+        const files = await googleDriveService.listFiles();
+        res.json({
+            success: true,
+            message: 'Google Drive connection OK',
+            folderId: env.GOOGLE_DRIVE_FOLDER_ID?.substring(0, 8) + '...',
+            filesInFolder: files.length,
+            credentialStatus: {
+                hasServiceEmail: !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+                hasPrivateKey: !!env.GOOGLE_PRIVATE_KEY,
+                privateKeyLength: env.GOOGLE_PRIVATE_KEY?.length || 0,
+                hasFolderId: !!env.GOOGLE_DRIVE_FOLDER_ID,
+            },
+        });
+    } catch (error: any) {
+        logger.error({ err: error }, 'Google Drive test failed');
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            code: error.code,
+            credentialStatus: {
+                hasServiceEmail: !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+                hasPrivateKey: !!env.GOOGLE_PRIVATE_KEY,
+                privateKeyLength: env.GOOGLE_PRIVATE_KEY?.length || 0,
+                hasFolderId: !!env.GOOGLE_DRIVE_FOLDER_ID,
+            },
+        });
+    }
+});
+
 // Static file serving for uploads — PROTECTED with authentication
 // Files in backend/uploads require a valid session to access (legacy support)
 const uploadsPath = path.join(process.cwd(), 'uploads');
