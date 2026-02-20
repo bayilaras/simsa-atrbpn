@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { suratMasukService } from '../services/surat-masuk.service';
@@ -173,7 +173,7 @@ router.post('/',
                         mimeType: file.mimetype,
                         buffer: file.buffer,
                     });
-                    filePath = `gdrive:${driveFile.id}`;
+                    filePath = `gdrive:${driveFile.id} `;
                     fileOriginalName = file.originalname;
                     log.info({ driveFileId: driveFile.id, fileName: file.originalname }, 'File uploaded to Google Drive');
                 } catch (driveError) {
@@ -241,7 +241,8 @@ router.put('/:id', validateIdParam(),
                 // For multipart/form-data, manually pick only known DB fields
                 const knownFields = ['jenisSurat', 'sifatSurat', 'nomorSurat', 'tanggalSurat',
                     'perihal', 'dari', 'kepada', 'status', 'disposisi', 'keterangan',
-                    'linkDokumen', 'klasifikasiKode', 'klasifikasiUraian'];
+                    'linkDokumen', 'klasifikasiKode', 'klasifikasiUraian',
+                    'filePath', 'fileOriginalName'];
                 updateData = {} as any;
                 for (const field of knownFields) {
                     if (req.body[field] !== undefined && req.body[field] !== '') {
@@ -264,7 +265,7 @@ router.put('/:id', validateIdParam(),
                         mimeType: file.mimetype,
                         buffer: file.buffer,
                     });
-                    updateData.filePath = `gdrive:${driveFile.id}`;
+                    updateData.filePath = `gdrive:${driveFile.id} `;
                     updateData.fileOriginalName = file.originalname;
                     log.info({ driveFileId: driveFile.id, fileName: file.originalname }, 'File uploaded to Google Drive (update)');
                 } catch (driveError) {
@@ -289,9 +290,13 @@ router.put('/:id', validateIdParam(),
             });
 
             res.json({ success: true, data: result });
-        } catch (error) {
-            log.error({ err: error }, '[PUT /surat-masuk/:id] Error:');
-            next(error);
+        } catch (error: any) {
+            log.error({ err: error, message: error?.message, stack: error?.stack }, '[PUT /surat-masuk/:id] Error:');
+            res.status(500).json({
+                success: false,
+                error: 'Gagal memperbarui surat masuk',
+                message: error?.message || 'Unknown error',
+            });
         }
     }
 );

@@ -1,7 +1,7 @@
 import {
   app_default,
   logger
-} from "./chunk-35LA4WY3.js";
+} from "./chunk-CE6YE37C.js";
 import "./chunk-MDWP4IF7.js";
 import "./chunk-Y75PW3VJ.js";
 import "./chunk-DL6EWBUY.js";

@@ -1,6 +1,11 @@
 // Vercel Serverless Function handler (ESM)
 // Imports from pre-built dist/app.js (ESM format)
 
+// Vercel function config — increase timeout for Google Drive file uploads
+export const config = {
+    maxDuration: 60, // 60 seconds for file upload to Google Drive
+};
+
 let app;
 let initError;
 

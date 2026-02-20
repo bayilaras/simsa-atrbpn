@@ -199,7 +199,7 @@ router.put('/:id', validateIdParam(),
                     'sifat', 'lampiran', 'konseptor', 'penandatangan', 'catatan',
                     'naskahDinas', 'klasifikasiFasilitatifKode', 'klasifikasiFasilitatif',
                     'klasifikasiSubstantifKode', 'klasifikasiSubstantif',
-                    'linkDokumen', 'keterangan'];
+                    'linkDokumen', 'keterangan', 'filePath', 'fileOriginalName'];
                 updateData = {} as any;
                 for (const field of knownFields) {
                     if (req.body[field] !== undefined && req.body[field] !== '') {
@@ -238,8 +238,13 @@ router.put('/:id', validateIdParam(),
             });
 
             res.json({ success: true, data: result });
-        } catch (error) {
-            next(error);
+        } catch (error: any) {
+            log.error({ err: error, message: error?.message, stack: error?.stack }, '[PUT /surat-keluar/:id] Error:');
+            res.status(500).json({
+                success: false,
+                error: 'Gagal memperbarui surat keluar',
+                message: error?.message || 'Unknown error',
+            });
         }
     }
 );
