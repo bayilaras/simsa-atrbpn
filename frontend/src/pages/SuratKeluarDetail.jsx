@@ -77,6 +77,13 @@ export default function SuratKeluarDetail() {
     const getFileUrl = (filePath) => {
         if (!filePath) return null
         if (filePath.startsWith('http')) return filePath
+        // Google Drive files stored as "gdrive:{fileId}" — route through proxy
+        if (filePath.startsWith('gdrive:')) {
+            const fileId = filePath.replace('gdrive:', '')
+            return `/api/drive-file/${fileId}`
+        }
+        // Legacy: local uploads go through Vercel proxy rewrite
+        if (filePath.startsWith('/uploads')) return filePath
         return `${API_BASE_URL}${filePath}`
     }
 

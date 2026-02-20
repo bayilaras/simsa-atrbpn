@@ -9,6 +9,10 @@
             "destination": "https://simsa-backend.vercel.app/health"
         },
         {
+            "source": "/uploads/:path*",
+            "destination": "https://simsa-backend.vercel.app/uploads/:path*"
+        },
+        {
             "source": "/(.*)",
             "destination": "/index.html"
         }

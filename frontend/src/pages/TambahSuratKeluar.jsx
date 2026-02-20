@@ -177,7 +177,7 @@ export default function TambahSuratKeluar() {
             if (data.filePath) {
                 setExistingFile({
                     path: data.filePath,
-                    name: data.fileOriginalName || data.filePath.split('/').pop(),
+                    name: data.fileOriginalName || (data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
                 });
             }
             // If this is a reply to a surat masuk, set it

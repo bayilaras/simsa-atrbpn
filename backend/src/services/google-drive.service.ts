@@ -131,6 +131,32 @@ export class GoogleDriveService {
         }
     }
 
+    // Download file content as a readable stream from Google Drive
+    async downloadFile(fileId: string): Promise<{ stream: Readable; mimeType: string; fileName: string } | null> {
+        try {
+            // Get file metadata first
+            const meta = await drive.files.get({
+                fileId,
+                fields: 'name, mimeType',
+            });
+
+            // Download file content
+            const response = await drive.files.get(
+                { fileId, alt: 'media' },
+                { responseType: 'stream' }
+            );
+
+            return {
+                stream: response.data as unknown as Readable,
+                mimeType: meta.data.mimeType || 'application/octet-stream',
+                fileName: meta.data.name || 'download',
+            };
+        } catch (error) {
+            log.error({ err: error, fileId }, 'Failed to download file from Drive');
+            return null;
+        }
+    }
+
     // List files in folder
     async listFiles(folderId?: string): Promise<DriveFile[]> {
         const targetFolderId = folderId || this.defaultFolderId;

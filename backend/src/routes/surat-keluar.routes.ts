@@ -11,20 +11,14 @@ import {
     querySuratKeluarSchema
 } from '../validators/schemas';
 import auditLogService from '../services/audit-log.service';
+import { createLogger } from '../utils/logger';
+import { googleDriveService } from '../services/google-drive.service';
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, path.join(process.cwd(), 'uploads', 'surat-keluar'));
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
-    }
-});
+const log = createLogger('SuratKeluarRoutes');
 
+// Configure multer with memory storage for Google Drive uploads
 const upload = multer({
-    storage,
+    storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
         const allowedTypes = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.zip', '.rar'];
@@ -136,11 +130,30 @@ router.post('/',
         try {
             const file = req.file;
 
+            // Upload file to Google Drive if present
+            let filePath: string | null = null;
+            let fileOriginalName: string | null = null;
+            if (file && file.buffer) {
+                try {
+                    const driveFile = await googleDriveService.uploadFile({
+                        fileName: file.originalname,
+                        mimeType: file.mimetype,
+                        buffer: file.buffer,
+                    });
+                    filePath = `gdrive:${driveFile.id}`;
+                    fileOriginalName = file.originalname;
+                    log.info({ driveFileId: driveFile.id, fileName: file.originalname }, 'File uploaded to Google Drive');
+                } catch (driveError) {
+                    log.error({ err: driveError }, 'Failed to upload file to Google Drive');
+                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file ke Google Drive' });
+                }
+            }
+
             const result = await suratKeluarService.create({
                 ...req.body,
                 createdBy: req.user?.id,
-                filePath: file ? `/uploads/surat-keluar/${file.filename}` : null,
-                fileOriginalName: file ? file.originalname : null,
+                filePath,
+                fileOriginalName,
             });
 
             await auditLogService.logAction({
@@ -195,10 +208,21 @@ router.put('/:id', validateIdParam(),
                 }
             }
 
-            // If a new file was uploaded, update file fields
-            if (file) {
-                updateData.filePath = `/uploads/surat-keluar/${file.filename}`;
-                updateData.fileOriginalName = file.originalname;
+            // If a new file was uploaded, upload to Google Drive
+            if (file && file.buffer) {
+                try {
+                    const driveFile = await googleDriveService.uploadFile({
+                        fileName: file.originalname,
+                        mimeType: file.mimetype,
+                        buffer: file.buffer,
+                    });
+                    updateData.filePath = `gdrive:${driveFile.id}`;
+                    updateData.fileOriginalName = file.originalname;
+                    log.info({ driveFileId: driveFile.id, fileName: file.originalname }, 'File uploaded to Google Drive (update)');
+                } catch (driveError) {
+                    log.error({ err: driveError }, 'Failed to upload file to Google Drive');
+                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file ke Google Drive' });
+                }
             }
 
             const result = await suratKeluarService.update(id, updateData);

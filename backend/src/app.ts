@@ -218,8 +218,34 @@ app.use(compression({
     level: 6 // Compression level (0-9, 6 is default balance)
 }));
 
+// Google Drive file proxy — streams file content from Drive through the backend
+// This allows the frontend iframe/img to display Drive files via same-origin
+import { googleDriveService } from './services/google-drive.service';
+app.get('/api/drive-file/:fileId', authMiddleware as any, async (req: Request, res: Response) => {
+    try {
+        const { fileId } = req.params;
+        if (!fileId || fileId.length < 10) {
+            return res.status(400).json({ error: 'Invalid file ID' });
+        }
+
+        const result = await googleDriveService.downloadFile(fileId);
+        if (!result) {
+            return res.status(404).json({ error: 'File not found in Google Drive' });
+        }
+
+        res.setHeader('Content-Type', result.mimeType);
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(result.fileName)}"`);
+        res.setHeader('Cache-Control', 'private, max-age=3600'); // Cache for 1 hour
+
+        result.stream.pipe(res);
+    } catch (error: any) {
+        logger.error({ err: error, fileId: req.params.fileId }, 'Drive file proxy error');
+        res.status(500).json({ error: 'Failed to retrieve file from Google Drive' });
+    }
+});
+
 // Static file serving for uploads — PROTECTED with authentication
-// Files in backend/uploads require a valid session to access
+// Files in backend/uploads require a valid session to access (legacy support)
 const uploadsPath = path.join(process.cwd(), 'uploads');
 app.use('/uploads', authMiddleware as any, express.static(uploadsPath));
 
