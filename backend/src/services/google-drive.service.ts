@@ -52,12 +52,13 @@ log.info({
 }, 'Google Drive credentials status');
 
 // Initialize Google Drive API with service account
+// Use full 'drive' scope for Shared Drive support
 const auth = new google.auth.GoogleAuth({
     credentials: {
         client_email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
         private_key: privateKey,
     },
-    scopes: ['https://www.googleapis.com/auth/drive.file'],
+    scopes: ['https://www.googleapis.com/auth/drive'],
 });
 
 const drive = google.drive({ version: 'v3', auth });
@@ -85,7 +86,7 @@ export class GoogleDriveService {
         this.defaultFolderId = env.GOOGLE_DRIVE_FOLDER_ID || '';
     }
 
-    // Upload file to Google Drive
+    // Upload file to Google Drive (supports both regular folders and Shared Drives)
     async uploadFile(options: UploadFileOptions): Promise<DriveFile> {
         const { fileName, mimeType, buffer, folderId } = options;
         const targetFolderId = folderId || this.defaultFolderId;
@@ -94,6 +95,8 @@ export class GoogleDriveService {
         const stream = new Readable();
         stream.push(buffer);
         stream.push(null);
+
+        log.info({ fileName, mimeType, bufferSize: buffer.length, targetFolderId }, 'Uploading file to Google Drive');
 
         const response = await drive.files.create({
             requestBody: {
@@ -105,33 +108,27 @@ export class GoogleDriveService {
                 body: stream,
             },
             fields: 'id, name, mimeType, webViewLink, webContentLink, size',
+            // Shared Drive support — required for service accounts without storage quota
+            supportsAllDrives: true,
         });
 
-        // Share file with domain-restricted access (organization only)
-        // Falls back to 'anyone' only if GOOGLE_WORKSPACE_DOMAIN is not set
-        const domain = process.env.GOOGLE_WORKSPACE_DOMAIN;
-        if (domain) {
-            await drive.permissions.create({
-                fileId: response.data.id!,
-                requestBody: {
-                    role: 'reader',
-                    type: 'domain',
-                    domain: domain,
-                },
-            });
-        } else {
-            // Fallback: anyone within organization with link can view
-            // WARNING: In production, set GOOGLE_WORKSPACE_DOMAIN for domain-restricted access
-            if (process.env.NODE_ENV === 'production') {
-                log.warn('[GoogleDrive] WARNING: GOOGLE_WORKSPACE_DOMAIN not set. Files will be shared with anyone who has the link. Set this env var for domain-restricted access.');
-            }
+        log.info({ fileId: response.data.id, fileName }, 'File created in Drive, setting permissions');
+
+        // Set file permissions — make accessible via link
+        // For Shared Drives, permissions are inherited, but we still set for regular folders
+        try {
             await drive.permissions.create({
                 fileId: response.data.id!,
                 requestBody: {
                     role: 'reader',
                     type: 'anyone',
                 },
+                supportsAllDrives: true,
             });
+        } catch (permError: any) {
+            // Shared Drives may restrict permission changes — that's OK, 
+            // the file is still accessible to Shared Drive members
+            log.warn({ err: permError?.message }, 'Could not set file permissions (may be inherited from Shared Drive)');
         }
 
         return {
@@ -150,6 +147,7 @@ export class GoogleDriveService {
             const response = await drive.files.get({
                 fileId,
                 fields: 'id, name, mimeType, webViewLink, webContentLink, size',
+                supportsAllDrives: true,
             });
 
             return {
@@ -169,7 +167,7 @@ export class GoogleDriveService {
     // Delete file from Google Drive
     async deleteFile(fileId: string): Promise<boolean> {
         try {
-            await drive.files.delete({ fileId });
+            await drive.files.delete({ fileId, supportsAllDrives: true });
             return true;
         } catch (error) {
             log.error({ err: error }, 'Failed to delete file:');
@@ -184,11 +182,12 @@ export class GoogleDriveService {
             const meta = await drive.files.get({
                 fileId,
                 fields: 'name, mimeType',
+                supportsAllDrives: true,
             });
 
             // Download file content
             const response = await drive.files.get(
-                { fileId, alt: 'media' },
+                { fileId, alt: 'media', supportsAllDrives: true },
                 { responseType: 'stream' }
             );
 
@@ -211,6 +210,9 @@ export class GoogleDriveService {
             q: `'${targetFolderId}' in parents and trashed = false`,
             fields: 'files(id, name, mimeType, webViewLink, webContentLink, size)',
             orderBy: 'createdTime desc',
+            supportsAllDrives: true,
+            includeItemsFromAllDrives: true,
+            corpora: 'allDrives',
         });
 
         return (response.data.files || []).map((file) => ({
@@ -232,6 +234,7 @@ export class GoogleDriveService {
                 parents: parentFolderId ? [parentFolderId] : undefined,
             },
             fields: 'id',
+            supportsAllDrives: true,
         });
 
         return response.data.id!;
