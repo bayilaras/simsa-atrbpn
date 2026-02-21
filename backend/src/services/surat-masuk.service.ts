@@ -206,22 +206,31 @@ export class SuratMasukService {
     }
 
     async getStats(unitKerjaId: string, tahun?: number) {
-        const conditions = [eq(suratMasuk.unitKerjaId, unitKerjaId)];
+        const conditions = [
+            eq(suratMasuk.unitKerjaId, unitKerjaId),
+            eq(suratMasuk.isDeleted, false),
+        ];
         if (tahun) {
             conditions.push(eq(suratMasuk.tahun, tahun));
         }
 
-        const stats = await db
-            .select({
-                total: sql<number>`count(*)::int`,
-                belumDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'belum_dibalas')::int`,
-                sudahDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'sudah_dibalas')::int`,
-                diarsipkan: sql<number>`count(*) filter (where ${suratMasuk.isArchived} = true)::int`,
-            })
-            .from(suratMasuk)
-            .where(and(...conditions));
+        try {
+            const stats = await db
+                .select({
+                    total: sql<number>`count(*)::int`,
+                    belumDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'belum_dibalas')::int`,
+                    sudahDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'sudah_dibalas')::int`,
+                    diarsipkan: sql<number>`count(*) filter (where ${suratMasuk.isArchived} = true)::int`,
+                })
+                .from(suratMasuk)
+                .where(and(...conditions));
 
-        return stats[0];
+            return stats[0];
+        } catch (error) {
+            console.error('[SuratMasukService.getStats] Query failed:', error);
+            // Return defaults so the frontend at least shows something
+            return { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 };
+        }
     }
 
     // Get surat keluar yang merupakan balasan dari surat masuk ini

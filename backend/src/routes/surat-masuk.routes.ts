@@ -71,6 +71,13 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
         const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
         const { tahun } = req.query;
 
+        log.info({
+            queryUnitKerjaId: req.query.unitKerjaId,
+            userUnitKerjaId: req.user?.unitKerjaId,
+            resolvedUnitKerjaId: unitKerjaId,
+            tahun,
+        }, '[GET /stats] Fetching stats');
+
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
@@ -79,6 +86,8 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
             unitKerjaId as string,
             tahun ? Number(tahun) : undefined
         );
+
+        log.info({ stats }, '[GET /stats] Stats result');
 
         res.json({ success: true, data: stats });
     } catch (error) {
