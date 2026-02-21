@@ -57,6 +57,10 @@ import clientUploadRoutes from './routes/client-upload.routes';
 
 const app = express();
 
+// Trust first proxy (Vercel's load balancer) for X-Forwarded-For headers
+// Required for express-rate-limit to correctly identify users behind a proxy
+app.set('trust proxy', 1);
+
 // CORS - must be before everything
 app.use(cors({
     origin: (origin, callback) => {

@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
-import { eq, and, desc, asc, like, sql, gte, lte, or, ilike } from 'drizzle-orm';
+import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull } from 'drizzle-orm';
 import { DatabaseError } from '../utils/errors';
 
 export interface SuratMasukFilters {
@@ -24,7 +24,7 @@ export class SuratMasukService {
         // Build where conditions
         const conditions = [
             eq(suratMasuk.unitKerjaId, unitKerjaId),
-            eq(suratMasuk.isDeleted, false),  // Exclude soft-deleted records
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
         ];
 
         if (tahun) {
@@ -208,7 +208,7 @@ export class SuratMasukService {
     async getStats(unitKerjaId: string, tahun?: number) {
         const conditions = [
             eq(suratMasuk.unitKerjaId, unitKerjaId),
-            eq(suratMasuk.isDeleted, false),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // NULL-safe
         ];
         if (tahun) {
             conditions.push(eq(suratMasuk.tahun, tahun));
