@@ -218,60 +218,46 @@ app.use(compression({
     level: 6 // Compression level (0-9, 6 is default balance)
 }));
 
-// Google Drive file proxy — streams file content from Drive through the backend
-// This allows the frontend iframe/img to display Drive files via same-origin
-import { googleDriveService } from './services/google-drive.service';
+// Blob file proxy — redirects to public Vercel Blob URL
+// Kept for backwards compatibility with older gdrive: and blob: references
 app.get('/api/drive-file/:fileId', authMiddleware as any, async (req: Request, res: Response) => {
     try {
         const { fileId } = req.params;
-        if (!fileId || fileId.length < 10) {
+        if (!fileId) {
             return res.status(400).json({ error: 'Invalid file ID' });
         }
 
-        const result = await googleDriveService.downloadFile(fileId);
-        if (!result) {
-            return res.status(404).json({ error: 'File not found in Google Drive' });
+        // For blob: URLs, the fileId IS the URL — just redirect
+        // Decode the fileId in case it was URL-encoded
+        const decodedUrl = decodeURIComponent(fileId);
+        if (decodedUrl.startsWith('http')) {
+            return res.redirect(decodedUrl);
         }
 
-        res.setHeader('Content-Type', result.mimeType);
-        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(result.fileName)}"`);
-        res.setHeader('Cache-Control', 'private, max-age=3600'); // Cache for 1 hour
-
-        result.stream.pipe(res);
+        return res.status(404).json({ error: 'File not found' });
     } catch (error: any) {
-        logger.error({ err: error, fileId: req.params.fileId }, 'Drive file proxy error');
-        res.status(500).json({ error: 'Failed to retrieve file from Google Drive' });
+        logger.error({ err: error, fileId: req.params.fileId }, 'File proxy error');
+        res.status(500).json({ error: 'Failed to retrieve file' });
     }
 });
 
-// Google Drive diagnostic — test that credentials and folder are working
-app.get('/api/drive-test', authMiddleware as any, async (req: Request, res: Response) => {
+// Blob storage diagnostic — test connectivity
+import { blobStorageService } from './services/blob-storage.service';
+app.get('/api/blob-test', authMiddleware as any, async (req: Request, res: Response) => {
     try {
-        const files = await googleDriveService.listFiles();
+        const files = await blobStorageService.listFiles();
         res.json({
             success: true,
-            message: 'Google Drive connection OK',
-            folderId: env.GOOGLE_DRIVE_FOLDER_ID?.substring(0, 8) + '...',
-            filesInFolder: files.length,
-            credentialStatus: {
-                hasServiceEmail: !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-                hasPrivateKey: !!env.GOOGLE_PRIVATE_KEY,
-                privateKeyLength: env.GOOGLE_PRIVATE_KEY?.length || 0,
-                hasFolderId: !!env.GOOGLE_DRIVE_FOLDER_ID,
-            },
+            message: 'Vercel Blob storage OK',
+            filesCount: files.length,
+            hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
         });
     } catch (error: any) {
-        logger.error({ err: error }, 'Google Drive test failed');
+        logger.error({ err: error }, 'Blob storage test failed');
         res.status(500).json({
             success: false,
             error: error.message,
-            code: error.code,
-            credentialStatus: {
-                hasServiceEmail: !!env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-                hasPrivateKey: !!env.GOOGLE_PRIVATE_KEY,
-                privateKeyLength: env.GOOGLE_PRIVATE_KEY?.length || 0,
-                hasFolderId: !!env.GOOGLE_DRIVE_FOLDER_ID,
-            },
+            hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
         });
     }
 });

@@ -216,7 +216,7 @@ export default function TambahSuratMasuk() {
             if (data.filePath) {
                 setExistingFile({
                     path: data.filePath,
-                    name: data.fileOriginalName || (data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
+                    name: data.fileOriginalName || (data.filePath.startsWith('blob:') || data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
                 });
             }
         } catch (err) {

@@ -7,7 +7,11 @@ export function FilePreviewSection({ surat }) {
     const getFileUrl = (filePath) => {
         if (!filePath) return null;
         if (filePath.startsWith('http')) return filePath;
-        // Google Drive files stored as "gdrive:{fileId}" — route through proxy
+        // Vercel Blob files stored as "blob:{url}" — use URL directly (public access)
+        if (filePath.startsWith('blob:')) {
+            return filePath.replace('blob:', '');
+        }
+        // Legacy Google Drive files stored as "gdrive:{fileId}" — route through proxy
         if (filePath.startsWith('gdrive:')) {
             const fileId = filePath.replace('gdrive:', '');
             return `/api/drive-file/${fileId}`;

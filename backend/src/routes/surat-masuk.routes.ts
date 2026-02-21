@@ -12,11 +12,11 @@ import {
 } from '../validators/schemas';
 import auditLogService from '../services/audit-log.service';
 import { createLogger } from '../utils/logger';
-import { googleDriveService } from '../services/google-drive.service';
+import { blobStorageService } from '../services/blob-storage.service';
 
 const log = createLogger('SuratMasukRoutes');
 
-// Configure multer with memory storage for Google Drive uploads
+// Configure multer with memory storage for Vercel Blob uploads
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
@@ -163,22 +163,22 @@ router.post('/',
                 });
             }
 
-            // Upload file to Google Drive if present
+            // Upload file to Vercel Blob if present
             let filePath: string | null = null;
             let fileOriginalName: string | null = null;
             if (file && file.buffer) {
                 try {
-                    const driveFile = await googleDriveService.uploadFile({
+                    const blobFile = await blobStorageService.uploadFile({
                         fileName: file.originalname,
                         mimeType: file.mimetype,
                         buffer: file.buffer,
                     });
-                    filePath = `gdrive:${driveFile.id}`;
+                    filePath = `blob:${blobFile.url}`;
                     fileOriginalName = file.originalname;
-                    log.info({ driveFileId: driveFile.id, fileName: file.originalname }, 'File uploaded to Google Drive');
-                } catch (driveError: any) {
-                    log.error({ err: driveError }, 'Failed to upload file to Google Drive');
-                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file ke Google Drive', message: driveError?.message || 'Unknown error' });
+                    log.info({ blobUrl: blobFile.url, fileName: file.originalname }, 'File uploaded to Vercel Blob');
+                } catch (uploadError: any) {
+                    log.error({ err: uploadError }, 'Failed to upload file to Vercel Blob');
+                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file', message: uploadError?.message || 'Unknown error' });
                 }
             }
 
@@ -257,20 +257,20 @@ router.put('/:id', validateIdParam(),
                 }
             }
 
-            // If a new file was uploaded, upload to Google Drive
+            // If a new file was uploaded, upload to Vercel Blob
             if (file && file.buffer) {
                 try {
-                    const driveFile = await googleDriveService.uploadFile({
+                    const blobFile = await blobStorageService.uploadFile({
                         fileName: file.originalname,
                         mimeType: file.mimetype,
                         buffer: file.buffer,
                     });
-                    updateData.filePath = `gdrive:${driveFile.id}`;
+                    updateData.filePath = `blob:${blobFile.url}`;
                     updateData.fileOriginalName = file.originalname;
-                    log.info({ driveFileId: driveFile.id, fileName: file.originalname }, 'File uploaded to Google Drive (update)');
-                } catch (driveError: any) {
-                    log.error({ err: driveError }, 'Failed to upload file to Google Drive');
-                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file ke Google Drive', message: driveError?.message || 'Unknown error' });
+                    log.info({ blobUrl: blobFile.url, fileName: file.originalname }, 'File uploaded to Vercel Blob (update)');
+                } catch (uploadError: any) {
+                    log.error({ err: uploadError }, 'Failed to upload file to Vercel Blob');
+                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file', message: uploadError?.message || 'Unknown error' });
                 }
             }
 

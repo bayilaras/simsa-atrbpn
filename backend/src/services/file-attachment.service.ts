@@ -1,7 +1,7 @@
 import { db } from '../config/database';
 import { fileAttachments, NewFileAttachment, FileAttachment } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
-import { googleDriveService } from './google-drive.service';
+import { blobStorageService } from './blob-storage.service';
 import crypto from 'crypto';
 
 export interface CreateAttachmentData {
@@ -29,12 +29,11 @@ export class FileAttachmentService {
         // Calculate hash
         const hash = crypto.createHash('sha256').update(data.buffer).digest('hex');
 
-        // Upload to Google Drive
-        const driveFile = await googleDriveService.uploadFile({
+        // Upload to Vercel Blob
+        const blobFile = await blobStorageService.uploadFile({
             fileName: data.fileName,
             mimeType: data.mimeType,
             buffer: data.buffer,
-            folderId: data.folderId,
         });
 
         // Create database record
@@ -46,8 +45,8 @@ export class FileAttachmentService {
                 fileName: data.fileName,
                 mimeType: data.mimeType,
                 sizeBytes: data.buffer.length,
-                driveFileId: driveFile.id,
-                fileUrl: driveFile.webViewLink,
+                driveFileId: blobFile.url,
+                fileUrl: blobFile.url,
             })
             .returning();
 
@@ -84,9 +83,9 @@ export class FileAttachmentService {
         const attachment = await this.findById(id);
         if (!attachment) return false;
 
-        // Delete from Google Drive
+        // Delete from Vercel Blob
         if (attachment.driveFileId) {
-            await googleDriveService.deleteFile(attachment.driveFileId);
+            await blobStorageService.deleteFile(attachment.driveFileId);
         }
 
         // Delete database record
