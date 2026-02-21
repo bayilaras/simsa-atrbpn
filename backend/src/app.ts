@@ -1,8 +1,8 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
-import helmet from 'helmet';
-const helmetMiddleware = (helmet as any).default || helmet;
+import * as helmetModule from 'helmet';
+const helmet = (helmetModule as any).default || helmetModule;
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { toNodeHandler } from 'better-auth/node';
@@ -86,7 +86,7 @@ app.use(cors({
 }));
 
 // Security Headers with Helmet.js
-app.use(helmetMiddleware({
+app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],

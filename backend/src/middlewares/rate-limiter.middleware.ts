@@ -1,4 +1,5 @@
-import rateLimit from 'express-rate-limit';
+import * as rateLimitModule from 'express-rate-limit';
+const rateLimit = (rateLimitModule as any).default || rateLimitModule;
 import { env } from '../config/env';
 
 /**
