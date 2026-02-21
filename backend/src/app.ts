@@ -2,6 +2,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
 import helmet from 'helmet';
+const helmetMiddleware = (helmet as any).default || helmet;
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { toNodeHandler } from 'better-auth/node';
@@ -85,7 +86,7 @@ app.use(cors({
 }));
 
 // Security Headers with Helmet.js
-app.use(helmet({
+app.use(helmetMiddleware({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
@@ -234,7 +235,7 @@ app.get('/api/drive-file/:fileId', authMiddleware as any, async (req: Request, r
 
         // For blob: URLs, the fileId IS the URL — just redirect
         // Decode the fileId in case it was URL-encoded
-        const decodedUrl = decodeURIComponent(fileId);
+        const decodedUrl = decodeURIComponent(fileId as string);
         if (decodedUrl.startsWith('http')) {
             return res.redirect(decodedUrl);
         }
