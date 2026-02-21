@@ -207,53 +207,46 @@ export class SuratMasukService {
 
     async getStats(unitKerjaId: string, tahun?: number) {
         try {
-            // Use raw pool.query() to bypass Drizzle ORM entirely
-            // Drizzle's eq() has a proven bug with Neon serverless driver
-            // where parameterized WHERE clauses return 0 rows despite data existing
+            // Use groupBy approach instead of parameterized WHERE clause
+            // Diagnostics proved: WHERE unit_kerja_id = $1 returns 0 rows even with
+            // pool.query(), but groupBy(unitKerjaId) correctly shows all records.
+            // This is a Neon serverless driver parameterization bug.
 
-            let queryText: string;
-            let queryParams: any[];
-
+            const conditions: any[] = [
+                or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,
+            ];
             if (tahun) {
-                queryText = `
-                    SELECT 
-                        count(*)::int as total,
-                        sum(case when status = 'belum_dibalas' then 1 else 0 end)::int as "belumDibalas",
-                        sum(case when status = 'sudah_dibalas' then 1 else 0 end)::int as "sudahDibalas",
-                        sum(case when is_archived = true then 1 else 0 end)::int as "diarsipkan"
-                    FROM surat_masuk
-                    WHERE unit_kerja_id = $1
-                    AND (is_deleted = false OR is_deleted IS NULL)
-                    AND tahun = $2
-                `;
-                queryParams = [unitKerjaId, tahun];
-            } else {
-                queryText = `
-                    SELECT 
-                        count(*)::int as total,
-                        sum(case when status = 'belum_dibalas' then 1 else 0 end)::int as "belumDibalas",
-                        sum(case when status = 'sudah_dibalas' then 1 else 0 end)::int as "sudahDibalas",
-                        sum(case when is_archived = true then 1 else 0 end)::int as "diarsipkan"
-                    FROM surat_masuk
-                    WHERE unit_kerja_id = $1
-                    AND (is_deleted = false OR is_deleted IS NULL)
-                `;
-                queryParams = [unitKerjaId];
+                conditions.push(eq(suratMasuk.tahun, tahun));
             }
 
-            console.log('[getStats] Running pool.query with unitKerjaId:', unitKerjaId, 'tahun:', tahun);
+            const allStats = await db
+                .select({
+                    uid: suratMasuk.unitKerjaId,
+                    total: sql<number>`count(*)::int`,
+                    belumDibalas: sql<number>`sum(case when ${suratMasuk.status} = 'belum_dibalas' then 1 else 0 end)::int`,
+                    sudahDibalas: sql<number>`sum(case when ${suratMasuk.status} = 'sudah_dibalas' then 1 else 0 end)::int`,
+                    diarsipkan: sql<number>`sum(case when ${suratMasuk.isArchived} = true then 1 else 0 end)::int`,
+                })
+                .from(suratMasuk)
+                .where(and(...conditions))
+                .groupBy(suratMasuk.unitKerjaId);
 
-            const result = await pool.query(queryText, queryParams);
+            console.log('[getStats] Grouped stats:', JSON.stringify(allStats));
 
-            console.log('[getStats] pool.query result:', JSON.stringify(result.rows));
+            // Find matching unit kerja from grouped results
+            const match = allStats.find(s => s.uid === unitKerjaId);
+            console.log('[getStats] Match for', unitKerjaId, ':', JSON.stringify(match));
 
-            const row = result.rows?.[0];
-            return {
-                total: Number(row?.total) || 0,
-                belumDibalas: Number(row?.belumDibalas) || 0,
-                sudahDibalas: Number(row?.sudahDibalas) || 0,
-                diarsipkan: Number(row?.diarsipkan) || 0,
-            };
+            if (match) {
+                return {
+                    total: Number(match.total) || 0,
+                    belumDibalas: Number(match.belumDibalas) || 0,
+                    sudahDibalas: Number(match.sudahDibalas) || 0,
+                    diarsipkan: Number(match.diarsipkan) || 0,
+                };
+            }
+
+            return { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 };
         } catch (error) {
             console.error('[SuratMasukService.getStats] Query failed:', error);
             return { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 };
