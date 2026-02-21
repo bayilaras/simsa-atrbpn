@@ -5,8 +5,8 @@ const unitKerjaData = [
     // Ditjen (top level)
     {
         id: 'ditjen',
-        name: 'Direktorat Jenderal',
-        description: 'Direktorat Jenderal PTEP',
+        name: 'Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan',
+        description: 'Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan (Ditjen PTPP)',
         parentId: null,
         unitType: 'ditjen',
         canReceiveDistribution: true,

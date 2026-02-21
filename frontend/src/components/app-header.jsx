@@ -35,7 +35,7 @@ const ROLE_LABELS = {
 
 // Unit kerja options for super admin notification filter
 const UNIT_KERJA_OPTIONS = [
-    { id: 'ditjen', label: 'Dirjen PTPP' },
+    { id: 'ditjen', label: 'Ditjen PTPP' },
     { id: 'sesditjen', label: 'Sesditjen' },
     { id: 'dir_bppt', label: 'Dir. BPPT' },
     { id: 'dir_ptep', label: 'Dir. PTEP' },
