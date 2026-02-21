@@ -67,6 +67,13 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
         return next();
     }
 
+    // Skip client-upload route — @vercel/blob/client's upload() makes its own POST
+    // request without the X-CSRF-Token header. This route is already protected by
+    // authMiddleware and rate limiting.
+    if (req.path.startsWith('/client-upload')) {
+        return next();
+    }
+
     const cookieToken = req.cookies?.[CSRF_COOKIE_NAME];
     const headerToken = req.headers[CSRF_HEADER_NAME] as string;
 
