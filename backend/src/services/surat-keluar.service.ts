@@ -197,20 +197,24 @@ export class SuratKeluarService {
         return (lastSurat?.noUrut || 0) + 1;
     }
 
-    async getStats(unitKerjaId: string, tahun?: number) {
-        const conditions = [eq(suratKeluar.unitKerjaId, unitKerjaId)];
-        if (tahun) {
-            conditions.push(eq(suratKeluar.tahun, tahun));
-        }
+    async getStats(unitKerjaId: string | null, tahun?: number) {
+        // Mirror dashboard pattern: conditionally apply unitKerjaId filter
+        const conditions = [
+            ...(unitKerjaId ? [eq(suratKeluar.unitKerjaId, unitKerjaId)] : []),
+            ...(tahun ? [eq(suratKeluar.tahun, tahun)] : []),
+        ];
+
+        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
         const stats = await db
             .select({
                 total: sql<number>`count(*)::int`,
-                diarsipkan: sql<number>`count(*) filter (where ${suratKeluar.isArchived} = true)::int`,
+                diarsipkan: sql<number>`sum(case when ${suratKeluar.isArchived} = true then 1 else 0 end)::int`,
             })
             .from(suratKeluar)
-            .where(and(...conditions));
+            .where(whereClause);
 
+        console.log('[getStats keluar] unitKerjaId:', unitKerjaId, 'result:', JSON.stringify(stats[0]));
         return stats[0];
     }
 

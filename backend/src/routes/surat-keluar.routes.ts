@@ -88,15 +88,12 @@ router.get('/next-number', async (req: AuthRequest, res, next) => {
 // GET /api/surat-keluar/stats
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Mirror dashboard pattern: pass null when no unitKerjaId
+        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || null;
         const { tahun } = req.query;
 
-        if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
-        }
-
         const stats = await suratKeluarService.getStats(
-            unitKerjaId as string,
+            unitKerjaId,
             tahun ? Number(tahun) : undefined
         );
 

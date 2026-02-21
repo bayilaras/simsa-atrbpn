@@ -1,4 +1,4 @@
-import { db, pool } from '../config/database';
+import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
 import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull } from 'drizzle-orm';
 import { DatabaseError } from '../utils/errors';
@@ -101,7 +101,7 @@ export class SuratMasukService {
         const tahun = data.tahun || new Date().getFullYear();
 
         try {
-            const result = await db.transaction(async (tx) => {
+            const result = await db.transaction(async (tx: any) => {
                 // Lock rows for this unit+year to prevent concurrent inserts getting same noUrut
                 const [lastSurat] = await tx
                     .select({ noUrut: suratMasuk.noUrut })
@@ -205,48 +205,49 @@ export class SuratMasukService {
         return (lastSurat?.noUrut || 0) + 1;
     }
 
-    async getStats(unitKerjaId: string, tahun?: number) {
+    async getStats(unitKerjaId: string | null, tahun?: number) {
         try {
-            // Use groupBy approach instead of parameterized WHERE clause
-            // Diagnostics proved: WHERE unit_kerja_id = $1 returns 0 rows even with
-            // pool.query(), but groupBy(unitKerjaId) correctly shows all records.
-            // This is a Neon serverless driver parameterization bug.
+            // Mirror dashboard service pattern exactly:
+            // - When unitKerjaId is null → skip WHERE clause (query all records)
+            // - Use individual count queries in parallel (proven working in dashboard)
+            // Dashboard shows 1721 surat masuk correctly using this approach
 
-            const conditions: any[] = [
+            const baseConditions = [
                 or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,
+                ...(unitKerjaId ? [eq(suratMasuk.unitKerjaId, unitKerjaId)] : []),
+                ...(tahun ? [eq(suratMasuk.tahun, tahun)] : []),
             ];
-            if (tahun) {
-                conditions.push(eq(suratMasuk.tahun, tahun));
-            }
 
-            const allStats = await db
-                .select({
-                    uid: suratMasuk.unitKerjaId,
-                    total: sql<number>`count(*)::int`,
-                    belumDibalas: sql<number>`sum(case when ${suratMasuk.status} = 'belum_dibalas' then 1 else 0 end)::int`,
-                    sudahDibalas: sql<number>`sum(case when ${suratMasuk.status} = 'sudah_dibalas' then 1 else 0 end)::int`,
-                    diarsipkan: sql<number>`sum(case when ${suratMasuk.isArchived} = true then 1 else 0 end)::int`,
-                })
-                .from(suratMasuk)
-                .where(and(...conditions))
-                .groupBy(suratMasuk.unitKerjaId);
+            // Run all counts in parallel (same approach as dashboard service)
+            const [
+                [totalResult],
+                [belumDibalasResult],
+                [sudahDibalasResult],
+                [diarsipkanResult],
+            ] = await Promise.all([
+                db.select({ count: sql<number>`count(*)::int` })
+                    .from(suratMasuk)
+                    .where(and(...baseConditions)),
+                db.select({ count: sql<number>`count(*)::int` })
+                    .from(suratMasuk)
+                    .where(and(...baseConditions, eq(suratMasuk.status, 'belum_dibalas'))),
+                db.select({ count: sql<number>`count(*)::int` })
+                    .from(suratMasuk)
+                    .where(and(...baseConditions, eq(suratMasuk.status, 'sudah_dibalas'))),
+                db.select({ count: sql<number>`count(*)::int` })
+                    .from(suratMasuk)
+                    .where(and(...baseConditions, eq(suratMasuk.isArchived, true))),
+            ]);
 
-            console.log('[getStats] Grouped stats:', JSON.stringify(allStats));
+            const result = {
+                total: totalResult?.count || 0,
+                belumDibalas: belumDibalasResult?.count || 0,
+                sudahDibalas: sudahDibalasResult?.count || 0,
+                diarsipkan: diarsipkanResult?.count || 0,
+            };
 
-            // Find matching unit kerja from grouped results
-            const match = allStats.find(s => s.uid === unitKerjaId);
-            console.log('[getStats] Match for', unitKerjaId, ':', JSON.stringify(match));
-
-            if (match) {
-                return {
-                    total: Number(match.total) || 0,
-                    belumDibalas: Number(match.belumDibalas) || 0,
-                    sudahDibalas: Number(match.sudahDibalas) || 0,
-                    diarsipkan: Number(match.diarsipkan) || 0,
-                };
-            }
-
-            return { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 };
+            console.log('[getStats] unitKerjaId:', unitKerjaId, 'result:', JSON.stringify(result));
+            return result;
         } catch (error) {
             console.error('[SuratMasukService.getStats] Query failed:', error);
             return { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 };
@@ -313,4 +314,3 @@ export class SuratMasukService {
 }
 
 export const suratMasukService = new SuratMasukService();
-
