@@ -1,4 +1,5 @@
 import api from './api';
+import { uploadFileToBlob } from './blob-upload.service';
 
 export const suratKeluarService = {
     // List surat keluar with pagination and filters
@@ -32,51 +33,57 @@ export const suratKeluarService = {
         return response.data;
     },
 
-    // Create new surat keluar (supports file upload)
+    // Create new surat keluar (supports file upload via Vercel Blob)
     async create(data, file = null) {
-        const formData = new FormData();
+        // Upload file to Vercel Blob first if present
+        let fileUrl = null;
+        let fileOriginalName = null;
 
-        // Append all data fields
-        Object.keys(data).forEach(key => {
-            if (data[key] !== null && data[key] !== undefined) {
-                formData.append(key, data[key]);
-            }
-        });
-
-        // Append file if exists
         if (file) {
-            formData.append('file', file);
+            try {
+                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar' });
+                fileUrl = blob.url;
+                fileOriginalName = file.name;
+            } catch (uploadError) {
+                console.error('Blob upload failed:', uploadError);
+                throw new Error('Gagal mengunggah file. Silakan coba lagi.');
+            }
         }
 
-        const response = await api.request('/api/surat-keluar', {
-            method: 'POST',
-            body: formData,
-        });
+        // Send as JSON (no file in request body)
+        const payload = {
+            ...data,
+            ...(fileUrl && { filePath: fileUrl }),
+            ...(fileOriginalName && { fileOriginalName }),
+        };
 
+        const response = await api.post('/api/surat-keluar', payload);
         return response;
     },
 
-    // Update surat keluar (supports file upload)
+    // Update surat keluar (supports file upload via Vercel Blob)
     async update(id, data, file = null) {
+        let fileUrl = null;
+        let fileOriginalName = null;
+
         if (file) {
-            const formData = new FormData();
-            Object.keys(data).forEach(key => {
-                if (data[key] !== null && data[key] !== undefined) {
-                    if (Array.isArray(data[key])) {
-                        data[key].forEach(value => formData.append(key, value));
-                    } else {
-                        formData.append(key, data[key]);
-                    }
-                }
-            });
-            formData.append('file', file);
-            const response = await api.request(`/api/surat-keluar/${id}`, {
-                method: 'PUT',
-                body: formData,
-            });
-            return response.data;
+            try {
+                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar' });
+                fileUrl = blob.url;
+                fileOriginalName = file.name;
+            } catch (uploadError) {
+                console.error('Blob upload failed:', uploadError);
+                throw new Error('Gagal mengunggah file. Silakan coba lagi.');
+            }
         }
-        const response = await api.put(`/api/surat-keluar/${id}`, data);
+
+        const payload = {
+            ...data,
+            ...(fileUrl && { filePath: fileUrl }),
+            ...(fileOriginalName && { fileOriginalName }),
+        };
+
+        const response = await api.put(`/api/surat-keluar/${id}`, payload);
         return response.data;
     },
 

@@ -130,10 +130,12 @@ router.post('/',
         try {
             const file = req.file;
 
-            // Upload file to Vercel Blob if present
-            let filePath: string | null = null;
-            let fileOriginalName: string | null = null;
-            if (file && file.buffer) {
+            // Determine file path — either from client-side Blob upload or server-side upload
+            let filePath: string | null = (req.body.filePath as string) || null;
+            let fileOriginalName: string | null = (req.body.fileOriginalName as string) || null;
+
+            // If file was uploaded via multipart (legacy), upload to Vercel Blob server-side
+            if (file && file.buffer && !filePath) {
                 try {
                     const blobFile = await blobStorageService.uploadFile({
                         fileName: file.originalname,
@@ -208,8 +210,9 @@ router.put('/:id', validateIdParam(),
                 }
             }
 
-            // If a new file was uploaded, upload to Vercel Blob
-            if (file && file.buffer) {
+            // If filePath is already provided (from client-side Blob upload), use it directly
+            // Otherwise, if a file was uploaded via multipart (legacy), upload to Blob server-side
+            if (file && file.buffer && !updateData.filePath) {
                 try {
                     const blobFile = await blobStorageService.uploadFile({
                         fileName: file.originalname,

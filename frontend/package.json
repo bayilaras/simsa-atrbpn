@@ -16,6 +16,7 @@
     "@radix-ui/react-progress": "^1.1.8",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@tailwindcss/vite": "^4.1.18",
+    "@vercel/blob": "^2.3.0",
     "axios": "^1.13.4",
     "better-auth": "^1.4.18",
     "chart.js": "^4.5.1",

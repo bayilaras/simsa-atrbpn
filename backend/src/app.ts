@@ -52,6 +52,7 @@ import mappingRoutes from './routes/mapping.routes';
 import approvalRoutes from './routes/approval.routes';
 import securityRoutes from './routes/security.routes';
 import googleDriveImportRoutes from './routes/google-drive-import.routes';
+import clientUploadRoutes from './routes/client-upload.routes';
 
 
 const app = express();
@@ -307,6 +308,7 @@ app.use('/api/supervision', supervisionRoutes);
 app.use('/api/mapping', mappingRoutes);
 app.use('/api/security', securityRoutes); // Security utilities (password check, etc.)
 app.use('/api/import', googleDriveImportRoutes); // Google Drive import
+app.use('/api/client-upload', clientUploadRoutes); // Client-side Vercel Blob uploads (bypasses 4.5MB limit)
 
 // Dev auth routes - ONLY available in development mode
 if (env.NODE_ENV === 'development') {

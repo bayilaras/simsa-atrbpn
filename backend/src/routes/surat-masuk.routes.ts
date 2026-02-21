@@ -141,7 +141,9 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
 });
 
 // POST /api/surat-masuk - Create new
-// Note: We validate after multer because multer populates req.body from multipart/form-data
+// Supports both:
+//   1. JSON body with pre-uploaded blob URL (filePath, fileOriginalName) — new approach
+//   2. Multipart FormData with file attachment — legacy approach (limited to 4.5MB on Vercel)
 router.post('/',
     canWriteMiddleware(),
     upload.single('file'),
@@ -163,10 +165,12 @@ router.post('/',
                 });
             }
 
-            // Upload file to Vercel Blob if present
-            let filePath: string | null = null;
-            let fileOriginalName: string | null = null;
-            if (file && file.buffer) {
+            // Determine file path — either from client-side Blob upload or server-side upload
+            let filePath: string | null = (req.body.filePath as string) || null;
+            let fileOriginalName: string | null = (req.body.fileOriginalName as string) || null;
+
+            // If a file was uploaded via multipart (legacy), upload to Vercel Blob server-side
+            if (file && file.buffer && !filePath) {
                 try {
                     const blobFile = await blobStorageService.uploadFile({
                         fileName: file.originalname,
@@ -207,7 +211,7 @@ router.post('/',
     }
 );
 
-// PUT /api/surat-masuk/:id - Update (supports file upload)
+// PUT /api/surat-masuk/:id - Update (supports both JSON body and multipart file upload)
 router.put('/:id', validateIdParam(),
     canWriteMiddleware(),
     upload.single('file'),
@@ -257,8 +261,9 @@ router.put('/:id', validateIdParam(),
                 }
             }
 
-            // If a new file was uploaded, upload to Vercel Blob
-            if (file && file.buffer) {
+            // If filePath is already provided (from client-side Blob upload), use it directly
+            // Otherwise, if a file was uploaded via multipart (legacy), upload to Blob server-side
+            if (file && file.buffer && !updateData.filePath) {
                 try {
                     const blobFile = await blobStorageService.uploadFile({
                         fileName: file.originalname,
