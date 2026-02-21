@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts src/app.ts --format esm",
+    "build": "tsup src/index.ts src/app.ts --format esm --no-dts",
     "start": "node dist/index.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -44,6 +44,7 @@
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.8",
     "pdf-parse": "^2.4.5",
     "pino-pretty": "^13.1.3",
