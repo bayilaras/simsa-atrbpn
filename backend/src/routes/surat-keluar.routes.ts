@@ -88,8 +88,8 @@ router.get('/next-number', async (req: AuthRequest, res, next) => {
 // GET /api/surat-keluar/stats
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        // Mirror dashboard pattern: pass null when no unitKerjaId
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || null;
+        // Pass null to query ALL records (matches dashboard behavior)
+        const unitKerjaId = (req.query.unitKerjaId as string) || null;
         const { tahun } = req.query;
 
         const stats = await suratKeluarService.getStats(

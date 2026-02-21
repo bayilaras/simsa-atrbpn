@@ -68,9 +68,9 @@ router.get('/', validateQuery(querySuratMasukSchema), async (req: AuthRequest, r
 // GET /api/surat-masuk/stats - Get statistics
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        // Mirror dashboard pattern: pass null when no unitKerjaId
-        // This avoids the Neon serverless parameterized WHERE bug
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || null;
+        // Pass null to query ALL records (matches dashboard behavior)
+        // Only filter if explicit unitKerjaId query param is provided
+        const unitKerjaId = (req.query.unitKerjaId as string) || null;
         const { tahun } = req.query;
 
         log.info({
