@@ -10,6 +10,7 @@ import {
 } from '../validators/schemas';
 import auditLogService from '../services/audit-log.service';
 import { fullTextSearchService } from '../services/fulltext-search.service';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const router = Router();
 
@@ -44,7 +45,7 @@ router.get('/', validateQuery(queryArsipSchema), async (req: AuthRequest, res, n
 // GET /api/arsip/expiring - Get expiring archives
 router.get('/expiring', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { daysAhead } = req.query;
 
         if (!unitKerjaId) {
@@ -65,7 +66,7 @@ router.get('/expiring', async (req: AuthRequest, res, next) => {
 // GET /api/arsip/stats
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { tahun } = req.query;
 
         if (!unitKerjaId) {
@@ -86,7 +87,7 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 // GET /api/arsip/search/fulltext - Full-text search across document content
 router.get('/search/fulltext', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { q, jenisArsip, tahun, page, limit } = req.query;
 
         if (!q || typeof q !== 'string') {
@@ -115,7 +116,7 @@ router.get('/search/fulltext', async (req: AuthRequest, res, next) => {
 // GET /api/arsip/search/suggestions - Autocomplete suggestions
 router.get('/search/suggestions', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { q, limit } = req.query;
 
         if (!q || typeof q !== 'string') {
@@ -141,7 +142,7 @@ router.get('/search/suggestions', async (req: AuthRequest, res, next) => {
 // GET /api/arsip/search/keywords - Search by keywords
 router.get('/search/keywords', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { keywords, page, limit } = req.query;
 
         if (!keywords || typeof keywords !== 'string') {
@@ -183,7 +184,7 @@ router.get('/search/keywords', async (req: AuthRequest, res, next) => {
 router.get('/:id/related', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { limit } = req.query;
 
         if (!unitKerjaId) {

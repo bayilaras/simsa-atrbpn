@@ -1,15 +1,16 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from './auth.middleware';
-import { hasPermission, canAccessUnit, isReadOnlyRole, Role, Module, Action } from '../config/permissions';
+import { hasPermission, canAccessUnit, isReadOnlyRole, isNoAccessRole, Role, Module, Action } from '../config/permissions';
 
 // Re-export types for convenience
 export type { Role, Module, Action } from '../config/permissions';
 
 // Legacy role hierarchy for backward compatibility
 const ROLE_PERMISSIONS: Record<Role, string[]> = {
-    'super_admin': ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'user'],
-    'admin_dirjen': ['admin_dirjen', 'user'],
-    'admin_sesditjen': ['admin_sesditjen', 'user'],
+    'super_admin': ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user'],
+    'admin_dirjen': ['admin_dirjen', 'staff', 'user'],
+    'admin_sesditjen': ['admin_sesditjen', 'staff', 'user'],
+    'staff': ['staff', 'user'],
     'auditor': ['auditor'],
     'user': ['user'],
 };

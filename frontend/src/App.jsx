@@ -106,6 +106,7 @@ const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
 const SUPER_ADMIN_ONLY = ['super_admin'];
 const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
 const ALL_ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+const STAFF_AND_ABOVE = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff'];
 
 function AppLayout() {
   return (
@@ -144,20 +145,20 @@ const router = createBrowserRouter([
     ),
     children: [
       { path: "/", element: <Dashboard /> },
-      { path: "/surat/masuk", element: <SuratMasuk /> },
+      { path: "/surat/masuk", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><SuratMasuk /></RoleGuard> },
       { path: "/surat/masuk/tambah", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratMasuk /></RoleGuard> },
       { path: "/surat/masuk/:id", element: <SuratMasukDetail /> },
       { path: "/surat/masuk/edit/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratMasuk /></RoleGuard> },
-      { path: "/surat/keluar", element: <SuratKeluar /> },
+      { path: "/surat/keluar", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><SuratKeluar /></RoleGuard> },
       { path: "/surat/keluar/tambah", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar /></RoleGuard> },
       { path: "/surat/keluar/:id", element: <SuratKeluarDetail /> },
       { path: "/surat/keluar/edit/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar /></RoleGuard> },
       { path: "/distribusi", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><DistributionInbox /></RoleGuard> },
       { path: "/arsip", element: <Navigate to="/arsip/keluar" replace /> },
-      { path: "/arsip/detail/:id", element: <ArsipDetail /> },
-      { path: "/arsip/:tab", element: <Arsip /> },
+      { path: "/arsip/detail/:id", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><ArsipDetail /></RoleGuard> },
+      { path: "/arsip/:tab", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><Arsip /></RoleGuard> },
       { path: "/bulk-upload", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard> },
-      { path: "/laporan", element: <Laporan /> },
+      { path: "/laporan", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><Laporan /></RoleGuard> },
       { path: "/audit-log", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><AuditLog /></RoleGuard> },
       { path: "/settings", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><Settings /></RoleGuard> },
       { path: "/users", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><UserManagement /></RoleGuard> },

@@ -7,7 +7,7 @@ export const users = pgTable('users', {
     email: varchar('email', { length: 255 }).unique().notNull(),
     name: varchar('name', { length: 255 }),
     image: text('image'),
-    role: varchar('role', { length: 50 }).default('user').notNull(), // super_admin, admin_dirjen, admin_sesditjen, user
+    role: varchar('role', { length: 50 }).default('user').notNull(), // super_admin, admin_dirjen, admin_sesditjen, staff, user
     unitKerjaId: varchar('unit_kerja_id', { length: 50 }).references(() => unitKerja.id),
     jabatan: varchar('jabatan', { length: 100 }),  // Job title/position (e.g. 'Arsiparis')
     nip: varchar('nip', { length: 30 }),           // Nomor Induk Pegawai

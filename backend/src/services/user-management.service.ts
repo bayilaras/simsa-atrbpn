@@ -29,7 +29,7 @@ export interface CreateUserData {
 }
 
 // Valid roles
-export const VALID_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'user'] as const;
+export const VALID_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'user'] as const;
 export type Role = typeof VALID_ROLES[number];
 
 // Admin roles that can access user management
@@ -262,6 +262,7 @@ export const userManagementService = {
             'super_admin': 'Super Admin',
             'admin_dirjen': 'Admin Dirjen PTPP',
             'admin_sesditjen': 'Admin Sesditjen',
+            'staff': 'Staff',
             'user': 'User',
         };
         return labels[role] || role;

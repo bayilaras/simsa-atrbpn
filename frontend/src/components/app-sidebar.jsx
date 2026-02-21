@@ -48,6 +48,7 @@ import { Badge } from '@/components/ui/badge'
 
 // Role constants for menu access
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen']
+const STAFF_AND_ABOVE = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff']
 const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor']
 
 // Menu items grouped by section
@@ -70,6 +71,7 @@ const menuGroups = [
             {
                 title: 'Surat',
                 icon: Mail,
+                allowedRoles: STAFF_AND_ABOVE,
                 subItems: [
                     { title: 'Surat Masuk', url: '/surat/masuk', icon: MailOpen },
                     { title: 'Surat Keluar', url: '/surat/keluar', icon: Send },
@@ -90,6 +92,7 @@ const menuGroups = [
                 title: 'Arsip Aktif',
                 icon: Archive,
                 url: '/arsip',
+                allowedRoles: STAFF_AND_ABOVE,
                 subItems: [
                     { title: 'Arsip Surat Masuk', url: '/arsip/masuk' },
                     { title: 'Arsip Surat Keluar', url: '/arsip/keluar' },
@@ -188,6 +191,7 @@ const menuGroups = [
                 title: 'Laporan',
                 url: '/laporan',
                 icon: FileBarChart,
+                allowedRoles: STAFF_AND_ABOVE,
             },
             {
                 title: 'Audit Log',

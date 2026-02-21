@@ -45,6 +45,7 @@ const ROLE_COLORS = {
     'super_admin': 'bg-red-100 text-red-800 border-red-200',
     'admin_dirjen': 'bg-blue-100 text-blue-800 border-blue-200',
     'admin_sesditjen': 'bg-green-100 text-green-800 border-green-200',
+    'staff': 'bg-amber-100 text-amber-800 border-amber-200',
     'user': 'bg-slate-100 text-slate-800 border-slate-200',
 };
 
@@ -52,6 +53,7 @@ const ROLE_LABELS = {
     'super_admin': 'Super Admin',
     'admin_dirjen': 'Admin Dirjen',
     'admin_sesditjen': 'Admin Sesditjen',
+    'staff': 'Staff',
     'user': 'User',
 };
 

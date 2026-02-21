@@ -1,10 +1,18 @@
 /**
  * Permission Configuration Module
  * Granular permissions per module and action
+ *
+ * Role hierarchy:
+ * - super_admin: Full access to ALL units + user management + settings
+ * - admin_dirjen: Full access scoped to 'ditjen' unit kerja
+ * - admin_sesditjen: Full access scoped to 'sesditjen' unit kerja
+ * - staff: Read-only access scoped to their own unit kerja (assigned by super_admin)
+ * - auditor: Read-only + export across all units
+ * - user: NO access (default for new Google logins, awaiting role assignment)
  */
 
 // Available roles in the system
-export type Role = 'super_admin' | 'admin_dirjen' | 'admin_sesditjen' | 'auditor' | 'user';
+export type Role = 'super_admin' | 'admin_dirjen' | 'admin_sesditjen' | 'staff' | 'auditor' | 'user';
 
 // Available modules
 export type Module =
@@ -24,81 +32,86 @@ export type Module =
 // Available actions
 export type Action = 'read' | 'create' | 'update' | 'delete' | 'archive' | 'destroy' | 'export';
 
+// Shorthand for admin roles that have full CRUD (scoped by unit kerja)
+const FULL_ADMIN: Role[] = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+
 // Permission matrix: which roles can perform which actions on which modules
+// NOTE: admin_dirjen and admin_sesditjen have FULL access like super_admin,
+// but data is scoped to their unit kerja via resolveUnitKerjaId() in routes.
 export const PERMISSIONS: Record<Module, Partial<Record<Action, Role[]>>> = {
     surat_masuk: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'user'],
-        create: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        update: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        delete: ['super_admin', 'admin_dirjen'],
-        archive: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        export: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'],
+        read: [...FULL_ADMIN, 'staff', 'auditor'],
+        create: FULL_ADMIN,
+        update: FULL_ADMIN,
+        delete: FULL_ADMIN,
+        archive: FULL_ADMIN,
+        export: [...FULL_ADMIN, 'auditor'],
     },
     surat_keluar: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'user'],
-        create: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        update: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        delete: ['super_admin', 'admin_dirjen'],
-        archive: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        export: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'],
+        read: [...FULL_ADMIN, 'staff', 'auditor'],
+        create: FULL_ADMIN,
+        update: FULL_ADMIN,
+        delete: FULL_ADMIN,
+        archive: FULL_ADMIN,
+        export: [...FULL_ADMIN, 'auditor'],
     },
     arsip: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'user'],
-        create: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        update: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        delete: ['super_admin', 'admin_dirjen'],
-        destroy: ['super_admin'], // Only super_admin can destroy archives
-        export: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'],
+        read: [...FULL_ADMIN, 'staff', 'auditor'],
+        create: FULL_ADMIN,
+        update: FULL_ADMIN,
+        delete: FULL_ADMIN,
+        destroy: ['super_admin'], // Only super_admin can permanently destroy archives
+        export: [...FULL_ADMIN, 'auditor'],
     },
     arsip_vital: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'user'],
-        create: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        update: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        delete: ['super_admin', 'admin_dirjen'],
-        export: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'],
+        read: [...FULL_ADMIN, 'staff', 'auditor'],
+        create: FULL_ADMIN,
+        update: FULL_ADMIN,
+        delete: FULL_ADMIN,
+        export: [...FULL_ADMIN, 'auditor'],
     },
     arsip_terjaga: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'user'],
-        create: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        update: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        delete: ['super_admin', 'admin_dirjen'],
-        export: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'],
+        read: [...FULL_ADMIN, 'staff', 'auditor'],
+        create: FULL_ADMIN,
+        update: FULL_ADMIN,
+        delete: FULL_ADMIN,
+        export: [...FULL_ADMIN, 'auditor'],
     },
     dosir: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'user'],
-        create: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        update: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
-        delete: ['super_admin', 'admin_dirjen'],
+        read: [...FULL_ADMIN, 'staff', 'auditor'],
+        create: FULL_ADMIN,
+        update: FULL_ADMIN,
+        delete: FULL_ADMIN,
     },
     audit_log: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'],
+        read: [...FULL_ADMIN, 'auditor'],
         export: ['super_admin', 'auditor'],
     },
     user_management: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
+        read: ['super_admin'],
         create: ['super_admin'],
         update: ['super_admin'],
         delete: ['super_admin'],
     },
     settings: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen'],
+        read: ['super_admin'],
         update: ['super_admin'],
     },
     reports: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'],
-        create: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'],
-        export: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'],
+        read: [...FULL_ADMIN, 'staff', 'auditor'],
+        create: [...FULL_ADMIN, 'auditor'],
+        export: [...FULL_ADMIN, 'auditor'],
     },
     klasifikasi: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'user'],
+        read: [...FULL_ADMIN, 'staff', 'auditor'],
         create: ['super_admin'],
         update: ['super_admin'],
         delete: ['super_admin'],
     },
     storage_locations: {
-        read: ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'user'],
-        create: ['super_admin', 'admin_dirjen'],
-        update: ['super_admin', 'admin_dirjen'],
+        read: [...FULL_ADMIN, 'staff', 'auditor'],
+        create: FULL_ADMIN,
+        update: FULL_ADMIN,
         delete: ['super_admin'],
     },
 };
@@ -108,17 +121,19 @@ export const ROLE_HIERARCHY: Record<Role, number> = {
     'super_admin': 100,
     'admin_dirjen': 80,
     'admin_sesditjen': 60,
-    'auditor': 40, // Read-only role
-    'user': 20,
+    'staff': 30,
+    'auditor': 40,
+    'user': 10, // Lowest — no access
 };
 
-// Unit kerja access by role
+// Unit kerja access by role (uses actual DB IDs from unit_kerja table)
 export const UNIT_KERJA_ACCESS: Record<Role, string[] | '*'> = {
     'super_admin': '*', // Access to all units
-    'admin_dirjen': ['dirjen-ptpp', 'dirjen-ptpp-*'], // Dirjen and sub-units
-    'admin_sesditjen': ['sesditjen-*'], // Sesditjen sub-units
-    'auditor': '*', // Read access to all (but auditor role restricts to read-only)
-    'user': [], // Will be set based on user's unitKerjaId
+    'admin_dirjen': ['ditjen'], // Dirjen unit only
+    'admin_sesditjen': ['sesditjen', 'bagian_keuangan', 'bagian_kepegawaian', 'bagian_umum'], // Sesditjen + sub-bagian
+    'staff': [], // Determined by user's unitKerjaId at runtime
+    'auditor': '*', // Read access to all (but restricted to read-only by permissions)
+    'user': [], // No access at all
 };
 
 /**
@@ -140,22 +155,19 @@ export function hasPermission(role: Role, module: Module, action: Action): boole
 export function canAccessUnit(role: Role, userUnitKerjaId: string | null, targetUnitKerjaId: string): boolean {
     const accessConfig = UNIT_KERJA_ACCESS[role];
 
-    // Wildcard access
+    // Wildcard access (super_admin, auditor)
     if (accessConfig === '*') return true;
 
-    // For regular users, they can only access their own unit
-    if (role === 'user') {
+    // user role has no access at all
+    if (role === 'user') return false;
+
+    // staff can only access their own assigned unit
+    if (role === 'staff') {
         return userUnitKerjaId === targetUnitKerjaId;
     }
 
-    // Check pattern matching
-    return accessConfig.some(pattern => {
-        if (pattern.endsWith('*')) {
-            const prefix = pattern.slice(0, -1);
-            return targetUnitKerjaId.startsWith(prefix);
-        }
-        return pattern === targetUnitKerjaId;
-    });
+    // admin_dirjen / admin_sesditjen: check against their allowed units
+    return accessConfig.includes(targetUnitKerjaId);
 }
 
 /**
@@ -171,8 +183,15 @@ export function getAllowedActions(role: Role, module: Module): Action[] {
 }
 
 /**
- * Check if role is read-only (auditor)
+ * Check if role is read-only (cannot create/update/delete)
  */
 export function isReadOnlyRole(role: Role): boolean {
-    return role === 'auditor' || role === 'user';
+    return role === 'auditor' || role === 'staff' || role === 'user';
+}
+
+/**
+ * Check if role has zero access (new users awaiting role assignment)
+ */
+export function isNoAccessRole(role: Role): boolean {
+    return role === 'user';
 }

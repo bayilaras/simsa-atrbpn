@@ -6,13 +6,14 @@ import { validateBody } from '../middlewares/validate.middleware';
 import { createArsipVitalSchema, updateArsipVitalSchema } from '../validators/schemas';
 
 import { printTemplateService } from '../services/print-template.service';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const router = Router();
 
 // Print Daftar Arsip Vital
 router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         if (!unitKerjaId) return res.status(400).json({ error: 'Unit Kerja ID required' });
 
         const pdfBuffer = await printTemplateService.generateDaftarArsipVital(unitKerjaId);
@@ -31,7 +32,7 @@ router.use(authMiddleware);
 // GET /api/arsip-vital - List all arsip vital
 router.get('/', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { kategoriVital, tingkatKekritisan, statusProteksi, search, page, limit } = req.query;
 
         if (!unitKerjaId) {
@@ -57,7 +58,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
 // GET /api/arsip-vital/stats - Get statistics
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -73,7 +74,7 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 // GET /api/arsip-vital/due-review - Get items due for review
 router.get('/due-review', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { daysAhead } = req.query;
 
         if (!unitKerjaId) {

@@ -1,0 +1,89 @@
+﻿TAP version 13
+1..1
+not ok 1 - src/__tests__/permissions.test.ts # time=19.80ms {
+    1..9
+    ok 1 - hasPermission # time=3.46ms {
+        1..10
+        ok 1 - super_admin should have all permissions on surat_masuk # time=1.25ms
+        ok 2 - admin_dirjen should have full CRUD on surat_masuk # time=0.25ms
+        ok 3 - admin_sesditjen should have full CRUD on surat_masuk # time=0.17ms
+        ok 4 - staff should only have read permission on surat_masuk # time=0.14ms
+        ok 5 - user should have NO permissions on surat_masuk # time=0.19ms
+        ok 6 - auditor should have read and export but not create/update/delete # time=0.27ms
+        ok 7 - only super_admin can destroy archives # time=0.23ms
+        ok 8 - only super_admin can manage users # time=0.17ms
+        ok 9 - should return false for non-existent module # time=0.11ms
+        ok 10 - should return false for non-existent action on existing module # time=0.10ms
+    }
+    ok 2 - canAccessUnit # time=0.70ms {
+        1..6
+        ok 1 - super_admin should access all units (wildcard) # time=0.15ms
+        ok 2 - auditor should access all units (wildcard, read-only role) # time=0.10ms
+        ok 3 - admin_dirjen should access only ditjen unit # time=0.10ms
+        ok 4 - admin_sesditjen should access sesditjen and sub-bagian units # time=0.13ms
+        ok 5 - staff should only access their own assigned unit # time=0.08ms
+        ok 6 - user should have no access to any unit # time=0.08ms
+    }
+    ok 3 - isReadOnlyRole # time=0.30ms {
+        1..4
+        ok 1 - staff should be read-only # time=0.07ms
+        ok 2 - auditor should be read-only # time=0.05ms
+        ok 3 - user should be read-only # time=0.06ms
+        ok 4 - admin roles should NOT be read-only # time=0.10ms
+    }
+    ok 4 - isNoAccessRole # time=0.26ms {
+        1..3
+        ok 1 - user should be no-access role # time=0.06ms
+        ok 2 - staff should NOT be no-access # time=0.08ms
+        ok 3 - admin roles should NOT be no-access # time=0.09ms
+    }
+    not ok 5 - getAllowedActions # time=9.57ms {
+        1..6
+        ok 1 - super_admin should have all actions on arsip # time=0.88ms
+        ok 2 - staff should only have read on arsip # time=0.47ms
+        ok 3 - user should have NO actions on arsip # time=0.08ms
+        ok 4 - auditor should only have read and export on surat_masuk # time=0.21ms
+        not ok 5 - auditor should only have read on audit_log # time=7.72ms
+            ---
+            error:
+                name: "AssertionError"
+                message: "expected [ 'read', 'export' ] to deeply equal [ 'read' ]"
+            at: "C:/Users/BPNSA/OneDrive/Desktop/Documents/Downloads/simsa-atrbpn/backend/src/__tests__/permissions.test.ts:197:25"
+            actual: "Array [
+  \"read\",
+  \"export\",
+]"
+            expected: "Array [
+  \"read\",
+]"
+            ...
+        ok 6 - should return empty array for non-existent module # time=0.14ms
+    }
+    ok 6 - ROLE_HIERARCHY # time=0.59ms {
+        1..2
+        ok 1 - should have correct hierarchy order # time=0.30ms
+        ok 2 - should include the staff role # time=0.20ms
+    }
+    ok 7 - permissionMiddleware # time=2.82ms {
+        1..6
+        ok 1 - should allow super_admin to create surat_masuk # time=1.21ms
+        ok 2 - should deny user from creating surat_masuk # time=0.48ms
+        ok 3 - should deny staff from creating surat_masuk # time=0.34ms
+        ok 4 - should allow staff to read surat_masuk # time=0.30ms
+        ok 5 - should deny user from reading surat_masuk # time=0.23ms
+        ok 6 - should return 401 when user is not authenticated # time=0.22ms
+    }
+    ok 8 - canWriteMiddleware # time=0.80ms {
+        1..4
+        ok 1 - should allow admin_dirjen to write # time=0.21ms
+        ok 2 - should block staff from writing # time=0.19ms
+        ok 3 - should block auditor from writing # time=0.20ms
+        ok 4 - should block regular user from writing # time=0.17ms
+    }
+    ok 9 - canReadMiddleware # time=0.55ms {
+        1..3
+        ok 1 - should allow any authenticated user to read # time=0.22ms
+        ok 2 - should allow staff to read # time=0.14ms
+        ok 3 - should return 401 when not authenticated # time=0.16ms
+    }
+}

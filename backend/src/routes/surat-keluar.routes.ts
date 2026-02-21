@@ -13,6 +13,7 @@ import {
 import auditLogService from '../services/audit-log.service';
 import { createLogger } from '../utils/logger';
 import { blobStorageService } from '../services/blob-storage.service';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const log = createLogger('SuratKeluarRoutes');
 
@@ -42,8 +43,8 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
         const validatedQuery = res.locals.validatedQuery || {};
         const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, page, limit } = validatedQuery;
 
-        // Get unitKerjaId from validated query or default to 'ditjen'
-        const unitKerjaId = validatedQuery.unitKerjaId || 'ditjen';
+        // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
+        const unitKerjaId = resolveUnitKerjaId(req) || validatedQuery.unitKerjaId;
 
         const result = await suratKeluarService.findAll({
             unitKerjaId,
@@ -67,7 +68,7 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
 // GET /api/surat-keluar/next-number - Get next number
 router.get('/next-number', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
         const { tahun } = req.query;
 
         if (!unitKerjaId) {
@@ -88,8 +89,8 @@ router.get('/next-number', async (req: AuthRequest, res, next) => {
 // GET /api/surat-keluar/stats
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        // Pass null to query ALL records (matches dashboard behavior)
-        const unitKerjaId = (req.query.unitKerjaId as string) || null;
+        // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
+        const unitKerjaId = resolveUnitKerjaId(req);
         const { tahun } = req.query;
 
         const stats = await suratKeluarService.getStats(

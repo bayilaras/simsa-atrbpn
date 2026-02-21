@@ -6,13 +6,14 @@ import { validateBody } from '../middlewares/validate.middleware';
 import { createArsipTerjagaSchema, updateArsipTerjagaSchema } from '../validators/schemas';
 
 import { printTemplateService } from '../services/print-template.service';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const router = Router();
 
 // Print Daftar Arsip Terjaga
 router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         if (!unitKerjaId) return res.status(400).json({ error: 'Unit Kerja ID required' });
 
         const pdfBuffer = await printTemplateService.generateDaftarArsipTerjaga(unitKerjaId);
@@ -32,7 +33,7 @@ router.use(authMiddleware);
 router.get('/', async (req: AuthRequest, res, next) => {
     try {
         const { kategoriTerjaga, statusPelaporan, statusKepatuhan, search, page, limit } = req.query;
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -57,7 +58,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
 // GET /api/arsip-terjaga/stats - Get statistics
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -73,7 +74,7 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 // GET /api/arsip-terjaga/due-reporting - Get items due for reporting
 router.get('/due-reporting', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { daysAhead } = req.query;
 
         if (!unitKerjaId) {
@@ -94,7 +95,7 @@ router.get('/due-reporting', async (req: AuthRequest, res, next) => {
 // GET /api/arsip-terjaga/laporan-anri - Generate ANRI report data
 router.get('/laporan-anri', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { tahun } = req.query;
 
         if (!unitKerjaId) {

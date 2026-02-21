@@ -13,6 +13,7 @@ import {
 import auditLogService from '../services/audit-log.service';
 import { createLogger } from '../utils/logger';
 import { blobStorageService } from '../services/blob-storage.service';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const log = createLogger('SuratMasukRoutes');
 
@@ -43,8 +44,8 @@ router.get('/', validateQuery(querySuratMasukSchema), async (req: AuthRequest, r
         const validatedQuery = res.locals.validatedQuery || {};
         const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, search, page, limit } = validatedQuery;
 
-        // Get unitKerjaId from validated query or default to 'ditjen'
-        const unitKerjaId = validatedQuery.unitKerjaId || 'ditjen';
+        // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
+        const unitKerjaId = resolveUnitKerjaId(req) || validatedQuery.unitKerjaId;
 
         const result = await suratMasukService.findAll({
             unitKerjaId,
@@ -68,13 +69,12 @@ router.get('/', validateQuery(querySuratMasukSchema), async (req: AuthRequest, r
 // GET /api/surat-masuk/stats - Get statistics
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        // Pass null to query ALL records (matches dashboard behavior)
-        // Only filter if explicit unitKerjaId query param is provided
-        const unitKerjaId = (req.query.unitKerjaId as string) || null;
+        // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
+        const unitKerjaId = resolveUnitKerjaId(req);
         const { tahun } = req.query;
 
         log.info({
-            queryUnitKerjaId: req.query.unitKerjaId,
+            userRole: req.user?.role,
             userUnitKerjaId: req.user?.unitKerjaId,
             resolvedUnitKerjaId: unitKerjaId,
             tahun,
@@ -96,7 +96,7 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 // GET /api/surat-masuk/next-number - Get next noUrut
 router.get('/next-number', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
         const { tahun } = req.query;
 
         if (!unitKerjaId) {
@@ -118,7 +118,7 @@ router.get('/next-number', async (req: AuthRequest, res, next) => {
 // NOTE: This route MUST be defined before /:id to avoid being matched as an ID
 router.get('/pending-for-reply', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
