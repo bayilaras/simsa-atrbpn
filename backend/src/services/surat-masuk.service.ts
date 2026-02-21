@@ -206,29 +206,57 @@ export class SuratMasukService {
     }
 
     async getStats(unitKerjaId: string, tahun?: number) {
-        const conditions = [
+        const conditions: any[] = [
             eq(suratMasuk.unitKerjaId, unitKerjaId),
-            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // NULL-safe
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,
         ];
         if (tahun) {
             conditions.push(eq(suratMasuk.tahun, tahun));
         }
 
         try {
+            // DIAGNOSTIC: Count ALL records in table (no conditions)
+            const allCount = await db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(suratMasuk);
+            console.log('[getStats] DIAGNOSTIC - Total records in table (no filter):', allCount[0]?.count);
+
+            // DIAGNOSTIC: Count records by unitKerjaId only
+            const byUnitCount = await db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(suratMasuk)
+                .where(eq(suratMasuk.unitKerjaId, unitKerjaId));
+            console.log('[getStats] DIAGNOSTIC - Records for unitKerjaId=' + unitKerjaId + ':', byUnitCount[0]?.count);
+
+            // DIAGNOSTIC: Get distinct unitKerjaId values
+            const distinctUnits = await db
+                .select({ uid: suratMasuk.unitKerjaId, count: sql<number>`count(*)::int` })
+                .from(suratMasuk)
+                .groupBy(suratMasuk.unitKerjaId);
+            console.log('[getStats] DIAGNOSTIC - Distinct unitKerjaIds:', JSON.stringify(distinctUnits));
+
+            // Main stats query using CASE/WHEN
             const stats = await db
                 .select({
                     total: sql<number>`count(*)::int`,
-                    belumDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'belum_dibalas')::int`,
-                    sudahDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'sudah_dibalas')::int`,
-                    diarsipkan: sql<number>`count(*) filter (where ${suratMasuk.isArchived} = true)::int`,
+                    belumDibalas: sql<number>`sum(case when ${suratMasuk.status} = 'belum_dibalas' then 1 else 0 end)::int`,
+                    sudahDibalas: sql<number>`sum(case when ${suratMasuk.status} = 'sudah_dibalas' then 1 else 0 end)::int`,
+                    diarsipkan: sql<number>`sum(case when ${suratMasuk.isArchived} = true then 1 else 0 end)::int`,
                 })
                 .from(suratMasuk)
                 .where(and(...conditions));
 
-            return stats[0];
+            console.log('[getStats] unitKerjaId:', unitKerjaId, 'tahun:', tahun, 'stats result:', JSON.stringify(stats));
+
+            const result = stats[0];
+            return {
+                total: result?.total ?? 0,
+                belumDibalas: result?.belumDibalas ?? 0,
+                sudahDibalas: result?.sudahDibalas ?? 0,
+                diarsipkan: result?.diarsipkan ?? 0,
+            };
         } catch (error) {
             console.error('[SuratMasukService.getStats] Query failed:', error);
-            // Return defaults so the frontend at least shows something
             return { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 };
         }
     }
