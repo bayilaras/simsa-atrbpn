@@ -206,54 +206,45 @@ export class SuratMasukService {
     }
 
     async getStats(unitKerjaId: string, tahun?: number) {
-        const conditions: any[] = [
-            eq(suratMasuk.unitKerjaId, unitKerjaId),
-            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,
-        ];
-        if (tahun) {
-            conditions.push(eq(suratMasuk.tahun, tahun));
-        }
-
         try {
-            // DIAGNOSTIC: Count ALL records in table (no conditions)
-            const allCount = await db
-                .select({ count: sql<number>`count(*)::int` })
-                .from(suratMasuk);
-            console.log('[getStats] DIAGNOSTIC - Total records in table (no filter):', allCount[0]?.count);
+            // Use raw SQL to bypass Drizzle ORM eq() bug with Neon serverless driver
+            // Diagnostic showed: eq(suratMasuk.unitKerjaId, 'ditjen') returns 0 rows
+            // while groupBy reveals all 1720 records have unitKerjaId='ditjen'
+            let query = sql`
+                SELECT 
+                    count(*)::int as total,
+                    sum(case when status = 'belum_dibalas' then 1 else 0 end)::int as "belumDibalas",
+                    sum(case when status = 'sudah_dibalas' then 1 else 0 end)::int as "sudahDibalas",
+                    sum(case when is_archived = true then 1 else 0 end)::int as "diarsipkan"
+                FROM surat_masuk
+                WHERE unit_kerja_id = ${unitKerjaId}
+                AND (is_deleted = false OR is_deleted IS NULL)
+            `;
 
-            // DIAGNOSTIC: Count records by unitKerjaId only
-            const byUnitCount = await db
-                .select({ count: sql<number>`count(*)::int` })
-                .from(suratMasuk)
-                .where(eq(suratMasuk.unitKerjaId, unitKerjaId));
-            console.log('[getStats] DIAGNOSTIC - Records for unitKerjaId=' + unitKerjaId + ':', byUnitCount[0]?.count);
+            if (tahun) {
+                query = sql`
+                    SELECT 
+                        count(*)::int as total,
+                        sum(case when status = 'belum_dibalas' then 1 else 0 end)::int as "belumDibalas",
+                        sum(case when status = 'sudah_dibalas' then 1 else 0 end)::int as "sudahDibalas",
+                        sum(case when is_archived = true then 1 else 0 end)::int as "diarsipkan"
+                    FROM surat_masuk
+                    WHERE unit_kerja_id = ${unitKerjaId}
+                    AND (is_deleted = false OR is_deleted IS NULL)
+                    AND tahun = ${tahun}
+                `;
+            }
 
-            // DIAGNOSTIC: Get distinct unitKerjaId values
-            const distinctUnits = await db
-                .select({ uid: suratMasuk.unitKerjaId, count: sql<number>`count(*)::int` })
-                .from(suratMasuk)
-                .groupBy(suratMasuk.unitKerjaId);
-            console.log('[getStats] DIAGNOSTIC - Distinct unitKerjaIds:', JSON.stringify(distinctUnits));
+            const result = await db.execute(query);
+            const row = result.rows?.[0] || result[0];
 
-            // Main stats query using CASE/WHEN
-            const stats = await db
-                .select({
-                    total: sql<number>`count(*)::int`,
-                    belumDibalas: sql<number>`sum(case when ${suratMasuk.status} = 'belum_dibalas' then 1 else 0 end)::int`,
-                    sudahDibalas: sql<number>`sum(case when ${suratMasuk.status} = 'sudah_dibalas' then 1 else 0 end)::int`,
-                    diarsipkan: sql<number>`sum(case when ${suratMasuk.isArchived} = true then 1 else 0 end)::int`,
-                })
-                .from(suratMasuk)
-                .where(and(...conditions));
+            console.log('[getStats] Raw SQL result:', JSON.stringify(row));
 
-            console.log('[getStats] unitKerjaId:', unitKerjaId, 'tahun:', tahun, 'stats result:', JSON.stringify(stats));
-
-            const result = stats[0];
             return {
-                total: result?.total ?? 0,
-                belumDibalas: result?.belumDibalas ?? 0,
-                sudahDibalas: result?.sudahDibalas ?? 0,
-                diarsipkan: result?.diarsipkan ?? 0,
+                total: Number(row?.total) || 0,
+                belumDibalas: Number(row?.belumDibalas) || 0,
+                sudahDibalas: Number(row?.sudahDibalas) || 0,
+                diarsipkan: Number(row?.diarsipkan) || 0,
             };
         } catch (error) {
             console.error('[SuratMasukService.getStats] Query failed:', error);
