@@ -1,9 +1,10 @@
 import { Router, Response } from 'express';
-import { notificationService } from '../services/notification.service';
-import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
-import { validateBody } from '../middlewares/validate.middleware';
-import { markAllReadSchema } from '../validators/schemas';
-import { createLogger } from '../utils/logger';
+import { notificationService } from '../services/notification.service.js';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
+import { validateBody } from '../middlewares/validate.middleware.js';
+import { markAllReadSchema } from '../validators/schemas.js';
+import { createLogger } from '../utils/logger.js';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const log = createLogger('NotificationRoutes');
 
@@ -38,7 +39,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         const { limit } = req.query;
         // Use user's unitKerjaId if not provided in query (or override if strict)
         // For now, allow query param but default to user's
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
 
         if (!unitKerjaId) {
             res.status(400).json({ error: 'unitKerjaId is required' });
@@ -82,7 +83,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
  */
 router.get('/count', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
 
         if (!unitKerjaId) {
             res.status(400).json({ error: 'unitKerjaId is required' });
@@ -112,7 +113,7 @@ router.get('/count', async (req: AuthRequest, res: Response) => {
  */
 router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
 
         if (!unitKerjaId) {
             res.status(400).json({ error: 'unitKerjaId is required' });
@@ -143,7 +144,7 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
 router.get('/arsip', async (req: AuthRequest, res: Response) => {
     try {
         const { daysAhead } = req.query;
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
 
         if (!unitKerjaId) {
             res.status(400).json({ error: 'unitKerjaId is required' });

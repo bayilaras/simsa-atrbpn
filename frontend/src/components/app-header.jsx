@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Bell, Building2, Users, ChevronDown, LogOut, User, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw, BookOpen, ExternalLink } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
@@ -33,6 +33,16 @@ const ROLE_LABELS = {
     user: 'Pengguna',
 }
 
+// Unit kerja options for super admin notification filter
+const UNIT_KERJA_OPTIONS = [
+    { id: 'ditjen', label: 'Dirjen PTPP' },
+    { id: 'sesditjen', label: 'Sesditjen' },
+    { id: 'dir_bppt', label: 'Dir. BPPT' },
+    { id: 'dir_ptep', label: 'Dir. PTEP' },
+    { id: 'dir_ktpp', label: 'Dir. KTPP' },
+    { id: 'dir_plp', label: 'Dir. PLP' },
+]
+
 export function AppHeader() {
     const { user: authUser, signOut } = useAuth()
     const navigate = useNavigate()
@@ -40,11 +50,22 @@ export function AppHeader() {
     const [searchOpen, setSearchOpen] = useState(false)
     const [activeTab, setActiveTab] = useState('all') // 'all', 'surat-masuk', 'arsip-retensi'
     const { setTheme } = useTheme()
+
+    // Super admin can switch unit kerja for notifications
+    const isSuperAdmin = authUser?.role === 'super_admin'
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(authUser?.unitKerjaId || 'ditjen')
+    const notifUnitKerjaId = isSuperAdmin ? selectedUnitKerja : authUser?.unitKerjaId
+
     const { notifications, counts, loading, hasUrgent, refresh, markAsRead, markAllAsRead, getByCategory, suratCount, arsipCount } = useNotifications({
-        unitKerjaId: authUser?.unitKerjaId,
+        unitKerjaId: notifUnitKerjaId,
         limit: 20,
         refreshInterval: 60000, // Refresh every minute
     })
+
+    // Get label for selected unit kerja
+    const selectedUnitLabel = useMemo(() => {
+        return UNIT_KERJA_OPTIONS.find(u => u.id === selectedUnitKerja)?.label || selectedUnitKerja
+    }, [selectedUnitKerja])
 
     const filteredNotifications = getByCategory(activeTab)
 
@@ -179,6 +200,24 @@ export function AppHeader() {
                                 </TooltipProvider>
                             )}
                         </div>
+
+                        {/* Super Admin: Unit Kerja Selector */}
+                        {isSuperAdmin && (
+                            <div className="px-4 pb-2">
+                                <div className="flex items-center gap-2">
+                                    <Building2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                    <select
+                                        value={selectedUnitKerja}
+                                        onChange={(e) => setSelectedUnitKerja(e.target.value)}
+                                        className="flex-1 text-xs font-medium rounded-md border border-input bg-background px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors cursor-pointer hover:bg-accent/50"
+                                    >
+                                        {UNIT_KERJA_OPTIONS.map(unit => (
+                                            <option key={unit.id} value={unit.id}>{unit.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Category Tabs: Surat | Arsip | Semua */}
                         <div className="px-4 pb-2">
