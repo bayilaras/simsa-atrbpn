@@ -1,4 +1,4 @@
-import { db } from '../config/database';
+import { db, pool } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
 import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull } from 'drizzle-orm';
 import { DatabaseError } from '../utils/errors';
@@ -207,39 +207,47 @@ export class SuratMasukService {
 
     async getStats(unitKerjaId: string, tahun?: number) {
         try {
-            // Use raw SQL to bypass Drizzle ORM eq() bug with Neon serverless driver
-            // Diagnostic showed: eq(suratMasuk.unitKerjaId, 'ditjen') returns 0 rows
-            // while groupBy reveals all 1720 records have unitKerjaId='ditjen'
-            let query = sql`
-                SELECT 
-                    count(*)::int as total,
-                    sum(case when status = 'belum_dibalas' then 1 else 0 end)::int as "belumDibalas",
-                    sum(case when status = 'sudah_dibalas' then 1 else 0 end)::int as "sudahDibalas",
-                    sum(case when is_archived = true then 1 else 0 end)::int as "diarsipkan"
-                FROM surat_masuk
-                WHERE unit_kerja_id = ${unitKerjaId}
-                AND (is_deleted = false OR is_deleted IS NULL)
-            `;
+            // Use raw pool.query() to bypass Drizzle ORM entirely
+            // Drizzle's eq() has a proven bug with Neon serverless driver
+            // where parameterized WHERE clauses return 0 rows despite data existing
+
+            let queryText: string;
+            let queryParams: any[];
 
             if (tahun) {
-                query = sql`
+                queryText = `
                     SELECT 
                         count(*)::int as total,
                         sum(case when status = 'belum_dibalas' then 1 else 0 end)::int as "belumDibalas",
                         sum(case when status = 'sudah_dibalas' then 1 else 0 end)::int as "sudahDibalas",
                         sum(case when is_archived = true then 1 else 0 end)::int as "diarsipkan"
                     FROM surat_masuk
-                    WHERE unit_kerja_id = ${unitKerjaId}
+                    WHERE unit_kerja_id = $1
                     AND (is_deleted = false OR is_deleted IS NULL)
-                    AND tahun = ${tahun}
+                    AND tahun = $2
                 `;
+                queryParams = [unitKerjaId, tahun];
+            } else {
+                queryText = `
+                    SELECT 
+                        count(*)::int as total,
+                        sum(case when status = 'belum_dibalas' then 1 else 0 end)::int as "belumDibalas",
+                        sum(case when status = 'sudah_dibalas' then 1 else 0 end)::int as "sudahDibalas",
+                        sum(case when is_archived = true then 1 else 0 end)::int as "diarsipkan"
+                    FROM surat_masuk
+                    WHERE unit_kerja_id = $1
+                    AND (is_deleted = false OR is_deleted IS NULL)
+                `;
+                queryParams = [unitKerjaId];
             }
 
-            const result = await db.execute(query);
-            const row = result.rows?.[0] || result[0];
+            console.log('[getStats] Running pool.query with unitKerjaId:', unitKerjaId, 'tahun:', tahun);
 
-            console.log('[getStats] Raw SQL result:', JSON.stringify(row));
+            const result = await pool.query(queryText, queryParams);
 
+            console.log('[getStats] pool.query result:', JSON.stringify(result.rows));
+
+            const row = result.rows?.[0];
             return {
                 total: Number(row?.total) || 0,
                 belumDibalas: Number(row?.belumDibalas) || 0,

@@ -18,5 +18,8 @@ const pool = new Pool({ connectionString: env.DATABASE_URL });
 // Create drizzle client
 export const db = drizzle({ client: pool, schema });
 
+// Export raw pool for queries that need to bypass Drizzle ORM
+export { pool };
+
 export type Database = typeof db;
 
