@@ -23,9 +23,13 @@ export class SuratMasukService {
 
         // Build where conditions
         const conditions = [
-            eq(suratMasuk.unitKerjaId, unitKerjaId),
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
         ];
+
+        // Only filter by unitKerjaId when provided (super_admin sees all)
+        if (unitKerjaId) {
+            conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
+        }
 
         if (tahun) {
             conditions.push(eq(suratMasuk.tahun, tahun));

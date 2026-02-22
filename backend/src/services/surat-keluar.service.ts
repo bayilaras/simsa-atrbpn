@@ -22,9 +22,13 @@ export class SuratKeluarService {
         const offset = (page - 1) * limit;
 
         const conditions = [
-            eq(suratKeluar.unitKerjaId, unitKerjaId),
             eq(suratKeluar.isDeleted, false),  // Exclude soft-deleted records
         ];
+
+        // Only filter by unitKerjaId when provided (super_admin sees all)
+        if (unitKerjaId) {
+            conditions.push(eq(suratKeluar.unitKerjaId, unitKerjaId));
+        }
 
         if (tahun) {
             conditions.push(eq(suratKeluar.tahun, tahun));
