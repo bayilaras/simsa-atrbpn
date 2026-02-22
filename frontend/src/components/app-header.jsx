@@ -394,7 +394,7 @@ export function AppHeader() {
                             </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild className="cursor-pointer rounded-md">
-                            <a href="https://bayilaras.gitbook.io/panduan-simsa" target="_blank" rel="noopener noreferrer" className="flex items-center">
+                            <a href="https://panduan-simsa.vercel.app" target="_blank" rel="noopener noreferrer" className="flex items-center">
                                 <BookOpen className="mr-2 h-4 w-4 text-muted-foreground" />
                                 Panduan Pengguna
                                 <ExternalLink className="ml-auto h-3 w-3 opacity-50" />

@@ -1,0 +1,173 @@
+:root {
+  --ifm-color-primary: #1a56db;
+  --ifm-color-primary-dark: #1648ba;
+  --ifm-color-primary-darker: #1544b0;
+  --ifm-color-primary-darkest: #113891;
+  --ifm-color-primary-light: #1e64f5;
+  --ifm-color-primary-lighter: #2e6ff6;
+  --ifm-color-primary-lightest: #5d90f8;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
+  --ifm-heading-font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --ifm-footer-background-color: #1e293b;
+  --ifm-footer-color: #e2e8f0;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #60a5fa;
+  --ifm-color-primary-dark: #3b93f9;
+  --ifm-color-primary-darker: #2889f8;
+  --ifm-color-primary-darkest: #0870e6;
+  --ifm-color-primary-light: #85b7fb;
+  --ifm-color-primary-lighter: #98c3fc;
+  --ifm-color-primary-lightest: #c4ddfd;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-footer-background-color: #0f172a;
+}
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* Better heading styles */
+.markdown h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 1.5rem;
+}
+
+.markdown h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--ifm-toc-border-color);
+}
+
+/* Table styling */
+.markdown table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.markdown table th {
+  background-color: var(--ifm-color-primary);
+  color: white;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+}
+
+[data-theme='dark'] .markdown table th {
+  background-color: var(--ifm-color-primary-dark);
+}
+
+.markdown table td {
+  padding: 0.75rem 1rem;
+}
+
+.markdown table tr:nth-child(even) {
+  background-color: var(--ifm-color-emphasis-100);
+}
+
+/* Info boxes / admonitions */
+.alert {
+  border-radius: 8px;
+}
+
+/* Code blocks in pre */
+.markdown pre {
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+/* Sidebar category labels */
+.theme-doc-sidebar-item-category>.menu__list-item-collapsible>.menu__link {
+  font-weight: 600;
+}
+
+/* Hero section on landing page */
+.hero-banner {
+  background: linear-gradient(135deg, #1a56db 0%, #3b82f6 50%, #60a5fa 100%);
+  padding: 3rem 2rem;
+  border-radius: 12px;
+  color: white;
+  margin-bottom: 2rem;
+}
+
+[data-theme='dark'] .hero-banner {
+  background: linear-gradient(135deg, #1e3a5f 0%, #1a56db 50%, #2563eb 100%);
+}
+
+.hero-banner h1 {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  border: none;
+  color: white;
+}
+
+.hero-banner p {
+  font-size: 1.15rem;
+  opacity: 0.9;
+  margin-bottom: 0;
+}
+
+/* Feature cards grid */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin: 2rem 0;
+}
+
+.feature-card {
+  background: var(--ifm-card-background-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 10px;
+  padding: 1.5rem;
+  transition: all 0.2s ease;
+  text-decoration: none !important;
+  color: inherit !important;
+}
+
+.feature-card:hover {
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 4px 20px rgba(26, 86, 219, 0.12);
+  transform: translateY(-2px);
+}
+
+[data-theme='dark'] .feature-card:hover {
+  box-shadow: 0 4px 20px rgba(96, 165, 250, 0.15);
+}
+
+.feature-card h3 {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.feature-card p {
+  font-size: 0.9rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 0;
+}
+
+/* Footer tweaks */
+.footer__title {
+  font-weight: 700;
+}
+
+/* Breadcrumbs */
+.breadcrumbs__link {
+  font-size: 0.85rem;
+}
+
+/* Pagination navigation */
+.pagination-nav__link {
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.pagination-nav__link:hover {
+  border-color: var(--ifm-color-primary);
+}

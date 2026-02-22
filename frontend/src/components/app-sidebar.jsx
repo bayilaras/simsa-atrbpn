@@ -221,7 +221,7 @@ const menuGroups = [
 import { useAuth } from '@/context/AuthContext'
 
 // URL for the documentation/user guide
-const DOCS_URL = 'https://bayilaras.gitbook.io/panduan-simsa'
+const DOCS_URL = 'https://panduan-simsa.vercel.app'
 
 export function AppSidebar() {
     const location = useLocation()
