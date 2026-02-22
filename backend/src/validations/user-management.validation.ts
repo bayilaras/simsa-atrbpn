@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Valid roles
-const roles = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'user'] as const;
+const roles = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'user'] as const;
 
 // Query params for listing users
 export const listUsersSchema = z.object({
@@ -35,6 +35,7 @@ export const createUserSchema = z.object({
     unitKerjaId: z.string().nullable().optional(),
     jabatan: z.string().max(100).nullable().optional(),
     nip: z.string().max(30).nullable().optional(),
+    password: z.string().min(8, 'Password minimal 8 karakter').optional(),
 });
 
 export type ListUsersQuery = z.infer<typeof listUsersSchema>;

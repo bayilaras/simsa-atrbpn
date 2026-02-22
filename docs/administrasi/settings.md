@@ -6,8 +6,11 @@ Panduan menggunakan halaman pengaturan SIMSA.
 
 ## Akses Settings
 
-1. Klik ikon **⚙️ Settings** di bagian bawah sidebar.
-2. Halaman Settings terdiri dari beberapa tab sesuai role Anda.
+> ⚠️ Menu **Settings** (⚙️) di sidebar **hanya muncul untuk Super Admin**. Pengguna lain dapat mengakses halaman profil melalui dropdown user di header.
+
+1. **Super Admin**: Klik ikon **⚙️ Settings** di bagian bawah sidebar.
+2. **Semua pengguna**: Klik avatar Anda di header → pilih **Profil Saya** atau **Pengaturan**.
+3. Halaman Settings terdiri dari beberapa tab sesuai role Anda.
 
 ---
 
@@ -27,7 +30,7 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 
 ## Tab Unit Kerja
 
-> 🔒 Hanya tersedia untuk **Admin** dan **Super Admin**.
+> 🔒 Hanya tersedia untuk **Super Admin**.
 
 Tab ini menampilkan daftar unit kerja yang terdaftar di sistem.
 
@@ -54,7 +57,7 @@ Tab ini menampilkan daftar unit kerja yang terdaftar di sistem.
 
 ## Tab Template Surat
 
-> 🔒 Hanya tersedia untuk **Admin** dan **Super Admin**.
+> 🔒 Hanya tersedia untuk **Super Admin**.
 
 Tab ini mengelola template surat yang digunakan dalam sistem.
 

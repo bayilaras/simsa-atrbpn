@@ -1,6 +1,7 @@
 import { db } from '../config/database';
 import { users, unitKerja } from '../db/schema';
 import { eq, ilike, or, and, desc, sql } from 'drizzle-orm';
+import { auth } from '../config/auth';
 
 export interface UserFilters {
     search?: string;
@@ -26,6 +27,7 @@ export interface CreateUserData {
     unitKerjaId?: string | null;
     jabatan?: string | null;
     nip?: string | null;
+    password?: string;
 }
 
 // Valid roles
@@ -69,25 +71,61 @@ export const userManagementService = {
             }
         }
 
-        const [newUser] = await db
-            .insert(users)
-            .values({
-                email: data.email,
-                name: data.name,
-                role: data.role,
-                unitKerjaId: data.unitKerjaId || null,
-                jabatan: data.jabatan || null,
-                nip: data.nip || null,
-                isActive: true,
-                emailVerified: false,
-            })
-            .returning();
+        let userId: string;
 
-        if (!newUser) {
-            throw new Error('Failed to create user');
+        if (data.password) {
+            // Use Better Auth signup API to create user with email/password credentials
+            // This creates both the user record AND the account (with hashed password)
+            const signupResult = await auth.api.signUpEmail({
+                body: {
+                    email: data.email,
+                    password: data.password,
+                    name: data.name,
+                },
+            });
+
+            if (!signupResult?.user?.id) {
+                throw new Error('Failed to create user with Better Auth');
+            }
+
+            userId = signupResult.user.id;
+
+            // Update additional fields that Better Auth doesn't handle
+            await db
+                .update(users)
+                .set({
+                    role: data.role,
+                    unitKerjaId: data.unitKerjaId || null,
+                    jabatan: data.jabatan || null,
+                    nip: data.nip || null,
+                    isActive: true,
+                    emailVerified: true, // Admin-created, auto-verified
+                })
+                .where(eq(users.id, userId));
+        } else {
+            // No password — user will login via Google OAuth only
+            const [newUser] = await db
+                .insert(users)
+                .values({
+                    email: data.email,
+                    name: data.name,
+                    role: data.role,
+                    unitKerjaId: data.unitKerjaId || null,
+                    jabatan: data.jabatan || null,
+                    nip: data.nip || null,
+                    isActive: true,
+                    emailVerified: false,
+                })
+                .returning();
+
+            if (!newUser) {
+                throw new Error('Failed to create user');
+            }
+
+            userId = newUser.id;
         }
 
-        return this.getUserById(newUser.id);
+        return this.getUserById(userId);
     },
 
     /**

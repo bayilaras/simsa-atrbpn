@@ -3,7 +3,7 @@
 **Sistem Informasi Manajemen Surat & Arsip**
 *Kementerian ATR/BPN — Dirjen PTPP*
 
-> Versi 1.0.0 (BETA) | Terakhir diperbarui: Februari 2026
+> Versi 1.0.0 (BETA) | Terakhir diperbarui: 22 Februari 2026
 
 ---
 
@@ -40,6 +40,7 @@
    - 9.4 Master Data
    - 9.5 Settings
 10. [Hak Akses Berdasarkan Role](#10-hak-akses-berdasarkan-role)
+11. [Notifikasi & Fitur Tambahan](#11-notifikasi--fitur-tambahan)
 
 ---
 
@@ -220,7 +221,7 @@ Setelah berhasil login, Anda akan diarahkan ke halaman **Dashboard** yang menamp
 
 ## 4. Navigasi Sidebar
 
-Sidebar adalah menu navigasi utama di sisi kiri layar. Sidebar dapat dilipat/diperluas dengan mengklik ikon hamburger.
+Sidebar adalah menu navigasi utama di sisi kiri layar. Sidebar dapat dilipat/diperluas dengan mengklik ikon hamburger (☰) di header.
 
 ### 4.1 Struktur Menu Sidebar
 
@@ -229,43 +230,52 @@ graph LR
     A[SIMSA Sidebar] --> B[Utama]
     A --> C[Manajemen Surat]
     A --> D[Siklus Hidup Arsip]
-    A --> E[Layanan & Fisik]
-    A --> F["Media & Autentikasi"]
+    A --> E["Layanan & Fisik 🔒"]
+    A --> F["Media & Autentikasi 🔒"]
     A --> G[Administrasi]
+    A --> H[Lainnya]
 
     B --> B1[Dashboard]
 
     C --> C1[Surat]
     C1 --> C1a[Surat Masuk]
     C1 --> C1b[Surat Keluar]
-    C --> C2[Distribusi]
+    C --> C2["Distribusi 🔒"]
 
     D --> D1[Arsip Aktif]
     D1 --> D1a[Arsip Surat Masuk]
     D1 --> D1b[Arsip Surat Keluar]
-    D --> D2["Pemberkasan (Dosir)"]
-    D --> D3[Jadwal Retensi]
-    D --> D4[Manajemen Retensi]
-    D --> D5[Penyusutan]
+    D --> D2["Pemberkasan Dosir 🔒"]
+    D --> D3["Jadwal Retensi 🔒"]
+    D --> D4["Manajemen Retensi 🔒"]
+    D --> D5["Penyusutan 🔒"]
 
-    E --> E1[Layanan Arsip]
-    E --> E2[Peminjaman]
-    E --> E3[Lokasi Simpan]
+    E --> E1["Layanan Arsip 🔒"]
+    E --> E2["Peminjaman 🔒"]
+    E --> E3["Lokasi Simpan 🔒"]
     E --> E4["Arsip Vital 🔒"]
     E --> E5["Arsip Terjaga 🔒"]
 
-    F --> F1[Arsip Elektronik]
-    F --> F2[Autentikasi]
-    F --> F3[Tunjuk Silang]
+    F --> F1["Arsip Elektronik 🔒"]
+    F --> F2["Autentikasi 🔒"]
+    F --> F3["Tunjuk Silang 🔒"]
 
     G --> G1[Laporan]
-    G --> G2[Audit Log]
-    G --> G3["User Management 🔒"]
+    G --> G2["Audit Log 🔒"]
+    G --> G3["User Management 🔒🔒"]
     G --> G4["Master Data 🔒"]
+
+    H --> H1["Settings ⚙️"]
+    H --> H2["📖 Panduan"]
 ```
 
 > [!NOTE]
-> Menu dengan ikon 🔒 hanya tersedia untuk pengguna dengan role **Admin** atau **Super Admin**.
+> - Menu dengan 🔒 hanya tersedia untuk **Admin** (Admin Dirjen / Admin Sesditjen) atau **Super Admin**.
+> - Menu dengan 🔒🔒 hanya tersedia untuk **Super Admin** saja.
+> - **Settings** (⚙️) hanya muncul untuk **Super Admin**.
+> - Link **📖 Panduan** mengarah ke dokumentasi online (GitBook) dan tersedia untuk semua pengguna.
+> - **Staff** hanya melihat: Dashboard, Surat Masuk/Keluar (read-only), Arsip Aktif (read-only), dan Laporan.
+> - **Auditor** melihat: Dashboard dan Audit Log.
 
 ---
 
@@ -324,9 +334,9 @@ flowchart LR
 1. Klik **ikon mata** (👁️) atau klik baris surat pada tabel.
 2. Halaman detail menampilkan informasi lengkap surat beserta lampiran.
 3. Tombol aksi tersedia di bagian atas (sesuai role):
-   - **Edit** — Ubah data surat
-   - **Distribusikan** — Kirim surat ke unit kerja lain
-   - **Arsipkan** — Pindahkan ke arsip
+   - **Edit** — Ubah data surat (Admin/Super Admin)
+   - **Distribusikan** — Kirim surat ke unit kerja lain (Admin/Super Admin)
+   - **Arsipkan** — Pindahkan ke arsip (Admin/Super Admin)
    - **Hapus** — Hapus surat (hanya Admin)
 
 #### Mengedit Surat Masuk
@@ -370,7 +380,7 @@ Halaman **Surat Keluar** mengelola semua surat yang dikirim dari unit kerja Anda
 
 Halaman **Distribusi** menampilkan surat-surat yang didistribusikan kepada atau dari unit kerja Anda.
 
-1. Klik menu **Distribusi** pada sidebar.
+1. Klik menu **Distribusi** pada sidebar (hanya tersedia untuk Admin dan Super Admin).
 2. Anda dapat melihat daftar surat yang perlu ditindaklanjuti.
 3. Klik surat untuk melihat detail dan mengambil tindakan.
 
@@ -536,7 +546,7 @@ Mengelola informasi lokasi fisik penyimpanan arsip.
 3. Admin dapat **menambah**, **mengedit**, atau **menghapus** lokasi.
 
 > [!NOTE]
-> Hanya tersedia untuk pengguna dengan role **Admin**.
+> Seluruh grup menu **Layanan & Fisik** hanya tersedia untuk pengguna dengan role **Admin** (Admin Dirjen, Admin Sesditjen) atau **Super Admin**.
 
 ---
 
@@ -681,7 +691,10 @@ Mengelola data referensi utama yang digunakan di seluruh sistem.
 
 Pengaturan sistem SIMSA, termasuk profil pengguna, unit kerja, dan template surat.
 
-1. Klik **Settings** (⚙️) di bagian bawah sidebar.
+> [!IMPORTANT]
+> Menu **Settings** (⚙️) di sidebar **hanya muncul untuk Super Admin**. Pengguna lain dapat mengakses halaman Settings melalui menu **Profil Saya** / **Pengaturan** di dropdown user di header.
+
+1. Klik **Settings** (⚙️) di bagian bawah sidebar (Super Admin), atau klik avatar Anda di header lalu pilih **Pengaturan**.
 
 #### Tab Profil
 
@@ -694,7 +707,7 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 > [!NOTE]
 > Perubahan nama akan langsung berlaku di seluruh sistem.
 
-#### Tab Unit Kerja (Admin/Super Admin)
+#### Tab Unit Kerja (Super Admin)
 
 1. Buka tab **Unit Kerja**.
 2. Lihat daftar unit kerja yang terdaftar.
@@ -702,13 +715,13 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 4. Klik ikon **edit** untuk mengubah nama/kode unit kerja.
 5. Klik ikon **hapus** untuk menghapus unit kerja.
 
-#### Tab Template Surat (Admin/Super Admin)
+#### Tab Template Surat (Super Admin)
 
 1. Buka tab **Template**.
 2. Lihat dan kelola template surat yang digunakan dalam sistem.
 
 > [!IMPORTANT]
-> Tab Unit Kerja dan Template hanya tersedia untuk **Admin** dan **Super Admin**.
+> Tab Unit Kerja dan Template hanya tersedia untuk **Super Admin**.
 
 ---
 
@@ -719,23 +732,31 @@ SIMSA menggunakan sistem role-based access control (RBAC) untuk mengatur hak aks
 | Fitur | Staff | Admin Dirjen | Admin Sesditjen | Super Admin | Auditor |
 |-------|:-----:|:------------:|:---------------:|:-----------:|:-------:|
 | Dashboard | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Surat Masuk/Keluar | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Distribusi | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Arsip Aktif | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dosir | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Retensi | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Peminjaman | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Layanan Arsip | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Laporan | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Surat Masuk/Keluar | 👁️ Lihat | ✅ | ✅ | ✅ | ❌ |
+| Distribusi | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Arsip Aktif | 👁️ Lihat | ✅ | ✅ | ✅ | ❌ |
+| Dosir | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Jadwal Retensi | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Manajemen Retensi | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Penyusutan | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Layanan Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Peminjaman | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Lokasi Simpan | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Arsip Vital | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Arsip Terjaga | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Arsip Elektronik | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Autentikasi Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Tunjuk Silang | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Klasifikasi Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Jadwal Retensi | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Lokasi Simpan | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Laporan | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Audit Log | ❌ | ✅ | ✅ | ✅ | ✅ |
 | User Management | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Settings | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Settings (sidebar) | ❌ | ❌ | ❌ | ✅ | ❌ |
 | Tab Pengawasan | ❌ | ❌ | ❌ | ✅ | ❌ |
+
+> [!NOTE]
+> - 👁️ **Lihat** = Staff hanya bisa **melihat** data (read-only), **tidak bisa** menambah, mengedit, atau menghapus.
+> - Semua pengguna dapat mengakses **Profil** melalui dropdown user di header.
 
 ### Cara Kerja Filter Data per Unit Kerja
 
@@ -788,30 +809,99 @@ flowchart TD
 
 ---
 
-## Fitur Tambahan
+## 11. Notifikasi & Fitur Tambahan
 
-### Bulk Upload
+### 11.1 Notifikasi
+
+Ikon **🔔 Notifikasi** di header menampilkan panel dropdown dengan fitur berikut:
+
+#### Tab Kategori Notifikasi
+
+Panel notifikasi memiliki **3 tab** untuk memfilter notifikasi:
+
+| Tab | Ikon | Keterangan |
+|-----|------|------------|
+| **Surat** | 📄 | Surat masuk yang **belum diproses** — ditandai dengan jumlah hari sejak diterima |
+| **Arsip** | 📦 | Arsip yang **mendekati masa retensi/kadaluarsa** — ditandai dengan sisa hari |
+| **Semua** | 🔔 | Gabungan semua notifikasi dari kedua kategori |
+
+#### Filter Unit Kerja (Super Admin)
+
+Jika Anda login sebagai **Super Admin**, panel notifikasi menampilkan **dropdown pilihan Unit Kerja** di bagian atas. Anda dapat memilih unit kerja berikut untuk melihat notifikasi spesifik:
+
+| Unit Kerja |
+|------------|
+| Ditjen PTPP |
+| Sesditjen |
+| Dir. BPPT |
+| Dir. PTEP |
+| Dir. KTPP |
+| Dir. PLP |
+
+> [!TIP]
+> Gunakan filter unit kerja untuk memantau notifikasi dari unit kerja tertentu tanpa perlu berpindah halaman.
+
+#### Aksi Notifikasi
+
+- **Tandai semua sudah dibaca** — Klik ikon ✅ di pojok kanan atas panel untuk menandai semua notifikasi sesuai tab aktif.
+- **Klik notifikasi** — Langsung navigasi ke halaman detail surat atau arsip terkait.
+- **Refresh** — Klik tombol **"Refresh Notifikasi"** di bagian bawah panel.
+
+#### Indikator Urgency Notifikasi
+
+| Warna | Keterangan |
+|-------|------------|
+| 🔴 Merah (berkedip) | **Urgent** — Memerlukan tindakan segera |
+| 🟡 Kuning | **Warning** — Perlu perhatian |
+| 🔵 Biru | **Info** — Informasi umum |
+
+---
+
+### 11.2 Pencarian Global
+
+- Klik **bar pencarian** di header atau tekan **⌘K** / **Ctrl+K** untuk membuka pencarian global.
+- Cari surat atau arsip di seluruh sistem berdasarkan kata kunci.
+
+---
+
+### 11.3 Mode Gelap/Terang
+
+- Klik ikon tema (🌙/☀️) di header untuk memilih mode tampilan:
+  - **Light** — Mode terang
+  - **Dark** — Mode gelap
+  - **System** — Mengikuti pengaturan sistem operasi
+
+---
+
+### 11.4 Menu Pengguna (Header)
+
+Klik **avatar** dan **nama Anda** di pojok kanan atas header untuk membuka dropdown user menu:
+
+| Menu | Keterangan |
+|------|------------|
+| **Profil Saya** | Buka halaman Settings tab Profil |
+| **Pengaturan** | Buka halaman Settings |
+| **Panduan Pengguna** | Buka dokumentasi online (GitBook) di tab baru |
+| **Keluar** | Logout dari sistem |
+
+---
+
+### 11.5 Link Panduan di Sidebar
+
+Di bagian bawah sidebar, terdapat link **📖 Panduan** yang mengarah ke dokumentasi online SIMSA di GitBook (`https://bayilaras.gitbook.io/panduan-simsa`). Link ini tersedia untuk **semua pengguna**.
+
+---
+
+### 11.6 Bulk Upload
 - Akses melalui menu **Aksi Cepat** > **Upload** di Dashboard.
 - Upload banyak surat atau arsip sekaligus dalam format yang didukung.
 
-### Formulir
+### 11.7 Formulir
 - Akses melalui menu **Formulir** pada sidebar.
 - Lihat dan cetak formulir-formulir kearsipan standar.
 
-### Pencarian Global
-- Gunakan ikon **🔍 Pencarian** di header untuk mencari surat atau arsip di seluruh sistem.
-
-### Notifikasi
-- Ikon **🔔 Notifikasi** di header menampilkan:
-  - **Tab Surat** — Surat masuk yang belum diproses
-  - **Tab Arsip** — Arsip mendekati masa retensi
-  - **Tab Semua** — Semua notifikasi gabungan
-
-### Ekspor Data
+### 11.8 Ekspor Data
 - Pada halaman daftar surat/arsip, klik tombol **"Ekspor"** untuk mengunduh data dalam format PDF, Excel, atau CSV.
-
-### Mode Gelap/Terang
-- Klik ikon tema (🌙/☀️) di header untuk beralih antara mode gelap dan mode terang.
 
 ---
 
@@ -820,5 +910,5 @@ flowchart TD
 
 ---
 
-*© 2024 Kementerian Agraria dan Tata Ruang / Badan Pertanahan Nasional*
+*© 2026 Kementerian Agraria dan Tata Ruang / Badan Pertanahan Nasional*
 *SIMSA v1.0.0 (BETA)*

@@ -16,7 +16,7 @@ Login dan Daftar
 |----------|------------|
 | [⚠️ Wajib BACA!](akses-simsa/wajib-baca.md) | Hal penting sebelum menggunakan SIMSA |
 | [🔑 Login dengan Email & Password](akses-simsa/login-email-password.md) | Cara login menggunakan email dan password |
-| [📧 Daftar Menggunakan Email](akses-simsa/daftar-email.md) | Cara membuat akun baru di SIMSA |
+| [📧 Pembuatan Akun oleh Super Admin](akses-simsa/daftar-email.md) | Cara mendapatkan akun SIMSA |
 | [🌐 Login Dengan Google](akses-simsa/login-google.md) | Cara login pakai akun Google |
 
 ### Tutorial Dasar
@@ -71,10 +71,11 @@ Login dan Daftar
 | [📝 Audit Log](administrasi/audit-log.md) | Monitoring aktivitas pengguna |
 | [👥 User Management](administrasi/user-management.md) | Kelola akun pengguna (Super Admin) |
 | [📂 Master Data](administrasi/master-data.md) | Kelola data klasifikasi dan template |
+| [⚙️ Settings](administrasi/settings.md) | Pengaturan profil, unit kerja, dan template |
 
 ---
 
 > **Butuh Bantuan?**\
 > Hubungi Administrator IT atau Super Admin di unit kerja kamu.
 
-*© 2024 Kementerian Agraria dan Tata Ruang / BPN — SIMSA v1.0.0 (BETA)*
+*© 2026 Kementerian Agraria dan Tata Ruang / BPN — SIMSA v1.0.0 (BETA)*

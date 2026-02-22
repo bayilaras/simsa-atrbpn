@@ -1,6 +1,6 @@
 import {
   app_default
-} from "./chunk-S2RRN5WH.js";
+} from "./chunk-PQORZTCT.js";
 import "./chunk-PXURFYUM.js";
 import "./chunk-VFKTQ3F4.js";
 import "./chunk-BZ77VRLB.js";

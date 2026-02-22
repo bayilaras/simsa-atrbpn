@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban, Eye, EyeOff, Lock } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -83,9 +83,10 @@ export default function UserManagement() {
 
     // Add user dialog
     const [addOpen, setAddOpen] = useState(false);
-    const [addData, setAddData] = useState({ email: '', name: '', role: 'user', unitKerjaId: '', jabatan: '', nip: '' });
+    const [addData, setAddData] = useState({ email: '', name: '', role: 'user', unitKerjaId: '', jabatan: '', nip: '', password: '' });
     const [creating, setCreating] = useState(false);
     const [addError, setAddError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
     // Check admin access
     const isAdmin = hasRole(['super_admin']);
@@ -182,14 +183,19 @@ export default function UserManagement() {
     };
 
     const handleAddUser = () => {
-        setAddData({ email: '', name: '', role: 'user', unitKerjaId: '', jabatan: '', nip: '' });
+        setAddData({ email: '', name: '', role: 'user', unitKerjaId: '', jabatan: '', nip: '', password: '' });
         setAddError('');
+        setShowPassword(false);
         setAddOpen(true);
     };
 
     const handleCreateUser = async () => {
         if (!addData.email || !addData.name) {
             setAddError('Email dan nama wajib diisi');
+            return;
+        }
+        if (addData.password && addData.password.length < 8) {
+            setAddError('Password minimal 8 karakter');
             return;
         }
         try {
@@ -202,6 +208,7 @@ export default function UserManagement() {
                 unitKerjaId: addData.unitKerjaId || null,
                 jabatan: addData.jabatan || null,
                 nip: addData.nip || null,
+                ...(addData.password ? { password: addData.password } : {}),
             });
             setAddOpen(false);
             loadUsers();
@@ -243,6 +250,24 @@ export default function UserManagement() {
         const index = name.charCodeAt(0) % colors.length;
         return colors[index];
     };
+
+    // Password strength calculator
+    const passwordStrength = useMemo(() => {
+        const pw = addData.password || '';
+        if (!pw) return { score: 0, label: '', color: '' };
+        let score = 0;
+        if (pw.length >= 8) score++;
+        if (pw.length >= 12) score++;
+        if (/[A-Z]/.test(pw)) score++;
+        if (/[a-z]/.test(pw)) score++;
+        if (/[0-9]/.test(pw)) score++;
+        if (/[^A-Za-z0-9]/.test(pw)) score++;
+
+        if (score <= 2) return { score: 1, label: 'Lemah', color: 'bg-red-500' };
+        if (score <= 3) return { score: 2, label: 'Sedang', color: 'bg-yellow-500' };
+        if (score <= 4) return { score: 3, label: 'Kuat', color: 'bg-blue-500' };
+        return { score: 4, label: 'Sangat Kuat', color: 'bg-green-500' };
+    }, [addData.password]);
 
     // Access denied for non-admins
     if (!isAdmin) {
@@ -639,7 +664,7 @@ export default function UserManagement() {
                             Tambah User Baru
                         </DialogTitle>
                         <DialogDescription>
-                            Buat akun user baru. User akan dapat login menggunakan email yang didaftarkan.
+                            Buat akun user baru. User akan dapat login menggunakan email + password atau Google.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -722,6 +747,52 @@ export default function UserManagement() {
                                     maxLength={30}
                                 />
                             </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="flex items-center gap-1.5">
+                                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                                Password
+                            </Label>
+                            <div className="relative">
+                                <Input
+                                    type={showPassword ? 'text' : 'password'}
+                                    placeholder="Minimal 8 karakter"
+                                    value={addData.password}
+                                    onChange={(e) => setAddData(d => ({ ...d, password: e.target.value }))}
+                                    maxLength={128}
+                                    className="pr-10"
+                                />
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="absolute right-0 top-0 h-full w-10 hover:bg-transparent text-muted-foreground"
+                                    onClick={() => setShowPassword(v => !v)}
+                                    tabIndex={-1}
+                                >
+                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </Button>
+                            </div>
+                            {addData.password && (
+                                <div className="space-y-1.5">
+                                    <div className="flex gap-1">
+                                        {[1, 2, 3, 4].map(i => (
+                                            <div
+                                                key={i}
+                                                className={`h-1.5 flex-1 rounded-full transition-colors ${i <= passwordStrength.score ? passwordStrength.color : 'bg-muted'
+                                                    }`}
+                                            />
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Kekuatan: <span className="font-medium">{passwordStrength.label}</span>
+                                    </p>
+                                </div>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                                Opsional. Jika diisi, user dapat login via email + password. Jika tidak, user hanya bisa login via Google.
+                            </p>
                         </div>
                     </div>
 
