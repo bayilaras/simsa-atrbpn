@@ -1,0 +1,70 @@
+name: Daily Neon DB Backup
+
+on:
+  schedule:
+    # Setiap hari jam 00:00 UTC (07:00 WIB)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Manual trigger
+
+env:
+  PG_VERSION: '16'
+
+jobs:
+  backup:
+    name: Backup Neon PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-${{ env.PG_VERSION }}
+
+      - name: Create backup
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          BACKUP_FILE="simsa-backup-$(date +%Y-%m-%d).sql"
+          echo "Creating backup: $BACKUP_FILE"
+
+          pg_dump "$DATABASE_URL" \
+            --no-owner \
+            --no-privileges \
+            --clean \
+            --if-exists \
+            --format=plain \
+            --file="$BACKUP_FILE"
+
+          # Compress backup
+          gzip "$BACKUP_FILE"
+
+          # Show file size
+          ls -lh "${BACKUP_FILE}.gz"
+          echo "BACKUP_FILE=${BACKUP_FILE}.gz" >> $GITHUB_ENV
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-backup-${{ github.run_id }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 30
+          compression-level: 0  # Already gzipped
+
+      - name: Verify backup
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          # Quick verification - check file size is reasonable (> 1KB)
+          FILE_SIZE=$(stat -c%s "${{ env.BACKUP_FILE }}")
+          if [ "$FILE_SIZE" -lt 1024 ]; then
+            echo "::error::Backup file is suspiciously small ($FILE_SIZE bytes)"
+            exit 1
+          fi
+          echo "✅ Backup verified: $FILE_SIZE bytes"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Database backup failed! Check the logs above."
+          echo "::error::Manual backup recommended: pg_dump \$DATABASE_URL > backup.sql"

@@ -3,6 +3,7 @@ import {
     listUsersSchema,
     updateUserSchema,
     userIdParamSchema,
+    createUserSchema,
 } from '../validations/user-management.validation';
 
 // ==================== listUsersSchema ====================
@@ -50,7 +51,7 @@ describe('listUsersSchema', () => {
     });
 
     it('accepts all valid roles', () => {
-        for (const role of ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'user']) {
+        for (const role of ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'user']) {
             const result = listUsersSchema.safeParse({ role });
             expect(result.success).toBe(true);
         }
@@ -146,6 +147,89 @@ describe('userIdParamSchema', () => {
 
     it('rejects missing userId', () => {
         const result = userIdParamSchema.safeParse({});
+        expect(result.success).toBe(false);
+    });
+});
+
+// ==================== createUserSchema ====================
+
+describe('createUserSchema', () => {
+    const validUser = {
+        email: 'test@example.com',
+        name: 'Test User',
+        role: 'user' as const,
+    };
+
+    it('accepts valid user data without password', () => {
+        const result = createUserSchema.safeParse(validUser);
+        expect(result.success).toBe(true);
+    });
+
+    it('accepts valid user data with password', () => {
+        const result = createUserSchema.safeParse({ ...validUser, password: 'SecurePass123!' });
+        expect(result.success).toBe(true);
+    });
+
+    it('rejects password shorter than 8 characters', () => {
+        const result = createUserSchema.safeParse({ ...validUser, password: 'short' });
+        expect(result.success).toBe(false);
+    });
+
+    it('accepts password exactly 8 characters', () => {
+        const result = createUserSchema.safeParse({ ...validUser, password: '12345678' });
+        expect(result.success).toBe(true);
+    });
+
+    it('rejects missing email', () => {
+        const result = createUserSchema.safeParse({ name: 'Test', role: 'user' });
+        expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid email format', () => {
+        const result = createUserSchema.safeParse({ ...validUser, email: 'not-an-email' });
+        expect(result.success).toBe(false);
+    });
+
+    it('rejects missing name', () => {
+        const result = createUserSchema.safeParse({ email: 'test@x.com', role: 'user' });
+        expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid role', () => {
+        const result = createUserSchema.safeParse({ ...validUser, role: 'manager' });
+        expect(result.success).toBe(false);
+    });
+
+    it('accepts all valid roles including staff', () => {
+        for (const role of ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'user']) {
+            const result = createUserSchema.safeParse({ ...validUser, role });
+            expect(result.success).toBe(true);
+        }
+    });
+
+    it('accepts optional fields', () => {
+        const result = createUserSchema.safeParse({
+            ...validUser,
+            unitKerjaId: 'ditjen',
+            jabatan: 'Arsiparis',
+            nip: '198501012010011001',
+            password: 'StrongPass1!',
+        });
+        expect(result.success).toBe(true);
+    });
+
+    it('accepts null unitKerjaId', () => {
+        const result = createUserSchema.safeParse({ ...validUser, unitKerjaId: null });
+        expect(result.success).toBe(true);
+    });
+
+    it('rejects jabatan exceeding 100 characters', () => {
+        const result = createUserSchema.safeParse({ ...validUser, jabatan: 'a'.repeat(101) });
+        expect(result.success).toBe(false);
+    });
+
+    it('rejects nip exceeding 30 characters', () => {
+        const result = createUserSchema.safeParse({ ...validUser, nip: '1'.repeat(31) });
         expect(result.success).toBe(false);
     });
 });

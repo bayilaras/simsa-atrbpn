@@ -46,12 +46,13 @@ describe('userManagementService', () => {
             expect(superAdmin!.label).toBe('Super Admin');
         });
 
-        it('should include all 4 roles', () => {
+        it('should include all 5 roles', () => {
             const roles = userManagementService.getRoles();
             const values = roles.map((r: any) => r.value);
             expect(values).toContain('super_admin');
             expect(values).toContain('admin_dirjen');
             expect(values).toContain('admin_sesditjen');
+            expect(values).toContain('staff');
             expect(values).toContain('user');
         });
     });
@@ -71,8 +72,8 @@ describe('userManagementService', () => {
 
     // ── Constants ──
     describe('VALID_ROLES', () => {
-        it('should contain exactly 4 roles', () => {
-            expect(VALID_ROLES).toHaveLength(4);
+        it('should contain exactly 5 roles', () => {
+            expect(VALID_ROLES).toHaveLength(5);
         });
 
         it('should be an array of strings', () => {
