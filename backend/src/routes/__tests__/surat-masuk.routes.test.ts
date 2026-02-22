@@ -7,7 +7,7 @@ import { suratMasukService } from '../../services/surat-masuk.service';
 // Mock Middlewares
 vi.mock('../../middlewares/auth.middleware', () => ({
     authMiddleware: (req: any, res: any, next: any) => {
-        req.user = { id: 'user-1', email: 'test@example.com', role: 'admin' };
+        req.user = { id: 'user-1', email: 'test@example.com', role: 'admin', unitKerjaId: 'ditjen' };
         next();
     },
 }));
@@ -23,6 +23,7 @@ vi.mock('../../middlewares/validate.middleware', () => ({
         res.locals.validatedQuery = req.query;
         next();
     },
+    validateIdParam: () => (req: any, res: any, next: any) => next(),
 }));
 
 // Mock Service

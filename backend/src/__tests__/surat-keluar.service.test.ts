@@ -19,6 +19,16 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
+    // create() uses db.transaction(async (tx) => { ... })
+    transaction: async (cb: any) => {
+        const txProxy: any = {
+            select: (..._a: any[]) => mockChain,
+            insert: (..._a: any[]) => mockChain,
+            update: (..._a: any[]) => mockChain,
+            delete: (..._a: any[]) => mockChain,
+        };
+        return cb(txProxy);
+    },
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));

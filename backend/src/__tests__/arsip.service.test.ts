@@ -66,8 +66,10 @@ describe('ArsipService', () => {
     // ── findById ──
     describe('findById', () => {
         it('should return arsip when found', async () => {
-            enqueue([{ id: '1', jenisArsip: 'masuk' }]);
-            expect(await svc.findById('1')).toEqual({ id: '1', jenisArsip: 'masuk' });
+            // findById makes 2 DB calls: select arsip + select arsipItems
+            enqueue([{ id: '1', jenisArsip: 'masuk' }]); // arsip
+            enqueue([{ nomorItem: 1 }]); // arsipItems
+            expect(await svc.findById('1')).toEqual({ id: '1', jenisArsip: 'masuk', items: [{ nomorItem: 1 }] });
         });
 
         it('should return null when not found', async () => {

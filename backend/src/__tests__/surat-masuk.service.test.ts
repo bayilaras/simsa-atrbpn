@@ -5,29 +5,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const resultQueue: any[] = [];
 function enqueue(...results: any[]) { resultQueue.push(...results); }
 
-const mockChain: any = new Proxy({}, {
-    get(_target, prop) {
-        if (prop === 'then') {
-            const val = resultQueue.shift() ?? [];
-            return (resolve: any) => resolve(val);
-        }
-        return (..._args: any[]) => mockChain;
-    },
-});
+// Create a fresh chain each time so Promise.all parallel queries work
+function createChain(): any {
+    return new Proxy({}, {
+        get(_target, prop) {
+            if (prop === 'then') {
+                const val = resultQueue.shift() ?? [];
+                return (resolve: any) => resolve(val);
+            }
+            return (..._args: any[]) => createChain();
+        },
+    });
+}
 
 const mockDb = {
-    select: (..._a: any[]) => mockChain,
-    insert: (..._a: any[]) => mockChain,
-    update: (..._a: any[]) => mockChain,
-    delete: (..._a: any[]) => mockChain,
+    select: (..._a: any[]) => createChain(),
+    insert: (..._a: any[]) => createChain(),
+    update: (..._a: any[]) => createChain(),
+    delete: (..._a: any[]) => createChain(),
     // create() uses db.transaction(async (tx) => { ... })
     // Execute the callback with a mock tx that uses the same chainable proxy
     transaction: async (cb: any) => {
         const txProxy: any = {
-            select: (..._a: any[]) => mockChain,
-            insert: (..._a: any[]) => mockChain,
-            update: (..._a: any[]) => mockChain,
-            delete: (..._a: any[]) => mockChain,
+            select: (..._a: any[]) => createChain(),
+            insert: (..._a: any[]) => createChain(),
+            update: (..._a: any[]) => createChain(),
+            delete: (..._a: any[]) => createChain(),
         };
         return cb(txProxy);
     },
@@ -192,10 +195,13 @@ describe('SuratMasukService', () => {
     // ── getStats ──
     describe('getStats', () => {
         it('should return statistics for unit', async () => {
-            const stats = { total: 10, belumDibalas: 3, sudahDibalas: 5, diarsipkan: 2 };
-            enqueue([stats]);
+            // getStats uses Promise.all with 4 parallel count queries
+            enqueue([{ count: 10 }]);  // total
+            enqueue([{ count: 3 }]);   // belumDibalas
+            enqueue([{ count: 5 }]);   // sudahDibalas
+            enqueue([{ count: 2 }]);   // diarsipkan
             const res = await svc.getStats('u1', 2026);
-            expect(res).toEqual(stats);
+            expect(res).toEqual({ total: 10, belumDibalas: 3, sudahDibalas: 5, diarsipkan: 2 });
         });
     });
 });
