@@ -301,12 +301,12 @@ export default function TambahSuratMasuk() {
 
         try {
             // Resolve unitKerjaId berdasarkan role (konsisten dengan backend resolveUnitKerjaId)
+            // Admin roles have FIXED unit kerja assignments regardless of user record
             const resolvedUnitKerjaId = (() => {
-                if (user?.unitKerjaId) return user.unitKerjaId;
                 switch (user?.role) {
                     case 'admin_sesditjen': return 'sesditjen';
                     case 'admin_dirjen': return 'ditjen';
-                    default: return 'ditjen';
+                    default: return user?.unitKerjaId || 'ditjen';
                 }
             })();
 
@@ -710,10 +710,10 @@ export default function TambahSuratMasuk() {
                                 </Label>
                                 <div
                                     className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${selectedFile
-                                            ? 'border-emerald-400 bg-emerald-50/50'
-                                            : isDragging
-                                                ? 'border-primary bg-primary/5 scale-[1.02] shadow-lg'
-                                                : 'border-border hover:border-primary/50 hover:bg-muted/30 group'
+                                        ? 'border-emerald-400 bg-emerald-50/50'
+                                        : isDragging
+                                            ? 'border-primary bg-primary/5 scale-[1.02] shadow-lg'
+                                            : 'border-border hover:border-primary/50 hover:bg-muted/30 group'
                                         }`}
                                     onClick={() => fileInputRef.current?.click()}
                                     onDragOver={(e) => {
