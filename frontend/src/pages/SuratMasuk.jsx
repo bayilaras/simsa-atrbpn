@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
-import { MailOpen, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, Reply, FolderArchive, ArrowUpDown, Send, RefreshCw, Trash2, FileText, AlertCircle, Inbox, Calendar, MoreHorizontal, CheckCircle2 } from 'lucide-react';
+import { MailOpen, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, Reply, FolderArchive, ArrowUpDown, Send, RefreshCw, Trash2, FileText, AlertCircle, Inbox, Calendar, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/pagination";
 import { TableSkeleton } from '@/components/skeletons';
 import suratMasukService from '@/services/surat-masuk.service';
+import settingsService from '@/services/settings.service';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 
@@ -71,12 +72,17 @@ export default function SuratMasuk() {
     const { toast } = useToast();
     const { user, canWrite } = useAuth();
     const isAdmin = canWrite();
+    const isSuperAdmin = user?.role === 'super_admin';
 
     // Data state
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
     const [stats, setStats] = useState({ total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 });
+
+    // Unit kerja filter for super admin
+    const [unitKerjaList, setUnitKerjaList] = useState([]);
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined));
 
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
@@ -94,6 +100,20 @@ export default function SuratMasuk() {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedSurat, setSelectedSurat] = useState(null);
 
+    // Load unit kerja list for super admin
+    useEffect(() => {
+        if (isSuperAdmin) {
+            settingsService.getAllUnitKerja().then(result => {
+                setUnitKerjaList(result.data || result || []);
+            }).catch(err => console.error('Failed to load unit kerja list:', err));
+        }
+    }, [isSuperAdmin]);
+
+    // Resolve effective unitKerjaId
+    const resolvedUnitKerjaId = isSuperAdmin
+        ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
+        : (user?.unitKerjaId || undefined);
+
     // Fetch data from API
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -102,7 +122,7 @@ export default function SuratMasuk() {
                 page: pagination.page,
                 limit: pagination.limit,
                 search: searchTerm || undefined,
-                unitKerjaId: user?.unitKerjaId || undefined,
+                unitKerjaId: resolvedUnitKerjaId,
                 tahun: tahun !== 'all' ? tahun : undefined,
                 jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                 status: status !== 'all' ? status : undefined,
@@ -130,19 +150,19 @@ export default function SuratMasuk() {
         } finally {
             setLoading(false);
         }
-    }, [pagination.page, pagination.limit, searchTerm, user?.unitKerjaId, tahun, jenisSurat, status, sifatSurat, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, searchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, tanggalDari, tanggalSampai, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
         try {
-            const result = await suratMasukService.getStats({ unitKerjaId: user?.unitKerjaId });
+            const result = await suratMasukService.getStats({ unitKerjaId: resolvedUnitKerjaId });
             if (result) {
                 setStats(result);
             }
         } catch (error) {
             console.error('Error fetching stats:', error);
         }
-    }, [user?.unitKerjaId]);
+    }, [resolvedUnitKerjaId]);
 
     useEffect(() => {
         fetchData();
@@ -258,6 +278,23 @@ export default function SuratMasuk() {
                         Kelola dan pantau surat masuk unit kerja Anda
                     </p>
                 </div>
+                {/* Unit Kerja Selector for Super Admin */}
+                {isSuperAdmin && unitKerjaList.length > 0 && (
+                    <div className="flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPagination(prev => ({ ...prev, page: 1 })); }}>
+                            <SelectTrigger className="w-[220px] h-9">
+                                <SelectValue placeholder="Pilih Unit Kerja" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                {unitKerjaList.map(uk => (
+                                    <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
                 <div className="flex items-center gap-2">
                     <Button variant="outline" onClick={fetchData} disabled={loading} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />

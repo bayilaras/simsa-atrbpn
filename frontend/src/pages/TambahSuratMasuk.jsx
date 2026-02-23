@@ -133,6 +133,7 @@ export default function TambahSuratMasuk() {
     const { user } = useAuth();
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
+    const errorRef = useRef(null);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -140,6 +141,7 @@ export default function TambahSuratMasuk() {
     const [success, setSuccess] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [existingFile, setExistingFile] = useState(null);
+    const [isDragging, setIsDragging] = useState(false);
 
     // Unsaved changes warning & auto-save draft
     const { isDirty, setDirty, resetDirty } = useUnsavedChanges();
@@ -287,6 +289,10 @@ export default function TambahSuratMasuk() {
         const validationError = validateForm();
         if (validationError) {
             setError(validationError);
+            // Auto-scroll ke error agar user tahu field mana yang belum diisi
+            setTimeout(() => {
+                errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
             return;
         }
 
@@ -294,9 +300,19 @@ export default function TambahSuratMasuk() {
         setError(null);
 
         try {
+            // Resolve unitKerjaId berdasarkan role (konsisten dengan backend resolveUnitKerjaId)
+            const resolvedUnitKerjaId = (() => {
+                if (user?.unitKerjaId) return user.unitKerjaId;
+                switch (user?.role) {
+                    case 'admin_sesditjen': return 'sesditjen';
+                    case 'admin_dirjen': return 'ditjen';
+                    default: return 'ditjen';
+                }
+            })();
+
             const dataToSubmit = {
                 ...formData,
-                unitKerjaId: user?.unitKerjaId || 'ditjen',
+                unitKerjaId: resolvedUnitKerjaId,
                 tahun: new Date().getFullYear(),
             };
 
@@ -413,7 +429,7 @@ export default function TambahSuratMasuk() {
 
             {/* Error/Success Alerts */}
             {error && (
-                <Alert variant="destructive" className="animate-in slide-in-from-top-2">
+                <Alert ref={errorRef} variant="destructive" className="animate-in slide-in-from-top-2">
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>{error}</AlertDescription>
                 </Alert>
@@ -694,10 +710,45 @@ export default function TambahSuratMasuk() {
                                 </Label>
                                 <div
                                     className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${selectedFile
-                                        ? 'border-emerald-400 bg-emerald-50/50'
-                                        : 'border-border hover:border-primary/50 hover:bg-muted/30 group'
+                                            ? 'border-emerald-400 bg-emerald-50/50'
+                                            : isDragging
+                                                ? 'border-primary bg-primary/5 scale-[1.02] shadow-lg'
+                                                : 'border-border hover:border-primary/50 hover:bg-muted/30 group'
                                         }`}
                                     onClick={() => fileInputRef.current?.click()}
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
+                                    onDragEnter={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setIsDragging(true);
+                                    }}
+                                    onDragLeave={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setIsDragging(false);
+                                    }}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setIsDragging(false);
+                                        const file = e.dataTransfer.files?.[0];
+                                        if (file) {
+                                            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
+                                            if (!allowedTypes.includes(file.type)) {
+                                                setError('Tipe file tidak didukung. Gunakan PDF, DOC, DOCX, JPG, atau PNG.');
+                                                return;
+                                            }
+                                            if (file.size > 10 * 1024 * 1024) {
+                                                setError('Ukuran file maksimal 10MB');
+                                                return;
+                                            }
+                                            setSelectedFile(file);
+                                            setError(null);
+                                        }
+                                    }}
                                 >
                                     <input
                                         ref={fileInputRef}
@@ -728,6 +779,17 @@ export default function TambahSuratMasuk() {
                                                 <X className="h-4 w-4" />
                                             </Button>
                                         </div>
+                                    ) : isDragging ? (
+                                        <div className="space-y-2">
+                                            <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
+                                                <Upload className="h-6 w-6 text-primary" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-semibold text-primary">
+                                                    Lepaskan file di sini
+                                                </p>
+                                            </div>
+                                        </div>
                                     ) : (
                                         <div className="space-y-2">
                                             <div className="mx-auto w-12 h-12 rounded-full bg-muted group-hover:bg-primary/10 flex items-center justify-center transition-colors">
@@ -735,7 +797,7 @@ export default function TambahSuratMasuk() {
                                             </div>
                                             <div>
                                                 <p className="text-sm font-medium text-foreground">
-                                                    Klik untuk memilih berkas
+                                                    Seret file ke sini atau klik untuk memilih berkas
                                                 </p>
                                                 <p className="text-xs text-muted-foreground mt-1">
                                                     PDF, DOC, DOCX, JPG, PNG, ZIP, RAR (maks. 10MB)

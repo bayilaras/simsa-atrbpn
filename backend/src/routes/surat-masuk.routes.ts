@@ -193,9 +193,14 @@ router.post('/',
                 }
             }
 
+            // Enforce server-resolved unitKerjaId to prevent client-side mismatch
+            // (e.g., admin_sesditjen sending 'ditjen' instead of 'sesditjen')
+            const serverUnitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || bodyValidation.data.unitKerjaId;
+
             const result = await suratMasukService.create({
                 ...bodyValidation.data,
                 createdBy: req.user?.id,
+                unitKerjaId: serverUnitKerjaId,
                 filePath,
                 fileOriginalName,
             } as any);

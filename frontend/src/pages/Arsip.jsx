@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { Archive, RefreshCw, Search, Eye, Edit, Clock, Upload, ChevronUp, Trash2, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive } from 'lucide-react'
+import { Archive, RefreshCw, Search, Eye, Edit, Clock, Upload, ChevronUp, Trash2, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -61,6 +61,7 @@ import {
     PaginationItem,
 } from "@/components/ui/pagination"
 import { arsipService } from '@/services/arsip.service'
+import settingsService from '@/services/settings.service'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
 
 export default function Arsip() {
@@ -68,6 +69,7 @@ export default function Arsip() {
     const navigate = useNavigate()
     const { user, canWrite } = useAuth()
     const isAdmin = canWrite()
+    const isSuperAdmin = user?.role === 'super_admin'
     const { toast } = useToast()
 
     // Valid tabs
@@ -78,11 +80,29 @@ export default function Arsip() {
     const [arsipStats, setArsipStats] = useState({ total: 0, arsipMasuk: 0, arsipKeluar: 0 })
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
 
+    // Unit kerja filter for super admin
+    const [unitKerjaList, setUnitKerjaList] = useState([])
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined))
+
+    // Load unit kerja list for super admin
+    useEffect(() => {
+        if (isSuperAdmin) {
+            settingsService.getAllUnitKerja().then(result => {
+                setUnitKerjaList(result.data || result || [])
+            }).catch(err => console.error('Failed to load unit kerja list:', err))
+        }
+    }, [isSuperAdmin])
+
+    // Resolve effective unitKerjaId
+    const resolvedUnitKerjaId = isSuperAdmin
+        ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
+        : (user?.unitKerjaId || undefined)
+
     // Fetch arsip stats
     useEffect(() => {
         const fetchArsipStats = async () => {
             try {
-                const result = await arsipService.getStats({ unitKerjaId: user?.unitKerjaId })
+                const result = await arsipService.getStats({ unitKerjaId: resolvedUnitKerjaId })
                 if (result) {
                     setArsipStats(result)
                 }
@@ -91,7 +111,7 @@ export default function Arsip() {
             }
         }
         fetchArsipStats()
-    }, [activeTab, user?.unitKerjaId])
+    }, [activeTab, resolvedUnitKerjaId])
 
     // Filter state
     const [tahunFilter, setTahunFilter] = useState('all')
@@ -132,7 +152,7 @@ export default function Arsip() {
                 const response = await arsipService.getAll({
                     page,
                     limit,
-                    unitKerjaId: user?.unitKerjaId || undefined,
+                    unitKerjaId: resolvedUnitKerjaId,
                     jenisArsip: activeTab,
                     search: searchTerm,
                     tahun: tahunFilter !== 'all' ? parseInt(tahunFilter) : undefined,
@@ -148,7 +168,7 @@ export default function Arsip() {
         },
         {
             pageSize: 10,
-            dependencies: [activeTab, searchTerm, tahunFilter, user]
+            dependencies: [activeTab, searchTerm, tahunFilter, user, resolvedUnitKerjaId]
         }
     )
 
@@ -180,7 +200,7 @@ export default function Arsip() {
             setPage(1) // Refresh data
 
             // Refresh stats
-            const stats = await arsipService.getStats({ unitKerjaId: user?.unitKerjaId })
+            const stats = await arsipService.getStats({ unitKerjaId: resolvedUnitKerjaId })
             if (stats) setArsipStats(stats)
         } catch (error) {
             toast({
@@ -214,6 +234,23 @@ export default function Arsip() {
                         Kelola pusat arsip surat dan pantau jadwal retensi
                     </p>
                 </div>
+                {/* Unit Kerja Selector for Super Admin */}
+                {isSuperAdmin && unitKerjaList.length > 0 && (
+                    <div className="flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPage(1); }}>
+                            <SelectTrigger className="w-[220px] h-9">
+                                <SelectValue placeholder="Pilih Unit Kerja" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                {unitKerjaList.map(uk => (
+                                    <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
                 <div className="flex items-center gap-2">
                     <Button variant="outline" onClick={() => setPage(1)} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${isLoading ? 'animate-spin' : ''}`} />

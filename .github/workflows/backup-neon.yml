@@ -47,21 +47,24 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: neon-backup-${{ github.run_id }}
-          path: ${{ env.BACKUP_FILE }}
+          path: simsa-backup-*.sql.gz
           retention-days: 30
           compression-level: 0  # Already gzipped
 
       - name: Verify backup
-        env:
-          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: |
           # Quick verification - check file size is reasonable (> 1KB)
-          FILE_SIZE=$(stat -c%s "${{ env.BACKUP_FILE }}")
+          BACKUP_FILE=$(ls simsa-backup-*.sql.gz 2>/dev/null | head -1)
+          if [ -z "$BACKUP_FILE" ]; then
+            echo "::error::Backup file not found"
+            exit 1
+          fi
+          FILE_SIZE=$(stat -c%s "$BACKUP_FILE")
           if [ "$FILE_SIZE" -lt 1024 ]; then
             echo "::error::Backup file is suspiciously small ($FILE_SIZE bytes)"
             exit 1
           fi
-          echo "✅ Backup verified: $FILE_SIZE bytes"
+          echo "✅ Backup verified: $BACKUP_FILE ($FILE_SIZE bytes)"
 
       - name: Notify on failure
         if: failure()
