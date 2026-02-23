@@ -34,6 +34,9 @@ export const createSuratMasukSchema = z.object({
         .optional(),
     keterangan: z.string().max(2000).optional(),
     linkDokumen: z.string().url().optional().or(z.literal('')),
+    // File attachment fields (set by client-side Vercel Blob upload)
+    filePath: z.string().optional(),
+    fileOriginalName: z.string().max(255).optional(),
     klasifikasiKode: z.string().max(50).optional(),
     klasifikasiUraian: z.string().max(1000).optional(),
 });
