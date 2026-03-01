@@ -16,6 +16,12 @@ Dashboard SIMSA terdiri dari beberapa bagian utama (dari atas ke bawah):
 5. **⚡ Aksi Cepat** — 4 tombol shortcut: Surat Masuk, Surat Keluar, Laporan, Upload.
 6. **⚠️ Masa Retensi** — Daftar arsip yang mendekati batas musnah (🔴 kritis, 🟡 peringatan, 🔵 informasi).
 7. **📋 Aktivitas Terbaru** — 8 surat terakhir yang diinput ke sistem.
+8. **🍩 Status Siklus Arsip** *(baru v1.1)* — Donut chart distribusi arsip: Aktif, Inaktif, Kadaluarsa, Belum Ditentukan.
+9. **💿 Jenis Media Arsip** *(baru v1.1)* — Progress bar distribusi per jenis media (kertas, foto, video, audio, elektronik).
+10. **📖 Peminjaman Arsip** *(baru v1.1)* — Jumlah arsip dipinjam dan yang terlambat dikembalikan.
+11. **📋 Pipeline Penyusutan** *(baru v1.1)* — Status 5 tahap alur penyusutan arsip.
+12. **🏢 Kapasitas Penyimpanan** *(baru v1.1)* — Utilisasi ruang arsip per gedung.
+13. **🛡️ Arsip Vital & Terjaga** *(baru v1.1)* — Alert arsip belum diproteksi/dilaporkan ke ANRI.
 :::
 
 ---
@@ -77,6 +83,75 @@ Klik arsip untuk langsung ke halaman detail arsip tersebut.
 ### 7. Aktivitas Terbaru
 
 Menampilkan **8 surat terakhir** (masuk dan keluar) yang diinput ke sistem. Klik untuk lihat detailnya.
+
+---
+
+## 🆕 Widget Tambahan (v1.1)
+
+Mulai versi 1.1, dashboard menampilkan **6 widget tambahan** di bawah Aktivitas Terbaru:
+
+### 8. Status Siklus Arsip (Donut Chart)
+
+**Donut chart** yang menampilkan distribusi arsip berdasarkan status siklus hidupnya:
+
+| Status | Warna | Keterangan |
+|--------|-------|------------|
+| **Aktif** | 🟢 Hijau | Masa retensi aktif masih berjalan |
+| **Inaktif** | 🔵 Biru | Masa aktif selesai, masa inaktif berjalan |
+| **Kadaluarsa** | 🔴 Merah | Semua masa retensi telah berakhir |
+| **Belum Ditentukan** | ⚪ Abu-abu | Belum memiliki data retensi |
+
+Status dihitung otomatis dari **tanggal arsip** dan **jadwal retensi aktif/inaktif**.
+
+### 9. Jenis Media Arsip
+
+**Progress bar** yang menampilkan distribusi arsip berdasarkan jenis media penyimpanan. Setiap jenis memiliki ikon dan warna berbeda:
+
+- 📄 **Kertas** (kuning)
+- 📸 **Foto** (pink)
+- 🎬 **Video** (ungu)
+- 🎵 **Audio** (teal)
+- 💻 **Elektronik** (biru)
+
+### 10. Peminjaman Arsip
+
+Menampilkan **2 angka penting**:
+- **Sedang Dipinjam** — jumlah arsip yang sedang dalam status borrowed
+- **Terlambat Dikembalikan** — jumlah arsip yang melewati batas tanggal pengembalian (ditampilkan merah jika ada)
+
+### 11. Pipeline Penyusutan Arsip
+
+Menampilkan status alur persetujuan penyusutan arsip dalam **5 tahap berurutan**:
+
+```
+[Draft] → [Diusulkan] → [Ditinjau] → [Disetujui] → [Dilaksanakan]
+```
+
+Setiap tahap menunjukkan jumlah arsip yang sedang berada di tahap tersebut.
+
+### 12. Kapasitas Penyimpanan Fisik
+
+**Progress bar** menampilkan utilisasi ruang arsip per gedung:
+
+| Tingkat Pengisian | Warna | Keterangan |
+|-------------------|-------|------------|
+| < 70% | 🟢 Hijau | Kapasitas masih cukup |
+| 70-89% | 🟡 Kuning | Mendekati penuh |
+| ≥ 90% | 🔴 Merah | Hampir penuh, perlu perhatian |
+
+Tombol **"Kelola Penyimpanan"** mengarah ke halaman Lokasi Simpan.
+
+### 13. Arsip Vital & Terjaga
+
+**Alert card** yang menampilkan:
+- **Arsip Vital** — jumlah arsip vital yang belum diproteksi (merah jika ada)
+- **Arsip Terjaga** — jumlah arsip terjaga yang belum dilaporkan ke **ANRI** (kuning jika ada)
+
+Jika semua arsip sudah diproteksi/dilaporkan, warnanya berubah menjadi **hijau** ✅.
+
+:::info Semua Widget Filter per Unit Kerja
+Semua widget otomatis menyesuaikan dengan **unit kerja yang dipilih** oleh Super Admin. Untuk admin biasa, data ditampilkan sesuai unit kerja masing-masing.
+:::
 
 ---
 

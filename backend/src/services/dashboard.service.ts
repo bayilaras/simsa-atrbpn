@@ -1,10 +1,15 @@
-import { db } from '../config/database';
-import { suratMasuk } from '../db/schema/surat-masuk';
-import { suratKeluar } from '../db/schema/surat-keluar';
-import { arsip } from '../db/schema/arsip';
-import { unitKerja } from '../db/schema/unit-kerja';
-import { sql, eq, and, gte, lte, count, inArray } from 'drizzle-orm';
-import { createLogger } from '../utils/logger';
+import { db } from '../config/database.js';
+import { suratMasuk } from '../db/schema/surat-masuk.js';
+import { suratKeluar } from '../db/schema/surat-keluar.js';
+import { arsip } from '../db/schema/arsip.js';
+import { unitKerja } from '../db/schema/unit-kerja.js';
+import { archiveLending } from '../db/schema/archive-lending.js';
+import { storageLocations } from '../db/schema/storage-locations.js';
+import { penyusutanArsip } from '../db/schema/penyusutan.js';
+import { arsipVital } from '../db/schema/arsip-vital.js';
+import { arsipTerjaga } from '../db/schema/arsip-terjaga.js';
+import { sql, eq, and, gte, lte, lt, count, inArray, or, isNull } from 'drizzle-orm';
+import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('DashboardService');
 
@@ -136,13 +141,13 @@ export const dashboardService = {
 
         // Build monthly trend from aggregated results (O(12) map instead of 24 queries)
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
-        const masukByMonth = new Map(masukMonthlyRaw.map(r => [r.month, r.count]));
-        const keluarByMonth = new Map(keluarMonthlyRaw.map(r => [r.month, r.count]));
+        const masukByMonth = new Map(masukMonthlyRaw.map((r: any) => [r.month, r.count]));
+        const keluarByMonth = new Map(keluarMonthlyRaw.map((r: any) => [r.month, r.count]));
 
         const monthlyTrend: MonthlyStats[] = monthNames.map((name, i) => ({
             month: name,
-            masuk: masukByMonth.get(i + 1) || 0,
-            keluar: keluarByMonth.get(i + 1) || 0,
+            masuk: (masukByMonth.get(i + 1) || 0) as number,
+            keluar: (keluarByMonth.get(i + 1) || 0) as number,
         }));
 
         return {
@@ -156,8 +161,8 @@ export const dashboardService = {
             keluarBulanIni: keluarBulanIniResult?.count || 0,
             monthlyTrend,
             statusBreakdown: {
-                masuk: masukStatusBreakdown.map(s => ({ status: s.status || 'Unknown', count: s.count })),
-                keluar: keluarJenisBreakdown.map(s => ({ status: s.status || 'Unknown', count: s.count })),
+                masuk: masukStatusBreakdown.map((s: any) => ({ status: s.status || 'Unknown', count: s.count })),
+                keluar: keluarJenisBreakdown.map((s: any) => ({ status: s.status || 'Unknown', count: s.count })),
             },
         };
     },
@@ -221,7 +226,7 @@ export const dashboardService = {
             .orderBy(arsip.tanggalKadaluarsa)
             .limit(10);
 
-        return expiringArchives.map(a => ({
+        return expiringArchives.map((a: any) => ({
             ...a,
             daysLeft: Math.ceil(
                 (new Date(a.tanggalKadaluarsa as string).getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
@@ -241,7 +246,7 @@ export const dashboardService = {
                     .select({ id: unitKerja.id, name: unitKerja.name })
                     .from(unitKerja)
                     .where(sql`${unitKerja.parentId} IS NULL`);
-                targetUnitIds = allTopUnits.map(u => u.id);
+                targetUnitIds = allTopUnits.map((u: any) => u.id);
             } else {
                 const children = await db
                     .select({ id: unitKerja.id, name: unitKerja.name })
@@ -249,7 +254,7 @@ export const dashboardService = {
                     .where(eq(unitKerja.parentId, unitKerjaId));
 
                 if (children.length > 0) {
-                    targetUnitIds = children.map(c => c.id);
+                    targetUnitIds = children.map((c: any) => c.id);
                 } else {
                     const currentUnit = await db
                         .select({ parentId: unitKerja.parentId })
@@ -263,7 +268,7 @@ export const dashboardService = {
                             .select({ id: unitKerja.id, name: unitKerja.name })
                             .from(unitKerja)
                             .where(eq(unitKerja.parentId, parentId));
-                        targetUnitIds = siblings.map(s => s.id);
+                        targetUnitIds = siblings.map((s: any) => s.id);
                     } else {
                         targetUnitIds = [unitKerjaId];
                     }
@@ -308,10 +313,10 @@ export const dashboardService = {
             ]);
 
             // 3. Build result from maps
-            const nameMap = new Map(unitNames.map(u => [u.id, u.name]));
-            const masukMap = new Map(masukCounts.map(r => [r.unitId, r.count]));
-            const keluarMap = new Map(keluarCounts.map(r => [r.unitId, r.count]));
-            const arsipMap = new Map(arsipCounts.map(r => [r.unitId, r.count]));
+            const nameMap = new Map(unitNames.map((u: any) => [u.id, u.name]));
+            const masukMap = new Map<string, number>(masukCounts.map((r: any) => [r.unitId, r.count]));
+            const keluarMap = new Map<string, number>(keluarCounts.map((r: any) => [r.unitId, r.count]));
+            const arsipMap = new Map<string, number>(arsipCounts.map((r: any) => [r.unitId, r.count]));
 
             const comparisonData = targetUnitIds.map(unitId => ({
                 name: nameMap.get(unitId) || unitId,
@@ -325,5 +330,219 @@ export const dashboardService = {
             log.error({ err: error }, '[DashboardService] Error in getUnitKerjaComparison:');
             throw error;
         }
-    }
+    },
+
+    async getWidgetData(unitKerjaId?: string | null) {
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+            // Build unit kerja filter conditions for each table
+            const arsipUnitFilter = unitKerjaId ? [eq(arsip.unitKerjaId, unitKerjaId)] : [];
+            const storageUnitFilter = unitKerjaId ? [eq(storageLocations.unitKerjaId, unitKerjaId)] : [];
+            const penyusutanUnitFilter = unitKerjaId ? [eq(penyusutanArsip.unitKerjaId, unitKerjaId)] : [];
+            const vitalUnitFilter = unitKerjaId ? [eq(arsipVital.unitKerjaId, unitKerjaId)] : [];
+            const terjagaUnitFilter = unitKerjaId ? [eq(arsipTerjaga.unitKerjaId, unitKerjaId)] : [];
+
+            const [
+                // Archive Lifecycle — compute status from retention dates using SQL
+                arsipAktifResult,
+                arsipInaktifResult,
+                arsipKadaluarsaResult,
+                arsipTotalResult,
+                // Storage Capacity
+                storageData,
+                // Lending Overview
+                lendingBorrowedResult,
+                lendingOverdueResult,
+                // Penyusutan Overview
+                penyusutanStatusData,
+                // Vital/Terjaga Alerts
+                vitalUnprotectedResult,
+                terjagaUnreportedResult,
+                vitalTotalResult,
+                terjagaTotalResult,
+                // Media Breakdown
+                mediaData,
+            ] = await Promise.all([
+                // 1. Arsip Aktif: has retensi_aktif set AND aktif period hasn't ended yet
+                db.select({ count: count() }).from(arsip)
+                    .where(and(
+                        ...arsipUnitFilter,
+                        sql`${arsip.tanggalArsip} IS NOT NULL`,
+                        sql`${arsip.retensiAktif} IS NOT NULL`,
+                        sql`(${arsip.tanggalArsip}::date + (COALESCE(NULLIF(regexp_replace(${arsip.retensiAktif}, '[^0-9]', '', 'g'), ''), '0')::int * INTERVAL '1 year')) > ${today}::date`,
+                    )),
+
+                // 2. Arsip Inaktif: aktif period ended, but inaktif period hasn't ended yet
+                db.select({ count: count() }).from(arsip)
+                    .where(and(
+                        ...arsipUnitFilter,
+                        sql`${arsip.tanggalArsip} IS NOT NULL`,
+                        sql`${arsip.retensiAktif} IS NOT NULL`,
+                        sql`(${arsip.tanggalArsip}::date + (COALESCE(NULLIF(regexp_replace(${arsip.retensiAktif}, '[^0-9]', '', 'g'), ''), '0')::int * INTERVAL '1 year')) <= ${today}::date`,
+                        sql`(${arsip.tanggalArsip}::date + ((COALESCE(NULLIF(regexp_replace(${arsip.retensiAktif}, '[^0-9]', '', 'g'), ''), '0')::int + COALESCE(NULLIF(regexp_replace(COALESCE(${arsip.retensiInaktif}, '0'), '[^0-9]', '', 'g'), ''), '0')::int) * INTERVAL '1 year')) > ${today}::date`,
+                    )),
+
+                // 3. Arsip Kadaluarsa: both aktif + inaktif periods ended
+                db.select({ count: count() }).from(arsip)
+                    .where(and(
+                        ...arsipUnitFilter,
+                        sql`${arsip.tanggalArsip} IS NOT NULL`,
+                        sql`${arsip.retensiAktif} IS NOT NULL`,
+                        sql`(${arsip.tanggalArsip}::date + ((COALESCE(NULLIF(regexp_replace(${arsip.retensiAktif}, '[^0-9]', '', 'g'), ''), '0')::int + COALESCE(NULLIF(regexp_replace(COALESCE(${arsip.retensiInaktif}, '0'), '[^0-9]', '', 'g'), ''), '0')::int) * INTERVAL '1 year')) <= ${today}::date`,
+                    )),
+
+                // 4. Total arsip (for "no retensi" count calculation)
+                db.select({ count: count() }).from(arsip)
+                    .where(and(...arsipUnitFilter)),
+
+                // 5. Storage Capacity — top-level locations (gedung) with aggregate capacity
+                db.select({
+                    id: storageLocations.id,
+                    name: storageLocations.name,
+                    code: storageLocations.code,
+                    level: storageLocations.level,
+                    capacity: storageLocations.capacity,
+                    currentCount: storageLocations.currentCount,
+                }).from(storageLocations)
+                    .where(and(
+                        ...storageUnitFilter,
+                        eq(storageLocations.level, 'gedung'),
+                    ))
+                    .orderBy(storageLocations.code)
+                    .limit(10),
+
+                // 6. Lending — active borrowed
+                db.select({ count: count() }).from(archiveLending)
+                    .where(and(
+                        eq(archiveLending.status, 'borrowed'),
+                        ...(unitKerjaId ? [
+                            sql`${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`
+                        ] : []),
+                    )),
+
+                // 7. Lending — overdue
+                db.select({ count: count() }).from(archiveLending)
+                    .where(and(
+                        eq(archiveLending.status, 'borrowed'),
+                        lt(archiveLending.dueDate, today),
+                        ...(unitKerjaId ? [
+                            sql`${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`
+                        ] : []),
+                    )),
+
+                // 8. Penyusutan — count per status
+                db.select({
+                    status: penyusutanArsip.status,
+                    count: count(),
+                }).from(penyusutanArsip)
+                    .where(and(...penyusutanUnitFilter))
+                    .groupBy(penyusutanArsip.status),
+
+                // 9. Vital — unprotected
+                db.select({ count: count() }).from(arsipVital)
+                    .where(and(
+                        ...vitalUnitFilter,
+                        eq(arsipVital.statusProteksi, 'belum_diproteksi'),
+                    )),
+
+                // 10. Terjaga — unreported
+                db.select({ count: count() }).from(arsipTerjaga)
+                    .where(and(
+                        ...terjagaUnitFilter,
+                        eq(arsipTerjaga.statusPelaporan, 'belum_dilaporkan'),
+                    )),
+
+                // 11. Vital — total
+                db.select({ count: count() }).from(arsipVital)
+                    .where(and(...vitalUnitFilter)),
+
+                // 12. Terjaga — total
+                db.select({ count: count() }).from(arsipTerjaga)
+                    .where(and(...terjagaUnitFilter)),
+
+                // 13. Media breakdown
+                db.select({
+                    mediaType: arsip.mediaType,
+                    count: count(),
+                }).from(arsip)
+                    .where(and(...arsipUnitFilter))
+                    .groupBy(arsip.mediaType),
+            ]);
+
+            // Compute storage capacity aggregates per gedung
+            // For each gedung, sum capacity of all descendant boxes
+            const storageCapacity = [];
+            for (const loc of storageData) {
+                // Get total capacity and count from all boxes under this gedung
+                const [boxStats] = await db.select({
+                    totalCapacity: sql<number>`COALESCE(SUM(${storageLocations.capacity}), 0)::int`,
+                    totalCount: sql<number>`COALESCE(SUM(${storageLocations.currentCount}), 0)::int`,
+                    boxCount: count(),
+                }).from(storageLocations)
+                    .where(and(
+                        ...(unitKerjaId ? [eq(storageLocations.unitKerjaId, unitKerjaId)] : []),
+                        eq(storageLocations.level, 'box'),
+                        sql`${storageLocations.code} LIKE ${loc.code + '%'}`,
+                    ));
+
+                storageCapacity.push({
+                    id: loc.id,
+                    name: loc.name,
+                    code: loc.code,
+                    totalCapacity: boxStats?.totalCapacity || 0,
+                    currentCount: boxStats?.totalCount || 0,
+                    boxCount: boxStats?.boxCount || 0,
+                    usagePercent: boxStats?.totalCapacity
+                        ? Math.round((boxStats.totalCount / boxStats.totalCapacity) * 100)
+                        : 0,
+                });
+            }
+
+            // Build penyusutan overview object
+            const penyusutanStatuses = ['draft', 'proposed', 'reviewed', 'approved', 'executed'];
+            const penyusutanMap = new Map(penyusutanStatusData.map((s: any) => [s.status, s.count]));
+            const penyusutanOverview = penyusutanStatuses.map(status => ({
+                status,
+                count: penyusutanMap.get(status) || 0,
+            }));
+
+            // Calculate counts
+            const aktifCount = arsipAktifResult[0]?.count || 0;
+            const inaktifCount = arsipInaktifResult[0]?.count || 0;
+            const kadaluarsaCount = arsipKadaluarsaResult[0]?.count || 0;
+            const totalArsip = arsipTotalResult[0]?.count || 0;
+            const belumDitentukan = Math.max(0, totalArsip - aktifCount - inaktifCount - kadaluarsaCount);
+
+            return {
+                archiveLifecycle: {
+                    aktif: aktifCount,
+                    inaktif: inaktifCount,
+                    kadaluarsa: kadaluarsaCount,
+                    belumDitentukan,
+                    total: totalArsip,
+                },
+                storageCapacity,
+                lendingOverview: {
+                    borrowed: lendingBorrowedResult[0]?.count || 0,
+                    overdue: lendingOverdueResult[0]?.count || 0,
+                },
+                penyusutanOverview,
+                vitalTerjagaAlerts: {
+                    vitalUnprotected: vitalUnprotectedResult[0]?.count || 0,
+                    vitalTotal: vitalTotalResult[0]?.count || 0,
+                    terjagaUnreported: terjagaUnreportedResult[0]?.count || 0,
+                    terjagaTotal: terjagaTotalResult[0]?.count || 0,
+                },
+                mediaBreakdown: mediaData.map((m: any) => ({
+                    type: m.mediaType || 'Lainnya',
+                    count: m.count,
+                })),
+            };
+        } catch (error) {
+            log.error({ err: error }, '[DashboardService] Error in getWidgetData:');
+            throw error;
+        }
+    },
 };

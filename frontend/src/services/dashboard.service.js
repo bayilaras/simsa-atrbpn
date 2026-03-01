@@ -46,7 +46,16 @@ const dashboardService = {
         const response = await api.get('/api/dashboard/comparison', params);
         return response.data;
     },
+    /**
+     * Get widget data (lifecycle, storage, lending, penyusutan, vital/terjaga, media)
+     */
+    async getWidgetData(unitKerjaId) {
+        const params = {};
+        if (unitKerjaId) params.unitKerjaId = unitKerjaId;
+
+        const response = await api.get('/api/dashboard/widgets', params);
+        return response.data;
+    },
 };
 
 export default dashboardService;
-

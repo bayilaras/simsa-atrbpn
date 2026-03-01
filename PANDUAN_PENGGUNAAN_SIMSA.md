@@ -3,7 +3,7 @@
 **Sistem Informasi Manajemen Surat & Arsip**
 *Kementerian ATR/BPN — Dirjen PTPP*
 
-> Versi 1.0.0 (BETA) | Terakhir diperbarui: 22 Februari 2026
+> Versi 1.1.0 (BETA) | Terakhir diperbarui: 1 Maret 2026
 
 ---
 
@@ -194,6 +194,31 @@ Setelah berhasil login, Anda akan diarahkan ke halaman **Dashboard** yang menamp
 │  │ 📋 Aktivitas Terbaru                             ││
 │  │ Surat masuk dan keluar terakhir                  ││
 │  └──────────────────────────────────────────────────┘│
+│                                                      │
+│  ┌ ─ ─ ─ ─ ─ WIDGET BARU (v1.1) ─ ─ ─ ─ ─ ─ ─ ─ ┐│
+│                                                      │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
+│  │🍩 Siklus     │ │💿 Jenis      │ │📖 Peminjaman │ │
+│  │ Arsip        │ │ Media Arsip  │ │ Arsip        │ │
+│  │ (Donut)      │ │ (Bar)        │ │ Borrowed: 5  │ │
+│  │Aktif/Inaktif │ │Kertas/Foto/..│ │ Overdue: 2 🔴│ │
+│  └──────────────┘ └──────────────┘ └──────────────┘ │
+│                                                      │
+│  ┌──────────────────────────────────────────────────┐│
+│  │ 📋 Pipeline Penyusutan Arsip                     ││
+│  │ [Draft] → [Diusulkan] → [Ditinjau] → [Disetujui]││
+│  │    3          2            1            0        ││
+│  └──────────────────────────────────────────────────┘│
+│                                                      │
+│  ┌─────────────────────┐ ┌──────────────────────────┐│
+│  │🏢 Kapasitas         │ │🛡️ Arsip Vital & Terjaga  ││
+│  │ Penyimpanan Fisik   │ │                          ││
+│  │ Gedung A: ████░ 80% │ │ Vital: 3 belum          ││
+│  │ Gedung B: ██░░░ 40% │ │   diproteksi  🔴        ││
+│  │                     │ │ Terjaga: 1 belum        ││
+│  │                     │ │   dilaporkan ANRI 🟡    ││
+│  └─────────────────────┘ └──────────────────────────┘│
+│  └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘│
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -209,13 +234,30 @@ Setelah berhasil login, Anda akan diarahkan ke halaman **Dashboard** yang menamp
 | **Masa Retensi** | Daftar arsip yang mendekati batas waktu musnah dengan indikator warna urgency |
 | **Aktivitas Terbaru** | Daftar surat masuk/keluar terakhir yang masuk ke sistem |
 
-### 3.3 Indikator Urgency Masa Retensi
+### 3.3 Widget Tambahan (Baru v1.1)
+
+Mulai versi 1.1, dashboard menampilkan **6 widget tambahan** yang memberikan gambaran menyeluruh tentang kondisi arsip:
+
+| Widget | Deskripsi |
+|--------|-----------|
+| **🍩 Status Siklus Arsip** | Donut chart menampilkan distribusi arsip berdasarkan status: **Aktif** (masa retensi aktif berjalan), **Inaktif** (masa aktif selesai, inaktif berjalan), **Kadaluarsa** (semua masa retensi selesai), dan **Belum Ditentukan** (belum ada data retensi). Dihitung otomatis dari tanggal arsip dan jadwal retensi aktif/inaktif. |
+| **💿 Jenis Media Arsip** | Progress bar menampilkan distribusi arsip per jenis media penyimpanan: kertas, foto, video, audio, elektronik, dll. Setiap jenis media memiliki ikon dan warna yang berbeda. |
+| **📖 Peminjaman Arsip** | Menampilkan jumlah arsip yang **sedang dipinjam** dan jumlah peminjaman yang **terlambat dikembalikan** (overdue). Jika ada overdue, indikator berwarna merah. |
+| **📋 Pipeline Penyusutan** | Menampilkan status alur persetujuan penyusutan arsip dalam 5 tahap: **Draft** → **Diusulkan** → **Ditinjau** → **Disetujui** → **Dilaksanakan**. Setiap tahap menunjukkan jumlah arsip yang sedang berada di tahap tersebut. |
+| **🏢 Kapasitas Penyimpanan** | Progress bar utilisasi ruang arsip per gedung. Warna berubah sesuai tingkat pengisian: **hijau** (<70%), **kuning** (70-89%), **merah** (≥90%). Tombol "Kelola Penyimpanan" di bawah mengarah ke halaman Lokasi Simpan. |
+| **🛡️ Arsip Vital & Terjaga** | Alert card yang menampilkan jumlah arsip vital yang **belum diproteksi** dan arsip terjaga yang **belum dilaporkan ke ANRI**. Berwarna merah/kuning jika ada yang perlu tindakan, hijau jika semua aman. |
+
+> [!NOTE]
+> Semua widget otomatis menyesuaikan dengan **unit kerja yang dipilih** oleh Super Admin melalui dropdown di Hero Section. Untuk admin biasa, data ditampilkan sesuai unit kerja masing-masing.
+
+### 3.4 Indikator Urgency Masa Retensi
 
 | Warna | Keterangan |
 |-------|------------|
 | 🔴 Merah | **Kritis** — ≤ 15 hari sebelum musnah |
 | 🟡 Kuning | **Peringatan** — 16-30 hari sebelum musnah |
 | 🔵 Biru | **Informasi** — 31-90 hari sebelum musnah |
+
 
 ---
 

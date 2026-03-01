@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { dashboardService } from '../services/dashboard.service';
-import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { dashboardService } from '../services/dashboard.service.js';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const router = Router();
@@ -70,6 +70,19 @@ router.get('/comparison', async (req: AuthRequest, res, next) => {
         );
 
         res.json({ success: true, data: comparison });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/dashboard/widgets - Get extended widget data
+router.get('/widgets', async (req: AuthRequest, res, next) => {
+    try {
+        const unitKerjaId = resolveUnitKerjaId(req);
+
+        const widgets = await dashboardService.getWidgetData(unitKerjaId);
+
+        res.json({ success: true, data: widgets });
     } catch (error) {
         next(error);
     }
