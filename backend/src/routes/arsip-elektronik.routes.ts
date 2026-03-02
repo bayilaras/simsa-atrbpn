@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
-import { arsipElektronikService } from '../services/arsip-elektronik.service';
-import { authMiddleware } from '../middlewares/auth.middleware';
+import { arsipElektronikService } from '../services/arsip-elektronik.service.js';
+import { authMiddleware } from '../middlewares/auth.middleware.js';
 
 interface AuthRequest extends Request {
     user?: { id: string; role: string };

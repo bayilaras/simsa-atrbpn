@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { suratKeluarService } from '@/services/surat-keluar.service';
 import { suratMasukService } from '@/services/surat-masuk.service';
@@ -112,6 +112,7 @@ export default function TambahSuratKeluar() {
     const isEditMode = Boolean(id);
     const { user } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
     const fileInputRef = useRef(null);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -154,6 +155,24 @@ export default function TambahSuratKeluar() {
             fetchSuratData();
         }
     }, [id, isEditMode]);
+
+    // Auto-fill from reply state (when clicking "Balas Surat" from detail surat masuk)
+    useEffect(() => {
+        const replyTo = location.state?.replyTo;
+        if (replyTo && !isEditMode) {
+            setFormData(prev => ({
+                ...prev,
+                perihal: `Balasan: ${replyTo.perihal || ''}`,
+                kepada: replyTo.dari || '',
+                balasanUntuk: replyTo.id,
+            }));
+            setSelectedSuratMasuk({
+                id: replyTo.id,
+                nomorSurat: replyTo.nomorSurat,
+                perihal: replyTo.perihal,
+            });
+        }
+    }, [location.state, isEditMode]);
 
     const fetchSuratData = async () => {
         setIsLoading(true);

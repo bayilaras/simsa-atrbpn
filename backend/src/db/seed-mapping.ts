@@ -1,5 +1,5 @@
-import { db } from '../config/database';
-import { klasifikasiJraMapping } from './schema';
+import { db } from '../config/database.js';
+import { klasifikasiJraMapping } from './schema/index.js';
 
 // Data pemetaan tematik antara Klasifikasi Arsip (Permen ATR/BPN 10/2018)
 // dan Jadwal Retensi Arsip (Permen ATR/BPN 8/2020)

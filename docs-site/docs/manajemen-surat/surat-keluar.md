@@ -45,6 +45,23 @@ Klik tombol **"+ Tambah Surat Keluar"** berwarna biru di pojok kanan atas.
 
 ---
 
+## Membuat Surat Keluar sebagai Balasan
+
+:::tip Fitur Baru v1.2
+Selain membuat surat keluar baru secara manual, kamu bisa langsung **membalas surat masuk** dari halaman detailnya. Data form akan otomatis terisi!
+:::
+
+### Cara Cepat (dari Detail Surat Masuk):
+
+1. Buka **Detail Surat Masuk** yang ingin dibalas.
+2. Klik tombol **"Balas Surat"** (ikon ↩️).
+3. Form Tambah Surat Keluar terbuka dengan **Perihal**, **Kepada**, dan **Referensi** otomatis terisi.
+4. Lengkapi field lainnya dan klik **"Simpan"**.
+
+Untuk panduan lengkap, lihat bagian [Membalas Surat Masuk](surat-masuk.md#membalas-surat-masuk).
+
+---
+
 ## Melihat Detail Surat Keluar
 
 1. Klik **ikon mata** (👁️) atau klik baris surat.

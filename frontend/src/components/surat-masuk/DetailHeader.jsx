@@ -1,4 +1,4 @@
-import { ArrowLeft, MailOpen, Edit, Send, Archive, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, MailOpen, Edit, Send, Archive, MoreHorizontal, Reply } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Link } from 'react-router-dom';
 
-export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, isAdmin }) {
+export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onArchive, isAdmin }) {
     return (
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 p-6 md:p-8 text-white shadow-xl">
             {/* Background Pattern */}
@@ -65,6 +65,14 @@ export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, i
                         <Button
                             variant="secondary"
                             className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm"
+                            onClick={onReply}
+                        >
+                            <Reply className="mr-2 h-4 w-4" />
+                            Balas Surat
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm"
                             onClick={onDistribute}
                         >
                             <Send className="mr-2 h-4 w-4" />
@@ -105,6 +113,10 @@ export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, i
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={onReply}>
+                                    <Reply className="mr-2 h-4 w-4" />
+                                    Balas Surat
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={onDistribute}>
                                     <Send className="mr-2 h-4 w-4" />
                                     Distribusikan

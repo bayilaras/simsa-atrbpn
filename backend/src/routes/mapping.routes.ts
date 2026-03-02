@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
-import { mappingService } from '../services/klasifikasi.service';
-import { createLogger } from '../utils/logger';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
+import { mappingService } from '../services/klasifikasi.service.js';
+import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('MappingRoutes');
 

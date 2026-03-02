@@ -1,5 +1,5 @@
-import { db } from '../config/database';
-import { arsipElektronik, NewArsipElektronik, ArsipElektronik, arsip } from '../db/schema';
+import { db } from '../config/database.js';
+import { arsipElektronik, NewArsipElektronik, ArsipElektronik, arsip } from '../db/schema/index.js';
 import { eq, and, desc, sql, count } from 'drizzle-orm';
 
 interface ArsipElektronikFilters {
@@ -165,7 +165,7 @@ class ArsipElektronikService {
         // Import dynamically to avoid circular dependency issues if any, though likely not needed here
         // better to import at top level if possible, but let's see if preservasiTrack is available
         // It is not imported at top level yet.
-        const { preservasiTrack } = await import('../db/schema/preservasi-track');
+        const { preservasiTrack } = await import('../db/schema/preservasi-track.js');
 
         const result = await db.insert(preservasiTrack).values({
             ...data,
@@ -175,7 +175,7 @@ class ArsipElektronikService {
     }
 
     async getPreservationHistory(arsipElektronikId: string) {
-        const { preservasiTrack, users } = await import('../db/schema');
+        const { preservasiTrack, users } = await import('../db/schema/index.js');
 
         const results = await db.select({
             id: preservasiTrack.id,

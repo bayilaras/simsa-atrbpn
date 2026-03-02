@@ -1,7 +1,7 @@
 import { pgTable, uuid, varchar, text, integer, timestamp, date } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { users } from './users';
-import { arsipElektronik } from './arsip-elektronik';
+import { users } from './users.js';
+import { arsipElektronik } from './arsip-elektronik.js';
 
 /**
  * Autentikasi — Berita Acara Autentikasi Arsip Hasil Alih Media

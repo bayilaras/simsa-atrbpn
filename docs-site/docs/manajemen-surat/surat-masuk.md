@@ -94,9 +94,45 @@ Halaman detail menampilkan semua informasi surat, termasuk lampiran yang bisa di
 | Tombol | Fungsi | Akses |
 |--------|--------|-------|
 | **Edit** | Ubah data surat | Staff, Admin |
+| **Balas Surat** | Buat surat keluar balasan (auto-fill) | Staff, Admin |
 | **Distribusikan** | Kirim surat ke unit lain | Staff, Admin |
 | **Arsipkan** | Pindahkan ke arsip | Staff, Admin |
 | **Hapus** | Hapus surat | Admin saja |
+
+---
+
+## Membalas Surat Masuk
+
+:::tip Fitur Baru v1.2
+Tombol **Balas Surat** tersedia di header halaman detail dan di kartu **Aksi Cepat** di sidebar kanan.
+:::
+
+### Langkah 1: Buka Detail Surat
+
+Klik surat yang ingin dibalas pada daftar Surat Masuk.
+
+### Langkah 2: Klik Balas Surat
+
+Klik tombol **"Balas Surat"** (ikon ↩️) di header atas atau di kartu Aksi Cepat.
+
+### Langkah 3: Form Otomatis Terisi
+
+Kamu akan diarahkan ke form **Tambah Surat Keluar** dengan data otomatis terisi:
+
+| Field | Isi Otomatis |
+|-------|-------------|
+| **Perihal** | "Balasan: [Perihal Surat Masuk]" |
+| **Kepada** | Nama pengirim surat masuk asal |
+| **Referensi Surat Masuk** | Otomatis terhubung (kartu biru) |
+
+### Langkah 4: Lengkapi & Simpan
+
+1. Isi sisa field: **Naskah Dinas**, **Nomor Surat**, **Tanggal**, dan **Lampiran/Link Dokumen**.
+2. Klik **"Simpan"** untuk menyimpan surat keluar balasan.
+
+:::info
+Setelah disimpan, status surat masuk otomatis berubah menjadi **"Sudah Dibalas"**.
+:::
 
 ---
 

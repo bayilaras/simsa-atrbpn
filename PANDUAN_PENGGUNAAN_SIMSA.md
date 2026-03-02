@@ -3,7 +3,7 @@
 **Sistem Informasi Manajemen Surat & Arsip**
 *Kementerian ATR/BPN — Dirjen PTPP*
 
-> Versi 1.1.0 (BETA) | Terakhir diperbarui: 1 Maret 2026
+> Versi 1.2.0 (BETA) | Terakhir diperbarui: 2 Maret 2026
 
 ---
 
@@ -377,9 +377,36 @@ flowchart LR
 2. Halaman detail menampilkan informasi lengkap surat beserta lampiran.
 3. Tombol aksi tersedia di bagian atas (sesuai role):
    - **Edit** — Ubah data surat (Admin/Super Admin)
+   - **Balas Surat** — Buat surat keluar balasan dengan data otomatis terisi (Admin/Super Admin)
    - **Distribusikan** — Kirim surat ke unit kerja lain (Admin/Super Admin)
    - **Arsipkan** — Pindahkan ke arsip (Admin/Super Admin)
    - **Hapus** — Hapus surat (hanya Admin)
+
+#### Membalas Surat Masuk (Baru v1.2)
+
+Fitur **Balas Surat** memungkinkan Anda membuat surat keluar balasan langsung dari halaman detail surat masuk, dengan data yang otomatis terisi.
+
+```mermaid
+flowchart LR
+    A["Buka Detail\nSurat Masuk"] --> B["Klik 'Balas Surat'"]
+    B --> C["Form Surat Keluar\n(Auto-fill)"]
+    C --> D["Lengkapi &\nSimpan"]
+    D --> E["Status berubah\n'Sudah Dibalas'"]
+```
+
+**Langkah-langkah:**
+
+1. Buka halaman **Detail Surat Masuk** (klik surat di tabel daftar).
+2. Klik tombol **"Balas Surat"** di header atau di kartu **Aksi Cepat** (sidebar kanan).
+3. Anda akan diarahkan ke form **Tambah Surat Keluar** dengan data otomatis terisi:
+   - **Perihal** → otomatis terisi "Balasan: [Perihal Surat Masuk]"
+   - **Kepada** → otomatis terisi dengan nama pengirim surat masuk
+   - **Referensi Surat Masuk** → otomatis terhubung (ditandai kartu biru di bagian atas form)
+4. Lengkapi sisa field yang diperlukan (Nomor Surat, Tanggal, Naskah Dinas, Lampiran).
+5. Klik **"Simpan"** untuk menyimpan surat keluar balasan.
+
+> [!TIP]
+> Setelah surat keluar balasan disimpan, status surat masuk akan otomatis berubah menjadi **"Sudah Dibalas"** sehingga mudah di-tracking.
 
 #### Mengedit Surat Masuk
 

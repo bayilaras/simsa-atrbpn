@@ -65,6 +65,19 @@ export default function SuratMasukDetail() {
         }
     }
 
+    const handleReply = () => {
+        navigate('/surat/keluar/tambah', {
+            state: {
+                replyTo: {
+                    id: surat.id,
+                    nomorSurat: surat.nomorSurat,
+                    perihal: surat.perihal,
+                    dari: surat.dari,
+                }
+            }
+        })
+    }
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
@@ -112,6 +125,7 @@ export default function SuratMasukDetail() {
                 surat={surat}
                 onBack={() => navigate(-1)}
                 onEdit={() => navigate(`/surat/masuk/edit/${surat.id}`)}
+                onReply={handleReply}
                 onDistribute={() => setDistributeDialogOpen(true)}
                 onArchive={() => setArchiveDialogOpen(true)}
                 isAdmin={isAdmin}
@@ -129,6 +143,7 @@ export default function SuratMasukDetail() {
                     <StatusSidebar
                         surat={surat}
                         onEdit={() => navigate(`/surat/masuk/edit/${surat.id}`)}
+                        onReply={handleReply}
                         onDistribute={() => setDistributeDialogOpen(true)}
                         onArchive={() => setArchiveDialogOpen(true)}
                         isAdmin={isAdmin}

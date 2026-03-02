@@ -1,12 +1,12 @@
 import { Router } from 'express';
-import { autentikasiService } from '../services/autentikasi.service';
-import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
-import { upload } from '../middlewares/upload.middleware';
-import { HashVerificationService } from '../services/hash-verification.service';
-import { canWriteMiddleware } from '../middlewares/role.middleware';
-import { validateBody, validateQuery } from '../middlewares/validate.middleware';
-import { createAutentikasiSchema, queryAutentikasiSchema } from '../validators/schemas';
-import auditLogService from '../services/audit-log.service';
+import { autentikasiService } from '../services/autentikasi.service.js';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
+import { upload } from '../middlewares/upload.middleware.js';
+import { HashVerificationService } from '../services/hash-verification.service.js';
+import { canWriteMiddleware } from '../middlewares/role.middleware.js';
+import { validateBody, validateQuery } from '../middlewares/validate.middleware.js';
+import { createAutentikasiSchema, queryAutentikasiSchema } from '../validators/schemas.js';
+import auditLogService from '../services/audit-log.service.js';
 
 const router = Router();
 

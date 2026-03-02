@@ -1,16 +1,16 @@
-import { db } from '../config/database';
-import { autentikasi, NewAutentikasi } from '../db/schema/autentikasi';
-import { arsipElektronik } from '../db/schema/arsip-elektronik';
-import { users } from '../db/schema/users';
+import { db } from '../config/database.js';
+import { autentikasi, NewAutentikasi } from '../db/schema/autentikasi.js';
+import { arsipElektronik } from '../db/schema/arsip-elektronik.js';
+import { users } from '../db/schema/users.js';
 import { eq, desc, ilike, and, gte, lte, inArray, sql } from 'drizzle-orm';
-import { CreateAutentikasi, QueryAutentikasi } from '../validators/schemas';
+import { CreateAutentikasi, QueryAutentikasi } from '../validators/schemas.js';
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 
 export class AutentikasiService {
     async create(data: CreateAutentikasi & { userId: string }) {
-        return await db.transaction(async (tx) => {
+        return await db.transaction(async (tx: any) => {
             // 1. Create Autentikasi Record
             const [newAutentikasi] = await tx.insert(autentikasi).values({
                 nomorBeritaAcara: data.nomorBeritaAcara,

@@ -1,13 +1,13 @@
 import { Link } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
-import { CheckCircle, Clock, Archive, Eye, Edit, Send } from 'lucide-react';
+import { CheckCircle, Clock, Archive, Eye, Edit, Send, Reply } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 
-export function StatusSidebar({ surat, onEdit, onDistribute, onArchive, isAdmin }) {
+export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive, isAdmin }) {
     const formatDate = (dateString) => {
         if (!dateString) return '-';
         try {
@@ -143,6 +143,14 @@ export function StatusSidebar({ surat, onEdit, onDistribute, onArchive, isAdmin 
                         >
                             <Edit className="mr-2 h-4 w-4" />
                             Edit Surat
+                        </Button>
+                        <Button
+                            variant="outline"
+                            className="w-full justify-start hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 dark:hover:bg-amber-950/30 dark:hover:text-amber-300 transition-colors"
+                            onClick={onReply}
+                        >
+                            <Reply className="mr-2 h-4 w-4" />
+                            Balas Surat
                         </Button>
                         <Button
                             variant="outline"

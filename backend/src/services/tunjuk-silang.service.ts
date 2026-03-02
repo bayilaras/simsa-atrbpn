@@ -1,5 +1,5 @@
-import { db } from '../config/database';
-import { tunjukSilang, NewTunjukSilang, TunjukSilang } from '../db/schema';
+import { db } from '../config/database.js';
+import { tunjukSilang, NewTunjukSilang, TunjukSilang } from '../db/schema/index.js';
 import { eq, or, and, desc, count } from 'drizzle-orm';
 
 const VALID_ENTITY_TYPES = ['arsip', 'surat_masuk', 'surat_keluar', 'dosir'];
@@ -46,7 +46,7 @@ class TunjukSilangService {
             .orderBy(desc(tunjukSilang.createdAt));
 
         // Normalize: for each result, determine direction relative to the queried entity
-        return results.map(ref => {
+        return results.map((ref: any) => {
             const isSource = ref.sourceType === entityType && ref.sourceId === entityId;
             return {
                 ...ref,

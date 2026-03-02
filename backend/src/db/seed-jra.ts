@@ -1,5 +1,5 @@
-import { db } from '../config/database';
-import { jadwalRetensiArsip } from './schema';
+import { db } from '../config/database.js';
+import { jadwalRetensiArsip } from './schema/index.js';
 
 // Data Jadwal Retensi Arsip berdasarkan Permen ATR/BPN No. 8 Tahun 2020
 // Generated from PDF extraction

@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
-import { tunjukSilangService } from '../services/tunjuk-silang.service';
-import { authMiddleware } from '../middlewares/auth.middleware';
+import { tunjukSilangService } from '../services/tunjuk-silang.service.js';
+import { authMiddleware } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
