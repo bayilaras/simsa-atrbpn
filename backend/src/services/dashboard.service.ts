@@ -471,12 +471,16 @@ export const dashboardService = {
                     .groupBy(arsip.mediaType),
             ]);
 
-            // Compute storage capacity aggregates per gedung
-            // For each gedung, sum capacity of all descendant boxes
-            const storageCapacity = [];
-            for (const loc of storageData) {
-                // Get total capacity and count from all boxes under this gedung
-                const [boxStats] = await db.select({
+            // Compute storage capacity aggregates per gedung — single query instead of N+1 loop
+            let storageCapacity: any[] = [];
+            if (storageData.length > 0) {
+                const gedungCodes = storageData.map((loc: any) => loc.code);
+                // Build OR conditions for each gedung code prefix
+                const prefixConditions = gedungCodes.map((code: string) =>
+                    sql`${storageLocations.code} LIKE ${code + '%'}`
+                );
+                const allBoxStats = await db.select({
+                    prefix: sql<string>`LEFT(${storageLocations.code}, 2)`,
                     totalCapacity: sql<number>`COALESCE(SUM(${storageLocations.capacity}), 0)::int`,
                     totalCount: sql<number>`COALESCE(SUM(${storageLocations.currentCount}), 0)::int`,
                     boxCount: count(),
@@ -484,19 +488,26 @@ export const dashboardService = {
                     .where(and(
                         ...(unitKerjaId ? [eq(storageLocations.unitKerjaId, unitKerjaId)] : []),
                         eq(storageLocations.level, 'box'),
-                        sql`${storageLocations.code} LIKE ${loc.code + '%'}`,
-                    ));
+                        or(...prefixConditions),
+                    ))
+                    .groupBy(sql`LEFT(${storageLocations.code}, 2)`);
 
-                storageCapacity.push({
-                    id: loc.id,
-                    name: loc.name,
-                    code: loc.code,
-                    totalCapacity: boxStats?.totalCapacity || 0,
-                    currentCount: boxStats?.totalCount || 0,
-                    boxCount: boxStats?.boxCount || 0,
-                    usagePercent: boxStats?.totalCapacity
-                        ? Math.round((boxStats.totalCount / boxStats.totalCapacity) * 100)
-                        : 0,
+                const boxStatsMap = new Map(allBoxStats.map((s: any) => [s.prefix, s]));
+
+                storageCapacity = storageData.map((loc: any) => {
+                    const prefix = loc.code?.substring(0, 2) || '';
+                    const stats = boxStatsMap.get(prefix);
+                    return {
+                        id: loc.id,
+                        name: loc.name,
+                        code: loc.code,
+                        totalCapacity: stats?.totalCapacity || 0,
+                        currentCount: stats?.totalCount || 0,
+                        boxCount: stats?.boxCount || 0,
+                        usagePercent: stats?.totalCapacity
+                            ? Math.round((stats.totalCount / stats.totalCapacity) * 100)
+                            : 0,
+                    };
                 });
             }
 

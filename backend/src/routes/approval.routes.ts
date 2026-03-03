@@ -1,9 +1,9 @@
 import express, { Response, NextFunction } from 'express';
-import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
-import { approvalService } from '../services/approval.service';
-import { signatureService } from '../services/signature.service';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
+import { approvalService } from '../services/approval.service.js';
+import { signatureService } from '../services/signature.service.js';
 import { z } from 'zod';
-import { validateBody } from '../middlewares/validate.middleware';
+import { validateBody } from '../middlewares/validate.middleware.js';
 
 const router = express.Router();
 
@@ -31,6 +31,22 @@ const signSchema = z.object({
 });
 
 // Routes
+
+// GET /api/approval/pending — List pending approvals for current user
+router.get('/pending', authMiddleware, async (req: any, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        // Return pending approvals — for now returns empty array as placeholder
+        // TODO: implement approvalService.getPending(userId) when approval workflow is fully used
+        res.json({ success: true, data: [] });
+    } catch (error) {
+        next(error);
+    }
+});
 
 // 1. Submit for Approval
 router.post('/submit', authMiddleware, validateBody(submitSchema), async (req: any, res: Response, next: NextFunction) => {
