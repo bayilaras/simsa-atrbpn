@@ -4,13 +4,16 @@ import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
 import { upload } from '../middlewares/upload.middleware.js';
 import { HashVerificationService } from '../services/hash-verification.service.js';
 import { canWriteMiddleware } from '../middlewares/role.middleware.js';
-import { validateBody, validateQuery } from '../middlewares/validate.middleware.js';
+import { validateBody, validateQuery, uuidParamValidator } from '../middlewares/validate.middleware.js';
 import { createAutentikasiSchema, queryAutentikasiSchema } from '../validators/schemas.js';
 import auditLogService from '../services/audit-log.service.js';
 
 const router = Router();
 
 router.use(authMiddleware);
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 // GET /api/autentikasi
 router.get('/', validateQuery(queryAutentikasiSchema), async (req: AuthRequest, res, next) => {

@@ -1,8 +1,12 @@
 import { Router, Response, NextFunction } from 'express';
 import { tunjukSilangService } from '../services/tunjuk-silang.service.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { uuidParamValidator } from '../middlewares/validate.middleware.js';
 
 const router = Router();
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 // All routes require authentication
 router.use(authMiddleware);

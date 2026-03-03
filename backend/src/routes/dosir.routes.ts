@@ -3,6 +3,7 @@ import { dosirService } from '../services/dosir.service';
 import { authMiddleware } from '../middlewares/auth.middleware';
 import { auditLogService } from '../services/audit-log.service';
 import { validateBody } from '../middlewares/validate.middleware';
+import { uuidParamValidator } from '../middlewares/validate.middleware';
 import { createDosirSchema, updateDosirSchema, linkSuratToDosirSchema } from '../validators/schemas';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
@@ -11,8 +12,10 @@ const log = createLogger('DosirRoutes');
 
 const router = Router();
 
-// Apply auth middleware to all routes
 router.use(authMiddleware);
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 /**
  * @swagger

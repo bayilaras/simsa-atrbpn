@@ -84,3 +84,20 @@ export function validateIdParam(paramName: string = 'id') {
     };
 }
 
+/**
+ * UUID param validator for use with router.param().
+ * Usage: router.param('id', uuidParamValidator);
+ * Automatically validates all routes using :id parameter on this router.
+ */
+export function uuidParamValidator(req: Request, res: Response, next: NextFunction, value: string) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!value || !uuidRegex.test(value)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid ID format',
+            message: 'Parameter must be a valid UUID',
+        });
+    }
+    next();
+}
+

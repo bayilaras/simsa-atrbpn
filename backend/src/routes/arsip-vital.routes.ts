@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { arsipVitalService } from '../services/arsip-vital.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware, canReadMiddleware } from '../middlewares/role.middleware';
-import { validateBody } from '../middlewares/validate.middleware';
+import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createArsipVitalSchema, updateArsipVitalSchema } from '../validators/schemas';
 
 import { printTemplateService } from '../services/print-template.service';
@@ -28,6 +28,9 @@ router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, n
 
 // All routes require authentication
 router.use(authMiddleware);
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 // GET /api/arsip-vital - List all arsip vital
 router.get('/', async (req: AuthRequest, res, next) => {

@@ -4,6 +4,7 @@ import { fileAttachmentService } from '../services/file-attachment.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { uploadLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
+import { uuidParamValidator } from '../middlewares/validate.middleware';
 
 const log = createLogger('UploadRoutes');
 
@@ -11,6 +12,9 @@ const router = Router();
 
 // Apply upload-specific rate limiting (10 per minute)
 router.use(uploadLimiter);
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 // Configure multer for memory storage
 const upload = multer({

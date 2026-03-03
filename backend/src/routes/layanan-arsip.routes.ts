@@ -4,12 +4,15 @@ import { layananArsipService } from '../services/layanan-arsip.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import auditLogService from '../services/audit-log.service';
-import { validateBody } from '../middlewares/validate.middleware';
+import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createLayananArsipSchema, updateLayananStatusSchema } from '../validators/schemas';
 
 const router = Router();
 
 router.use(authMiddleware);
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 // GET /api/layanan-arsip
 router.get('/', async (req: AuthRequest, res, next) => {

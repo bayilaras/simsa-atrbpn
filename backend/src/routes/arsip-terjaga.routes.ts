@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { arsipTerjagaService } from '../services/arsip-terjaga.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canReadMiddleware, canWriteMiddleware } from '../middlewares/role.middleware';
-import { validateBody } from '../middlewares/validate.middleware';
+import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createArsipTerjagaSchema, updateArsipTerjagaSchema } from '../validators/schemas';
 
 import { printTemplateService } from '../services/print-template.service';
@@ -28,6 +28,9 @@ router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, n
 
 // All routes require authentication
 router.use(authMiddleware);
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 // GET /api/arsip-terjaga - List all arsip terjaga
 router.get('/', async (req: AuthRequest, res, next) => {

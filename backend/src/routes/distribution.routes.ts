@@ -3,7 +3,7 @@ import { distributionService } from '../services/distribution.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import auditLogService from '../services/audit-log.service';
-import { validateBody } from '../middlewares/validate.middleware';
+import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createDistributionSchema, rejectDistributionSchema } from '../validators/schemas';
 
 const router = Router();
@@ -15,6 +15,9 @@ const getIpAddress = (req: AuthRequest): string | undefined => {
 };
 
 router.use(authMiddleware);
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 /**
  * @route GET /api/distributions/units

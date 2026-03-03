@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { arsipElektronikService } from '../services/arsip-elektronik.service.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { uuidParamValidator } from '../middlewares/validate.middleware.js';
 
 interface AuthRequest extends Request {
     user?: { id: string; role: string };
@@ -10,6 +11,9 @@ interface AuthRequest extends Request {
 }
 
 const router = Router();
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 // All routes require authentication
 router.use(authMiddleware);

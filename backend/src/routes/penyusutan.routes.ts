@@ -2,15 +2,17 @@ import { Router } from 'express';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { penyusutanService } from '../services/penyusutan.service';
-import { validateBody } from '../middlewares/validate.middleware';
+import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createPenyusutanSchema, updatePenyusutanStatusSchema, removePenyusutanItemsSchema } from '../validators/schemas';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { printTemplateService } from '../services/print-template.service';
 
 const router = Router();
 
-// Apply auth middleware to all routes
 router.use(authMiddleware);
+
+// Validate all :id params as UUID
+router.param('id', uuidParamValidator);
 
 // ==================== PRINT TEMPLATES ====================
 
