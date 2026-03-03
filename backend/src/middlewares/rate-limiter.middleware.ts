@@ -12,7 +12,7 @@ const isDev = env.NODE_ENV === 'development' || env.NODE_ENV === 'test';
 // General API rate limiter - 100 requests per 15 minutes
 export const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDev ? 10000 : 500, // Relaxed in dev/test; 500 per window in production
+    max: isDev ? 1000 : 500, // Reasonable in dev; 500 per window in production
     message: {
         error: 'Too Many Requests',
         message: 'Too many requests from this IP, please try again after 15 minutes',
@@ -24,7 +24,7 @@ export const generalLimiter = rateLimit({
 // Strict rate limiter for authentication endpoints - 5 attempts per 15 minutes
 export const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDev ? 10000 : 5, // Relaxed in dev/test; 5 per window in production
+    max: isDev ? 50 : 5, // 50 in dev (testable); 5 per window in production
     message: {
         error: 'Too Many Attempts',
         message: 'Too many login attempts from this IP, please try again after 15 minutes',
@@ -37,7 +37,7 @@ export const authLimiter = rateLimit({
 // Rate limiter for signup - 3 attempts per hour
 export const signupLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: isDev ? 10000 : 3, // Relaxed in dev/test; 3 per hour in production
+    max: isDev ? 50 : 3, // 50 in dev (testable); 3 per hour in production
     message: {
         error: 'Too Many Signups',
         message: 'Too many signup attempts from this IP, please try again after an hour',
