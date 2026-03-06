@@ -4,8 +4,29 @@ import { db } from './database';
 import { env } from './env';
 import * as schema from '../db/schema';
 
+// Determine the base URL for Better Auth:
+// 1. Use BETTER_AUTH_URL if explicitly set (and not localhost in production)
+// 2. Fall back to VERCEL_URL (auto-set by Vercel) in production
+// 3. Default to localhost for local development
+function resolveBaseURL(): string {
+    const configured = env.BETTER_AUTH_URL;
+    if (configured && !configured.includes('localhost')) {
+        return configured;
+    }
+    // In production, try Vercel's auto-set URL
+    if (env.NODE_ENV === 'production' && process.env.VERCEL_URL) {
+        const url = `https://${process.env.VERCEL_URL}`;
+        console.warn(`[Auth] BETTER_AUTH_URL not set for production. Using VERCEL_URL: ${url}`);
+        return url;
+    }
+    if (env.NODE_ENV === 'production' && configured?.includes('localhost')) {
+        console.error('[Auth] CRITICAL: BETTER_AUTH_URL points to localhost in production! Google OAuth will fail.');
+    }
+    return configured || 'http://localhost:3001';
+}
+
 export const auth = betterAuth({
-    baseURL: env.BETTER_AUTH_URL || 'http://localhost:3001',
+    baseURL: resolveBaseURL(),
     basePath: '/api/auth',
     database: drizzleAdapter(db, {
         provider: 'pg',

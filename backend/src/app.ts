@@ -189,10 +189,12 @@ const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunctio
     try {
         await authHandler(req, res);
     } catch (error: any) {
-        console.error('Auth handler error:', error.message);
+        console.error(`Auth handler error on ${req.method} ${req.path}:`, error.message, error.stack);
         res.status(500).json({
             error: 'Authentication Error',
-            message: 'Terjadi kesalahan pada proses autentikasi.',
+            message: env.NODE_ENV === 'production'
+                ? 'Terjadi kesalahan pada proses autentikasi.'
+                : `Auth error: ${error.message}`,
         });
     }
 };
