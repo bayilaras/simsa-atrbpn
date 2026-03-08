@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/context/AuthContext';
 import { layananArsipService } from '@/services/layanan-arsip.service';
 import { arsipService } from '@/services/arsip.service';
 import {
@@ -28,6 +29,7 @@ import {
 export default function LayananArsipCreate() {
     const navigate = useNavigate();
     const { toast } = useToast();
+    const { user } = useAuth();
     const [loading, setLoading] = useState(false);
 
     // Form Data
@@ -57,7 +59,8 @@ export default function LayananArsipCreate() {
         try {
             const result = await arsipService.getAll({
                 search: searchArsip,
-                limit: 10
+                limit: 10,
+                unitKerjaId: user?.unitKerjaId,
             });
             setArsipList(result.data || []);
         } catch (error) {

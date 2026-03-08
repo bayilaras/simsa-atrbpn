@@ -15,7 +15,7 @@ export interface LendingFilters {
 
 export class ArchiveLendingService {
     async findAll(filters: LendingFilters) {
-        const { status, lendingType, borrowerId, arsipId, storageLocationId, page = 1, limit = 20 } = filters;
+        const { unitKerjaId, status, lendingType, borrowerId, arsipId, storageLocationId, page = 1, limit = 20 } = filters;
         const offset = (page - 1) * limit;
 
         const conditions: any[] = [];
@@ -34,6 +34,12 @@ export class ArchiveLendingService {
         }
         if (storageLocationId) {
             conditions.push(eq(archiveLending.storageLocationId, storageLocationId));
+        }
+        if (unitKerjaId) {
+            // Filter via arsip's unitKerjaId using subquery
+            conditions.push(
+                sql`(${archiveLending.arsipId} IS NULL OR ${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId}))`
+            );
         }
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -227,7 +233,7 @@ export class ArchiveLendingService {
         return updated;
     }
 
-    async getOverdue() {
+    async getOverdue(unitKerjaId?: string) {
         const todayStr = new Date().toISOString().split('T')[0];
 
         const overdue = await db
@@ -243,7 +249,8 @@ export class ArchiveLendingService {
             .leftJoin(users, eq(archiveLending.borrowerId, users.id))
             .where(and(
                 eq(archiveLending.status, 'borrowed'),
-                lt(archiveLending.dueDate, todayStr)
+                lt(archiveLending.dueDate, todayStr),
+                ...(unitKerjaId ? [sql`(${archiveLending.arsipId} IS NULL OR ${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId}))`] : [])
             ))
             .orderBy(archiveLending.dueDate);
 
@@ -263,8 +270,12 @@ export class ArchiveLendingService {
         }));
     }
 
-    async getStats() {
+    async getStats(unitKerjaId?: string) {
         const todayStr = new Date().toISOString().split('T')[0];
+
+        const unitKerjaCondition = unitKerjaId
+            ? sql`(${archiveLending.arsipId} IS NULL OR ${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId}))`
+            : undefined;
 
         const stats = await db
             .select({
@@ -273,7 +284,8 @@ export class ArchiveLendingService {
                 overdue: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed' and ${archiveLending.dueDate} < ${todayStr})::int`,
                 returned: sql<number>`count(*) filter (where ${archiveLending.status} = 'returned')::int`,
             })
-            .from(archiveLending);
+            .from(archiveLending)
+            .where(unitKerjaCondition);
 
         return stats[0];
     }

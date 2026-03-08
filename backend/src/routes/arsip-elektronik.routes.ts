@@ -4,7 +4,7 @@ import { authMiddleware } from '../middlewares/auth.middleware.js';
 import { uuidParamValidator } from '../middlewares/validate.middleware.js';
 
 interface AuthRequest extends Request {
-    user?: { id: string; role: string };
+    user?: { id: string; role: string; unitKerjaId?: string };
     params: any;
     query: any;
     body: any;
@@ -25,6 +25,7 @@ router.get('/', async (req: any, res: Response, next: NextFunction) => {
             formatFile: req.query.formatFile as string | undefined,
             statusVerifikasi: req.query.statusVerifikasi as string | undefined,
             mediaAsal: req.query.mediaAsal as string | undefined,
+            unitKerjaId: req.user?.unitKerjaId,
             page: req.query.page ? Number(req.query.page) : 1,
             limit: req.query.limit ? Number(req.query.limit) : 20,
         };
@@ -38,7 +39,7 @@ router.get('/', async (req: any, res: Response, next: NextFunction) => {
 // GET /api/arsip-elektronik/stats — Statistics
 router.get('/stats', async (req: any, res: Response, next: NextFunction) => {
     try {
-        const stats = await arsipElektronikService.getStats();
+        const stats = await arsipElektronikService.getStats(req.user?.unitKerjaId);
         res.json(stats);
     } catch (error) {
         next(error);
@@ -50,7 +51,7 @@ router.get('/pending', async (req: any, res: Response, next: NextFunction) => {
     try {
         const page = req.query.page ? Number(req.query.page) : 1;
         const limit = req.query.limit ? Number(req.query.limit) : 20;
-        const result = await arsipElektronikService.findPendingVerification(page, limit);
+        const result = await arsipElektronikService.findPendingVerification(page, limit, req.user?.unitKerjaId);
         res.json(result);
     } catch (error) {
         next(error);

@@ -7,6 +7,7 @@ interface ArsipElektronikFilters {
     formatFile?: string;
     statusVerifikasi?: string;
     mediaAsal?: string;
+    unitKerjaId?: string;
     page?: number;
     limit?: number;
 }
@@ -21,6 +22,11 @@ class ArsipElektronikService {
         if (filters.formatFile) conditions.push(eq(arsipElektronik.formatFile, filters.formatFile));
         if (filters.statusVerifikasi) conditions.push(eq(arsipElektronik.statusVerifikasi, filters.statusVerifikasi));
         if (filters.mediaAsal) conditions.push(eq(arsipElektronik.mediaAsal, filters.mediaAsal));
+        if (filters.unitKerjaId) {
+            conditions.push(
+                sql`${arsipElektronik.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${filters.unitKerjaId})`
+            );
+        }
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -97,9 +103,15 @@ class ArsipElektronikService {
         await db.delete(arsipElektronik).where(eq(arsipElektronik.id, id));
     }
 
-    async findPendingVerification(page = 1, limit = 20) {
+    async findPendingVerification(page = 1, limit = 20, unitKerjaId?: string) {
         const offset = (page - 1) * limit;
-        const whereClause = eq(arsipElektronik.statusVerifikasi, 'pending');
+        const conditions = [eq(arsipElektronik.statusVerifikasi, 'pending')];
+        if (unitKerjaId) {
+            conditions.push(
+                sql`${arsipElektronik.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`
+            );
+        }
+        const whereClause = and(...conditions);
 
         const [data, totalResult] = await Promise.all([
             db.select()
@@ -121,13 +133,18 @@ class ArsipElektronikService {
         };
     }
 
-    async getStats() {
+    async getStats(unitKerjaId?: string) {
+        const unitKerjaCondition = unitKerjaId
+            ? sql`${arsipElektronik.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`
+            : undefined;
+
         const [byFormat, byStatus, byMedia, totalResult] = await Promise.all([
             db.select({
                 formatFile: arsipElektronik.formatFile,
                 count: count(),
             })
                 .from(arsipElektronik)
+                .where(unitKerjaCondition)
                 .groupBy(arsipElektronik.formatFile),
 
             db.select({
@@ -135,6 +152,7 @@ class ArsipElektronikService {
                 count: count(),
             })
                 .from(arsipElektronik)
+                .where(unitKerjaCondition)
                 .groupBy(arsipElektronik.statusVerifikasi),
 
             db.select({
@@ -142,9 +160,10 @@ class ArsipElektronikService {
                 count: count(),
             })
                 .from(arsipElektronik)
+                .where(unitKerjaCondition)
                 .groupBy(arsipElektronik.mediaAsal),
 
-            db.select({ count: count() }).from(arsipElektronik),
+            db.select({ count: count() }).from(arsipElektronik).where(unitKerjaCondition),
         ]);
 
         return {
