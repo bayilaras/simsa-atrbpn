@@ -309,7 +309,9 @@ export async function seedJadwalRetensiArsip() {
   console.log(`Seeding JRA complete! Total: ${JRA_DATA.length} records`);
 }
 
-if (require.main === module) {
+// ESM-compatible entry point
+const isMain = import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`;
+if (isMain) {
   seedJadwalRetensiArsip()
     .then(() => process.exit(0))
     .catch((e) => { console.error(e); process.exit(1); });
