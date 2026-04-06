@@ -91,6 +91,7 @@ export default function SuratMasuk() {
     const [jenisSurat, setJenisSurat] = useState('all');
     const [status, setStatus] = useState('all');
     const [sifatSurat, setSifatSurat] = useState('all');
+    const [disposisiKe, setDisposisiKe] = useState('all');
     const [tanggalDari, setTanggalDari] = useState(null);
     const [tanggalSampai, setTanggalSampai] = useState(null);
 
@@ -127,6 +128,7 @@ export default function SuratMasuk() {
                 jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                 status: status !== 'all' ? status : undefined,
                 sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
+                disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
             };
@@ -150,7 +152,7 @@ export default function SuratMasuk() {
         } finally {
             setLoading(false);
         }
-    }, [pagination.page, pagination.limit, searchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, searchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -178,7 +180,7 @@ export default function SuratMasuk() {
     }, [searchTerm]);
 
     const hasActiveFilters = tahun !== 'all' || jenisSurat !== 'all' || status !== 'all' ||
-        sifatSurat !== 'all' || tanggalDari || tanggalSampai || searchTerm;
+        sifatSurat !== 'all' || disposisiKe !== 'all' || tanggalDari || tanggalSampai || searchTerm;
 
     const clearAllFilters = () => {
         setSearchTerm('');
@@ -186,6 +188,7 @@ export default function SuratMasuk() {
         setJenisSurat('all');
         setStatus('all');
         setSifatSurat('all');
+        setDisposisiKe('all');
         setTanggalDari(null);
         setTanggalSampai(null);
         setPagination(prev => ({ ...prev, page: 1 }));
@@ -315,6 +318,7 @@ export default function SuratMasuk() {
                             jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                             status: status !== 'all' ? status : undefined,
                             sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
+                            disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
                             tanggalDari: tanggalDari?.toISOString().split('T')[0],
                             tanggalSampai: tanggalSampai?.toISOString().split('T')[0],
                         }}
@@ -509,6 +513,24 @@ export default function SuratMasuk() {
                                                 className="h-9 bg-background flex-1"
                                             />
                                         </div>
+                                    </div>
+
+                                    {/* Disposisi Ke */}
+                                    <div className="space-y-1.5 sm:col-span-2">
+                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Disposisi Ke</label>
+                                        <SearchableSelect
+                                            options={[
+                                                { value: 'all', label: 'Semua Disposisi' },
+                                                'Ditjen', 'SekDitjen', 'Dit. BPPT', 'Dit. PTEP',
+                                                'Dit. KTPP', 'Kabag Program dan Hukum',
+                                                'Kabag Kepegawaian Keuangan dan Umum'
+                                            ]}
+                                            value={disposisiKe}
+                                            onValueChange={setDisposisiKe}
+                                            placeholder="Pilih Disposisi"
+                                            searchPlaceholder=" Cari disposisi..."
+                                            className="h-9"
+                                        />
                                     </div>
                                 </div>
                             </CollapsibleContent>

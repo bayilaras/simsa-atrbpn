@@ -51,6 +51,7 @@ export const querySuratMasukSchema = paginationSchema.extend({
     jenisSurat: z.string().max(100).optional(),
     sifatSurat: z.enum(['biasa', 'segera', 'sangat_segera', 'rahasia', 'undangan', 'penting']).optional(),
     status: z.enum(['pending', 'diproses', 'selesai', 'arsip', 'belum_dibalas', 'sudah_dibalas']).optional(),
+    disposisi: z.string().max(100).optional(),
     search: z.string().max(255).optional(),
 });
 

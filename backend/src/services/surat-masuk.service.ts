@@ -11,6 +11,7 @@ export interface SuratMasukFilters {
     jenisSurat?: string;
     sifatSurat?: string;
     status?: string;
+    disposisi?: string;
     search?: string;
     page?: number;
     limit?: number;
@@ -18,7 +19,7 @@ export interface SuratMasukFilters {
 
 export class SuratMasukService {
     async findAll(filters: SuratMasukFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, search, page = 1, limit = 20 } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, search, page = 1, limit = 20 } = filters;
         const offset = (page - 1) * limit;
 
         // Build where conditions
@@ -48,6 +49,9 @@ export class SuratMasukService {
         }
         if (status) {
             conditions.push(eq(suratMasuk.status, status));
+        }
+        if (disposisi) {
+            conditions.push(sql`${suratMasuk.disposisi} @> ARRAY[${disposisi}]`);
         }
 
         // Search across multiple fields using ILIKE (case-insensitive)

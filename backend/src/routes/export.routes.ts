@@ -24,7 +24,7 @@ router.use(authMiddleware);
 router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
     try {
         const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
-        const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status } = req.query;
+        const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
 
         const filters = {
             unitKerjaId: unitKerjaId as string,
@@ -34,6 +34,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
             jenisSurat: jenisSurat as string,
             sifatSurat: sifatSurat as string,
             status: status as string,
+            disposisi: disposisi as string,
         };
 
         const buffer = await exportService.generateExcelSuratMasuk(filters);
@@ -58,7 +59,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
 router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
     try {
         const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
-        const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status } = req.query;
+        const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
 
         const filters = {
             unitKerjaId: unitKerjaId as string,
@@ -68,6 +69,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
             jenisSurat: jenisSurat as string,
             sifatSurat: sifatSurat as string,
             status: status as string,
+            disposisi: disposisi as string,
         };
 
         const buffer = await exportService.generatePdfSuratMasuk(filters);
