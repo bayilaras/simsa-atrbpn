@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { reportService, ReportFilters, ArsipReportFilters, LendingReportFilters } from '../services/report.service';
 import { exportService } from '../services/export.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('ReportRoutes');
@@ -39,7 +40,9 @@ router.use(authMiddleware);
  */
 router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { year, month, tanggalDari, tanggalSampai, period, page, limit } = req.query;
 
         if (!unitKerjaId) {
@@ -77,7 +80,9 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
  */
 router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { year, tanggalDari, tanggalSampai, period, page, limit } = req.query;
 
         if (!unitKerjaId) {
@@ -124,7 +129,9 @@ router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
  */
 router.get('/arsip', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { type, mediaType, daysAhead, year, page, limit } = req.query;
 
         if (!unitKerjaId) {
@@ -161,7 +168,9 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
  */
 router.get('/lending', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { status, tanggalDari, tanggalSampai, page, limit } = req.query;
 
         const filters: LendingReportFilters = {
@@ -192,7 +201,9 @@ router.get('/lending', async (req: AuthRequest, res: Response) => {
  */
 router.get('/summary', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { year } = req.query;
 
         if (!unitKerjaId) {
@@ -236,7 +247,9 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
 router.get('/export/:type/:format', async (req: AuthRequest, res: Response) => {
     try {
         const { type, format } = req.params;
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { year, tanggalDari, tanggalSampai, arsipType, mediaType } = req.query;
 
         if (!unitKerjaId) {

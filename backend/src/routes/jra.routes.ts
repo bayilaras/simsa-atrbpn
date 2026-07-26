@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { roleMiddleware } from '../middlewares/role.middleware';
 import { jraService } from '../services/klasifikasi.service';
 import { createLogger } from '../utils/logger';
 
@@ -135,7 +136,7 @@ router.get('/:kode', async (req: AuthRequest, res: Response) => {
  *       201:
  *         description: Created successfully
  */
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response) => {
     try {
         const { kode, uraian, retensiAktif, retensiInaktif, keterangan, kategori, parentKode, tipe, level } = req.body;
 
@@ -202,7 +203,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: Updated successfully
  */
-router.put('/:kode', async (req: AuthRequest, res: Response) => {
+router.put('/:kode', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response) => {
     try {
         const kode = req.params.kode as string;
         const { uraian, retensiAktif, retensiInaktif, keterangan, kategori, isActive } = req.body;
@@ -245,7 +246,7 @@ router.put('/:kode', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: Deleted successfully
  */
-router.delete('/:kode', async (req: AuthRequest, res: Response) => {
+router.delete('/:kode', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response) => {
     try {
         const kode = req.params.kode as string;
         const deleted = await jraService.delete(kode);

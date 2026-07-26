@@ -14,6 +14,17 @@ export const arsipService = {
         return response;
     },
 
+    // Search arsip (used by the arsip picker dialogs in Arsip Vital / Terjaga forms).
+    // Returns the raw list response ({ success, data, pagination }).
+    async search({ q, limit = 5, unitKerjaId } = {}) {
+        const response = await api.get('/api/arsip', {
+            search: q,
+            limit,
+            unitKerjaId,
+        });
+        return response;
+    },
+
     // Get single arsip by ID
     async getById(id) {
         const response = await api.get(`/api/arsip/${id}`);

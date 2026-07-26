@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { tunjukSilangService } from '../services/tunjuk-silang.service.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 import { uuidParamValidator } from '../middlewares/validate.middleware.js';
 
 const router = Router();
@@ -49,7 +50,7 @@ router.get('/:type/:id', async (req: any, res: Response, next: NextFunction) => 
 });
 
 // POST /api/tunjuk-silang — Create cross-reference
-router.post('/', async (req: any, res: Response, next: NextFunction) => {
+router.post('/', canWriteMiddleware(), async (req: any, res: Response, next: NextFunction) => {
     try {
         const { sourceType, sourceId, targetType, targetId, jenisRelasi, keterangan } = req.body;
 
@@ -76,7 +77,7 @@ router.post('/', async (req: any, res: Response, next: NextFunction) => {
 });
 
 // DELETE /api/tunjuk-silang/:id — Delete cross-reference
-router.delete('/:id', async (req: any, res: Response, next: NextFunction) => {
+router.delete('/:id', canWriteMiddleware(), async (req: any, res: Response, next: NextFunction) => {
     try {
         const id = String(req.params.id);
         await tunjukSilangService.delete(id);

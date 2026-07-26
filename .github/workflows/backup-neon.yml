@@ -6,6 +6,11 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch: # Manual trigger
 
+# Least privilege: the job only reads the repo and uploads an artifact; it never
+# needs write access to repository contents.
+permissions:
+  contents: read
+
 env:
   PG_VERSION: '16'
 
@@ -21,10 +26,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-${{ env.PG_VERSION }}
 
-      - name: Create backup
+      - name: Create and encrypt backup
         env:
           DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
         run: |
+          # The dump contains the full production database (users, correspondence,
+          # personnel records). Refuse to run unless an encryption passphrase is set,
+          # so we never store a plaintext dump as a workflow artifact.
+          if [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::BACKUP_ENCRYPTION_PASSPHRASE secret is not set — refusing to create an unencrypted production dump."
+            exit 1
+          fi
+
           BACKUP_FILE="simsa-backup-$(date +%Y-%m-%d).sql"
           echo "Creating backup: $BACKUP_FILE"
 
@@ -36,25 +50,33 @@ jobs:
             --format=plain \
             --file="$BACKUP_FILE"
 
-          # Compress backup
+          # Compress, then encrypt with AES-256. Remove the plaintext copies so only
+          # the encrypted file ever leaves this runner.
+          # Decrypt later with:
+          #   gpg --batch --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" \
+          #     --decrypt simsa-backup-YYYY-MM-DD.sql.gz.gpg > simsa-backup.sql.gz
           gzip "$BACKUP_FILE"
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase "$BACKUP_PASSPHRASE" \
+            --output "${BACKUP_FILE}.gz.gpg" \
+            "${BACKUP_FILE}.gz"
+          rm -f "${BACKUP_FILE}.gz"
 
-          # Show file size
-          ls -lh "${BACKUP_FILE}.gz"
-          echo "BACKUP_FILE=${BACKUP_FILE}.gz" >> $GITHUB_ENV
+          ls -lh "${BACKUP_FILE}.gz.gpg"
+          echo "BACKUP_FILE=${BACKUP_FILE}.gz.gpg" >> $GITHUB_ENV
 
       - name: Upload backup artifact
         uses: actions/upload-artifact@v4
         with:
           name: neon-backup-${{ github.run_id }}
-          path: simsa-backup-*.sql.gz
+          path: simsa-backup-*.sql.gz.gpg
           retention-days: 30
-          compression-level: 0  # Already gzipped
+          compression-level: 0  # Already compressed + encrypted
 
       - name: Verify backup
         run: |
           # Quick verification - check file size is reasonable (> 1KB)
-          BACKUP_FILE=$(ls simsa-backup-*.sql.gz 2>/dev/null | head -1)
+          BACKUP_FILE=$(ls simsa-backup-*.sql.gz.gpg 2>/dev/null | head -1)
           if [ -z "$BACKUP_FILE" ]; then
             echo "::error::Backup file not found"
             exit 1
@@ -64,7 +86,7 @@ jobs:
             echo "::error::Backup file is suspiciously small ($FILE_SIZE bytes)"
             exit 1
           fi
-          echo "✅ Backup verified: $BACKUP_FILE ($FILE_SIZE bytes)"
+          echo "✅ Encrypted backup verified: $BACKUP_FILE ($FILE_SIZE bytes)"
 
       - name: Notify on failure
         if: failure()

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { exportService } from '../services/export.service';
 import { exportLimiter } from '../middlewares/rate-limiter.middleware';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('ExportRoutes');
@@ -23,7 +24,9 @@ router.use(authMiddleware);
  */
 router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit (or all units) via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
 
         const filters = {
@@ -58,7 +61,9 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
  */
 router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit (or all units) via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
 
         const filters = {
@@ -95,7 +100,9 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
  */
 router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit (or all units) via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif } = req.query;
 
         const filters = {
@@ -129,7 +136,9 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
  */
 router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit (or all units) via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif } = req.query;
 
         const filters = {
@@ -172,7 +181,9 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
  */
 router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit (or all units) via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { jenisArsip, tahun, formulirType } = req.query;
 
         const filters = {
@@ -204,7 +215,9 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
  */
 router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit (or all units) via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { jenisArsip, tahun, formulirType } = req.query;
 
         const filters = {

@@ -11,6 +11,7 @@ import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, MapPin, Loader2
 import { useAuth } from '@/context/AuthContext'
 import storageLocationService from '@/services/storage-location.service'
 import { Skeleton } from "@/components/ui/skeleton"
+import { useToast } from '@/hooks/use-toast'
 
 // Level configuration
 const LEVEL_CONFIG = {
@@ -153,8 +154,11 @@ function QRCodeDialog({ open, onOpenChange, location, qrData }) {
 
 // Main Page Component
 export default function StorageLocations() {
-    const { session } = useAuth()
-    const unitKerjaId = session?.user?.unitKerjaId || 'default'
+    const { user } = useAuth()
+    // AuthContext exposes `user` (not `session`); read the unit from it directly.
+    // Leave it undefined until known so we don't read/write a bogus 'default' pool.
+    const unitKerjaId = user?.unitKerjaId
+    const { toast } = useToast()
 
     const [treeData, setTreeData] = useState([])
     const [loading, setLoading] = useState(true)
@@ -226,23 +230,30 @@ export default function StorageLocations() {
             const data = {
                 ...formData,
                 unitKerjaId,
-                capacity: formData.capacity ? parseInt(formData.capacity) : null,
-                parentId: parentItem?.id || null,
+                // Omit capacity when empty (backend rejects null via .positive()).
+                capacity: formData.capacity ? parseInt(formData.capacity) : undefined,
             }
 
             if (editMode && currentItem) {
+                // Do NOT send parentId on edit — the service does a wholesale update and
+                // a null parentId would detach the node and re-parent it to the root.
                 await storageLocationService.update(currentItem.id, data)
-                // alert('Lokasi berhasil diperbarui')
+                toast({ title: 'Lokasi berhasil diperbarui' })
             } else {
+                data.parentId = parentItem?.id || null
                 await storageLocationService.create(data)
-                // alert('Lokasi berhasil ditambahkan')
+                toast({ title: 'Lokasi berhasil ditambahkan' })
             }
             fetchData()
             setDialogOpen(false)
             resetForm()
         } catch (error) {
-            // alert(error.response?.data?.error || 'Gagal menyimpan data')
             console.error(error)
+            toast({
+                variant: 'destructive',
+                title: 'Gagal menyimpan data',
+                description: error.response?.data?.error || error.message || 'Terjadi kesalahan',
+            })
         }
     }
 

@@ -153,8 +153,14 @@ export class ApprovalService {
             const [currentStep] = await tx.select().from(approvalSteps)
                 .where(and(
                     eq(approvalSteps.requestId, request.id),
-                    eq(approvalSteps.stepOrder, request.currentStepOrder)
+                    eq(approvalSteps.stepOrder, request.currentStepOrder),
+                    eq(approvalSteps.status, 'pending')
                 )).limit(1);
+
+            // Guard: there must be an active pending step, and only the assigned
+            // approver of that step may reject it (mirrors approve()).
+            if (!currentStep) throw new Error('No pending step');
+            if (currentStep.approverId !== rejectorId) throw new Error('Unauthorized');
 
             await tx.update(approvalSteps).set({ status: 'rejected', actionAt: new Date(), notes }).where(eq(approvalSteps.id, currentStep.id));
 

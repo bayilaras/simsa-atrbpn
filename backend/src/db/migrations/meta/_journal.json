@@ -57,6 +57,20 @@
       "when": 1771074259749,
       "tag": "0007_light_lila_cheney",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1771074300000,
+      "tag": "0008_widen_kepada_dari_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1771074400000,
+      "tag": "0009_fix_password_and_verification",
+      "breakpoints": true
     }
   ]
 }

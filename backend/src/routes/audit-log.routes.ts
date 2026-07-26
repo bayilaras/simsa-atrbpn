@@ -4,14 +4,18 @@ import { db } from '../config/database';
 import { users } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import auditLogService from '../services/audit-log.service';
+import { hasPermission, Role } from '../config/permissions';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('AuditLogRoutes');
 
 const router = Router();
 
-// Middleware to check authentication
-async function requireAuth(req: Request, res: Response, next: any) {
+// Middleware: authenticate AND authorize audit-log read.
+// The audit trail contains sensitive cross-unit data (emails, IPs, before/after
+// payloads), so only roles permitted by the permission matrix (super_admin, admin
+// roles, auditor) may read it — a plain session is not enough.
+async function requireAuditRead(req: Request, res: Response, next: any) {
     try {
         const session = await auth.api.getSession({
             headers: req.headers as any,
@@ -21,7 +25,19 @@ async function requireAuth(req: Request, res: Response, next: any) {
             return res.status(401).json({ error: 'Not authenticated' });
         }
 
-        (req as any).currentUser = { id: session.user.id };
+        const [dbUser] = await db
+            .select({ role: users.role, unitKerjaId: users.unitKerjaId })
+            .from(users)
+            .where(eq(users.id, session.user.id))
+            .limit(1);
+
+        const role = (dbUser?.role || 'user') as Role;
+
+        if (!hasPermission(role, 'audit_log', 'read')) {
+            return res.status(403).json({ error: 'Forbidden', message: 'Anda tidak berwenang membaca log audit' });
+        }
+
+        (req as any).currentUser = { id: session.user.id, role, unitKerjaId: dbUser?.unitKerjaId };
         next();
     } catch (error) {
         log.error({ err: error }, 'Auth check error:');
@@ -80,7 +96,7 @@ async function requireAuth(req: Request, res: Response, next: any) {
  *       200:
  *         description: List of audit logs with pagination
  */
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', requireAuditRead, async (req: Request, res: Response) => {
     try {
         const { entityType, entityId, action, userId, search, startDate, endDate, page, limit } = req.query;
 
@@ -127,7 +143,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
  *       200:
  *         description: Entity audit history
  */
-router.get('/:entityType/:entityId', requireAuth, async (req: Request, res: Response) => {
+router.get('/:entityType/:entityId', requireAuditRead, async (req: Request, res: Response) => {
     try {
         const entityType = req.params.entityType as string;
         const entityId = req.params.entityId as string;

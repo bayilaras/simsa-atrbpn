@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { dosirService } from '../services/dosir.service';
 import { authMiddleware } from '../middlewares/auth.middleware';
+import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { auditLogService } from '../services/audit-log.service';
 import { validateBody } from '../middlewares/validate.middleware';
 import { uuidParamValidator } from '../middlewares/validate.middleware';
@@ -207,7 +208,7 @@ router.get('/:id/timeline', async (req: Request, res: Response) => {
  *       201:
  *         description: Created dosir
  */
-router.post('/', validateBody(createDosirSchema), async (req: Request, res: Response) => {
+router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (req: Request, res: Response) => {
     try {
         const user = (req as any).user;
         const { kode, judul, deskripsi, kategori, tanggalMulai } = req.body;
@@ -285,7 +286,7 @@ router.post('/', validateBody(createDosirSchema), async (req: Request, res: Resp
  *       200:
  *         description: Updated dosir
  */
-router.put('/:id', validateBody(updateDosirSchema), async (req: Request, res: Response) => {
+router.put('/:id', canWriteMiddleware(), validateBody(updateDosirSchema), async (req: Request, res: Response) => {
     try {
         const user = (req as any).user;
         const { id } = req.params;
@@ -335,7 +336,7 @@ router.put('/:id', validateBody(updateDosirSchema), async (req: Request, res: Re
  *       200:
  *         description: Deleted
  */
-router.delete('/:id', sensitiveLimiter, async (req: Request, res: Response) => {
+router.delete('/:id', sensitiveLimiter, canWriteMiddleware(), async (req: Request, res: Response) => {
     try {
         const user = (req as any).user;
         const { id } = req.params;
@@ -396,7 +397,7 @@ router.delete('/:id', sensitiveLimiter, async (req: Request, res: Response) => {
  *       201:
  *         description: Surat linked
  */
-router.post('/:id/surat', validateBody(linkSuratToDosirSchema), async (req: Request, res: Response) => {
+router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSchema), async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { type, suratId, notes } = req.body;
@@ -456,7 +457,7 @@ router.post('/:id/surat', validateBody(linkSuratToDosirSchema), async (req: Requ
  *       200:
  *         description: Surat unlinked
  */
-router.delete('/:id/surat/:type/:suratId', async (req: Request, res: Response) => {
+router.delete('/:id/surat/:type/:suratId', canWriteMiddleware(), async (req: Request, res: Response) => {
     try {
         const { id, type, suratId } = req.params;
 

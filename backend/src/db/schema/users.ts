@@ -47,8 +47,10 @@ export const accounts = pgTable('accounts', {
 
 export const verifications = pgTable('verifications', {
     id: uuid('id').primaryKey().defaultRandom(),
-    identifier: varchar('identifier', { length: 255 }).notNull(),
-    value: varchar('value', { length: 255 }).notNull(),
+    // Better Auth stores a JSON blob here for social sign-in (PKCE codeVerifier,
+    // callbackURL, expiry) that routinely exceeds 255 chars — must be text.
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
     expiresAt: timestamp('expires_at').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

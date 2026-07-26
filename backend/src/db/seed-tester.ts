@@ -3,12 +3,22 @@ import { users, accounts } from './schema/users';
 import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 async function seedTester() {
     console.log('🧪 Seeding tester account...');
 
-    const email = 'tester@simsa.atrbpn.go.id';
-    const password = 'password123';
+    // Never provision a super_admin backdoor against a production database.
+    if (process.env.NODE_ENV === 'production') {
+        console.error('❌ Refusing to run the tester seed with NODE_ENV=production.');
+        process.exit(1);
+    }
+
+    const email = process.env.SEED_TESTER_EMAIL || 'tester@simsa.local';
+    // Password comes from the environment; if absent, a strong random one is generated
+    // and printed. It is never hard-coded in the repo.
+    const generated = !process.env.SEED_TESTER_PASSWORD;
+    const password = process.env.SEED_TESTER_PASSWORD || crypto.randomBytes(15).toString('base64url');
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Check if user exists
@@ -70,8 +80,9 @@ async function seedTester() {
 
     console.log(`
 🎉 Login Credentials:
-Email: ${email}
-Password: ${password}
+Email: ${email}${generated ? `
+Password (generated — set SEED_TESTER_PASSWORD to choose your own): ${password}` : `
+Password: (from SEED_TESTER_PASSWORD)`}
     `);
 
     process.exit(0);

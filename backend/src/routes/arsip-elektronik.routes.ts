@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { arsipElektronikService } from '../services/arsip-elektronik.service.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 import { uuidParamValidator } from '../middlewares/validate.middleware.js';
 
 interface AuthRequest extends Request {
@@ -84,7 +85,7 @@ router.get('/:id', async (req: any, res: Response, next: NextFunction) => {
 });
 
 // POST /api/arsip-elektronik — Create e-metadata
-router.post('/', async (req: any, res: Response, next: NextFunction) => {
+router.post('/', canWriteMiddleware(), async (req: any, res: Response, next: NextFunction) => {
     try {
         const data = req.body;
         if (!data.arsipId || !data.formatFile) {
@@ -98,7 +99,7 @@ router.post('/', async (req: any, res: Response, next: NextFunction) => {
 });
 
 // PUT /api/arsip-elektronik/:id — Update metadata
-router.put('/:id', async (req: any, res: Response, next: NextFunction) => {
+router.put('/:id', canWriteMiddleware(), async (req: any, res: Response, next: NextFunction) => {
     try {
         const id = String(req.params.id);
         const result = await arsipElektronikService.update(id, req.body);
@@ -112,7 +113,7 @@ router.put('/:id', async (req: any, res: Response, next: NextFunction) => {
 });
 
 // POST /api/arsip-elektronik/:id/verify — Verify/reject document
-router.post('/:id/verify', async (req: any, res: Response, next: NextFunction) => {
+router.post('/:id/verify', canWriteMiddleware(), async (req: any, res: Response, next: NextFunction) => {
     try {
         const id = String(req.params.id);
         const { status, catatan } = req.body;
@@ -131,7 +132,7 @@ router.post('/:id/verify', async (req: any, res: Response, next: NextFunction) =
 });
 
 // POST /api/arsip-elektronik/:id/preservasi — Add preservation action tracking
-router.post('/:id/preservasi', async (req: any, res: Response, next: NextFunction) => {
+router.post('/:id/preservasi', canWriteMiddleware(), async (req: any, res: Response, next: NextFunction) => {
     try {
         const id = String(req.params.id);
         const { action, details, notes } = req.body;
@@ -167,7 +168,7 @@ router.get('/:id/preservasi', async (req: any, res: Response, next: NextFunction
 });
 
 // DELETE /api/arsip-elektronik/:id
-router.delete('/:id', async (req: any, res: Response, next: NextFunction) => {
+router.delete('/:id', canWriteMiddleware(), async (req: any, res: Response, next: NextFunction) => {
     try {
         const id = String(req.params.id);
         await arsipElektronikService.delete(id);

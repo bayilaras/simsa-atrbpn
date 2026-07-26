@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { Archive, RefreshCw, Search, Eye, Edit, Clock, Upload, ChevronUp, Trash2, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2 } from 'lucide-react'
+import { Archive, RefreshCw, Search, Eye, Edit, Clock, Upload, ChevronUp, Trash2, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'

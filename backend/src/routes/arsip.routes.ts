@@ -20,12 +20,12 @@ router.use(authMiddleware);
 router.get('/', validateQuery(queryArsipSchema), async (req: AuthRequest, res, next) => {
     try {
         const validatedQuery = res.locals.validatedQuery || {};
-        let { unitKerjaId, jenisSurat, tahun, search, page, limit } = validatedQuery;
+        const { jenisSurat, tahun, search, page, limit } = validatedQuery;
 
-        // Sanitize unitKerjaId
-        if (unitKerjaId === 'null' || unitKerjaId === 'undefined') {
-            unitKerjaId = undefined;
-        }
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit,
+        // only super_admin/auditor may list another unit (or all units). This prevents a
+        // staff user from reading other units' archives (or the whole table via no param).
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
 
         const result = await arsipService.findAll({
             unitKerjaId,

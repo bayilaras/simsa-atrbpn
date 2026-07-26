@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { globalSearchService } from '../services/global-search.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { ocrLimiter } from '../middlewares/rate-limiter.middleware';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.use(authMiddleware);
  */
 router.get('/', async (req: AuthRequest, res, next) => {
     try {
-        const { q, modules, unitKerjaId, tahun, limit, page } = req.query;
+        const { q, modules, tahun, limit, page } = req.query;
 
         if (!q || typeof q !== 'string') {
             return res.status(400).json({
@@ -27,6 +28,10 @@ router.get('/', async (req: AuthRequest, res, next) => {
                 error: 'Query parameter "q" is required'
             });
         }
+
+        // Enforce unit-kerja isolation: staff/admin are scoped to their own unit;
+        // super_admin/auditor may search across units.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
 
         const result = await globalSearchService.search({
             query: q,
@@ -54,7 +59,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
  */
 router.get('/content', ocrLimiter, async (req: AuthRequest, res, next) => {
     try {
-        const { q, unitKerjaId } = req.query;
+        const { q } = req.query;
 
         if (!q || typeof q !== 'string') {
             return res.status(400).json({
@@ -62,6 +67,8 @@ router.get('/content', ocrLimiter, async (req: AuthRequest, res, next) => {
                 error: 'Query parameter "q" is required'
             });
         }
+
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
 
         const results = await globalSearchService.searchByContent(
             q,
@@ -84,11 +91,13 @@ router.get('/content', ocrLimiter, async (req: AuthRequest, res, next) => {
  */
 router.get('/suggestions', async (req: AuthRequest, res, next) => {
     try {
-        const { q, unitKerjaId } = req.query;
+        const { q } = req.query;
 
         if (!q || typeof q !== 'string' || q.length < 2) {
             return res.json({ success: true, data: [] });
         }
+
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
 
         // Quick search with limited results for suggestions
         const result = await globalSearchService.search({

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { distributionService } from '../services/distribution.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { canAccessUnit, Role } from '../config/permissions';
 import auditLogService from '../services/audit-log.service';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createDistributionSchema, rejectDistributionSchema } from '../validators/schemas';
@@ -39,7 +41,8 @@ router.get('/units', async (req: AuthRequest, res, next) => {
  */
 router.get('/inbox', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit.
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { status, page, limit } = req.query;
 
         if (!unitKerjaId) {
@@ -64,7 +67,8 @@ router.get('/inbox', async (req: AuthRequest, res, next) => {
  */
 router.get('/outbox', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit.
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         const { status, page, limit } = req.query;
 
         if (!unitKerjaId) {
@@ -89,7 +93,8 @@ router.get('/outbox', async (req: AuthRequest, res, next) => {
  */
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit.
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -145,6 +150,13 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
 
         if (!suratMasukId || !sourceUnitId || !targetUnitId) {
             return res.status(400).json({ error: 'suratMasukId, sourceUnitId, and targetUnitId are required' });
+        }
+
+        // Prevent sending on behalf of another unit: the caller must be allowed to act
+        // for sourceUnitId (super_admin/auditor may act for any unit).
+        const callerRole = (req.user?.role || 'user') as Role;
+        if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, sourceUnitId)) {
+            return res.status(403).json({ error: 'Anda tidak berwenang mendistribusikan surat atas nama unit tersebut' });
         }
 
         const result = await distributionService.distribute({

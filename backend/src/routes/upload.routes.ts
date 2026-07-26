@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { fileAttachmentService } from '../services/file-attachment.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { uploadLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
 import { uuidParamValidator } from '../middlewares/validate.middleware';
@@ -47,6 +48,7 @@ const upload = multer({
 router.post(
     '/:suratType/:suratId',
     authMiddleware,
+    canWriteMiddleware(),
     upload.single('file'),
     async (req: AuthRequest, res: Response) => {
         try {
@@ -104,7 +106,7 @@ router.get('/:suratType/:suratId', authMiddleware, async (req: AuthRequest, res:
 });
 
 // Delete attachment
-router.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authMiddleware, canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
     try {
         const id = req.params.id as string;
 

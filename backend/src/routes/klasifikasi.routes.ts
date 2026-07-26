@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { permissionMiddleware } from '../middlewares/role.middleware';
 import { klasifikasiService, jraService } from '../services/klasifikasi.service';
 import { createLogger } from '../utils/logger';
 
@@ -158,7 +159,7 @@ router.get('/:kode', async (req: AuthRequest, res: Response) => {
  *       201:
  *         description: Created successfully
  */
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', permissionMiddleware('klasifikasi', 'create'), async (req: AuthRequest, res: Response) => {
     try {
         const { kode, jenis, keterangan, kategori, parentKode, tipe, level } = req.body;
 
@@ -221,7 +222,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: Updated successfully
  */
-router.put('/:kode', async (req: AuthRequest, res: Response) => {
+router.put('/:kode', permissionMiddleware('klasifikasi', 'update'), async (req: AuthRequest, res: Response) => {
     try {
         const kode = req.params.kode as string;
         const { jenis, keterangan, kategori, isActive } = req.body;
@@ -262,7 +263,7 @@ router.put('/:kode', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: Deleted successfully
  */
-router.delete('/:kode', async (req: AuthRequest, res: Response) => {
+router.delete('/:kode', permissionMiddleware('klasifikasi', 'delete'), async (req: AuthRequest, res: Response) => {
     try {
         const kode = req.params.kode as string;
         const deleted = await klasifikasiService.delete(kode);

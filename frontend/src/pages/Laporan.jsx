@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { reportService } from '@/services/report.service';
-import { FileSpreadsheet, FileText, Download, BarChart3, Mail, Send, Archive, BookOpen, TrendingUp, FileImage, Film, FileAudio } from 'lucide-react';
+import { FileSpreadsheet, FileText, Download, BarChart3, Mail, Send, Archive, BookOpen, TrendingUp, FileImage, Film, FileAudio, Loader2 } from 'lucide-react';
 import {
     BarChart,
     Bar,

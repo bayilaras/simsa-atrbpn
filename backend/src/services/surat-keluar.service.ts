@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratKeluar, NewSuratKeluar, SuratKeluar, suratMasuk } from '../db/schema';
-import { eq, and, desc, sql, gte, lte, like } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, like, or, ilike } from 'drizzle-orm';
 import { DatabaseError } from '../utils/errors';
 
 export interface SuratKeluarFilters {
@@ -47,6 +47,16 @@ export class SuratKeluarService {
         }
         if (klasifikasiSubstantif) {
             conditions.push(like(suratKeluar.klasifikasiSubstantif, `%${klasifikasiSubstantif}%`));
+        }
+        if (search && search.trim()) {
+            const pattern = `%${search.trim()}%`;
+            conditions.push(
+                or(
+                    ilike(suratKeluar.perihal, pattern),
+                    ilike(suratKeluar.nomorSurat, pattern),
+                    ilike(suratKeluar.kepada, pattern)
+                )!
+            );
         }
 
         // Get total count - safely handle empty result

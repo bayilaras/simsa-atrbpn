@@ -1,6 +1,6 @@
 import { db } from '../config/database';
-import { digitalSignatures, suratKeluar, approvalRequests, approvalHistory } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { digitalSignatures, suratKeluar, approvalRequests, approvalSteps, approvalHistory } from '../db/schema';
+import { eq, and, desc } from 'drizzle-orm';
 import crypto from 'crypto';
 
 export class SignatureService {
@@ -14,6 +14,29 @@ export class SignatureService {
             const [surat] = await tx.select().from(suratKeluar).where(eq(suratKeluar.id, suratId)).limit(1);
             if (!surat) throw new Error('Surat not found');
             if (surat.isSigned) throw new Error('Surat already signed');
+
+            // Only an approved surat may be signed — never a draft/pending/rejected one.
+            if (surat.approvalStatus !== 'approved') {
+                throw new Error('Surat harus disetujui terlebih dahulu sebelum ditandatangani');
+            }
+
+            // Only the final approver of the flow is authorized to sign. currentApproverId
+            // is cleared once the flow is fully approved, so resolve the signer from the
+            // last approved step instead.
+            const [request] = await tx.select().from(approvalRequests).where(eq(approvalRequests.entityId, suratId)).limit(1);
+            if (request) {
+                const [finalStep] = await tx.select().from(approvalSteps)
+                    .where(and(
+                        eq(approvalSteps.requestId, request.id),
+                        eq(approvalSteps.status, 'approved')
+                    ))
+                    .orderBy(desc(approvalSteps.stepOrder))
+                    .limit(1);
+
+                if (finalStep && finalStep.approverId !== signerId) {
+                    throw new Error('Hanya penyetuju terakhir yang berwenang menandatangani surat ini');
+                }
+            }
 
             // 2. Generate Mock Signature Data
             const signatureId = crypto.randomUUID();
@@ -49,7 +72,6 @@ export class SignatureService {
             }).where(eq(suratKeluar.id, suratId));
 
             // 5. Update Approval Request if exists (mark as completed/signed)
-            const [request] = await tx.select().from(approvalRequests).where(eq(approvalRequests.entityId, suratId)).limit(1);
             if (request) {
                 await tx.update(approvalRequests).set({ status: 'signed', updatedAt: timestamp }).where(eq(approvalRequests.id, request.id));
 
