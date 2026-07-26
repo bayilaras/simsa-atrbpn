@@ -68,18 +68,18 @@ export default function ArsipVitalForm({ open, onOpenChange, form, setForm, onSu
                             </div>
                             {loadingArsip && <p className="text-xs text-muted-foreground animate-pulse">Sedang mencari...</p>}
                             {arsipList.length > 0 && !form.arsipId && (
-                                <div className="border rounded-md max-h-40 overflow-y-auto bg-white shadow-sm">
+                                <div className="border rounded-md max-h-40 overflow-y-auto bg-card shadow-sm">
                                     {arsipList.map(a => (
-                                        <div key={a.id} className="p-3 hover:bg-neutral-50 cursor-pointer border-b last:border-0 text-sm group"
+                                        <div key={a.id} className="p-3 hover:bg-muted/50 cursor-pointer border-b last:border-0 text-sm group"
                                             onClick={() => { setForm(f => ({ ...f, arsipId: a.id })); setArsipSearch(a.nomorBerkas || a.uraianBerkas || a.id) }}>
-                                            <div className="font-medium group-hover:text-red-700">{a.nomorBerkas || 'Tanpa Nomor'}</div>
+                                            <div className="font-medium group-hover:text-red-700 dark:text-red-300">{a.nomorBerkas || 'Tanpa Nomor'}</div>
                                             <div className="text-muted-foreground text-xs">{a.uraianBerkas || a.perihalOriginal || '-'}</div>
                                         </div>
                                     ))}
                                 </div>
                             )}
                             {form.arsipId && (
-                                <div className="flex items-center gap-2 text-sm text-emerald-600 bg-emerald-50 p-2 rounded border border-emerald-100">
+                                <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 p-2 rounded border border-emerald-100">
                                     <FileText className="h-4 w-4" />
                                     <span>Arsip berhasil dipilih</span>
                                     <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground ml-auto hover:text-red-600"

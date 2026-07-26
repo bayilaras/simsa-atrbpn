@@ -25,9 +25,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 const STATUS_CONFIG = {
-    open: { label: 'Aktif', variant: 'default', icon: FolderOpen, className: 'bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200' },
-    closed: { label: 'Selesai', variant: 'secondary', icon: CheckCircle2, className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-emerald-200' },
-    archived: { label: 'Diarsipkan', variant: 'outline', icon: Archive, className: 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200' },
+    open: { label: 'Aktif', variant: 'default', icon: FolderOpen, className: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-200 border-blue-200' },
+    closed: { label: 'Selesai', variant: 'secondary', icon: CheckCircle2, className: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 border-emerald-200' },
+    archived: { label: 'Diarsipkan', variant: 'outline', icon: Archive, className: 'bg-muted text-foreground hover:bg-muted border-border' },
 }
 
 const KATEGORI_OPTIONS = [
@@ -167,7 +167,7 @@ export default function Dosir() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
                             <FolderOpen className="h-6 w-6 text-indigo-600" />
                         </div>
                         Pemberkasan Perkara (Dosir)
@@ -279,19 +279,19 @@ export default function Dosir() {
                 <Card className="shadow-sm border-l-4 border-l-slate-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Dosir</CardTitle>
-                        <div className="p-2 bg-slate-100 rounded-full">
-                            <FolderOpen className="h-4 w-4 text-slate-600" />
+                        <div className="p-2 bg-muted rounded-full">
+                            <FolderOpen className="h-4 w-4 text-muted-foreground" />
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-slate-700">{stats.total}</div>
+                        <div className="text-2xl font-bold text-foreground">{stats.total}</div>
                         <p className="text-xs text-muted-foreground mt-1">Total seluruh dosir</p>
                     </CardContent>
                 </Card>
                 <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Aktif</CardTitle>
-                        <div className="p-2 bg-blue-100 rounded-full">
+                        <div className="p-2 bg-blue-100 dark:bg-blue-500/15 rounded-full">
                             <FolderOpen className="h-4 w-4 text-blue-600" />
                         </div>
                     </CardHeader>
@@ -303,7 +303,7 @@ export default function Dosir() {
                 <Card className="shadow-sm border-l-4 border-l-emerald-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Selesai</CardTitle>
-                        <div className="p-2 bg-emerald-100 rounded-full">
+                        <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-full">
                             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                         </div>
                     </CardHeader>
@@ -315,12 +315,12 @@ export default function Dosir() {
                 <Card className="shadow-sm border-l-4 border-l-amber-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Diarsipkan</CardTitle>
-                        <div className="p-2 bg-amber-100 rounded-full">
-                            <Archive className="h-4 w-4 text-amber-600" />
+                        <div className="p-2 bg-amber-100 dark:bg-amber-500/15 rounded-full">
+                            <Archive className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-amber-600">{stats.archived}</div>
+                        <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.archived}</div>
                         <p className="text-xs text-muted-foreground mt-1">Dosir diarsipkan</p>
                     </CardContent>
                 </Card>
@@ -465,7 +465,7 @@ export default function Dosir() {
                                 </CardContent>
                                 <CardFooter className="pt-0">
                                     <Button
-                                        className="w-full bg-muted/50 hover:bg-indigo-50 text-foreground hover:text-indigo-700 border border-border/50 hover:border-indigo-200 transition-all font-medium"
+                                        className="w-full bg-muted/50 hover:bg-indigo-50 dark:bg-indigo-500/15 text-foreground hover:text-indigo-700 dark:text-indigo-300 border border-border/50 hover:border-indigo-200 transition-all font-medium"
                                         variant="outline"
                                         onClick={() => navigate(`/dosir/${item.id}`)}
                                     >

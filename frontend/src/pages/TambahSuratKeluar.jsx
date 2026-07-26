@@ -379,7 +379,7 @@ export default function TambahSuratKeluar() {
                 <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-foreground">{title}</h3>
                     {step && (
-                        <Badge variant="outline" className="text-xs border-emerald-200 text-emerald-700 bg-emerald-50">
+                        <Badge variant="outline" className="text-xs border-emerald-200 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15">
                             Langkah {step}
                         </Badge>
                     )}
@@ -412,7 +412,7 @@ export default function TambahSuratKeluar() {
     return (
         <div className="max-w-4xl mx-auto space-y-6 pb-24 relative">
             {/* Sticky Progress Bar */}
-            <div className="fixed top-0 left-0 right-0 h-1 bg-slate-100 z-50">
+            <div className="fixed top-0 left-0 right-0 h-1 bg-muted z-50">
                 <div
                     className="h-full bg-emerald-600 transition-all duration-150"
                     style={{ width: `${scrollProgress * 100}%` }}
@@ -456,7 +456,7 @@ export default function TambahSuratKeluar() {
             )}
 
             {success && (
-                <Alert className="border-emerald-500 bg-emerald-50 text-emerald-700 animate-in slide-in-from-top-2">
+                <Alert className="border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 animate-in slide-in-from-top-2">
                     <CheckCircle2 className="h-4 w-4" />
                     <AlertDescription>
                         <span className="font-medium">Berhasil!</span> Surat keluar telah disimpan ke sistem.
@@ -476,13 +476,13 @@ export default function TambahSuratKeluar() {
                         />
 
                         {selectedSuratMasuk ? (
-                            <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                                <div className="p-2 bg-blue-100 rounded-lg flex-shrink-0">
+                            <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-500/15 border border-blue-200 rounded-xl">
+                                <div className="p-2 bg-blue-100 dark:bg-blue-500/15 rounded-lg flex-shrink-0">
                                     <Mail className="h-5 w-5 text-blue-600" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <p className="font-medium text-blue-900">{selectedSuratMasuk.nomorSurat || 'Tanpa Nomor'}</p>
-                                    <p className="text-sm text-blue-700 truncate">{selectedSuratMasuk.perihal}</p>
+                                    <p className="font-medium text-blue-900 dark:text-blue-300">{selectedSuratMasuk.nomorSurat || 'Tanpa Nomor'}</p>
+                                    <p className="text-sm text-blue-700 dark:text-blue-300 truncate">{selectedSuratMasuk.perihal}</p>
                                     <p className="text-xs text-blue-500 mt-1">
                                         Surat ini akan ditandai sebagai balasan
                                     </p>
@@ -492,7 +492,7 @@ export default function TambahSuratKeluar() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={clearSuratMasuk}
-                                    className="flex-shrink-0 hover:bg-blue-100 text-blue-600"
+                                    className="flex-shrink-0 hover:bg-blue-100 dark:bg-blue-500/15 text-blue-600"
                                 >
                                     <X className="h-4 w-4" />
                                 </Button>
@@ -791,18 +791,18 @@ export default function TambahSuratKeluar() {
                                     />
                                     {selectedFile ? (
                                         <div className="flex items-center justify-center gap-3">
-                                            <div className="p-2 bg-emerald-100 rounded-lg">
+                                            <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-lg">
                                                 <FileText className="h-6 w-6 text-emerald-600" />
                                             </div>
                                             <div className="text-left">
-                                                <p className="font-medium text-emerald-700">{selectedFile.name}</p>
+                                                <p className="font-medium text-emerald-700 dark:text-emerald-300">{selectedFile.name}</p>
                                                 <p className="text-sm text-emerald-600">{formatFileSize(selectedFile.size)}</p>
                                             </div>
                                             <Button
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
-                                                className="ml-2 hover:bg-red-100 hover:text-red-600"
+                                                className="ml-2 hover:bg-red-100 dark:bg-red-500/15 hover:text-red-600 dark:text-red-400"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     removeFile();
@@ -840,9 +840,9 @@ export default function TambahSuratKeluar() {
                                 </div>
                             </div>
 
-                            <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-100">
+                            <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-100">
                                 <Info className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                                <p className="text-xs text-emerald-700">
+                                <p className="text-xs text-emerald-700 dark:text-emerald-300">
                                     <strong>Catatan:</strong> Salah satu dari link dokumen atau upload berkas wajib diisi.
                                     Anda dapat mengisi keduanya jika diperlukan.
                                 </p>
@@ -852,7 +852,7 @@ export default function TambahSuratKeluar() {
                 </Card>
 
                 {/* Floating Action Bar */}
-                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                     <Link to="/surat/keluar">
                         <Button type="button" variant="outline" size="lg" disabled={isSubmitting} className="rounded-full px-6">
                             Batal

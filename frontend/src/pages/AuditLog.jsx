@@ -16,19 +16,19 @@ import auditLogService from '@/services/audit-log.service';
 import { Skeleton } from "@/components/ui/skeleton"
 
 const ACTION_CONFIG = {
-    'create': { label: 'Membuat', icon: Plus, color: 'bg-green-100 text-green-800', borderColor: 'border-green-200', iconColor: 'text-green-600' },
-    'update': { label: 'Mengubah', icon: Edit, color: 'bg-blue-100 text-blue-800', borderColor: 'border-blue-200', iconColor: 'text-blue-600' },
-    'delete': { label: 'Menghapus', icon: Trash2, color: 'bg-red-100 text-red-800', borderColor: 'border-red-200', iconColor: 'text-red-600' },
-    'archive': { label: 'Mengarsipkan', icon: Archive, color: 'bg-purple-100 text-purple-800', borderColor: 'border-purple-200', iconColor: 'text-purple-600' },
-    'restore': { label: 'Memulihkan', icon: RefreshCw, color: 'bg-yellow-100 text-yellow-800', borderColor: 'border-yellow-200', iconColor: 'text-yellow-600' },
-    'status_change': { label: 'Ubah Status', icon: RefreshCw, color: 'bg-orange-100 text-orange-800', borderColor: 'border-orange-200', iconColor: 'text-orange-600' },
+    'create': { label: 'Membuat', icon: Plus, color: 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300', borderColor: 'border-green-200', iconColor: 'text-green-600' },
+    'update': { label: 'Mengubah', icon: Edit, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300', borderColor: 'border-blue-200', iconColor: 'text-blue-600' },
+    'delete': { label: 'Menghapus', icon: Trash2, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
+    'archive': { label: 'Mengarsipkan', icon: Archive, color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-800 dark:text-purple-300', borderColor: 'border-purple-200', iconColor: 'text-purple-600' },
+    'restore': { label: 'Memulihkan', icon: RefreshCw, color: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-800 dark:text-yellow-300', borderColor: 'border-yellow-200', iconColor: 'text-yellow-600' },
+    'status_change': { label: 'Ubah Status', icon: RefreshCw, color: 'bg-orange-100 dark:bg-orange-500/15 text-orange-800 dark:text-orange-300', borderColor: 'border-orange-200', iconColor: 'text-orange-600' },
 };
 
 const ENTITY_CONFIG = {
-    'surat_masuk': { label: 'Surat Masuk', color: 'text-blue-600', bgColor: 'bg-blue-50' },
-    'surat_keluar': { label: 'Surat Keluar', color: 'text-green-600', bgColor: 'bg-green-50' },
-    'arsip': { label: 'Arsip', color: 'text-purple-600', bgColor: 'bg-purple-50' },
-    'user': { label: 'User', color: 'text-orange-600', bgColor: 'bg-orange-50' },
+    'surat_masuk': { label: 'Surat Masuk', color: 'text-blue-600', bgColor: 'bg-blue-50 dark:bg-blue-500/15' },
+    'surat_keluar': { label: 'Surat Keluar', color: 'text-green-600', bgColor: 'bg-green-50 dark:bg-green-500/15' },
+    'arsip': { label: 'Arsip', color: 'text-purple-600', bgColor: 'bg-purple-50 dark:bg-purple-500/15' },
+    'user': { label: 'User', color: 'text-orange-600', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
 };
 
 export default function AuditLog() {
@@ -129,7 +129,7 @@ export default function AuditLog() {
                             <span className="font-medium text-muted-foreground capitalize">{field.replace('_', ' ')}:</span>
                             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
                                 {before?.[field] !== undefined && (
-                                    <span className="text-red-600 line-through bg-red-50 px-1 rounded truncate max-w-xs block" title={String(before[field])}>
+                                    <span className="text-red-600 line-through bg-red-50 dark:bg-red-500/15 px-1 rounded truncate max-w-xs block" title={String(before[field])}>
                                         {String(before[field])}
                                     </span>
                                 )}
@@ -137,7 +137,7 @@ export default function AuditLog() {
                                     <span className="text-muted-foreground hidden sm:inline">→</span>
                                 )}
                                 {after?.[field] !== undefined && (
-                                    <span className="text-green-600 bg-green-50 px-1 rounded font-medium break-all" title={String(after[field])}>
+                                    <span className="text-green-600 bg-green-50 dark:bg-green-500/15 px-1 rounded font-medium break-all" title={String(after[field])}>
                                         {String(after[field])}
                                     </span>
                                 )}
@@ -155,8 +155,8 @@ export default function AuditLog() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <Shield className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <Shield className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         Audit Log
                     </h1>
@@ -265,8 +265,8 @@ export default function AuditLog() {
                         ) : (
                             <div className="space-y-6">
                                 {logs.map((log) => {
-                                    const actionConfig = ACTION_CONFIG[log.action] || { label: log.action, icon: FileText, color: 'bg-gray-100', iconColor: 'text-gray-600' };
-                                    const entityConfig = ENTITY_CONFIG[log.entityType] || { label: log.entityType, color: 'text-gray-600', bgColor: 'bg-gray-50' };
+                                    const actionConfig = ACTION_CONFIG[log.action] || { label: log.action, icon: FileText, color: 'bg-muted', iconColor: 'text-muted-foreground' };
+                                    const entityConfig = ENTITY_CONFIG[log.entityType] || { label: log.entityType, color: 'text-muted-foreground', bgColor: 'bg-muted/50' };
                                     const ActionIcon = actionConfig.icon;
                                     const isExpanded = expandedId === log.id;
 

@@ -266,8 +266,8 @@ export default function SuratKeluar() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-emerald-100 rounded-lg">
-                            <Send className="h-6 w-6 text-emerald-600" />
+                        <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-lg">
+                            <Send className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
                         </div>
                         Surat Keluar
                     </h1>
@@ -334,7 +334,7 @@ export default function SuratKeluar() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Surat</p>
                             <p className="text-2xl font-bold">{stats.total}</p>
                         </div>
-                        <div className="p-2.5 bg-emerald-100 rounded-full text-emerald-600">
+                        <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-full text-emerald-600 dark:text-emerald-400">
                             <Send className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -345,7 +345,7 @@ export default function SuratKeluar() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Draft / Belum Final</p>
                             <p className="text-2xl font-bold text-orange-600">{stats.total - stats.diarsipkan}</p>
                         </div>
-                        <div className="p-2.5 bg-orange-100 rounded-full text-orange-600">
+                        <div className="p-2.5 bg-orange-100 dark:bg-orange-500/15 rounded-full text-orange-600">
                             <AlertCircle className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -356,7 +356,7 @@ export default function SuratKeluar() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Diarsipkan</p>
                             <p className="text-2xl font-bold text-blue-600">{stats.diarsipkan}</p>
                         </div>
-                        <div className="p-2.5 bg-blue-100 rounded-full text-blue-600">
+                        <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600">
                             <FolderArchive className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -530,19 +530,19 @@ export default function SuratKeluar() {
                                                 <TableCell>
                                                     <div className="flex flex-wrap gap-1.5">
                                                         {row.filePath && (
-                                                            <Badge variant="secondary" className="gap-1 bg-blue-50 text-blue-700 border-blue-200">
+                                                            <Badge variant="secondary" className="gap-1 bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200">
                                                                 <FileText className="h-3 w-3" />
                                                                 File
                                                             </Badge>
                                                         )}
                                                         {row.balasanUntuk && (
-                                                            <Badge variant="outline" className="gap-1 border-orange-200 text-orange-700 bg-orange-50">
+                                                            <Badge variant="outline" className="gap-1 border-orange-200 text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-500/15">
                                                                 <MailOpen className="h-3 w-3" />
                                                                 Balasan
                                                             </Badge>
                                                         )}
                                                         {row.isArchived ? (
-                                                            <Badge variant="outline" className="border-green-500 text-green-600 bg-green-50">
+                                                            <Badge variant="outline" className="border-green-500 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/15">
                                                                 <FolderArchive className="h-3 w-3 mr-1" />
                                                                 Arsip
                                                             </Badge>

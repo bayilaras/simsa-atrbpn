@@ -57,7 +57,7 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
                 )}
 
                 <div className="flex gap-1 shrink-0 ml-2">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 hover:text-blue-600" onClick={() => onEdit(node)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:bg-blue-500/15 hover:text-blue-600 dark:text-blue-400" onClick={() => onEdit(node)}>
                         <Edit2 className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)}>
@@ -249,8 +249,8 @@ export default function KlasifikasiArsip() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <FolderTree className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <FolderTree className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         Klasifikasi Arsip
                     </h1>
@@ -270,36 +270,36 @@ export default function KlasifikasiArsip() {
                     <Card className="shadow-sm border-l-4 border-l-slate-400">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Total Klasifikasi</CardTitle>
-                            <div className="p-1.5 bg-slate-100 rounded-full">
-                                <Folder className="h-3.5 w-3.5 text-slate-600" />
+                            <div className="p-1.5 bg-muted rounded-full">
+                                <Folder className="h-3.5 w-3.5 text-muted-foreground" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-slate-700">{stats.total}</div>
+                            <div className="text-2xl font-bold text-foreground">{stats.total}</div>
                             <p className="text-xs text-muted-foreground mt-1">Total seluruh kode</p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-blue-400">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Fasilitatif</CardTitle>
-                            <div className="p-1.5 bg-blue-100 rounded-full">
-                                <Book className="h-3.5 w-3.5 text-blue-600" />
+                            <div className="p-1.5 bg-blue-100 dark:bg-blue-500/15 rounded-full">
+                                <Book className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-blue-600">{stats.fasilitatif}</div>
+                            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.fasilitatif}</div>
                             <p className="text-xs text-muted-foreground mt-1">{stats.rootFasilitatif} kategori utama</p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-emerald-400">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Substantif</CardTitle>
-                            <div className="p-1.5 bg-emerald-100 rounded-full">
-                                <Building2 className="h-3.5 w-3.5 text-emerald-600" />
+                            <div className="p-1.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-full">
+                                <Building2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-emerald-600">{stats.substantif}</div>
+                            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.substantif}</div>
                             <p className="text-xs text-muted-foreground mt-1">{stats.rootSubstantif} kategori utama</p>
                         </CardContent>
                     </Card>

@@ -63,21 +63,21 @@ export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive,
                     {/* Archive Status */}
                     <div className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${surat.isArchived
                         ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50'
-                        : 'bg-gray-50 dark:bg-gray-900/30 border border-gray-100 dark:border-gray-800'
+                        : 'bg-muted/50 dark:bg-foreground/30 border border-border dark:border-gray-800'
                         }`}>
                         <div className={`p-2 rounded-full ${surat.isArchived
                             ? 'bg-emerald-100 dark:bg-emerald-900/50'
-                            : 'bg-gray-100 dark:bg-gray-800'
+                            : 'bg-muted dark:bg-foreground'
                             }`}>
                             <Archive className={`h-4 w-4 ${surat.isArchived
                                 ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-gray-500'
+                                : 'text-muted-foreground'
                                 }`} />
                         </div>
                         <div>
                             <p className={`font-medium text-sm ${surat.isArchived
                                 ? 'text-emerald-700 dark:text-emerald-300'
-                                : 'text-gray-600 dark:text-gray-400'
+                                : 'text-muted-foreground dark:text-muted-foreground'
                                 }`}>
                                 {surat.isArchived ? 'Sudah Diarsipkan' : 'Belum Diarsipkan'}
                             </p>
@@ -146,7 +146,7 @@ export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive,
                         </Button>
                         <Button
                             variant="outline"
-                            className="w-full justify-start hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 dark:hover:bg-amber-950/30 dark:hover:text-amber-300 transition-colors"
+                            className="w-full justify-start hover:bg-amber-50 dark:bg-amber-500/15 hover:text-amber-700 dark:text-amber-300 hover:border-amber-200 dark:hover:bg-amber-950/30 dark:hover:text-amber-300 transition-colors"
                             onClick={onReply}
                         >
                             <Reply className="mr-2 h-4 w-4" />
@@ -154,7 +154,7 @@ export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive,
                         </Button>
                         <Button
                             variant="outline"
-                            className="w-full justify-start hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 dark:hover:bg-blue-950/30 dark:hover:text-blue-300 transition-colors"
+                            className="w-full justify-start hover:bg-blue-50 dark:bg-blue-500/15 hover:text-blue-700 dark:text-blue-300 hover:border-blue-200 dark:hover:bg-blue-950/30 dark:hover:text-blue-300 transition-colors"
                             onClick={onDistribute}
                         >
                             <Send className="mr-2 h-4 w-4" />
@@ -163,7 +163,7 @@ export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive,
                         {!surat.isArchived && (
                             <Button
                                 variant="outline"
-                                className="w-full justify-start hover:bg-purple-50 hover:text-purple-700 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
+                                className="w-full justify-start hover:bg-purple-50 dark:bg-purple-500/15 hover:text-purple-700 dark:text-purple-300 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
                                 onClick={onArchive}
                             >
                                 <Archive className="mr-2 h-4 w-4" />

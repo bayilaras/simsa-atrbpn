@@ -179,8 +179,8 @@ export default function SuratKeluarDetail() {
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 p-6 md:p-8 text-white shadow-xl">
                 {/* Background Pattern */}
                 <div className="absolute inset-0 opacity-10">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
-                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-card rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-card rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
                 </div>
 
                 <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -188,13 +188,13 @@ export default function SuratKeluarDetail() {
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="text-white/80 hover:text-white hover:bg-white/10 shrink-0"
+                            className="text-white/80 hover:text-white hover:bg-card/10 shrink-0"
                             onClick={() => navigate(-1)}
                         >
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                         <div className="flex items-center gap-4">
-                            <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm shrink-0 hidden sm:flex">
+                            <div className="bg-card/20 p-3 rounded-xl backdrop-blur-sm shrink-0 hidden sm:flex">
                                 <Send className="h-8 w-8" />
                             </div>
                             <div className="min-w-0">
@@ -221,7 +221,7 @@ export default function SuratKeluarDetail() {
                         <div className="hidden md:flex gap-2">
                             <Button
                                 variant="secondary"
-                                className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm"
+                                className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
                                 onClick={() => navigate(`/surat/keluar/edit/${surat.id}`)}
                             >
                                 <Edit className="mr-2 h-4 w-4" />
@@ -229,7 +229,7 @@ export default function SuratKeluarDetail() {
                             </Button>
                             {!surat.isArchived && (
                                 <Button
-                                    className="bg-white text-blue-700 hover:bg-white/90"
+                                    className="bg-card text-blue-700 hover:bg-card/90"
                                     onClick={() => setArchiveDialogOpen(true)}
                                 >
                                     <Archive className="mr-2 h-4 w-4" />
@@ -245,7 +245,7 @@ export default function SuratKeluarDetail() {
                             <Button
                                 variant="secondary"
                                 size="sm"
-                                className="bg-white/20 hover:bg-white/30 text-white border-0 flex-1"
+                                className="bg-card/20 hover:bg-card/30 text-white border-0 flex-1"
                                 onClick={() => navigate(`/surat/keluar/edit/${surat.id}`)}
                             >
                                 <Edit className="mr-2 h-4 w-4" />
@@ -257,7 +257,7 @@ export default function SuratKeluarDetail() {
                                         <Button
                                             variant="secondary"
                                             size="icon"
-                                            className="bg-white/20 hover:bg-white/30 text-white border-0"
+                                            className="bg-card/20 hover:bg-card/30 text-white border-0"
                                         >
                                             <MoreHorizontal className="h-4 w-4" />
                                         </Button>
@@ -293,7 +293,7 @@ export default function SuratKeluarDetail() {
                                     <Sparkles className="h-3 w-3" />
                                     Perihal
                                 </label>
-                                <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1 leading-relaxed">
+                                <p className="text-lg font-semibold text-foreground dark:text-white mt-1 leading-relaxed">
                                     {surat.perihal}
                                 </p>
                             </div>
@@ -314,7 +314,7 @@ export default function SuratKeluarDetail() {
                                 <div className="space-y-1 p-3 bg-muted/30 rounded-lg">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tanggal Kirim</label>
                                     <p className="flex items-center gap-2 text-sm">
-                                        <Clock className="h-4 w-4 text-indigo-600" />
+                                        <Clock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                                         {formatDate(surat.tanggalKirim)}
                                     </p>
                                 </div>
@@ -374,7 +374,7 @@ export default function SuratKeluarDetail() {
                                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Balasan dari Surat Masuk</label>
                                         <Button variant="outline" size="sm" asChild className="group">
                                             <Link to={`/surat/masuk/${surat.balasanUntuk}`}>
-                                                <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 transition-colors" />
+                                                <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 dark:text-emerald-400 transition-colors" />
                                                 Lihat Surat Masuk
                                             </Link>
                                         </Button>
@@ -426,7 +426,7 @@ export default function SuratKeluarDetail() {
                         <Card className="shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden">
                             <CardHeader className="pb-3">
                                 <CardTitle className="flex items-center gap-2">
-                                    <FileText className="h-5 w-5 text-indigo-600" />
+                                    <FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                                     Dokumen Lampiran
                                 </CardTitle>
                                 <CardDescription className="flex items-center gap-2">
@@ -516,21 +516,21 @@ export default function SuratKeluarDetail() {
                             {/* Archive Status */}
                             <div className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${surat.isArchived
                                 ? 'bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50'
-                                : 'bg-gray-50 dark:bg-gray-900/30 border border-gray-100 dark:border-gray-800'
+                                : 'bg-muted/50 dark:bg-foreground/30 border border-border dark:border-gray-800'
                                 }`}>
                                 <div className={`p-2 rounded-full ${surat.isArchived
                                     ? 'bg-blue-100 dark:bg-blue-900/50'
-                                    : 'bg-gray-100 dark:bg-gray-800'
+                                    : 'bg-muted dark:bg-foreground'
                                     }`}>
                                     <Archive className={`h-4 w-4 ${surat.isArchived
                                         ? 'text-blue-600 dark:text-blue-400'
-                                        : 'text-gray-500'
+                                        : 'text-muted-foreground'
                                         }`} />
                                 </div>
                                 <div>
                                     <p className={`font-medium text-sm ${surat.isArchived
                                         ? 'text-blue-700 dark:text-blue-300'
-                                        : 'text-gray-600 dark:text-gray-400'
+                                        : 'text-muted-foreground dark:text-muted-foreground'
                                         }`}>
                                         {surat.isArchived ? 'Sudah Diarsipkan' : 'Belum Diarsipkan'}
                                     </p>
@@ -600,7 +600,7 @@ export default function SuratKeluarDetail() {
                                 {!surat.isArchived && (
                                     <Button
                                         variant="outline"
-                                        className="w-full justify-start hover:bg-purple-50 hover:text-purple-700 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
+                                        className="w-full justify-start hover:bg-purple-50 dark:bg-purple-500/15 hover:text-purple-700 dark:text-purple-300 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
                                         onClick={() => setArchiveDialogOpen(true)}
                                     >
                                         <Archive className="mr-2 h-4 w-4" />

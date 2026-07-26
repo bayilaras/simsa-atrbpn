@@ -25,7 +25,7 @@ export default function ArsipVitalDetail({
                 {selectedItem && (
                     <div className="space-y-6">
                         {/* Arsip Info Header */}
-                        <div className="bg-slate-50 p-4 rounded-lg border space-y-2">
+                        <div className="bg-muted/50 p-4 rounded-lg border space-y-2">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <h3 className="font-semibold text-lg">{selectedItem.nomorBerkas || 'Tanpa Nomor Berkas'}</h3>
@@ -142,7 +142,7 @@ export default function ArsipVitalDetail({
                                         </div>
                                         <div>
                                             <Label className="text-muted-foreground text-xs">Jadwal Review</Label>
-                                            <div className="text-red-600 font-medium">{selectedItem.tanggalReviewSelanjutnya ? new Date(selectedItem.tanggalReviewSelanjutnya).toLocaleDateString('id-ID') : '-'}</div>
+                                            <div className="text-red-600 dark:text-red-400 font-medium">{selectedItem.tanggalReviewSelanjutnya ? new Date(selectedItem.tanggalReviewSelanjutnya).toLocaleDateString('id-ID') : '-'}</div>
                                         </div>
                                     </div>
                                     <div>

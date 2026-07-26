@@ -96,7 +96,7 @@ const buildItems = ({ perihal, tanggalSurat }) => ([
 ])
 
 // Section Header Component with Dashboard Theme Colors
-function SectionHeader({ number, title, icon: Icon, colorClass = "text-teal-700 bg-teal-50 border-teal-100" }) {
+function SectionHeader({ number, title, icon: Icon, colorClass = "text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-500/15 border-teal-100" }) {
     return (
         <div className={`flex items-center gap-3 pb-3 border-b-2 ${colorClass.split(' ')[2]}`}>
             <div className={`flex items-center justify-center w-8 h-8 rounded-full ${colorClass.split(' ')[1]} ${colorClass.split(' ')[0]}`}>
@@ -113,14 +113,14 @@ function SectionHeader({ number, title, icon: Icon, colorClass = "text-teal-700 
 function FormField({ label, required, hint, children, icon: Icon }) {
     return (
         <div className="space-y-1.5">
-            <Label className="text-slate-700 font-medium flex items-center gap-2">
-                {Icon && <Icon className="h-3.5 w-3.5 text-slate-400" />}
+            <Label className="text-foreground font-medium flex items-center gap-2">
+                {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
                 {label}
                 {required && <span className="text-red-500">*</span>}
             </Label>
             {children}
             {hint && (
-                <p className="text-[11px] text-slate-500 italic mt-0.5">{hint}</p>
+                <p className="text-[11px] text-muted-foreground italic mt-0.5">{hint}</p>
             )}
         </div>
     )
@@ -221,37 +221,37 @@ export function ArchiveDialog({
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             {/* Added: data-[state=open] styling directly here to ensure checks pass, but DialogContent handles animation via class */}
-            <DialogContent showCloseButton={false} className="!max-w-[95vw] !w-[95vw] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col bg-slate-50 border-0 rounded-xl shadow-2xl">
+            <DialogContent showCloseButton={false} className="!max-w-[95vw] !w-[95vw] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col bg-muted/50 border-0 rounded-xl shadow-2xl">
 
                 {/* Header - Updated to Teal Gradient (ATR/BPN Style) */}
                 <div className="bg-gradient-to-r from-teal-700 to-teal-600 text-white px-6 py-4 flex items-center gap-4 shadow-md shrink-0">
-                    <div className="p-2.5 bg-white/15 rounded-xl border border-white/10 backdrop-blur-sm shadow-inner">
+                    <div className="p-2.5 bg-card/15 rounded-xl border border-white/10 backdrop-blur-sm shadow-inner">
                         <Archive className="h-6 w-6 text-white" />
                     </div>
                     <div className="flex-1">
                         <div className="flex items-center gap-2">
                             <h2 className="text-xl font-bold tracking-tight">Arsipkan Surat</h2>
-                            <span className="bg-white/20 text-xs px-2 py-0.5 rounded-full font-medium border border-white/10">Input Data</span>
+                            <span className="bg-card/20 text-xs px-2 py-0.5 rounded-full font-medium border border-white/10">Input Data</span>
                         </div>
                         <p className="text-teal-50 text-sm mt-0.5 opacity-90">Lengkapi data arsip dengan teliti untuk kemudahan pencarian.</p>
                     </div>
-                    <DialogClose className="text-white/80 hover:text-white hover:bg-white/20 rounded-full p-2 transition-all">
+                    <DialogClose className="text-white/80 hover:text-white hover:bg-card/20 rounded-full p-2 transition-all">
                         <X className="h-5 w-5" />
                     </DialogClose>
                 </div>
 
                 {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto bg-slate-50/50">
+                <div className="flex-1 overflow-y-auto bg-muted/50">
                     <form id="archive-form" onSubmit={handleSubmit} className="p-6 md:p-8 space-y-8 max-w-[1600px] mx-auto">
 
                         {/* ==================== SECTION 1: IDENTIFIKASI BERKAS ==================== */}
-                        <section className="bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
+                        <section className="bg-card rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
                             <div className="bg-teal-50/50 px-6 py-4 border-b border-teal-100/50">
                                 <SectionHeader
                                     number={1}
                                     title="Identifikasi Berkas"
                                     icon={FileText}
-                                    colorClass="text-teal-700 bg-teal-100 border-teal-200"
+                                    colorClass="text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-500/15 border-teal-200"
                                 />
                             </div>
 
@@ -268,7 +268,7 @@ export function ArchiveDialog({
                                             value={formData.nomorBerkas}
                                             onChange={(e) => handleChange('nomorBerkas', e.target.value)}
                                             placeholder="Contoh: AT.02.02/2172-32/VIII/2025"
-                                            className="bg-slate-50 border-slate-200 focus:border-teal-500 focus:ring-teal-500 h-10"
+                                            className="bg-muted/50 border-border focus:border-teal-500 focus:ring-teal-500 h-10"
                                         />
                                     </FormField>
 
@@ -313,34 +313,34 @@ export function ArchiveDialog({
                                         value={formData.kodeKlasifikasi}
                                         readOnly
                                         placeholder="Otomatis dari klasifikasi arsip"
-                                        className="bg-slate-100/50 border-slate-200 text-slate-600 font-medium w-full md:w-1/2 h-10"
+                                        className="bg-muted/50 border-border text-muted-foreground font-medium w-full md:w-1/2 h-10"
                                     />
                                 </FormField>
 
-                                <Separator className="my-2 bg-slate-100" />
+                                <Separator className="my-2 bg-muted" />
 
                                 {/* JRA Display - auto-filled from KlasifikasiPicker */}
                                 {formData.jraKode ? (
-                                    <Alert className="bg-emerald-50 border-emerald-200 text-emerald-800">
+                                    <Alert className="bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 text-emerald-800 dark:text-emerald-300">
                                         <Clock className="h-4 w-4 text-emerald-600 mt-0.5" />
                                         <AlertDescription className="text-sm ml-2">
-                                            <span className="font-semibold block mb-0.5 text-emerald-700">Jadwal Retensi Arsip Terpilih:</span>
-                                            <span className="font-mono text-xs bg-emerald-100 px-1.5 py-0.5 rounded">{formData.jraKode}</span>
+                                            <span className="font-semibold block mb-0.5 text-emerald-700 dark:text-emerald-300">Jadwal Retensi Arsip Terpilih:</span>
+                                            <span className="font-mono text-xs bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded">{formData.jraKode}</span>
                                             <span className="ml-2">{formData.jraUraian}</span>
                                         </AlertDescription>
                                     </Alert>
                                 ) : (
-                                    <Alert className="bg-sky-50 border-sky-200 text-sky-800">
+                                    <Alert className="bg-sky-50 dark:bg-sky-500/15 border-sky-200 text-sky-800 dark:text-sky-300">
                                         <Info className="h-4 w-4 text-sky-600 mt-0.5" />
                                         <AlertDescription className="text-sm ml-2">
-                                            <span className="font-semibold block mb-0.5 text-sky-700">Petunjuk Pengisian JRA:</span>
+                                            <span className="font-semibold block mb-0.5 text-sky-700 dark:text-sky-300">Petunjuk Pengisian JRA:</span>
                                             Pilih klasifikasi arsip di atas, kemudian pilih jadwal retensi dari saran yang muncul di panel sebelah kanan.
                                         </AlertDescription>
                                     </Alert>
                                 )}
 
                                 {/* JRA Details - 3 columns */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 p-4 bg-slate-50 rounded-lg border border-slate-100">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 p-4 bg-muted/50 rounded-lg border border-border">
                                     <FormField
                                         label="Aktif"
                                         required
@@ -352,7 +352,7 @@ export function ArchiveDialog({
                                                 value={formData.retensiAktif}
                                                 readOnly
                                                 placeholder="--"
-                                                className="bg-white border-slate-200 text-slate-700 h-9"
+                                                className="bg-card border-border text-foreground h-9"
                                             />
                                         </div>
                                     </FormField>
@@ -368,7 +368,7 @@ export function ArchiveDialog({
                                                 value={formData.retensiInaktif}
                                                 readOnly
                                                 placeholder="--"
-                                                className="bg-white border-slate-200 text-slate-700 h-9"
+                                                className="bg-card border-border text-foreground h-9"
                                             />
                                         </div>
                                     </FormField>
@@ -384,13 +384,13 @@ export function ArchiveDialog({
                                                 value={formData.hasilAkhir}
                                                 readOnly
                                                 placeholder="--"
-                                                className="bg-white border-slate-200 text-slate-700 h-9"
+                                                className="bg-card border-border text-foreground h-9"
                                             />
                                         </div>
                                     </FormField>
                                 </div>
 
-                                <Separator className="my-2 bg-slate-100" />
+                                <Separator className="my-2 bg-muted" />
 
                                 {/* Uraian Informasi Berkas */}
                                 <FormField
@@ -402,7 +402,7 @@ export function ArchiveDialog({
                                         value={formData.uraianBerkas}
                                         onChange={(e) => handleChange('uraianBerkas', e.target.value)}
                                         placeholder="Uraian lengkap tentang berkas ini..."
-                                        className="min-h-[80px] bg-slate-50 border-slate-200 resize-none focus:border-teal-500 focus:ring-teal-500"
+                                        className="min-h-[80px] bg-muted/50 border-border resize-none focus:border-teal-500 focus:ring-teal-500"
                                     />
                                 </FormField>
 
@@ -415,7 +415,7 @@ export function ArchiveDialog({
                                         hint="Pilih unit yang mengolah/bertanggung jawab atas arsip ini"
                                     >
                                         <Select value={formData.unitPengolah} onValueChange={(v) => handleChange('unitPengolah', v)}>
-                                            <SelectTrigger className="bg-slate-50 border-slate-200 h-10 focus:ring-teal-500">
+                                            <SelectTrigger className="bg-muted/50 border-border h-10 focus:ring-teal-500">
                                                 <SelectValue placeholder="-- Pilih Unit Pengolah --" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -437,16 +437,16 @@ export function ArchiveDialog({
                                                     type="date"
                                                     value={formData.kurunWaktuDari}
                                                     onChange={(e) => handleChange('kurunWaktuDari', e.target.value)}
-                                                    className="bg-slate-50 border-slate-200 h-10 focus:border-teal-500 focus:ring-teal-500"
+                                                    className="bg-muted/50 border-border h-10 focus:border-teal-500 focus:ring-teal-500"
                                                 />
                                             </div>
-                                            <span className="text-slate-400 font-medium text-sm">s/d</span>
+                                            <span className="text-muted-foreground font-medium text-sm">s/d</span>
                                             <div className="flex-1">
                                                 <Input
                                                     type="date"
                                                     value={formData.kurunWaktuSampai}
                                                     onChange={(e) => handleChange('kurunWaktuSampai', e.target.value)}
-                                                    className="bg-slate-50 border-slate-200 h-10 focus:border-teal-500 focus:ring-teal-500"
+                                                    className="bg-muted/50 border-border h-10 focus:border-teal-500 focus:ring-teal-500"
                                                 />
                                             </div>
                                         </div>
@@ -456,20 +456,20 @@ export function ArchiveDialog({
                         </section>
 
                         {/* ==================== SECTION 2: DETAIL ITEM ARSIP ==================== */}
-                        <section className="bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
+                        <section className="bg-card rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
                             <div className="bg-amber-50/50 px-6 py-4 flex items-center justify-between border-b border-amber-100/50">
                                 <SectionHeader
                                     number={2}
                                     title="Detail Item Arsip"
                                     icon={Folder}
-                                    colorClass="text-amber-700 bg-amber-100 border-amber-200"
+                                    colorClass="text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-500/15 border-amber-200"
                                 />
                                 <Button
                                     type="button"
                                     variant="outline"
                                     size="sm"
                                     onClick={addItem}
-                                    className="text-amber-700 border-amber-200 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300 transition-all font-medium"
+                                    className="text-amber-700 dark:text-amber-300 border-amber-200 hover:bg-amber-50 dark:bg-amber-500/15 hover:text-amber-800 dark:text-amber-300 hover:border-amber-300 transition-all font-medium"
                                 >
                                     <Plus className="h-4 w-4 mr-1.5" /> Tambah Item
                                 </Button>
@@ -477,8 +477,8 @@ export function ArchiveDialog({
 
                             <div className="p-6 space-y-6">
                                 {/* Info Alert */}
-                                <Alert className="bg-slate-50 border-slate-200 text-slate-600">
-                                    <Info className="h-4 w-4 text-slate-500 mt-0.5" />
+                                <Alert className="bg-muted/50 border-border text-muted-foreground">
+                                    <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
                                     <AlertDescription className="text-sm ml-2">
                                         Setiap berkas dapat memiliki beberapa item arsip.
                                         Klik "Tambah Item" untuk menambah item baru.
@@ -487,7 +487,7 @@ export function ArchiveDialog({
 
                                 {/* Item Cards */}
                                 {items.map((item, index) => (
-                                    <Card key={index} className="border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 group">
+                                    <Card key={index} className="border border-border overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 group">
                                         {/* Item Header - Updated to Amber/Gold Theme */}
                                         <div className="bg-gradient-to-r from-amber-500 to-yellow-500 text-white px-5 py-3 flex justify-between items-center">
                                             <span className="font-semibold flex items-center gap-2 text-sm uppercase tracking-wide">
@@ -500,7 +500,7 @@ export function ArchiveDialog({
                                                     variant="ghost"
                                                     size="sm"
                                                     onClick={() => removeItem(index)}
-                                                    className="text-white/90 hover:text-white hover:bg-white/20 h-7 w-7 p-0 rounded-full transition-colors"
+                                                    className="text-white/90 hover:text-white hover:bg-card/20 h-7 w-7 p-0 rounded-full transition-colors"
                                                 >
                                                     <X className="h-4 w-4" />
                                                 </Button>
@@ -515,7 +515,7 @@ export function ArchiveDialog({
                                                         <Input
                                                             value={item.nomor}
                                                             onChange={(e) => handleItemChange(index, 'nomor', e.target.value)}
-                                                            className="bg-slate-50 h-9"
+                                                            className="bg-muted/50 h-9"
                                                         />
                                                     </FormField>
                                                 </div>
@@ -525,7 +525,7 @@ export function ArchiveDialog({
                                                             value={item.uraian}
                                                             onChange={(e) => handleItemChange(index, 'uraian', e.target.value)}
                                                             placeholder="Deskripsi detail item arsip..."
-                                                            className="bg-slate-50 h-9 focus:border-amber-400 focus:ring-amber-400"
+                                                            className="bg-muted/50 h-9 focus:border-amber-400 focus:ring-amber-400"
                                                         />
                                                     </FormField>
                                                 </div>
@@ -539,7 +539,7 @@ export function ArchiveDialog({
                                                             value={item.perkembangan}
                                                             onValueChange={(v) => handleItemChange(index, 'perkembangan', v)}
                                                         >
-                                                            <SelectTrigger className="bg-slate-50 h-9">
+                                                            <SelectTrigger className="bg-muted/50 h-9">
                                                                 <SelectValue placeholder="Pilih..." />
                                                             </SelectTrigger>
                                                             <SelectContent>
@@ -556,7 +556,7 @@ export function ArchiveDialog({
                                                             type="date"
                                                             value={item.tanggal}
                                                             onChange={(e) => handleItemChange(index, 'tanggal', e.target.value)}
-                                                            className="bg-slate-50 h-9"
+                                                            className="bg-muted/50 h-9"
                                                         />
                                                     </FormField>
                                                 </div>
@@ -567,15 +567,15 @@ export function ArchiveDialog({
                                                             min="1"
                                                             value={item.jumlah}
                                                             onChange={(e) => handleItemChange(index, 'jumlah', parseInt(e.target.value) || 1)}
-                                                            className="bg-slate-50 h-9"
+                                                            className="bg-muted/50 h-9"
                                                         />
                                                     </FormField>
                                                 </div>
                                             </div>
 
                                             {/* Lokasi Penyimpanan */}
-                                            <div className="pt-4 border-t border-dashed border-slate-200">
-                                                <Label className="text-amber-700 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 mb-3">
+                                            <div className="pt-4 border-t border-dashed border-border">
+                                                <Label className="text-amber-700 dark:text-amber-300 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 mb-3">
                                                     <MapPin className="h-3.5 w-3.5" />
                                                     Lokasi Penyimpanan Fisik
                                                 </Label>
@@ -585,7 +585,7 @@ export function ArchiveDialog({
                                                             value={item.lokasiFc}
                                                             onChange={(e) => handleItemChange(index, 'lokasiFc', e.target.value)}
                                                             placeholder="Ex: FC-01"
-                                                            className="bg-white h-9 border-amber-200 focus:border-amber-400 focus:ring-amber-400"
+                                                            className="bg-card h-9 border-amber-200 focus:border-amber-400 focus:ring-amber-400"
                                                         />
                                                     </FormField>
                                                     <FormField label="No. Laci" required>
@@ -593,7 +593,7 @@ export function ArchiveDialog({
                                                             value={item.lokasiLaci}
                                                             onChange={(e) => handleItemChange(index, 'lokasiLaci', e.target.value)}
                                                             placeholder="Ex: L-02"
-                                                            className="bg-white h-9 border-amber-200 focus:border-amber-400 focus:ring-amber-400"
+                                                            className="bg-card h-9 border-amber-200 focus:border-amber-400 focus:ring-amber-400"
                                                         />
                                                     </FormField>
                                                     <FormField label="No. Folder" required>
@@ -601,7 +601,7 @@ export function ArchiveDialog({
                                                             value={item.lokasiFolder}
                                                             onChange={(e) => handleItemChange(index, 'lokasiFolder', e.target.value)}
                                                             placeholder="Ex: F-003"
-                                                            className="bg-white h-9 border-amber-200 focus:border-amber-400 focus:ring-amber-400"
+                                                            className="bg-card h-9 border-amber-200 focus:border-amber-400 focus:ring-amber-400"
                                                         />
                                                     </FormField>
                                                 </div>
@@ -613,13 +613,13 @@ export function ArchiveDialog({
                         </section>
 
                         {/* ==================== SECTION 3: KEAMANAN, PIC & CATATAN ==================== */}
-                        <section className="bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
-                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
+                        <section className="bg-card rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
+                            <div className="bg-muted/50 px-6 py-4 border-b border-border">
                                 <SectionHeader
                                     number={3}
                                     title="Keamanan & Catatan Lain"
                                     icon={Shield}
-                                    colorClass="text-slate-700 bg-slate-200 border-slate-300"
+                                    colorClass="text-foreground bg-muted border-border"
                                 />
                             </div>
 
@@ -634,7 +634,7 @@ export function ArchiveDialog({
                                             value={formData.klasifikasiKeamanan}
                                             onValueChange={(v) => handleChange('klasifikasiKeamanan', v)}
                                         >
-                                            <SelectTrigger className="bg-slate-50 border-slate-200 h-10">
+                                            <SelectTrigger className="bg-muted/50 border-border h-10">
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -655,7 +655,7 @@ export function ArchiveDialog({
                                             value={formData.personInCharge}
                                             onChange={(e) => handleChange('personInCharge', e.target.value)}
                                             placeholder="Contoh: Nama Staff / Admin"
-                                            className="bg-slate-50 border-slate-200 h-10"
+                                            className="bg-muted/50 border-border h-10"
                                         />
                                     </FormField>
                                 </div>
@@ -668,7 +668,7 @@ export function ArchiveDialog({
                                         value={formData.keterangan}
                                         onChange={(e) => handleChange('keterangan', e.target.value)}
                                         placeholder="Catatan..."
-                                        className="min-h-[80px] bg-slate-50 border-slate-200 resize-none"
+                                        className="min-h-[80px] bg-muted/50 border-border resize-none"
                                     />
                                 </FormField>
                             </div>
@@ -678,12 +678,12 @@ export function ArchiveDialog({
                 </div>
 
                 {/* Footer */}
-                <div className="p-5 border-t border-slate-200 bg-white flex justify-end gap-3 shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.03)] z-10">
+                <div className="p-5 border-t border-border bg-card flex justify-end gap-3 shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.03)] z-10">
                     <Button
                         type="button"
                         variant="secondary"
                         onClick={() => onOpenChange(false)}
-                        className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 min-w-[100px] shadow-sm"
+                        className="bg-card border border-border text-foreground hover:bg-muted/50 min-w-[100px] shadow-sm"
                     >
                         <X className="h-4 w-4 mr-2" />
                         Batal

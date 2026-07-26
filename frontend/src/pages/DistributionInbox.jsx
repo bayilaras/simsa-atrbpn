@@ -36,8 +36,8 @@ import { id as localeId } from 'date-fns/locale'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
 
 const statusConfig = {
-    sent: { label: 'Menunggu', variant: 'outline', icon: Clock, className: 'text-yellow-600 border-yellow-200 bg-yellow-50' },
-    received: { label: 'Diterima', variant: 'secondary', icon: Check, className: 'text-blue-600 border-blue-200 bg-blue-50' },
+    sent: { label: 'Menunggu', variant: 'outline', icon: Clock, className: 'text-yellow-600 dark:text-yellow-400 border-yellow-200 bg-yellow-50 dark:bg-yellow-500/15' },
+    received: { label: 'Diterima', variant: 'secondary', icon: Check, className: 'text-blue-600 border-blue-200 bg-blue-50 dark:bg-blue-500/15' },
     processed: { label: 'Selesai', variant: 'default', icon: CheckCircle, className: 'bg-emerald-600 hover:bg-emerald-700' },
     rejected: { label: 'Ditolak', variant: 'destructive', icon: XCircle, className: '' },
 }
@@ -186,8 +186,8 @@ export default function DistributionInbox() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <Inbox className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <Inbox className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         Distribusi Surat
                     </h1>
@@ -205,26 +205,26 @@ export default function DistributionInbox() {
                     <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Surat Masuk</CardTitle>
-                            <div className="p-2 bg-blue-100 rounded-full">
+                            <div className="p-2 bg-blue-100 dark:bg-blue-500/15 rounded-full">
                                 <ArrowDownLeft className="h-4 w-4 text-blue-600" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-blue-700">{stats.inbox?.total || 0}</div>
+                            <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">{stats.inbox?.total || 0}</div>
                             <p className="text-xs text-muted-foreground mt-1">
-                                <span className="font-medium text-orange-600">{stats.inbox?.pending || 0}</span> menunggu diterima
+                                <span className="font-medium text-orange-600 dark:text-orange-400">{stats.inbox?.pending || 0}</span> menunggu diterima
                             </p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-orange-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Perlu Proses</CardTitle>
-                            <div className="p-2 bg-orange-100 rounded-full">
-                                <Clock className="h-4 w-4 text-orange-600" />
+                            <div className="p-2 bg-orange-100 dark:bg-orange-500/15 rounded-full">
+                                <Clock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-orange-600">
+                            <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
                                 {(stats.inbox?.pending || 0) + (stats.inbox?.received || 0)}
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">Belum tuntas</p>
@@ -233,26 +233,26 @@ export default function DistributionInbox() {
                     <Card className="shadow-sm border-l-4 border-l-emerald-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Selesai</CardTitle>
-                            <div className="p-2 bg-emerald-100 rounded-full">
-                                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                            <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-full">
+                                <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-emerald-600">{stats.inbox?.processed || 0}</div>
+                            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.inbox?.processed || 0}</div>
                             <p className="text-xs text-muted-foreground mt-1">Telah diproses</p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-indigo-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Surat Dikirim</CardTitle>
-                            <div className="p-2 bg-indigo-100 rounded-full">
-                                <Send className="h-4 w-4 text-indigo-600" />
+                            <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-full">
+                                <Send className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-indigo-600">{stats.outbox?.total || 0}</div>
+                            <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{stats.outbox?.total || 0}</div>
                             <p className="text-xs text-muted-foreground mt-1">
-                                <span className="font-medium text-orange-600">{stats.outbox?.pending || 0}</span> belum diterima
+                                <span className="font-medium text-orange-600 dark:text-orange-400">{stats.outbox?.pending || 0}</span> belum diterima
                             </p>
                         </CardContent>
                     </Card>
@@ -345,7 +345,7 @@ export default function DistributionInbox() {
                                             <TableCell className="text-sm text-muted-foreground">
                                                 {item.sourceUnit?.name || '-'}
                                             </TableCell>
-                                            <TableCell className="text-sm font-medium text-orange-600/90 italic">
+                                            <TableCell className="text-sm font-medium text-orange-600 dark:text-orange-400/90 italic">
                                                 "{item.instruction || '-'}"
                                             </TableCell>
                                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
@@ -361,7 +361,7 @@ export default function DistributionInbox() {
                                                                     <Button
                                                                         variant="outline"
                                                                         size="icon"
-                                                                        className="h-8 w-8 hover:bg-green-50 hover:text-green-600 hover:border-green-200 transition-colors"
+                                                                        className="h-8 w-8 hover:bg-green-50 dark:bg-green-500/15 hover:text-green-600 dark:text-green-400 hover:border-green-200 transition-colors"
                                                                         onClick={() => handleReceive(item.id)}
                                                                         disabled={actionLoading}
                                                                     >
@@ -473,7 +473,7 @@ export default function DistributionInbox() {
                                             <TableCell className="text-sm text-muted-foreground">
                                                 {item.targetUnit?.name || '-'}
                                             </TableCell>
-                                            <TableCell className="text-sm font-medium text-orange-600/90 italic">
+                                            <TableCell className="text-sm font-medium text-orange-600 dark:text-orange-400/90 italic">
                                                 "{item.instruction || '-'}"
                                             </TableCell>
                                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap">

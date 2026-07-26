@@ -101,13 +101,13 @@ export function AppHeader() {
 
     return (
         <>
-            <header className="sticky top-0 z-50 flex h-16 items-center gap-4 border-b border-border/40 bg-background/80 backdrop-blur-md px-6 shadow-sm transition-all duration-300">
-                <SidebarTrigger className="hover:bg-accent/50 hover:text-accent-foreground transition-colors" />
-                <Separator orientation="vertical" className="h-6 opacity-50" />
+            <header className="sticky top-0 z-50 flex h-14 items-center gap-2 border-b border-border bg-background px-4 sm:h-16 sm:gap-3 sm:px-6">
+                <SidebarTrigger className="-ml-1" />
+                <Separator orientation="vertical" className="hidden h-5 sm:block" />
 
-                {/* Unit Kerja Label */}
+                {/* Unit kerja — context, not a control; it yields space first on narrow screens */}
                 {authUser?.unitKerjaId && (
-                    <div className="flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
+                    <div className="hidden items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground md:flex">
                         <Building2 className="h-3.5 w-3.5" />
                         <span>
                             {authUser.unitKerjaId === 'dirjen' ? 'Dirjen PTPP' : authUser.unitKerjaId === 'sesditjen' ? 'Sesditjen' : authUser.unitKerjaId}
@@ -115,26 +115,33 @@ export function AppHeader() {
                     </div>
                 )}
 
-                {/* Global Search Button */}
+                {/* Search: a field on desktop, an icon button once space runs out */}
                 <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 w-64 justify-start text-muted-foreground bg-muted/30 border-input/50 focus-within:ring-2 focus-within:ring-primary/20 hover:bg-muted/50 transition-all ml-2"
+                    className="ml-auto hidden h-9 w-56 justify-start gap-2 px-3 font-normal text-muted-foreground lg:flex xl:w-72"
                     onClick={() => setSearchOpen(true)}
                 >
-                    <Search className="mr-2 h-4 w-4 opacity-50" />
-                    <span className="text-xs">Cari surat, arsip...</span>
-                    <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground shadow-sm">
-                        <span className="text-xs">⌘</span>K
+                    <Search className="h-4 w-4 shrink-0" />
+                    <span className="truncate text-xs">Cari surat, arsip...</span>
+                    <kbd className="ml-auto hidden shrink-0 select-none items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium xl:inline-flex">
+                        ⌘K
                     </kbd>
                 </Button>
-
-                <div className="flex-1" />
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="ml-auto h-9 w-9 lg:hidden"
+                    onClick={() => setSearchOpen(true)}
+                >
+                    <Search className="h-4 w-4" />
+                    <span className="sr-only">Cari surat, arsip</span>
+                </Button>
 
                 {/* Theme Toggle */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full hover:bg-accent/50">
+                        <Button variant="ghost" size="icon" className="h-9 w-9">
                             <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                             <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                             <span className="sr-only">Toggle theme</span>
@@ -156,7 +163,7 @@ export function AppHeader() {
                 {/* Notifications */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-full hover:bg-accent/50">
+                        <Button variant="ghost" size="icon" className="relative h-9 w-9">
                             {loading ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
@@ -169,7 +176,7 @@ export function AppHeader() {
                             )}
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[400px] p-0">
+                    <DropdownMenuContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-0">
                         <div className="flex items-center justify-between p-4 pb-2">
                             <div className="flex items-center gap-2">
                                 <div className="p-1.5 rounded-full bg-primary/10 text-primary">
@@ -359,18 +366,19 @@ export function AppHeader() {
                 {/* User Menu */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="gap-3 pl-2 h-10 rounded-full hover:bg-accent/50 pr-4">
-                            <Avatar className="h-8 w-8 ring-2 ring-background shadow-sm transition-transform hover:scale-105">
+                        <Button variant="ghost" className="h-10 gap-2 px-2">
+                            <Avatar className="h-8 w-8">
                                 {user.image && (
                                     <AvatarImage src={user.image} alt={user.name} referrerPolicy="no-referrer" />
                                 )}
-                                <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground text-xs font-bold">{user.initials}</AvatarFallback>
+                                <AvatarFallback className="bg-primary text-xs font-semibold text-primary-foreground">{user.initials}</AvatarFallback>
                             </Avatar>
-                            <div className="hidden flex-col items-start md:flex gap-0.5">
-                                <span className="text-sm font-semibold leading-none">{user.name}</span>
-                                <Badge variant="secondary" className="h-4 px-1.5 text-[9px] font-medium bg-secondary/20 text-secondary-foreground shadow-none">{user.role}</Badge>
+                            {/* Long Indonesian names must not push the header wider than the viewport */}
+                            <div className="hidden min-w-0 flex-col items-start lg:flex">
+                                <span className="max-w-[12rem] truncate text-sm font-medium leading-tight">{user.name}</span>
+                                <span className="text-[11px] leading-tight text-muted-foreground">{user.role}</span>
                             </div>
-                            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground opacity-50" />
+                            <ChevronDown className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground lg:block" />
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56 p-2">

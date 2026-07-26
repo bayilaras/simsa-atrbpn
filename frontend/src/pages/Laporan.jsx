@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { reportService } from '@/services/report.service';
+import { PageHeader } from '@/components/PageHeader';
 import { FileSpreadsheet, FileText, Download, BarChart3, Mail, Send, Archive, BookOpen, TrendingUp, FileImage, Film, FileAudio, Loader2 } from 'lucide-react';
 import {
     BarChart,
@@ -151,11 +152,11 @@ export default function Laporan() {
 
     const getStatusBadge = (status) => {
         const variants = {
-            belum_dibalas: 'bg-yellow-100 text-yellow-800',
-            sudah_dibalas: 'bg-green-100 text-green-800',
-            borrowed: 'bg-orange-100 text-orange-800',
-            returned: 'bg-green-100 text-green-800',
-            overdue: 'bg-red-100 text-red-800',
+            belum_dibalas: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-800 dark:text-yellow-300',
+            sudah_dibalas: 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300',
+            borrowed: 'bg-orange-100 dark:bg-orange-500/15 text-orange-800 dark:text-orange-300',
+            returned: 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300',
+            overdue: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300',
         };
         const statusLabels = {
             belum_dibalas: 'Belum Diproses',
@@ -165,7 +166,7 @@ export default function Laporan() {
             overdue: 'Terlambat',
         };
         return (
-            <Badge className={variants[status] || 'bg-gray-100 text-gray-800'}>
+            <Badge className={variants[status] || 'bg-muted text-foreground'}>
                 {statusLabels[status] || status?.replace('_', ' ')}
             </Badge>
         );
@@ -173,32 +174,20 @@ export default function Laporan() {
 
     return (
         <div className="space-y-6">
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 text-white shadow-xl">
-                <div className="absolute top-0 right-0 -mr-20 -mt-20 h-96 w-96 rounded-full bg-indigo-500/30 blur-3xl"></div>
-                <div className="absolute bottom-0 left-0 -ml-20 -mb-20 h-64 w-64 rounded-full bg-blue-500/20 blur-3xl"></div>
-                <div className="relative p-8">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-inner">
-                            <BarChart3 className="h-8 w-8 text-white" />
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Laporan & Statistik</h1>
-                            <p className="text-blue-100/80 text-lg">
-                                Analisis kinerja dan statistik pengelolaan surat dan arsip
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <PageHeader
+                icon={BarChart3}
+                title="Laporan & Statistik"
+                description="Analisis kinerja dan statistik pengelolaan surat dan arsip"
+            />
 
             {/* Filters */}
-            <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200">
+            <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200">
                 <CardContent className="pt-6">
                     <div className="flex flex-wrap gap-4 items-end">
                         <div className="space-y-2">
-                            <Label className="text-slate-700 font-medium">Tahun</Label>
+                            <Label className="text-foreground font-medium">Tahun</Label>
                             <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-                                <SelectTrigger className="w-[120px] bg-white border-slate-200 focus:ring-blue-400/20">
+                                <SelectTrigger className="w-[120px] bg-card border-border focus:ring-ring/20">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -211,27 +200,27 @@ export default function Laporan() {
                             </Select>
                         </div>
                         <div className="space-y-2">
-                            <Label className="text-slate-700 font-medium">Dari Tanggal</Label>
+                            <Label className="text-foreground font-medium">Dari Tanggal</Label>
                             <Input
                                 type="date"
                                 value={tanggalDari}
                                 onChange={(e) => setTanggalDari(e.target.value)}
-                                className="w-[160px] bg-white border-slate-200 focus:ring-blue-400/20"
+                                className="w-[160px] bg-card border-border focus:ring-ring/20"
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label className="text-slate-700 font-medium">Sampai Tanggal</Label>
+                            <Label className="text-foreground font-medium">Sampai Tanggal</Label>
                             <Input
                                 type="date"
                                 value={tanggalSampai}
                                 onChange={(e) => setTanggalSampai(e.target.value)}
-                                className="w-[160px] bg-white border-slate-200 focus:ring-blue-400/20"
+                                className="w-[160px] bg-card border-border focus:ring-ring/20"
                             />
                         </div>
                         <Button
                             onClick={loadData}
                             disabled={loading}
-                            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
+                            className="bg-primary hover:bg-primary text-white shadow-sm transition-all"
                         >
                             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Tampilkan Data'}
                         </Button>
@@ -241,24 +230,24 @@ export default function Laporan() {
 
             {/* Tabs */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className="bg-white/50 backdrop-blur-sm border border-slate-200/60 p-1 h-auto rounded-xl shadow-sm grid w-full grid-cols-2 md:grid-cols-5 gap-1">
-                    <TabsTrigger value="summary" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
+                <TabsList className="bg-card/50 backdrop-blur-sm border border-border/60 p-1 h-auto rounded-xl shadow-sm grid w-full grid-cols-2 md:grid-cols-5 gap-1">
+                    <TabsTrigger value="summary" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <BarChart3 className="h-4 w-4 mr-2" />
                         <span className="hidden sm:inline">Ringkasan</span>
                     </TabsTrigger>
-                    <TabsTrigger value="surat-masuk" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
+                    <TabsTrigger value="surat-masuk" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <Mail className="h-4 w-4 mr-2" />
                         <span className="hidden sm:inline">Surat Masuk</span>
                     </TabsTrigger>
-                    <TabsTrigger value="surat-keluar" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
+                    <TabsTrigger value="surat-keluar" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <Send className="h-4 w-4 mr-2" />
                         <span className="hidden sm:inline">Surat Keluar</span>
                     </TabsTrigger>
-                    <TabsTrigger value="arsip" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
+                    <TabsTrigger value="arsip" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <Archive className="h-4 w-4 mr-2" />
                         <span className="hidden sm:inline">Arsip</span>
                     </TabsTrigger>
-                    <TabsTrigger value="peminjaman" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
+                    <TabsTrigger value="peminjaman" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <BookOpen className="h-4 w-4 mr-2" />
                         <span className="hidden sm:inline">Peminjaman</span>
                     </TabsTrigger>
@@ -275,65 +264,65 @@ export default function Laporan() {
                     ) : summaryData ? (
                         <>
                             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200 group">
+                                <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 group">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium text-slate-600">Surat Masuk</CardTitle>
-                                        <div className="p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
-                                            <Mail className="h-4 w-4 text-blue-600" />
+                                        <CardTitle className="text-sm font-medium text-muted-foreground">Surat Masuk</CardTitle>
+                                        <div className="p-2 bg-blue-50 dark:bg-blue-500/15 rounded-lg group-hover:bg-blue-100 dark:bg-blue-500/15 transition-colors">
+                                            <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                                         </div>
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="text-3xl font-bold text-slate-800">{summaryData.suratMasuk?.total || 0}</div>
-                                        <p className="text-xs text-slate-500 mt-1 font-medium">
-                                            <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md">
+                                        <div className="text-3xl font-bold text-foreground">{summaryData.suratMasuk?.total || 0}</div>
+                                        <p className="text-xs text-muted-foreground mt-1 font-medium">
+                                            <span className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15 px-1.5 py-0.5 rounded-md">
                                                 {summaryData.suratMasuk?.belumDibalas || 0} belum diproses
                                             </span>
                                         </p>
                                     </CardContent>
                                 </Card>
-                                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200 group">
+                                <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 group">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium text-slate-600">Surat Keluar</CardTitle>
-                                        <div className="p-2 bg-emerald-50 rounded-lg group-hover:bg-emerald-100 transition-colors">
-                                            <Send className="h-4 w-4 text-emerald-600" />
+                                        <CardTitle className="text-sm font-medium text-muted-foreground">Surat Keluar</CardTitle>
+                                        <div className="p-2 bg-emerald-50 dark:bg-emerald-500/15 rounded-lg group-hover:bg-emerald-100 dark:bg-emerald-500/15 transition-colors">
+                                            <Send className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                                         </div>
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="text-3xl font-bold text-slate-800">{summaryData.suratKeluar?.total || 0}</div>
-                                        <p className="text-xs text-slate-500 mt-1 font-medium">
-                                            <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
+                                        <div className="text-3xl font-bold text-foreground">{summaryData.suratKeluar?.total || 0}</div>
+                                        <p className="text-xs text-muted-foreground mt-1 font-medium">
+                                            <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-md">
                                                 {summaryData.suratKeluar?.diarsipkan || 0} diarsipkan
                                             </span>
                                         </p>
                                     </CardContent>
                                 </Card>
-                                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200 group">
+                                <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 group">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium text-slate-600">Arsip</CardTitle>
-                                        <div className="p-2 bg-purple-50 rounded-lg group-hover:bg-purple-100 transition-colors">
-                                            <Archive className="h-4 w-4 text-purple-600" />
+                                        <CardTitle className="text-sm font-medium text-muted-foreground">Arsip</CardTitle>
+                                        <div className="p-2 bg-purple-50 dark:bg-purple-500/15 rounded-lg group-hover:bg-purple-100 dark:bg-purple-500/15 transition-colors">
+                                            <Archive className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                                         </div>
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="text-3xl font-bold text-slate-800">{summaryData.arsip?.total || 0}</div>
-                                        <p className="text-xs text-slate-500 mt-1 font-medium">
-                                            <span className="text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-md">
+                                        <div className="text-3xl font-bold text-foreground">{summaryData.arsip?.total || 0}</div>
+                                        <p className="text-xs text-muted-foreground mt-1 font-medium">
+                                            <span className="text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/15 px-1.5 py-0.5 rounded-md">
                                                 {summaryData.arsip?.permanen || 0} permanen
                                             </span>
                                         </p>
                                     </CardContent>
                                 </Card>
-                                <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200 group">
+                                <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 group">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium text-slate-600">Peminjaman</CardTitle>
-                                        <div className="p-2 bg-orange-50 rounded-lg group-hover:bg-orange-100 transition-colors">
+                                        <CardTitle className="text-sm font-medium text-muted-foreground">Peminjaman</CardTitle>
+                                        <div className="p-2 bg-orange-50 dark:bg-orange-500/15 rounded-lg group-hover:bg-orange-100 dark:bg-orange-500/15 transition-colors">
                                             <BookOpen className="h-4 w-4 text-orange-600" />
                                         </div>
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="text-3xl font-bold text-slate-800">{summaryData.peminjaman?.total || 0}</div>
-                                        <p className="text-xs text-slate-500 mt-1 font-medium">
-                                            <span className="text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-md">
+                                        <div className="text-3xl font-bold text-foreground">{summaryData.peminjaman?.total || 0}</div>
+                                        <p className="text-xs text-muted-foreground mt-1 font-medium">
+                                            <span className="text-orange-600 bg-orange-50 dark:bg-orange-500/15 px-1.5 py-0.5 rounded-md">
                                                 {summaryData.peminjaman?.borrowed || 0} aktif dipinjam
                                             </span>
                                         </p>
@@ -342,11 +331,11 @@ export default function Laporan() {
                             </div>
 
                             {/* Monthly Trend Chart */}
-                            <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200">
+                            <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200">
                                 <CardHeader>
-                                    <CardTitle className="flex items-center gap-2 text-lg text-slate-800">
+                                    <CardTitle className="flex items-center gap-2 text-lg text-foreground">
                                         <div className="p-2 bg-blue-100/50 rounded-lg">
-                                            <TrendingUp className="h-5 w-5 text-blue-600" />
+                                            <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                                         </div>
                                         Tren Bulanan {year}
                                     </CardTitle>
@@ -383,21 +372,21 @@ export default function Laporan() {
                             </Card>
                         </>
                     ) : (
-                        <div className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                        <div className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-border rounded-xl bg-muted/50">
                             <BarChart3 className="h-12 w-12 text-slate-300 mb-3" />
-                            <h3 className="text-lg font-medium text-slate-900">Tidak ada data</h3>
-                            <p className="text-slate-500 max-w-sm mt-1">Belum ada data statistik yang tersedia untuk periode yang dipilih.</p>
+                            <h3 className="text-lg font-medium text-foreground">Tidak ada data</h3>
+                            <p className="text-muted-foreground max-w-sm mt-1">Belum ada data statistik yang tersedia untuk periode yang dipilih.</p>
                         </div>
                     )}
                 </TabsContent>
 
                 {/* Surat Masuk Tab */}
                 <TabsContent value="surat-masuk" className="space-y-4">
-                    <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200/60">
+                    <div className="flex justify-between items-center bg-card p-4 rounded-xl shadow-sm border border-border/60">
                         <div className="flex items-center gap-2">
                             <div className="h-8 w-1 bg-blue-500 rounded-full"></div>
-                            <div className="text-sm font-medium text-slate-700">
-                                Total: <span className="font-bold text-slate-900">{suratMasukData?.pagination?.total || 0}</span> surat
+                            <div className="text-sm font-medium text-foreground">
+                                Total: <span className="font-bold text-foreground">{suratMasukData?.pagination?.total || 0}</span> surat
                             </div>
                         </div>
                         <div className="flex gap-2">
@@ -406,7 +395,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('surat-masuk', 'excel')}
                                 disabled={exporting}
-                                className="border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-colors"
+                                className="border-border hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-600 dark:text-emerald-400 hover:border-emerald-200 transition-colors"
                             >
                                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                                 Excel
@@ -416,23 +405,23 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('surat-masuk', 'pdf')}
                                 disabled={exporting}
-                                className="border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors"
+                                className="border-border hover:bg-rose-50 dark:bg-rose-500/15 hover:text-rose-600 dark:text-rose-400 hover:border-rose-200 transition-colors"
                             >
                                 <FileText className="h-4 w-4 mr-2" />
                                 PDF
                             </Button>
                         </div>
                     </div>
-                    <Card className="border-slate-200/60 shadow-sm overflow-hidden">
+                    <Card className="border-border/60 shadow-sm overflow-hidden">
                         <Table>
-                            <TableHeader className="bg-slate-50/50">
-                                <TableRow className="hover:bg-slate-50/50">
-                                    <TableHead className="w-[60px] text-slate-700 font-semibold">No</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Nomor Surat</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Tanggal</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Dari</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Perihal</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Status</TableHead>
+                            <TableHeader className="bg-muted/50">
+                                <TableRow className="hover:bg-muted/50">
+                                    <TableHead className="w-[60px] text-foreground font-semibold">No</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Nomor Surat</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Tanggal</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Dari</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Perihal</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Status</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -446,19 +435,19 @@ export default function Laporan() {
                                     ))
                                 ) : suratMasukData?.data?.length ? (
                                     suratMasukData.data.map((item, index) => (
-                                        <TableRow key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                                            <TableCell className="font-medium text-slate-500">{index + 1}</TableCell>
+                                        <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
+                                            <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
                                             <TableCell className="font-medium">{item.nomorSurat || '-'}</TableCell>
                                             <TableCell>{formatDate(item.tanggalSurat)}</TableCell>
                                             <TableCell>{item.dari || '-'}</TableCell>
-                                            <TableCell className="max-w-xs truncate text-slate-600" title={item.perihal}>{item.perihal || '-'}</TableCell>
+                                            <TableCell className="max-w-xs truncate text-muted-foreground" title={item.perihal}>{item.perihal || '-'}</TableCell>
                                             <TableCell>{getStatusBadge(item.status)}</TableCell>
                                         </TableRow>
                                     ))
                                 ) : (
                                     <TableRow>
                                         <TableCell colSpan={6} className="h-32 text-center">
-                                            <div className="flex flex-col items-center justify-center text-slate-400">
+                                            <div className="flex flex-col items-center justify-center text-muted-foreground">
                                                 <Mail className="h-8 w-8 mb-2 opacity-50" />
                                                 <p>Tidak ada data surat masuk</p>
                                             </div>
@@ -472,11 +461,11 @@ export default function Laporan() {
 
                 {/* Surat Keluar Tab */}
                 <TabsContent value="surat-keluar" className="space-y-4">
-                    <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200/60">
+                    <div className="flex justify-between items-center bg-card p-4 rounded-xl shadow-sm border border-border/60">
                         <div className="flex items-center gap-2">
                             <div className="h-8 w-1 bg-emerald-500 rounded-full"></div>
-                            <div className="text-sm font-medium text-slate-700">
-                                Total: <span className="font-bold text-slate-900">{suratKeluarData?.pagination?.total || 0}</span> surat
+                            <div className="text-sm font-medium text-foreground">
+                                Total: <span className="font-bold text-foreground">{suratKeluarData?.pagination?.total || 0}</span> surat
                             </div>
                         </div>
                         <div className="flex gap-2">
@@ -485,7 +474,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('surat-keluar', 'excel')}
                                 disabled={exporting}
-                                className="border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-colors"
+                                className="border-border hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-600 dark:text-emerald-400 hover:border-emerald-200 transition-colors"
                             >
                                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                                 Excel
@@ -495,23 +484,23 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('surat-keluar', 'pdf')}
                                 disabled={exporting}
-                                className="border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors"
+                                className="border-border hover:bg-rose-50 dark:bg-rose-500/15 hover:text-rose-600 dark:text-rose-400 hover:border-rose-200 transition-colors"
                             >
                                 <FileText className="h-4 w-4 mr-2" />
                                 PDF
                             </Button>
                         </div>
                     </div>
-                    <Card className="border-slate-200/60 shadow-sm overflow-hidden">
+                    <Card className="border-border/60 shadow-sm overflow-hidden">
                         <Table>
-                            <TableHeader className="bg-slate-50/50">
-                                <TableRow className="hover:bg-slate-50/50">
-                                    <TableHead className="w-[60px] text-slate-700 font-semibold">No</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Nomor Surat</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Tanggal</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Kepada</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Perihal</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Jenis</TableHead>
+                            <TableHeader className="bg-muted/50">
+                                <TableRow className="hover:bg-muted/50">
+                                    <TableHead className="w-[60px] text-foreground font-semibold">No</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Nomor Surat</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Tanggal</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Kepada</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Perihal</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Jenis</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -525,12 +514,12 @@ export default function Laporan() {
                                     ))
                                 ) : suratKeluarData?.data?.length ? (
                                     suratKeluarData.data.map((item, index) => (
-                                        <TableRow key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                                            <TableCell className="font-medium text-slate-500">{index + 1}</TableCell>
+                                        <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
+                                            <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
                                             <TableCell className="font-medium">{item.nomorSurat || '-'}</TableCell>
                                             <TableCell>{formatDate(item.tanggalSurat)}</TableCell>
                                             <TableCell>{item.kepada || '-'}</TableCell>
-                                            <TableCell className="max-w-xs truncate text-slate-600" title={item.perihal}>{item.perihal || '-'}</TableCell>
+                                            <TableCell className="max-w-xs truncate text-muted-foreground" title={item.perihal}>{item.perihal || '-'}</TableCell>
                                             <TableCell>
                                                 <Badge variant="outline" className="font-normal">{item.naskahDinas || '-'}</Badge>
                                             </TableCell>
@@ -539,7 +528,7 @@ export default function Laporan() {
                                 ) : (
                                     <TableRow>
                                         <TableCell colSpan={6} className="h-32 text-center">
-                                            <div className="flex flex-col items-center justify-center text-slate-400">
+                                            <div className="flex flex-col items-center justify-center text-muted-foreground">
                                                 <Send className="h-8 w-8 mb-2 opacity-50" />
                                                 <p>Tidak ada data surat keluar</p>
                                             </div>
@@ -553,17 +542,17 @@ export default function Laporan() {
 
                 {/* Arsip Tab */}
                 <TabsContent value="arsip" className="space-y-4">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200/60">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-card p-4 rounded-xl shadow-sm border border-border/60">
                         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full md:w-auto">
                             <div className="flex items-center gap-2">
                                 <div className="h-8 w-1 bg-purple-500 rounded-full"></div>
-                                <div className="text-sm font-medium text-slate-700 whitespace-nowrap">
-                                    Total: <span className="font-bold text-slate-900">{arsipData?.pagination?.total || 0}</span> arsip
+                                <div className="text-sm font-medium text-foreground whitespace-nowrap">
+                                    Total: <span className="font-bold text-foreground">{arsipData?.pagination?.total || 0}</span> arsip
                                 </div>
                             </div>
                             <div className="flex gap-2 w-full sm:w-auto">
                                 <Select value={arsipType} onValueChange={setArsipType}>
-                                    <SelectTrigger className="w-full sm:w-[150px] bg-slate-50 border-slate-200">
+                                    <SelectTrigger className="w-full sm:w-[150px] bg-muted/50 border-border">
                                         <SelectValue placeholder="Filter" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -574,7 +563,7 @@ export default function Laporan() {
                                     </SelectContent>
                                 </Select>
                                 <Select value={mediaType} onValueChange={setMediaType}>
-                                    <SelectTrigger className="w-full sm:w-[150px] bg-slate-50 border-slate-200">
+                                    <SelectTrigger className="w-full sm:w-[150px] bg-muted/50 border-border">
                                         <SelectValue placeholder="Media" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -595,7 +584,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('arsip', 'excel')}
                                 disabled={exporting}
-                                className="flex-1 md:flex-none border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-colors"
+                                className="flex-1 md:flex-none border-border hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-600 dark:text-emerald-400 hover:border-emerald-200 transition-colors"
                             >
                                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                                 Excel
@@ -605,7 +594,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('arsip', 'pdf')}
                                 disabled={exporting}
-                                className="flex-1 md:flex-none border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors"
+                                className="flex-1 md:flex-none border-border hover:bg-rose-50 dark:bg-rose-500/15 hover:text-rose-600 dark:text-rose-400 hover:border-rose-200 transition-colors"
                             >
                                 <FileText className="h-4 w-4 mr-2" />
                                 PDF
@@ -616,21 +605,21 @@ export default function Laporan() {
                     {arsipData?.stats?.byMediaType && (
                         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-4">
                             {arsipData.stats.byMediaType.map((stat, index) => (
-                                <Card key={index} className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200">
+                                <Card key={index} className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                        <CardTitle className="text-sm font-medium capitalize text-slate-600">
+                                        <CardTitle className="text-sm font-medium capitalize text-muted-foreground">
                                             {stat.mediaType || 'Kertas'}
                                         </CardTitle>
-                                        <div className="p-1.5 bg-slate-100 rounded-md">
-                                            {stat.mediaType === 'foto' ? <FileImage className="h-4 w-4 text-slate-500" /> :
-                                                stat.mediaType === 'video' ? <Film className="h-4 w-4 text-slate-500" /> :
-                                                    stat.mediaType === 'audio' ? <FileAudio className="h-4 w-4 text-slate-500" /> :
-                                                        <FileText className="h-4 w-4 text-slate-500" />}
+                                        <div className="p-1.5 bg-muted rounded-md">
+                                            {stat.mediaType === 'foto' ? <FileImage className="h-4 w-4 text-muted-foreground" /> :
+                                                stat.mediaType === 'video' ? <Film className="h-4 w-4 text-muted-foreground" /> :
+                                                    stat.mediaType === 'audio' ? <FileAudio className="h-4 w-4 text-muted-foreground" /> :
+                                                        <FileText className="h-4 w-4 text-muted-foreground" />}
                                         </div>
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="text-2xl font-bold text-slate-800">{stat.count}</div>
-                                        <p className="text-xs text-slate-400 mt-1">
+                                        <div className="text-2xl font-bold text-foreground">{stat.count}</div>
+                                        <p className="text-xs text-muted-foreground mt-1">
                                             Arsip {stat.mediaType || 'Kertas'}
                                         </p>
                                     </CardContent>
@@ -639,18 +628,18 @@ export default function Laporan() {
                         </div>
                     )}
 
-                    <Card className="border-slate-200/60 shadow-sm overflow-hidden">
+                    <Card className="border-border/60 shadow-sm overflow-hidden">
                         <Table>
-                            <TableHeader className="bg-slate-50/50">
-                                <TableRow className="hover:bg-slate-50/50">
-                                    <TableHead className="w-[60px] text-slate-700 font-semibold">No</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Kode Klasifikasi</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Jenis</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Media</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Nomor Berkas</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Uraian</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Kadaluarsa</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Status</TableHead>
+                            <TableHeader className="bg-muted/50">
+                                <TableRow className="hover:bg-muted/50">
+                                    <TableHead className="w-[60px] text-foreground font-semibold">No</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Kode Klasifikasi</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Jenis</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Media</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Nomor Berkas</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Uraian</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Kadaluarsa</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Status</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -664,16 +653,16 @@ export default function Laporan() {
                                     ))
                                 ) : arsipData?.data?.length ? (
                                     arsipData.data.map((item, index) => (
-                                        <TableRow key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                                            <TableCell className="font-medium text-slate-500">{index + 1}</TableCell>
-                                            <TableCell className="font-medium bg-slate-50 px-2 py-1 rounded inline-block text-xs mt-2">{item.kodeKlasifikasi || '-'}</TableCell>
+                                        <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
+                                            <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell className="font-medium bg-muted/50 px-2 py-1 rounded inline-block text-xs mt-2">{item.kodeKlasifikasi || '-'}</TableCell>
                                             <TableCell>
                                                 <Badge variant={item.jenisArsip === 'masuk' ? 'default' : 'secondary'} className="font-normal">
                                                     {item.jenisArsip}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell>
-                                                <div className="flex items-center gap-1.5 text-slate-600 text-sm capitalize">
+                                                <div className="flex items-center gap-1.5 text-muted-foreground text-sm capitalize">
                                                     {item.mediaType === 'foto' ? <FileImage className="h-3 w-3" /> :
                                                         item.mediaType === 'video' ? <Film className="h-3 w-3" /> :
                                                             item.mediaType === 'audio' ? <FileAudio className="h-3 w-3" /> :
@@ -682,17 +671,17 @@ export default function Laporan() {
                                                 </div>
                                             </TableCell>
                                             <TableCell>{item.nomorBerkas || '-'}</TableCell>
-                                            <TableCell className="max-w-xs truncate text-slate-600" title={item.uraianBerkas || '-'}>{item.uraianBerkas || '-'}</TableCell>
+                                            <TableCell className="max-w-xs truncate text-muted-foreground" title={item.uraianBerkas || '-'}>{item.uraianBerkas || '-'}</TableCell>
                                             <TableCell>{formatDate(item.tanggalKadaluarsa)}</TableCell>
                                             <TableCell>
-                                                <Badge variant="outline" className="font-normal border-slate-200 text-slate-600">{item.hasilAkhir || item.retensiInaktif || '-'}</Badge>
+                                                <Badge variant="outline" className="font-normal border-border text-muted-foreground">{item.hasilAkhir || item.retensiInaktif || '-'}</Badge>
                                             </TableCell>
                                         </TableRow>
                                     ))
                                 ) : (
                                     <TableRow>
                                         <TableCell colSpan={8} className="h-32 text-center">
-                                            <div className="flex flex-col items-center justify-center text-slate-400">
+                                            <div className="flex flex-col items-center justify-center text-muted-foreground">
                                                 <Archive className="h-8 w-8 mb-2 opacity-50" />
                                                 <p>Tidak ada data arsip</p>
                                             </div>
@@ -706,16 +695,16 @@ export default function Laporan() {
 
                 {/* Peminjaman Tab */}
                 <TabsContent value="peminjaman" className="space-y-4">
-                    <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200/60">
+                    <div className="flex justify-between items-center bg-card p-4 rounded-xl shadow-sm border border-border/60">
                         <div className="flex items-center gap-2">
                             <div className="h-8 w-1 bg-orange-500 rounded-full"></div>
-                            <div className="text-sm font-medium text-slate-700">
-                                Total: <span className="font-bold text-slate-900">{lendingData?.pagination?.total || 0}</span> peminjaman
+                            <div className="text-sm font-medium text-foreground">
+                                Total: <span className="font-bold text-foreground">{lendingData?.pagination?.total || 0}</span> peminjaman
                             </div>
                         </div>
                         <div className="flex gap-4 items-center">
                             <Select value={lendingStatus} onValueChange={setLendingStatus}>
-                                <SelectTrigger className="w-[150px] bg-slate-50 border-slate-200">
+                                <SelectTrigger className="w-[150px] bg-muted/50 border-border">
                                     <SelectValue placeholder="Status" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -727,17 +716,17 @@ export default function Laporan() {
                             </Select>
                         </div>
                     </div>
-                    <Card className="border-slate-200/60 shadow-sm overflow-hidden">
+                    <Card className="border-border/60 shadow-sm overflow-hidden">
                         <Table>
-                            <TableHeader className="bg-slate-50/50">
-                                <TableRow className="hover:bg-slate-50/50">
-                                    <TableHead className="w-[60px] text-slate-700 font-semibold">No</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Peminjam</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Unit</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Tgl Pinjam</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Jatuh Tempo</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Tgl Kembali</TableHead>
-                                    <TableHead className="text-slate-700 font-semibold">Status</TableHead>
+                            <TableHeader className="bg-muted/50">
+                                <TableRow className="hover:bg-muted/50">
+                                    <TableHead className="w-[60px] text-foreground font-semibold">No</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Peminjam</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Unit</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Tgl Pinjam</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Jatuh Tempo</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Tgl Kembali</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Status</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -751,8 +740,8 @@ export default function Laporan() {
                                     ))
                                 ) : lendingData?.data?.length ? (
                                     lendingData.data.map((item, index) => (
-                                        <TableRow key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                                            <TableCell className="font-medium text-slate-500">{index + 1}</TableCell>
+                                        <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
+                                            <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
                                             <TableCell className="font-medium">{item.borrowerName}</TableCell>
                                             <TableCell>{item.departmentUnit || '-'}</TableCell>
                                             <TableCell>{formatDate(item.borrowDate)}</TableCell>
@@ -764,7 +753,7 @@ export default function Laporan() {
                                 ) : (
                                     <TableRow>
                                         <TableCell colSpan={7} className="h-32 text-center">
-                                            <div className="flex flex-col items-center justify-center text-slate-400">
+                                            <div className="flex flex-col items-center justify-center text-muted-foreground">
                                                 <BookOpen className="h-8 w-8 mb-2 opacity-50" />
                                                 <p>Tidak ada data peminjaman</p>
                                             </div>

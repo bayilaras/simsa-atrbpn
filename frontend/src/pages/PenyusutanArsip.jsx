@@ -17,18 +17,18 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 
 const STATUS_CONFIG = {
-    draft: { label: 'Draft', color: 'bg-slate-100 text-slate-700 border-slate-200', icon: FileText },
-    proposed: { label: 'Diusulkan', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Send },
-    reviewed: { label: 'Ditinjau', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Eye },
-    approved: { label: 'Disetujui', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle },
-    executed: { label: 'Dilaksanakan', color: 'bg-purple-100 text-purple-700 border-purple-200', icon: FileCheck },
+    draft: { label: 'Draft', color: 'bg-muted text-foreground border-border', icon: FileText },
+    proposed: { label: 'Diusulkan', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200', icon: Send },
+    reviewed: { label: 'Ditinjau', color: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200', icon: Eye },
+    approved: { label: 'Disetujui', color: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200', icon: CheckCircle },
+    executed: { label: 'Dilaksanakan', color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-200', icon: FileCheck },
 }
 
 const JENIS_CONFIG = {
-    pemindahan: { label: 'Pemindahan', icon: ArrowRightLeft, desc: 'Transfer arsip dari Unit Pengolah ke Unit Kearsipan', color: 'text-blue-600', bg: 'bg-blue-100', border: 'border-blue-200' },
-    pemusnahan: { label: 'Pemusnahan', icon: Flame, desc: 'Pemusnahan arsip yang telah melewati masa retensi (JRA: Musnah)', color: 'text-red-600', bg: 'bg-red-100', border: 'border-red-200' },
-    alih_media: { label: 'Alih Media', icon: Repeat, desc: 'Alih media arsip dari bentuk fisik ke digital atau sebaliknya', color: 'text-indigo-600', bg: 'bg-indigo-100', border: 'border-indigo-200' },
-    penyerahan: { label: 'Penyerahan', icon: Archive, desc: 'Penyerahan arsip statis ke Lembaga Kearsipan Nasional', color: 'text-amber-600', bg: 'bg-amber-100', border: 'border-amber-200' },
+    pemindahan: { label: 'Pemindahan', icon: ArrowRightLeft, desc: 'Transfer arsip dari Unit Pengolah ke Unit Kearsipan', color: 'text-blue-600', bg: 'bg-blue-100 dark:bg-blue-500/15', border: 'border-blue-200' },
+    pemusnahan: { label: 'Pemusnahan', icon: Flame, desc: 'Pemusnahan arsip yang telah melewati masa retensi (JRA: Musnah)', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-500/15', border: 'border-red-200' },
+    alih_media: { label: 'Alih Media', icon: Repeat, desc: 'Alih media arsip dari bentuk fisik ke digital atau sebaliknya', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-100 dark:bg-indigo-500/15', border: 'border-indigo-200' },
+    penyerahan: { label: 'Penyerahan', icon: Archive, desc: 'Penyerahan arsip statis ke Lembaga Kearsipan Nasional', color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-500/15', border: 'border-amber-200' },
 }
 
 const NEXT_ACTION_LABEL = {
@@ -182,8 +182,8 @@ export default function PenyusutanArsip() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-rose-100 rounded-lg">
-                            <History className="h-6 w-6 text-rose-600" />
+                        <div className="p-2 bg-rose-100 dark:bg-rose-500/15 rounded-lg">
+                            <History className="h-6 w-6 text-rose-600 dark:text-rose-400" />
                         </div>
                         Penyusutan Arsip
                     </h1>
@@ -310,7 +310,7 @@ export default function PenyusutanArsip() {
                             <CardHeader className="pb-3 border-b bg-emerald-50/50">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <div className="p-1.5 bg-emerald-100 rounded-md text-emerald-700">
+                                        <div className="p-1.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-md text-emerald-700 dark:text-emerald-300">
                                             <Plus className="h-4 w-4" />
                                         </div>
                                         <CardTitle className="text-base text-emerald-950">Buat Usulan {JenisConf.label} Baru</CardTitle>
@@ -343,13 +343,13 @@ export default function PenyusutanArsip() {
                                                 {candidates.map(c => (
                                                     <label
                                                         key={c.id}
-                                                        className={`flex items-start gap-3 p-3 rounded-md border transition-all cursor-pointer ${selectedCandidates.includes(c.id) ? 'bg-emerald-50 border-emerald-200 shadow-sm' : 'hover:bg-muted/50 border-border'}`}
+                                                        className={`flex items-start gap-3 p-3 rounded-md border transition-all cursor-pointer ${selectedCandidates.includes(c.id) ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 shadow-sm' : 'hover:bg-muted/50 border-border'}`}
                                                     >
                                                         <input
                                                             type="checkbox"
                                                             checked={selectedCandidates.includes(c.id)}
                                                             onChange={() => toggleCandidate(c.id)}
-                                                            className="mt-1 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                                            className="mt-1 rounded border-border text-emerald-600 focus:ring-emerald-500"
                                                         />
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex justify-between gap-2">

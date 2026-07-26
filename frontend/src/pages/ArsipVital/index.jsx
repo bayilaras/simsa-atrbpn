@@ -201,8 +201,8 @@ export default function ArsipVital() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-red-100 rounded-lg">
-                        <ShieldAlert className="h-6 w-6 text-red-600" />
+                    <div className="p-2 bg-red-100 dark:bg-red-500/15 rounded-lg">
+                        <ShieldAlert className="h-6 w-6 text-red-600 dark:text-red-400" />
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">Arsip Vital</h1>
@@ -229,7 +229,7 @@ export default function ArsipVital() {
                             <p className="text-sm font-medium text-muted-foreground">Total Arsip Vital</p>
                             <p className="text-3xl font-bold mt-2">{stats?.total || 0}</p>
                         </div>
-                        <div className="p-3 bg-blue-100 rounded-full"><Shield className="h-6 w-6 text-blue-600" /></div>
+                        <div className="p-3 bg-blue-100 dark:bg-blue-500/15 rounded-full"><Shield className="h-6 w-6 text-blue-600 dark:text-blue-400" /></div>
                     </CardContent>
                 </Card>
                 <Card>
@@ -238,7 +238,7 @@ export default function ArsipVital() {
                             <p className="text-sm font-medium text-muted-foreground">Terlindungi</p>
                             <p className="text-3xl font-bold mt-2 text-emerald-600">{getStatValue(stats?.byStatus, 'terlindungi')}</p>
                         </div>
-                        <div className="p-3 bg-emerald-100 rounded-full"><ShieldCheck className="h-6 w-6 text-emerald-600" /></div>
+                        <div className="p-3 bg-emerald-100 dark:bg-emerald-500/15 rounded-full"><ShieldCheck className="h-6 w-6 text-emerald-600" /></div>
                     </CardContent>
                 </Card>
                 <Card>
@@ -247,16 +247,16 @@ export default function ArsipVital() {
                             <p className="text-sm font-medium text-muted-foreground">Perlu Review</p>
                             <p className="text-3xl font-bold mt-2 text-amber-600">{getStatValue(stats?.byStatus, 'perlu_review')}</p>
                         </div>
-                        <div className="p-3 bg-amber-100 rounded-full"><AlertTriangle className="h-6 w-6 text-amber-600" /></div>
+                        <div className="p-3 bg-amber-100 dark:bg-amber-500/15 rounded-full"><AlertTriangle className="h-6 w-6 text-amber-600" /></div>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="p-6 flex items-center justify-between">
                         <div>
                             <p className="text-sm font-medium text-muted-foreground">Belum Diproteksi</p>
-                            <p className="text-3xl font-bold mt-2 text-red-600">{getStatValue(stats?.byStatus, 'belum_diproteksi')}</p>
+                            <p className="text-3xl font-bold mt-2 text-red-600 dark:text-red-400">{getStatValue(stats?.byStatus, 'belum_diproteksi')}</p>
                         </div>
-                        <div className="p-3 bg-red-100 rounded-full"><ShieldX className="h-6 w-6 text-red-600" /></div>
+                        <div className="p-3 bg-red-100 dark:bg-red-500/15 rounded-full"><ShieldX className="h-6 w-6 text-red-600 dark:text-red-400" /></div>
                     </CardContent>
                 </Card>
             </div>
@@ -296,7 +296,7 @@ export default function ArsipVital() {
                 <TabsContent value="monitoring" className="space-y-4">
                     <Card className="border-l-4 border-l-amber-500">
                         <CardHeader>
-                            <CardTitle className="text-lg flex items-center gap-2 text-amber-700">
+                            <CardTitle className="text-lg flex items-center gap-2 text-amber-700 dark:text-amber-300">
                                 <AlertTriangle className="h-5 w-5" />
                                 Perlu Review / Tindakan ({dueReview.length})
                             </CardTitle>
@@ -304,10 +304,10 @@ export default function ArsipVital() {
                         <CardContent>
                             {dueReview.length === 0 ? (
                                 <div className="text-center py-8">
-                                    <div className="p-3 bg-emerald-100 rounded-full w-fit mx-auto mb-3">
+                                    <div className="p-3 bg-emerald-100 dark:bg-emerald-500/15 rounded-full w-fit mx-auto mb-3">
                                         <CheckCircle2 className="h-6 w-6 text-emerald-600" />
                                     </div>
-                                    <p className="font-medium text-emerald-700">Semua Terkendali!</p>
+                                    <p className="font-medium text-emerald-700 dark:text-emerald-300">Semua Terkendali!</p>
                                     <p className="text-muted-foreground text-sm">Tidak ada arsip vital yang memerlukan review saat ini.</p>
                                 </div>
                             ) : (
@@ -331,7 +331,7 @@ export default function ArsipVital() {
                                                     <TableCell className="font-medium">{item.nomorBerkas || '-'}</TableCell>
                                                     <TableCell>{item.uraianBerkas || '-'}</TableCell>
                                                     <TableCell><Badge variant="outline" className={kek.color}>{kek.label}</Badge></TableCell>
-                                                    <TableCell className="text-red-600 font-medium">{item.tanggalReviewSelanjutnya ? new Date(item.tanggalReviewSelanjutnya).toLocaleDateString('id-ID') : '-'}</TableCell>
+                                                    <TableCell className="text-red-600 dark:text-red-400 font-medium">{item.tanggalReviewSelanjutnya ? new Date(item.tanggalReviewSelanjutnya).toLocaleDateString('id-ID') : '-'}</TableCell>
                                                     <TableCell>{item.penanggungJawab || '-'}</TableCell>
                                                     <TableCell><Badge variant="outline" className={sp.color}>{sp.label}</Badge></TableCell>
                                                 </TableRow>

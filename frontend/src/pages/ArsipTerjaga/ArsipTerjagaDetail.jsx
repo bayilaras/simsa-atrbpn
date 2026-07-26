@@ -25,7 +25,7 @@ export default function ArsipTerjagaDetail({
                 {selectedItem && (
                     <div className="space-y-6">
                         {/* Arsip Info Header */}
-                        <div className="bg-slate-50 p-4 rounded-lg border space-y-2">
+                        <div className="bg-muted/50 p-4 rounded-lg border space-y-2">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <h3 className="font-semibold text-lg">{selectedItem.nomorBerkas || 'Tanpa Nomor Berkas'}</h3>
@@ -134,7 +134,7 @@ export default function ArsipTerjagaDetail({
                         <>
                             <Button variant="outline" onClick={() => onOpenChange(false)}>Tutup</Button>
                             {selectedItem?.statusPelaporan === 'belum_dilaporkan' && (
-                                <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => { onOpenChange(false); onOpenReport(selectedItem) }}>
+                                <Button className="bg-primary hover:bg-primary" onClick={() => { onOpenChange(false); onOpenReport(selectedItem) }}>
                                     <Send className="h-4 w-4 mr-2" /> Laporkan ke ANRI
                                 </Button>
                             )}

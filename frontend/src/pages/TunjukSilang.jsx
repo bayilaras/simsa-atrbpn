@@ -23,20 +23,20 @@ import { tunjukSilangService } from '@/services/tunjuk-silang.service'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 const ENTITY_TYPES = [
-    { value: 'arsip', label: 'Arsip', icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50' },
-    { value: 'surat_masuk', label: 'Surat Masuk', icon: Mail, color: 'text-green-500', bg: 'bg-green-50' },
-    { value: 'surat_keluar', label: 'Surat Keluar', icon: Send, color: 'text-orange-500', bg: 'bg-orange-50' },
-    { value: 'dosir', label: 'Dosir', icon: FolderOpen, color: 'text-purple-500', bg: 'bg-purple-50' },
+    { value: 'arsip', label: 'Arsip', icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-500/15' },
+    { value: 'surat_masuk', label: 'Surat Masuk', icon: Mail, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-500/15' },
+    { value: 'surat_keluar', label: 'Surat Keluar', icon: Send, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-500/15' },
+    { value: 'dosir', label: 'Dosir', icon: FolderOpen, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-500/15' },
 ]
 
 const RELASI_TYPES = [
-    { value: 'balasan', label: 'Balasan', color: 'bg-blue-100 text-blue-800 border-blue-200' },
-    { value: 'tindak_lanjut', label: 'Tindak Lanjut', color: 'bg-green-100 text-green-800 border-green-200' },
-    { value: 'lampiran', label: 'Lampiran', color: 'bg-purple-100 text-purple-800 border-purple-200' },
-    { value: 'referensi', label: 'Referensi', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-    { value: 'revisi', label: 'Revisi', color: 'bg-orange-100 text-orange-800 border-orange-200' },
-    { value: 'duplikat', label: 'Duplikat', color: 'bg-red-100 text-red-800 border-red-200' },
-    { value: 'berkaitan', label: 'Berkaitan', color: 'bg-slate-100 text-slate-800 border-slate-200' },
+    { value: 'balasan', label: 'Balasan', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-200' },
+    { value: 'tindak_lanjut', label: 'Tindak Lanjut', color: 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300 border-green-200' },
+    { value: 'lampiran', label: 'Lampiran', color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-800 dark:text-purple-300 border-purple-200' },
+    { value: 'referensi', label: 'Referensi', color: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-800 dark:text-yellow-300 border-yellow-200' },
+    { value: 'revisi', label: 'Revisi', color: 'bg-orange-100 dark:bg-orange-500/15 text-orange-800 dark:text-orange-300 border-orange-200' },
+    { value: 'duplikat', label: 'Duplikat', color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300 border-red-200' },
+    { value: 'berkaitan', label: 'Berkaitan', color: 'bg-muted text-foreground border-border' },
 ]
 
 const getEntityIcon = (type) => {
@@ -51,11 +51,11 @@ const getEntityLabel = (type) => {
 
 const getEntityStyle = (type) => {
     const found = ENTITY_TYPES.find(e => e.value === type)
-    return found || { color: 'text-gray-500', bg: 'bg-gray-50' }
+    return found || { color: 'text-muted-foreground', bg: 'bg-muted/50' }
 }
 
 const getRelasiConfig = (relasi) => {
-    return RELASI_TYPES.find(r => r.value === relasi) || { label: relasi, color: 'bg-gray-100 text-gray-800 border-gray-200' }
+    return RELASI_TYPES.find(r => r.value === relasi) || { label: relasi, color: 'bg-muted text-foreground border-border' }
 }
 
 export default function TunjukSilang() {
@@ -164,7 +164,7 @@ export default function TunjukSilang() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
                             <Link2 className="h-6 w-6 text-indigo-600" />
                         </div>
                         Tunjuk Silang
@@ -298,7 +298,7 @@ export default function TunjukSilang() {
                         <Link2 className="h-4 w-4 text-indigo-600" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-indigo-700">{stats?.total || 0}</div>
+                        <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">{stats?.total || 0}</div>
                         <p className="text-xs text-muted-foreground mt-1">Data hubungan tersimpan</p>
                     </CardContent>
                 </Card>
@@ -537,7 +537,7 @@ export default function TunjukSilang() {
                                                             className="group flex flex-col md:flex-row md:items-center gap-4 p-4 border rounded-lg hover:border-indigo-200 hover:bg-indigo-50/10 transition-all bg-card shadow-sm"
                                                         >
                                                             <div className="flex items-center gap-3 min-w-[150px]">
-                                                                <div className={`p-2 rounded-full ${ref.direction === 'outgoing' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
+                                                                <div className={`p-2 rounded-full ${ref.direction === 'outgoing' ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-600' : 'bg-green-100 dark:bg-green-500/15 text-green-600'}`}>
                                                                     <RelIcon className="h-4 w-4" />
                                                                 </div>
                                                                 <div>
@@ -548,7 +548,7 @@ export default function TunjukSilang() {
                                                                 </div>
                                                             </div>
 
-                                                            <div className="flex-1 flex items-center gap-4 p-3 bg-muted/30 rounded-md border border-transparent group-hover:border-indigo-100 group-hover:bg-white transition-colors">
+                                                            <div className="flex-1 flex items-center gap-4 p-3 bg-muted/30 rounded-md border border-transparent group-hover:border-indigo-100 group-hover:bg-card transition-colors">
                                                                 <div className={`p-2 rounded-md ${entStyle.bg}`}>
                                                                     <EntityIcon className={`h-5 w-5 ${entStyle.color}`} />
                                                                 </div>

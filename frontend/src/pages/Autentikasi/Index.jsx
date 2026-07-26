@@ -87,7 +87,7 @@ export default function AutentikasiIndex() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-                        <FileCheck className="h-6 w-6 text-blue-600" />
+                        <FileCheck className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                         Autentikasi Alih Media
                     </h1>
                     <p className="text-muted-foreground">

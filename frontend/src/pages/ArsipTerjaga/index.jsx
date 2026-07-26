@@ -178,7 +178,7 @@ export default function ArsipTerjaga() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-100 rounded-lg"><Lock className="h-6 w-6 text-purple-600" /></div>
+                    <div className="p-2 bg-purple-100 dark:bg-purple-500/15 rounded-lg"><Lock className="h-6 w-6 text-purple-600 dark:text-purple-400" /></div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">Arsip Terjaga</h1>
                         <p className="text-sm text-muted-foreground">
@@ -204,7 +204,7 @@ export default function ArsipTerjaga() {
                             <p className="text-sm font-medium text-muted-foreground">Total Arsip Terjaga</p>
                             <p className="text-3xl font-bold mt-2">{stats?.total || 0}</p>
                         </div>
-                        <div className="p-3 bg-purple-100 rounded-full"><FileText className="h-6 w-6 text-purple-600" /></div>
+                        <div className="p-3 bg-purple-100 dark:bg-purple-500/15 rounded-full"><FileText className="h-6 w-6 text-purple-600 dark:text-purple-400" /></div>
                     </CardContent>
                 </Card>
                 <Card>
@@ -215,7 +215,7 @@ export default function ArsipTerjaga() {
                                 {(getStatValue(stats?.byPelaporan, 'dilaporkan') + getStatValue(stats?.byPelaporan, 'terverifikasi'))}
                             </p>
                         </div>
-                        <div className="p-3 bg-emerald-100 rounded-full"><FileCheck className="h-6 w-6 text-emerald-600" /></div>
+                        <div className="p-3 bg-emerald-100 dark:bg-emerald-500/15 rounded-full"><FileCheck className="h-6 w-6 text-emerald-600" /></div>
                     </CardContent>
                 </Card>
                 <Card>
@@ -224,7 +224,7 @@ export default function ArsipTerjaga() {
                             <p className="text-sm font-medium text-muted-foreground">Belum Dilaporkan</p>
                             <p className="text-3xl font-bold mt-2 text-red-600">{getStatValue(stats?.byPelaporan, 'belum_dilaporkan')}</p>
                         </div>
-                        <div className="p-3 bg-red-100 rounded-full"><FileWarning className="h-6 w-6 text-red-600" /></div>
+                        <div className="p-3 bg-red-100 dark:bg-red-500/15 rounded-full"><FileWarning className="h-6 w-6 text-red-600" /></div>
                     </CardContent>
                 </Card>
                 <Card>
@@ -236,7 +236,7 @@ export default function ArsipTerjaga() {
                                 <span className="text-xs text-muted-foreground">perlu segera</span>
                             </div>
                         </div>
-                        <div className="p-3 bg-amber-100 rounded-full"><FileClock className="h-6 w-6 text-amber-600" /></div>
+                        <div className="p-3 bg-amber-100 dark:bg-amber-500/15 rounded-full"><FileClock className="h-6 w-6 text-amber-600 dark:text-amber-400" /></div>
                     </CardContent>
                 </Card>
             </div>
@@ -277,7 +277,7 @@ export default function ArsipTerjaga() {
                 <TabsContent value="pelaporan" className="space-y-4">
                     <Card className="border-l-4 border-l-red-500">
                         <CardHeader>
-                            <CardTitle className="text-lg flex items-center gap-2 text-red-700">
+                            <CardTitle className="text-lg flex items-center gap-2 text-red-700 dark:text-red-300">
                                 <FileWarning className="h-5 w-5" />
                                 Arsip Terjaga Belum Dilaporkan ({dueReporting.length})
                             </CardTitle>
@@ -285,10 +285,10 @@ export default function ArsipTerjaga() {
                         <CardContent>
                             {dueReporting.length === 0 ? (
                                 <div className="text-center py-8">
-                                    <div className="p-3 bg-emerald-100 rounded-full w-fit mx-auto mb-3">
+                                    <div className="p-3 bg-emerald-100 dark:bg-emerald-500/15 rounded-full w-fit mx-auto mb-3">
                                         <FileCheck className="h-6 w-6 text-emerald-600" />
                                     </div>
-                                    <p className="font-medium text-emerald-700">Semua Terkendali!</p>
+                                    <p className="font-medium text-emerald-700 dark:text-emerald-300">Semua Terkendali!</p>
                                     <p className="text-muted-foreground text-sm">Semua arsip terjaga sudah dilaporkan ke ANRI sesuai jadwal.</p>
                                 </div>
                             ) : (
@@ -418,7 +418,7 @@ export default function ArsipTerjaga() {
                     )}
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowReportDialog(false)}>Batal</Button>
-                        <Button onClick={handleReport} className="bg-blue-600 hover:bg-blue-700">
+                        <Button onClick={handleReport} className="bg-primary hover:bg-primary">
                             <Send className="h-4 w-4 mr-2" /> Konfirmasi Pelaporan
                         </Button>
                     </DialogFooter>

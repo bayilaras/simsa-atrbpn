@@ -112,11 +112,13 @@ function AppLayout() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset className="bg-muted/10 transition-colors duration-300">
+      <SidebarInset>
         <AppHeader />
-        <main className="flex-1 p-6 overflow-x-hidden">
-          <Breadcrumbs />
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 ease-in-out">
+        {/* min-w-0 lets wide children (tables, charts) scroll inside their own
+            container instead of stretching the shell on small screens. */}
+        <main className="flex-1 min-w-0 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+          <div className="mx-auto w-full max-w-[1600px] space-y-5 sm:space-y-6">
+            <Breadcrumbs />
             <ErrorBoundary fallbackMessage="Terjadi kesalahan saat memuat halaman. Silakan coba lagi.">
               <Suspense fallback={<PageLoader />}>
                 <Outlet />

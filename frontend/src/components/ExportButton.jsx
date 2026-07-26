@@ -86,41 +86,41 @@ const ExportButton = ({ type, filters = {} }) => {
             </button>
 
             {showDropdown && (
-                <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-xl z-50 overflow-hidden">
                     {isArsip ? (
                         <>
                             {/* Arsip: sub-menu for Formulir type */}
-                            <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase border-b bg-gray-50">
+                            <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase border-b bg-muted/50">
                                 Formulir 4 — Arsip Aktif
                             </div>
                             <button
                                 onClick={() => handleExport('excel', 'formulir4')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300 transition-colors"
                             >
-                                <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                                <FileSpreadsheet className="w-4 h-4 text-green-600 dark:text-green-400" />
                                 Excel (.xlsx)
                             </button>
                             <button
                                 onClick={() => handleExport('pdf', 'formulir4')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-red-50 dark:bg-red-500/15 hover:text-red-700 dark:text-red-300 transition-colors"
                             >
                                 <FileText className="w-4 h-4 text-red-600" />
                                 PDF
                             </button>
 
-                            <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase border-t border-b bg-gray-50">
+                            <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase border-t border-b bg-muted/50">
                                 Formulir 6 — Arsip Inaktif
                             </div>
                             <button
                                 onClick={() => handleExport('excel', 'formulir6')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300 transition-colors"
                             >
-                                <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                                <FileSpreadsheet className="w-4 h-4 text-green-600 dark:text-green-400" />
                                 Excel (.xlsx)
                             </button>
                             <button
                                 onClick={() => handleExport('pdf', 'formulir6')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-red-50 dark:bg-red-500/15 hover:text-red-700 dark:text-red-300 transition-colors"
                             >
                                 <FileText className="w-4 h-4 text-red-600" />
                                 PDF
@@ -131,14 +131,14 @@ const ExportButton = ({ type, filters = {} }) => {
                             {/* Surat Masuk / Surat Keluar */}
                             <button
                                 onClick={() => handleExport('excel')}
-                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-foreground hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300 transition-colors"
                             >
-                                <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                                <FileSpreadsheet className="w-4 h-4 text-green-600 dark:text-green-400" />
                                 Export Excel (.xlsx)
                             </button>
                             <button
                                 onClick={() => handleExport('pdf')}
-                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors border-t"
+                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-foreground hover:bg-red-50 dark:bg-red-500/15 hover:text-red-700 dark:text-red-300 transition-colors border-t"
                             >
                                 <FileText className="w-4 h-4 text-red-600" />
                                 Export PDF

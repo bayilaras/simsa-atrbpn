@@ -14,8 +14,8 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 p-6 md:p-8 text-white shadow-xl">
             {/* Background Pattern */}
             <div className="absolute inset-0 opacity-10">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
-                <div className="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
+                <div className="absolute top-0 right-0 w-64 h-64 bg-card rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute bottom-0 left-0 w-48 h-48 bg-card rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
             </div>
 
             <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -23,13 +23,13 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="text-white/80 hover:text-white hover:bg-white/10 shrink-0"
+                        className="text-white/80 hover:text-white hover:bg-card/10 shrink-0"
                         onClick={onBack}
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
                     <div className="flex items-center gap-4">
-                        <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm shrink-0 hidden sm:flex">
+                        <div className="bg-card/20 p-3 rounded-xl backdrop-blur-sm shrink-0 hidden sm:flex">
                             <MailOpen className="h-8 w-8" />
                         </div>
                         <div className="min-w-0">
@@ -56,7 +56,7 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                     <div className="hidden md:flex gap-2">
                         <Button
                             variant="secondary"
-                            className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm"
+                            className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
                             onClick={onEdit}
                         >
                             <Edit className="mr-2 h-4 w-4" />
@@ -64,7 +64,7 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                         </Button>
                         <Button
                             variant="secondary"
-                            className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm"
+                            className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
                             onClick={onReply}
                         >
                             <Reply className="mr-2 h-4 w-4" />
@@ -72,7 +72,7 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                         </Button>
                         <Button
                             variant="secondary"
-                            className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm"
+                            className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
                             onClick={onDistribute}
                         >
                             <Send className="mr-2 h-4 w-4" />
@@ -80,7 +80,7 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                         </Button>
                         {!surat.isArchived && (
                             <Button
-                                className="bg-white text-emerald-700 hover:bg-white/90"
+                                className="bg-card text-emerald-700 dark:text-emerald-300 hover:bg-card/90"
                                 onClick={onArchive}
                             >
                                 <Archive className="mr-2 h-4 w-4" />
@@ -96,7 +96,7 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                         <Button
                             variant="secondary"
                             size="sm"
-                            className="bg-white/20 hover:bg-white/30 text-white border-0 flex-1"
+                            className="bg-card/20 hover:bg-card/30 text-white border-0 flex-1"
                             onClick={onEdit}
                         >
                             <Edit className="mr-2 h-4 w-4" />
@@ -107,7 +107,7 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                                 <Button
                                     variant="secondary"
                                     size="icon"
-                                    className="bg-white/20 hover:bg-white/30 text-white border-0"
+                                    className="bg-card/20 hover:bg-card/30 text-white border-0"
                                 >
                                     <MoreHorizontal className="h-4 w-4" />
                                 </Button>

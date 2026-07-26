@@ -248,19 +248,16 @@ export function AppSidebar() {
 
     return (
         <Sidebar collapsible="icon">
-            <SidebarHeader className="border-b border-sidebar-border/50 bg-gradient-to-r from-sidebar-primary/10 to-transparent">
-                <div className="flex items-center gap-3 px-2 py-3">
-                    <div className="relative">
-                        <div className="absolute inset-0 bg-sidebar-primary/20 blur-md rounded-full"></div>
-                        <img
-                            src="/logo-simsa.png"
-                            alt="Logo"
-                            className="relative h-9 w-9 rounded-lg bg-white p-1 shadow-sm transition-transform hover:scale-105"
-                        />
-                    </div>
-                    <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-                        <span className="font-bold text-lg leading-none tracking-tight">SIMSA</span>
-                        <span className="text-[10px] uppercase tracking-wider text-sidebar-primary font-medium">ATR/BPN</span>
+            <SidebarHeader className="border-b border-sidebar-border">
+                <div className="flex items-center gap-2.5 px-2 py-2.5">
+                    <img
+                        src="/logo-simsa.png"
+                        alt=""
+                        className="h-8 w-8 shrink-0 rounded-md bg-card p-1 ring-1 ring-sidebar-border"
+                    />
+                    <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
+                        <span className="text-base font-semibold leading-none tracking-tight">SIMSA</span>
+                        <span className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">ATR/BPN</span>
                     </div>
                 </div>
             </SidebarHeader>
@@ -273,7 +270,7 @@ export function AppSidebar() {
                         if (visibleItems.length === 0) return null
                         return (
                             <SidebarGroup key={group.label} className={groupIndex === 0 ? '' : 'mt-2'}>
-                                <SidebarGroupLabel className="text-[10px] uppercase tracking-widest font-semibold text-sidebar-foreground/50">{group.label}</SidebarGroupLabel>
+                                <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</SidebarGroupLabel>
                                 <SidebarGroupContent>
                                     <SidebarMenu>
                                         {visibleItems.map((item) => (
@@ -281,7 +278,7 @@ export function AppSidebar() {
                                                 <Collapsible key={item.title} defaultOpen={isParentActive(item)} className="group/collapsible">
                                                     <SidebarMenuItem>
                                                         <CollapsibleTrigger asChild>
-                                                            <SidebarMenuButton tooltip={item.title} isActive={isParentActive(item)} className="transition-all duration-200">
+                                                            <SidebarMenuButton tooltip={item.title} isActive={isParentActive(item)}>
                                                                 <item.icon className="h-4 w-4" />
                                                                 <span className="font-medium">{item.title}</span>
                                                                 <ChevronDown className="ml-auto h-3 w-3 transition-transform group-data-[state=open]/collapsible:rotate-180 opacity-70" />
@@ -302,7 +299,7 @@ export function AppSidebar() {
                                                 </Collapsible>
                                             ) : (
                                                 <SidebarMenuItem key={item.title}>
-                                                    <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)} className="transition-all duration-200">
+                                                    <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)}>
                                                         <Link to={item.url}>
                                                             <item.icon className="h-4 w-4" />
                                                             <span className="font-medium">{item.title}</span>

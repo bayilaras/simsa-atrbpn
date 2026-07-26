@@ -176,9 +176,9 @@ export default function LayananArsipDetail() {
                                     </div>
                                 </div>
                                 {data.catatanPersetujuan && (
-                                    <div className="flex items-start gap-4 p-3 bg-yellow-50 rounded-md">
+                                    <div className="flex items-start gap-4 p-3 bg-yellow-50 dark:bg-yellow-500/15 rounded-md">
                                         <MessageSquare className="h-5 w-5 text-yellow-600 mt-0.5" />
-                                        <p className="text-sm text-yellow-800">{data.catatanPersetujuan}</p>
+                                        <p className="text-sm text-yellow-800 dark:text-yellow-300">{data.catatanPersetujuan}</p>
                                     </div>
                                 )}
                             </CardContent>
@@ -230,13 +230,13 @@ export default function LayananArsipDetail() {
                             )}
 
                             {data.status === 'selesai' && (
-                                <div className="bg-green-50 p-3 rounded text-green-700 text-center text-sm font-medium">
+                                <div className="bg-green-50 dark:bg-green-500/15 p-3 rounded text-green-700 dark:text-green-300 text-center text-sm font-medium">
                                     Layanan Selesai
                                 </div>
                             )}
 
                             {data.status === 'ditolak' && (
-                                <div className="bg-red-50 p-3 rounded text-red-700 text-center text-sm font-medium">
+                                <div className="bg-red-50 dark:bg-red-500/15 p-3 rounded text-red-700 dark:text-red-300 text-center text-sm font-medium">
                                     Permohonan Ditolak
                                 </div>
                             )}

@@ -138,7 +138,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
         return (
             <button
                 onClick={handleOpen}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary transition-colors text-sm font-medium shadow-sm"
             >
                 <Upload className="w-4 h-4" />
                 Import dari Google Drive
@@ -151,7 +151,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
             {/* Backdrop */}
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={handleClose}>
                 <div
-                    className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
+                    className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* Header */}
@@ -163,7 +163,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                 <p className="text-blue-100 text-xs">Dari Google Spreadsheet</p>
                             </div>
                         </div>
-                        <button onClick={handleClose} className="p-1 text-white/80 hover:text-white rounded-lg hover:bg-white/10">
+                        <button onClick={handleClose} className="p-1 text-white/80 hover:text-white rounded-lg hover:bg-card/10">
                             <X className="w-5 h-5" />
                         </button>
                     </div>
@@ -171,7 +171,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto p-6">
                         {error && (
-                            <div className="flex items-start gap-2 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                            <div className="flex items-start gap-2 mb-4 p-3 bg-red-50 dark:bg-red-500/15 border border-red-200 rounded-lg text-red-700 dark:text-red-300 text-sm">
                                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                                 <p>{error}</p>
                             </div>
@@ -181,7 +181,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                         {step === 'input' && (
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-foreground mb-2">
                                         URL Google Spreadsheet
                                     </label>
                                     <input
@@ -189,9 +189,9 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                         value={spreadsheetUrl}
                                         onChange={(e) => setSpreadsheetUrl(e.target.value)}
                                         placeholder="https://docs.google.com/spreadsheets/d/..."
-                                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                        className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-blue-500 text-sm"
                                     />
-                                    <p className="mt-2 text-xs text-gray-500">
+                                    <p className="mt-2 text-xs text-muted-foreground">
                                         Pastikan spreadsheet bersifat publik (dapat diakses semua orang)
                                     </p>
                                 </div>
@@ -199,7 +199,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                 <button
                                     onClick={fetchSheets}
                                     disabled={isLoading || !spreadsheetUrl}
-                                    className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                                    className="w-full py-2.5 bg-primary text-white rounded-lg hover:bg-primary disabled:opacity-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                                 >
                                     {isLoading ? (
                                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -215,7 +215,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                         {step === 'sheets' && (
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-foreground mb-2">
                                         Pilih Sheet
                                     </label>
                                     {sheets.length > 0 ? (
@@ -224,8 +224,8 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                                 <label
                                                     key={idx}
                                                     className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedSheet === sheet.name
-                                                        ? 'border-blue-500 bg-blue-50'
-                                                        : 'border-gray-200 hover:bg-gray-50'
+                                                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/15'
+                                                        : 'border-border hover:bg-muted/50'
                                                         }`}
                                                 >
                                                     <input
@@ -236,7 +236,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                                         onChange={() => setSelectedSheet(sheet.name)}
                                                         className="text-blue-600"
                                                     />
-                                                    <span className="text-sm text-gray-700">{sheet.name}</span>
+                                                    <span className="text-sm text-foreground">{sheet.name}</span>
                                                 </label>
                                             ))}
                                         </div>
@@ -247,9 +247,9 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                                 value={selectedSheet}
                                                 onChange={(e) => setSelectedSheet(e.target.value)}
                                                 placeholder="Nama sheet (mis. Surat Masuk 2024)"
-                                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                                className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-blue-500 text-sm"
                                             />
-                                            <p className="mt-2 text-xs text-gray-500">
+                                            <p className="mt-2 text-xs text-muted-foreground">
                                                 Daftar sheet tidak terdeteksi. Ketik nama sheet secara manual.
                                             </p>
                                         </div>
@@ -259,14 +259,14 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => setStep('input')}
-                                        className="flex-1 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                                        className="flex-1 py-2.5 border border-border text-foreground rounded-lg hover:bg-muted/50 transition-colors text-sm"
                                     >
                                         Kembali
                                     </button>
                                     <button
                                         onClick={handlePreview}
                                         disabled={isLoading || !selectedSheet}
-                                        className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                                        className="flex-1 py-2.5 bg-primary text-white rounded-lg hover:bg-primary disabled:opacity-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                                     >
                                         {isLoading ? (
                                             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -283,10 +283,10 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                         {step === 'preview' && previewData && (
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">
-                                    <p className="text-sm text-gray-600">
+                                    <p className="text-sm text-muted-foreground">
                                         Menampilkan <strong>{previewData.rows.length}</strong> dari <strong>{previewData.totalRows}</strong> baris
                                     </p>
-                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                                    <span className="text-xs bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">
                                         Sheet: {selectedSheet}
                                     </span>
                                 </div>
@@ -294,9 +294,9 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                 <div className="overflow-x-auto border rounded-lg">
                                     <table className="w-full text-xs">
                                         <thead>
-                                            <tr className="bg-gray-50 border-b">
+                                            <tr className="bg-muted/50 border-b">
                                                 {previewData.headers.map((h, i) => (
-                                                    <th key={i} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">
+                                                    <th key={i} className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">
                                                         {h}
                                                     </th>
                                                 ))}
@@ -304,9 +304,9 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                         </thead>
                                         <tbody>
                                             {previewData.rows.map((row, ri) => (
-                                                <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                <tr key={ri} className={ri % 2 === 0 ? 'bg-card' : 'bg-muted/50'}>
                                                     {row.map((cell, ci) => (
-                                                        <td key={ci} className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[200px] truncate">
+                                                        <td key={ci} className="px-3 py-2 text-foreground whitespace-nowrap max-w-[200px] truncate">
                                                             {cell}
                                                         </td>
                                                     ))}
@@ -319,7 +319,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => setStep('sheets')}
-                                        className="flex-1 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                                        className="flex-1 py-2.5 border border-border text-foreground rounded-lg hover:bg-muted/50 transition-colors text-sm"
                                     >
                                         Kembali
                                     </button>
@@ -338,8 +338,8 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                         {step === 'importing' && (
                             <div className="flex flex-col items-center py-12">
                                 <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-                                <p className="text-sm text-gray-600 font-medium">Mengimpor data...</p>
-                                <p className="text-xs text-gray-400 mt-1">Harap tunggu, proses ini mungkin memakan waktu</p>
+                                <p className="text-sm text-muted-foreground font-medium">Mengimpor data...</p>
+                                <p className="text-xs text-muted-foreground mt-1">Harap tunggu, proses ini mungkin memakan waktu</p>
                             </div>
                         )}
 
@@ -347,23 +347,23 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                         {step === 'result' && importResult && (
                             <div className="space-y-4">
                                 <div className={`flex items-start gap-3 p-4 rounded-lg ${importResult.importedRows > 0
-                                    ? 'bg-emerald-50 border border-emerald-200'
-                                    : 'bg-red-50 border border-red-200'
+                                    ? 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200'
+                                    : 'bg-red-50 dark:bg-red-500/15 border border-red-200'
                                     }`}>
                                     {importResult.importedRows > 0 ? (
-                                        <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5" />
+                                        <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                                     ) : (
                                         <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
                                     )}
                                     <div>
-                                        <p className="font-medium text-gray-800">
+                                        <p className="font-medium text-foreground">
                                             {importResult.importedRows > 0 ? 'Import Berhasil!' : 'Import Gagal'}
                                         </p>
-                                        <p className="text-sm text-gray-600 mt-1">
+                                        <p className="text-sm text-muted-foreground mt-1">
                                             {importResult.importedRows} dari {importResult.totalRows} baris berhasil diimpor
                                         </p>
                                         {importResult.skippedRows > 0 && (
-                                            <p className="text-sm text-amber-600 mt-1">
+                                            <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
                                                 {importResult.skippedRows} baris dilewati (data tidak valid/kosong)
                                             </p>
                                         )}
@@ -376,8 +376,8 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                 </div>
 
                                 {importResult.errors && importResult.errors.length > 0 && (
-                                    <div className="border rounded-lg p-3 max-h-40 overflow-y-auto bg-gray-50">
-                                        <p className="text-xs font-medium text-gray-500 mb-2">Detail Error:</p>
+                                    <div className="border rounded-lg p-3 max-h-40 overflow-y-auto bg-muted/50">
+                                        <p className="text-xs font-medium text-muted-foreground mb-2">Detail Error:</p>
                                         {importResult.errors.map((err, i) => (
                                             <p key={i} className="text-xs text-red-600 leading-relaxed">{err}</p>
                                         ))}
@@ -386,7 +386,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
 
                                 <button
                                     onClick={handleClose}
-                                    className="w-full py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                                    className="w-full py-2.5 bg-muted text-foreground rounded-lg hover:bg-muted transition-colors text-sm font-medium"
                                 >
                                     Tutup
                                 </button>
@@ -395,12 +395,12 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                     </div>
 
                     {/* Step indicator */}
-                    <div className="px-6 py-3 border-t bg-gray-50 flex items-center justify-center gap-2">
+                    <div className="px-6 py-3 border-t bg-muted/50 flex items-center justify-center gap-2">
                         {['input', 'sheets', 'preview', 'result'].map((s, i) => (
                             <div
                                 key={s}
                                 className={`w-2 h-2 rounded-full transition-colors ${step === s || (step === 'importing' && s === 'result')
-                                    ? 'bg-blue-600'
+                                    ? 'bg-primary'
                                     : 'bg-gray-300'
                                     }`}
                             />

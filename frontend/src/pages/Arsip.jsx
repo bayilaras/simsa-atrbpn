@@ -225,8 +225,8 @@ export default function Arsip() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-blue-100 rounded-lg">
-                            <Archive className="h-6 w-6 text-blue-600" />
+                        <div className="p-2 bg-blue-100 dark:bg-blue-500/15 rounded-lg">
+                            <Archive className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                         </div>
                         Manajemen Arsip
                     </h1>
@@ -283,7 +283,7 @@ export default function Arsip() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Arsip</p>
                             <p className="text-2xl font-bold">{arsipStats.total}</p>
                         </div>
-                        <div className="p-2.5 bg-blue-100 rounded-full text-blue-600">
+                        <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600 dark:text-blue-400">
                             <FolderArchive className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -292,9 +292,9 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Arsip Masuk</p>
-                            <p className="text-2xl font-bold text-emerald-600">{arsipStats.arsipMasuk}</p>
+                            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{arsipStats.arsipMasuk}</p>
                         </div>
-                        <div className="p-2.5 bg-emerald-100 rounded-full text-emerald-600">
+                        <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-full text-emerald-600 dark:text-emerald-400">
                             <Inbox className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -303,9 +303,9 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Arsip Keluar</p>
-                            <p className="text-2xl font-bold text-yellow-600">{arsipStats.arsipKeluar}</p>
+                            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{arsipStats.arsipKeluar}</p>
                         </div>
-                        <div className="p-2.5 bg-yellow-100 rounded-full text-yellow-600">
+                        <div className="p-2.5 bg-yellow-100 dark:bg-yellow-500/15 rounded-full text-yellow-600 dark:text-yellow-400">
                             <Upload className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -354,14 +354,14 @@ export default function Arsip() {
                                         </div>
                                     </div>
                                     <div className="flex items-start gap-3">
-                                        <Badge variant="outline" className="mt-0.5 w-20 justify-center border-orange-200 bg-orange-50 text-orange-700">Inaktif</Badge>
+                                        <Badge variant="outline" className="mt-0.5 w-20 justify-center border-orange-200 bg-orange-50 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300">Inaktif</Badge>
                                         <div className="space-y-1">
                                             <p className="font-medium text-xs">Masa Retensi Inaktif</p>
                                             <p className="text-xs text-muted-foreground">Frekuensi rendah, disimpan di pusat arsip.</p>
                                         </div>
                                     </div>
                                     <div className="flex items-start gap-3">
-                                        <Badge className="mt-0.5 w-20 justify-center bg-blue-600 hover:bg-blue-700">Permanen</Badge>
+                                        <Badge className="mt-0.5 w-20 justify-center bg-primary hover:bg-primary">Permanen</Badge>
                                         <div className="space-y-1">
                                             <p className="font-medium text-xs">Nasib Akhir: Permanen</p>
                                             <p className="text-xs text-muted-foreground">Memiliki nilai guna berkelanjutan, diserahkan ke ANRI.</p>

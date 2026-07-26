@@ -30,7 +30,7 @@ export function InfoSection({ surat }) {
                         <Sparkles className="h-3 w-3" />
                         Perihal
                     </label>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1 leading-relaxed">
+                    <p className="text-lg font-semibold text-foreground dark:text-white mt-1 leading-relaxed">
                         {surat.perihal}
                     </p>
                 </div>

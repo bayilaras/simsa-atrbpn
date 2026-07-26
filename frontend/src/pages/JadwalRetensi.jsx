@@ -66,7 +66,7 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
                     {node.keterangan && node.keterangan !== '' && (
                         <Badge
                             variant={node.keterangan.toLowerCase().includes('permanen') ? 'default' : 'secondary'}
-                            className={`text-[10px] ${node.keterangan.toLowerCase().includes('permanen') ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                            className={`text-[10px] ${node.keterangan.toLowerCase().includes('permanen') ? 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200' : 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 hover:bg-red-200'}`}
                         >
                             {node.keterangan}
                         </Badge>
@@ -74,7 +74,7 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
                 </div>
 
                 <div className="flex gap-1 shrink-0 ml-2">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 hover:text-blue-600" onClick={() => onEdit(node)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:bg-blue-500/15 hover:text-blue-600 dark:text-blue-400" onClick={() => onEdit(node)}>
                         <Edit2 className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)}>
@@ -252,7 +252,7 @@ export default function JadwalRetensi() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
                             <Clock className="h-6 w-6 text-indigo-600" />
                         </div>
                         Jadwal Retensi Arsip (JRA)
@@ -272,8 +272,8 @@ export default function JadwalRetensi() {
                 <Card className="shadow-sm border-l-4 border-l-blue-400">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Retensi Aktif</CardTitle>
-                        <div className="p-1.5 bg-blue-100 rounded-full">
-                            <Clock className="h-3.5 w-3.5 text-blue-600" />
+                        <div className="p-1.5 bg-blue-100 dark:bg-blue-500/15 rounded-full">
+                            <Clock className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                         </div>
                     </CardHeader>
                     <CardContent>
@@ -283,8 +283,8 @@ export default function JadwalRetensi() {
                 <Card className="shadow-sm border-l-4 border-l-orange-400">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Retensi Inaktif</CardTitle>
-                        <div className="p-1.5 bg-orange-100 rounded-full">
-                            <Archive className="h-3.5 w-3.5 text-orange-600" />
+                        <div className="p-1.5 bg-orange-100 dark:bg-orange-500/15 rounded-full">
+                            <Archive className="h-3.5 w-3.5 text-orange-600 dark:text-orange-400" />
                         </div>
                     </CardHeader>
                     <CardContent>
@@ -294,7 +294,7 @@ export default function JadwalRetensi() {
                 <Card className="shadow-sm border-l-4 border-l-indigo-400">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Permanen</CardTitle>
-                        <div className="p-1.5 bg-indigo-100 rounded-full">
+                        <div className="p-1.5 bg-indigo-100 dark:bg-indigo-500/15 rounded-full">
                             <CheckCircle2 className="h-3.5 w-3.5 text-indigo-600" />
                         </div>
                     </CardHeader>
@@ -305,7 +305,7 @@ export default function JadwalRetensi() {
                 <Card className="shadow-sm border-l-4 border-l-red-400">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Musnah</CardTitle>
-                        <div className="p-1.5 bg-red-100 rounded-full">
+                        <div className="p-1.5 bg-red-100 dark:bg-red-500/15 rounded-full">
                             <Trash className="h-3.5 w-3.5 text-red-600" />
                         </div>
                     </CardHeader>

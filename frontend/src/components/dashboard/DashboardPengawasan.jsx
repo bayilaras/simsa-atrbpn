@@ -156,11 +156,11 @@ export default function DashboardPengawasan() {
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Lewat Masa Retensi</CardTitle>
                         <div className="p-2 bg-red-100/50 rounded-full">
-                            <AlertTriangle className="h-4 w-4 text-red-600" />
+                            <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-red-600">{complianceStats?.overdueRetention || 0}</div>
+                        <div className="text-2xl font-bold text-red-600 dark:text-red-400">{complianceStats?.overdueRetention || 0}</div>
                         <p className="text-xs text-muted-foreground mt-1">Arsip perlu tindak lanjut pemusnahan</p>
                     </CardContent>
                 </Card>
@@ -169,11 +169,11 @@ export default function DashboardPengawasan() {
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Belum Terverifikasi</CardTitle>
                         <div className="p-2 bg-amber-100/50 rounded-full">
-                            <Clock className="h-4 w-4 text-amber-600" />
+                            <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-amber-600">{complianceStats?.unverifiedElectronic || 0}</div>
+                        <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{complianceStats?.unverifiedElectronic || 0}</div>
                         <p className="text-xs text-muted-foreground mt-1">Arsip elektronik menunggu verifikasi</p>
                     </CardContent>
                 </Card>
@@ -182,11 +182,11 @@ export default function DashboardPengawasan() {
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Arsip Baru (Bulan Ini)</CardTitle>
                         <div className="p-2 bg-emerald-100/50 rounded-full">
-                            <Activity className="h-4 w-4 text-emerald-600" />
+                            <Activity className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-emerald-600">{complianceStats?.newArchivesThisMonth || 0}</div>
+                        <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{complianceStats?.newArchivesThisMonth || 0}</div>
                         <p className="text-xs text-muted-foreground mt-1">Total input arsip bulan ini</p>
                     </CardContent>
                 </Card>

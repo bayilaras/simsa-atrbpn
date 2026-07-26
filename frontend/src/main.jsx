@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './components/theme-provider'
+// Bundled so the PWA keeps its typography offline and the shell is not
+// blocked on a font CDN that government networks often filter.
+import '@fontsource-variable/inter'
 import './index.css'
 import App from './App.jsx'
 

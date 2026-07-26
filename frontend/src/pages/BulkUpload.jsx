@@ -161,7 +161,7 @@ export default function BulkUpload() {
                             variant="ghost"
                             size="icon"
                             onClick={() => navigate('/arsip')}
-                            className="text-white/80 hover:text-white hover:bg-white/20 -ml-2"
+                            className="text-white/80 hover:text-white hover:bg-card/20 -ml-2"
                         >
                             <ChevronLeft className="h-5 w-5" />
                         </Button>
@@ -189,12 +189,12 @@ export default function BulkUpload() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -20 }}
                     >
-                        <Card className="border-2 border-dashed border-gray-200 dark:border-gray-800 shadow-sm hover:border-blue-400 dark:hover:border-blue-500 transition-colors bg-white/50 dark:bg-gray-950/50 backdrop-blur-sm">
+                        <Card className="border-2 border-dashed border-border dark:border-gray-800 shadow-sm hover:border-blue-400 dark:hover:border-blue-500 transition-colors bg-card/50 dark:bg-foreground/50 backdrop-blur-sm">
                             <CardContent className="p-10">
                                 <div
                                     className={`
                                         flex flex-col items-center justify-center p-12 text-center cursor-pointer rounded-2xl transition-all duration-300
-                                        ${dragActive ? 'bg-blue-50/80 border-blue-500 dark:bg-blue-900/20' : 'bg-gray-50/50 dark:bg-gray-900/50 hover:bg-gray-50 dark:hover:bg-gray-900'}
+                                        ${dragActive ? 'bg-blue-50/80 border-blue-500 dark:bg-blue-900/20' : 'bg-muted/50 dark:bg-foreground/50 hover:bg-muted/50 dark:hover:bg-foreground'}
                                     `}
                                     onDragEnter={handleDrag}
                                     onDragLeave={handleDrag}
@@ -210,16 +210,16 @@ export default function BulkUpload() {
                                         onChange={handleFileSelect}
                                         className="hidden"
                                     />
-                                    <div className={`p-4 rounded-full mb-4 ${dragActive ? 'bg-blue-100 text-blue-600' : 'bg-blue-50 text-blue-500 dark:bg-blue-900/30'}`}>
+                                    <div className={`p-4 rounded-full mb-4 ${dragActive ? 'bg-blue-100 text-blue-600 dark:text-blue-400' : 'bg-blue-50 text-blue-500 dark:bg-blue-900/30'}`}>
                                         <CloudUpload className="h-10 w-10" />
                                     </div>
-                                    <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100">
+                                    <h3 className="text-xl font-semibold mb-2 text-foreground dark:text-gray-100">
                                         Drag & drop file PDF di sini
                                     </h3>
-                                    <p className="text-gray-500 dark:text-gray-400 mb-6 max-w-sm">
+                                    <p className="text-muted-foreground dark:text-muted-foreground mb-6 max-w-sm">
                                         atau klik untuk memilih file dari komputer Anda (Maksimal 50 file)
                                     </p>
-                                    <Button variant="outline" className="border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:border-blue-800 dark:hover:bg-blue-900/50">
+                                    <Button variant="outline" className="border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900/50">
                                         Pilih File
                                     </Button>
                                 </div>
@@ -227,25 +227,25 @@ export default function BulkUpload() {
                                 {files.length > 0 && (
                                     <div className="mt-8 space-y-4">
                                         <div className="flex items-center justify-between">
-                                            <h4 className="font-medium text-gray-700 dark:text-gray-300">File Terpilih ({files.length})</h4>
+                                            <h4 className="font-medium text-foreground dark:text-gray-300">File Terpilih ({files.length})</h4>
                                             <Button variant="ghost" size="sm" onClick={clearFiles} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
                                                 Hapus Semua
                                             </Button>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                             {files.map((file, index) => (
-                                                <div key={index} className="flex items-center p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-800 shadow-sm group hover:shadow-md transition-shadow">
+                                                <div key={index} className="flex items-center p-3 bg-card dark:bg-foreground rounded-lg border border-border dark:border-gray-800 shadow-sm group hover:shadow-md transition-shadow">
                                                     <div className="p-2 bg-red-50 dark:bg-red-900/20 text-red-500 rounded mr-3">
                                                         <FileText className="h-4 w-4" />
                                                     </div>
                                                     <div className="flex-1 min-w-0 mr-2">
-                                                        <p className="text-sm font-medium truncate text-gray-900 dark:text-gray-100">{file.name}</p>
-                                                        <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
+                                                        <p className="text-sm font-medium truncate text-foreground dark:text-gray-100">{file.name}</p>
+                                                        <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
                                                     </div>
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        className="h-8 w-8 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                                                        className="h-8 w-8 text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             removeFile(index);
@@ -260,7 +260,7 @@ export default function BulkUpload() {
                                             <Button
                                                 onClick={handleUpload}
                                                 disabled={isUploading}
-                                                className="bg-blue-600 hover:bg-blue-700 text-white min-w-[150px]"
+                                                className="bg-primary hover:bg-primary text-white min-w-[150px]"
                                                 size="lg"
                                             >
                                                 {isUploading ? (
@@ -291,25 +291,25 @@ export default function BulkUpload() {
                             <CardContent className="p-8 text-center space-y-6">
                                 <div className="relative inline-flex items-center justify-center">
                                     <div className="absolute inset-0 bg-blue-100 dark:bg-blue-900/30 rounded-full animate-ping opacity-75"></div>
-                                    <div className="relative p-4 bg-blue-50 dark:bg-blue-900/50 rounded-full text-blue-600">
+                                    <div className="relative p-4 bg-blue-50 dark:bg-blue-900/50 rounded-full text-blue-600 dark:text-blue-400">
                                         <Loader2 className="h-10 w-10 animate-spin" />
                                     </div>
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                                    <h3 className="text-xl font-bold text-foreground dark:text-gray-100 mb-2">
                                         {isUploading ? 'Mengupload File...' : 'Memproses OCR Metadata...'}
                                     </h3>
-                                    <p className="text-gray-500 dark:text-gray-400">
+                                    <p className="text-muted-foreground dark:text-muted-foreground">
                                         Sistem sedang membaca isi dokumen Anda secara otomatis.
                                     </p>
                                 </div>
                                 <div className="space-y-2">
-                                    <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 px-1">
+                                    <div className="flex justify-between text-sm text-muted-foreground dark:text-muted-foreground px-1">
                                         <span>Progress</span>
                                         <span>{progress?.percentage || 0}%</span>
                                     </div>
                                     <Progress value={progress?.percentage || 0} className="h-2 w-full" />
-                                    <p className="text-xs text-gray-400 text-right">
+                                    <p className="text-xs text-muted-foreground text-right">
                                         {progress?.processed || 0} dari {progress?.total || files.length} file selesai
                                     </p>
                                 </div>
@@ -326,11 +326,11 @@ export default function BulkUpload() {
                         animate={{ opacity: 1, y: 0 }}
                         className="space-y-6"
                     >
-                        <Card className="border-none shadow-md bg-white/50 dark:bg-gray-950/50 backdrop-blur-sm">
+                        <Card className="border-none shadow-md bg-card/50 dark:bg-foreground/50 backdrop-blur-sm">
                             <CardHeader className="flex flex-row items-center justify-between">
                                 <div>
                                     <CardTitle className="flex items-center gap-2">
-                                        <FileText className="h-5 w-5 text-blue-600" />
+                                        <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                                         Hasil Ekstraksi Data
                                     </CardTitle>
                                     <CardDescription>
@@ -338,12 +338,12 @@ export default function BulkUpload() {
                                     </CardDescription>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 px-3 py-1">
+                                    <Badge variant="outline" className="bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-300 border-green-200 px-3 py-1">
                                         <Check className="h-3 w-3 mr-1" />
                                         {progress?.completed || 0} Berhasil
                                     </Badge>
                                     {(progress?.failed || 0) > 0 && (
-                                        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 px-3 py-1">
+                                        <Badge variant="outline" className="bg-red-50 text-red-700 dark:text-red-300 border-red-200 px-3 py-1">
                                             <AlertCircle className="h-3 w-3 mr-1" />
                                             {progress.failed} Gagal
                                         </Badge>
@@ -361,23 +361,23 @@ export default function BulkUpload() {
                                             className={`
                                                 relative border rounded-lg overflow-hidden transition-all
                                                 ${editingItem === item.id
-                                                    ? 'border-blue-400 ring-2 ring-blue-100 bg-white dark:bg-gray-900 shadow-md transform scale-[1.01]'
-                                                    : 'border-gray-200 hover:border-blue-300 bg-white/60 dark:bg-gray-900/60 dark:border-gray-800'
+                                                    ? 'border-blue-400 ring-2 ring-blue-100 bg-card dark:bg-foreground shadow-md transform scale-[1.01]'
+                                                    : 'border-border hover:border-blue-300 bg-card/60 dark:bg-foreground/60 dark:border-gray-800'
                                                 }
                                             `}
                                         >
                                             {/* Item Header / Preview */}
                                             <div className="flex flex-col md:flex-row md:items-center p-4 gap-4">
                                                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                    <div className={`p-2 rounded-lg ${item.status === 'completed' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-500'}`}>
+                                                    <div className={`p-2 rounded-lg ${item.status === 'completed' ? 'bg-blue-50 text-blue-600 dark:text-blue-400' : 'bg-red-50 text-red-500'}`}>
                                                         <FileType className="h-5 w-5" />
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate w-full" title={item.fileName}>
+                                                        <p className="text-sm font-medium text-foreground dark:text-gray-100 truncate w-full" title={item.fileName}>
                                                             {item.fileName}
                                                         </p>
                                                         {item.status === 'completed' && editingItem !== item.id && (
-                                                            <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-500">
+                                                            <div className="flex flex-wrap gap-2 mt-1 text-xs text-muted-foreground">
                                                                 <Badge variant="secondary" className="text-[10px] h-5 font-normal">
                                                                     {editedData[item.id]?.nomorBerkas || item.metadata?.nomorSurat || 'No Surat'}
                                                                 </Badge>
@@ -398,7 +398,7 @@ export default function BulkUpload() {
                                                             variant="outline"
                                                             size="sm"
                                                             onClick={() => startEditing(item)}
-                                                            className="h-8 gap-2 hover:text-blue-600 hover:border-blue-200"
+                                                            className="h-8 gap-2 hover:text-blue-600 dark:text-blue-400 hover:border-blue-200"
                                                         >
                                                             <Edit className="h-3 w-3" />
                                                             Edit Data
@@ -409,10 +409,10 @@ export default function BulkUpload() {
 
                                             {/* Edit Form */}
                                             {editingItem === item.id && (
-                                                <div className="p-4 bg-gray-50/50 dark:bg-gray-800/20 border-t space-y-4 animate-in slide-in-from-top-2 duration-200">
+                                                <div className="p-4 bg-muted/50 dark:bg-foreground/20 border-t space-y-4 animate-in slide-in-from-top-2 duration-200">
                                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                                         <div className="space-y-2">
-                                                            <Label className="text-xs font-semibold text-gray-500">Nomor Surat</Label>
+                                                            <Label className="text-xs font-semibold text-muted-foreground">Nomor Surat</Label>
                                                             <Input
                                                                 value={editedData[item.id]?.nomorBerkas || ''}
                                                                 onChange={(e) => updateEditedData(item.id, 'nomorBerkas', e.target.value)}
@@ -421,7 +421,7 @@ export default function BulkUpload() {
                                                             />
                                                         </div>
                                                         <div className="space-y-2 lg:col-span-2">
-                                                            <Label className="text-xs font-semibold text-gray-500">Perihal / Uraian</Label>
+                                                            <Label className="text-xs font-semibold text-muted-foreground">Perihal / Uraian</Label>
                                                             <Input
                                                                 value={editedData[item.id]?.uraianBerkas || ''}
                                                                 onChange={(e) => updateEditedData(item.id, 'uraianBerkas', e.target.value)}
@@ -430,7 +430,7 @@ export default function BulkUpload() {
                                                             />
                                                         </div>
                                                         <div className="space-y-2">
-                                                            <Label className="text-xs font-semibold text-gray-500">Tahun</Label>
+                                                            <Label className="text-xs font-semibold text-muted-foreground">Tahun</Label>
                                                             <Input
                                                                 type="number"
                                                                 value={editedData[item.id]?.tahun || new Date().getFullYear()}
@@ -439,7 +439,7 @@ export default function BulkUpload() {
                                                             />
                                                         </div>
                                                         <div className="space-y-2">
-                                                            <Label className="text-xs font-semibold text-gray-500">Jenis Arsip</Label>
+                                                            <Label className="text-xs font-semibold text-muted-foreground">Jenis Arsip</Label>
                                                             <Select
                                                                 value={editedData[item.id]?.jenisArsip || 'masuk'}
                                                                 onValueChange={(v) => updateEditedData(item.id, 'jenisArsip', v)}
@@ -458,7 +458,7 @@ export default function BulkUpload() {
                                                         <Button
                                                             size="sm"
                                                             onClick={() => setEditingItem(null)}
-                                                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                                                            className="bg-primary hover:bg-primary text-white"
                                                         >
                                                             <Check className="h-3 w-3 mr-1.5" />
                                                             Selesai Edit
@@ -470,8 +470,8 @@ export default function BulkUpload() {
                                     ))}
                                 </div>
                             </CardContent>
-                            <CardFooter className="flex justify-between border-t bg-gray-50/50 dark:bg-gray-900/50 p-6 rounded-b-lg">
-                                <Button variant="ghost" onClick={clearFiles} className="text-gray-500 hover:text-red-500">
+                            <CardFooter className="flex justify-between border-t bg-muted/50 dark:bg-foreground/50 p-6 rounded-b-lg">
+                                <Button variant="ghost" onClick={clearFiles} className="text-muted-foreground hover:text-red-500">
                                     <Trash2 className="h-4 w-4 mr-2" />
                                     Batal & Hapus
                                 </Button>

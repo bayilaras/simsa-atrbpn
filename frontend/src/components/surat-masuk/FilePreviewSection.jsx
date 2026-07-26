@@ -44,7 +44,7 @@ export function FilePreviewSection({ surat }) {
         <Card className="shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden">
             <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-blue-600" />
+                    <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                     Dokumen Lampiran
                 </CardTitle>
                 <CardDescription className="flex items-center gap-2">

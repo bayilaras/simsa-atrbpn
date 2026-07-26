@@ -112,7 +112,7 @@ export default function ArsipElektronik() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-                        <HardDrive className="h-6 w-6 text-purple-600" />
+                        <HardDrive className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                         Arsip Elektronik
                     </h1>
                     <p className="text-muted-foreground">Pengelolaan metadata arsip digital, verifikasi, dan konversi</p>
@@ -163,7 +163,7 @@ export default function ArsipElektronik() {
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <FileCheck className="h-5 w-5 text-yellow-600" />
+                            <FileCheck className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
                             Antrian Verifikasi
                             <Badge variant="outline">{pendingData.length} pending</Badge>
                         </CardTitle>

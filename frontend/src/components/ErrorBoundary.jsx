@@ -36,8 +36,8 @@ class ErrorBoundary extends React.Component {
         if (this.state.hasError) {
             return (
                 <div className="flex flex-col items-center justify-center min-h-[400px] p-8">
-                    <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
-                        <AlertTriangle className="w-8 h-8 text-red-600" />
+                    <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-500/15 flex items-center justify-center mb-4">
+                        <AlertTriangle className="w-8 h-8 text-red-600 dark:text-red-400" />
                     </div>
                     <h2 className="text-2xl font-bold mb-2">Oops! Something went wrong</h2>
                     <p className="text-muted-foreground mb-6 text-center max-w-md">
@@ -50,7 +50,7 @@ class ErrorBoundary extends React.Component {
                             <summary className="cursor-pointer text-sm text-muted-foreground mb-2">
                                 Error Details (Development Only)
                             </summary>
-                            <pre className="bg-gray-100 p-4 rounded text-xs overflow-auto max-h-60">
+                            <pre className="bg-muted p-4 rounded text-xs overflow-auto max-h-60">
                                 {this.state.error.toString()}
                                 {'\n\n'}
                                 {this.state.errorInfo?.componentStack}

@@ -87,7 +87,7 @@ export function KeyboardShortcutsHelp({ shortcuts, onClose }: {
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
             <div
-                className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto"
+                className="bg-card rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="p-6 border-b">
@@ -102,7 +102,7 @@ export function KeyboardShortcutsHelp({ shortcuts, onClose }: {
                         {shortcuts.filter(s => s.description).map((shortcut, index) => (
                             <div key={index} className="flex items-center justify-between py-2 border-b last:border-0">
                                 <span className="text-sm">{shortcut.description}</span>
-                                <kbd className="px-3 py-1.5 text-sm font-semibold bg-gray-100 border border-gray-300 rounded">
+                                <kbd className="px-3 py-1.5 text-sm font-semibold bg-muted border border-border rounded">
                                     {formatShortcut(shortcut)}
                                 </kbd>
                             </div>
@@ -110,7 +110,7 @@ export function KeyboardShortcutsHelp({ shortcuts, onClose }: {
                     </div>
                 </div>
 
-                <div className="p-6 border-t bg-gray-50 flex justify-end">
+                <div className="p-6 border-t bg-muted/50 flex justify-end">
                     <button
                         onClick={onClose}
                         className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90"

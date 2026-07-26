@@ -20,9 +20,9 @@ import { id as idLocale } from 'date-fns/locale'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
 
 const STATUS_CONFIG = {
-    borrowed: { label: 'Dipinjam', variant: 'default', icon: ArrowLeftRight, className: 'bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200' },
+    borrowed: { label: 'Dipinjam', variant: 'default', icon: ArrowLeftRight, className: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-200 border-blue-200' },
     overdue: { label: 'Terlambat', variant: 'destructive', icon: AlertTriangle, className: '' },
-    returned: { label: 'Dikembalikan', variant: 'secondary', icon: CheckCircle2, className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-emerald-200' },
+    returned: { label: 'Dikembalikan', variant: 'secondary', icon: CheckCircle2, className: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 border-emerald-200' },
 }
 
 const EMPTY_BORROW_FORM = {
@@ -39,8 +39,8 @@ const EMPTY_BORROW_FORM = {
 const toList = (res) => (Array.isArray(res) ? res : res?.data ?? [])
 
 const TYPE_CONFIG = {
-    arsip: { label: 'Per Arsip', variant: 'outline', icon: FileText, className: 'border-indigo-200 text-indigo-700 bg-indigo-50' },
-    box: { label: 'Per Box', variant: 'secondary', icon: Box, className: 'border-orange-200 text-orange-700 bg-orange-50' },
+    arsip: { label: 'Per Arsip', variant: 'outline', icon: FileText, className: 'border-indigo-200 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/15' },
+    box: { label: 'Per Box', variant: 'secondary', icon: Box, className: 'border-orange-200 text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-500/15' },
 }
 
 function StatusBadge({ status }) {
@@ -63,7 +63,7 @@ function LendingRow({ item, onReturn, onExtend }) {
         <TableRow className={`group hover:bg-muted/30 transition-colors ${isOverdue ? 'bg-red-50/50 hover:bg-red-50/80' : ''}`}>
             <TableCell>
                 <div className="flex items-center gap-2">
-                    <div className={`p-1.5 rounded-full ${item.lendingType === 'arsip' ? 'bg-indigo-100 text-indigo-600' : 'bg-orange-100 text-orange-600'}`}>
+                    <div className={`p-1.5 rounded-full ${item.lendingType === 'arsip' ? 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600' : 'bg-orange-100 dark:bg-orange-500/15 text-orange-600'}`}>
                         <TypeIcon className="h-3.5 w-3.5" />
                     </div>
                     <span className="text-sm font-medium">
@@ -347,7 +347,7 @@ export default function ArchiveLending() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
                             <ArrowLeftRight className="h-6 w-6 text-indigo-600" />
                         </div>
                         Peminjaman Arsip
@@ -368,31 +368,31 @@ export default function ArchiveLending() {
                     <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Sedang Dipinjam</CardTitle>
-                            <div className="p-2 bg-blue-100 rounded-full">
+                            <div className="p-2 bg-blue-100 dark:bg-blue-500/15 rounded-full">
                                 <ArrowLeftRight className="h-4 w-4 text-blue-600" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-blue-700">{stats.borrowed}</div>
+                            <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">{stats.borrowed}</div>
                             <p className="text-xs text-muted-foreground mt-1">Arsip aktif dipinjam</p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-red-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Terlambat</CardTitle>
-                            <div className="p-2 bg-red-100 rounded-full">
-                                <AlertTriangle className="h-4 w-4 text-red-600" />
+                            <div className="p-2 bg-red-100 dark:bg-red-500/15 rounded-full">
+                                <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-red-600">{stats.overdue}</div>
+                            <div className="text-2xl font-bold text-red-600 dark:text-red-400">{stats.overdue}</div>
                             <p className="text-xs text-muted-foreground mt-1">Melewati jatuh tempo</p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-emerald-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Dikembalikan</CardTitle>
-                            <div className="p-2 bg-emerald-100 rounded-full">
+                            <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-full">
                                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                             </div>
                         </CardHeader>
@@ -404,12 +404,12 @@ export default function ArchiveLending() {
                     <Card className="shadow-sm border-l-4 border-l-slate-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Total Sirkulasi</CardTitle>
-                            <div className="p-2 bg-slate-100 rounded-full">
-                                <Clock className="h-4 w-4 text-slate-600" />
+                            <div className="p-2 bg-muted rounded-full">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-slate-700">{stats.total}</div>
+                            <div className="text-2xl font-bold text-foreground">{stats.total}</div>
                             <p className="text-xs text-muted-foreground mt-1">Total transaksi</p>
                         </CardContent>
                     </Card>
@@ -554,7 +554,7 @@ export default function ArchiveLending() {
                     </div>
                     <DialogFooter className="gap-2 sm:gap-0">
                         <Button variant="outline" onClick={() => setExtendDialogOpen(false)}>Batal</Button>
-                        <Button onClick={handleExtend} className="bg-blue-600 hover:bg-blue-700">Perpanjang</Button>
+                        <Button onClick={handleExtend} className="bg-primary hover:bg-primary">Perpanjang</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -600,7 +600,7 @@ export default function ArchiveLending() {
                             <Label className="text-right pt-2">{borrowForm.lendingType === 'arsip' ? 'Arsip' : 'Lokasi / Box'}</Label>
                             <div className="col-span-3 space-y-2">
                                 {targetLabel ? (
-                                    <div className="flex items-center gap-2 text-sm bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md px-3 py-2">
+                                    <div className="flex items-center gap-2 text-sm bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-100 rounded-md px-3 py-2">
                                         {borrowForm.lendingType === 'arsip' ? <FileText className="h-4 w-4 shrink-0" /> : <Box className="h-4 w-4 shrink-0" />}
                                         <span className="truncate">{targetLabel}</span>
                                         <Button variant="ghost" size="sm" className="h-auto p-0 ml-auto text-muted-foreground hover:text-destructive" onClick={clearTarget}>

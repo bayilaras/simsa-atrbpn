@@ -75,9 +75,9 @@ export default function LayananArsipIndex() {
 
     const getStatusBadge = (status) => {
         switch (status) {
-            case 'diajukan': return <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100"><Clock className="w-3 h-3 mr-1" /> Diajukan</Badge>;
-            case 'diproses': return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"><Clock className="w-3 h-3 mr-1" /> Diproses</Badge>;
-            case 'selesai': return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100"><CheckCircle2 className="w-3 h-3 mr-1" /> Selesai</Badge>;
+            case 'diajukan': return <Badge variant="outline" className="bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200 hover:bg-yellow-100 dark:bg-yellow-500/15"><Clock className="w-3 h-3 mr-1" /> Diajukan</Badge>;
+            case 'diproses': return <Badge variant="outline" className="bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 hover:bg-blue-100 dark:bg-blue-500/15"><Clock className="w-3 h-3 mr-1" /> Diproses</Badge>;
+            case 'selesai': return <Badge variant="outline" className="bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-300 border-green-200 hover:bg-green-100 dark:bg-green-500/15"><CheckCircle2 className="w-3 h-3 mr-1" /> Selesai</Badge>;
             case 'ditolak': return <Badge variant="destructive" className="hover:bg-destructive/90"><XCircle className="w-3 h-3 mr-1" /> Ditolak</Badge>;
             default: return <Badge variant="outline">{status}</Badge>;
         }
@@ -104,8 +104,8 @@ export default function LayananArsipIndex() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <FileBadge className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <FileBadge className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         Layanan Arsip
                     </h1>
@@ -193,7 +193,7 @@ export default function LayananArsipIndex() {
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex items-center gap-2">
-                                                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
+                                                <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
                                                     {item.pemohon?.nama?.charAt(0)}
                                                 </div>
                                                 <span className="text-sm">{item.pemohon?.nama}</span>

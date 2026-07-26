@@ -101,12 +101,12 @@ const JENIS_SURAT_OPTIONS = [
 
 // Sifat Surat options with colors
 const SIFAT_SURAT_OPTIONS = [
-    { value: 'biasa', label: 'Biasa', color: 'bg-slate-100 text-slate-700 border-slate-200' },
-    { value: 'segera', label: 'Segera', color: 'bg-amber-100 text-amber-700 border-amber-200' },
-    { value: 'sangat_segera', label: 'Sangat Segera', color: 'bg-red-100 text-red-700 border-red-200' },
-    { value: 'rahasia', label: 'Rahasia', color: 'bg-purple-100 text-purple-700 border-purple-200' },
-    { value: 'undangan', label: 'Undangan', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-    { value: 'penting', label: 'Penting', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+    { value: 'biasa', label: 'Biasa', color: 'bg-muted text-foreground border-border' },
+    { value: 'segera', label: 'Segera', color: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200' },
+    { value: 'sangat_segera', label: 'Sangat Segera', color: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
+    { value: 'rahasia', label: 'Rahasia', color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-200' },
+    { value: 'undangan', label: 'Undangan', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200' },
+    { value: 'penting', label: 'Penting', color: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-200' },
 ];
 
 // Keterangan options
@@ -394,7 +394,7 @@ export default function TambahSuratMasuk() {
     return (
         <div className="max-w-4xl mx-auto space-y-6 pb-24 relative">
             {/* Sticky Progress Bar */}
-            <div className="fixed top-0 left-0 right-0 h-1 bg-slate-100 z-50">
+            <div className="fixed top-0 left-0 right-0 h-1 bg-muted z-50">
                 <div
                     className="h-full bg-primary transition-all duration-150"
                     style={{ width: `${scrollProgress * 100}%` }}
@@ -438,7 +438,7 @@ export default function TambahSuratMasuk() {
             )}
 
             {success && (
-                <Alert className="border-emerald-500 bg-emerald-50 text-emerald-700 animate-in slide-in-from-top-2">
+                <Alert className="border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 animate-in slide-in-from-top-2">
                     <CheckCircle2 className="h-4 w-4" />
                     <AlertDescription>
                         <span className="font-medium">Berhasil!</span> Surat masuk telah disimpan ke sistem.
@@ -761,18 +761,18 @@ export default function TambahSuratMasuk() {
                                     />
                                     {selectedFile ? (
                                         <div className="flex items-center justify-center gap-3">
-                                            <div className="p-2 bg-emerald-100 rounded-lg">
+                                            <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-lg">
                                                 <FileText className="h-6 w-6 text-emerald-600" />
                                             </div>
                                             <div className="text-left">
-                                                <p className="font-medium text-emerald-700">{selectedFile.name}</p>
+                                                <p className="font-medium text-emerald-700 dark:text-emerald-300">{selectedFile.name}</p>
                                                 <p className="text-sm text-emerald-600">{formatFileSize(selectedFile.size)}</p>
                                             </div>
                                             <Button
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
-                                                className="ml-2 hover:bg-red-100 hover:text-red-600"
+                                                className="ml-2 hover:bg-red-100 dark:bg-red-500/15 hover:text-red-600"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     removeFile();
@@ -810,9 +810,9 @@ export default function TambahSuratMasuk() {
                                 </div>
                             </div>
 
-                            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100">
+                            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-500/15 border border-blue-100">
                                 <Info className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                                <p className="text-xs text-blue-700">
+                                <p className="text-xs text-blue-700 dark:text-blue-300">
                                     <strong>Catatan:</strong> Salah satu dari link dokumen atau upload berkas wajib diisi.
                                     Anda dapat mengisi keduanya jika diperlukan.
                                 </p>
@@ -822,11 +822,11 @@ export default function TambahSuratMasuk() {
                 </Card>
 
                 {/* Floating Action Bar */}
-                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-between sm:justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-between sm:justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                     <div className="hidden sm:block mr-auto">
                         {/* Auto-save status indicator */}
                         {saveStatus && (
-                            <span className="text-xs text-muted-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100">
+                            <span className="text-xs text-muted-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted">
                                 {saveStatus === 'saving' && <><Loader2 className="h-3 w-3 animate-spin" /> Menyimpan draft...</>}
                                 {saveStatus === 'saved' && <><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Draft tersimpan</>}
                                 {saveStatus === 'restored' && <><FileText className="h-3 w-3 text-blue-500" /> Draft dimuat</>}

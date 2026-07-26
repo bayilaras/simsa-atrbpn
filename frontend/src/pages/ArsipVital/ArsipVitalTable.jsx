@@ -99,7 +99,7 @@ export default function ArsipVitalTable({
                                 <TableRow key={item.id} className="hover:bg-muted/50">
                                     <TableCell className="text-center">{(page - 1) * 10 + idx + 1}</TableCell>
                                     <TableCell>
-                                        <div className="font-medium text-red-700">{item.nomorBerkas || '-'}</div>
+                                        <div className="font-medium text-red-700 dark:text-red-300">{item.nomorBerkas || '-'}</div>
                                         <div className="text-sm text-muted-foreground max-w-[250px] truncate" title={item.uraianBerkas || item.perihalOriginal}>
                                             {item.uraianBerkas || item.perihalOriginal || '-'}
                                         </div>
@@ -130,7 +130,7 @@ export default function ArsipVitalTable({
                                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onOpenDetail(item)}>
                                                 <Eye className="h-4 w-4" />
                                             </Button>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => onDelete(item.id)}>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 dark:text-red-300 hover:bg-red-50 dark:bg-red-500/15" onClick={() => onDelete(item.id)}>
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
                                         </div>

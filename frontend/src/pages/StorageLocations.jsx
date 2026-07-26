@@ -15,10 +15,10 @@ import { useToast } from '@/hooks/use-toast'
 
 // Level configuration
 const LEVEL_CONFIG = {
-    gedung: { label: 'Gedung', icon: Building2, color: 'bg-blue-500', bgColor: 'bg-blue-100', textColor: 'text-blue-700' },
-    ruang: { label: 'Ruang', icon: MapPin, color: 'bg-green-500', bgColor: 'bg-green-100', textColor: 'text-green-700' },
-    rak: { label: 'Rak', icon: Layers, color: 'bg-yellow-500', bgColor: 'bg-yellow-100', textColor: 'text-yellow-700' },
-    box: { label: 'Box', icon: Package, color: 'bg-purple-500', bgColor: 'bg-purple-100', textColor: 'text-purple-700' },
+    gedung: { label: 'Gedung', icon: Building2, color: 'bg-blue-500', bgColor: 'bg-blue-100 dark:bg-blue-500/15', textColor: 'text-blue-700 dark:text-blue-300' },
+    ruang: { label: 'Ruang', icon: MapPin, color: 'bg-green-500', bgColor: 'bg-green-100 dark:bg-green-500/15', textColor: 'text-green-700 dark:text-green-300' },
+    rak: { label: 'Rak', icon: Layers, color: 'bg-yellow-500', bgColor: 'bg-yellow-100 dark:bg-yellow-500/15', textColor: 'text-yellow-700 dark:text-yellow-300' },
+    box: { label: 'Box', icon: Package, color: 'bg-purple-500', bgColor: 'bg-purple-100 dark:bg-purple-500/15', textColor: 'text-purple-700 dark:text-purple-300' },
 }
 
 // Tree Node Component
@@ -69,14 +69,14 @@ function TreeNode({ node, level = 0, onEdit, onDelete, onGenerateQR, onAddChild 
 
                 <div className="flex gap-1 ml-2">
                     {node.level !== 'box' && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-indigo-50 hover:text-indigo-600" onClick={() => onAddChild(node)} title="Tambah Sub-lokasi">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-indigo-50 dark:bg-indigo-500/15 hover:text-indigo-600 dark:text-indigo-400" onClick={() => onAddChild(node)} title="Tambah Sub-lokasi">
                             <Plus className="h-3.5 w-3.5" />
                         </Button>
                     )}
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-slate-100" onClick={() => onGenerateQR(node)} title="QR Code">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-muted" onClick={() => onGenerateQR(node)} title="QR Code">
                         <QrCode className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 hover:text-blue-600" onClick={() => onEdit(node)} title="Edit">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:bg-blue-500/15 hover:text-blue-600" onClick={() => onEdit(node)} title="Edit">
                         <Edit2 className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)} title="Hapus">
@@ -121,7 +121,7 @@ function QRCodeDialog({ open, onOpenChange, location, qrData }) {
                 <div className="flex flex-col items-center gap-4 py-6 bg-muted/20 rounded-lg mt-2">
                     {qrData?.qrCodeDataUrl ? (
                         <>
-                            <div className="bg-white p-4 rounded-xl shadow-sm border">
+                            <div className="bg-card p-4 rounded-xl shadow-sm border">
                                 <img src={qrData.qrCodeDataUrl} alt="QR Code" className="w-48 h-48 mix-blend-multiply" />
                             </div>
                             <p className="text-sm text-muted-foreground text-center px-4">
@@ -334,8 +334,8 @@ export default function StorageLocations() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <MapPin className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <MapPin className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         Lokasi Penyimpanan
                     </h1>

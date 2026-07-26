@@ -368,7 +368,7 @@ export default function SuratMasuk() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Perlu Tindakan</p>
                             <p className="text-2xl font-bold text-orange-600">{stats.belumDibalas}</p>
                         </div>
-                        <div className="p-2.5 bg-orange-100 rounded-full text-orange-600">
+                        <div className="p-2.5 bg-orange-100 dark:bg-orange-500/15 rounded-full text-orange-600">
                             <AlertCircle className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -379,7 +379,7 @@ export default function SuratMasuk() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Sudah Dibalas</p>
                             <p className="text-2xl font-bold text-green-600">{stats.sudahDibalas}</p>
                         </div>
-                        <div className="p-2.5 bg-green-100 rounded-full text-green-600">
+                        <div className="p-2.5 bg-green-100 dark:bg-green-500/15 rounded-full text-green-600">
                             <CheckCircle2 className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -390,7 +390,7 @@ export default function SuratMasuk() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Diarsipkan</p>
                             <p className="text-2xl font-bold text-blue-600">{stats.diarsipkan}</p>
                         </div>
-                        <div className="p-2.5 bg-blue-100 rounded-full text-blue-600">
+                        <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600">
                             <FolderArchive className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -609,9 +609,9 @@ export default function SuratMasuk() {
                                                             <span className="max-w-[150px] truncate" title={row.dari}>Oleh: {row.dari}</span>
                                                             {row.jenisSurat && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.jenisSurat}</span>}
                                                             {row.sifatSurat && row.sifatSurat !== 'biasa' && (
-                                                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${row.sifatSurat === 'penting' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                                                    row.sifatSurat === 'rahasia' ? 'bg-red-50 text-red-700 border-red-200' :
-                                                                        'bg-blue-50 text-blue-700 border-blue-200'
+                                                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${row.sifatSurat === 'penting' ? 'bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200' :
+                                                                    row.sifatSurat === 'rahasia' ? 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' :
+                                                                        'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200'
                                                                     }`}>
                                                                     {row.sifatSurat.replace('_', ' ')}
                                                                 </span>
@@ -621,11 +621,11 @@ export default function SuratMasuk() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex flex-wrap gap-1.5">
-                                                        <Badge className={`shadow-none ${row.status === 'sudah_dibalas' ? 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200'}`}>
+                                                        <Badge className={`shadow-none ${row.status === 'sudah_dibalas' ? 'bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-200 border-green-200' : 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 hover:bg-orange-200 border-orange-200'}`}>
                                                             {row.status === 'sudah_dibalas' ? 'Sudah Dibalas' : 'Belum Diproses'}
                                                         </Badge>
                                                         {row.isArchived && (
-                                                            <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50">
+                                                            <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 dark:bg-blue-500/15">
                                                                 <FolderArchive className="h-3 w-3 mr-1" />
                                                                 Arsip
                                                             </Badge>

@@ -14,17 +14,17 @@ import { id as idLocale } from 'date-fns/locale'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 const STATUS_LABELS = {
-    kadaluarsa: { label: 'Kadaluarsa', variant: 'destructive', icon: XCircle, className: 'bg-red-100 text-red-700 border-red-200' },
-    akan_kadaluarsa: { label: 'Akan Kadaluarsa', variant: 'warning', icon: AlertTriangle, className: 'bg-orange-100 text-orange-700 border-orange-200' },
-    inaktif: { label: 'Inaktif', variant: 'secondary', icon: Clock, className: 'bg-slate-100 text-slate-700 border-slate-200' },
-    akan_inaktif: { label: 'Akan Inaktif', variant: 'outline', icon: Clock, className: 'bg-blue-100 text-blue-700 border-blue-200' },
-    aktif: { label: 'Aktif', variant: 'default', icon: CheckCircle2, className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+    kadaluarsa: { label: 'Kadaluarsa', variant: 'destructive', icon: XCircle, className: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
+    akan_kadaluarsa: { label: 'Akan Kadaluarsa', variant: 'warning', icon: AlertTriangle, className: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-200' },
+    inaktif: { label: 'Inaktif', variant: 'secondary', icon: Clock, className: 'bg-muted text-foreground border-border' },
+    akan_inaktif: { label: 'Akan Inaktif', variant: 'outline', icon: Clock, className: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200' },
+    aktif: { label: 'Aktif', variant: 'default', icon: CheckCircle2, className: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200' },
 }
 
 const HASIL_AKHIR_OPTIONS = {
-    'Musnah': { label: 'Musnah', color: 'bg-red-500', badgeClass: 'bg-red-100 text-red-700 border-red-200' },
-    'Permanen': { label: 'Permanen', color: 'bg-blue-500', badgeClass: 'bg-blue-100 text-blue-700 border-blue-200' },
-    'Dinilai Kembali': { label: 'Dinilai Kembali', color: 'bg-yellow-500', badgeClass: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+    'Musnah': { label: 'Musnah', color: 'bg-red-500', badgeClass: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
+    'Permanen': { label: 'Permanen', color: 'bg-blue-500', badgeClass: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200' },
+    'Dinilai Kembali': { label: 'Dinilai Kembali', color: 'bg-yellow-500', badgeClass: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200' },
 }
 
 export default function RetentionManagement() {
@@ -237,7 +237,7 @@ export default function RetentionManagement() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-orange-100 rounded-lg">
+                        <div className="p-2 bg-orange-100 dark:bg-orange-500/15 rounded-lg">
                             <Scale className="h-6 w-6 text-orange-600" />
                         </div>
                         Manajemen Retensi Arsip (JRA)
@@ -248,12 +248,12 @@ export default function RetentionManagement() {
                 </div>
 
                 {summary && summary.alertLevel !== 'none' && (
-                    <div className={`px-4 py-2 rounded-lg border flex items-center gap-3 ${summary.alertLevel === 'high' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-                        <div className={`p-1.5 rounded-full ${summary.alertLevel === 'high' ? 'bg-red-100' : 'bg-yellow-100'}`}>
+                    <div className={`px-4 py-2 rounded-lg border flex items-center gap-3 ${summary.alertLevel === 'high' ? 'bg-red-50 dark:bg-red-500/15 border-red-200' : 'bg-yellow-50 dark:bg-yellow-500/15 border-yellow-200'}`}>
+                        <div className={`p-1.5 rounded-full ${summary.alertLevel === 'high' ? 'bg-red-100 dark:bg-red-500/15' : 'bg-yellow-100 dark:bg-yellow-500/15'}`}>
                             <AlertTriangle className={`h-4 w-4 ${summary.alertLevel === 'high' ? 'text-red-600' : 'text-yellow-600'}`} />
                         </div>
                         <div>
-                            <p className={`text-sm font-semibold ${summary.alertLevel === 'high' ? 'text-red-700' : 'text-yellow-700'}`}>
+                            <p className={`text-sm font-semibold ${summary.alertLevel === 'high' ? 'text-red-700 dark:text-red-300' : 'text-yellow-700 dark:text-yellow-300'}`}>
                                 Notifikasi Penyusutan
                             </p>
                             <p className={`text-xs ${summary.alertLevel === 'high' ? 'text-red-600' : 'text-yellow-600'}`}>
@@ -328,10 +328,10 @@ export default function RetentionManagement() {
             {summary?.expiredByHasilAkhir && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {Object.entries(summary.expiredByHasilAkhir).map(([key, count]) => {
-                        let conf = { label: key, icon: FileText, color: 'bg-gray-100 text-gray-700' };
-                        if (key === 'musnah') conf = { label: 'Musnah', icon: Trash2, color: 'bg-red-100 text-red-700' };
-                        if (key === 'permanen') conf = { label: 'Permanen', icon: Archive, color: 'bg-blue-100 text-blue-700' };
-                        if (key === 'dinilaiKembali') conf = { label: 'Dinilai Kembali', icon: History, color: 'bg-yellow-100 text-yellow-700' };
+                        let conf = { label: key, icon: FileText, color: 'bg-muted text-foreground' };
+                        if (key === 'musnah') conf = { label: 'Musnah', icon: Trash2, color: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300' };
+                        if (key === 'permanen') conf = { label: 'Permanen', icon: Archive, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300' };
+                        if (key === 'dinilaiKembali') conf = { label: 'Dinilai Kembali', icon: History, color: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' };
 
                         const Icon = conf.icon;
 
@@ -472,7 +472,7 @@ export default function RetentionManagement() {
                                             {arch.hasilAkhir ? (
                                                 <Badge
                                                     variant="outline"
-                                                    className={`text-[10px] shadow-none ${HASIL_AKHIR_OPTIONS[arch.hasilAkhir]?.badgeClass || 'bg-gray-100 text-gray-700'}`}
+                                                    className={`text-[10px] shadow-none ${HASIL_AKHIR_OPTIONS[arch.hasilAkhir]?.badgeClass || 'bg-muted text-foreground'}`}
                                                 >
                                                     {arch.hasilAkhir}
                                                 </Badge>
@@ -533,7 +533,7 @@ export default function RetentionManagement() {
 
                     <div className="flex-1 overflow-y-auto p-6 bg-muted/10">
                         {reportData && (
-                            <div className="bg-white p-8 shadow-sm border rounded-lg min-h-[600px] max-w-[800px] mx-auto text-sm">
+                            <div className="bg-card p-8 shadow-sm border rounded-lg min-h-[600px] max-w-[800px] mx-auto text-sm">
                                 {/* Letterhead Simulation */}
                                 <div className="text-center mb-8 border-b-2 border-black pb-4">
                                     <h3 className="font-bold text-lg uppercase tracking-wide mb-1">KEMENTERIAN AGRARIA DAN TATA RUANG/BADAN PERTANAHAN NASIONAL</h3>
@@ -552,7 +552,7 @@ export default function RetentionManagement() {
                                 <div className="border rounded mb-6">
                                     <Table className="text-xs">
                                         <TableHeader>
-                                            <TableRow className="bg-gray-50 hover:bg-gray-50">
+                                            <TableRow className="bg-muted/50 hover:bg-muted/50">
                                                 <TableHead className="w-10 text-black font-bold border-r">No</TableHead>
                                                 <TableHead className="text-black font-bold border-r">Nomor Berkas</TableHead>
                                                 <TableHead className="text-black font-bold border-r">Kode</TableHead>

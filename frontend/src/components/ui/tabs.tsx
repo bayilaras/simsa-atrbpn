@@ -24,7 +24,9 @@ function Tabs({
 }
 
 const tabsListVariants = cva(
-  "rounded-lg p-[3px] group-data-[orientation=horizontal]/tabs:h-9 data-[variant=line]:rounded-none group/tabs-list text-muted-foreground inline-flex w-fit items-center justify-center group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col",
+  // min-h rather than a fixed h: pages that lay their triggers out in a grid or
+  // let them wrap need the list to grow instead of overlapping its own rows.
+  "rounded-lg p-[3px] group-data-[orientation=horizontal]/tabs:min-h-9 data-[variant=line]:rounded-none group/tabs-list text-muted-foreground inline-flex w-fit items-center justify-center group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col",
   {
     variants: {
       variant: {

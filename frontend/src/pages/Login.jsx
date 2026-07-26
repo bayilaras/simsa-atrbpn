@@ -39,12 +39,12 @@ export default function Login() {
             <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
                 <div className="absolute top-[10%] left-[10%] w-72 h-72 bg-primary/20 rounded-full blur-3xl animate-pulse-glow"></div>
                 <div className="absolute bottom-[10%] right-[10%] w-96 h-96 bg-secondary/20 rounded-full blur-3xl animate-pulse-glow delay-1000"></div>
-                <div className="absolute top-[40%] left-[60%] w-48 h-48 bg-white/10 rounded-full blur-2xl animate-pulse"></div>
+                <div className="absolute top-[40%] left-[60%] w-48 h-48 bg-card/10 rounded-full blur-2xl animate-pulse"></div>
             </div>
 
             <div className="w-full max-w-md px-4 relative z-10 animate-fade-in-up">
                 <div className="text-center mb-6 space-y-2">
-                    <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 shadow-xl mb-2">
+                    <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-card/10 backdrop-blur-sm border border-white/20 shadow-xl mb-2">
                         <img
                             src="/logo-simsa.png"
                             alt="Logo SIMSA"
@@ -58,7 +58,7 @@ export default function Login() {
                     </div>
                 </div>
 
-                <Card className="border-white/20 bg-white/95 backdrop-blur-xl shadow-2xl">
+                <Card className="border-white/20 bg-card/95 backdrop-blur-xl shadow-2xl">
                     <CardHeader className="space-y-1 pb-4">
                         <CardTitle className="text-xl font-semibold text-center text-foreground/80">Selamat Datang</CardTitle>
                         <CardDescription className="text-center">
@@ -117,7 +117,7 @@ export default function Login() {
                                 <Separator className="w-full bg-border/60" />
                             </div>
                             <div className="relative flex justify-center text-xs uppercase">
-                                <span className="bg-white px-2 text-muted-foreground font-medium">Atau lanjutkan dengan</span>
+                                <span className="bg-card px-2 text-muted-foreground font-medium">Atau lanjutkan dengan</span>
                             </div>
                         </div>
 
@@ -125,7 +125,7 @@ export default function Login() {
                             onClick={signInWithGoogle}
                             disabled={loading}
                             variant="outline"
-                            className="w-full bg-white hover:bg-gray-50 text-gray-700 border-gray-200 hover:border-gray-300 shadow-sm transition-all duration-300"
+                            className="w-full bg-card hover:bg-muted/50 text-foreground border-border hover:border-border shadow-sm transition-all duration-300"
                             size="lg"
                         >
                             <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">

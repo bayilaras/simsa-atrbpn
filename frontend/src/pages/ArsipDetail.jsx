@@ -38,11 +38,11 @@ function formatRelative(dateStr) {
 
 function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'secondary', className = '' }) {
     return (
-        <div className={`group relative p-4 rounded-xl border border-slate-100 transition-all duration-200 hover:shadow-md hover:border-emerald-200 hover:bg-emerald-50/30 ${className}`}>
+        <div className={`group relative p-4 rounded-xl border border-border transition-all duration-200 hover:shadow-md hover:border-emerald-200 hover:bg-emerald-50/30 ${className}`}>
             <div className="flex items-center gap-2 mb-2">
                 {Icon && (
-                    <div className="p-1.5 rounded-lg bg-slate-100 group-hover:bg-emerald-100 transition-colors">
-                        <Icon className="h-3.5 w-3.5 text-slate-500 group-hover:text-emerald-600 transition-colors" />
+                    <div className="p-1.5 rounded-lg bg-muted group-hover:bg-emerald-100 dark:bg-emerald-500/15 transition-colors">
+                        <Icon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-emerald-600 transition-colors" />
                     </div>
                 )}
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</span>
@@ -50,7 +50,7 @@ function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'seconda
             {badge && value ? (
                 <Badge variant={variant} className="mt-0.5">{value}</Badge>
             ) : (
-                <p className={`text-sm font-semibold break-words ${!value ? 'text-muted-foreground italic font-normal' : 'text-slate-900'}`}>
+                <p className={`text-sm font-semibold break-words ${!value ? 'text-muted-foreground italic font-normal' : 'text-foreground'}`}>
                     {value || '—'}
                 </p>
             )}
@@ -60,7 +60,7 @@ function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'seconda
 
 function QuickStatBox({ icon: Icon, label, value, color = 'white' }) {
     return (
-        <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 hover:bg-white/15 transition-colors">
+        <div className="bg-card/10 backdrop-blur-sm rounded-xl p-3 hover:bg-card/15 transition-colors">
             <Icon className="h-4 w-4 text-white/50 mb-1" />
             <p className="text-xs text-white/50">{label}</p>
             <p className="text-sm font-semibold text-white">{value || '—'}</p>
@@ -73,21 +73,21 @@ function StatusIndicator({ label, active, activeLabel, inactiveLabel, activeColo
     return (
         <div className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${isActive
             ? `bg-${activeColor}-50 border border-${activeColor}-100`
-            : 'bg-gray-50 border border-gray-100'
+            : 'bg-muted/50 border border-border'
             }`}>
             <div className={`p-2 rounded-full ${isActive
                 ? `bg-${activeColor}-100`
-                : 'bg-gray-100'
+                : 'bg-muted'
                 }`}>
                 <Icon className={`h-4 w-4 ${isActive
                     ? `text-${activeColor}-600`
-                    : 'text-gray-500'
+                    : 'text-muted-foreground'
                     }`} />
             </div>
             <div>
                 <p className={`font-medium text-sm ${isActive
                     ? `text-${activeColor}-700`
-                    : 'text-gray-600'
+                    : 'text-muted-foreground'
                     }`}>
                     {isActive ? activeLabel : inactiveLabel}
                 </p>
@@ -101,13 +101,13 @@ function TimelineEvent({ icon: Icon, label, date, color = 'emerald', isLast = fa
     return (
         <div className="relative flex gap-3 pb-6 last:pb-0">
             {!isLast && (
-                <div className="absolute left-[11px] top-6 bottom-0 w-0.5 bg-slate-200" />
+                <div className="absolute left-[11px] top-6 bottom-0 w-0.5 bg-muted" />
             )}
             <div className={`relative z-10 p-1.5 rounded-full bg-${color}-100 ring-4 ring-white shrink-0`}>
                 <Icon className={`h-3 w-3 text-${color}-600`} />
             </div>
             <div className="min-w-0 pt-0.5">
-                <p className="text-sm font-medium text-slate-800">{label}</p>
+                <p className="text-sm font-medium text-foreground">{label}</p>
                 <p className="text-xs text-muted-foreground">{formatDate(date)}</p>
                 {date && (
                     <p className="text-xs text-muted-foreground/70">{formatRelative(date)}</p>
@@ -128,19 +128,19 @@ function ArsipDetailSkeleton() {
                     {/* Tab bar skeleton */}
                     <div className="flex gap-2">
                         {[1, 2, 3, 4, 5].map(i => (
-                            <div key={i} className="h-10 w-28 rounded-lg bg-slate-100" />
+                            <div key={i} className="h-10 w-28 rounded-lg bg-muted" />
                         ))}
                     </div>
                     {/* Content skeleton */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-                            <div key={i} className="h-24 rounded-xl bg-slate-100" />
+                            <div key={i} className="h-24 rounded-xl bg-muted" />
                         ))}
                     </div>
                 </div>
                 <div className="space-y-4">
                     {[1, 2, 3].map(i => (
-                        <div key={i} className="h-32 rounded-xl bg-slate-100" />
+                        <div key={i} className="h-32 rounded-xl bg-muted" />
                     ))}
                 </div>
             </div>
@@ -244,8 +244,8 @@ export default function ArsipDetail() {
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-emerald-900 to-teal-800 p-6 md:p-8 text-white shadow-xl">
                 {/* Background decorative elements */}
                 <div className="absolute inset-0 opacity-10">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
-                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-card rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-card rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
                 </div>
 
                 <div className="relative space-y-5">
@@ -254,7 +254,7 @@ export default function ArsipDetail() {
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="text-white/80 hover:text-white hover:bg-white/10"
+                            className="text-white/80 hover:text-white hover:bg-card/10"
                             onClick={() => navigate(-1)}
                         >
                             <ArrowLeft className="mr-2 h-4 w-4" /> Kembali
@@ -262,7 +262,7 @@ export default function ArsipDetail() {
                         <div className="flex gap-2">
                             {suratUrl && (
                                 <Link to={suratUrl}>
-                                    <Button variant="secondary" size="sm" className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm">
+                                    <Button variant="secondary" size="sm" className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm">
                                         <ExternalLink className="mr-2 h-4 w-4" /> Lihat Surat Asli
                                     </Button>
                                 </Link>
@@ -272,7 +272,7 @@ export default function ArsipDetail() {
 
                     {/* Title area */}
                     <div className="flex items-center gap-4">
-                        <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm shrink-0 hidden sm:flex">
+                        <div className="bg-card/20 p-3 rounded-xl backdrop-blur-sm shrink-0 hidden sm:flex">
                             <Archive className="h-8 w-8" />
                         </div>
                         <div className="min-w-0">
@@ -288,7 +288,7 @@ export default function ArsipDetail() {
                                     ? 'bg-blue-500/20 text-blue-200 border-blue-400/30'
                                     : arsip.disposalStatus === 'executed'
                                         ? 'bg-red-500/20 text-red-200 border-red-400/30'
-                                        : 'bg-white/10 text-white/70 border-white/20'
+                                        : 'bg-card/10 text-white/70 border-white/20'
                                     }`}>
                                     {arsip.disposalStatus || 'Active'}
                                 </Badge>
@@ -318,20 +318,20 @@ export default function ArsipDetail() {
                 <div className="lg:col-span-2">
                     <Tabs defaultValue="identifikasi" className="w-full">
                         <TabsList className="w-full justify-start bg-muted/50 h-auto p-1 rounded-xl flex-wrap">
-                            <TabsTrigger value="identifikasi" className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
+                            <TabsTrigger value="identifikasi" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
                                 <FileText className="h-4 w-4" /> Identifikasi
                             </TabsTrigger>
-                            <TabsTrigger value="items" className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
+                            <TabsTrigger value="items" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
                                 <Layers className="h-4 w-4" /> Item Arsip
                                 <Badge variant="secondary" className="ml-1 text-xs h-5 px-1.5">{itemCount}</Badge>
                             </TabsTrigger>
-                            <TabsTrigger value="retensi" className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
+                            <TabsTrigger value="retensi" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
                                 <Clock className="h-4 w-4" /> Retensi & Lokasi
                             </TabsTrigger>
-                            <TabsTrigger value="keamanan" className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
+                            <TabsTrigger value="keamanan" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
                                 <Shield className="h-4 w-4" /> Keamanan
                             </TabsTrigger>
-                            <TabsTrigger value="surat" className="gap-1.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
+                            <TabsTrigger value="surat" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
                                 <BookOpen className="h-4 w-4" /> Surat Asli
                             </TabsTrigger>
                         </TabsList>
@@ -341,8 +341,8 @@ export default function ArsipDetail() {
                             <Card>
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-base flex items-center gap-2">
-                                        <div className="p-1.5 rounded-lg bg-blue-100">
-                                            <FileText className="h-4 w-4 text-blue-600" />
+                                        <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-500/15">
+                                            <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                                         </div>
                                         Identifikasi Berkas
                                     </CardTitle>
@@ -368,11 +368,11 @@ export default function ArsipDetail() {
                                 <CardHeader className="bg-gradient-to-r from-indigo-50 to-sky-50 border-b pb-3">
                                     <div className="flex items-center justify-between">
                                         <CardTitle className="text-base flex items-center gap-2">
-                                            <div className="p-1.5 rounded-lg bg-indigo-100">
+                                            <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-500/15">
                                                 <Layers className="h-4 w-4 text-indigo-600" />
                                             </div>
                                             Daftar Item Arsip
-                                            <Badge className="bg-indigo-100 text-indigo-700 border-0">{itemCount} Item</Badge>
+                                            <Badge className="bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-0">{itemCount} Item</Badge>
                                         </CardTitle>
                                     </div>
                                 </CardHeader>
@@ -380,58 +380,58 @@ export default function ArsipDetail() {
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-sm">
                                             <thead>
-                                                <tr className="bg-slate-50/80">
-                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b w-14">No</th>
-                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b">Uraian Informasi</th>
-                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b w-32">Tk. Perkembangan</th>
-                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b w-28">Tanggal</th>
-                                                    <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider border-b w-16">Jml</th>
-                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b w-24">Media</th>
-                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b w-40">Lokasi</th>
+                                                <tr className="bg-muted/80">
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b w-14">No</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b">Uraian Informasi</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b w-32">Tk. Perkembangan</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b w-28">Tanggal</th>
+                                                    <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b w-16">Jml</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b w-24">Media</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b w-40">Lokasi</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {arsip.items && arsip.items.length > 0 ? (
                                                     arsip.items.map((item, idx) => (
-                                                        <tr key={item.id || idx} className="hover:bg-slate-50/80 transition-colors group">
+                                                        <tr key={item.id || idx} className="hover:bg-muted/80 transition-colors group">
                                                             <td className="px-4 py-3">
-                                                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-100 text-xs font-semibold text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-700 transition-colors">
+                                                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-semibold text-muted-foreground group-hover:bg-indigo-100 dark:bg-indigo-500/15 group-hover:text-indigo-700 dark:text-indigo-300 transition-colors">
                                                                     {item.nomorItem || idx + 1}
                                                                 </span>
                                                             </td>
-                                                            <td className="px-4 py-3 text-slate-900 font-medium">{item.uraianItem || '-'}</td>
+                                                            <td className="px-4 py-3 text-foreground font-medium">{item.uraianItem || '-'}</td>
                                                             <td className="px-4 py-3">
                                                                 <Badge variant="outline" className="text-xs">{item.tingkatPerkembangan || '-'}</Badge>
                                                             </td>
-                                                            <td className="px-4 py-3 text-slate-600">{formatDate(item.tanggalItem)}</td>
+                                                            <td className="px-4 py-3 text-muted-foreground">{formatDate(item.tanggalItem)}</td>
                                                             <td className="px-4 py-3 text-center">
-                                                                <span className="font-semibold text-slate-700">{item.jumlah || 1}</span>
+                                                                <span className="font-semibold text-foreground">{item.jumlah || 1}</span>
                                                             </td>
                                                             <td className="px-4 py-3">
                                                                 <Badge variant="secondary" className="text-xs">{item.mediaType || 'kertas'}</Badge>
                                                             </td>
-                                                            <td className="px-4 py-3 text-slate-600 text-xs">
+                                                            <td className="px-4 py-3 text-muted-foreground text-xs">
                                                                 {[item.lokasiFc, item.lokasiLaci, item.lokasiFolder].filter(Boolean).join(' / ') || '-'}
                                                             </td>
                                                         </tr>
                                                     ))
                                                 ) : arsip.nomorItem ? (
-                                                    <tr className="hover:bg-slate-50/80 transition-colors group">
+                                                    <tr className="hover:bg-muted/80 transition-colors group">
                                                         <td className="px-4 py-3">
-                                                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                                                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-semibold text-muted-foreground">
                                                                 {arsip.nomorItem}
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-3 text-slate-900 font-medium">{arsip.uraianItem || '-'}</td>
+                                                        <td className="px-4 py-3 text-foreground font-medium">{arsip.uraianItem || '-'}</td>
                                                         <td className="px-4 py-3">
                                                             <Badge variant="outline" className="text-xs">{arsip.tingkatPerkembangan || '-'}</Badge>
                                                         </td>
-                                                        <td className="px-4 py-3 text-slate-600">{formatDate(arsip.tanggalArsip)}</td>
-                                                        <td className="px-4 py-3 text-center font-semibold text-slate-700">{arsip.jumlah || 1}</td>
+                                                        <td className="px-4 py-3 text-muted-foreground">{formatDate(arsip.tanggalArsip)}</td>
+                                                        <td className="px-4 py-3 text-center font-semibold text-foreground">{arsip.jumlah || 1}</td>
                                                         <td className="px-4 py-3">
                                                             <Badge variant="secondary" className="text-xs">{arsip.mediaType || 'kertas'}</Badge>
                                                         </td>
-                                                        <td className="px-4 py-3 text-slate-600 text-xs">
+                                                        <td className="px-4 py-3 text-muted-foreground text-xs">
                                                             {[arsip.lokasiFc, arsip.lokasiLaci, arsip.lokasiFolder].filter(Boolean).join(' / ') || '-'}
                                                         </td>
                                                     </tr>
@@ -446,7 +446,7 @@ export default function ArsipDetail() {
                                         </table>
                                     </div>
                                     {itemCount > 0 && (
-                                        <div className="px-4 py-2.5 bg-slate-50/50 border-t text-xs text-muted-foreground text-center">
+                                        <div className="px-4 py-2.5 bg-muted/50 border-t text-xs text-muted-foreground text-center">
                                             Menampilkan {itemCount} item
                                         </div>
                                     )}
@@ -460,8 +460,8 @@ export default function ArsipDetail() {
                             <Card>
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-base flex items-center gap-2">
-                                        <div className="p-1.5 rounded-lg bg-green-100">
-                                            <MapPin className="h-4 w-4 text-green-600" />
+                                        <div className="p-1.5 rounded-lg bg-green-100 dark:bg-green-500/15">
+                                            <MapPin className="h-4 w-4 text-green-600 dark:text-green-400" />
                                         </div>
                                         Lokasi Penyimpanan
                                     </CardTitle>
@@ -479,8 +479,8 @@ export default function ArsipDetail() {
                             <Card>
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-base flex items-center gap-2">
-                                        <div className="p-1.5 rounded-lg bg-orange-100">
-                                            <Clock className="h-4 w-4 text-orange-600" />
+                                        <div className="p-1.5 rounded-lg bg-orange-100 dark:bg-orange-500/15">
+                                            <Clock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                                         </div>
                                         Jadwal Retensi Arsip (JRA)
                                     </CardTitle>
@@ -501,22 +501,22 @@ export default function ArsipDetail() {
                                         <>
                                             <Separator className="my-4" />
                                             <div className="space-y-3">
-                                                <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                                <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
                                                     <Clock className="h-4 w-4 text-orange-500" /> Progress Retensi Aktif
                                                 </h4>
                                                 <div>
                                                     <div className="flex justify-between text-xs mb-1.5 text-muted-foreground">
                                                         <span>{Math.min(yearsSinceArchived, retensiAktifYears).toFixed(1)} dari {retensiAktifYears} tahun</span>
-                                                        <span className="font-semibold text-slate-700">{Math.round(progressAktif)}%</span>
+                                                        <span className="font-semibold text-foreground">{Math.round(progressAktif)}%</span>
                                                     </div>
                                                     <Progress value={progressAktif} className="h-2.5" />
                                                 </div>
                                                 {daysUntilExpiry !== null && (
                                                     <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${daysUntilExpiry <= 30
-                                                        ? 'bg-red-50 text-red-700 border border-red-100'
+                                                        ? 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border border-red-100'
                                                         : daysUntilExpiry <= 365
-                                                            ? 'bg-amber-50 text-amber-700 border border-amber-100'
-                                                            : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                                            ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-100'
+                                                            : 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-100'
                                                         }`}>
                                                         <Calendar className="h-4 w-4 shrink-0" />
                                                         <span>
@@ -539,7 +539,7 @@ export default function ArsipDetail() {
                             <Card>
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-base flex items-center gap-2">
-                                        <div className="p-1.5 rounded-lg bg-red-100">
+                                        <div className="p-1.5 rounded-lg bg-red-100 dark:bg-red-500/15">
                                             <Shield className="h-4 w-4 text-red-600" />
                                         </div>
                                         Keamanan & Penanggung Jawab
@@ -560,8 +560,8 @@ export default function ArsipDetail() {
                             <Card>
                                 <CardHeader className="pb-3">
                                     <CardTitle className="text-base flex items-center gap-2">
-                                        <div className="p-1.5 rounded-lg bg-teal-100">
-                                            <BookOpen className="h-4 w-4 text-teal-600" />
+                                        <div className="p-1.5 rounded-lg bg-teal-100 dark:bg-teal-500/15">
+                                            <BookOpen className="h-4 w-4 text-teal-600 dark:text-teal-400" />
                                         </div>
                                         Informasi Surat Asli
                                     </CardTitle>

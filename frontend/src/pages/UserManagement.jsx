@@ -42,11 +42,11 @@ import userManagementService from '@/services/user-management.service';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const ROLE_COLORS = {
-    'super_admin': 'bg-red-100 text-red-800 border-red-200',
-    'admin_dirjen': 'bg-blue-100 text-blue-800 border-blue-200',
-    'admin_sesditjen': 'bg-green-100 text-green-800 border-green-200',
-    'staff': 'bg-amber-100 text-amber-800 border-amber-200',
-    'user': 'bg-slate-100 text-slate-800 border-slate-200',
+    'super_admin': 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300 border-red-200',
+    'admin_dirjen': 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-200',
+    'admin_sesditjen': 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300 border-green-200',
+    'staff': 'bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-200',
+    'user': 'bg-muted text-foreground border-border',
 };
 
 const ROLE_LABELS = {
@@ -293,7 +293,7 @@ export default function UserManagement() {
     if (!isAdmin) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-in fade-in zoom-in duration-500">
-                <div className="p-4 bg-red-100 rounded-full">
+                <div className="p-4 bg-red-100 dark:bg-red-500/15 rounded-full">
                     <Shield className="h-16 w-16 text-red-600" />
                 </div>
                 <div className="text-center space-y-2">
@@ -310,8 +310,8 @@ export default function UserManagement() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <Users className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <Users className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         User Management
                     </h1>
@@ -333,7 +333,7 @@ export default function UserManagement() {
                         <Users className="h-4 w-4 text-blue-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-blue-700">{pagination.total}</div>
+                        <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">{pagination.total}</div>
                         <p className="text-xs text-muted-foreground mt-1">Pengguna terdaftar</p>
                     </CardContent>
                 </Card>
@@ -343,7 +343,7 @@ export default function UserManagement() {
                         <CheckCircle2 className="h-4 w-4 text-green-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-700">
+                        <div className="text-2xl font-bold text-green-700 dark:text-green-300">
                             {/* Ideally fetch from stats endpoint, simplified here */}
                             {users.filter(u => u.isActive).length}
                         </div>
@@ -353,10 +353,10 @@ export default function UserManagement() {
                 <Card className="shadow-sm border-l-4 border-l-slate-400">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Nonaktif</CardTitle>
-                        <Ban className="h-4 w-4 text-slate-500" />
+                        <Ban className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-slate-700">
+                        <div className="text-2xl font-bold text-foreground">
                             {users.filter(u => !u.isActive).length}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">Pengguna nonaktif (halaman ini)</p>
@@ -480,7 +480,7 @@ export default function UserManagement() {
                                         <TableCell>
                                             <Badge
                                                 variant={user.isActive ? 'default' : 'secondary'}
-                                                className={user.isActive ? "bg-green-100 text-green-700 hover:bg-green-200 border-green-200 shadow-none border" : "bg-slate-100 text-slate-600 border-slate-200 shadow-none border"}
+                                                className={user.isActive ? "bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-200 border-green-200 shadow-none border" : "bg-muted text-muted-foreground border-border shadow-none border"}
                                             >
                                                 {user.isActive ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <Ban className="w-3 h-3 mr-1" />}
                                                 {user.isActive ? 'Aktif' : 'Nonaktif'}
@@ -616,7 +616,7 @@ export default function UserManagement() {
                         <div className="space-y-2">
                             <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Status Akun</label>
                             <Select value={String(editData.isActive)} onValueChange={(v) => setEditData(d => ({ ...d, isActive: v === 'true' }))}>
-                                <SelectTrigger className={editData.isActive ? "border-green-200 bg-green-50 text-green-900" : "border-red-200 bg-red-50 text-red-900"}>
+                                <SelectTrigger className={editData.isActive ? "border-green-200 bg-green-50 dark:bg-green-500/15 text-green-900 dark:text-green-300" : "border-red-200 bg-red-50 dark:bg-red-500/15 text-red-900 dark:text-red-300"}>
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -680,7 +680,7 @@ export default function UserManagement() {
                 <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <UserPlus className="h-5 w-5 text-indigo-600" />
+                            <UserPlus className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                             Tambah User Baru
                         </DialogTitle>
                         <DialogDescription>
@@ -689,7 +689,7 @@ export default function UserManagement() {
                     </DialogHeader>
 
                     {addError && (
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700">
+                        <div className="bg-red-50 dark:bg-red-500/15 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700 dark:text-red-300">
                             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                             {addError}
                         </div>

@@ -84,7 +84,7 @@ export default function SuratMasukDetail() {
                 <div className="flex flex-col items-center gap-4">
                     <div className="relative">
                         <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full blur-xl opacity-30 animate-pulse" />
-                        <Loader2 className="h-12 w-12 animate-spin text-emerald-600 relative" />
+                        <Loader2 className="h-12 w-12 animate-spin text-emerald-600 dark:text-emerald-400 relative" />
                     </div>
                     <p className="text-muted-foreground font-medium">Memuat data surat...</p>
                 </div>
