@@ -33,7 +33,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
         const { status, lendingType, borrowerId, arsipId, storageLocationId, page, limit } = req.query as any;
 
         const result = await archiveLendingService.findAll({
-            unitKerjaId: req.user?.unitKerjaId,
+            unitKerjaId: req.user?.unitKerjaId ?? undefined,
             status,
             lendingType,
             borrowerId,
@@ -58,7 +58,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
  */
 router.get('/overdue', async (req: AuthRequest, res, next) => {
     try {
-        const data = await archiveLendingService.getOverdue(req.user?.unitKerjaId);
+        const data = await archiveLendingService.getOverdue(req.user?.unitKerjaId ?? undefined);
         res.json({ success: true, data });
     } catch (error) {
         next(error);
@@ -74,7 +74,7 @@ router.get('/overdue', async (req: AuthRequest, res, next) => {
  */
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        const stats = await archiveLendingService.getStats(req.user?.unitKerjaId);
+        const stats = await archiveLendingService.getStats(req.user?.unitKerjaId ?? undefined);
         res.json({ success: true, data: stats });
     } catch (error) {
         next(error);
