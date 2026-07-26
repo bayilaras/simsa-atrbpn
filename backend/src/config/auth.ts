@@ -3,6 +3,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { createAuthMiddleware, APIError } from 'better-auth/api';
 import { db } from './database';
 import { env } from './env';
+import { getTrustedOrigins, isTrustedOrigin } from './trusted-origins';
 import * as schema from '../db/schema';
 
 // Determine the base URL for Better Auth:
@@ -26,14 +27,6 @@ function resolveBaseURL(): string {
     return configured || 'http://localhost:3001';
 }
 
-function normalizeOrigin(value: string): string | null {
-    try {
-        return new URL(value).origin;
-    } catch {
-        return null;
-    }
-}
-
 // Better Auth's built-in CSRF check is disabled (it conflicts with the Vercel proxy) and
 // the custom CSRF middleware skips /auth, so state-changing auth requests are guarded here.
 // A browser always sends Origin (or at least Referer) on a cross-site POST, so rejecting
@@ -49,12 +42,7 @@ const originGuard = createAuthMiddleware(async (ctx) => {
     const originHeader = request.headers.get('origin') || request.headers.get('referer');
     if (!originHeader) return;
 
-    const requestOrigin = normalizeOrigin(originHeader);
-    const isTrusted = requestOrigin !== null && ctx.context.trustedOrigins.some(
-        (allowed) => normalizeOrigin(allowed) === requestOrigin
-    );
-
-    if (!isTrusted) {
+    if (!isTrustedOrigin(originHeader)) {
         ctx.context.logger.error(`Blocked auth request from untrusted origin: ${originHeader}`);
         throw new APIError('FORBIDDEN', { message: 'Invalid origin' });
     }
@@ -84,9 +72,7 @@ export const auth = betterAuth({
         // Permanent fix: use custom domain (e.g., api.simsa.atrbpn.go.id).
         skipStateCookieCheck: true,
     },
-    trustedOrigins: env.NODE_ENV === 'production'
-        ? [env.FRONTEND_URL]
-        : [env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001'],
+    trustedOrigins: getTrustedOrigins(),
     session: {
         expiresIn: 60 * 60 * 24, // 24 hours — hardened for government document security
         updateAge: 60 * 60 * 4,  // 4 hours — refresh session more frequently

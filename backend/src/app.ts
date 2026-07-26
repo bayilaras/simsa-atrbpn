@@ -7,6 +7,7 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { toNodeHandler } from 'better-auth/node';
 import { env } from './config/env';
+import { isTrustedOrigin } from './config/trusted-origins';
 import { auth } from './config/auth';
 import { generalLimiter, authLimiter } from './middlewares/rate-limiter.middleware';
 import { authMiddleware } from './middlewares/auth.middleware';
@@ -68,13 +69,7 @@ app.use(cors({
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
 
-        const allowedOrigin = env.FRONTEND_URL.replace(/\/$/, "");
-        if (origin === allowedOrigin || origin === allowedOrigin + '/') {
-            return callback(null, true);
-        }
-
-        // During development, allow localhost variations
-        if (env.NODE_ENV !== 'production' && origin.match(/^http:\/\/localhost:\d+$/)) {
+        if (isTrustedOrigin(origin)) {
             return callback(null, true);
         }
 
@@ -160,9 +155,7 @@ app.use('/api/auth', authLimiter);
 // This ensures CORS headers are always returned for OPTIONS requests to /api/auth/*
 app.options('/api/auth/*splat', (req: Request, res: Response) => {
     const origin = req.headers.origin;
-    const allowedOrigin = env.FRONTEND_URL.replace(/\/$/, '');
-    if (origin === allowedOrigin || origin === allowedOrigin + '/' ||
-        (env.NODE_ENV !== 'production' && origin?.match(/^http:\/\/localhost:\d+$/))) {
+    if (isTrustedOrigin(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin!);
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');

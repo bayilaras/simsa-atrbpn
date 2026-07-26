@@ -31,6 +31,13 @@ export const env = {
     // Frontend
     FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
 
+    // Extra browser origins allowed to call this API, comma separated.
+    // Use for a second custom domain or a staging frontend.
+    ADDITIONAL_TRUSTED_ORIGINS: process.env.ADDITIONAL_TRUSTED_ORIGINS || '',
+
+    // Set by Vercel: 'production' | 'preview' | 'development'.
+    VERCEL_ENV: process.env.VERCEL_ENV || '',
+
     // Cookie domain (set to .yourdomain.com when using custom domain)
     COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || '',
 };
