@@ -265,7 +265,7 @@ export default function RetentionManagement() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-4">
                 <Card className="shadow-sm border-l-4 border-l-yellow-400">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Akan Inaktif</CardTitle>
@@ -326,7 +326,7 @@ export default function RetentionManagement() {
 
             {/* Expired Breakdown */}
             {summary?.expiredByHasilAkhir && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     {Object.entries(summary.expiredByHasilAkhir).map(([key, count]) => {
                         let conf = { label: key, icon: FileText, color: 'bg-muted text-foreground' };
                         if (key === 'musnah') conf = { label: 'Musnah', icon: Trash2, color: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300' };
@@ -387,7 +387,7 @@ export default function RetentionManagement() {
 
                     <div className="flex flex-wrap items-center gap-3 mt-4">
                         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-                            <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
+                            <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
                                 <SelectValue placeholder="Filter Status" />
                             </SelectTrigger>
                             <SelectContent>
@@ -398,7 +398,7 @@ export default function RetentionManagement() {
                             </SelectContent>
                         </Select>
                         <Select value={hasilAkhirFilter} onValueChange={(v) => { setHasilAkhirFilter(v); setPage(1); }}>
-                            <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
+                            <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
                                 <SelectValue placeholder="Filter Hasil Akhir" />
                             </SelectTrigger>
                             <SelectContent>
@@ -432,7 +432,7 @@ export default function RetentionManagement() {
                             <p className="text-sm opacity-80">Tidak ada arsip yang sesuai filter saat ini</p>
                         </div>
                     ) : (
-                        <Table>
+                        <Table responsive>
                             <TableHeader className="bg-muted/50">
                                 <TableRow>
                                     <TableHead className="w-10">
@@ -458,17 +458,17 @@ export default function RetentionManagement() {
                                                 onCheckedChange={(checked) => handleSelectArchive(arch.id, checked)}
                                             />
                                         </TableCell>
-                                        <TableCell className="font-medium font-mono text-xs">{arch.nomorBerkas || '-'}</TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Nomor Berkas" className="font-medium font-mono text-xs">{arch.nomorBerkas || '-'}</TableCell>
+                                        <TableCell data-label="Kode">
                                             <Badge variant="outline" className="font-mono text-[10px]">{arch.kodeKlasifikasi || '-'}</Badge>
                                         </TableCell>
-                                        <TableCell className="max-w-xs truncate text-sm" title={arch.uraianBerkas}>
+                                        <TableCell data-label="Uraian" className="max-w-xs truncate text-sm" title={arch.uraianBerkas}>
                                             {arch.uraianBerkas || arch.uraianItem || '-'}
                                         </TableCell>
-                                        <TableCell className="text-xs text-muted-foreground">
+                                        <TableCell data-label="Tgl Kadaluarsa" className="text-xs text-muted-foreground">
                                             {formatDate(arch.tanggalKadaluarsa)}
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Hasil Akhir">
                                             {arch.hasilAkhir ? (
                                                 <Badge
                                                     variant="outline"
@@ -480,7 +480,7 @@ export default function RetentionManagement() {
                                                 <span className="text-muted-foreground text-xs">-</span>
                                             )}
                                         </TableCell>
-                                        <TableCell className="max-w-xs truncate text-xs text-muted-foreground">{arch.keterangan || '-'}</TableCell>
+                                        <TableCell data-label="Keterangan" className="max-w-xs truncate text-xs text-muted-foreground">{arch.keterangan || '-'}</TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -494,7 +494,7 @@ export default function RetentionManagement() {
                         <p className="text-xs text-muted-foreground">
                             Halaman <span className="font-medium text-foreground">{candidates.pagination.page}</span> dari <span className="font-medium text-foreground">{candidates.pagination.totalPages}</span> ({candidates.pagination.total} arsip)
                         </p>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -550,7 +550,7 @@ export default function RetentionManagement() {
                                 </div>
 
                                 <div className="border rounded mb-6">
-                                    <Table className="text-xs">
+                                    <Table responsive className="text-xs">
                                         <TableHeader>
                                             <TableRow className="bg-muted/50 hover:bg-muted/50">
                                                 <TableHead className="w-10 text-black font-bold border-r">No</TableHead>
@@ -563,11 +563,11 @@ export default function RetentionManagement() {
                                         <TableBody>
                                             {reportData.daftarArsip.map((a) => (
                                                 <TableRow key={a.no} className="border-t hover:bg-transparent">
-                                                    <TableCell className="border-r py-2">{a.no}</TableCell>
-                                                    <TableCell className="border-r py-2">{a.nomorBerkas}</TableCell>
-                                                    <TableCell className="border-r py-2">{a.kodeKlasifikasi}</TableCell>
-                                                    <TableCell className="border-r py-2 max-w-xs truncate">{a.uraian}</TableCell>
-                                                    <TableCell className="py-2">{a.hasilAkhir}</TableCell>
+                                                    <TableCell data-label="No" className="border-r py-2">{a.no}</TableCell>
+                                                    <TableCell data-label="Nomor Berkas" className="border-r py-2">{a.nomorBerkas}</TableCell>
+                                                    <TableCell data-label="Kode" className="border-r py-2">{a.kodeKlasifikasi}</TableCell>
+                                                    <TableCell data-label="Uraian" className="border-r py-2 max-w-xs truncate">{a.uraian}</TableCell>
+                                                    <TableCell data-label="Hasil Akhir" className="py-2">{a.hasilAkhir}</TableCell>
                                                 </TableRow>
                                             ))}
                                         </TableBody>

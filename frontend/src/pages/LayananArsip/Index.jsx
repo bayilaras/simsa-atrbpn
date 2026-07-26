@@ -123,7 +123,7 @@ export default function LayananArsipIndex() {
 
             <Card className="shadow-sm border-border/60">
                 <CardHeader className="pb-4 bg-muted/20">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between gap-4">
                         <Tabs defaultValue="all" value={statusFilter} onValueChange={setStatusFilter} className="w-full sm:w-auto">
                             <TabsList className="bg-muted/50 p-1">
                                 <TabsTrigger value="all">Semua</TabsTrigger>
@@ -133,7 +133,7 @@ export default function LayananArsipIndex() {
                             </TabsList>
                         </Tabs>
 
-                        <div className="relative w-full sm:w-72">
+                        <div className="relative w-full sm:w-72 sm:max-w-full">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                                 placeholder="Cari nomor berkas, uraian, pemohon..."
@@ -145,7 +145,7 @@ export default function LayananArsipIndex() {
                     </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                    <Table>
+                    <Table responsive>
                         <TableHeader className="bg-muted/50">
                             <TableRow className="hover:bg-transparent">
                                 <TableHead className="w-[140px]">Tanggal</TableHead>
@@ -176,22 +176,22 @@ export default function LayananArsipIndex() {
                             ) : (
                                 filteredData.map((item) => (
                                     <TableRow key={item.id} className="group hover:bg-muted/50 transition-colors">
-                                        <TableCell className="text-muted-foreground font-medium text-xs">
+                                        <TableCell data-label="Tanggal" className="text-muted-foreground font-medium text-xs">
                                             {format(new Date(item.createdAt), 'dd MMM yyyy, HH:mm', { locale: idLocale })}
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Jenis Layanan">
                                             <div className="flex items-center capitalize font-medium text-sm">
                                                 {getLayananIcon(item.jenisLayanan)}
                                                 {item.jenisLayanan}
                                             </div>
                                         </TableCell>
-                                        <TableCell className="max-w-[300px]">
+                                        <TableCell data-label="Arsip" className="max-w-[300px]">
                                             <div className="font-semibold text-sm">{item.arsip?.nomorBerkas || '-'}</div>
                                             <div className="text-xs text-muted-foreground truncate">
                                                 {item.arsip?.uraianBerkas}
                                             </div>
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Pemohon">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
                                                     {item.pemohon?.nama?.charAt(0)}
@@ -199,10 +199,10 @@ export default function LayananArsipIndex() {
                                                 <span className="text-sm">{item.pemohon?.nama}</span>
                                             </div>
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Status">
                                             {getStatusBadge(item.status)}
                                         </TableCell>
-                                        <TableCell className="text-right">
+                                        <TableCell data-label="Aksi" className="text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" className="h-8 w-8 p-0">

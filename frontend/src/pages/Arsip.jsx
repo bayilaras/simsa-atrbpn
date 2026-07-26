@@ -276,7 +276,7 @@ export default function Arsip() {
             </div>
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
@@ -314,7 +314,7 @@ export default function Arsip() {
 
             {/* Main Content with Tabs */}
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                     <TabsList className="bg-muted/50 p-1">
                         <TabsTrigger value="keluar" className="gap-2">
                             <Upload className="h-4 w-4" /> Arsip Surat Keluar

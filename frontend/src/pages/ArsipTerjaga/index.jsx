@@ -176,7 +176,7 @@ export default function ArsipTerjaga() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-purple-100 dark:bg-purple-500/15 rounded-lg"><Lock className="h-6 w-6 text-purple-600 dark:text-purple-400" /></div>
                     <div>
@@ -186,7 +186,7 @@ export default function ArsipTerjaga() {
                         </p>
                     </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={handlePrint} className="gap-2">
                         <Printer className="h-4 w-4" /> Cetak Daftar
                     </Button>
@@ -197,7 +197,7 @@ export default function ArsipTerjaga() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <Card>
                     <CardContent className="p-6 flex items-center justify-between">
                         <div>
@@ -292,7 +292,7 @@ export default function ArsipTerjaga() {
                                     <p className="text-muted-foreground text-sm">Semua arsip terjaga sudah dilaporkan ke ANRI sesuai jadwal.</p>
                                 </div>
                             ) : (
-                                <Table>
+                                <Table responsive>
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead>Nomor Berkas</TableHead>
@@ -309,12 +309,12 @@ export default function ArsipTerjaga() {
                                             const sk = STATUS_KEPATUHAN_CONFIG[item.statusKepatuhan] || {}
                                             return (
                                                 <TableRow key={item.id}>
-                                                    <TableCell className="font-medium">{item.nomorBerkas || '-'}</TableCell>
-                                                    <TableCell>{item.uraianBerkas || '-'}</TableCell>
-                                                    <TableCell><Badge variant="outline" className={kat.color}>{kat.label}</Badge></TableCell>
-                                                    <TableCell>{item.tanggalPenetapan ? new Date(item.tanggalPenetapan).toLocaleDateString('id-ID') : '-'}</TableCell>
-                                                    <TableCell><Badge variant="outline" className={sk.color}>{sk.label}</Badge></TableCell>
-                                                    <TableCell>
+                                                    <TableCell data-label="Nomor Berkas" className="font-medium">{item.nomorBerkas || '-'}</TableCell>
+                                                    <TableCell data-label="Uraian">{item.uraianBerkas || '-'}</TableCell>
+                                                    <TableCell data-label="Kategori"><Badge variant="outline" className={kat.color}>{kat.label}</Badge></TableCell>
+                                                    <TableCell data-label="Tgl. Penetapan">{item.tanggalPenetapan ? new Date(item.tanggalPenetapan).toLocaleDateString('id-ID') : '-'}</TableCell>
+                                                    <TableCell data-label="Status Kepatuhan"><Badge variant="outline" className={sk.color}>{sk.label}</Badge></TableCell>
+                                                    <TableCell data-label="Aksi">
                                                         <Button size="sm" onClick={() => openReport(item)} className="w-full gap-2">
                                                             <Send className="h-3.5 w-3.5" /> Laporkan
                                                         </Button>

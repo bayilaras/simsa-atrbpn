@@ -191,7 +191,7 @@ export default function PenyusutanArsip() {
                         Kelola daur hidup arsip: Pemindahan, Pemusnahan, dan Penyerahan
                     </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" onClick={() => handlePrint('daftar-arsip-aktif')}>
                         <Printer className="mr-1.5 h-4 w-4" /> Daftar Arsip Aktif
                     </Button>
@@ -229,7 +229,7 @@ export default function PenyusutanArsip() {
                 {/* Left column: Batches list */}
                 <Card className="lg:col-span-4 h-full flex flex-col border-border/60 shadow-sm overflow-hidden">
                     <CardHeader className="pb-3 border-b bg-muted/30">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                             <CardTitle className="text-base font-semibold">Riwayat Usulan</CardTitle>
                             <div className="flex gap-1">
                                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { loadBatches(); loadCandidates(); }}>
@@ -308,7 +308,7 @@ export default function PenyusutanArsip() {
                     {showCreate ? (
                         <Card className="h-full flex flex-col border-emerald-200 bg-emerald-50/10 shadow-sm overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
                             <CardHeader className="pb-3 border-b bg-emerald-50/50">
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div className="flex items-center gap-2">
                                         <div className="p-1.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-md text-emerald-700 dark:text-emerald-300">
                                             <Plus className="h-4 w-4" />
@@ -444,7 +444,7 @@ export default function PenyusutanArsip() {
                                 <Separator className="my-6" />
 
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <h4 className="font-semibold flex items-center gap-2">
                                             <FileText className="h-4 w-4 text-primary" />
                                             Daftar Arsip

@@ -268,7 +268,7 @@ export default function JadwalRetensi() {
             </div>
 
             {/* Legend / Info Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-4">
                 <Card className="shadow-sm border-l-4 border-l-blue-400">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Retensi Aktif</CardTitle>
@@ -318,7 +318,7 @@ export default function JadwalRetensi() {
             {/* Main Content */}
             <Card className="shadow-sm border-border/60">
                 <CardHeader className="pb-4 bg-muted/20">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between gap-4">
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
                             <TabsList className="bg-muted/50 p-1">
                                 <TabsTrigger value="fasilitatif" className="gap-2">
@@ -332,7 +332,7 @@ export default function JadwalRetensi() {
                             </TabsList>
                         </Tabs>
 
-                        <div className="relative w-full sm:w-72">
+                        <div className="relative w-full sm:w-72 sm:max-w-full">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                                 placeholder="Cari kode atau uraian JRA..."

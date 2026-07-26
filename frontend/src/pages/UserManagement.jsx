@@ -326,7 +326,7 @@ export default function UserManagement() {
             </div>
 
             {/* Stats Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card className="shadow-sm border-l-4 border-l-blue-500">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -423,7 +423,7 @@ export default function UserManagement() {
                             <Button onClick={loadUsers} variant="outline">Coba Lagi</Button>
                         </div>
                     ) : (
-                        <Table>
+                        <Table responsive>
                             <TableHeader className="bg-muted/50">
                                 <TableRow className="hover:bg-transparent">
                                     <TableHead className="w-[300px]">User</TableHead>
@@ -446,7 +446,7 @@ export default function UserManagement() {
                                     </TableRow>
                                 ) : users.map((user) => (
                                     <TableRow key={user.id} className="group hover:bg-muted/50 transition-colors">
-                                        <TableCell>
+                                        <TableCell data-label="User">
                                             <div className="flex items-center gap-3">
                                                 <Avatar className="h-9 w-9 border border-border">
                                                     <AvatarImage src={user.image} />
@@ -462,12 +462,12 @@ export default function UserManagement() {
                                                 </div>
                                             </div>
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Role">
                                             <Badge variant="outline" className={`font-medium shadow-none ${ROLE_COLORS[user.role] || ''}`}>
                                                 {ROLE_LABELS[user.role] || user.role}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Unit Kerja">
                                             {user.unitKerjaName ? (
                                                 <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                                                     <Building2 className="h-3.5 w-3.5" />
@@ -477,7 +477,7 @@ export default function UserManagement() {
                                                 <span className="text-muted-foreground text-xs italic">-</span>
                                             )}
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Status">
                                             <Badge
                                                 variant={user.isActive ? 'default' : 'secondary'}
                                                 className={user.isActive ? "bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-200 border-green-200 shadow-none border" : "bg-muted text-muted-foreground border-border shadow-none border"}
@@ -486,7 +486,7 @@ export default function UserManagement() {
                                                 {user.isActive ? 'Aktif' : 'Nonaktif'}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-right">
+                                        <TableCell data-label="Aksi" className="text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -534,7 +534,7 @@ export default function UserManagement() {
                         <p className="text-sm text-muted-foreground">
                             Halaman <span className="font-medium text-foreground">{pagination.page}</span> dari <span className="font-medium text-foreground">{pagination.totalPages}</span>
                         </p>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"

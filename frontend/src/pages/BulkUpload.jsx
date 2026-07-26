@@ -226,7 +226,7 @@ export default function BulkUpload() {
 
                                 {files.length > 0 && (
                                     <div className="mt-8 space-y-4">
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
                                             <h4 className="font-medium text-foreground dark:text-gray-300">File Terpilih ({files.length})</h4>
                                             <Button variant="ghost" size="sm" onClick={clearFiles} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
                                                 Hapus Semua

@@ -173,7 +173,7 @@ export default function TunjukSilang() {
                         Kelola referensi silang dan keterkaitan antar dokumen
                     </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
                         <DialogTrigger asChild>
                             <Button className="bg-indigo-600 hover:bg-indigo-700 shadow-sm">
@@ -192,7 +192,7 @@ export default function TunjukSilang() {
                             </DialogHeader>
                             <div className="space-y-6 py-4">
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div className="flex-1 p-4 bg-muted/40 rounded-lg border-2 border-transparent focus-within:border-indigo-500/50 transition-colors">
                                             <p className="text-xs font-semibold text-muted-foreground mb-3 text-center uppercase tracking-wider">Sumber (Source)</p>
                                             <div className="space-y-3">
@@ -291,7 +291,7 @@ export default function TunjukSilang() {
             </div>
 
             {/* Stats Overview */}
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-4">
                 <Card className="border-indigo-100 shadow-sm bg-indigo-50/30">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Referensi</CardTitle>
@@ -328,7 +328,7 @@ export default function TunjukSilang() {
                 <TabsContent value="list" className="space-y-4">
                     <Card className="border-border/60 shadow-sm">
                         <CardHeader className="pb-4 bg-muted/20">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                     <CardTitle>Semua Data Tunjuk Silang</CardTitle>
                                     <CardDescription>Daftar lengkap referensi silang yang tercatat di sistem</CardDescription>
@@ -338,7 +338,7 @@ export default function TunjukSilang() {
                                         <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
                                     </Button>
                                     <Select value={filterRelasi} onValueChange={(v) => { setFilterRelasi(v); setPage(1); }}>
-                                        <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
+                                        <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
                                             <Filter className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
                                             <SelectValue placeholder="Semua Jenis" />
                                         </SelectTrigger>
@@ -351,7 +351,7 @@ export default function TunjukSilang() {
                             </div>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/50">
                                     <TableRow>
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -391,8 +391,8 @@ export default function TunjukSilang() {
 
                                         return (
                                             <TableRow key={ref.id} className="hover:bg-muted/30">
-                                                <TableCell className="text-center text-muted-foreground text-xs">{(page - 1) * 20 + index + 1}</TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="No." className="text-center text-muted-foreground text-xs">{(page - 1) * 20 + index + 1}</TableCell>
+                                                <TableCell data-label="Sumber (Source)">
                                                     <div className="flex items-center gap-3">
                                                         <div className={`p-1.5 rounded-md ${srcStyle.bg}`}>
                                                             <SrcIcon className={`h-4 w-4 ${srcStyle.color}`} />
@@ -405,10 +405,10 @@ export default function TunjukSilang() {
                                                         </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="text-center">
+                                                <TableCell data-label="Relasi" className="text-center">
                                                     <Badge variant="outline" className={`${relCfg.color} text-[10px] h-5`}>{relCfg.label}</Badge>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Tujuan (Target)">
                                                     <div className="flex items-center gap-3">
                                                         <div className={`p-1.5 rounded-md ${tgtStyle.bg}`}>
                                                             <TgtIcon className={`h-4 w-4 ${tgtStyle.color}`} />
@@ -421,10 +421,10 @@ export default function TunjukSilang() {
                                                         </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate" title={ref.keterangan}>
+                                                <TableCell data-label="Keterangan" className="text-xs text-muted-foreground max-w-[150px] truncate" title={ref.keterangan}>
                                                     {ref.keterangan || '-'}
                                                 </TableCell>
-                                                <TableCell className="text-xs text-muted-foreground">
+                                                <TableCell data-label="Tanggal" className="text-xs text-muted-foreground">
                                                     {new Date(ref.createdAt).toLocaleDateString('id-ID')}
                                                 </TableCell>
                                                 <TableCell>
@@ -518,7 +518,7 @@ export default function TunjukSilang() {
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
+                                            <div className="flex flex-wrap items-center justify-between gap-3">
                                                 <p className="text-sm font-medium flex items-center gap-2">
                                                     <CheckCircle2 className="h-4 w-4 text-green-600" />
                                                     {lookupResults.length} referensi ditemukan

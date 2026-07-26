@@ -145,7 +145,7 @@ export default function LayananArsipCreate() {
 
                         <div className="space-y-2">
                             <Label>Pilih Arsip</Label>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                                 <div className="flex-1 p-3 border rounded-md bg-muted/20">
                                     {selectedArsip ? (
                                         <div>

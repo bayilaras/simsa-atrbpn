@@ -61,7 +61,7 @@ function LendingRow({ item, onReturn, onExtend }) {
 
     return (
         <TableRow className={`group hover:bg-muted/30 transition-colors ${isOverdue ? 'bg-red-50/50 hover:bg-red-50/80' : ''}`}>
-            <TableCell>
+            <TableCell data-label="Tipe">
                 <div className="flex items-center gap-2">
                     <div className={`p-1.5 rounded-full ${item.lendingType === 'arsip' ? 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600' : 'bg-orange-100 dark:bg-orange-500/15 text-orange-600'}`}>
                         <TypeIcon className="h-3.5 w-3.5" />
@@ -71,36 +71,36 @@ function LendingRow({ item, onReturn, onExtend }) {
                     </span>
                 </div>
             </TableCell>
-            <TableCell className="font-medium">
+            <TableCell data-label="ID Arsip/Lokasi" className="font-medium">
                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">
                     {item.lendingType === 'arsip' ? item.arsip?.noArsip : item.storageLocation?.code}
                 </code>
             </TableCell>
-            <TableCell>
+            <TableCell data-label="Peminjam">
                 <div className="flex items-center gap-2">
                     <User className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-sm">{item.borrowerName}</span>
                 </div>
             </TableCell>
-            <TableCell>
+            <TableCell data-label="Unit Kerja">
                 <div className="flex items-center gap-2">
                     <Building className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">{item.departmentUnit || '-'}</span>
                 </div>
             </TableCell>
-            <TableCell className="text-sm text-muted-foreground">
+            <TableCell data-label="Tgl Pinjam" className="text-sm text-muted-foreground">
                 {format(parseISO(item.borrowDate), 'dd MMM yyyy', { locale: idLocale })}
             </TableCell>
-            <TableCell>
+            <TableCell data-label="Jatuh Tempo">
                 <div className={`flex flex-col ${isOverdue ? 'text-destructive font-semibold' : 'text-sm'}`}>
                     <span>{format(parseISO(item.dueDate), 'dd MMM yyyy', { locale: idLocale })}</span>
                     {isOverdue && <span className="text-[10px] flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Terlambat!</span>}
                 </div>
             </TableCell>
-            <TableCell>
+            <TableCell data-label="Status">
                 <StatusBadge status={isOverdue ? 'overdue' : item.status} />
             </TableCell>
-            <TableCell className="text-right">
+            <TableCell data-label="Aksi" className="text-right">
                 <div className="flex justify-end gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                     {item.status === 'borrowed' && (
                         <>
@@ -364,7 +364,7 @@ export default function ArchiveLending() {
 
             {/* Stats */}
             {stats && (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                     <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Sedang Dipinjam</CardTitle>
@@ -419,7 +419,7 @@ export default function ArchiveLending() {
             {/* Main Content */}
             <Card className="shadow-sm border-border/60">
                 <CardHeader className="pb-4 bg-muted/20">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between gap-4">
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
                             <TabsList className="grid w-full grid-cols-3 sm:w-auto">
                                 <TabsTrigger value="active" className="gap-2">
@@ -437,7 +437,7 @@ export default function ArchiveLending() {
                             </TabsList>
                         </Tabs>
 
-                        <div className="relative w-full sm:w-72">
+                        <div className="relative w-full sm:w-72 sm:max-w-full">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                                 placeholder="Cari peminjam, nomor arsip..."
@@ -450,7 +450,7 @@ export default function ArchiveLending() {
                 </CardHeader>
 
                 <CardContent className="p-0">
-                    <Table>
+                    <Table responsive>
                         <TableHeader className="bg-muted/50">
                             <TableRow className="hover:bg-transparent">
                                 <TableHead className="w-[120px]">Tipe</TableHead>

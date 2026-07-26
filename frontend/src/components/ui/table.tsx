@@ -17,7 +17,7 @@ function Table({
   return (
     <div
       data-slot="table-container"
-      className={cn("relative w-full", responsive ? "sm:overflow-x-auto" : "overflow-x-auto")}
+      className={cn("relative w-full min-w-0", responsive ? "sm:overflow-x-auto" : "overflow-x-auto")}
     >
       <table
         data-slot="table"

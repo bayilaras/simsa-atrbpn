@@ -267,7 +267,7 @@ export default function Settings() {
                 {/* Unit Kerja Tab (Admin Only) */}
                 {isAdmin && (
                     <TabsContent value="unit-kerja" className="mt-0">
-                        <div className="grid gap-6 md:grid-cols-3">
+                        <div className="grid gap-6 lg:grid-cols-3">
                             {/* Unit List */}
                             <Card className="md:col-span-1 border-border/60 shadow-sm hover:shadow-md transition-all duration-200 h-fit">
                                 <CardHeader className="bg-muted/50 border-b border-border pb-4">
@@ -313,7 +313,7 @@ export default function Settings() {
                             {/* Unit Details */}
                             <Card className="md:col-span-2 border-border/60 shadow-sm hover:shadow-md transition-all duration-200">
                                 <CardHeader className="bg-muted/50 border-b border-border pb-4">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div>
                                             <CardTitle className="text-lg text-foreground">Detail Unit Kerja</CardTitle>
                                             <CardDescription className="text-muted-foreground">

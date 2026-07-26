@@ -126,13 +126,13 @@ function ArsipDetailSkeleton() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-4">
                     {/* Tab bar skeleton */}
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                         {[1, 2, 3, 4, 5].map(i => (
                             <div key={i} className="h-10 w-28 rounded-lg bg-muted" />
                         ))}
                     </div>
                     {/* Content skeleton */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
                             <div key={i} className="h-24 rounded-xl bg-muted" />
                         ))}
@@ -250,7 +250,7 @@ export default function ArsipDetail() {
 
                 <div className="relative space-y-5">
                     {/* Top row: back + actions */}
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                         <Button
                             variant="ghost"
                             size="sm"
@@ -259,7 +259,7 @@ export default function ArsipDetail() {
                         >
                             <ArrowLeft className="mr-2 h-4 w-4" /> Kembali
                         </Button>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             {suratUrl && (
                                 <Link to={suratUrl}>
                                     <Button variant="secondary" size="sm" className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm">
@@ -302,7 +302,7 @@ export default function ArsipDetail() {
                     </div>
 
                     {/* Quick Stats Strip */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                         <QuickStatBox icon={Layers} label="Item Arsip" value={`${itemCount} Item`} />
                         <QuickStatBox icon={Clock} label="Retensi" value={totalRetensi > 0 ? `${totalRetensi} Tahun` : '-'} />
                         <QuickStatBox icon={MapPin} label="Lokasi" value={lokasiStr} />
@@ -366,7 +366,7 @@ export default function ArsipDetail() {
                         <TabsContent value="items" className="mt-4">
                             <Card className="overflow-hidden">
                                 <CardHeader className="bg-gradient-to-r from-indigo-50 to-sky-50 border-b pb-3">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <CardTitle className="text-base flex items-center gap-2">
                                             <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-500/15">
                                                 <Layers className="h-4 w-4 text-indigo-600" />

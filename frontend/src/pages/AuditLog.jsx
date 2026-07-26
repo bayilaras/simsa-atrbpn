@@ -205,7 +205,7 @@ export default function AuditLog() {
                         <div className="flex flex-wrap items-center gap-2">
                             <Filter className="h-4 w-4 text-muted-foreground mr-1" />
                             <Select value={entityType} onValueChange={applyFilter(setEntityType)}>
-                                <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
+                                <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
                                     <SelectValue placeholder="Tipe Entity" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -217,7 +217,7 @@ export default function AuditLog() {
                                 </SelectContent>
                             </Select>
                             <Select value={action} onValueChange={applyFilter(setAction)}>
-                                <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
+                                <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
                                     <SelectValue placeholder="Aksi" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -239,7 +239,7 @@ export default function AuditLog() {
                         {loading ? (
                             <div className="space-y-6">
                                 {[1, 2, 3, 4, 5].map(i => (
-                                    <div key={i} className="flex gap-4">
+                                    <div key={i} className="flex flex-wrap gap-3 sm:gap-4">
                                         <Skeleton className="h-10 w-10 rounded-full shrink-0" />
                                         <div className="space-y-2 flex-1">
                                             <Skeleton className="h-4 w-1/3" />
@@ -348,7 +348,7 @@ export default function AuditLog() {
                         <p className="text-sm text-muted-foreground">
                             Halaman <span className="font-medium text-foreground">{pagination.page}</span> dari <span className="font-medium text-foreground">{pagination.totalPages}</span>
                         </p>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"

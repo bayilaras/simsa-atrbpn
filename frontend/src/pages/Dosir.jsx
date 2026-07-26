@@ -51,7 +51,7 @@ function DosirSkeleton() {
             </CardHeader>
             <CardContent>
                 <Skeleton className="h-12 w-full mb-4" />
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Skeleton className="h-4 w-16" />
                     <Skeleton className="h-4 w-16" />
                 </div>
@@ -182,7 +182,7 @@ export default function Dosir() {
                         <div className="flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-muted-foreground" />
                             <Select value={selectedUnitKerja} onValueChange={setSelectedUnitKerja}>
-                                <SelectTrigger className="w-[220px] h-9">
+                                <SelectTrigger className="w-full sm:w-[220px] h-9">
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -275,7 +275,7 @@ export default function Dosir() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-4">
                 <Card className="shadow-sm border-l-4 border-l-slate-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Dosir</CardTitle>
@@ -339,9 +339,9 @@ export default function Dosir() {
                                 className="pl-9 bg-muted/50 focus:bg-background"
                             />
                         </div>
-                        <div className="flex gap-4">
+                        <div className="flex flex-wrap gap-3 sm:gap-4">
                             <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                <SelectTrigger className="w-[180px] bg-muted/50 focus:bg-background">
+                                <SelectTrigger className="w-full sm:w-[180px] bg-muted/50 focus:bg-background">
                                     <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
                                     <SelectValue placeholder="Semua Status" />
                                 </SelectTrigger>
@@ -353,7 +353,7 @@ export default function Dosir() {
                                 </SelectContent>
                             </Select>
                             <Select value={kategoriFilter} onValueChange={setKategoriFilter}>
-                                <SelectTrigger className="w-[200px] bg-muted/50 focus:bg-background">
+                                <SelectTrigger className="w-full sm:w-[200px] bg-muted/50 focus:bg-background">
                                     <Folder className="h-4 w-4 mr-2 text-muted-foreground" />
                                     <SelectValue placeholder="Semua Kategori" />
                                 </SelectTrigger>

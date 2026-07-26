@@ -84,7 +84,7 @@ export default function AutentikasiIndex() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
                         <FileCheck className="h-6 w-6 text-blue-600 dark:text-blue-400" />
@@ -104,7 +104,7 @@ export default function AutentikasiIndex() {
 
             <Card>
                 <CardHeader>
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                         <CardTitle>Daftar Autentikasi</CardTitle>
                         <div className="relative w-72">
                             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -124,7 +124,7 @@ export default function AutentikasiIndex() {
                         </div>
                     ) : (
                         <>
-                            <Table>
+                            <Table responsive>
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>No.</TableHead>
@@ -146,21 +146,21 @@ export default function AutentikasiIndex() {
                                     ) : (
                                         currentData.map((item, index) => (
                                             <TableRow key={item.id}>
-                                                <TableCell>{(currentPage - 1) * 10 + index + 1}</TableCell>
-                                                <TableCell className="font-medium">{item.nomorBeritaAcara}</TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="No.">{(currentPage - 1) * 10 + index + 1}</TableCell>
+                                                <TableCell data-label="Nomor Berita Acara" className="font-medium">{item.nomorBeritaAcara}</TableCell>
+                                                <TableCell data-label="Tanggal">
                                                     {new Date(item.tanggalAutentikasi).toLocaleDateString('id-ID', {
                                                         day: 'numeric', month: 'long', year: 'numeric'
                                                     })}
                                                 </TableCell>
-                                                <TableCell>{item.kegiatan}</TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Kegiatan">{item.kegiatan}</TableCell>
+                                                <TableCell data-label="Jumlah Arsip">
                                                     <Badge variant="secondary">
                                                         {item.jumlahArsip} Arsip
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell>{item.petugas?.nama || '-'}</TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Petugas">{item.petugas?.nama || '-'}</TableCell>
+                                                <TableCell data-label="Aksi">
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"

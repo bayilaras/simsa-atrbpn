@@ -195,7 +195,7 @@ export default function AutentikasiCreate() {
                             </div>
                         ) : (
                             <div className="rounded-md border">
-                                <Table>
+                                <Table responsive>
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead className="w-12">
@@ -226,10 +226,10 @@ export default function AutentikasiCreate() {
                                                             onCheckedChange={(checked) => handleSelectArchive(archive.id, checked)}
                                                         />
                                                     </TableCell>
-                                                    <TableCell className="font-medium">{archive.nomorBerkas}</TableCell>
-                                                    <TableCell className="max-w-xs truncate">{archive.uraianBerkas}</TableCell>
-                                                    <TableCell>{archive.tahun}</TableCell>
-                                                    <TableCell>{archive.jenisArsip}</TableCell>
+                                                    <TableCell data-label="Nomor Berkas" className="font-medium">{archive.nomorBerkas}</TableCell>
+                                                    <TableCell data-label="Uraian" className="max-w-xs truncate">{archive.uraianBerkas}</TableCell>
+                                                    <TableCell data-label="Tahun">{archive.tahun}</TableCell>
+                                                    <TableCell data-label="Jenis">{archive.jenisArsip}</TableCell>
                                                 </TableRow>
                                             ))
                                         )}

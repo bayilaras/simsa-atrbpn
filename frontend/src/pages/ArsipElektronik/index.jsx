@@ -109,7 +109,7 @@ export default function ArsipElektronik() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
                         <HardDrive className="h-6 w-6 text-purple-600 dark:text-purple-400" />
@@ -117,7 +117,7 @@ export default function ArsipElektronik() {
                     </h1>
                     <p className="text-muted-foreground">Pengelolaan metadata arsip digital, verifikasi, dan konversi</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Button onClick={() => setAddDialogOpen(true)}>
                         <Plus className="mr-2 h-4 w-4" /> Tambah Metadata
                     </Button>
@@ -128,7 +128,7 @@ export default function ArsipElektronik() {
             </div>
 
             {/* Custom Tabs */}
-            <div className="flex gap-1 border-b">
+            <div className="flex gap-1 overflow-x-auto border-b">
                 {TABS.map(tab => (
                     <button
                         key={tab.id}
@@ -176,7 +176,7 @@ export default function ArsipElektronik() {
                                 <p className="text-sm">Tidak ada dokumen yang menunggu verifikasi</p>
                             </div>
                         ) : (
-                            <Table>
+                            <Table responsive>
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>No.</TableHead>
@@ -191,17 +191,17 @@ export default function ArsipElektronik() {
                                 <TableBody>
                                     {pendingData.map((item, index) => (
                                         <TableRow key={item.id}>
-                                            <TableCell>{index + 1}</TableCell>
-                                            <TableCell><Badge variant="outline">{item.formatFile}</Badge></TableCell>
-                                            <TableCell className="text-xs">{formatFileSize(item.ukuranFile)}</TableCell>
-                                            <TableCell className="text-xs">{item.mediaAsal} → {item.mediaTujuan}</TableCell>
-                                            <TableCell className="font-mono text-xs max-w-[100px] truncate">
+                                            <TableCell data-label="No.">{index + 1}</TableCell>
+                                            <TableCell data-label="Format"><Badge variant="outline">{item.formatFile}</Badge></TableCell>
+                                            <TableCell data-label="Ukuran" className="text-xs">{formatFileSize(item.ukuranFile)}</TableCell>
+                                            <TableCell data-label="Media Asal → Tujuan" className="text-xs">{item.mediaAsal} → {item.mediaTujuan}</TableCell>
+                                            <TableCell data-label="Hash" className="font-mono text-xs max-w-[100px] truncate">
                                                 {item.hashSHA256 ? item.hashSHA256.substring(0, 12) + '...' : '-'}
                                             </TableCell>
-                                            <TableCell className="text-xs">
+                                            <TableCell data-label="Tanggal" className="text-xs">
                                                 {item.tanggalDigitalisasi || new Date(item.createdAt).toLocaleDateString('id-ID')}
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="Aksi">
                                                 <div className="flex gap-1">
                                                     <Button size="sm" variant="default"
                                                         onClick={() => { setSelectedItem(item); setVerifyDialogOpen(true); }}>
@@ -230,7 +230,7 @@ export default function ArsipElektronik() {
                         <CardContent>
                             <div className="space-y-2">
                                 {(stats.byFormat || []).map(item => (
-                                    <div key={item.formatFile} className="flex justify-between items-center">
+                                    <div key={item.formatFile} className="flex flex-wrap items-center justify-between gap-3">
                                         <Badge variant="outline">{item.formatFile}</Badge>
                                         <span className="text-sm font-medium">{item.count}</span>
                                     </div>
@@ -248,7 +248,7 @@ export default function ArsipElektronik() {
                                 {(stats.byStatus || []).map(item => {
                                     const cfg = STATUS_CONFIG[item.statusVerifikasi] || STATUS_CONFIG.pending
                                     return (
-                                        <div key={item.statusVerifikasi} className="flex justify-between items-center">
+                                        <div key={item.statusVerifikasi} className="flex flex-wrap items-center justify-between gap-3">
                                             <Badge variant={cfg.variant} className="gap-1">
                                                 <cfg.icon className="h-3 w-3" /> {cfg.label}
                                             </Badge>
@@ -267,7 +267,7 @@ export default function ArsipElektronik() {
                         <CardContent>
                             <div className="space-y-2">
                                 {(stats.byMedia || []).map(item => (
-                                    <div key={item.mediaAsal} className="flex justify-between items-center">
+                                    <div key={item.mediaAsal} className="flex flex-wrap items-center justify-between gap-3">
                                         <span className="text-sm capitalize">{item.mediaAsal}</span>
                                         <span className="text-sm font-medium">{item.count}</span>
                                     </div>

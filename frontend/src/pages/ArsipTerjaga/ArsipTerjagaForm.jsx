@@ -124,7 +124,7 @@ export default function ArsipTerjagaForm({ open, onOpenChange, form, setForm, on
                     {/* Jadwal */}
                     <div className="space-y-3">
                         <Label className="text-base font-semibold">3. Jadwal Pelaporan</Label>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4 bg-muted/40 rounded-lg border">
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-muted/40 rounded-lg border">
                             <div className="space-y-2">
                                 <Label className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5" /> Tgl. Penetapan</Label>
                                 <Input type="date" value={form.tanggalPenetapan} onChange={e => setForm(f => ({ ...f, tanggalPenetapan: e.target.value }))} />

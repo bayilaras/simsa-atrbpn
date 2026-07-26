@@ -201,7 +201,7 @@ export default function DistributionInbox() {
 
             {/* Stats Cards */}
             {stats && (
-                <div className="grid gap-4 md:grid-cols-4">
+                <div className="grid gap-4 lg:grid-cols-4">
                     <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Surat Masuk</CardTitle>
@@ -261,7 +261,7 @@ export default function DistributionInbox() {
 
             {/* Tabs & Content */}
             <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val); setSearchTerm('') }} className="space-y-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between gap-4">
                     <TabsList className="bg-muted/50 p-1">
                         <TabsTrigger value="inbox" className="gap-2">
                             <Inbox className="h-4 w-4" />
@@ -300,7 +300,7 @@ export default function DistributionInbox() {
                             <CardDescription>Daftar surat yang didistribusikan ke unit kerja Anda</CardDescription>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/50">
                                     <TableRow className="hover:bg-transparent">
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -331,28 +331,28 @@ export default function DistributionInbox() {
                                         </TableRow>
                                     ) : filteredInbox.map((item, index) => (
                                         <TableRow key={item.id} className="group hover:bg-muted/30 transition-colors">
-                                            <TableCell className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="No." className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="Nomor Surat">
                                                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">
                                                     {item.surat?.nomorSurat || '-'}
                                                 </code>
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="Perihal">
                                                 <span className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
                                                     {item.surat?.perihal || '-'}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-sm text-muted-foreground">
+                                            <TableCell data-label="Dari Unit" className="text-sm text-muted-foreground">
                                                 {item.sourceUnit?.name || '-'}
                                             </TableCell>
-                                            <TableCell className="text-sm font-medium text-orange-600 dark:text-orange-400/90 italic">
+                                            <TableCell data-label="Instruksi" className="text-sm font-medium text-orange-600 dark:text-orange-400/90 italic">
                                                 "{item.instruction || '-'}"
                                             </TableCell>
-                                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                            <TableCell data-label="Tanggal Kirim" className="text-xs text-muted-foreground whitespace-nowrap">
                                                 {formatDate(item.sentAt)}
                                             </TableCell>
-                                            <TableCell>{renderStatusBadge(item.status)}</TableCell>
-                                            <TableCell className="text-right">
+                                            <TableCell data-label="Status">{renderStatusBadge(item.status)}</TableCell>
+                                            <TableCell data-label="Aksi" className="text-right">
                                                 <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                                                     {item.status === 'sent' && (
                                                         <TooltipProvider>
@@ -429,7 +429,7 @@ export default function DistributionInbox() {
                             <CardDescription>Daftar surat yang Anda distribusikan ke unit lain</CardDescription>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/50">
                                     <TableRow className="hover:bg-transparent">
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -459,27 +459,27 @@ export default function DistributionInbox() {
                                         </TableRow>
                                     ) : filteredOutbox.map((item, index) => (
                                         <TableRow key={item.id} className="group hover:bg-muted/30 transition-colors">
-                                            <TableCell className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="No." className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="Nomor Surat">
                                                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">
                                                     {item.surat?.nomorSurat || '-'}
                                                 </code>
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="Perihal">
                                                 <span className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
                                                     {item.surat?.perihal || '-'}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-sm text-muted-foreground">
+                                            <TableCell data-label="Tujuan Unit" className="text-sm text-muted-foreground">
                                                 {item.targetUnit?.name || '-'}
                                             </TableCell>
-                                            <TableCell className="text-sm font-medium text-orange-600 dark:text-orange-400/90 italic">
+                                            <TableCell data-label="Instruksi" className="text-sm font-medium text-orange-600 dark:text-orange-400/90 italic">
                                                 "{item.instruction || '-'}"
                                             </TableCell>
-                                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                            <TableCell data-label="Tanggal Kirim" className="text-xs text-muted-foreground whitespace-nowrap">
                                                 {formatDate(item.sentAt)}
                                             </TableCell>
-                                            <TableCell>{renderStatusBadge(item.status)}</TableCell>
+                                            <TableCell data-label="Status">{renderStatusBadge(item.status)}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>

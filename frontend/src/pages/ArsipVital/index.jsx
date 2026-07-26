@@ -199,7 +199,7 @@ export default function ArsipVital() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-red-100 dark:bg-red-500/15 rounded-lg">
                         <ShieldAlert className="h-6 w-6 text-red-600 dark:text-red-400" />
@@ -211,7 +211,7 @@ export default function ArsipVital() {
                         </p>
                     </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={handlePrint} className="gap-2">
                         <Printer className="h-4 w-4" /> Cetak Daftar
                     </Button>
@@ -222,7 +222,7 @@ export default function ArsipVital() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <Card>
                     <CardContent className="p-6 flex items-center justify-between">
                         <div>
@@ -311,7 +311,7 @@ export default function ArsipVital() {
                                     <p className="text-muted-foreground text-sm">Tidak ada arsip vital yang memerlukan review saat ini.</p>
                                 </div>
                             ) : (
-                                <Table>
+                                <Table responsive>
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead>Nomor Berkas</TableHead>
@@ -328,12 +328,12 @@ export default function ArsipVital() {
                                             const sp = STATUS_PROTEKSI_CONFIG[item.statusProteksi] || {}
                                             return (
                                                 <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetail(item)}>
-                                                    <TableCell className="font-medium">{item.nomorBerkas || '-'}</TableCell>
-                                                    <TableCell>{item.uraianBerkas || '-'}</TableCell>
-                                                    <TableCell><Badge variant="outline" className={kek.color}>{kek.label}</Badge></TableCell>
-                                                    <TableCell className="text-red-600 dark:text-red-400 font-medium">{item.tanggalReviewSelanjutnya ? new Date(item.tanggalReviewSelanjutnya).toLocaleDateString('id-ID') : '-'}</TableCell>
-                                                    <TableCell>{item.penanggungJawab || '-'}</TableCell>
-                                                    <TableCell><Badge variant="outline" className={sp.color}>{sp.label}</Badge></TableCell>
+                                                    <TableCell data-label="Nomor Berkas" className="font-medium">{item.nomorBerkas || '-'}</TableCell>
+                                                    <TableCell data-label="Uraian">{item.uraianBerkas || '-'}</TableCell>
+                                                    <TableCell data-label="Kekritisan"><Badge variant="outline" className={kek.color}>{kek.label}</Badge></TableCell>
+                                                    <TableCell data-label="Tgl. Review" className="text-red-600 dark:text-red-400 font-medium">{item.tanggalReviewSelanjutnya ? new Date(item.tanggalReviewSelanjutnya).toLocaleDateString('id-ID') : '-'}</TableCell>
+                                                    <TableCell data-label="Penanggung Jawab">{item.penanggungJawab || '-'}</TableCell>
+                                                    <TableCell data-label="Status"><Badge variant="outline" className={sp.color}>{sp.label}</Badge></TableCell>
                                                 </TableRow>
                                             )
                                         })}

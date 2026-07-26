@@ -233,7 +233,7 @@ export default function DosirDetail() {
                             Kembali ke Daftar
                         </Button>
 
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Badge className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-md px-3 py-1">
                                 {dosir.kategori || 'Umum'}
                             </Badge>
@@ -463,7 +463,7 @@ export default function DosirDetail() {
                                                         {format(parseISO(sm.createdAt), 'dd MMM yyyy')}
                                                     </p>
                                                 </div>
-                                                <div className="flex gap-2">
+                                                <div className="flex flex-wrap gap-2">
                                                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-emerald-600" onClick={() => navigate(`/surat/masuk/${sm.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>
@@ -501,7 +501,7 @@ export default function DosirDetail() {
                                                         {format(parseISO(sk.createdAt), 'dd MMM yyyy')}
                                                     </p>
                                                 </div>
-                                                <div className="flex gap-2">
+                                                <div className="flex flex-wrap gap-2">
                                                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-blue-600" onClick={() => navigate(`/surat/keluar/${sk.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>

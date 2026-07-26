@@ -494,7 +494,7 @@ export default function Dashboard() {
                             {/* Expiring Archives */}
                             <Card className="shadow-sm border-border/60 overflow-hidden flex flex-col min-h-[300px] lg:min-h-[400px]">
                                 <CardHeader className="bg-amber-50/50 dark:bg-amber-950/10 border-b border-amber-100 dark:border-amber-900/50 pb-4">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div className="flex items-center gap-2 text-amber-700 dark:text-amber-500">
                                             <AlertTriangle className="h-4 w-4" />
                                             <CardTitle className="text-base">Masa Retensi</CardTitle>
@@ -513,7 +513,7 @@ export default function Dashboard() {
                                                             item.daysLeft <= 30 ? 'bg-amber-500 ring-2 ring-amber-100' : 'bg-blue-500 ring-2 ring-blue-100'
                                                             }`} />
                                                         <div className="flex-1 min-w-0 space-y-1">
-                                                            <div className="flex items-center justify-between">
+                                                            <div className="flex flex-wrap items-center justify-between gap-3">
                                                                 <p className="text-sm font-medium truncate">{item.kodeKlasifikasi}</p>
                                                                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${item.daysLeft <= 15 ? 'bg-red-50 dark:bg-red-500/15 text-red-600' :
                                                                     item.daysLeft <= 30 ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
@@ -591,7 +591,7 @@ export default function Dashboard() {
                     {widgetData && (
                         <>
                             {/* Row 1: Archive Lifecycle + Media Breakdown + Peminjaman */}
-                            <div className="grid gap-6 md:grid-cols-3">
+                            <div className="grid gap-6 lg:grid-cols-3">
                                 {/* Archive Lifecycle Donut */}
                                 <Card className="shadow-sm border-border/60">
                                     <CardHeader className="pb-2">
@@ -704,7 +704,7 @@ export default function Dashboard() {
                                                     const barColor = barColors[media.type?.toLowerCase()] || 'bg-gray-500';
                                                     return (
                                                         <div key={media.type} className="space-y-1.5">
-                                                            <div className="flex items-center justify-between">
+                                                            <div className="flex flex-wrap items-center justify-between gap-3">
                                                                 <div className="flex items-center gap-2">
                                                                     <div className={`p-1.5 rounded-lg ${colorClass}`}>
                                                                         <IconComp className="h-3.5 w-3.5" />
@@ -831,7 +831,7 @@ export default function Dashboard() {
                                             <div className="space-y-4">
                                                 {widgetData.storageCapacity.map((loc) => (
                                                     <div key={loc.id} className="space-y-2">
-                                                        <div className="flex items-center justify-between">
+                                                        <div className="flex flex-wrap items-center justify-between gap-3">
                                                             <div className="flex items-center gap-2">
                                                                 <Building2 className="h-4 w-4 text-muted-foreground" />
                                                                 <span className="text-sm font-medium">{loc.name}</span>

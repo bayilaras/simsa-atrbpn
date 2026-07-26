@@ -187,7 +187,7 @@ export default function Laporan() {
                         <div className="space-y-2">
                             <Label className="text-foreground font-medium">Tahun</Label>
                             <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-                                <SelectTrigger className="w-[120px] bg-card border-border focus:ring-ring/20">
+                                <SelectTrigger className="w-full sm:w-[120px] bg-card border-border focus:ring-ring/20">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -389,7 +389,7 @@ export default function Laporan() {
                                 Total: <span className="font-bold text-foreground">{suratMasukData?.pagination?.total || 0}</span> surat
                             </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -413,7 +413,7 @@ export default function Laporan() {
                         </div>
                     </div>
                     <Card className="border-border/60 shadow-sm overflow-hidden">
-                        <Table>
+                        <Table responsive>
                             <TableHeader className="bg-muted/50">
                                 <TableRow className="hover:bg-muted/50">
                                     <TableHead className="w-[60px] text-foreground font-semibold">No</TableHead>
@@ -436,12 +436,12 @@ export default function Laporan() {
                                 ) : suratMasukData?.data?.length ? (
                                     suratMasukData.data.map((item, index) => (
                                         <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
-                                            <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
-                                            <TableCell className="font-medium">{item.nomorSurat || '-'}</TableCell>
-                                            <TableCell>{formatDate(item.tanggalSurat)}</TableCell>
-                                            <TableCell>{item.dari || '-'}</TableCell>
-                                            <TableCell className="max-w-xs truncate text-muted-foreground" title={item.perihal}>{item.perihal || '-'}</TableCell>
-                                            <TableCell>{getStatusBadge(item.status)}</TableCell>
+                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="Nomor Surat" className="font-medium">{item.nomorSurat || '-'}</TableCell>
+                                            <TableCell data-label="Tanggal">{formatDate(item.tanggalSurat)}</TableCell>
+                                            <TableCell data-label="Dari">{item.dari || '-'}</TableCell>
+                                            <TableCell data-label="Perihal" className="max-w-xs truncate text-muted-foreground" title={item.perihal}>{item.perihal || '-'}</TableCell>
+                                            <TableCell data-label="Status">{getStatusBadge(item.status)}</TableCell>
                                         </TableRow>
                                     ))
                                 ) : (
@@ -468,7 +468,7 @@ export default function Laporan() {
                                 Total: <span className="font-bold text-foreground">{suratKeluarData?.pagination?.total || 0}</span> surat
                             </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -492,7 +492,7 @@ export default function Laporan() {
                         </div>
                     </div>
                     <Card className="border-border/60 shadow-sm overflow-hidden">
-                        <Table>
+                        <Table responsive>
                             <TableHeader className="bg-muted/50">
                                 <TableRow className="hover:bg-muted/50">
                                     <TableHead className="w-[60px] text-foreground font-semibold">No</TableHead>
@@ -515,12 +515,12 @@ export default function Laporan() {
                                 ) : suratKeluarData?.data?.length ? (
                                     suratKeluarData.data.map((item, index) => (
                                         <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
-                                            <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
-                                            <TableCell className="font-medium">{item.nomorSurat || '-'}</TableCell>
-                                            <TableCell>{formatDate(item.tanggalSurat)}</TableCell>
-                                            <TableCell>{item.kepada || '-'}</TableCell>
-                                            <TableCell className="max-w-xs truncate text-muted-foreground" title={item.perihal}>{item.perihal || '-'}</TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="Nomor Surat" className="font-medium">{item.nomorSurat || '-'}</TableCell>
+                                            <TableCell data-label="Tanggal">{formatDate(item.tanggalSurat)}</TableCell>
+                                            <TableCell data-label="Kepada">{item.kepada || '-'}</TableCell>
+                                            <TableCell data-label="Perihal" className="max-w-xs truncate text-muted-foreground" title={item.perihal}>{item.perihal || '-'}</TableCell>
+                                            <TableCell data-label="Jenis">
                                                 <Badge variant="outline" className="font-normal">{item.naskahDinas || '-'}</Badge>
                                             </TableCell>
                                         </TableRow>
@@ -629,7 +629,7 @@ export default function Laporan() {
                     )}
 
                     <Card className="border-border/60 shadow-sm overflow-hidden">
-                        <Table>
+                        <Table responsive>
                             <TableHeader className="bg-muted/50">
                                 <TableRow className="hover:bg-muted/50">
                                     <TableHead className="w-[60px] text-foreground font-semibold">No</TableHead>
@@ -654,14 +654,14 @@ export default function Laporan() {
                                 ) : arsipData?.data?.length ? (
                                     arsipData.data.map((item, index) => (
                                         <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
-                                            <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
-                                            <TableCell className="font-medium bg-muted/50 px-2 py-1 rounded inline-block text-xs mt-2">{item.kodeKlasifikasi || '-'}</TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="Kode Klasifikasi" className="font-medium bg-muted/50 px-2 py-1 rounded inline-block text-xs mt-2">{item.kodeKlasifikasi || '-'}</TableCell>
+                                            <TableCell data-label="Jenis">
                                                 <Badge variant={item.jenisArsip === 'masuk' ? 'default' : 'secondary'} className="font-normal">
                                                     {item.jenisArsip}
                                                 </Badge>
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="Media">
                                                 <div className="flex items-center gap-1.5 text-muted-foreground text-sm capitalize">
                                                     {item.mediaType === 'foto' ? <FileImage className="h-3 w-3" /> :
                                                         item.mediaType === 'video' ? <Film className="h-3 w-3" /> :
@@ -670,10 +670,10 @@ export default function Laporan() {
                                                     {item.mediaType || 'kertas'}
                                                 </div>
                                             </TableCell>
-                                            <TableCell>{item.nomorBerkas || '-'}</TableCell>
-                                            <TableCell className="max-w-xs truncate text-muted-foreground" title={item.uraianBerkas || '-'}>{item.uraianBerkas || '-'}</TableCell>
-                                            <TableCell>{formatDate(item.tanggalKadaluarsa)}</TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="Nomor Berkas">{item.nomorBerkas || '-'}</TableCell>
+                                            <TableCell data-label="Uraian" className="max-w-xs truncate text-muted-foreground" title={item.uraianBerkas || '-'}>{item.uraianBerkas || '-'}</TableCell>
+                                            <TableCell data-label="Kadaluarsa">{formatDate(item.tanggalKadaluarsa)}</TableCell>
+                                            <TableCell data-label="Status">
                                                 <Badge variant="outline" className="font-normal border-border text-muted-foreground">{item.hasilAkhir || item.retensiInaktif || '-'}</Badge>
                                             </TableCell>
                                         </TableRow>
@@ -704,7 +704,7 @@ export default function Laporan() {
                         </div>
                         <div className="flex gap-4 items-center">
                             <Select value={lendingStatus} onValueChange={setLendingStatus}>
-                                <SelectTrigger className="w-[150px] bg-muted/50 border-border">
+                                <SelectTrigger className="w-full sm:w-[150px] bg-muted/50 border-border">
                                     <SelectValue placeholder="Status" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -717,7 +717,7 @@ export default function Laporan() {
                         </div>
                     </div>
                     <Card className="border-border/60 shadow-sm overflow-hidden">
-                        <Table>
+                        <Table responsive>
                             <TableHeader className="bg-muted/50">
                                 <TableRow className="hover:bg-muted/50">
                                     <TableHead className="w-[60px] text-foreground font-semibold">No</TableHead>
@@ -741,13 +741,13 @@ export default function Laporan() {
                                 ) : lendingData?.data?.length ? (
                                     lendingData.data.map((item, index) => (
                                         <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
-                                            <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
-                                            <TableCell className="font-medium">{item.borrowerName}</TableCell>
-                                            <TableCell>{item.departmentUnit || '-'}</TableCell>
-                                            <TableCell>{formatDate(item.borrowDate)}</TableCell>
-                                            <TableCell>{formatDate(item.dueDate)}</TableCell>
-                                            <TableCell>{formatDate(item.returnDate)}</TableCell>
-                                            <TableCell>{getStatusBadge(item.status)}</TableCell>
+                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="Peminjam" className="font-medium">{item.borrowerName}</TableCell>
+                                            <TableCell data-label="Unit">{item.departmentUnit || '-'}</TableCell>
+                                            <TableCell data-label="Tgl Pinjam">{formatDate(item.borrowDate)}</TableCell>
+                                            <TableCell data-label="Jatuh Tempo">{formatDate(item.dueDate)}</TableCell>
+                                            <TableCell data-label="Tgl Kembali">{formatDate(item.returnDate)}</TableCell>
+                                            <TableCell data-label="Status">{getStatusBadge(item.status)}</TableCell>
                                         </TableRow>
                                     ))
                                 ) : (
