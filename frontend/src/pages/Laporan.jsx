@@ -267,7 +267,7 @@ export default function Laporan() {
                                 <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 group">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium text-muted-foreground">Surat Masuk</CardTitle>
-                                        <div className="p-2 bg-blue-50 dark:bg-blue-500/15 rounded-lg group-hover:bg-blue-100 dark:bg-blue-500/15 transition-colors">
+                                        <div className="p-2 bg-blue-50 dark:bg-blue-500/15 rounded-lg group-hover:bg-blue-100 dark:group-hover:bg-blue-500/15 transition-colors">
                                             <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                                         </div>
                                     </CardHeader>
@@ -283,7 +283,7 @@ export default function Laporan() {
                                 <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 group">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium text-muted-foreground">Surat Keluar</CardTitle>
-                                        <div className="p-2 bg-emerald-50 dark:bg-emerald-500/15 rounded-lg group-hover:bg-emerald-100 dark:bg-emerald-500/15 transition-colors">
+                                        <div className="p-2 bg-emerald-50 dark:bg-emerald-500/15 rounded-lg group-hover:bg-emerald-100 dark:group-hover:bg-emerald-500/15 transition-colors">
                                             <Send className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                                         </div>
                                     </CardHeader>
@@ -299,7 +299,7 @@ export default function Laporan() {
                                 <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 group">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium text-muted-foreground">Arsip</CardTitle>
-                                        <div className="p-2 bg-purple-50 dark:bg-purple-500/15 rounded-lg group-hover:bg-purple-100 dark:bg-purple-500/15 transition-colors">
+                                        <div className="p-2 bg-purple-50 dark:bg-purple-500/15 rounded-lg group-hover:bg-purple-100 dark:group-hover:bg-purple-500/15 transition-colors">
                                             <Archive className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                                         </div>
                                     </CardHeader>
@@ -315,7 +315,7 @@ export default function Laporan() {
                                 <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 group">
                                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                                         <CardTitle className="text-sm font-medium text-muted-foreground">Peminjaman</CardTitle>
-                                        <div className="p-2 bg-orange-50 dark:bg-orange-500/15 rounded-lg group-hover:bg-orange-100 dark:bg-orange-500/15 transition-colors">
+                                        <div className="p-2 bg-orange-50 dark:bg-orange-500/15 rounded-lg group-hover:bg-orange-100 dark:group-hover:bg-orange-500/15 transition-colors">
                                             <BookOpen className="h-4 w-4 text-orange-600" />
                                         </div>
                                     </CardHeader>
@@ -395,7 +395,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('surat-masuk', 'excel')}
                                 disabled={exporting}
-                                className="border-border hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-600 dark:text-emerald-400 hover:border-emerald-200 transition-colors"
+                                className="border-border hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-200 transition-colors"
                             >
                                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                                 Excel
@@ -405,7 +405,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('surat-masuk', 'pdf')}
                                 disabled={exporting}
-                                className="border-border hover:bg-rose-50 dark:bg-rose-500/15 hover:text-rose-600 dark:text-rose-400 hover:border-rose-200 transition-colors"
+                                className="border-border hover:bg-rose-50 dark:hover:bg-rose-500/15 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 transition-colors"
                             >
                                 <FileText className="h-4 w-4 mr-2" />
                                 PDF
@@ -474,7 +474,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('surat-keluar', 'excel')}
                                 disabled={exporting}
-                                className="border-border hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-600 dark:text-emerald-400 hover:border-emerald-200 transition-colors"
+                                className="border-border hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-200 transition-colors"
                             >
                                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                                 Excel
@@ -484,7 +484,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('surat-keluar', 'pdf')}
                                 disabled={exporting}
-                                className="border-border hover:bg-rose-50 dark:bg-rose-500/15 hover:text-rose-600 dark:text-rose-400 hover:border-rose-200 transition-colors"
+                                className="border-border hover:bg-rose-50 dark:hover:bg-rose-500/15 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 transition-colors"
                             >
                                 <FileText className="h-4 w-4 mr-2" />
                                 PDF
@@ -584,7 +584,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('arsip', 'excel')}
                                 disabled={exporting}
-                                className="flex-1 md:flex-none border-border hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-600 dark:text-emerald-400 hover:border-emerald-200 transition-colors"
+                                className="flex-1 md:flex-none border-border hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-200 transition-colors"
                             >
                                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                                 Excel
@@ -594,7 +594,7 @@ export default function Laporan() {
                                 size="sm"
                                 onClick={() => handleExport('arsip', 'pdf')}
                                 disabled={exporting}
-                                className="flex-1 md:flex-none border-border hover:bg-rose-50 dark:bg-rose-500/15 hover:text-rose-600 dark:text-rose-400 hover:border-rose-200 transition-colors"
+                                className="flex-1 md:flex-none border-border hover:bg-rose-50 dark:hover:bg-rose-500/15 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 transition-colors"
                             >
                                 <FileText className="h-4 w-4 mr-2" />
                                 PDF

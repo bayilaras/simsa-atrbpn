@@ -465,7 +465,7 @@ export default function Dosir() {
                                 </CardContent>
                                 <CardFooter className="pt-0">
                                     <Button
-                                        className="w-full bg-muted/50 hover:bg-indigo-50 dark:bg-indigo-500/15 text-foreground hover:text-indigo-700 dark:text-indigo-300 border border-border/50 hover:border-indigo-200 transition-all font-medium"
+                                        className="w-full bg-muted/50 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 text-foreground hover:text-indigo-700 dark:hover:text-indigo-300 border border-border/50 hover:border-indigo-200 transition-all font-medium"
                                         variant="outline"
                                         onClick={() => navigate(`/dosir/${item.id}`)}
                                     >

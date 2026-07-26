@@ -25,7 +25,9 @@ export function PageHeader({ icon: Icon, title, description, actions, className,
                 </div>
             </div>
             {actions && (
-                <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+                /* min-w-0, never shrink-0: the toolbar has to be allowed to wrap,
+                   or a row of buttons pushes the page wider than the viewport. */
+                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">{actions}</div>
             )}
         </div>
     )

@@ -41,7 +41,7 @@ function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'seconda
         <div className={`group relative p-4 rounded-xl border border-border transition-all duration-200 hover:shadow-md hover:border-emerald-200 hover:bg-emerald-50/30 ${className}`}>
             <div className="flex items-center gap-2 mb-2">
                 {Icon && (
-                    <div className="p-1.5 rounded-lg bg-muted group-hover:bg-emerald-100 dark:bg-emerald-500/15 transition-colors">
+                    <div className="p-1.5 rounded-lg bg-muted group-hover:bg-emerald-100 dark:group-hover:bg-emerald-500/15 transition-colors">
                         <Icon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-emerald-600 transition-colors" />
                     </div>
                 )}
@@ -395,7 +395,7 @@ export default function ArsipDetail() {
                                                     arsip.items.map((item, idx) => (
                                                         <tr key={item.id || idx} className="hover:bg-muted/80 transition-colors group">
                                                             <td className="px-4 py-3">
-                                                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-semibold text-muted-foreground group-hover:bg-indigo-100 dark:bg-indigo-500/15 group-hover:text-indigo-700 dark:text-indigo-300 transition-colors">
+                                                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-semibold text-muted-foreground group-hover:bg-indigo-100 dark:group-hover:bg-indigo-500/15 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 transition-colors">
                                                                     {item.nomorItem || idx + 1}
                                                                 </span>
                                                             </td>

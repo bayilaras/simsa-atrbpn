@@ -475,7 +475,7 @@ export default function Settings() {
                                             <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-2">Variabel yang Tersedia</h4>
                                             <div className="flex flex-wrap gap-2">
                                                 {['{noUrut}', '{tahun}', '{bulan}', '{unitKerja}', '{naskahDinas}'].map((v) => (
-                                                    <Badge key={v} variant="secondary" className="bg-blue-100/50 text-blue-700 dark:text-blue-300 border-blue-200 hover:bg-blue-100 dark:bg-blue-500/15 font-mono">
+                                                    <Badge key={v} variant="secondary" className="bg-blue-100/50 text-blue-700 dark:text-blue-300 border-blue-200 hover:bg-blue-100 dark:hover:bg-blue-500/15 font-mono">
                                                         {v}
                                                     </Badge>
                                                 ))}

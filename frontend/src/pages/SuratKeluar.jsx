@@ -263,9 +263,9 @@ export default function SuratKeluar() {
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Page Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 space-y-1">
+                    <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
                         <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-lg">
                             <Send className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
                         </div>
@@ -277,14 +277,14 @@ export default function SuratKeluar() {
                 </div>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex w-full items-center gap-2 sm:w-auto">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPagination(prev => ({ ...prev, page: 1 })); }}>
-                            <SelectTrigger className="w-[220px] h-9">
+                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                <SelectItem value="all">Semua Unit Kerja</SelectItem>
                                 {unitKerjaList.map(uk => (
                                     <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
                                 ))}
@@ -292,7 +292,7 @@ export default function SuratKeluar() {
                         </Select>
                     </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" onClick={fetchData} disabled={loading} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />
                         Refresh
@@ -473,7 +473,7 @@ export default function SuratKeluar() {
                                 <TableSkeleton columns={7} rows={5} />
                             </div>
                         ) : (
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/30">
                                     <TableRow className="hover:bg-transparent">
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -502,10 +502,10 @@ export default function SuratKeluar() {
                                     ) : (
                                         data.map((row, index) => (
                                             <TableRow key={row.id} className="group hover:bg-muted/30 transition-colors">
-                                                <TableCell className="text-center font-medium text-muted-foreground text-xs">
+                                                <TableCell data-label="No." className="text-center font-medium text-muted-foreground text-xs">
                                                     {(pagination.page - 1) * pagination.limit + index + 1}
                                                 </TableCell>
-                                                <TableCell className="text-sm">
+                                                <TableCell data-label="Tanggal" className="text-sm">
                                                     <div className="flex flex-col">
                                                         <span className="font-medium">{formatDate(row.tanggalSurat)}</span>
                                                         {row.tanggalKirim && (
@@ -513,12 +513,12 @@ export default function SuratKeluar() {
                                                         )}
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Nomor Surat">
                                                     <Badge variant="outline" className="font-mono text-xs bg-background">
                                                         {row.nomorSurat}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Perihal">
                                                     <div className="flex flex-col gap-1 max-w-[400px]">
                                                         <span className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
                                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -527,7 +527,7 @@ export default function SuratKeluar() {
                                                         </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Status">
                                                     <div className="flex flex-wrap gap-1.5">
                                                         {row.filePath && (
                                                             <Badge variant="secondary" className="gap-1 bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200">

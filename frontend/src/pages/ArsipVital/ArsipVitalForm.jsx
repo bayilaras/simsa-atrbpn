@@ -72,7 +72,7 @@ export default function ArsipVitalForm({ open, onOpenChange, form, setForm, onSu
                                     {arsipList.map(a => (
                                         <div key={a.id} className="p-3 hover:bg-muted/50 cursor-pointer border-b last:border-0 text-sm group"
                                             onClick={() => { setForm(f => ({ ...f, arsipId: a.id })); setArsipSearch(a.nomorBerkas || a.uraianBerkas || a.id) }}>
-                                            <div className="font-medium group-hover:text-red-700 dark:text-red-300">{a.nomorBerkas || 'Tanpa Nomor'}</div>
+                                            <div className="font-medium group-hover:text-red-700 dark:group-hover:text-red-300">{a.nomorBerkas || 'Tanpa Nomor'}</div>
                                             <div className="text-muted-foreground text-xs">{a.uraianBerkas || a.perihalOriginal || '-'}</div>
                                         </div>
                                     ))}

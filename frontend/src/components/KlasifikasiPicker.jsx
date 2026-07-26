@@ -56,7 +56,7 @@ function KlasifikasiItem({ item, isSelected, onSelect }) {
                         variant="secondary"
                         className={cn(
                             "text-[10px] h-5 px-1.5",
-                            item.tipe === 'fasilitatif' ? "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:bg-blue-500/15" : "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:bg-emerald-500/15"
+                            item.tipe === 'fasilitatif' ? "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-500/15" : "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/15"
                         )}
                     >
                         {item.tipe === 'fasilitatif' ? 'Fasilitatif' : 'Substantif'}
@@ -121,7 +121,7 @@ function JRAItem({ item, isSelected, onSelect }) {
             onClick={() => onSelect(item)}
             className={cn(
                 "flex items-start gap-1.5 p-1.5 rounded-md cursor-pointer transition-all text-xs mb-0.5",
-                "border border-transparent hover:border-amber-500/30 hover:bg-amber-50 dark:bg-amber-500/15",
+                "border border-transparent hover:border-amber-500/30 hover:bg-amber-50 dark:hover:bg-amber-500/15",
                 isSelected ? "bg-amber-50 dark:bg-amber-500/15 border-amber-500/40 shadow-sm" : "bg-card border-border/30",
             )}
         >

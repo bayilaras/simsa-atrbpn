@@ -38,6 +38,7 @@ import { DashboardSkeleton } from '@/components/skeletons'
 import { useAuth } from '@/context/AuthContext'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import DashboardPengawasan from '@/components/dashboard/DashboardPengawasan'
+import { PageHeader } from '@/components/PageHeader';
 
 ChartJS.register(
     CategoryScale,
@@ -308,56 +309,39 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
-            {/* Hero Section - Responsive */}
-            <div className="bg-gradient-to-r from-primary/90 to-primary/70 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 lg:p-10 text-white shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-40 sm:w-64 h-40 sm:h-64 bg-card/10 rounded-full blur-3xl -mr-10 sm:-mr-16 -mt-10 sm:-mt-16 animate-pulse"></div>
-                <div className="absolute bottom-0 left-0 w-32 sm:w-48 h-32 sm:h-48 bg-black/10 rounded-full blur-3xl -ml-6 sm:-ml-10 -mb-6 sm:-mb-10"></div>
-
-                <div className="relative z-10 flex flex-col gap-4 sm:gap-6">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6">
-                        <div className="space-y-1 sm:space-y-2 min-w-0 flex-1">
-                            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight break-words">Halo, {user?.name.split(' ')[0]}! 👋</h1>
-                            <p className="text-primary-foreground/90 text-sm sm:text-base md:text-lg leading-relaxed">
-                                Selamat datang kembali di Dashboard SIMSA.
-                            </p>
+            <PageHeader
+                title={`Halo, ${user?.name?.split(' ')[0] || 'Pengguna'}`}
+                description="Ringkasan surat dan arsip unit kerja Anda hari ini."
+                actions={
+                    <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <CalendarClock className="h-4 w-4 shrink-0" />
+                            <span>{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
                         </div>
-                        <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[200px] backdrop-blur-sm bg-card/10 p-2.5 sm:p-3 rounded-xl border border-white/20 shadow-sm shrink-0">
-                            <div className="flex items-center gap-2 text-xs sm:text-sm font-medium">
-                                <CalendarClock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
-                                <span className="truncate">{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
-                            </div>
-                            {selectedUnitKerja !== 'all' && user?.unitKerjaId && (
-                                <div className="flex items-center gap-2 text-xs bg-card/20 px-2 py-1 rounded-md w-fit">
-                                    <Building2 className="h-3 w-3 shrink-0" />
-                                    <span className="uppercase truncate">{user.unitKerjaId}</span>
-                                </div>
-                            )}
-                        </div>
+                        {isSuperAdmin && unitKerjaList.length > 0 && (
+                            <Select value={selectedUnitKerja} onValueChange={setSelectedUnitKerja}>
+                                <SelectTrigger className="h-9 w-full sm:w-[260px]">
+                                    <SelectValue placeholder="Pilih Unit Kerja" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Semua Unit Kerja</SelectItem>
+                                    {unitKerjaList.map(uk => (
+                                        <SelectItem key={uk.id} value={uk.id}>
+                                            {uk.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
+                        {!isSuperAdmin && selectedUnitKerja !== 'all' && user?.unitKerjaId && (
+                            <Badge variant="muted" className="w-fit gap-1.5 self-start sm:self-end">
+                                <Building2 className="h-3 w-3" />
+                                <span className="uppercase">{user.unitKerjaId}</span>
+                            </Badge>
+                        )}
                     </div>
-
-                    {/* Unit Kerja Selector for Super Admin */}
-                    {isSuperAdmin && unitKerjaList.length > 0 && (
-                        <div className="pt-4 sm:pt-6 border-t border-white/20">
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
-                                <span className="text-xs sm:text-sm font-medium opacity-90">Tampilkan Data:</span>
-                                <Select value={selectedUnitKerja} onValueChange={setSelectedUnitKerja}>
-                                    <SelectTrigger className="w-full sm:w-[260px] h-9 bg-card/10 border-white/30 text-white placeholder:text-white/70 focus:ring-0 focus:ring-offset-0 focus:border-white/50">
-                                        <SelectValue placeholder="Pilih Unit Kerja" className="placeholder:text-white/70" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
-                                        {unitKerjaList.map(uk => (
-                                            <SelectItem key={uk.id} value={uk.id}>
-                                                {uk.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
+                }
+            />
 
             <Tabs defaultValue="overview" className="space-y-6">
 

@@ -197,6 +197,97 @@
   }
 }
 
+/*
+  Responsive tables: below `sm`, a row becomes a labelled card. A register of
+  letters has 6+ columns, which no phone can show side by side — stacking keeps
+  every field readable instead of hiding most of them behind a sideways scroll.
+  Opt in per table with <Table responsive> and label the cells with data-label.
+*/
+@media (max-width: 639px) {
+  table[data-responsive="true"] thead {
+    display: none;
+  }
+
+  table[data-responsive="true"] tbody,
+  table[data-responsive="true"] tr,
+  table[data-responsive="true"] td {
+    display: block;
+    width: auto;
+  }
+
+  table[data-responsive="true"] tr {
+    margin-bottom: 0.625rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background-color: var(--card);
+    padding: 0.25rem 0.125rem;
+  }
+
+  table[data-responsive="true"] td {
+    border: 0;
+    padding: 0.4375rem 0.75rem;
+    text-align: right;
+  }
+
+  /* Labelled cells read as "field — value" pairs */
+  table[data-responsive="true"] td[data-label] {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  table[data-responsive="true"] td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    text-align: left;
+  }
+
+  /* The value side must be allowed to shrink, or a long perihal widens the card
+     past the viewport instead of wrapping inside it. */
+  table[data-responsive="true"] td[data-label] > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* TableCell ships with whitespace-nowrap, which is right for a scrolling grid
+     but would keep every stacked card as wide as its longest line. */
+  table[data-responsive="true"] td,
+  table[data-responsive="true"] td * {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  /* Pills stay on one line — a status broken across two lines is unreadable */
+  table[data-responsive="true"] td [data-slot="badge"],
+  table[data-responsive="true"] td [class*="rounded-full"] {
+    white-space: nowrap;
+  }
+
+  /* Keep the label from crowding out the value it describes */
+  table[data-responsive="true"] td[data-label]::before {
+    max-width: 40%;
+  }
+
+  /* Unlabelled cells (actions, empty states) keep the full card width */
+  table[data-responsive="true"] td:not([data-label]) {
+    text-align: left;
+  }
+
+  table[data-responsive="true"] td[colspan] {
+    text-align: center;
+  }
+
+  /* An empty state is a message, not a card */
+  table[data-responsive="true"] tr:has(td[colspan]) {
+    border: 0;
+    background-color: transparent;
+  }
+}
+
 @layer utilities {
   /*
     Interactive card. The old version lifted the card and dropped a large

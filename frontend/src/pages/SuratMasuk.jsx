@@ -62,6 +62,7 @@ import suratMasukService from '@/services/surat-masuk.service';
 import settingsService from '@/services/settings.service';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
+import { PageHeader } from '@/components/PageHeader'
 
 // Generate year options
 const currentYear = new Date().getFullYear();
@@ -282,29 +283,21 @@ export default function SuratMasuk() {
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Page Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-primary/10 rounded-lg">
-                            <MailOpen className="h-6 w-6 text-primary" />
-                        </div>
-                        Surat Masuk
-                    </h1>
-                    <p className="text-muted-foreground">
-                        Kelola dan pantau surat masuk unit kerja Anda
-                    </p>
-                </div>
+            <PageHeader
+                icon={MailOpen}
+                title="Surat Masuk"
+                description="Kelola dan pantau surat masuk unit kerja Anda"
+                actions={<>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex w-full items-center gap-2 sm:w-auto">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPagination(prev => ({ ...prev, page: 1 })); }}>
-                            <SelectTrigger className="w-[220px] h-9">
+                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                <SelectItem value="all">Semua Unit Kerja</SelectItem>
                                 {unitKerjaList.map(uk => (
                                     <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
                                 ))}
@@ -312,7 +305,7 @@ export default function SuratMasuk() {
                         </Select>
                     </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" onClick={fetchData} disabled={loading} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />
                         Refresh
@@ -340,17 +333,18 @@ export default function SuratMasuk() {
 
                     {isAdmin && (
                         <Link to="/surat/masuk/tambah">
-                            <Button size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                            <Button size="sm" className="h-9">
                                 <Plus className="mr-2 h-3.5 w-3.5" />
                                 Surat Baru
                             </Button>
                         </Link>
                     )}
                 </div>
-            </div>
+                </>}
+            />
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
                 <Card className="shadow-sm border-l-4 border-l-primary card-hover">
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
@@ -559,7 +553,7 @@ export default function SuratMasuk() {
                                 <TableSkeleton columns={7} rows={5} />
                             </div>
                         ) : (
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/30">
                                     <TableRow className="hover:bg-transparent">
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -588,25 +582,25 @@ export default function SuratMasuk() {
                                     ) : (
                                         data.map((row, index) => (
                                             <TableRow key={row.id} className="group hover:bg-muted/30 transition-colors">
-                                                <TableCell className="text-center font-medium text-muted-foreground text-xs">
+                                                <TableCell data-label="No." className="text-center font-medium text-muted-foreground text-xs">
                                                     {(pagination.page - 1) * pagination.limit + index + 1}
                                                 </TableCell>
-                                                <TableCell className="text-sm">
-                                                    <div className="flex flex-col">
+                                                <TableCell data-label="Tanggal" className="text-sm">
+                                                    <div className="flex flex-col sm:items-start items-end">
                                                         <span className="font-medium">{formatDate(row.tanggalSurat)}</span>
                                                         <span className="text-xs text-muted-foreground">{formatDate(row.tanggalDiterima)} (Trm)</span>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Nomor Surat">
                                                     <Badge variant="outline" className="font-mono text-xs bg-background">
                                                         {row.nomorSurat}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell>
-                                                    <div className="flex flex-col gap-1 max-w-[400px]">
-                                                        <span className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
+                                                <TableCell data-label="Perihal">
+                                                    <div className="flex flex-col gap-1 sm:max-w-[400px] items-end sm:items-start">
+                                                        <span className="font-semibold sm:line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
                                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                            <span className="max-w-[150px] truncate" title={row.dari}>Oleh: {row.dari}</span>
+                                                            <span className="sm:max-w-[150px] sm:truncate" title={row.dari}>Oleh: {row.dari}</span>
                                                             {row.jenisSurat && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.jenisSurat}</span>}
                                                             {row.sifatSurat && row.sifatSurat !== 'biasa' && (
                                                                 <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${row.sifatSurat === 'penting' ? 'bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200' :
@@ -619,8 +613,8 @@ export default function SuratMasuk() {
                                                         </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>
-                                                    <div className="flex flex-wrap gap-1.5">
+                                                <TableCell data-label="Status">
+                                                    <div className="flex flex-wrap justify-end gap-1.5 sm:justify-start">
                                                         <Badge className={`shadow-none ${row.status === 'sudah_dibalas' ? 'bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-200 border-green-200' : 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 hover:bg-orange-200 border-orange-200'}`}>
                                                             {row.status === 'sudah_dibalas' ? 'Sudah Dibalas' : 'Belum Diproses'}
                                                         </Badge>

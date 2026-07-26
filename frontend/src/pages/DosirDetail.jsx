@@ -277,7 +277,7 @@ export default function DosirDetail() {
                         <div className="flex flex-row md:flex-col gap-3 w-full md:w-auto shrink-0">
                             <Dialog open={editing} onOpenChange={setEditing}>
                                 <DialogTrigger asChild>
-                                    <Button className="bg-card text-indigo-700 dark:text-indigo-300 hover:bg-emerald-50 dark:bg-emerald-500/15 w-full md:w-auto shadow-lg hover:shadow-xl transition-all">
+                                    <Button className="bg-card text-indigo-700 dark:text-indigo-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 w-full md:w-auto shadow-lg hover:shadow-xl transition-all">
                                         <Edit2 className="mr-2 h-4 w-4" />
                                         Edit Dosir
                                     </Button>
@@ -467,7 +467,7 @@ export default function DosirDetail() {
                                                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-emerald-600" onClick={() => navigate(`/surat/masuk/${sm.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:text-red-400" onClick={() => handleRemoveSurat('masuk', sm.id)}>
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('masuk', sm.id)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </div>
@@ -505,7 +505,7 @@ export default function DosirDetail() {
                                                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-blue-600" onClick={() => navigate(`/surat/keluar/${sk.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:text-red-400" onClick={() => handleRemoveSurat('keluar', sk.id)}>
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('keluar', sk.id)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </div>

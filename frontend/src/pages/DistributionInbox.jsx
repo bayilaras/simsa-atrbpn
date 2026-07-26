@@ -361,7 +361,7 @@ export default function DistributionInbox() {
                                                                     <Button
                                                                         variant="outline"
                                                                         size="icon"
-                                                                        className="h-8 w-8 hover:bg-green-50 dark:bg-green-500/15 hover:text-green-600 dark:text-green-400 hover:border-green-200 transition-colors"
+                                                                        className="h-8 w-8 hover:bg-green-50 dark:hover:bg-green-500/15 hover:text-green-600 dark:hover:text-green-400 hover:border-green-200 transition-colors"
                                                                         onClick={() => handleReceive(item.id)}
                                                                         disabled={actionLoading}
                                                                     >

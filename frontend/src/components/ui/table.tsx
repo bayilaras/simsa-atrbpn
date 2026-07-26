@@ -2,14 +2,26 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+/**
+ * `responsive` restacks each row into a labelled card below the `sm` breakpoint
+ * instead of forcing a long sideways scroll. Cells opt in by carrying a
+ * `data-label`, which becomes the row label on narrow screens; cells without one
+ * (actions, checkboxes) simply span the card. The transformation lives in
+ * index.css because it needs `content: attr(data-label)`.
+ */
+function Table({
+  className,
+  responsive = false,
+  ...props
+}: React.ComponentProps<"table"> & { responsive?: boolean }) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className={cn("relative w-full", responsive ? "sm:overflow-x-auto" : "overflow-x-auto")}
     >
       <table
         data-slot="table"
+        data-responsive={responsive ? "true" : undefined}
         className={cn("w-full caption-bottom text-sm", className)}
         {...props}
       />

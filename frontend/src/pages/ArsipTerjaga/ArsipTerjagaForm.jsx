@@ -67,9 +67,9 @@ export default function ArsipTerjagaForm({ open, onOpenChange, form, setForm, on
                             {arsipList.length > 0 && !form.arsipId && (
                                 <div className="border rounded-md max-h-40 overflow-y-auto bg-card shadow-sm">
                                     {arsipList.map(a => (
-                                        <div key={a.id} className="p-3 hover:bg-purple-50 dark:bg-purple-500/15 cursor-pointer border-b last:border-0 text-sm group"
+                                        <div key={a.id} className="p-3 hover:bg-purple-50 dark:hover:bg-purple-500/15 cursor-pointer border-b last:border-0 text-sm group"
                                             onClick={() => { setForm(f => ({ ...f, arsipId: a.id })); setArsipSearch(a.nomorBerkas || a.uraianBerkas || a.id) }}>
-                                            <div className="font-medium group-hover:text-purple-700 dark:text-purple-300">{a.nomorBerkas || 'Tanpa Nomor'}</div>
+                                            <div className="font-medium group-hover:text-purple-700 dark:group-hover:text-purple-300">{a.nomorBerkas || 'Tanpa Nomor'}</div>
                                             <div className="text-muted-foreground text-xs">{a.uraianBerkas || a.perihalOriginal || '-'}</div>
                                         </div>
                                     ))}
@@ -79,7 +79,7 @@ export default function ArsipTerjagaForm({ open, onOpenChange, form, setForm, on
                                 <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 p-2 rounded border border-emerald-100">
                                     <FileCheck className="h-4 w-4" />
                                     <span>Arsip berhasil dipilih</span>
-                                    <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground ml-auto hover:text-red-600 dark:text-red-400"
+                                    <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground ml-auto hover:text-red-600 dark:hover:text-red-400"
                                         onClick={() => { setForm(f => ({ ...f, arsipId: '' })); setArsipSearch('') }}>Ubah</Button>
                                 </div>
                             )}

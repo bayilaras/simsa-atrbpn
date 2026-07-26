@@ -492,7 +492,7 @@ export default function TambahSuratKeluar() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={clearSuratMasuk}
-                                    className="flex-shrink-0 hover:bg-blue-100 dark:bg-blue-500/15 text-blue-600"
+                                    className="flex-shrink-0 hover:bg-blue-100 dark:hover:bg-blue-500/15 text-blue-600"
                                 >
                                     <X className="h-4 w-4" />
                                 </Button>
@@ -802,7 +802,7 @@ export default function TambahSuratKeluar() {
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
-                                                className="ml-2 hover:bg-red-100 dark:bg-red-500/15 hover:text-red-600 dark:text-red-400"
+                                                className="ml-2 hover:bg-red-100 dark:hover:bg-red-500/15 hover:text-red-600 dark:hover:text-red-400"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     removeFile();

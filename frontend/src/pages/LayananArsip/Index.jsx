@@ -75,9 +75,9 @@ export default function LayananArsipIndex() {
 
     const getStatusBadge = (status) => {
         switch (status) {
-            case 'diajukan': return <Badge variant="outline" className="bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200 hover:bg-yellow-100 dark:bg-yellow-500/15"><Clock className="w-3 h-3 mr-1" /> Diajukan</Badge>;
-            case 'diproses': return <Badge variant="outline" className="bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 hover:bg-blue-100 dark:bg-blue-500/15"><Clock className="w-3 h-3 mr-1" /> Diproses</Badge>;
-            case 'selesai': return <Badge variant="outline" className="bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-300 border-green-200 hover:bg-green-100 dark:bg-green-500/15"><CheckCircle2 className="w-3 h-3 mr-1" /> Selesai</Badge>;
+            case 'diajukan': return <Badge variant="outline" className="bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200 hover:bg-yellow-100 dark:hover:bg-yellow-500/15"><Clock className="w-3 h-3 mr-1" /> Diajukan</Badge>;
+            case 'diproses': return <Badge variant="outline" className="bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 hover:bg-blue-100 dark:hover:bg-blue-500/15"><Clock className="w-3 h-3 mr-1" /> Diproses</Badge>;
+            case 'selesai': return <Badge variant="outline" className="bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-300 border-green-200 hover:bg-green-100 dark:hover:bg-green-500/15"><CheckCircle2 className="w-3 h-3 mr-1" /> Selesai</Badge>;
             case 'ditolak': return <Badge variant="destructive" className="hover:bg-destructive/90"><XCircle className="w-3 h-3 mr-1" /> Ditolak</Badge>;
             default: return <Badge variant="outline">{status}</Badge>;
         }

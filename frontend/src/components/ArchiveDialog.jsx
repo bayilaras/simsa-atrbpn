@@ -469,7 +469,7 @@ export function ArchiveDialog({
                                     variant="outline"
                                     size="sm"
                                     onClick={addItem}
-                                    className="text-amber-700 dark:text-amber-300 border-amber-200 hover:bg-amber-50 dark:bg-amber-500/15 hover:text-amber-800 dark:text-amber-300 hover:border-amber-300 transition-all font-medium"
+                                    className="text-amber-700 dark:text-amber-300 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-800 dark:hover:text-amber-300 hover:border-amber-300 transition-all font-medium"
                                 >
                                     <Plus className="h-4 w-4 mr-1.5" /> Tambah Item
                                 </Button>

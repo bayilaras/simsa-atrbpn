@@ -112,7 +112,9 @@ function AppLayout() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
+      {/* min-w-0: SidebarInset is w-full, which at the tablet breakpoint would sit
+          beside the 16rem rail and push the page wider than the viewport. */}
+      <SidebarInset className="min-w-0">
         <AppHeader />
         {/* min-w-0 lets wide children (tables, charts) scroll inside their own
             container instead of stretching the shell on small screens. */}

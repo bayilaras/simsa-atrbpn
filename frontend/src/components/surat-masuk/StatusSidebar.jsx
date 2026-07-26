@@ -146,7 +146,7 @@ export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive,
                         </Button>
                         <Button
                             variant="outline"
-                            className="w-full justify-start hover:bg-amber-50 dark:bg-amber-500/15 hover:text-amber-700 dark:text-amber-300 hover:border-amber-200 dark:hover:bg-amber-950/30 dark:hover:text-amber-300 transition-colors"
+                            className="w-full justify-start hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 hover:border-amber-200 dark:hover:bg-amber-950/30 dark:hover:text-amber-300 transition-colors"
                             onClick={onReply}
                         >
                             <Reply className="mr-2 h-4 w-4" />
@@ -154,7 +154,7 @@ export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive,
                         </Button>
                         <Button
                             variant="outline"
-                            className="w-full justify-start hover:bg-blue-50 dark:bg-blue-500/15 hover:text-blue-700 dark:text-blue-300 hover:border-blue-200 dark:hover:bg-blue-950/30 dark:hover:text-blue-300 transition-colors"
+                            className="w-full justify-start hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-700 dark:hover:text-blue-300 hover:border-blue-200 dark:hover:bg-blue-950/30 dark:hover:text-blue-300 transition-colors"
                             onClick={onDistribute}
                         >
                             <Send className="mr-2 h-4 w-4" />
@@ -163,7 +163,7 @@ export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive,
                         {!surat.isArchived && (
                             <Button
                                 variant="outline"
-                                className="w-full justify-start hover:bg-purple-50 dark:bg-purple-500/15 hover:text-purple-700 dark:text-purple-300 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
+                                className="w-full justify-start hover:bg-purple-50 dark:hover:bg-purple-500/15 hover:text-purple-700 dark:hover:text-purple-300 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
                                 onClick={onArchive}
                             >
                                 <Archive className="mr-2 h-4 w-4" />

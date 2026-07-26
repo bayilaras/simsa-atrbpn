@@ -138,7 +138,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
         return (
             <button
                 onClick={handleOpen}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary transition-colors text-sm font-medium shadow-sm"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 border transition-colors text-sm font-medium shadow-sm"
             >
                 <Upload className="w-4 h-4" />
                 Import dari Google Drive

@@ -173,9 +173,9 @@ export default function AuditLog() {
             {/* Filters */}
             <Card className="shadow-sm border-border/60">
                 <CardHeader className="pb-4 bg-muted/20">
-                    <div className="flex flex-col gap-4">
-                        <div className="flex flex-col sm:flex-row gap-4">
-                            <div className="relative flex-1">
+                    <div className="flex min-w-0 flex-col gap-4">
+                        <div className="flex flex-col gap-4 sm:flex-row">
+                            <div className="relative min-w-0 flex-1">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
                                     placeholder="Cari user, email, atau ID..."

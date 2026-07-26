@@ -219,7 +219,7 @@ export default function BulkUpload() {
                                     <p className="text-muted-foreground dark:text-muted-foreground mb-6 max-w-sm">
                                         atau klik untuk memilih file dari komputer Anda (Maksimal 50 file)
                                     </p>
-                                    <Button variant="outline" className="border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900/50">
+                                    <Button variant="outline" className="border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:hover:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900/50">
                                         Pilih File
                                     </Button>
                                 </div>
@@ -398,7 +398,7 @@ export default function BulkUpload() {
                                                             variant="outline"
                                                             size="sm"
                                                             onClick={() => startEditing(item)}
-                                                            className="h-8 gap-2 hover:text-blue-600 dark:text-blue-400 hover:border-blue-200"
+                                                            className="h-8 gap-2 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200"
                                                         >
                                                             <Edit className="h-3 w-3" />
                                                             Edit Data

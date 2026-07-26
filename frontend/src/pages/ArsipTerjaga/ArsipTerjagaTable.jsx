@@ -127,11 +127,11 @@ export default function ArsipTerjagaTable({
                                                 <Eye className="h-4 w-4" />
                                             </Button>
                                             {item.statusPelaporan === 'belum_dilaporkan' && (
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:bg-blue-500/15" onClick={() => onOpenReport(item)}>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-500/15" onClick={() => onOpenReport(item)}>
                                                     <Send className="h-4 w-4" />
                                                 </Button>
                                             )}
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 dark:text-red-300 hover:bg-red-50 dark:bg-red-500/15" onClick={() => onDelete(item.id)}>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/15" onClick={() => onDelete(item.id)}>
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
                                         </div>

@@ -222,9 +222,9 @@ export default function Arsip() {
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Page Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 space-y-1">
+                    <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
                         <div className="p-2 bg-blue-100 dark:bg-blue-500/15 rounded-lg">
                             <Archive className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                         </div>
@@ -236,14 +236,14 @@ export default function Arsip() {
                 </div>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex w-full items-center gap-2 sm:w-auto">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPage(1); }}>
-                            <SelectTrigger className="w-[220px] h-9">
+                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                <SelectItem value="all">Semua Unit Kerja</SelectItem>
                                 {unitKerjaList.map(uk => (
                                     <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
                                 ))}
@@ -251,7 +251,7 @@ export default function Arsip() {
                         </Select>
                     </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" onClick={() => setPage(1)} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                         Refresh
@@ -445,7 +445,7 @@ export default function Arsip() {
                                             <TableSkeleton rows={5} columns={7} />
                                         </div>
                                     ) : (
-                                        <Table>
+                                        <Table responsive>
                                             <TableHeader className="bg-muted/30">
                                                 <TableRow className="hover:bg-transparent">
                                                     <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -479,19 +479,19 @@ export default function Arsip() {
                                                 ) : (
                                                     currentData.map((row, index) => (
                                                         <TableRow key={row.id} className="group hover:bg-muted/30 transition-colors">
-                                                            <TableCell className="text-center font-medium text-muted-foreground text-xs">
+                                                            <TableCell data-label="No." className="text-center font-medium text-muted-foreground text-xs">
                                                                 {(currentPage - 1) * 10 + index + 1}
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="No. Berkas">
                                                                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">{row.nomorBerkas || '-'}</code>
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="Klasifikasi">
                                                                 <div className="flex flex-col">
                                                                     <span className="font-mono text-xs font-semibold">{row.kodeKlasifikasi || '-'}</span>
                                                                     <span className="text-[10px] text-muted-foreground hidden lg:inline-block truncate max-w-[100px]">{row.klasifikasi || ''}</span>
                                                                 </div>
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="Uraian Berkas">
                                                                 <div className="flex flex-col gap-1 max-w-[300px]">
                                                                     <span className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
                                                                         {row.uraianBerkas || row.perihalOriginal || '-'}
@@ -501,7 +501,7 @@ export default function Arsip() {
                                                                     )}
                                                                 </div>
                                                             </TableCell>
-                                                            <TableCell className="text-xs text-muted-foreground">
+                                                            <TableCell data-label="Lokasi" className="text-xs text-muted-foreground">
                                                                 {row.lokasiFc || row.lokasiLaci || row.lokasiFolder ? (
                                                                     <div className="flex flex-col gap-0.5">
                                                                         <span className="font-medium text-foreground text-xs">{row.lokasiFc || '-'}</span>
@@ -509,7 +509,7 @@ export default function Arsip() {
                                                                     </div>
                                                                 ) : '-'}
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="Retensi">
                                                                 <div className="flex flex-col gap-1">
                                                                     <div className="flex items-center gap-1.5 text-xs">
                                                                         <span className="text-[10px] w-8 text-muted-foreground">Aktif:</span>
@@ -521,7 +521,7 @@ export default function Arsip() {
                                                                     </div>
                                                                 </div>
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="Status">
                                                                 <Badge variant={row.hasilAkhir === 'Permanen' ? 'default' : row.hasilAkhir === 'Musnah' ? 'destructive' : 'secondary'} className="text-[10px] px-2">
                                                                     {row.hasilAkhir || '-'}
                                                                 </Badge>

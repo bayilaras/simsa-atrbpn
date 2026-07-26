@@ -130,7 +130,7 @@ export default function ArsipVitalTable({
                                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onOpenDetail(item)}>
                                                 <Eye className="h-4 w-4" />
                                             </Button>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 dark:text-red-300 hover:bg-red-50 dark:bg-red-500/15" onClick={() => onDelete(item.id)}>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/15" onClick={() => onDelete(item.id)}>
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
                                         </div>

@@ -57,7 +57,7 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
                 )}
 
                 <div className="flex gap-1 shrink-0 ml-2">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:bg-blue-500/15 hover:text-blue-600 dark:text-blue-400" onClick={() => onEdit(node)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400" onClick={() => onEdit(node)}>
                         <Edit2 className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)}>

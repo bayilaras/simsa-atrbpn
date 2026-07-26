@@ -69,14 +69,14 @@ function TreeNode({ node, level = 0, onEdit, onDelete, onGenerateQR, onAddChild 
 
                 <div className="flex gap-1 ml-2">
                     {node.level !== 'box' && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-indigo-50 dark:bg-indigo-500/15 hover:text-indigo-600 dark:text-indigo-400" onClick={() => onAddChild(node)} title="Tambah Sub-lokasi">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={() => onAddChild(node)} title="Tambah Sub-lokasi">
                             <Plus className="h-3.5 w-3.5" />
                         </Button>
                     )}
                     <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-muted" onClick={() => onGenerateQR(node)} title="QR Code">
                         <QrCode className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:bg-blue-500/15 hover:text-blue-600" onClick={() => onEdit(node)} title="Edit">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600" onClick={() => onEdit(node)} title="Edit">
                         <Edit2 className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)} title="Hapus">

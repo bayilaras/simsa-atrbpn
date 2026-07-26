@@ -374,7 +374,7 @@ export default function SuratKeluarDetail() {
                                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Balasan dari Surat Masuk</label>
                                         <Button variant="outline" size="sm" asChild className="group">
                                             <Link to={`/surat/masuk/${surat.balasanUntuk}`}>
-                                                <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 dark:text-emerald-400 transition-colors" />
+                                                <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
                                                 Lihat Surat Masuk
                                             </Link>
                                         </Button>
@@ -600,7 +600,7 @@ export default function SuratKeluarDetail() {
                                 {!surat.isArchived && (
                                     <Button
                                         variant="outline"
-                                        className="w-full justify-start hover:bg-purple-50 dark:bg-purple-500/15 hover:text-purple-700 dark:text-purple-300 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
+                                        className="w-full justify-start hover:bg-purple-50 dark:hover:bg-purple-500/15 hover:text-purple-700 dark:hover:text-purple-300 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
                                         onClick={() => setArchiveDialogOpen(true)}
                                     >
                                         <Archive className="mr-2 h-4 w-4" />

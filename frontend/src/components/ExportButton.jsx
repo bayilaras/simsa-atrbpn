@@ -74,7 +74,7 @@ const ExportButton = ({ type, filters = {} }) => {
             <button
                 onClick={() => setShowDropdown(!showDropdown)}
                 disabled={isExporting}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm"
             >
                 {isExporting ? (
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -95,14 +95,14 @@ const ExportButton = ({ type, filters = {} }) => {
                             </div>
                             <button
                                 onClick={() => handleExport('excel', 'formulir4')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
                             >
                                 <FileSpreadsheet className="w-4 h-4 text-green-600 dark:text-green-400" />
                                 Excel (.xlsx)
                             </button>
                             <button
                                 onClick={() => handleExport('pdf', 'formulir4')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-red-50 dark:bg-red-500/15 hover:text-red-700 dark:text-red-300 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-red-50 dark:hover:bg-red-500/15 hover:text-red-700 dark:hover:text-red-300 transition-colors"
                             >
                                 <FileText className="w-4 h-4 text-red-600" />
                                 PDF
@@ -113,14 +113,14 @@ const ExportButton = ({ type, filters = {} }) => {
                             </div>
                             <button
                                 onClick={() => handleExport('excel', 'formulir6')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
                             >
                                 <FileSpreadsheet className="w-4 h-4 text-green-600 dark:text-green-400" />
                                 Excel (.xlsx)
                             </button>
                             <button
                                 onClick={() => handleExport('pdf', 'formulir6')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-red-50 dark:bg-red-500/15 hover:text-red-700 dark:text-red-300 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-red-50 dark:hover:bg-red-500/15 hover:text-red-700 dark:hover:text-red-300 transition-colors"
                             >
                                 <FileText className="w-4 h-4 text-red-600" />
                                 PDF
@@ -131,14 +131,14 @@ const ExportButton = ({ type, filters = {} }) => {
                             {/* Surat Masuk / Surat Keluar */}
                             <button
                                 onClick={() => handleExport('excel')}
-                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-foreground hover:bg-emerald-50 dark:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-foreground hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
                             >
                                 <FileSpreadsheet className="w-4 h-4 text-green-600 dark:text-green-400" />
                                 Export Excel (.xlsx)
                             </button>
                             <button
                                 onClick={() => handleExport('pdf')}
-                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-foreground hover:bg-red-50 dark:bg-red-500/15 hover:text-red-700 dark:text-red-300 transition-colors border-t"
+                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-foreground hover:bg-red-50 dark:hover:bg-red-500/15 hover:text-red-700 dark:hover:text-red-300 transition-colors border-t"
                             >
                                 <FileText className="w-4 h-4 text-red-600" />
                                 Export PDF

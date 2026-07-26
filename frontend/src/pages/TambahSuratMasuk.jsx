@@ -772,7 +772,7 @@ export default function TambahSuratMasuk() {
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
-                                                className="ml-2 hover:bg-red-100 dark:bg-red-500/15 hover:text-red-600"
+                                                className="ml-2 hover:bg-red-100 dark:hover:bg-red-500/15 hover:text-red-600"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     removeFile();
