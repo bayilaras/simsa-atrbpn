@@ -577,7 +577,7 @@ export default function Dashboard() {
                                 <div className="divide-y divide-border/50">
                                     {recentActivity.map((item) => (
                                         <div key={item.id} className="flex items-center gap-4 py-3 hover:bg-muted/50 rounded-lg px-2 transition-colors cursor-pointer group"
-                                            onClick={() => navigate(item.type === 'masuk' ? `/surat/masuk/detail/${item.id}` : `/surat/keluar/detail/${item.id}`)}>
+                                            onClick={() => navigate(item.type === 'masuk' ? `/surat/masuk/${item.id}` : `/surat/keluar/${item.id}`)}>
                                             <div className={`p-2 rounded-lg ${item.type === 'masuk' ? 'bg-emerald-100/50' : 'bg-yellow-100/50'}`}>
                                                 {item.type === 'masuk'
                                                     ? <MailOpen className="h-4 w-4 text-emerald-600" />

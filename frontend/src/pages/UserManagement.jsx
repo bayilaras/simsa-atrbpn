@@ -107,6 +107,12 @@ export default function UserManagement() {
         }
     }, [search, roleFilter, unitKerjaFilter, pagination.page]);
 
+    // Applying a filter must restart from the first page
+    const applyFilter = (setter) => (value) => {
+        setter(value);
+        setPagination(prev => ({ ...prev, page: 1 }));
+    };
+
     const loadDropdownData = async () => {
         try {
             const [rolesRes, unitKerjaRes] = await Promise.all([
@@ -239,6 +245,20 @@ export default function UserManagement() {
         }
     };
 
+    const handleActivate = async (user) => {
+        if (!window.confirm(`Yakin ingin mengaktifkan user ${user.name || user.email}?`)) {
+            return;
+        }
+
+        try {
+            await userManagementService.updateUser(user.id, { isActive: true });
+            loadUsers();
+        } catch (err) {
+            console.error('Failed to activate user:', err);
+            alert(err.response?.data?.error || 'Gagal mengaktifkan user');
+        }
+    };
+
     const getInitials = (name) => {
         if (!name) return '?';
         return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -353,12 +373,12 @@ export default function UserManagement() {
                             <Input
                                 placeholder="Cari nama atau email..."
                                 value={search}
-                                onChange={(e) => setSearch(e.target.value)}
+                                onChange={(e) => applyFilter(setSearch)(e.target.value)}
                                 className="pl-9 bg-background focus:bg-background"
                             />
                         </div>
                         <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <Select value={roleFilter} onValueChange={setRoleFilter}>
+                            <Select value={roleFilter} onValueChange={applyFilter(setRoleFilter)}>
                                 <SelectTrigger className="w-full sm:w-[180px] bg-background">
                                     <SelectValue placeholder="Filter Role" />
                                 </SelectTrigger>
@@ -371,7 +391,7 @@ export default function UserManagement() {
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <Select value={unitKerjaFilter} onValueChange={setUnitKerjaFilter}>
+                            <Select value={unitKerjaFilter} onValueChange={applyFilter(setUnitKerjaFilter)}>
                                 <SelectTrigger className="w-full sm:w-[180px] bg-background">
                                     <SelectValue placeholder="Filter Unit" />
                                 </SelectTrigger>
@@ -482,7 +502,7 @@ export default function UserManagement() {
                                                     </DropdownMenuItem>
                                                     {user.id !== currentUser?.id && (
                                                         <DropdownMenuItem
-                                                            onClick={() => handleDeactivate(user)}
+                                                            onClick={() => user.isActive ? handleDeactivate(user) : handleActivate(user)}
                                                             className={user.isActive ? "text-red-600 focus:text-red-600" : "text-green-600 focus:text-green-600"}
                                                         >
                                                             {user.isActive ? (

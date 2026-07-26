@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { format } from 'date-fns'
 import { useAuth } from '@/context/AuthContext'
 import { arsipVitalService } from '@/services/arsip-vital.service'
 import { Button } from '@/components/ui/button'
@@ -18,19 +19,28 @@ import ArsipVitalTable from './ArsipVitalTable'
 import ArsipVitalForm from './ArsipVitalForm'
 import ArsipVitalDetail from './ArsipVitalDetail'
 
-const INITIAL_FORM = {
-    arsipId: '',
-    kategoriVital: '',
-    tingkatKekritisan: '',
-    alasanPenetapan: '',
-    metodeProteksi: '',
-    lokasiBackup: '',
-    mediaBackup: '',
-    jadwalBackup: '',
-    penanggungJawab: '',
-    tanggalPenetapan: new Date().toISOString().split('T')[0],
-    tanggalReviewSelanjutnya: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-    statusProteksi: 'belum_diproteksi'
+const SEARCH_DEBOUNCE_MS = 300
+
+// Built per call so the dates follow the browser's local day, not UTC, and never go stale.
+const makeInitialForm = () => {
+    const today = new Date()
+    const nextReview = new Date(today)
+    nextReview.setFullYear(nextReview.getFullYear() + 1)
+
+    return {
+        arsipId: '',
+        kategoriVital: '',
+        tingkatKekritisan: '',
+        alasanPenetapan: '',
+        metodeProteksi: '',
+        lokasiBackup: '',
+        mediaBackup: '',
+        jadwalBackup: '',
+        penanggungJawab: '',
+        tanggalPenetapan: format(today, 'yyyy-MM-dd'),
+        tanggalReviewSelanjutnya: format(nextReview, 'yyyy-MM-dd'),
+        statusProteksi: 'belum_diproteksi'
+    }
 }
 
 export default function ArsipVital() {
@@ -49,6 +59,7 @@ export default function ArsipVital() {
 
     // Filters
     const [search, setSearch] = useState('')
+    const [debouncedSearch, setDebouncedSearch] = useState('')
     const [filterKategori, setFilterKategori] = useState('')
     const [filterStatus, setFilterStatus] = useState('')
 
@@ -59,28 +70,39 @@ export default function ArsipVital() {
 
     // Form
     const [selectedItem, setSelectedItem] = useState(null)
-    const [form, setForm] = useState(INITIAL_FORM)
+    const [form, setForm] = useState(makeInitialForm)
+
+    // Only the newest list request may write to the table
+    const loadSeq = useRef(0)
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS)
+        return () => clearTimeout(timer)
+    }, [search])
 
     // Load Data
     const loadData = useCallback(async () => {
         if (!unitKerjaId) return
+        const seq = ++loadSeq.current
         setLoading(true)
         try {
             const res = await arsipVitalService.findAll({
-                unitKerjaId, page, limit: 10, search,
+                unitKerjaId, page, limit: 10, search: debouncedSearch,
                 kategoriVital: filterKategori, statusProteksi: filterStatus
             })
+            if (seq !== loadSeq.current) return
             if (res.success) {
                 setData(res.data)
                 setTotalPages(res.pagination.totalPages)
             }
         } catch (err) {
+            if (seq !== loadSeq.current) return
             console.error(err)
             toast({ title: 'Gagal memuat data', description: err.message, variant: 'destructive' })
         } finally {
-            setLoading(false)
+            if (seq === loadSeq.current) setLoading(false)
         }
-    }, [unitKerjaId, page, search, filterKategori, filterStatus])
+    }, [unitKerjaId, page, debouncedSearch, filterKategori, filterStatus])
 
     const loadStats = useCallback(async () => {
         if (!unitKerjaId) return
@@ -88,7 +110,9 @@ export default function ArsipVital() {
             const resStats = await arsipVitalService.getStats(unitKerjaId)
             setStats(resStats.data)
             const resDue = await arsipVitalService.getDueForReview(unitKerjaId)
-            setDueReview(resDue.data)
+            // getDueForReview already unwraps the { success, data } envelope; never store undefined
+            // here because the tab badge and table read dueReview.length during render.
+            setDueReview(Array.isArray(resDue) ? resDue : resDue?.data ?? [])
         } catch (err) {
             console.error(err)
         }
@@ -97,7 +121,7 @@ export default function ArsipVital() {
     useEffect(() => { loadData(); loadStats() }, [loadData, loadStats])
 
     // Handlers
-    const resetForm = () => setForm(INITIAL_FORM)
+    const resetForm = () => setForm(makeInitialForm())
 
     const handleCreate = async () => {
         if (!form.arsipId || !form.kategoriVital || !form.tingkatKekritisan) {

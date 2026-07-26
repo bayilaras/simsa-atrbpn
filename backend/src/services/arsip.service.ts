@@ -1,6 +1,7 @@
 import { db } from '../config/database';
 import { arsip, NewArsip, Arsip, arsipItems } from '../db/schema';
-import { eq, and, desc, sql, lte, gte } from 'drizzle-orm';
+import { eq, and, desc, sql, lte, gte, ilike, or } from 'drizzle-orm';
+import { ConflictError } from '../utils/errors';
 
 export interface ArsipFilters {
     unitKerjaId?: string;
@@ -27,6 +28,16 @@ export class ArsipService {
         }
         if (tahun) {
             conditions.push(eq(arsip.tahun, tahun));
+        }
+        if (search) {
+            conditions.push(
+                or(
+                    ilike(arsip.nomorBerkas, `%${search}%`),
+                    ilike(arsip.uraianBerkas, `%${search}%`),
+                    ilike(arsip.nomorSuratOriginal, `%${search}%`),
+                    ilike(arsip.perihalOriginal, `%${search}%`)
+                )!
+            );
         }
 
 
@@ -94,10 +105,97 @@ export class ArsipService {
     }
 
     async delete(id: string) {
-        const [result] = await db
-            .delete(arsip)
+        const {
+            archiveLending, layananArsip, arsipVital, arsipTerjaga,
+            penyusutanItems, fileAttachments, suratMasuk, suratKeluar,
+        } = await import('../db/schema');
+
+        const [existing] = await db
+            .select()
+            .from(arsip)
             .where(eq(arsip.id, id))
-            .returning();
+            .limit(1);
+
+        if (!existing) return undefined;
+
+        if (existing.lendingStatus === 'borrowed') {
+            throw new ConflictError('Arsip sedang dipinjam sehingga tidak dapat dihapus.');
+        }
+
+        // These tables reference arsip with ON DELETE RESTRICT / NO ACTION, so without
+        // this check the delete surfaces as a raw foreign key violation.
+        const blockers: string[] = [];
+
+        const [lending] = await db.select({ id: archiveLending.id }).from(archiveLending)
+            .where(eq(archiveLending.arsipId, id)).limit(1);
+        if (lending) blockers.push('riwayat peminjaman');
+
+        const [layanan] = await db.select({ id: layananArsip.id }).from(layananArsip)
+            .where(eq(layananArsip.arsipId, id)).limit(1);
+        if (layanan) blockers.push('permintaan layanan arsip');
+
+        const [vital] = await db.select({ id: arsipVital.id }).from(arsipVital)
+            .where(eq(arsipVital.arsipId, id)).limit(1);
+        if (vital) blockers.push('penetapan arsip vital');
+
+        const [terjaga] = await db.select({ id: arsipTerjaga.id }).from(arsipTerjaga)
+            .where(eq(arsipTerjaga.arsipId, id)).limit(1);
+        if (terjaga) blockers.push('penetapan arsip terjaga');
+
+        const [penyusutan] = await db.select({ id: penyusutanItems.id }).from(penyusutanItems)
+            .where(eq(penyusutanItems.arsipId, id)).limit(1);
+        if (penyusutan) blockers.push('daftar penyusutan');
+
+        if (blockers.length > 0) {
+            throw new ConflictError(`Arsip tidak dapat dihapus karena masih terkait dengan ${blockers.join(', ')}.`);
+        }
+
+        const attachments = await db
+            .select()
+            .from(fileAttachments)
+            .where(and(
+                eq(fileAttachments.entityType, 'arsip'),
+                eq(fileAttachments.entityId, id)
+            ));
+
+        const result = await db.transaction(async (tx: any) => {
+            await tx
+                .delete(fileAttachments)
+                .where(and(
+                    eq(fileAttachments.entityType, 'arsip'),
+                    eq(fileAttachments.entityId, id)
+                ));
+
+            const [deleted] = await tx
+                .delete(arsip)
+                .where(eq(arsip.id, id))
+                .returning();
+
+            // Release the source surat so it can be archived again
+            if (existing.sourceSuratId && existing.jenisArsip === 'masuk') {
+                await tx
+                    .update(suratMasuk)
+                    .set({ isArchived: false, updatedAt: new Date() })
+                    .where(eq(suratMasuk.id, existing.sourceSuratId));
+            } else if (existing.sourceSuratId && existing.jenisArsip === 'keluar') {
+                await tx
+                    .update(suratKeluar)
+                    .set({ isArchived: false, updatedAt: new Date() })
+                    .where(eq(suratKeluar.id, existing.sourceSuratId));
+            }
+
+            return deleted;
+        });
+
+        // Blobs live outside the database, so they are cleaned up after the commit
+        if (attachments.length > 0) {
+            const { blobStorageService } = await import('./blob-storage.service');
+            for (const attachment of attachments) {
+                if (attachment.driveFileId) {
+                    await blobStorageService.deleteFile(attachment.driveFileId);
+                }
+            }
+        }
 
         return result;
     }
@@ -129,101 +227,105 @@ export class ArsipService {
     }) {
         const { suratMasuk } = await import('../db/schema');
 
-        // Get the surat masuk
-        const [surat] = await db
-            .select()
-            .from(suratMasuk)
-            .where(eq(suratMasuk.id, suratMasukId))
-            .limit(1);
+        return await db.transaction(async (tx: any) => {
+            // Get the surat masuk — locked so concurrent requests cannot both pass the
+            // "already archived" check below and create duplicate arsip rows
+            const [surat] = await tx
+                .select()
+                .from(suratMasuk)
+                .where(eq(suratMasuk.id, suratMasukId))
+                .limit(1)
+                .for('update');
 
-        if (!surat) {
-            throw new Error('Surat masuk not found');
-        }
+            if (!surat) {
+                throw new Error('Surat masuk not found');
+            }
 
-        // Check if already archived
-        const [existing] = await db
-            .select()
-            .from(arsip)
-            .where(and(
-                eq(arsip.sourceSuratId, suratMasukId),
-                eq(arsip.jenisArsip, 'masuk')
-            ))
-            .limit(1);
+            // Check if already archived
+            const [existing] = await tx
+                .select()
+                .from(arsip)
+                .where(and(
+                    eq(arsip.sourceSuratId, suratMasukId),
+                    eq(arsip.jenisArsip, 'masuk')
+                ))
+                .limit(1);
 
-        if (existing) {
-            throw new Error('Surat masuk sudah diarsipkan');
-        }
+            if (existing) {
+                throw new Error('Surat masuk sudah diarsipkan');
+            }
 
-        // Calculate retention dates
-        const retentionDates = metadata.retensiAktif || metadata.retensiInaktif
-            ? this.calculateRetentionDates(
-                surat.tanggalSurat || new Date().toISOString().split('T')[0],
-                metadata.retensiAktif || null,
-                metadata.retensiInaktif || null
-            )
-            : { tanggalKadaluarsa: null };
+            // Calculate retention dates
+            const retentionDates = metadata.retensiAktif || metadata.retensiInaktif
+                ? this.calculateRetentionDates(
+                    surat.tanggalSurat || new Date().toISOString().split('T')[0],
+                    metadata.retensiAktif || null,
+                    metadata.retensiInaktif || null
+                )
+                : { tanggalKadaluarsa: null };
 
-        // Create arsip entry
-        const [arsipEntry] = await db
-            .insert(arsip)
-            .values({
-                unitKerjaId: surat.unitKerjaId,
-                jenisArsip: 'masuk',
-                sourceSuratId: suratMasukId,
-                tahun: surat.tahun,
-                nomorBerkas: metadata.nomorBerkas,
-                kodeKlasifikasi: metadata.kodeKlasifikasi || surat.klasifikasiKode,
-                uraianBerkas: metadata.uraianBerkas || surat.perihal,
-                tanggalArsip: metadata.tanggalArsip || surat.tanggalSurat,
-                lokasiFc: metadata.lokasiFc,
-                lokasiLaci: metadata.lokasiLaci,
-                lokasiFolder: metadata.lokasiFolder,
-                jraKode: metadata.jraKode,
-                jraUraian: metadata.jraUraian,
-                retensiAktif: metadata.retensiAktif,
-                retensiInaktif: metadata.retensiInaktif,
-                hasilAkhir: metadata.hasilAkhir,
-                klasifikasiKeamanan: metadata.klasifikasiKeamanan,
-                personInCharge: metadata.personInCharge,
-                unitPengolah: metadata.unitPengolah,
-                kurunWaktu: metadata.kurunWaktu,
-                nomorItem: metadata.nomorItem,
-                uraianItem: metadata.uraianItem,
-                tingkatPerkembangan: metadata.tingkatPerkembangan,
-                jumlah: metadata.jumlah,
-                keterangan: metadata.keterangan,
-                nomorSuratOriginal: surat.nomorSurat,
-                tanggalSuratOriginal: surat.tanggalSurat,
-                perihalOriginal: surat.perihal,
-                tanggalKadaluarsa: retentionDates.tanggalKadaluarsa,
-                createdBy: metadata.createdBy,
-            })
-            .returning();
+            // Create arsip entry
+            const [arsipEntry] = await tx
+                .insert(arsip)
+                .values({
+                    unitKerjaId: surat.unitKerjaId,
+                    jenisArsip: 'masuk',
+                    sourceSuratId: suratMasukId,
+                    tahun: surat.tahun,
+                    nomorBerkas: metadata.nomorBerkas,
+                    kodeKlasifikasi: metadata.kodeKlasifikasi || surat.klasifikasiKode,
+                    uraianBerkas: metadata.uraianBerkas || surat.perihal,
+                    tanggalArsip: metadata.tanggalArsip || surat.tanggalSurat,
+                    lokasiFc: metadata.lokasiFc,
+                    lokasiLaci: metadata.lokasiLaci,
+                    lokasiFolder: metadata.lokasiFolder,
+                    jraKode: metadata.jraKode,
+                    jraUraian: metadata.jraUraian,
+                    retensiAktif: metadata.retensiAktif,
+                    retensiInaktif: metadata.retensiInaktif,
+                    hasilAkhir: metadata.hasilAkhir,
+                    klasifikasiKeamanan: metadata.klasifikasiKeamanan,
+                    personInCharge: metadata.personInCharge,
+                    unitPengolah: metadata.unitPengolah,
+                    kurunWaktu: metadata.kurunWaktu,
+                    nomorItem: metadata.nomorItem,
+                    uraianItem: metadata.uraianItem,
+                    tingkatPerkembangan: metadata.tingkatPerkembangan,
+                    jumlah: metadata.jumlah,
+                    keterangan: metadata.keterangan,
+                    nomorSuratOriginal: surat.nomorSurat,
+                    tanggalSuratOriginal: surat.tanggalSurat,
+                    perihalOriginal: surat.perihal,
+                    tanggalKadaluarsa: retentionDates.tanggalKadaluarsa,
+                    createdBy: metadata.createdBy,
+                })
+                .returning();
 
-        // Insert items into arsip_items table
-        if ((metadata as any).items && Array.isArray((metadata as any).items) && (metadata as any).items.length > 0) {
-            const itemsToInsert = (metadata as any).items.map((item: any) => ({
-                arsipId: arsipEntry.id,
-                nomorItem: item.nomor || item.nomorItem || '',
-                uraianItem: item.uraian || item.uraianItem || '',
-                tingkatPerkembangan: item.perkembangan || item.tingkatPerkembangan || '',
-                tanggalItem: item.tanggal || item.tanggalItem || null,
-                jumlah: item.jumlah || 1,
-                mediaType: item.mediaType || 'kertas',
-                lokasiFc: item.lokasiFc || '',
-                lokasiLaci: item.lokasiLaci || '',
-                lokasiFolder: item.lokasiFolder || '',
-            }));
-            await db.insert(arsipItems).values(itemsToInsert);
-        }
+            // Insert items into arsip_items table
+            if ((metadata as any).items && Array.isArray((metadata as any).items) && (metadata as any).items.length > 0) {
+                const itemsToInsert = (metadata as any).items.map((item: any) => ({
+                    arsipId: arsipEntry.id,
+                    nomorItem: item.nomor || item.nomorItem || '',
+                    uraianItem: item.uraian || item.uraianItem || '',
+                    tingkatPerkembangan: item.perkembangan || item.tingkatPerkembangan || '',
+                    tanggalItem: item.tanggal || item.tanggalItem || null,
+                    jumlah: item.jumlah || 1,
+                    mediaType: item.mediaType || 'kertas',
+                    lokasiFc: item.lokasiFc || '',
+                    lokasiLaci: item.lokasiLaci || '',
+                    lokasiFolder: item.lokasiFolder || '',
+                }));
+                await tx.insert(arsipItems).values(itemsToInsert);
+            }
 
-        // Update surat masuk isArchived flag
-        await db
-            .update(suratMasuk)
-            .set({ isArchived: true, updatedAt: new Date() })
-            .where(eq(suratMasuk.id, suratMasukId));
+            // Update surat masuk isArchived flag
+            await tx
+                .update(suratMasuk)
+                .set({ isArchived: true, updatedAt: new Date() })
+                .where(eq(suratMasuk.id, suratMasukId));
 
-        return arsipEntry;
+            return arsipEntry;
+        });
     }
 
     // Create arsip from surat keluar
@@ -253,101 +355,105 @@ export class ArsipService {
     }) {
         const { suratKeluar } = await import('../db/schema');
 
-        // Get the surat keluar
-        const [surat] = await db
-            .select()
-            .from(suratKeluar)
-            .where(eq(suratKeluar.id, suratKeluarId))
-            .limit(1);
+        return await db.transaction(async (tx: any) => {
+            // Get the surat keluar — locked so concurrent requests cannot both pass the
+            // "already archived" check below and create duplicate arsip rows
+            const [surat] = await tx
+                .select()
+                .from(suratKeluar)
+                .where(eq(suratKeluar.id, suratKeluarId))
+                .limit(1)
+                .for('update');
 
-        if (!surat) {
-            throw new Error('Surat keluar not found');
-        }
+            if (!surat) {
+                throw new Error('Surat keluar not found');
+            }
 
-        // Check if already archived
-        const [existing] = await db
-            .select()
-            .from(arsip)
-            .where(and(
-                eq(arsip.sourceSuratId, suratKeluarId),
-                eq(arsip.jenisArsip, 'keluar')
-            ))
-            .limit(1);
+            // Check if already archived
+            const [existing] = await tx
+                .select()
+                .from(arsip)
+                .where(and(
+                    eq(arsip.sourceSuratId, suratKeluarId),
+                    eq(arsip.jenisArsip, 'keluar')
+                ))
+                .limit(1);
 
-        if (existing) {
-            throw new Error('Surat keluar sudah diarsipkan');
-        }
+            if (existing) {
+                throw new Error('Surat keluar sudah diarsipkan');
+            }
 
-        // Calculate retention dates
-        const retentionDates = metadata.retensiAktif || metadata.retensiInaktif
-            ? this.calculateRetentionDates(
-                surat.tanggalSurat || new Date().toISOString().split('T')[0],
-                metadata.retensiAktif || null,
-                metadata.retensiInaktif || null
-            )
-            : { tanggalKadaluarsa: null };
+            // Calculate retention dates
+            const retentionDates = metadata.retensiAktif || metadata.retensiInaktif
+                ? this.calculateRetentionDates(
+                    surat.tanggalSurat || new Date().toISOString().split('T')[0],
+                    metadata.retensiAktif || null,
+                    metadata.retensiInaktif || null
+                )
+                : { tanggalKadaluarsa: null };
 
-        // Create arsip entry
-        const [arsipEntry] = await db
-            .insert(arsip)
-            .values({
-                unitKerjaId: surat.unitKerjaId,
-                jenisArsip: 'keluar',
-                sourceSuratId: suratKeluarId,
-                tahun: surat.tahun,
-                nomorBerkas: metadata.nomorBerkas,
-                kodeKlasifikasi: metadata.kodeKlasifikasi || surat.klasifikasiFasilitatifKode || surat.klasifikasiSubstantifKode,
-                uraianBerkas: metadata.uraianBerkas || surat.perihal,
-                tanggalArsip: metadata.tanggalArsip || surat.tanggalSurat,
-                lokasiFc: metadata.lokasiFc,
-                lokasiLaci: metadata.lokasiLaci,
-                lokasiFolder: metadata.lokasiFolder,
-                jraKode: metadata.jraKode,
-                jraUraian: metadata.jraUraian,
-                retensiAktif: metadata.retensiAktif,
-                retensiInaktif: metadata.retensiInaktif,
-                hasilAkhir: metadata.hasilAkhir,
-                klasifikasiKeamanan: metadata.klasifikasiKeamanan,
-                personInCharge: metadata.personInCharge,
-                unitPengolah: metadata.unitPengolah,
-                kurunWaktu: metadata.kurunWaktu,
-                nomorItem: metadata.nomorItem,
-                uraianItem: metadata.uraianItem,
-                tingkatPerkembangan: metadata.tingkatPerkembangan,
-                jumlah: metadata.jumlah,
-                keterangan: metadata.keterangan,
-                nomorSuratOriginal: surat.nomorSurat,
-                tanggalSuratOriginal: surat.tanggalSurat,
-                perihalOriginal: surat.perihal,
-                tanggalKadaluarsa: retentionDates.tanggalKadaluarsa,
-                createdBy: metadata.createdBy,
-            })
-            .returning();
+            // Create arsip entry
+            const [arsipEntry] = await tx
+                .insert(arsip)
+                .values({
+                    unitKerjaId: surat.unitKerjaId,
+                    jenisArsip: 'keluar',
+                    sourceSuratId: suratKeluarId,
+                    tahun: surat.tahun,
+                    nomorBerkas: metadata.nomorBerkas,
+                    kodeKlasifikasi: metadata.kodeKlasifikasi || surat.klasifikasiFasilitatifKode || surat.klasifikasiSubstantifKode,
+                    uraianBerkas: metadata.uraianBerkas || surat.perihal,
+                    tanggalArsip: metadata.tanggalArsip || surat.tanggalSurat,
+                    lokasiFc: metadata.lokasiFc,
+                    lokasiLaci: metadata.lokasiLaci,
+                    lokasiFolder: metadata.lokasiFolder,
+                    jraKode: metadata.jraKode,
+                    jraUraian: metadata.jraUraian,
+                    retensiAktif: metadata.retensiAktif,
+                    retensiInaktif: metadata.retensiInaktif,
+                    hasilAkhir: metadata.hasilAkhir,
+                    klasifikasiKeamanan: metadata.klasifikasiKeamanan,
+                    personInCharge: metadata.personInCharge,
+                    unitPengolah: metadata.unitPengolah,
+                    kurunWaktu: metadata.kurunWaktu,
+                    nomorItem: metadata.nomorItem,
+                    uraianItem: metadata.uraianItem,
+                    tingkatPerkembangan: metadata.tingkatPerkembangan,
+                    jumlah: metadata.jumlah,
+                    keterangan: metadata.keterangan,
+                    nomorSuratOriginal: surat.nomorSurat,
+                    tanggalSuratOriginal: surat.tanggalSurat,
+                    perihalOriginal: surat.perihal,
+                    tanggalKadaluarsa: retentionDates.tanggalKadaluarsa,
+                    createdBy: metadata.createdBy,
+                })
+                .returning();
 
-        // Insert items into arsip_items table
-        if ((metadata as any).items && Array.isArray((metadata as any).items) && (metadata as any).items.length > 0) {
-            const itemsToInsert = (metadata as any).items.map((item: any) => ({
-                arsipId: arsipEntry.id,
-                nomorItem: item.nomor || item.nomorItem || '',
-                uraianItem: item.uraian || item.uraianItem || '',
-                tingkatPerkembangan: item.perkembangan || item.tingkatPerkembangan || '',
-                tanggalItem: item.tanggal || item.tanggalItem || null,
-                jumlah: item.jumlah || 1,
-                mediaType: item.mediaType || 'kertas',
-                lokasiFc: item.lokasiFc || '',
-                lokasiLaci: item.lokasiLaci || '',
-                lokasiFolder: item.lokasiFolder || '',
-            }));
-            await db.insert(arsipItems).values(itemsToInsert);
-        }
+            // Insert items into arsip_items table
+            if ((metadata as any).items && Array.isArray((metadata as any).items) && (metadata as any).items.length > 0) {
+                const itemsToInsert = (metadata as any).items.map((item: any) => ({
+                    arsipId: arsipEntry.id,
+                    nomorItem: item.nomor || item.nomorItem || '',
+                    uraianItem: item.uraian || item.uraianItem || '',
+                    tingkatPerkembangan: item.perkembangan || item.tingkatPerkembangan || '',
+                    tanggalItem: item.tanggal || item.tanggalItem || null,
+                    jumlah: item.jumlah || 1,
+                    mediaType: item.mediaType || 'kertas',
+                    lokasiFc: item.lokasiFc || '',
+                    lokasiLaci: item.lokasiLaci || '',
+                    lokasiFolder: item.lokasiFolder || '',
+                }));
+                await tx.insert(arsipItems).values(itemsToInsert);
+            }
 
-        // Update surat keluar isArchived flag
-        await db
-            .update(suratKeluar)
-            .set({ isArchived: true, updatedAt: new Date() })
-            .where(eq(suratKeluar.id, suratKeluarId));
+            // Update surat keluar isArchived flag
+            await tx
+                .update(suratKeluar)
+                .set({ isArchived: true, updatedAt: new Date() })
+                .where(eq(suratKeluar.id, suratKeluarId));
 
-        return arsipEntry;
+            return arsipEntry;
+        });
     }
 
     // Find arsip by source surat id
@@ -437,21 +543,33 @@ export class ArsipService {
         return match ? parseInt(match[1], 10) : 0;
     }
 
+    // Retention expressed in months, so "6 bulan" is not silently treated as no retention
+    parseRetentionMonths(retention: string | null): number {
+        const years = this.parseRetentionPeriod(retention);
+        if (years > 0) return years * 12;
+
+        const match = retention ? retention.match(/(\d+)\s*bulan/i) : null;
+        return match ? parseInt(match[1], 10) : 0;
+    }
+
     calculateRetentionDates(tanggalArsip: string, retensiAktif: string | null, retensiInaktif: string | null) {
         const arsipDate = new Date(tanggalArsip);
-        const aktifYears = this.parseRetentionPeriod(retensiAktif);
-        const inaktifYears = this.parseRetentionPeriod(retensiInaktif);
+        const aktifMonths = this.parseRetentionMonths(retensiAktif);
+        const inaktifMonths = this.parseRetentionMonths(retensiInaktif);
 
         const endAktif = new Date(arsipDate);
-        endAktif.setFullYear(endAktif.getFullYear() + aktifYears);
+        endAktif.setMonth(endAktif.getMonth() + aktifMonths);
 
         const endInaktif = new Date(endAktif);
-        endInaktif.setFullYear(endInaktif.getFullYear() + inaktifYears);
+        endInaktif.setMonth(endInaktif.getMonth() + inaktifMonths);
+
+        const totalMonths = aktifMonths + inaktifMonths;
 
         return {
-            tanggalAktifBerakhir: aktifYears > 0 ? endAktif.toISOString().split('T')[0] : null,
-            tanggalInaktifBerakhir: (aktifYears + inaktifYears) > 0 ? endInaktif.toISOString().split('T')[0] : null,
-            tanggalKadaluarsa: endInaktif.toISOString().split('T')[0],
+            tanggalAktifBerakhir: aktifMonths > 0 ? endAktif.toISOString().split('T')[0] : null,
+            tanggalInaktifBerakhir: totalMonths > 0 ? endInaktif.toISOString().split('T')[0] : null,
+            // No parsable retention (JRA rows use '-') means no expiry, not "expired today"
+            tanggalKadaluarsa: totalMonths > 0 ? endInaktif.toISOString().split('T')[0] : null,
         };
     }
 

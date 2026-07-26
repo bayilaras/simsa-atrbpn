@@ -22,11 +22,8 @@ export default function handler(req, res) {
     if (initError) {
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({
-            error: 'App initialization failed',
-            message: initError.message,
-            stack: initError.stack?.split('\n').slice(0, 8),
-        }));
+        // Details are already logged above — never expose them to the client.
+        res.end(JSON.stringify({ error: 'Internal Server Error' }));
         return;
     }
     return app(req, res);

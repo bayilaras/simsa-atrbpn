@@ -239,6 +239,23 @@ app.get('/api/drive-file/:fileId', authMiddleware as any, async (req: Request, r
         // Decode the fileId in case it was URL-encoded
         const decodedUrl = decodeURIComponent(fileId as string);
         if (decodedUrl.startsWith('http')) {
+            // fileId is client-controlled, so only our own blob storage may be
+            // redirected to — anything else would make this an open redirect.
+            let target: URL;
+            try {
+                target = new URL(decodedUrl);
+            } catch {
+                return res.status(400).json({ error: 'Invalid file ID' });
+            }
+
+            const isBlobStorage = target.protocol === 'https:' &&
+                (target.hostname === 'blob.vercel-storage.com' ||
+                    target.hostname.endsWith('.blob.vercel-storage.com'));
+
+            if (!isBlobStorage) {
+                return res.status(400).json({ error: 'Invalid file ID' });
+            }
+
             return res.redirect(decodedUrl);
         }
 

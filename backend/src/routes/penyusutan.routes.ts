@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
+import { canAccessUnit, Role } from '../config/permissions';
 import { penyusutanService } from '../services/penyusutan.service';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createPenyusutanSchema, updatePenyusutanStatusSchema, removePenyusutanItemsSchema } from '../validators/schemas';
@@ -86,6 +87,11 @@ router.get('/', async (req: AuthRequest, res, next) => {
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
+        // unitKerjaId is client-supplied, so the caller must be scoped to that unit
+        const callerRole = (req.user?.role || 'user') as Role;
+        if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
+            return res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
+        }
         const result = await penyusutanService.findAll({
             unitKerjaId,
             jenisPenyusutan: jenisPenyusutan as any,
@@ -121,6 +127,11 @@ router.post('/', canWriteMiddleware(), sensitiveLimiter, validateBody(createPeny
             return res.status(400).json({
                 error: 'unitKerjaId, jenisPenyusutan, and arsipIds[] are required'
             });
+        }
+        // unitKerjaId is client-supplied, so the caller must be scoped to that unit
+        const callerRole = (req.user?.role || 'user') as Role;
+        if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
+            return res.status(403).json({ error: 'Anda tidak berwenang membuat penyusutan untuk unit kerja tersebut' });
         }
         const result = await penyusutanService.create({
             unitKerjaId,

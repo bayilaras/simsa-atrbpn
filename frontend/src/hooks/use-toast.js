@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 // Simple toast state management
 let toastId = 0
@@ -30,12 +30,12 @@ function dismissToast(id) {
 export function useToast() {
     const [toasts, setToasts] = useState(toastState.toasts)
 
-    useState(() => {
+    useEffect(() => {
         listeners.push(setToasts)
         return () => {
             listeners = listeners.filter((l) => l !== setToasts)
         }
-    })
+    }, [])
 
     const toast = useCallback(({ title, description, variant = 'default', duration = 3000 }) => {
         // For now, use browser alert as fallback since Toaster component is not set up

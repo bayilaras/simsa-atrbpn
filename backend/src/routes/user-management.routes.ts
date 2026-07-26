@@ -29,7 +29,7 @@ async function requireAdmin(req: Request, res: Response, next: any) {
 
         // Get user role
         const [currentUser] = await db
-            .select({ role: users.role })
+            .select({ role: users.role, email: users.email })
             .from(users)
             .where(eq(users.id, session.user.id))
             .limit(1);
@@ -42,7 +42,7 @@ async function requireAdmin(req: Request, res: Response, next: any) {
         }
 
         // Attach user to request
-        (req as any).currentUser = { id: session.user.id, role: currentUser.role };
+        (req as any).currentUser = { id: session.user.id, role: currentUser.role, email: currentUser.email };
         next();
     } catch (error) {
         log.error({ err: error }, 'Auth check error:');

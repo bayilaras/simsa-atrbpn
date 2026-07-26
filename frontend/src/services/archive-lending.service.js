@@ -7,24 +7,23 @@ export const archiveLendingService = {
      * Get all lending records with filters
      */
     getAll: async (params = {}) => {
-        const response = await api.get(BASE_URL, params);
-        return response.data;
+        // Read endpoints return the full { success, data, pagination } envelope,
+        // matching arsip.service.js and what the pages check.
+        return await api.get(BASE_URL, params);
     },
 
     /**
      * Get overdue lending records
      */
     getOverdue: async () => {
-        const response = await api.get(`${BASE_URL}/overdue`);
-        return response.data;
+        return await api.get(`${BASE_URL}/overdue`);
     },
 
     /**
      * Get lending statistics
      */
     getStats: async () => {
-        const response = await api.get(`${BASE_URL}/stats`);
-        return response.data;
+        return await api.get(`${BASE_URL}/stats`);
     },
 
     /**

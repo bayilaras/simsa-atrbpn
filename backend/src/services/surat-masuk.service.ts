@@ -94,11 +94,21 @@ export class SuratMasukService {
         };
     }
 
-    async findById(id: string) {
+    async findById(id: string, unitKerjaId?: string | null) {
+        const conditions = [
+            eq(suratMasuk.id, id),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+        ];
+
+        // Only scope to a unit when the caller resolved one (super_admin sees all)
+        if (unitKerjaId) {
+            conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
+        }
+
         const [result] = await db
             .select()
             .from(suratMasuk)
-            .where(eq(suratMasuk.id, id))
+            .where(and(...conditions))
             .limit(1);
 
         return result || null;
@@ -142,18 +152,38 @@ export class SuratMasukService {
         }
     }
 
-    async update(id: string, data: Partial<SuratMasuk>) {
+    async update(id: string, data: Partial<SuratMasuk>, unitKerjaId?: string | null) {
+        const conditions = [
+            eq(suratMasuk.id, id),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Never mutate soft-deleted records (NULL-safe)
+        ];
+
+        // Only scope to a unit when the caller resolved one (super_admin sees all)
+        if (unitKerjaId) {
+            conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
+        }
+
         const [result] = await db
             .update(suratMasuk)
             .set({ ...data, updatedAt: new Date() })
-            .where(eq(suratMasuk.id, id))
+            .where(and(...conditions))
             .returning();
 
         return result;
     }
 
-    async delete(id: string, deletedByUserId?: string) {
+    async delete(id: string, deletedByUserId?: string, unitKerjaId?: string | null) {
         // Soft delete - mark as deleted instead of permanently removing
+        const conditions = [
+            eq(suratMasuk.id, id),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Keep deletedAt/deletedBy of an already deleted record intact
+        ];
+
+        // Only scope to a unit when the caller resolved one (super_admin sees all)
+        if (unitKerjaId) {
+            conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
+        }
+
         const [result] = await db
             .update(suratMasuk)
             .set({
@@ -162,7 +192,7 @@ export class SuratMasukService {
                 deletedBy: deletedByUserId || null,
                 updatedAt: new Date(),
             })
-            .where(eq(suratMasuk.id, id))
+            .where(and(...conditions))
             .returning();
 
         return result;
@@ -193,8 +223,8 @@ export class SuratMasukService {
         return result;
     }
 
-    async archive(id: string) {
-        return this.update(id, { isArchived: true });
+    async archive(id: string, unitKerjaId?: string | null) {
+        return this.update(id, { isArchived: true }, unitKerjaId);
     }
 
     async getNextNumber(unitKerjaId: string, tahun?: number) {
@@ -269,7 +299,10 @@ export class SuratMasukService {
         const balasan = await db
             .select()
             .from(suratKeluar)
-            .where(eq(suratKeluar.balasanUntuk, suratMasukId))
+            .where(and(
+                eq(suratKeluar.balasanUntuk, suratMasukId),
+                or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!  // Exclude soft-deleted records (NULL-safe)
+            ))
             .orderBy(desc(suratKeluar.createdAt));
 
         return balasan;
@@ -288,7 +321,8 @@ export class SuratMasukService {
             .from(suratMasuk)
             .where(and(
                 eq(suratMasuk.unitKerjaId, unitKerjaId),
-                eq(suratMasuk.status, 'belum_dibalas')
+                eq(suratMasuk.status, 'belum_dibalas'),
+                or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!  // Exclude soft-deleted records (NULL-safe)
             ))
             .orderBy(desc(suratMasuk.tanggalSurat));
 
@@ -296,8 +330,8 @@ export class SuratMasukService {
     }
 
     // Get full detail with linked arsip info
-    async findByIdWithLinks(id: string) {
-        const surat = await this.findById(id);
+    async findByIdWithLinks(id: string, unitKerjaId?: string | null) {
+        const surat = await this.findById(id, unitKerjaId);
         if (!surat) return null;
 
         const balasan = await this.getBalasan(id);

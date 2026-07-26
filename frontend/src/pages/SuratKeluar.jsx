@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { Send, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, MailOpen, FolderArchive, RefreshCw, Trash2, FileText, AlertCircle, Inbox, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
@@ -85,6 +85,7 @@ export default function SuratKeluar() {
 
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
     const [tahun, setTahun] = useState('all');
     const [naskahDinas, setNaskahDinas] = useState('all');
@@ -110,22 +111,27 @@ export default function SuratKeluar() {
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (user?.unitKerjaId || undefined);
 
+    // Guards against out-of-order responses overwriting newer results
+    const fetchSeqRef = useRef(0);
+
     // Fetch data from API
     const fetchData = useCallback(async () => {
+        const seq = ++fetchSeqRef.current;
         setLoading(true);
         try {
             const params = {
                 page: pagination.page,
                 limit: pagination.limit,
-                search: searchTerm || undefined,
+                search: debouncedSearchTerm || undefined,
                 unitKerjaId: resolvedUnitKerjaId,
                 tahun: tahun !== 'all' ? tahun : undefined,
-                jenisSurat: naskahDinas !== 'all' ? naskahDinas : undefined,
+                naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
             };
 
             const response = await suratKeluarService.getAll(params);
+            if (seq !== fetchSeqRef.current) return;
             if (response.success) {
                 setData(response.data || []);
                 setPagination(prev => ({
@@ -135,6 +141,7 @@ export default function SuratKeluar() {
                 }));
             }
         } catch (error) {
+            if (seq !== fetchSeqRef.current) return;
             console.error('Error fetching surat keluar:', error);
             toast({
                 title: 'Error',
@@ -142,9 +149,9 @@ export default function SuratKeluar() {
                 variant: 'destructive',
             });
         } finally {
-            setLoading(false);
+            if (seq === fetchSeqRef.current) setLoading(false);
         }
-    }, [pagination.page, pagination.limit, searchTerm, resolvedUnitKerjaId, tahun, naskahDinas, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, naskahDinas, tanggalDari, tanggalSampai, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -166,6 +173,7 @@ export default function SuratKeluar() {
     // Debounced search
     useEffect(() => {
         const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
             setPagination(prev => ({ ...prev, page: 1 }));
         }, 500);
         return () => clearTimeout(timer);
@@ -173,6 +181,12 @@ export default function SuratKeluar() {
 
     const hasActiveFilters = tahun !== 'all' || naskahDinas !== 'all' ||
         tanggalDari || tanggalSampai || searchTerm;
+
+    // Applying a filter must restart from the first page
+    const applyFilter = (setter) => (value) => {
+        setter(value);
+        setPagination(prev => ({ ...prev, page: 1 }));
+    };
 
     const clearAllFilters = () => {
         setSearchTerm('');
@@ -296,8 +310,8 @@ export default function SuratKeluar() {
                         filters={{
                             tahun: tahun !== 'all' ? tahun : undefined,
                             naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
-                            tanggalDari: tanggalDari?.toISOString().split('T')[0],
-                            tanggalSampai: tanggalSampai?.toISOString().split('T')[0],
+                            tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
+                            tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
                         }}
                     />
 
@@ -392,7 +406,7 @@ export default function SuratKeluar() {
                                     {/* Tahun */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-semibold text-muted-foreground uppercase">Tahun</label>
-                                        <Select value={tahun} onValueChange={setTahun}>
+                                        <Select value={tahun} onValueChange={applyFilter(setTahun)}>
                                             <SelectTrigger className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Tahun" />
                                             </SelectTrigger>
@@ -420,7 +434,7 @@ export default function SuratKeluar() {
                                                 'Surat Edaran', 'Pengaduan'
                                             ]}
                                             value={naskahDinas}
-                                            onValueChange={setNaskahDinas}
+                                            onValueChange={applyFilter(setNaskahDinas)}
                                             placeholder="Pilih Naskah"
                                             searchPlaceholder=" Cari..."
                                             className="h-9"
@@ -433,14 +447,14 @@ export default function SuratKeluar() {
                                         <div className="flex items-center gap-2">
                                             <DatePicker
                                                 date={tanggalDari}
-                                                onDateChange={setTanggalDari}
+                                                onDateChange={applyFilter(setTanggalDari)}
                                                 placeholder="Dari tanggal"
                                                 className="h-9 bg-background flex-1"
                                             />
                                             <span className="text-muted-foreground">-</span>
                                             <DatePicker
                                                 date={tanggalSampai}
-                                                onDateChange={setTanggalSampai}
+                                                onDateChange={applyFilter(setTanggalSampai)}
                                                 placeholder="Sampai tanggal"
                                                 className="h-9 bg-background flex-1"
                                             />
@@ -509,7 +523,7 @@ export default function SuratKeluar() {
                                                         <span className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
                                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                                             <span className="max-w-[150px] truncate" title={row.kepada}>Kepada: {row.kepada}</span>
-                                                            {row.jenisSurat && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.jenisSurat}</span>}
+                                                            {row.naskahDinas && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.naskahDinas}</span>}
                                                         </div>
                                                     </div>
                                                 </TableCell>
@@ -521,7 +535,7 @@ export default function SuratKeluar() {
                                                                 File
                                                             </Badge>
                                                         )}
-                                                        {row.balasanDariId && (
+                                                        {row.balasanUntuk && (
                                                             <Badge variant="outline" className="gap-1 border-orange-200 text-orange-700 bg-orange-50">
                                                                 <MailOpen className="h-3 w-3" />
                                                                 Balasan

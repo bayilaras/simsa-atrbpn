@@ -40,6 +40,7 @@ export async function authMiddleware(
                 name: users.name,
                 role: users.role,
                 unitKerjaId: users.unitKerjaId,
+                isActive: users.isActive,
             })
             .from(users)
             .where(eq(users.id, session.user.id))
@@ -49,7 +50,17 @@ export async function authMiddleware(
             return res.status(401).json({ error: 'Unauthorized: User not found' });
         }
 
-        req.user = user;
+        // Deactivating a user does not revoke their Better Auth session, so a
+        // soft-deleted account stays authenticated until expiry unless blocked here.
+        const { isActive, ...authUser } = user;
+        if (isActive === false) {
+            return res.status(403).json({
+                error: 'Forbidden',
+                message: 'Akun Anda telah dinonaktifkan. Hubungi administrator.',
+            });
+        }
+
+        req.user = authUser;
         next();
     } catch (error) {
         log.error({ err: error }, 'Auth middleware error');
@@ -76,13 +87,17 @@ export async function optionalAuthMiddleware(
                     name: users.name,
                     role: users.role,
                     unitKerjaId: users.unitKerjaId,
+                    isActive: users.isActive,
                 })
                 .from(users)
                 .where(eq(users.id, session.user.id))
                 .limit(1);
 
             if (user) {
-                req.user = user;
+                const { isActive, ...authUser } = user;
+                if (isActive !== false) {
+                    req.user = authUser;
+                }
             }
         }
 

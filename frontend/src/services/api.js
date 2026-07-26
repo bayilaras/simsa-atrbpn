@@ -9,6 +9,7 @@ function getCookie(name) {
 
 // Generic API client with auth support, global error handling, CSRF protection, and retry logic
 const STATE_CHANGING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
+const SAFE_METHODS = ['GET', 'HEAD'];
 
 class ApiClient {
     constructor(baseUrl) {
@@ -74,8 +75,11 @@ class ApiClient {
         try {
             response = await fetch(url, config);
         } catch (networkError) {
-            // Network error (offline, DNS failure, etc.) — retry once
-            if (retryCount < this._maxRetries) {
+            // Network error (offline, DNS failure, etc.) — retry once.
+            // Only safe/idempotent methods may be retried: a dropped connection can
+            // happen after the server already processed a mutation, so re-sending a
+            // POST/PUT/PATCH/DELETE would duplicate it.
+            if (SAFE_METHODS.includes(method) && retryCount < this._maxRetries) {
                 console.warn(`[API] Network error on ${endpoint}, retrying in ${this._retryDelayMs}ms...`);
                 await new Promise(r => setTimeout(r, this._retryDelayMs));
                 return this.request(endpoint, options, retryCount + 1);

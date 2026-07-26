@@ -7,16 +7,16 @@ export const storageLocationService = {
      * Get all storage locations with pagination
      */
     getAll: async (params = {}) => {
-        const response = await api.get(BASE_URL, params);
-        return response.data;
+        // Read endpoints return the full { success, data, pagination } envelope,
+        // matching arsip.service.js and what the pages check.
+        return await api.get(BASE_URL, params);
     },
 
     /**
      * Get storage locations as hierarchical tree
      */
     getTree: async (unitKerjaId) => {
-        const response = await api.get(`${BASE_URL}/tree`, { unitKerjaId });
-        return response.data;
+        return await api.get(`${BASE_URL}/tree`, { unitKerjaId });
     },
 
     /**
@@ -55,8 +55,7 @@ export const storageLocationService = {
      * Generate QR code for storage location
      */
     generateQR: async (id) => {
-        const response = await api.get(`${BASE_URL}/${id}/qr`);
-        return response.data;
+        return await api.get(`${BASE_URL}/${id}/qr`);
     },
 };
 

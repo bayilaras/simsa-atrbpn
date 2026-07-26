@@ -11,9 +11,9 @@ async function seed() {
     console.log('Seeding unit_kerja...');
     await db.insert(unitKerja).values([
         {
-            id: 'dirjen',
+            id: 'ditjen',
             name: 'Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan',
-            description: 'Dirjen PTPP',
+            description: 'Ditjen PTPP',
             driveFolderId: '1AQThU5U82bb7PqLfNyLHU-bbXoWuqb-k',
             driveUploadFolderId: '1s6h9YbNJE5Ig9jOXwEmt2udisOkKxRyA',
         },

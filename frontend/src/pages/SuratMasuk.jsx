@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { MailOpen, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, Reply, FolderArchive, ArrowUpDown, Send, RefreshCw, Trash2, FileText, AlertCircle, Inbox, Calendar, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
@@ -86,6 +86,7 @@ export default function SuratMasuk() {
 
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
     const [tahun, setTahun] = useState('all');
     const [jenisSurat, setJenisSurat] = useState('all');
@@ -115,14 +116,18 @@ export default function SuratMasuk() {
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (user?.unitKerjaId || undefined);
 
+    // Guards against out-of-order responses overwriting newer results
+    const fetchSeqRef = useRef(0);
+
     // Fetch data from API
     const fetchData = useCallback(async () => {
+        const seq = ++fetchSeqRef.current;
         setLoading(true);
         try {
             const params = {
                 page: pagination.page,
                 limit: pagination.limit,
-                search: searchTerm || undefined,
+                search: debouncedSearchTerm || undefined,
                 unitKerjaId: resolvedUnitKerjaId,
                 tahun: tahun !== 'all' ? tahun : undefined,
                 jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
@@ -134,6 +139,7 @@ export default function SuratMasuk() {
             };
 
             const response = await suratMasukService.getAll(params);
+            if (seq !== fetchSeqRef.current) return;
             if (response.success) {
                 setData(response.data || []);
                 setPagination(prev => ({
@@ -143,6 +149,7 @@ export default function SuratMasuk() {
                 }));
             }
         } catch (error) {
+            if (seq !== fetchSeqRef.current) return;
             console.error('Error fetching surat masuk:', error);
             toast({
                 title: 'Error',
@@ -150,9 +157,9 @@ export default function SuratMasuk() {
                 variant: 'destructive',
             });
         } finally {
-            setLoading(false);
+            if (seq === fetchSeqRef.current) setLoading(false);
         }
-    }, [pagination.page, pagination.limit, searchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -174,6 +181,7 @@ export default function SuratMasuk() {
     // Debounced search
     useEffect(() => {
         const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
             setPagination(prev => ({ ...prev, page: 1 }));
         }, 500);
         return () => clearTimeout(timer);
@@ -181,6 +189,12 @@ export default function SuratMasuk() {
 
     const hasActiveFilters = tahun !== 'all' || jenisSurat !== 'all' || status !== 'all' ||
         sifatSurat !== 'all' || disposisiKe !== 'all' || tanggalDari || tanggalSampai || searchTerm;
+
+    // Applying a filter must restart from the first page
+    const applyFilter = (setter) => (value) => {
+        setter(value);
+        setPagination(prev => ({ ...prev, page: 1 }));
+    };
 
     const clearAllFilters = () => {
         setSearchTerm('');
@@ -319,8 +333,8 @@ export default function SuratMasuk() {
                             status: status !== 'all' ? status : undefined,
                             sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
                             disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
-                            tanggalDari: tanggalDari?.toISOString().split('T')[0],
-                            tanggalSampai: tanggalSampai?.toISOString().split('T')[0],
+                            tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
+                            tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
                         }}
                     />
 
@@ -426,7 +440,7 @@ export default function SuratMasuk() {
                                     {/* Tahun */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-semibold text-muted-foreground uppercase">Tahun</label>
-                                        <Select value={tahun} onValueChange={setTahun}>
+                                        <Select value={tahun} onValueChange={applyFilter(setTahun)}>
                                             <SelectTrigger className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Tahun" />
                                             </SelectTrigger>
@@ -454,7 +468,7 @@ export default function SuratMasuk() {
                                                 'Surat Edaran', 'Pengaduan'
                                             ]}
                                             value={jenisSurat}
-                                            onValueChange={setJenisSurat}
+                                            onValueChange={applyFilter(setJenisSurat)}
                                             placeholder="Pilih Jenis"
                                             searchPlaceholder=" Cari..."
                                             className="h-9"
@@ -464,7 +478,7 @@ export default function SuratMasuk() {
                                     {/* Status */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
-                                        <Select value={status} onValueChange={setStatus}>
+                                        <Select value={status} onValueChange={applyFilter(setStatus)}>
                                             <SelectTrigger className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Status" />
                                             </SelectTrigger>
@@ -479,7 +493,7 @@ export default function SuratMasuk() {
                                     {/* Sifat Surat */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-semibold text-muted-foreground uppercase">Sifat Surat</label>
-                                        <Select value={sifatSurat} onValueChange={setSifatSurat}>
+                                        <Select value={sifatSurat} onValueChange={applyFilter(setSifatSurat)}>
                                             <SelectTrigger className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Sifat" />
                                             </SelectTrigger>
@@ -501,14 +515,14 @@ export default function SuratMasuk() {
                                         <div className="flex items-center gap-2">
                                             <DatePicker
                                                 date={tanggalDari}
-                                                onDateChange={setTanggalDari}
+                                                onDateChange={applyFilter(setTanggalDari)}
                                                 placeholder="Dari tanggal"
                                                 className="h-9 bg-background flex-1"
                                             />
                                             <span className="text-muted-foreground">-</span>
                                             <DatePicker
                                                 date={tanggalSampai}
-                                                onDateChange={setTanggalSampai}
+                                                onDateChange={applyFilter(setTanggalSampai)}
                                                 placeholder="Sampai tanggal"
                                                 className="h-9 bg-background flex-1"
                                             />
@@ -526,7 +540,7 @@ export default function SuratMasuk() {
                                                 'Kabag Kepegawaian Keuangan dan Umum'
                                             ]}
                                             value={disposisiKe}
-                                            onValueChange={setDisposisiKe}
+                                            onValueChange={applyFilter(setDisposisiKe)}
                                             placeholder="Pilih Disposisi"
                                             searchPlaceholder=" Cari disposisi..."
                                             className="h-9"

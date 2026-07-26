@@ -348,7 +348,7 @@ export default function SuratKeluarDetail() {
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Jenis Surat</label>
-                                    <p className="text-sm font-medium">{surat.jenisSurat || '-'}</p>
+                                    <p className="text-sm font-medium">{surat.naskahDinas || '-'}</p>
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sifat Surat</label>
@@ -367,13 +367,13 @@ export default function SuratKeluarDetail() {
                             </div>
 
                             {/* Balasan dari Surat Masuk */}
-                            {surat.balasanDariId && (
+                            {surat.balasanUntuk && (
                                 <>
                                     <Separator />
                                     <div className="space-y-2">
                                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Balasan dari Surat Masuk</label>
                                         <Button variant="outline" size="sm" asChild className="group">
-                                            <Link to={`/surat/masuk/${surat.balasanDariId}`}>
+                                            <Link to={`/surat/masuk/${surat.balasanUntuk}`}>
                                                 <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 transition-colors" />
                                                 Lihat Surat Masuk
                                             </Link>

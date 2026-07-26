@@ -3,7 +3,7 @@ import { suratMasuk } from '../db/schema/surat-masuk';
 import { suratKeluar } from '../db/schema/surat-keluar';
 import { arsip } from '../db/schema/arsip';
 import { archiveLending } from '../db/schema';
-import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, or, isNull } from 'drizzle-orm';
 
 // Types
 export interface ReportFilters {
@@ -42,7 +42,10 @@ class ReportService {
         const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
         const offset = (page - 1) * limit;
 
-        const conditions = [eq(suratMasuk.unitKerjaId, unitKerjaId)];
+        const conditions = [
+            eq(suratMasuk.unitKerjaId, unitKerjaId),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+        ];
 
         if (tanggalDari) {
             conditions.push(gte(suratMasuk.tanggalSurat, tanggalDari));
@@ -100,6 +103,7 @@ class ReportService {
         const conditions = [
             eq(suratMasuk.unitKerjaId, unitKerjaId),
             eq(suratMasuk.tahun, currentYear),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
         ];
 
         const stats = await db
@@ -139,7 +143,10 @@ class ReportService {
         const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
         const offset = (page - 1) * limit;
 
-        const conditions = [eq(suratKeluar.unitKerjaId, unitKerjaId)];
+        const conditions = [
+            eq(suratKeluar.unitKerjaId, unitKerjaId),
+            or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+        ];
 
         if (tanggalDari) {
             conditions.push(gte(suratKeluar.tanggalSurat, tanggalDari));
@@ -194,6 +201,7 @@ class ReportService {
         const conditions = [
             eq(suratKeluar.unitKerjaId, unitKerjaId),
             eq(suratKeluar.tahun, currentYear),
+            or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
         ];
 
         const stats = await db
@@ -348,12 +356,27 @@ class ReportService {
     }
 
     // ==================== LENDING REPORTS ====================
+    // archive_lending has no unit column: an entry belongs to a unit through the
+    // arsip it borrows, or through the storage location for per-box lending.
+    private lendingUnitCondition(unitKerjaId?: string) {
+        if (!unitKerjaId) return undefined;
+
+        return or(
+            sql`${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`,
+            sql`${archiveLending.storageLocationId} IN (SELECT id FROM storage_locations WHERE unit_kerja_id = ${unitKerjaId})`
+        );
+    }
+
     async getLendingReport(filters: LendingReportFilters) {
-        const { status = 'all', tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, status = 'all', tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
         const offset = (page - 1) * limit;
 
         const conditions: any[] = [];
 
+        const unitCondition = this.lendingUnitCondition(unitKerjaId);
+        if (unitCondition) {
+            conditions.push(unitCondition);
+        }
         if (status !== 'all') {
             conditions.push(eq(archiveLending.status, status));
         }
@@ -390,7 +413,7 @@ class ReportService {
             .limit(limit)
             .offset(offset);
 
-        const stats = await this.getLendingStats();
+        const stats = await this.getLendingStats(unitKerjaId);
 
         return {
             data,
@@ -404,8 +427,9 @@ class ReportService {
         };
     }
 
-    async getLendingStats() {
+    async getLendingStats(unitKerjaId?: string) {
         const now = new Date().toISOString().split('T')[0];
+        const unitCondition = this.lendingUnitCondition(unitKerjaId);
 
         const stats = await db
             .select({
@@ -414,7 +438,8 @@ class ReportService {
                 returned: sql<number>`count(*) filter (where ${archiveLending.status} = 'returned')::int`,
                 overdue: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed' and ${archiveLending.dueDate} < ${now})::int`,
             })
-            .from(archiveLending);
+            .from(archiveLending)
+            .where(unitCondition);
 
         // Recent lending activity by month
         const currentYear = new Date().getFullYear();
@@ -424,7 +449,10 @@ class ReportService {
                 count: sql<number>`count(*)::int`,
             })
             .from(archiveLending)
-            .where(sql`extract(year from ${archiveLending.borrowDate}) = ${currentYear}`)
+            .where(and(
+                sql`extract(year from ${archiveLending.borrowDate}) = ${currentYear}`,
+                unitCondition
+            ))
             .groupBy(sql`extract(month from ${archiveLending.borrowDate})`)
             .orderBy(sql`extract(month from ${archiveLending.borrowDate})`);
 
@@ -447,7 +475,7 @@ class ReportService {
         const suratMasukStats = await this.getSuratMasukStats(unitKerjaId, currentYear);
         const suratKeluarStats = await this.getSuratKeluarStats(unitKerjaId, currentYear);
         const arsipStats = await this.getArsipStats(unitKerjaId, currentYear);
-        const lendingStats = await this.getLendingStats();
+        const lendingStats = await this.getLendingStats(unitKerjaId);
 
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
         const combinedMonthly = monthNames.map((month, index) => ({

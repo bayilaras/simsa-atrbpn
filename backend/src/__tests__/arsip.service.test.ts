@@ -19,6 +19,7 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
+    transaction: async (fn: any) => fn(mockDb),
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
@@ -100,9 +101,25 @@ describe('ArsipService', () => {
     // ── delete ──
     describe('delete', () => {
         it('should delete and return arsip', async () => {
-            enqueue([{ id: '1' }]);
+            enqueue([{ id: '1' }]);          // load arsip
+            enqueue([], [], [], [], []);     // blocker checks: lending, layanan, vital, terjaga, penyusutan
+            enqueue([]);                     // file_attachments lookup
+            enqueue([]);                     // delete file_attachments
+            enqueue([{ id: '1' }]);          // delete arsip .returning()
             const res = await svc.delete('1');
             expect(res).toEqual({ id: '1' });
+        });
+
+        it('should refuse to delete an arsip that is currently borrowed', async () => {
+            enqueue([{ id: '1', lendingStatus: 'borrowed' }]);
+            await expect(svc.delete('1')).rejects.toThrow(/dipinjam/);
+        });
+
+        it('should refuse to delete an arsip still referenced elsewhere', async () => {
+            enqueue([{ id: '1' }]);                  // load arsip
+            enqueue([{ id: 'lend-1' }]);             // lending blocker hit
+            enqueue([], [], [], []);                 // remaining blocker checks
+            await expect(svc.delete('1')).rejects.toThrow(/tidak dapat dihapus/);
         });
     });
 
@@ -156,7 +173,8 @@ describe('ArsipService', () => {
             const result = svc.calculateRetentionDates('2020-01-15', null, null);
             expect(result.tanggalAktifBerakhir).toBeNull();
             expect(result.tanggalInaktifBerakhir).toBeNull();
-            expect(result.tanggalKadaluarsa).toBe('2020-01-15');
+            // No parsable retention means no expiry date at all, not "expired on day one"
+            expect(result.tanggalKadaluarsa).toBeNull();
         });
 
         it('should handle only active retention (no inactive)', () => {

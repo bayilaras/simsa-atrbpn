@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker'
 import {
     Dialog,
@@ -62,6 +62,39 @@ const UNIT_PENGOLAH_OPTIONS = [
     { value: 'Dit. KTPP', label: 'Dit. KTPP' },
 ]
 
+const buildFormData = ({ nomorSurat, klasifikasiKode, perihal }) => ({
+    nomorBerkas: nomorSurat || '',
+    kodeKlasifikasi: klasifikasiKode || '',
+    klasifikasiArsip: '',
+    uraianBerkas: perihal || '',
+    unitPengolah: '',
+    kurunWaktuDari: '',
+    kurunWaktuSampai: '',
+    // JRA
+    jraKode: '',
+    jraUraian: '',
+    retensiAktif: '',
+    retensiInaktif: '',
+    hasilAkhir: '',
+    // Keamanan & PIC
+    klasifikasiKeamanan: 'biasa',
+    personInCharge: '',
+    keterangan: '',
+})
+
+const buildItems = ({ perihal, tanggalSurat }) => ([
+    {
+        nomor: '1',
+        uraian: perihal || '',
+        perkembangan: 'Asli',
+        tanggal: tanggalSurat || '',
+        jumlah: 1,
+        lokasiFc: '',
+        lokasiLaci: '',
+        lokasiFolder: ''
+    }
+])
+
 // Section Header Component with Dashboard Theme Colors
 function SectionHeader({ number, title, icon: Icon, colorClass = "text-teal-700 bg-teal-50 border-teal-100" }) {
     return (
@@ -102,40 +135,20 @@ export function ArchiveDialog({
 }) {
     const [loading, setLoading] = useState(false)
 
+    const { nomorSurat, klasifikasiKode, perihal, tanggalSurat } = suratData || {}
+
     // Form state for Identifikasi Berkas
-    const [formData, setFormData] = useState({
-        nomorBerkas: suratData?.nomorSurat || '',
-        kodeKlasifikasi: suratData?.klasifikasiKode || '',
-        klasifikasiArsip: '',
-        uraianBerkas: suratData?.perihal || '',
-        unitPengolah: '',
-        kurunWaktuDari: '',
-        kurunWaktuSampai: '',
-        // JRA
-        jraKode: '',
-        jraUraian: '',
-        retensiAktif: '',
-        retensiInaktif: '',
-        hasilAkhir: '',
-        // Keamanan & PIC
-        klasifikasiKeamanan: 'biasa',
-        personInCharge: '',
-        keterangan: '',
-    })
+    const [formData, setFormData] = useState(() => buildFormData({ nomorSurat, klasifikasiKode, perihal }))
 
     // Items state
-    const [items, setItems] = useState([
-        {
-            nomor: '1',
-            uraian: suratData?.perihal || '',
-            perkembangan: 'Asli',
-            tanggal: suratData?.tanggalSurat || '',
-            jumlah: 1,
-            lokasiFc: '',
-            lokasiLaci: '',
-            lokasiFolder: ''
-        }
-    ])
+    const [items, setItems] = useState(() => buildItems({ perihal, tanggalSurat }))
+
+    // Dialog stays mounted between surat, so refill the form from the surat being archived
+    useEffect(() => {
+        if (!open) return
+        setFormData(buildFormData({ nomorSurat, klasifikasiKode, perihal }))
+        setItems(buildItems({ perihal, tanggalSurat }))
+    }, [open, nomorSurat, klasifikasiKode, perihal, tanggalSurat])
 
     const handleChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }))

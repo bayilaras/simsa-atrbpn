@@ -19,6 +19,7 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
+    transaction: async (fn: any) => fn(mockDb),
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));

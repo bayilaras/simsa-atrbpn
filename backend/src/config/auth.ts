@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { createAuthMiddleware, APIError } from 'better-auth/api';
 import { db } from './database';
 import { env } from './env';
 import * as schema from '../db/schema';
@@ -24,6 +25,40 @@ function resolveBaseURL(): string {
     }
     return configured || 'http://localhost:3001';
 }
+
+function normalizeOrigin(value: string): string | null {
+    try {
+        return new URL(value).origin;
+    } catch {
+        return null;
+    }
+}
+
+// Better Auth's built-in CSRF check is disabled (it conflicts with the Vercel proxy) and
+// the custom CSRF middleware skips /auth, so state-changing auth requests are guarded here.
+// A browser always sends Origin (or at least Referer) on a cross-site POST, so rejecting
+// untrusted origins blocks login/sign-out CSRF, while origin-less traffic (OAuth redirects,
+// server-to-server calls through the proxy) keeps working as before.
+const originGuard = createAuthMiddleware(async (ctx) => {
+    const request = ctx.request;
+    if (!request) return;
+
+    const method = request.method?.toUpperCase();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
+
+    const originHeader = request.headers.get('origin') || request.headers.get('referer');
+    if (!originHeader) return;
+
+    const requestOrigin = normalizeOrigin(originHeader);
+    const isTrusted = requestOrigin !== null && ctx.context.trustedOrigins.some(
+        (allowed) => normalizeOrigin(allowed) === requestOrigin
+    );
+
+    if (!isTrusted) {
+        ctx.context.logger.error(`Blocked auth request from untrusted origin: ${originHeader}`);
+        throw new APIError('FORBIDDEN', { message: 'Invalid origin' });
+    }
+});
 
 export const auth = betterAuth({
     baseURL: resolveBaseURL(),
@@ -65,9 +100,12 @@ export const auth = betterAuth({
             },
         },
     },
+    hooks: {
+        before: originGuard,
+    },
     advanced: {
         useSecureCookies: env.NODE_ENV === 'production',
-        disableCSRFCheck: true, // We have our own CSRF middleware; Better Auth's check conflicts with Vercel proxy
+        disableCSRFCheck: true, // Better Auth's check conflicts with the Vercel proxy; originGuard above replaces it
         defaultCookieAttributes: env.NODE_ENV === 'production'
             ? {
                 sameSite: 'none' as const,   // Required for cross-domain cookies on .vercel.app (public suffix)

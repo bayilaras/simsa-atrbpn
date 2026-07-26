@@ -48,13 +48,16 @@ export default function AuditLog() {
     const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
 
     useEffect(() => {
-        loadLogs();
-    }, []);
-
-    useEffect(() => {
         const timer = setTimeout(() => loadLogs(), 300);
         return () => clearTimeout(timer);
     }, [entityType, action, search, startDate, endDate, pagination.page]);
+
+    // Applying a filter must restart from the first page, otherwise the filtered
+    // query keeps requesting a now out-of-range page and the table looks empty.
+    const applyFilter = (setter) => (value) => {
+        setter(value);
+        setPagination(prev => (prev.page === 1 ? prev : { ...prev, page: 1 }));
+    };
 
     const loadLogs = useCallback(async () => {
         try {
@@ -177,7 +180,7 @@ export default function AuditLog() {
                                 <Input
                                     placeholder="Cari user, email, atau ID..."
                                     value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
+                                    onChange={(e) => applyFilter(setSearch)(e.target.value)}
                                     className="pl-9 bg-background focus:bg-background"
                                 />
                             </div>
@@ -186,14 +189,14 @@ export default function AuditLog() {
                                 <Input
                                     type="date"
                                     value={startDate}
-                                    onChange={(e) => setStartDate(e.target.value)}
+                                    onChange={(e) => applyFilter(setStartDate)(e.target.value)}
                                     className="w-auto bg-background"
                                 />
                                 <span className="text-muted-foreground">-</span>
                                 <Input
                                     type="date"
                                     value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
+                                    onChange={(e) => applyFilter(setEndDate)(e.target.value)}
                                     className="w-auto bg-background"
                                 />
                             </div>
@@ -201,7 +204,7 @@ export default function AuditLog() {
 
                         <div className="flex flex-wrap items-center gap-2">
                             <Filter className="h-4 w-4 text-muted-foreground mr-1" />
-                            <Select value={entityType} onValueChange={setEntityType}>
+                            <Select value={entityType} onValueChange={applyFilter(setEntityType)}>
                                 <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
                                     <SelectValue placeholder="Tipe Entity" />
                                 </SelectTrigger>
@@ -213,7 +216,7 @@ export default function AuditLog() {
                                     <SelectItem value="user">User</SelectItem>
                                 </SelectContent>
                             </Select>
-                            <Select value={action} onValueChange={setAction}>
+                            <Select value={action} onValueChange={applyFilter(setAction)}>
                                 <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
                                     <SelectValue placeholder="Aksi" />
                                 </SelectTrigger>

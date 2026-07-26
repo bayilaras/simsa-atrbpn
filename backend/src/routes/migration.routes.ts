@@ -3,6 +3,7 @@ import multer from 'multer';
 import { migrationService } from '../services/migration.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
+import { canAccessUnit, Role } from '../config/permissions';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -25,6 +26,16 @@ router.post('/surat-masuk',
                 return res.status(400).json({
                     success: false,
                     error: 'unitKerjaId is required'
+                });
+            }
+
+            // unitKerjaId comes from the request body, so the caller must actually be
+            // allowed to write into that unit.
+            const callerRole = (req.user?.role || 'user') as Role;
+            if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Anda tidak berwenang mengimpor data untuk unit kerja tersebut'
                 });
             }
 
@@ -71,6 +82,16 @@ router.post('/surat-keluar',
                 });
             }
 
+            // unitKerjaId comes from the request body, so the caller must actually be
+            // allowed to write into that unit.
+            const callerRole = (req.user?.role || 'user') as Role;
+            if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Anda tidak berwenang mengimpor data untuk unit kerja tersebut'
+                });
+            }
+
             if (!req.file) {
                 return res.status(400).json({
                     success: false,
@@ -111,6 +132,16 @@ router.post('/arsip',
                 return res.status(400).json({
                     success: false,
                     error: 'unitKerjaId is required'
+                });
+            }
+
+            // unitKerjaId comes from the request body, so the caller must actually be
+            // allowed to write into that unit.
+            const callerRole = (req.user?.role || 'user') as Role;
+            if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Anda tidak berwenang mengimpor data untuk unit kerja tersebut'
                 });
             }
 

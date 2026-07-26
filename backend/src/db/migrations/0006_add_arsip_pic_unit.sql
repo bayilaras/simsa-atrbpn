@@ -1,2 +1,5 @@
-ALTER TABLE "arsip" ADD COLUMN IF NOT EXISTS "person_in_charge" varchar(255);
-ALTER TABLE "arsip" ADD COLUMN IF NOT EXISTS "unit_pengolah" varchar(255);
+-- No-op: superseded by 0006_simple_scourge.sql, the journal-tracked migration that
+-- adds arsip.person_in_charge and arsip.unit_pengolah.
+-- This ad-hoc file is not registered in meta/_journal.json, so drizzle-kit never runs
+-- it; running it by hand used to make 0006_simple_scourge abort with duplicate_column
+-- and block the rest of the chain.

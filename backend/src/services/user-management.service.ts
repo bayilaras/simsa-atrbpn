@@ -1,5 +1,5 @@
 import { db } from '../config/database';
-import { users, unitKerja } from '../db/schema';
+import { users, unitKerja, sessions } from '../db/schema';
 import { eq, ilike, or, and, desc, sql } from 'drizzle-orm';
 import { auth } from '../config/auth';
 
@@ -279,7 +279,11 @@ export const userManagementService = {
      * Deactivate user (soft delete)
      */
     async deactivateUser(userId: string) {
-        return this.updateUser(userId, { isActive: false });
+        const result = await this.updateUser(userId, { isActive: false });
+        // Drop existing sessions so access ends immediately instead of lasting
+        // until the session naturally expires.
+        await db.delete(sessions).where(eq(sessions.userId, userId));
+        return result;
     },
 
     /**

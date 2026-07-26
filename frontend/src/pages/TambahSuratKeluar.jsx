@@ -327,15 +327,17 @@ export default function TambahSuratKeluar() {
             const dataToSubmit = {
                 ...formData,
                 unitKerjaId: resolvedUnitKerjaId,
-                tahun: new Date().getFullYear(),
             };
 
             if (isEditMode) {
-                // Update existing surat (with optional file)
+                // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
                 await suratKeluarService.update(id, dataToSubmit, selectedFile);
             } else {
                 // Create new surat
-                await suratKeluarService.create(dataToSubmit, selectedFile);
+                await suratKeluarService.create({
+                    ...dataToSubmit,
+                    tahun: Number(formData.tanggalSurat?.slice(0, 4)) || new Date().getFullYear(),
+                }, selectedFile);
             }
             setSuccess(true);
 

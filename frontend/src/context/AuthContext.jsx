@@ -21,8 +21,10 @@ export function AuthProvider({ children }) {
     // Reset idle timers when user activity is detected
     const resetIdleTimer = useCallback(() => {
         const now = Date.now();
-        // Throttle: only reset if enough time has passed since last reset
-        if (now - lastActivityRef.current < ACTIVITY_THROTTLE_MS) return;
+        // Throttle: only reset if enough time has passed since last reset.
+        // Never throttle while no timer is armed, otherwise the initializing call
+        // right after login is swallowed and the timers are never created.
+        if (idleTimerRef.current && now - lastActivityRef.current < ACTIVITY_THROTTLE_MS) return;
         lastActivityRef.current = now;
 
         setIdleWarning(false);
@@ -56,6 +58,8 @@ export function AuthProvider({ children }) {
             events.forEach(event => window.removeEventListener(event, resetIdleTimer));
             if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
             if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+            warningTimerRef.current = null;
+            idleTimerRef.current = null;
         };
     }, [user, resetIdleTimer]);
 
@@ -129,6 +133,8 @@ export function AuthProvider({ children }) {
         try {
             if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
             if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+            warningTimerRef.current = null;
+            idleTimerRef.current = null;
             setIdleWarning(false);
             setUser(null);
             await authService.signOut();

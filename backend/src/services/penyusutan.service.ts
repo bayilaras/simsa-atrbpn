@@ -6,6 +6,7 @@ import {
 } from '../db/schema';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { arsipService } from './arsip.service';
+import { ValidationError } from '../utils/errors';
 
 // Types
 interface PenyusutanFilters {
@@ -100,6 +101,42 @@ class PenyusutanService {
     }
 
     /**
+     * Ensure every arsip may be placed in a batch of the given unit: it has to exist,
+     * belong to that unit, and not already be claimed by another batch — otherwise its
+     * disposalBatchId would be silently overwritten while the old batch still lists it.
+     */
+    private async assertArsipEligible(tx: any, arsipIds: string[], unitKerjaId: string) {
+        const rows = await tx.select({
+            id: arsip.id,
+            unitKerjaId: arsip.unitKerjaId,
+            disposalStatus: arsip.disposalStatus,
+            disposalBatchId: arsip.disposalBatchId,
+        })
+            .from(arsip)
+            .where(inArray(arsip.id, arsipIds));
+
+        const foundIds = new Set(rows.map((r: any) => r.id));
+        const missing = arsipIds.filter(id => !foundIds.has(id));
+        if (missing.length > 0) {
+            throw new ValidationError(`Arsip tidak ditemukan: ${missing.join(', ')}`);
+        }
+
+        const luarUnit = rows.filter((r: any) => r.unitKerjaId !== unitKerjaId);
+        if (luarUnit.length > 0) {
+            throw new ValidationError(
+                `Arsip di luar unit kerja batch tidak dapat disusutkan: ${luarUnit.map((r: any) => r.id).join(', ')}`
+            );
+        }
+
+        const sudahDiproses = rows.filter((r: any) => r.disposalStatus !== 'active' || r.disposalBatchId);
+        if (sudahDiproses.length > 0) {
+            throw new ValidationError(
+                `Arsip sudah termasuk dalam proses penyusutan lain: ${sudahDiproses.map((r: any) => r.id).join(', ')}`
+            );
+        }
+    }
+
+    /**
      * Create a new penyusutan batch with arsip items
      */
     async create(data: CreatePenyusutanData) {
@@ -110,38 +147,44 @@ class PenyusutanService {
         const nomorBA = data.nomorBA ||
             `BA-${data.jenisPenyusutan.toUpperCase().substring(0, 3)}-${data.unitKerjaId}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-        // Create batch
-        const [batch] = await db.insert(penyusutanArsip).values({
-            unitKerjaId: batchData.unitKerjaId,
-            jenisPenyusutan: batchData.jenisPenyusutan,
-            nomorBA,
-            keterangan: batchData.keterangan,
-            totalBerkas: arsipIds.length,
-            createdBy: batchData.createdBy,
-            status: 'draft',
-        }).returning();
+        return await db.transaction(async (tx: any) => {
+            if (arsipIds.length > 0) {
+                await this.assertArsipEligible(tx, arsipIds, batchData.unitKerjaId);
+            }
 
-        // Add items
-        if (arsipIds.length > 0) {
-            const itemsToInsert = arsipIds.map((arsipId, index) => ({
-                penyusutanId: batch.id,
-                arsipId,
-                nomorUrut: index + 1,
-            }));
-            await db.insert(penyusutanItems).values(itemsToInsert);
+            // Create batch
+            const [batch] = await tx.insert(penyusutanArsip).values({
+                unitKerjaId: batchData.unitKerjaId,
+                jenisPenyusutan: batchData.jenisPenyusutan,
+                nomorBA,
+                keterangan: batchData.keterangan,
+                totalBerkas: arsipIds.length,
+                createdBy: batchData.createdBy,
+                status: 'draft',
+            }).returning();
 
-            // Update arsip disposalStatus
-            const disposalStatus = JENIS_TO_DISPOSAL_STATUS[data.jenisPenyusutan] || 'active';
-            await db.update(arsip)
-                .set({
-                    disposalStatus,
-                    disposalBatchId: batch.id,
-                    updatedAt: new Date(),
-                })
-                .where(inArray(arsip.id, arsipIds));
-        }
+            // Add items
+            if (arsipIds.length > 0) {
+                const itemsToInsert = arsipIds.map((arsipId, index) => ({
+                    penyusutanId: batch.id,
+                    arsipId,
+                    nomorUrut: index + 1,
+                }));
+                await tx.insert(penyusutanItems).values(itemsToInsert);
 
-        return batch;
+                // Update arsip disposalStatus
+                const disposalStatus = JENIS_TO_DISPOSAL_STATUS[data.jenisPenyusutan] || 'active';
+                await tx.update(arsip)
+                    .set({
+                        disposalStatus,
+                        disposalBatchId: batch.id,
+                        updatedAt: new Date(),
+                    })
+                    .where(inArray(arsip.id, arsipIds));
+            }
+
+            return batch;
+        });
     }
 
     /**
@@ -204,40 +247,42 @@ class PenyusutanService {
         if (nextStatus === 'executed') updateData.tanggalPelaksanaan = new Date().toISOString().split('T')[0];
         if (metadata?.catatan) updateData.catatanPanitia = metadata.catatan;
 
-        const [updated] = await db.update(penyusutanArsip)
-            .set(updateData)
-            .where(eq(penyusutanArsip.id, id))
-            .returning();
+        return await db.transaction(async (tx: any) => {
+            const [updated] = await tx.update(penyusutanArsip)
+                .set(updateData)
+                .where(eq(penyusutanArsip.id, id))
+                .returning();
 
-        // When executed, update arsip status to 'executed'
-        if (nextStatus === 'executed') {
-            const items = await db.select({ arsipId: penyusutanItems.arsipId })
-                .from(penyusutanItems)
-                .where(eq(penyusutanItems.penyusutanId, id));
+            // When executed, update arsip status to 'executed'
+            if (nextStatus === 'executed') {
+                const items = await tx.select({ arsipId: penyusutanItems.arsipId })
+                    .from(penyusutanItems)
+                    .where(eq(penyusutanItems.penyusutanId, id));
 
-            const arsipIds = items.map(i => i.arsipId);
-            if (arsipIds.length > 0) {
-                await db.update(arsip)
-                    .set({ disposalStatus: 'executed', updatedAt: new Date() })
-                    .where(inArray(arsip.id, arsipIds));
+                const arsipIds = items.map((i: any) => i.arsipId);
+                if (arsipIds.length > 0) {
+                    await tx.update(arsip)
+                        .set({ disposalStatus: 'executed', updatedAt: new Date() })
+                        .where(inArray(arsip.id, arsipIds));
+                }
             }
-        }
 
-        // When approved, update arsip status to 'approved'
-        if (nextStatus === 'approved') {
-            const items = await db.select({ arsipId: penyusutanItems.arsipId })
-                .from(penyusutanItems)
-                .where(eq(penyusutanItems.penyusutanId, id));
+            // When approved, update arsip status to 'approved'
+            if (nextStatus === 'approved') {
+                const items = await tx.select({ arsipId: penyusutanItems.arsipId })
+                    .from(penyusutanItems)
+                    .where(eq(penyusutanItems.penyusutanId, id));
 
-            const arsipIds = items.map(i => i.arsipId);
-            if (arsipIds.length > 0) {
-                await db.update(arsip)
-                    .set({ disposalStatus: 'approved', updatedAt: new Date() })
-                    .where(inArray(arsip.id, arsipIds));
+                const arsipIds = items.map((i: any) => i.arsipId);
+                if (arsipIds.length > 0) {
+                    await tx.update(arsip)
+                        .set({ disposalStatus: 'approved', updatedAt: new Date() })
+                        .where(inArray(arsip.id, arsipIds));
+                }
             }
-        }
 
-        return updated;
+            return updated;
+        });
     }
 
     /**
@@ -248,38 +293,42 @@ class PenyusutanService {
         if (!batch[0]) throw new Error('Batch not found');
         if (batch[0].status !== 'draft') throw new Error('Can only add items to draft batches');
 
-        // Get current max nomorUrut
-        const existingItems = await db.select({ nomorUrut: penyusutanItems.nomorUrut })
-            .from(penyusutanItems)
-            .where(eq(penyusutanItems.penyusutanId, batchId))
-            .orderBy(desc(penyusutanItems.nomorUrut))
-            .limit(1);
-        const startNum = (existingItems[0]?.nomorUrut || 0) + 1;
+        return await db.transaction(async (tx: any) => {
+            await this.assertArsipEligible(tx, arsipIds, batch[0].unitKerjaId);
 
-        const itemsToInsert = arsipIds.map((arsipId, index) => ({
-            penyusutanId: batchId,
-            arsipId,
-            nomorUrut: startNum + index,
-        }));
+            // Get current max nomorUrut
+            const existingItems = await tx.select({ nomorUrut: penyusutanItems.nomorUrut })
+                .from(penyusutanItems)
+                .where(eq(penyusutanItems.penyusutanId, batchId))
+                .orderBy(desc(penyusutanItems.nomorUrut))
+                .limit(1);
+            const startNum = (existingItems[0]?.nomorUrut || 0) + 1;
 
-        await db.insert(penyusutanItems).values(itemsToInsert);
+            const itemsToInsert = arsipIds.map((arsipId, index) => ({
+                penyusutanId: batchId,
+                arsipId,
+                nomorUrut: startNum + index,
+            }));
 
-        // Update arsip disposal status
-        const disposalStatus = JENIS_TO_DISPOSAL_STATUS[batch[0].jenisPenyusutan] || 'active';
-        await db.update(arsip)
-            .set({ disposalStatus, disposalBatchId: batchId, updatedAt: new Date() })
-            .where(inArray(arsip.id, arsipIds));
+            await tx.insert(penyusutanItems).values(itemsToInsert);
 
-        // Update totals
-        const countResult = await db.select({ count: sql<number>`count(*)` })
-            .from(penyusutanItems)
-            .where(eq(penyusutanItems.penyusutanId, batchId));
+            // Update arsip disposal status
+            const disposalStatus = JENIS_TO_DISPOSAL_STATUS[batch[0].jenisPenyusutan] || 'active';
+            await tx.update(arsip)
+                .set({ disposalStatus, disposalBatchId: batchId, updatedAt: new Date() })
+                .where(inArray(arsip.id, arsipIds));
 
-        await db.update(penyusutanArsip)
-            .set({ totalBerkas: Number(countResult[0]?.count || 0), updatedAt: new Date() })
-            .where(eq(penyusutanArsip.id, batchId));
+            // Update totals
+            const countResult = await tx.select({ count: sql<number>`count(*)` })
+                .from(penyusutanItems)
+                .where(eq(penyusutanItems.penyusutanId, batchId));
 
-        return { added: arsipIds.length };
+            await tx.update(penyusutanArsip)
+                .set({ totalBerkas: Number(countResult[0]?.count || 0), updatedAt: new Date() })
+                .where(eq(penyusutanArsip.id, batchId));
+
+            return { added: arsipIds.length };
+        });
     }
 
     /**
@@ -290,27 +339,32 @@ class PenyusutanService {
         if (!batch[0]) throw new Error('Batch not found');
         if (batch[0].status !== 'draft') throw new Error('Can only remove items from draft batches');
 
-        await db.delete(penyusutanItems)
-            .where(and(
-                eq(penyusutanItems.penyusutanId, batchId),
-                inArray(penyusutanItems.arsipId, arsipIds),
-            ));
+        return await db.transaction(async (tx: any) => {
+            await tx.delete(penyusutanItems)
+                .where(and(
+                    eq(penyusutanItems.penyusutanId, batchId),
+                    inArray(penyusutanItems.arsipId, arsipIds),
+                ));
 
-        // Reset arsip disposal status
-        await db.update(arsip)
-            .set({ disposalStatus: 'active', disposalBatchId: null, updatedAt: new Date() })
-            .where(inArray(arsip.id, arsipIds));
+            // Reset arsip disposal status — only for arsip actually held by this batch
+            await tx.update(arsip)
+                .set({ disposalStatus: 'active', disposalBatchId: null, updatedAt: new Date() })
+                .where(and(
+                    inArray(arsip.id, arsipIds),
+                    eq(arsip.disposalBatchId, batchId),
+                ));
 
-        // Update totals
-        const countResult = await db.select({ count: sql<number>`count(*)` })
-            .from(penyusutanItems)
-            .where(eq(penyusutanItems.penyusutanId, batchId));
+            // Update totals
+            const countResult = await tx.select({ count: sql<number>`count(*)` })
+                .from(penyusutanItems)
+                .where(eq(penyusutanItems.penyusutanId, batchId));
 
-        await db.update(penyusutanArsip)
-            .set({ totalBerkas: Number(countResult[0]?.count || 0), updatedAt: new Date() })
-            .where(eq(penyusutanArsip.id, batchId));
+            await tx.update(penyusutanArsip)
+                .set({ totalBerkas: Number(countResult[0]?.count || 0), updatedAt: new Date() })
+                .where(eq(penyusutanArsip.id, batchId));
 
-        return { removed: arsipIds.length };
+            return { removed: arsipIds.length };
+        });
     }
 
     /**

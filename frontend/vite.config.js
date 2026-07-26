@@ -59,6 +59,13 @@ export default defineConfig({
             }
           },
           {
+            // Auth/session responses must never be cached — a cached session would
+            // keep a signed-out user "authenticated" whenever the network fails.
+            // Must stay ordered before the generic /api rule (first matching route wins).
+            urlPattern: /\/api\/auth\/.*/i,
+            handler: 'NetworkOnly'
+          },
+          {
             // Cache API responses with NetworkFirst strategy
             urlPattern: /\/api\/.*/i,
             handler: 'NetworkFirst',
@@ -69,7 +76,7 @@ export default defineConfig({
                 maxAgeSeconds: 60 * 60 // 1 hour
               },
               cacheableResponse: {
-                statuses: [0, 200]
+                statuses: [200]
               },
               networkTimeoutSeconds: 10
             }

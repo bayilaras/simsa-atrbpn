@@ -94,6 +94,15 @@ export const authService = {
         } catch (error) {
             console.error('Sign out failed:', error);
         }
+        // Purge cached API responses so the next user on a shared machine cannot
+        // read the previous session's surat/arsip data from the service worker.
+        try {
+            if ('caches' in window) {
+                await caches.delete('api-cache');
+            }
+        } catch (error) {
+            console.error('Failed to clear API cache:', error);
+        }
     },
 
     // Get authenticated user - alias for getSession

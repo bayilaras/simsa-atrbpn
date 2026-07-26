@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 
 export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dependencies = [] } = {}) {
     const [currentPage, setCurrentPage] = useState(1)
@@ -30,6 +30,21 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
         });
     }, [dataInput, sortConfig, isServerSide]);
 
+    // When the filter dependencies change the result set changes too, so the
+    // current page may no longer exist — restart from the first page before fetching
+    const prevDependenciesRef = useRef(null);
+    const prevDependencies = prevDependenciesRef.current;
+    prevDependenciesRef.current = dependencies;
+
+    if (
+        prevDependencies &&
+        currentPage !== 1 &&
+        (prevDependencies.length !== dependencies.length ||
+            dependencies.some((dep, index) => !Object.is(dep, prevDependencies[index])))
+    ) {
+        setCurrentPage(1);
+    }
+
     // Server-side fetching
     useEffect(() => {
         if (!isServerSide) return;
@@ -57,6 +72,11 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
 
     const totalItems = isServerSide ? serverTotal : (sortedData.length || 0);
     const totalPages = Math.ceil(totalItems / pageSize) || 1;
+
+    // Client-side data can shrink below the current page (e.g. after filtering)
+    if (!isServerSide && currentPage > totalPages) {
+        setCurrentPage(totalPages);
+    }
 
     const currentData = useMemo(() => {
         if (isServerSide) return serverData;

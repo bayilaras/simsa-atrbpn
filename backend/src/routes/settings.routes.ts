@@ -7,6 +7,15 @@ const log = createLogger('SettingsRoutes');
 
 const router = Router();
 
+const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+
+// Drive folder identifiers are integration credentials — only admins may see them,
+// while every authenticated user still needs the unit list for filters/dropdowns.
+const stripDriveConfig = (unit: any) => {
+    const { driveFolderId, driveUploadFolderId, ...rest } = unit;
+    return rest;
+};
+
 // Apply auth middleware to ALL settings routes
 router.use(authMiddleware as any);
 
@@ -92,7 +101,8 @@ router.put('/profile', async (req: Request, res: Response) => {
 router.get('/unit-kerja', async (req: Request, res: Response) => {
     try {
         const units = await settingsService.getAllUnitKerja();
-        res.json(units);
+        const isAdmin = ADMIN_ROLES.includes((req as any).user?.role);
+        res.json(isAdmin ? units : units.map(stripDriveConfig));
     } catch (error) {
         log.error({ err: error }, 'Error getting unit kerja:');
         res.status(500).json({ error: 'Failed to get unit kerja' });
@@ -116,7 +126,8 @@ router.get('/unit-kerja/:id', async (req: Request, res: Response) => {
             return;
         }
 
-        res.json(unit);
+        const isAdmin = ADMIN_ROLES.includes((req as any).user?.role);
+        res.json(isAdmin ? unit : stripDriveConfig(unit));
     } catch (error) {
         log.error({ err: error }, 'Error getting unit kerja:');
         res.status(500).json({ error: 'Failed to get unit kerja' });
@@ -214,7 +225,7 @@ router.post('/unit-kerja', async (req: Request, res: Response) => {
  */
 router.get('/surat-templates', async (req: Request, res: Response) => {
     try {
-        const unitKerjaId = (req as any).user?.unitKerjaId || 'dirjen';
+        const unitKerjaId = (req as any).user?.unitKerjaId || 'ditjen';
         const templates = await settingsService.getSuratTemplates(unitKerjaId);
         res.json(templates);
     } catch (error) {
@@ -239,7 +250,7 @@ router.put('/surat-templates', async (req: Request, res: Response) => {
             return;
         }
 
-        const unitKerjaId = (req as any).user?.unitKerjaId || 'dirjen';
+        const unitKerjaId = (req as any).user?.unitKerjaId || 'ditjen';
         const { masukFormat, keluarFormat } = req.body;
 
         const updated = await settingsService.updateSuratTemplates(unitKerjaId, {

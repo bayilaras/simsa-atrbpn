@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratDistributions, NewSuratDistribution, SuratDistribution, suratMasuk, unitKerja, users } from '../db/schema';
-import { eq, and, desc, sql, or } from 'drizzle-orm';
+import { eq, and, desc, sql, or, ne, notInArray } from 'drizzle-orm';
 
 export interface DistributionFilters {
     unitKerjaId?: string;
@@ -164,13 +164,24 @@ export class DistributionService {
     }
 
     /**
+     * Scope a distribution to the target unit when the caller resolved one
+     * (super_admin passes nothing and may act on any unit).
+     */
+    private targetScope(targetUnitId?: string | null) {
+        return targetUnitId ? [eq(suratDistributions.targetUnitId, targetUnitId)] : [];
+    }
+
+    /**
      * Mark distribution as received by target unit
      */
-    async receive(distributionId: string, receivedBy: string) {
+    async receive(distributionId: string, receivedBy: string, targetUnitId?: string | null) {
         const [distribution] = await db
             .select()
             .from(suratDistributions)
-            .where(eq(suratDistributions.id, distributionId))
+            .where(and(
+                eq(suratDistributions.id, distributionId),
+                ...this.targetScope(targetUnitId)
+            ))
             .limit(1);
 
         if (!distribution) {
@@ -188,8 +199,17 @@ export class DistributionService {
                 receivedBy,
                 updatedAt: new Date(),
             })
-            .where(eq(suratDistributions.id, distributionId))
+            // Repeat the status guard so a concurrent call cannot also win the check above
+            .where(and(
+                eq(suratDistributions.id, distributionId),
+                eq(suratDistributions.status, 'sent'),
+                ...this.targetScope(targetUnitId)
+            ))
             .returning();
+
+        if (!result) {
+            throw new Error('Distribution sudah diterima atau diproses');
+        }
 
         return result;
     }
@@ -197,11 +217,14 @@ export class DistributionService {
     /**
      * Mark distribution as processed/completed
      */
-    async process(distributionId: string) {
+    async process(distributionId: string, targetUnitId?: string | null) {
         const [distribution] = await db
             .select()
             .from(suratDistributions)
-            .where(eq(suratDistributions.id, distributionId))
+            .where(and(
+                eq(suratDistributions.id, distributionId),
+                ...this.targetScope(targetUnitId)
+            ))
             .limit(1);
 
         if (!distribution) {
@@ -218,8 +241,17 @@ export class DistributionService {
                 processedAt: new Date(),
                 updatedAt: new Date(),
             })
-            .where(eq(suratDistributions.id, distributionId))
+            // Repeat the status guard so a concurrent call cannot also win the check above
+            .where(and(
+                eq(suratDistributions.id, distributionId),
+                ne(suratDistributions.status, 'processed'),
+                ...this.targetScope(targetUnitId)
+            ))
             .returning();
+
+        if (!result) {
+            throw new Error('Distribution sudah selesai diproses');
+        }
 
         return result;
     }
@@ -227,11 +259,14 @@ export class DistributionService {
     /**
      * Reject distribution (return to sender)
      */
-    async reject(distributionId: string, reason: string) {
+    async reject(distributionId: string, reason: string, targetUnitId?: string | null) {
         const [distribution] = await db
             .select()
             .from(suratDistributions)
-            .where(eq(suratDistributions.id, distributionId))
+            .where(and(
+                eq(suratDistributions.id, distributionId),
+                ...this.targetScope(targetUnitId)
+            ))
             .limit(1);
 
         if (!distribution) {
@@ -248,8 +283,17 @@ export class DistributionService {
                 rejectionReason: reason,
                 updatedAt: new Date(),
             })
-            .where(eq(suratDistributions.id, distributionId))
+            // Repeat the status guard so a concurrent call cannot also win the check above
+            .where(and(
+                eq(suratDistributions.id, distributionId),
+                notInArray(suratDistributions.status, ['processed', 'rejected']),
+                ...this.targetScope(targetUnitId)
+            ))
             .returning();
+
+        if (!result) {
+            throw new Error('Distribution tidak bisa ditolak');
+        }
 
         return result;
     }

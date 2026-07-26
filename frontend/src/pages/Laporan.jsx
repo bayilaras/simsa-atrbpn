@@ -28,7 +28,7 @@ import {
 export default function Laporan() {
     const { user } = useAuth();
     const { toast } = useToast();
-    const unitKerjaId = user?.unitKerjaId || 'dirjen';
+    const unitKerjaId = user?.unitKerjaId || 'ditjen';
 
     const [activeTab, setActiveTab] = useState('summary');
     const [loading, setLoading] = useState(false);
@@ -55,7 +55,7 @@ export default function Laporan() {
     // Load data based on active tab
     useEffect(() => {
         loadData();
-    }, [activeTab, year, unitKerjaId]);
+    }, [activeTab, year, unitKerjaId, arsipType, mediaType, lendingStatus]);
 
     const loadData = async () => {
         setLoading(true);
@@ -562,7 +562,7 @@ export default function Laporan() {
                                 </div>
                             </div>
                             <div className="flex gap-2 w-full sm:w-auto">
-                                <Select value={arsipType} onValueChange={(v) => { setArsipType(v); loadData(); }}>
+                                <Select value={arsipType} onValueChange={setArsipType}>
                                     <SelectTrigger className="w-full sm:w-[150px] bg-slate-50 border-slate-200">
                                         <SelectValue placeholder="Filter" />
                                     </SelectTrigger>
@@ -573,7 +573,7 @@ export default function Laporan() {
                                         <SelectItem value="destroyed">Musnah</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                <Select value={mediaType} onValueChange={(v) => { setMediaType(v); loadData(); }}>
+                                <Select value={mediaType} onValueChange={setMediaType}>
                                     <SelectTrigger className="w-full sm:w-[150px] bg-slate-50 border-slate-200">
                                         <SelectValue placeholder="Media" />
                                     </SelectTrigger>
@@ -714,7 +714,7 @@ export default function Laporan() {
                             </div>
                         </div>
                         <div className="flex gap-4 items-center">
-                            <Select value={lendingStatus} onValueChange={(v) => { setLendingStatus(v); loadData(); }}>
+                            <Select value={lendingStatus} onValueChange={setLendingStatus}>
                                 <SelectTrigger className="w-[150px] bg-slate-50 border-slate-200">
                                     <SelectValue placeholder="Status" />
                                 </SelectTrigger>

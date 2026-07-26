@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { fileAttachmentService } from '../services/file-attachment.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
@@ -44,12 +44,61 @@ const upload = multer({
     },
 });
 
+// Magic-byte family each accepted MIME type must resolve to. Legacy Office formats
+// share the OLE2 container and the OOXML formats share the ZIP container, so they
+// can only be distinguished down to the family level.
+type ContentFamily = 'pdf' | 'ole' | 'ooxml' | 'jpeg' | 'png' | 'gif';
+
+const EXPECTED_CONTENT_FAMILY: Record<string, ContentFamily> = {
+    'application/pdf': 'pdf',
+    'application/msword': 'ole',
+    'application/vnd.ms-excel': 'ole',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'ooxml',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'ooxml',
+    'image/jpeg': 'jpeg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+};
+
+const OLE_SIGNATURE = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
+const ZIP_SIGNATURE = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+
+function detectContentFamily(buffer: Buffer): ContentFamily | null {
+    if (buffer.length < 8) return null;
+    if (buffer.subarray(0, 4).toString('latin1') === '%PDF') return 'pdf';
+    if (buffer.subarray(0, 8).equals(OLE_SIGNATURE)) return 'ole';
+    if (buffer.subarray(0, 4).equals(ZIP_SIGNATURE)) return 'ooxml';
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'jpeg';
+    if (buffer.subarray(0, 8).equals(PNG_SIGNATURE)) return 'png';
+    if (buffer.subarray(0, 4).toString('latin1') === 'GIF8') return 'gif';
+    return null;
+}
+
+// multer's fileFilter can only see the client-supplied Content-Type, so the stored
+// bytes are checked here before anything is persisted.
+function verifyFileContent(req: Request, res: Response, next: NextFunction) {
+    if (!req.file) {
+        return next();
+    }
+
+    const expected = EXPECTED_CONTENT_FAMILY[req.file.mimetype];
+    if (!expected || detectContentFamily(req.file.buffer) !== expected) {
+        return res.status(400).json({
+            error: 'File content does not match the declared file type.',
+        });
+    }
+
+    next();
+}
+
 // Upload file for a surat
 router.post(
     '/:suratType/:suratId',
     authMiddleware,
     canWriteMiddleware(),
     upload.single('file'),
+    verifyFileContent,
     async (req: AuthRequest, res: Response) => {
         try {
             const suratType = req.params.suratType as string;

@@ -314,7 +314,10 @@ class FullTextSearchService {
     private highlightTerms(text: string, terms: string[]): string {
         let highlighted = text;
         terms.forEach(term => {
-            const regex = new RegExp(`(${term})`, 'gi');
+            if (!term) return;
+            // Terms come straight from the user query, so regex metacharacters must be literal
+            const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escapedTerm})`, 'gi');
             highlighted = highlighted.replace(regex, '**$1**');
         });
         return highlighted;

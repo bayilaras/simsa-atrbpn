@@ -638,16 +638,19 @@ const KLASIFIKASI_DATA = [
 export async function seedKlasifikasiArsip() {
   console.log('Seeding klasifikasi arsip...');
 
-  // Clear existing data
-  await db.delete(klasifikasiArsip);
+  // Delete + re-insert in one transaction so a failed batch never leaves the
+  // catalog empty or partial, and readers never observe the empty window.
+  await db.transaction(async (tx: any) => {
+    await tx.delete(klasifikasiArsip);
 
-  // Insert in batches of 50
-  const batchSize = 50;
-  for (let i = 0; i < KLASIFIKASI_DATA.length; i += batchSize) {
-    const batch = KLASIFIKASI_DATA.slice(i, i + batchSize);
-    await db.insert(klasifikasiArsip).values(batch);
-    console.log(`  Inserted ${Math.min(i + batchSize, KLASIFIKASI_DATA.length)}/${KLASIFIKASI_DATA.length} records`);
-  }
+    // Insert in batches of 50
+    const batchSize = 50;
+    for (let i = 0; i < KLASIFIKASI_DATA.length; i += batchSize) {
+      const batch = KLASIFIKASI_DATA.slice(i, i + batchSize);
+      await tx.insert(klasifikasiArsip).values(batch);
+      console.log(`  Inserted ${Math.min(i + batchSize, KLASIFIKASI_DATA.length)}/${KLASIFIKASI_DATA.length} records`);
+    }
+  });
 
   console.log(`Seeding klasifikasi arsip complete! Total: ${KLASIFIKASI_DATA.length} records`);
 }

@@ -194,7 +194,7 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
 router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await distributionService.receive(id, req.user?.id || '');
+        const result = await distributionService.receive(id, req.user?.id || '', resolveUnitKerjaId(req));
 
         await auditLogService.logAction({
             userId: req.user?.id,
@@ -222,7 +222,7 @@ router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, n
 router.put('/:id/process', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await distributionService.process(id);
+        const result = await distributionService.process(id, resolveUnitKerjaId(req));
 
         await auditLogService.logAction({
             userId: req.user?.id,
@@ -256,7 +256,7 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
             return res.status(400).json({ error: 'Alasan penolakan wajib diisi' });
         }
 
-        const result = await distributionService.reject(id, reason);
+        const result = await distributionService.reject(id, reason, resolveUnitKerjaId(req));
 
         await auditLogService.logAction({
             userId: req.user?.id,

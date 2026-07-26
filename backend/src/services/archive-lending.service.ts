@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { archiveLending, NewArchiveLending, ArchiveLending, arsip, storageLocations, users } from '../db/schema';
-import { eq, and, desc, sql, lte, lt, isNull } from 'drizzle-orm';
+import { eq, and, desc, sql, lte, lt, isNull, inArray } from 'drizzle-orm';
 
 export interface LendingFilters {
     unitKerjaId?: string;
@@ -124,49 +124,69 @@ export class ArchiveLendingService {
             throw new Error('storageLocationId is required for per-box lending');
         }
 
-        // Check if already borrowed
-        if (data.lendingType === 'arsip' && data.arsipId) {
-            const [existingArsip] = await db
-                .select()
-                .from(arsip)
-                .where(eq(arsip.id, data.arsipId))
-                .limit(1);
+        return await db.transaction(async (tx: any) => {
+            // Check if already borrowed
+            if (data.lendingType === 'arsip' && data.arsipId) {
+                const [existingArsip] = await tx
+                    .select()
+                    .from(arsip)
+                    .where(eq(arsip.id, data.arsipId))
+                    .limit(1)
+                    .for('update');
 
-            if (!existingArsip) {
-                throw new Error('Arsip not found');
+                if (!existingArsip) {
+                    throw new Error('Arsip not found');
+                }
+                if (existingArsip.lendingStatus === 'borrowed') {
+                    throw new Error('Arsip is already borrowed');
+                }
             }
-            if (existingArsip.lendingStatus === 'borrowed') {
-                throw new Error('Arsip is already borrowed');
+
+            // A box can only be out on one loan at a time, otherwise the first return
+            // would flip every arsip back to available while the second loan is still open
+            if (data.lendingType === 'box' && data.storageLocationId) {
+                const [openBoxLending] = await tx
+                    .select()
+                    .from(archiveLending)
+                    .where(and(
+                        eq(archiveLending.storageLocationId, data.storageLocationId),
+                        inArray(archiveLending.status, ['borrowed', 'overdue'])
+                    ))
+                    .limit(1);
+
+                if (openBoxLending) {
+                    throw new Error('Box is already borrowed');
+                }
             }
-        }
 
-        // Create lending record
-        const [lending] = await db
-            .insert(archiveLending)
-            .values({
-                ...data,
-                borrowDate,
-                status: 'borrowed',
-            })
-            .returning();
+            // Create lending record
+            const [lending] = await tx
+                .insert(archiveLending)
+                .values({
+                    ...data,
+                    borrowDate,
+                    status: 'borrowed',
+                })
+                .returning();
 
-        // Update arsip lending status if per-arsip
-        if (data.lendingType === 'arsip' && data.arsipId) {
-            await db
-                .update(arsip)
-                .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
-                .where(eq(arsip.id, data.arsipId));
-        }
+            // Update arsip lending status if per-arsip
+            if (data.lendingType === 'arsip' && data.arsipId) {
+                await tx
+                    .update(arsip)
+                    .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
+                    .where(eq(arsip.id, data.arsipId));
+            }
 
-        // If per-box, update all arsip in that box
-        if (data.lendingType === 'box' && data.storageLocationId) {
-            await db
-                .update(arsip)
-                .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
-                .where(eq(arsip.storageLocationId, data.storageLocationId));
-        }
+            // If per-box, update all arsip in that box
+            if (data.lendingType === 'box' && data.storageLocationId) {
+                await tx
+                    .update(arsip)
+                    .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
+                    .where(eq(arsip.storageLocationId, data.storageLocationId));
+            }
 
-        return lending;
+            return lending;
+        });
     }
 
     async return(lendingId: string, notes?: string) {
@@ -180,35 +200,41 @@ export class ArchiveLendingService {
 
         const returnDate = new Date().toISOString().split('T')[0];
 
-        // Update lending record
-        const [updated] = await db
-            .update(archiveLending)
-            .set({
-                status: 'returned',
-                returnDate,
-                notes: notes || lending.notes,
-                updatedAt: new Date(),
-            })
-            .where(eq(archiveLending.id, lendingId))
-            .returning();
+        return await db.transaction(async (tx: any) => {
+            // Update lending record
+            const [updated] = await tx
+                .update(archiveLending)
+                .set({
+                    status: 'returned',
+                    returnDate,
+                    notes: notes || lending.notes,
+                    updatedAt: new Date(),
+                })
+                .where(eq(archiveLending.id, lendingId))
+                .returning();
 
-        // Update arsip lending status
-        if (lending.lendingType === 'arsip' && lending.arsipId) {
-            await db
-                .update(arsip)
-                .set({ lendingStatus: 'available', updatedAt: new Date() })
-                .where(eq(arsip.id, lending.arsipId));
-        }
+            // Update arsip lending status
+            if (lending.lendingType === 'arsip' && lending.arsipId) {
+                await tx
+                    .update(arsip)
+                    .set({ lendingStatus: 'available', updatedAt: new Date() })
+                    .where(eq(arsip.id, lending.arsipId));
+            }
 
-        // If per-box, update all arsip in that box
-        if (lending.lendingType === 'box' && lending.storageLocationId) {
-            await db
-                .update(arsip)
-                .set({ lendingStatus: 'available', updatedAt: new Date() })
-                .where(eq(arsip.storageLocationId, lending.storageLocationId));
-        }
+            // If per-box, update all arsip in that box, except those still out on a
+            // lending of their own
+            if (lending.lendingType === 'box' && lending.storageLocationId) {
+                await tx
+                    .update(arsip)
+                    .set({ lendingStatus: 'available', updatedAt: new Date() })
+                    .where(and(
+                        eq(arsip.storageLocationId, lending.storageLocationId),
+                        sql`NOT EXISTS (SELECT 1 FROM archive_lending al WHERE al.arsip_id = arsip.id AND al.status <> 'returned')`
+                    ));
+            }
 
-        return updated;
+            return updated;
+        });
     }
 
     async extend(lendingId: string, newDueDate: string) {
@@ -248,7 +274,7 @@ export class ArchiveLendingService {
             .from(archiveLending)
             .leftJoin(users, eq(archiveLending.borrowerId, users.id))
             .where(and(
-                eq(archiveLending.status, 'borrowed'),
+                inArray(archiveLending.status, ['borrowed', 'overdue']),
                 lt(archiveLending.dueDate, todayStr),
                 ...(unitKerjaId ? [sql`(${archiveLending.arsipId} IS NULL OR ${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId}))`] : [])
             ))
@@ -256,6 +282,7 @@ export class ArchiveLendingService {
 
         // Update status to overdue
         for (const item of overdue) {
+            if (item.lending.status === 'overdue') continue;
             await db
                 .update(archiveLending)
                 .set({ status: 'overdue', updatedAt: new Date() })
@@ -280,8 +307,8 @@ export class ArchiveLendingService {
         const stats = await db
             .select({
                 total: sql<number>`count(*)::int`,
-                borrowed: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed')::int`,
-                overdue: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed' and ${archiveLending.dueDate} < ${todayStr})::int`,
+                borrowed: sql<number>`count(*) filter (where ${archiveLending.status} in ('borrowed', 'overdue'))::int`,
+                overdue: sql<number>`count(*) filter (where ${archiveLending.status} in ('borrowed', 'overdue') and ${archiveLending.dueDate} < ${todayStr})::int`,
                 returned: sql<number>`count(*) filter (where ${archiveLending.status} = 'returned')::int`,
             })
             .from(archiveLending)

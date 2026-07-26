@@ -230,6 +230,7 @@ class ArsipTerjagaService {
     async getDueForReporting(unitKerjaId: string, daysAhead: number = 30) {
         const futureDate = new Date();
         futureDate.setDate(futureDate.getDate() + daysAhead);
+        const futureDateStr = futureDate.toISOString().split('T')[0];
 
         const results = await db
             .select({
@@ -250,7 +251,11 @@ class ArsipTerjagaService {
             .where(
                 and(
                     eq(arsipTerjaga.unitKerjaId, unitKerjaId),
-                    eq(arsipTerjaga.statusPelaporan, 'belum_dilaporkan')
+                    eq(arsipTerjaga.statusPelaporan, 'belum_dilaporkan'),
+                    sql`COALESCE(
+                        ${arsipTerjaga.tanggalReviewSelanjutnya},
+                        ${arsipTerjaga.tanggalPenetapan} + make_interval(days => COALESCE(${arsipTerjaga.periodePelaporanHari}, 365))
+                    ) <= ${futureDateStr}::date`
                 )
             )
             .orderBy(arsipTerjaga.tanggalPenetapan);
@@ -261,6 +266,9 @@ class ArsipTerjagaService {
     // Generate ANRI report data
     async generateLaporanANRI(unitKerjaId: string, tahun?: number) {
         const conditions = [eq(arsipTerjaga.unitKerjaId, unitKerjaId)];
+        if (tahun) {
+            conditions.push(sql`EXTRACT(YEAR FROM ${arsipTerjaga.tanggalPenetapan}) = ${tahun}`);
+        }
 
         const results = await db
             .select({

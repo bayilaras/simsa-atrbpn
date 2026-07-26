@@ -19,6 +19,7 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
+    transaction: async (fn: any) => fn(mockDb),
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
@@ -103,6 +104,10 @@ describe('PenyusutanService', () => {
     // ── create ──
     describe('create', () => {
         it('should create batch with arsip items', async () => {
+            enqueue([
+                { id: 'a1', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null },
+                { id: 'a2', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null },
+            ]); // eligibility check
             enqueue([{ id: 'p-new', status: 'draft' }]); // insert batch
             enqueue([]); // insert items (returns nothing important)
             enqueue([]); // update arsip disposalStatus
@@ -112,6 +117,24 @@ describe('PenyusutanService', () => {
                 arsipIds: ['a1', 'a2'],
             });
             expect(res.id).toBe('p-new');
+        });
+
+        it('should reject arsip belonging to another unit kerja', async () => {
+            enqueue([{ id: 'a1', unitKerjaId: 'lain', disposalStatus: 'active', disposalBatchId: null }]);
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1',
+                jenisPenyusutan: 'pemusnahan',
+                arsipIds: ['a1'],
+            })).rejects.toThrow(/luar unit kerja/);
+        });
+
+        it('should reject arsip already in another disposal batch', async () => {
+            enqueue([{ id: 'a1', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: 'p-lama' }]);
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1',
+                jenisPenyusutan: 'pemusnahan',
+                arsipIds: ['a1'],
+            })).rejects.toThrow(/penyusutan lain/);
         });
 
         it('should handle create with empty arsipIds', async () => {
@@ -148,7 +171,8 @@ describe('PenyusutanService', () => {
     // ── addItems ──
     describe('addItems', () => {
         it('should add arsip items to draft batch', async () => {
-            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan' }]); // find batch
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1' }]); // find batch
+            enqueue([{ id: 'a-new', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null }]); // eligibility check
             enqueue([{ nomorUrut: 3 }]); // existing items max nomorUrut
             enqueue([]); // insert items
             enqueue([]); // update arsip

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { notificationService } from '../services/notification.service'
 
 // Use the same base URL pattern as other services
 const API_BASE = import.meta.env.VITE_API_URL || ''
@@ -68,71 +69,68 @@ export function useNotifications({ unitKerjaId = 'ditjen', limit = 20, refreshIn
     }, [fetchNotifications])
 
     const markAsRead = useCallback(async (id) => {
-        try {
-            // Optimistic update - find the notification to update counts properly
-            const notif = notifications.find(n => n.id === id)
-            setNotifications(prev => prev.filter(n => n.id !== id))
-            if (notif) {
-                setCounts(prev => ({
-                    ...prev,
-                    total: Math.max(0, prev.total - 1),
-                    [notif.type]: Math.max(0, (prev[notif.type] || 0) - 1),
-                    suratMasuk: notif.category === 'surat-masuk'
-                        ? Math.max(0, prev.suratMasuk - 1) : prev.suratMasuk,
-                    arsipRetensi: notif.category === 'arsip-retensi'
-                        ? Math.max(0, prev.arsipRetensi - 1) : prev.arsipRetensi,
-                }))
-            }
+        // Optimistic update - find the notification to update counts properly
+        const notif = notifications.find(n => n.id === id)
+        setNotifications(prev => prev.filter(n => n.id !== id))
+        if (notif) {
+            setCounts(prev => ({
+                ...prev,
+                total: Math.max(0, prev.total - 1),
+                [notif.type]: Math.max(0, (prev[notif.type] || 0) - 1),
+                suratMasuk: notif.category === 'surat-masuk'
+                    ? Math.max(0, prev.suratMasuk - 1) : prev.suratMasuk,
+                arsipRetensi: notif.category === 'arsip-retensi'
+                    ? Math.max(0, prev.arsipRetensi - 1) : prev.arsipRetensi,
+            }))
+        }
 
-            await fetch(`${API_BASE}/api/notifications/${id}/read`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include'
-            })
+        try {
+            await notificationService.markAsRead(id)
 
             // Sync accurate counts
             fetchNotifications()
         } catch (err) {
             console.error('Error marking notification as read:', err)
+            // Re-sync first so the optimistic removal is rolled back, then surface the error
+            await fetchNotifications()
+            setError(err.message || 'Gagal menandai notifikasi sebagai dibaca')
         }
     }, [notifications, fetchNotifications])
 
     const markAllAsRead = useCallback(async (categoryFilter) => {
-        try {
-            // If categoryFilter provided, only mark visible category as read
-            const targetNotifications = categoryFilter
-                ? notifications.filter(n => n.category === categoryFilter)
-                : notifications
-            const ids = targetNotifications.map(n => n.id)
-            if (ids.length === 0) return
+        // If categoryFilter provided, only mark visible category as read
+        const targetNotifications = categoryFilter
+            ? notifications.filter(n => n.category === categoryFilter)
+            : notifications
+        const ids = targetNotifications.map(n => n.id)
+        if (ids.length === 0) return
 
-            // Optimistic update
-            if (categoryFilter) {
-                setNotifications(prev => prev.filter(n => n.category !== categoryFilter))
-                setCounts(prev => ({
-                    ...prev,
-                    total: Math.max(0, prev.total - ids.length),
-                    suratMasuk: categoryFilter === 'surat-masuk' ? 0 : prev.suratMasuk,
-                    arsipRetensi: categoryFilter === 'arsip-retensi' ? 0 : prev.arsipRetensi,
-                }))
-            } else {
-                setNotifications([])
-                setCounts({
-                    total: 0, urgent: 0, warning: 0, info: 0,
-                    suratMasuk: 0, arsipRetensi: 0
-                })
-            }
-
-            await fetch(`${API_BASE}/api/notifications/read-all`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ notificationIds: ids })
+        // Optimistic update
+        if (categoryFilter) {
+            setNotifications(prev => prev.filter(n => n.category !== categoryFilter))
+            setCounts(prev => ({
+                ...prev,
+                total: Math.max(0, prev.total - ids.length),
+                suratMasuk: categoryFilter === 'surat-masuk' ? 0 : prev.suratMasuk,
+                arsipRetensi: categoryFilter === 'arsip-retensi' ? 0 : prev.arsipRetensi,
+            }))
+        } else {
+            setNotifications([])
+            setCounts({
+                total: 0, urgent: 0, warning: 0, info: 0,
+                suratMasuk: 0, arsipRetensi: 0
             })
+        }
+
+        try {
+            await notificationService.markAllAsRead(ids)
 
             fetchNotifications()
         } catch (err) {
             console.error('Error marking all as read:', err)
+            // Re-sync first so the optimistic removal is rolled back, then surface the error
+            await fetchNotifications()
+            setError(err.message || 'Gagal menandai semua notifikasi sebagai dibaca')
         }
     }, [notifications, fetchNotifications])
 

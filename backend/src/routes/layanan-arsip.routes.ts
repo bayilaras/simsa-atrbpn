@@ -9,6 +9,17 @@ import { createLayananArsipSchema, updateLayananStatusSchema } from '../validato
 
 const router = Router();
 
+// Roles allowed to see archive-service requests other than their own
+const LAYANAN_REVIEWER_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
+
+// Allowed status transitions — a closed request (selesai/ditolak) cannot be reopened
+const LAYANAN_STATUS_TRANSITIONS: Record<string, string[]> = {
+    diajukan: ['diproses', 'ditolak'],
+    diproses: ['selesai', 'ditolak'],
+    selesai: [],
+    ditolak: [],
+};
+
 router.use(authMiddleware);
 
 // Validate all :id params as UUID
@@ -27,8 +38,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
         };
 
         // If 'myRequests' is true or user is not admin/archivist, only show their own requests
-        // Assuming role check logic here, simplifying for brevity
-        if (myRequests === 'true') {
+        if (myRequests === 'true' || !LAYANAN_REVIEWER_ROLES.includes(req.user?.role || '')) {
             filters.userId = req.user?.id;
         }
 
@@ -87,6 +97,15 @@ router.post('/:id/status', canWriteMiddleware(), validateBody(updateLayananStatu
 
         if (!['diproses', 'selesai', 'ditolak'].includes(status)) {
             return res.status(400).json({ error: 'Invalid status' });
+        }
+
+        const existing = await layananArsipService.findById(id as string);
+        if (!existing) return res.status(404).json({ error: 'Data not found' });
+
+        if (!LAYANAN_STATUS_TRANSITIONS[existing.status]?.includes(status)) {
+            return res.status(400).json({
+                error: `Status tidak dapat diubah dari '${existing.status}' ke '${status}'`,
+            });
         }
 
         const result = await layananArsipService.updateStatus(id as string, status, req.user?.id, notes);

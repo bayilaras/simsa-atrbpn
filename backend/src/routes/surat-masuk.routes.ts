@@ -136,7 +136,7 @@ router.get('/pending-for-reply', async (req: AuthRequest, res, next) => {
 router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await suratMasukService.findById(id);
+        const result = await suratMasukService.findById(id, resolveUnitKerjaId(req));
 
         if (!result) {
             return res.status(404).json({ error: 'Surat masuk not found' });
@@ -236,7 +236,7 @@ router.put('/:id', validateIdParam(),
             log.info({ id, hasFile: !!file }, '[PUT /surat-masuk/:id] Request received');
             log.info({ bodyKeys: Object.keys(req.body) }, '[PUT /surat-masuk/:id] Body keys');
 
-            const existing = await suratMasukService.findById(id);
+            const existing = await suratMasukService.findById(id, resolveUnitKerjaId(req));
 
             if (!existing) {
                 return res.status(404).json({ error: 'Surat masuk not found' });
@@ -294,7 +294,7 @@ router.put('/:id', validateIdParam(),
 
             log.info({ updateKeys: Object.keys(updateData) }, '[PUT /surat-masuk/:id] Update data keys');
 
-            const result = await suratMasukService.update(id, updateData);
+            const result = await suratMasukService.update(id, updateData, resolveUnitKerjaId(req));
 
             // Log audit
             await auditLogService.logAction({
@@ -323,8 +323,8 @@ router.put('/:id', validateIdParam(),
 router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const existing = await suratMasukService.findById(id);
-        const result = await suratMasukService.delete(id);
+        const existing = await suratMasukService.findById(id, resolveUnitKerjaId(req));
+        const result = await suratMasukService.delete(id, req.user?.id, resolveUnitKerjaId(req));
 
         if (!result) {
             return res.status(404).json({ error: 'Surat masuk not found' });
@@ -382,7 +382,7 @@ router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, 
 router.post('/:id/archive', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await suratMasukService.archive(id);
+        const result = await suratMasukService.archive(id, resolveUnitKerjaId(req));
 
         if (!result) {
             return res.status(404).json({ error: 'Surat masuk not found' });
@@ -420,7 +420,7 @@ router.get('/:id/balasan', async (req: AuthRequest, res, next) => {
 router.get('/:id/with-links', async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await suratMasukService.findByIdWithLinks(id);
+        const result = await suratMasukService.findByIdWithLinks(id, resolveUnitKerjaId(req));
 
         if (!result) {
             return res.status(404).json({ error: 'Surat masuk not found' });
