@@ -105,7 +105,18 @@ export function validateEnv() {
     validateMalwareScanConfig(
         malwareScanConfig,
         process.env.NODE_ENV === 'production' || process.env.VERCEL ? 'production' : (process.env.NODE_ENV || 'development'),
+        process.env,
     );
+
+    if (
+        env.APP_PROFILE === 'internal'
+        && malwareScanConfig.mode === 'disabled'
+        && (process.env.NODE_ENV === 'production' || process.env.VERCEL)
+    ) {
+        process.stderr.write(
+            'WARNING: Malware scanner is disabled; every uploaded bitstream remains quarantined and unavailable until a clean scan is recorded.\n',
+        );
+    }
 
     // Outbound SRIKANDI traffic is disabled by default. If an operator opts in,
     // fail startup unless endpoint, credential, and official response contract

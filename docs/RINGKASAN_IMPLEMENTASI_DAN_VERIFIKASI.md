@@ -39,7 +39,7 @@ Migrasi `0011` berhenti bila versi arsip elektronik legacy ambigu. Migrasi `0012
 
 ## Bukti verifikasi
 
-- Backend: 57 berkas test, 752 test lulus.
+- Backend: 57 berkas test, 753 test lulus.
 - Frontend: 4 berkas test, 22 test lulus.
 - TypeScript backend: lulus.
 - Build produksi backend: lulus.
