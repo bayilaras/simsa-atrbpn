@@ -134,6 +134,66 @@ describe('authMiddleware', () => {
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
     });
+
+    it('should deny an unprovisioned default user', async () => {
+        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (db.select as any).mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([{ ...mockUser, role: 'user', unitKerjaId: null }]),
+                }),
+            }),
+        });
+
+        const req = createMockReq();
+        const res = createMockRes();
+
+        await authMiddleware(req, res, mockNext);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Access pending' }));
+        expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('should fail closed for an unknown database role', async () => {
+        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (db.select as any).mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([{ ...mockUser, role: 'legacy_admin' }]),
+                }),
+            }),
+        });
+
+        const req = createMockReq();
+        const res = createMockRes();
+
+        await authMiddleware(req, res, mockNext);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Access pending' }));
+        expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('should deny staff without an assigned unit kerja', async () => {
+        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (db.select as any).mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([{ ...mockUser, role: 'staff', unitKerjaId: null }]),
+                }),
+            }),
+        });
+
+        const req = createMockReq();
+        const res = createMockRes();
+
+        await authMiddleware(req, res, mockNext);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Unit kerja required' }));
+        expect(mockNext).not.toHaveBeenCalled();
+    });
 });
 
 describe('optionalAuthMiddleware', () => {

@@ -53,7 +53,7 @@ export function AppHeader() {
 
     // Super admin can switch unit kerja for notifications
     const isSuperAdmin = authUser?.role === 'super_admin'
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(authUser?.unitKerjaId || 'ditjen')
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(authUser?.unitKerjaId || '')
     const notifUnitKerjaId = isSuperAdmin ? selectedUnitKerja : authUser?.unitKerjaId
 
     const { notifications, counts, loading, hasUrgent, refresh, markAsRead, markAllAsRead, getByCategory, suratCount, arsipCount } = useNotifications({

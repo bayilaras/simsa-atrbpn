@@ -1,14 +1,22 @@
 import { Router } from 'express';
 import { arsipVitalService } from '../services/arsip-vital.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
-import { canWriteMiddleware, canReadMiddleware } from '../middlewares/role.middleware';
+import { canReadMiddleware, canWriteMiddleware } from '../middlewares/role.middleware';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createArsipVitalSchema, updateArsipVitalSchema } from '../validators/schemas';
 
 import { printTemplateService } from '../services/print-template.service';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
+import {
+    allowedSecurityClassifications,
+    recordAccessService,
+} from '../services/record-access.service.js';
 
 const router = Router();
+
+// Authentication must run before every authorization check, including print.
+router.use(authMiddleware);
 
 // Print Daftar Arsip Vital
 router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, next) => {
@@ -16,7 +24,10 @@ router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, n
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         if (!unitKerjaId) return res.status(400).json({ error: 'Unit Kerja ID required' });
 
-        const pdfBuffer = await printTemplateService.generateDaftarArsipVital(unitKerjaId);
+        const pdfBuffer = await printTemplateService.generateDaftarArsipVital(
+            unitKerjaId,
+            allowedSecurityClassifications(req.user),
+        );
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="daftar-arsip-vital-${unitKerjaId}.pdf"`);
@@ -25,9 +36,6 @@ router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, n
         next(error);
     }
 });
-
-// All routes require authentication
-router.use(authMiddleware);
 
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);
@@ -50,6 +58,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
             search: search as string,
             page: page ? Number(page) : 1,
             limit: limit ? Number(limit) : 20,
+            securityClassifications: allowedSecurityClassifications(req.user),
         });
 
         res.json({ success: true, ...result });
@@ -67,7 +76,10 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
 
-        const stats = await arsipVitalService.getStats(unitKerjaId as string);
+        const stats = await arsipVitalService.getStats(
+            unitKerjaId as string,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, data: stats });
     } catch (error) {
         next(error);
@@ -86,7 +98,8 @@ router.get('/due-review', async (req: AuthRequest, res, next) => {
 
         const data = await arsipVitalService.getDueForReview(
             unitKerjaId as string,
-            daysAhead ? Number(daysAhead) : 30
+            daysAhead ? Number(daysAhead) : 30,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data });
@@ -99,7 +112,11 @@ router.get('/due-review', async (req: AuthRequest, res, next) => {
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const result = await arsipVitalService.findById(id as string);
+        const result = await arsipVitalService.findById(
+            id as string,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
 
         if (!result) {
             return res.status(404).json({ error: 'Arsip vital not found' });
@@ -117,8 +134,16 @@ router.post('/',
     validateBody(createArsipVitalSchema),
     async (req: AuthRequest, res, next) => {
         try {
+            const access = await recordAccessService.check(req.user, 'arsip', req.body.arsipId);
+            if (!access.exists || !access.allowed || !access.unitKerjaId) {
+                return res.status(404).json({ error: 'Arsip not found' });
+            }
+
             const result = await arsipVitalService.create({
                 ...req.body,
+                // Unit is authoritative metadata of the parent archive, never a
+                // client-selected value.
+                unitKerjaId: access.unitKerjaId,
                 createdBy: req.user?.id,
             });
 
@@ -136,13 +161,22 @@ router.put('/:id',
     async (req: AuthRequest, res, next) => {
         try {
             const { id } = req.params;
-            const existing = await arsipVitalService.findById(id as string);
+            const unitScope = resolveRecordUnitScope(req);
+            const existing = await arsipVitalService.findById(
+                id as string,
+                unitScope,
+                allowedSecurityClassifications(req.user),
+            );
 
             if (!existing) {
                 return res.status(404).json({ error: 'Arsip vital not found' });
             }
 
-            const result = await arsipVitalService.update(id as string, req.body);
+            const result = await arsipVitalService.update(id as string, req.body, unitScope);
+            if (!result) {
+                return res.status(404).json({ error: 'Arsip vital not found' });
+            }
+
             res.json({ success: true, data: result });
         } catch (error) {
             next(error);
@@ -154,13 +188,22 @@ router.put('/:id',
 router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const existing = await arsipVitalService.findById(id as string);
+        const unitScope = resolveRecordUnitScope(req);
+        const existing = await arsipVitalService.findById(
+            id as string,
+            unitScope,
+            allowedSecurityClassifications(req.user),
+        );
 
         if (!existing) {
             return res.status(404).json({ error: 'Arsip vital not found' });
         }
 
-        await arsipVitalService.delete(id as string);
+        const deleted = await arsipVitalService.delete(id as string, unitScope);
+        if (!deleted) {
+            return res.status(404).json({ error: 'Arsip vital not found' });
+        }
+
         res.json({ success: true, message: 'Arsip vital designation removed' });
     } catch (error) {
         next(error);

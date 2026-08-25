@@ -4,6 +4,17 @@
 $baseUrl = "http://localhost:3001"
 $results = @()
 
+function Get-RequiredTestCredential([string]$name) {
+    $value = [Environment]::GetEnvironmentVariable($name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "Required environment variable $name is not set. Refusing to run with a default credential."
+    }
+    return $value
+}
+
+$testLoginEmail = Get-RequiredTestCredential "SIMSA_TEST_EMAIL"
+$testLoginPassword = Get-RequiredTestCredential "SIMSA_TEST_PASSWORD"
+
 function Add-Result($id, $name, $status, $detail) {
     $script:results += [PSCustomObject]@{
         ID = $id
@@ -107,7 +118,7 @@ try {
 }
 
 # TC-01d: Valid login
-$loginBody = '{"email":"tester@simsa.atrbpn.go.id","password":"Password123!@#"}'
+$loginBody = @{ email = $testLoginEmail; password = $testLoginPassword } | ConvertTo-Json -Compress
 try {
     $r = Invoke-WebRequest -Uri "$baseUrl/api/auth/sign-in/email" -Method POST -Body $loginBody -ContentType "application/json" -UseBasicParsing -SessionVariable loginSession
     $global:s = $loginSession

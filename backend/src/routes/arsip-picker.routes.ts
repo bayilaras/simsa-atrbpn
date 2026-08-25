@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { klasifikasiService, jraService } from '../services/klasifikasi.service';
 import { arsipService } from '../services/arsip.service';
-import { authMiddleware } from '../middlewares/auth.middleware';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { validateBody } from '../middlewares/validate.middleware';
+import { calculateRetentionDatesSchema } from '../validators/schemas';
 import { createLogger } from '../utils/logger';
+import { allowedSecurityClassifications } from '../services/record-access.service.js';
 
 const log = createLogger('ArsipPickerRoutes');
 
@@ -87,7 +90,7 @@ router.get('/jra/:kode', authMiddleware, async (req: Request, res: Response) => 
  * @swagger
  * /api/arsip-picker/calculate-dates:
  *   post:
- *     summary: Calculate retention dates based on arsip date and JRA
+ *     summary: Calculate retention dates from an explicit business-event trigger and JRA
  *     tags: [Arsip Picker]
  *     security:
  *       - bearerAuth: []
@@ -97,8 +100,9 @@ router.get('/jra/:kode', authMiddleware, async (req: Request, res: Response) => 
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [retentionTriggerDate]
  *             properties:
- *               tanggalArsip:
+ *               retentionTriggerDate:
  *                 type: string
  *                 format: date
  *               retensiAktif:
@@ -109,17 +113,12 @@ router.get('/jra/:kode', authMiddleware, async (req: Request, res: Response) => 
  *       200:
  *         description: Calculated dates
  */
-router.post('/calculate-dates', authMiddleware, async (req: Request, res: Response) => {
+router.post('/calculate-dates', authMiddleware, validateBody(calculateRetentionDatesSchema), async (req: Request, res: Response) => {
     try {
-        const { tanggalArsip, retensiAktif, retensiInaktif } = req.body;
+        const { retentionTriggerDate, retensiAktif, retensiInaktif } = req.body;
 
-        if (!tanggalArsip) {
-            res.status(400).json({ success: false, error: 'tanggalArsip is required' });
-            return;
-        }
-
-        const dates = arsipService.calculateRetentionDates(tanggalArsip, retensiAktif, retensiInaktif);
-        const status = arsipService.getArchiveStatus(tanggalArsip, retensiAktif, retensiInaktif);
+        const dates = arsipService.calculateRetentionDates(retentionTriggerDate, retensiAktif, retensiInaktif);
+        const status = arsipService.getArchiveStatus(retentionTriggerDate, retensiAktif, retensiInaktif);
 
         res.json({
             success: true,
@@ -146,12 +145,18 @@ router.post('/calculate-dates', authMiddleware, async (req: Request, res: Respon
  *       200:
  *         description: Lifecycle notifications by status
  */
-router.get('/lifecycle', authMiddleware, async (req: Request, res: Response) => {
+router.get('/lifecycle', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
-        const user = (req as any).user;
-        const unitKerjaId = user?.unitKerjaId || 'PTEP';
+        const unitKerjaId = req.user?.unitKerjaId;
+        if (!unitKerjaId) {
+            res.status(400).json({ success: false, error: 'unitKerjaId is required' });
+            return;
+        }
 
-        const notifications = await arsipService.getLifecycleNotifications(unitKerjaId);
+        const notifications = await arsipService.getLifecycleNotifications(
+            unitKerjaId,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, data: notifications });
     } catch (error) {
         log.error({ err: error }, 'Error fetching lifecycle notifications:');

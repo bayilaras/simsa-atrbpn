@@ -81,12 +81,17 @@ describe('SuratKeluarService', () => {
     describe('findById', () => {
         it('should return surat keluar when found', async () => {
             enqueue([{ id: '1', perihal: 'Test SK' }]);
-            expect(await svc.findById('1')).toEqual({ id: '1', perihal: 'Test SK' });
+            expect(await svc.findById('1', 'u1')).toEqual({ id: '1', perihal: 'Test SK' });
         });
 
         it('should return null when not found', async () => {
             enqueue([]);
-            expect(await svc.findById('x')).toBeNull();
+            expect(await svc.findById('x', 'u1')).toBeNull();
+        });
+
+        it('should allow an explicit all-unit scope for super_admin callers', async () => {
+            enqueue([{ id: '1', unitKerjaId: 'u2' }]);
+            expect(await svc.findById('1', null)).toEqual({ id: '1', unitKerjaId: 'u2' });
         });
     });
 
@@ -108,6 +113,7 @@ describe('SuratKeluarService', () => {
 
         it('should update surat masuk status when balasanUntuk is provided', async () => {
             enqueue([{ noUrut: 1 }]);     // lastSurat
+            enqueue([{ id: 'sm-1' }]);    // same-unit reply target
             enqueue([{ id: 'reply-1', noUrut: 2, balasanUntuk: 'sm-1' }]); // insert
             enqueue([]);                   // update suratMasuk
 
@@ -118,13 +124,24 @@ describe('SuratKeluarService', () => {
             } as any);
             expect(res.id).toBe('reply-1');
         });
+
+        it('rejects a reply target outside the outgoing letter unit', async () => {
+            enqueue([{ noUrut: 1 }]); // lastSurat
+            enqueue([]);              // no live reply target in the same unit
+
+            await expect(svc.create({
+                unitKerjaId: 'u1',
+                tahun: 2026,
+                balasanUntuk: 'sm-other-unit',
+            } as any)).rejects.toThrow('unit kerja yang sama');
+        });
     });
 
     // ── update ──
     describe('update', () => {
         it('should update and return modified surat', async () => {
             enqueue([{ id: '1', perihal: 'Updated SK' }]);
-            const res = await svc.update('1', { perihal: 'Updated SK' } as any);
+            const res = await svc.update('1', { perihal: 'Updated SK' } as any, 'u1');
             expect(res).toEqual({ id: '1', perihal: 'Updated SK' });
         });
     });
@@ -133,7 +150,7 @@ describe('SuratKeluarService', () => {
     describe('delete', () => {
         it('should delete and return deleted surat', async () => {
             enqueue([{ id: '1', perihal: 'To Delete' }]);
-            const res = await svc.delete('1');
+            const res = await svc.delete('1', undefined, 'u1');
             expect(res).toEqual({ id: '1', perihal: 'To Delete' });
         });
     });
@@ -142,7 +159,7 @@ describe('SuratKeluarService', () => {
     describe('archive', () => {
         it('should call update with isArchived true', async () => {
             enqueue([{ id: '1', isArchived: true }]);
-            const res = await svc.archive('1');
+            const res = await svc.archive('1', 'u1');
             expect(res?.isArchived).toBe(true);
         });
     });

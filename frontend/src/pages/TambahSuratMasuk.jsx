@@ -306,7 +306,7 @@ export default function TambahSuratMasuk() {
                 switch (user?.role) {
                     case 'admin_sesditjen': return 'sesditjen';
                     case 'admin_dirjen': return 'ditjen';
-                    default: return user?.unitKerjaId || 'ditjen';
+                    default: return user?.unitKerjaId || '';
                 }
             })();
 
@@ -828,7 +828,7 @@ export default function TambahSuratMasuk() {
                         {saveStatus && (
                             <span className="text-xs text-muted-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted">
                                 {saveStatus === 'saving' && <><Loader2 className="h-3 w-3 animate-spin" /> Menyimpan draft...</>}
-                                {saveStatus === 'saved' && <><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Draft tersimpan</>}
+                                {saveStatus === 'saved' && <><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Draft sementara tersimpan</>}
                                 {saveStatus === 'restored' && <><FileText className="h-3 w-3 text-blue-500" /> Draft dimuat</>}
                             </span>
                         )}

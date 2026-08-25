@@ -1,4 +1,6 @@
 // API Configuration
+import { clearOfflineStorage } from '../lib/offline-storage';
+
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // Read a cookie value by name
@@ -74,7 +76,7 @@ class ApiClient {
         let response;
         try {
             response = await fetch(url, config);
-        } catch (networkError) {
+        } catch {
             // Network error (offline, DNS failure, etc.) — retry once.
             // Only safe/idempotent methods may be retried: a dropped connection can
             // happen after the server already processed a mutation, so re-sending a
@@ -94,7 +96,9 @@ class ApiClient {
             // 401 Unauthorized — session expired or invalid
             if (response.status === 401) {
                 console.warn('[API] Session expired — redirecting to login');
-                // Clear any stored state and redirect
+                // Purge legacy offline data before handing the workstation to a
+                // subsequent user. This also covers server-side session expiry.
+                await clearOfflineStorage();
                 window.location.href = '/login';
                 throw new Error('Sesi telah berakhir. Silakan login kembali.');
             }
@@ -127,7 +131,7 @@ class ApiClient {
     get(endpoint, params = {}) {
         // Filter out undefined, null, and empty string values to prevent sending them as string literals
         const filteredParams = Object.fromEntries(
-            Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && v !== '')
+            Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
         );
         const query = new URLSearchParams(filteredParams).toString();
         const url = query ? `${endpoint}?${query}` : endpoint;
@@ -146,8 +150,8 @@ class ApiClient {
         return this.request(endpoint, { method: 'PATCH', body });
     }
 
-    delete(endpoint) {
-        return this.request(endpoint, { method: 'DELETE' });
+    delete(endpoint, body) {
+        return this.request(endpoint, { method: 'DELETE', body });
     }
 }
 

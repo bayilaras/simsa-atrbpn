@@ -8,6 +8,9 @@ import {
     createPenyusutanSchema,
     updatePenyusutanStatusSchema,
     removePenyusutanItemsSchema,
+    legalHoldActionSchema,
+    updateArsipSchema,
+    calculateRetentionDatesSchema,
     createStorageLocationSchema,
     updateStorageLocationSchema,
     borrowArchiveSchema,
@@ -190,6 +193,57 @@ describe('removePenyusutanItemsSchema', () => {
     it('rejects empty arsipIds', () => {
         const result = removePenyusutanItemsSchema.safeParse({ arsipIds: [] });
         expect(result.success).toBe(false);
+    });
+});
+
+describe('retention and legal hold schemas', () => {
+    it('accepts a fully documented retention trigger', () => {
+        const result = updateArsipSchema.safeParse({
+            retentionTriggerType: 'serah_terima',
+            retentionTriggerLabel: 'BAST final',
+            retentionTriggerDate: '2026-08-20',
+            retentionTriggerEvidence: 'BAST Nomor 12/2026 tanggal 20 Agustus 2026',
+            jraVersion: 'JRA 2026',
+            jraReference: 'Kode AT.02',
+        });
+        expect(result.success).toBe(true);
+    });
+
+    it('rejects a trigger date without supporting evidence', () => {
+        const result = updateArsipSchema.safeParse({
+            retentionTriggerType: 'serah_terima',
+            retentionTriggerLabel: 'BAST final',
+            retentionTriggerDate: '2026-08-20',
+        });
+        expect(result.success).toBe(false);
+    });
+
+    it('allows legacy updates without a trigger and keeps them non-actionable', () => {
+        expect(updateArsipSchema.safeParse({ catatan: 'Koreksi metadata' }).success).toBe(true);
+    });
+
+    it('requires a unit and a meaningful legal-hold reason', () => {
+        expect(legalHoldActionSchema.safeParse({
+            unitKerjaId: 'ditjen',
+            reason: 'Pemeriksaan masih berlangsung',
+        }).success).toBe(true);
+        expect(legalHoldActionSchema.safeParse({
+            unitKerjaId: 'ditjen',
+            reason: 'singkat',
+        }).success).toBe(false);
+    });
+
+    it('requires an explicit trigger date for retention calculations', () => {
+        expect(calculateRetentionDatesSchema.safeParse({
+            retentionTriggerDate: '2026-08-20',
+            retensiAktif: '2 tahun',
+            retensiInaktif: '3 tahun',
+        }).success).toBe(true);
+        expect(calculateRetentionDatesSchema.safeParse({
+            tanggalArsip: '2026-08-20',
+            retensiAktif: '2 tahun',
+            retensiInaktif: '3 tahun',
+        }).success).toBe(false);
     });
 });
 

@@ -1,7 +1,7 @@
 import { db } from '../config/database';
 import { arsip, NewArsip, Arsip, arsipItems } from '../db/schema';
-import { eq, and, desc, sql, lte, gte, ilike, or } from 'drizzle-orm';
-import { ConflictError } from '../utils/errors';
+import { eq, and, desc, sql, lte, gte, ilike, or, isNotNull, isNull, ne, inArray } from 'drizzle-orm';
+import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
 
 export interface ArsipFilters {
     unitKerjaId?: string;
@@ -10,17 +10,94 @@ export interface ArsipFilters {
     search?: string;
     page?: number;
     limit?: number;
+    /** null means all classes (super_admin); [] fails closed. */
+    securityClassifications?: string[] | null;
 }
 
+interface ArchiveRetentionMetadata {
+    retentionTriggerType?: 'kegiatan_selesai' | 'berkas_ditutup' | 'serah_terima' | 'penetapan' | 'lainnya';
+    retentionTriggerLabel?: string;
+    retentionTriggerDate?: string;
+    retentionTriggerEvidence?: string;
+    jraVersion?: string;
+    jraReference?: string;
+}
+
+function archiveSecurityCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+    return inArray(
+        sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+        classes,
+    );
+}
+
+const RETENTION_DECISION_FIELDS = new Set([
+    'kodeKlasifikasi',
+    'masaSimpanAktif',
+    'masaSimpanInaktif',
+    'hasilAkhir',
+    'jraKode',
+    'jraUraian',
+    'jraVersion',
+    'jraReference',
+    'retensiAktif',
+    'retensiInaktif',
+    'retensiKeterangan',
+    'retentionTriggerType',
+    'retentionTriggerLabel',
+    'retentionTriggerDate',
+    'retentionTriggerEvidence',
+    'tanggalKadaluarsa',
+]);
+
+const SYSTEM_MANAGED_RETENTION_FIELDS = new Set([
+    'disposalStatus',
+    'disposalBatchId',
+    'legalHold',
+    'legalHoldReason',
+    'legalHoldPlacedAt',
+    'legalHoldPlacedBy',
+    'legalHoldReleasedAt',
+    'legalHoldReleasedBy',
+    'legalHoldReleaseReason',
+]);
+
 export class ArsipService {
+    private assertRetentionTriggerDocumented(data: Record<string, any>) {
+        if (!data.retentionTriggerDate) return;
+        if (!data.retentionTriggerType || !data.retentionTriggerLabel?.trim() || !data.retentionTriggerEvidence?.trim()) {
+            throw new ValidationError(
+                'Pemicu retensi harus dilengkapi jenis, label, tanggal, dan bukti pendukung.',
+            );
+        }
+    }
+
     async findAll(filters: ArsipFilters) {
-        const { unitKerjaId, jenisArsip, tahun, search, page = 1, limit = 20 } = filters;
+        const {
+            unitKerjaId,
+            jenisArsip,
+            tahun,
+            search,
+            page = 1,
+            limit = 20,
+            securityClassifications,
+        } = filters;
         const offset = (page - 1) * limit;
 
         const conditions = [];
 
         if (unitKerjaId) {
             conditions.push(eq(arsip.unitKerjaId, unitKerjaId));
+        }
+
+        if (securityClassifications !== undefined && securityClassifications !== null) {
+            conditions.push(securityClassifications.length > 0
+                ? inArray(
+                    sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+                    securityClassifications,
+                )
+                : sql`false`);
         }
 
         if (jenisArsip) {
@@ -85,119 +162,100 @@ export class ArsipService {
         return { ...result, items };
     }
 
+    private deriveRetentionFields<T extends Record<string, any>>(
+        data: T,
+        existing?: Pick<Arsip, 'retentionTriggerDate' | 'retensiAktif' | 'retensiInaktif'>,
+    ): T & { tanggalKadaluarsa: string | null } {
+        const triggerDate = data.retentionTriggerDate !== undefined
+            ? data.retentionTriggerDate
+            : existing?.retentionTriggerDate;
+        const retensiAktif = data.retensiAktif !== undefined
+            ? data.retensiAktif
+            : existing?.retensiAktif;
+        const retensiInaktif = data.retensiInaktif !== undefined
+            ? data.retensiInaktif
+            : existing?.retensiInaktif;
+
+        const dates = this.calculateRetentionDates(
+            triggerDate || null,
+            retensiAktif || null,
+            retensiInaktif || null,
+        );
+
+        return { ...data, tanggalKadaluarsa: dates.tanggalKadaluarsa };
+    }
+
     async create(data: NewArsip) {
+        // tanggalKadaluarsa is always derived from an explicit retention trigger.
+        // A caller-provided expiry without a trigger is intentionally discarded.
+        this.assertRetentionTriggerDocumented(data);
+        const preparedData = this.deriveRetentionFields(data);
         const [result] = await db
             .insert(arsip)
-            .values(data)
+            .values(preparedData)
             .returning();
 
         return result;
     }
 
     async update(id: string, data: Partial<Arsip>) {
-        const [result] = await db
-            .update(arsip)
-            .set({ ...data, updatedAt: new Date() })
-            .where(eq(arsip.id, id))
-            .returning();
-
-        return result;
-    }
-
-    async delete(id: string) {
-        const {
-            archiveLending, layananArsip, arsipVital, arsipTerjaga,
-            penyusutanItems, fileAttachments, suratMasuk, suratKeluar,
-        } = await import('../db/schema');
-
-        const [existing] = await db
-            .select()
-            .from(arsip)
-            .where(eq(arsip.id, id))
-            .limit(1);
-
-        if (!existing) return undefined;
-
-        if (existing.lendingStatus === 'borrowed') {
-            throw new ConflictError('Arsip sedang dipinjam sehingga tidak dapat dihapus.');
+        const requestedFields = Object.keys(data);
+        const changesRetentionDecision = requestedFields.some(field =>
+            RETENTION_DECISION_FIELDS.has(field),
+        );
+        const changesSystemManagedState = requestedFields.some(field =>
+            SYSTEM_MANAGED_RETENTION_FIELDS.has(field),
+        );
+        if (changesSystemManagedState) {
+            throw new ValidationError(
+                'Status penyusutan dan legal hold hanya dapat diubah melalui workflow khusus.'
+            );
         }
 
-        // These tables reference arsip with ON DELETE RESTRICT / NO ACTION, so without
-        // this check the delete surfaces as a raw foreign key violation.
-        const blockers: string[] = [];
+        return db.transaction(async (tx: any) => {
+            const [existing] = await tx
+                .select()
+                .from(arsip)
+                .where(eq(arsip.id, id))
+                .limit(1)
+                .for('update');
 
-        const [lending] = await db.select({ id: archiveLending.id }).from(archiveLending)
-            .where(eq(archiveLending.arsipId, id)).limit(1);
-        if (lending) blockers.push('riwayat peminjaman');
+            if (!existing) return undefined;
+            if (existing.disposalStatus === 'executed') {
+                throw new ConflictError(
+                    'Arsip yang penyusutannya telah dieksekusi bersifat immutable.'
+                );
+            }
 
-        const [layanan] = await db.select({ id: layananArsip.id }).from(layananArsip)
-            .where(eq(layananArsip.arsipId, id)).limit(1);
-        if (layanan) blockers.push('permintaan layanan arsip');
+            const isInDisposalWorkflow = existing.disposalStatus !== 'active'
+                || Boolean(existing.disposalBatchId);
+            if (changesRetentionDecision && (existing.legalHold || isInDisposalWorkflow)) {
+                throw new ConflictError(
+                    'Keputusan retensi/JRA tidak dapat diubah saat legal hold atau setelah arsip masuk workflow penyusutan.'
+                );
+            }
 
-        const [vital] = await db.select({ id: arsipVital.id }).from(arsipVital)
-            .where(eq(arsipVital.arsipId, id)).limit(1);
-        if (vital) blockers.push('penetapan arsip vital');
+            let preparedData: Partial<Arsip> = data;
+            if (changesRetentionDecision) {
+                this.assertRetentionTriggerDocumented({ ...existing, ...data });
+                preparedData = this.deriveRetentionFields(data, existing) as Partial<Arsip>;
+            }
 
-        const [terjaga] = await db.select({ id: arsipTerjaga.id }).from(arsipTerjaga)
-            .where(eq(arsipTerjaga.arsipId, id)).limit(1);
-        if (terjaga) blockers.push('penetapan arsip terjaga');
-
-        const [penyusutan] = await db.select({ id: penyusutanItems.id }).from(penyusutanItems)
-            .where(eq(penyusutanItems.arsipId, id)).limit(1);
-        if (penyusutan) blockers.push('daftar penyusutan');
-
-        if (blockers.length > 0) {
-            throw new ConflictError(`Arsip tidak dapat dihapus karena masih terkait dengan ${blockers.join(', ')}.`);
-        }
-
-        const attachments = await db
-            .select()
-            .from(fileAttachments)
-            .where(and(
-                eq(fileAttachments.entityType, 'arsip'),
-                eq(fileAttachments.entityId, id)
-            ));
-
-        const result = await db.transaction(async (tx: any) => {
-            await tx
-                .delete(fileAttachments)
-                .where(and(
-                    eq(fileAttachments.entityType, 'arsip'),
-                    eq(fileAttachments.entityId, id)
-                ));
-
-            const [deleted] = await tx
-                .delete(arsip)
+            const [result] = await tx
+                .update(arsip)
+                .set({ ...preparedData, updatedAt: new Date() })
                 .where(eq(arsip.id, id))
                 .returning();
 
-            // Release the source surat so it can be archived again
-            if (existing.sourceSuratId && existing.jenisArsip === 'masuk') {
-                await tx
-                    .update(suratMasuk)
-                    .set({ isArchived: false, updatedAt: new Date() })
-                    .where(eq(suratMasuk.id, existing.sourceSuratId));
-            } else if (existing.sourceSuratId && existing.jenisArsip === 'keluar') {
-                await tx
-                    .update(suratKeluar)
-                    .set({ isArchived: false, updatedAt: new Date() })
-                    .where(eq(suratKeluar.id, existing.sourceSuratId));
-            }
-
-            return deleted;
+            return result;
         });
+    }
 
-        // Blobs live outside the database, so they are cleaned up after the commit
-        if (attachments.length > 0) {
-            const { blobStorageService } = await import('./blob-storage.service');
-            for (const attachment of attachments) {
-                if (attachment.driveFileId) {
-                    await blobStorageService.deleteFile(attachment.driveFileId);
-                }
-            }
-        }
-
-        return result;
+    async delete(id: string) {
+        void id;
+        throw new ConflictError(
+            'Penghapusan langsung arsip dinonaktifkan. Gunakan workflow penyusutan sesuai JRA dan legal hold.'
+        );
     }
 
     // Create arsip from surat masuk
@@ -212,6 +270,12 @@ export class ArsipService {
         jraUraian?: string;
         retensiAktif?: string;
         retensiInaktif?: string;
+        retentionTriggerType?: ArchiveRetentionMetadata['retentionTriggerType'];
+        retentionTriggerLabel?: string;
+        retentionTriggerDate?: string;
+        retentionTriggerEvidence?: string;
+        jraVersion?: string;
+        jraReference?: string;
         hasilAkhir?: string;
         keterangan?: string;
         klasifikasiKeamanan?: string;
@@ -226,6 +290,7 @@ export class ArsipService {
         createdBy?: string;
     }) {
         const { suratMasuk } = await import('../db/schema');
+        this.assertRetentionTriggerDocumented(metadata);
 
         return await db.transaction(async (tx: any) => {
             // Get the surat masuk — locked so concurrent requests cannot both pass the
@@ -255,14 +320,13 @@ export class ArsipService {
                 throw new Error('Surat masuk sudah diarsipkan');
             }
 
-            // Calculate retention dates
-            const retentionDates = metadata.retensiAktif || metadata.retensiInaktif
-                ? this.calculateRetentionDates(
-                    surat.tanggalSurat || new Date().toISOString().split('T')[0],
-                    metadata.retensiAktif || null,
-                    metadata.retensiInaktif || null
-                )
-                : { tanggalKadaluarsa: null };
+            // Retention starts only from the explicit business-event trigger supplied
+            // by the archivist. tanggalSurat/tanggalArsip are descriptive dates, not JRA triggers.
+            const retentionDates = this.calculateRetentionDates(
+                metadata.retentionTriggerDate || null,
+                metadata.retensiAktif || null,
+                metadata.retensiInaktif || null,
+            );
 
             // Create arsip entry
             const [arsipEntry] = await tx
@@ -283,6 +347,12 @@ export class ArsipService {
                     jraUraian: metadata.jraUraian,
                     retensiAktif: metadata.retensiAktif,
                     retensiInaktif: metadata.retensiInaktif,
+                    retentionTriggerType: metadata.retentionTriggerType,
+                    retentionTriggerLabel: metadata.retentionTriggerLabel,
+                    retentionTriggerDate: metadata.retentionTriggerDate,
+                    retentionTriggerEvidence: metadata.retentionTriggerEvidence,
+                    jraVersion: metadata.jraVersion,
+                    jraReference: metadata.jraReference,
                     hasilAkhir: metadata.hasilAkhir,
                     klasifikasiKeamanan: metadata.klasifikasiKeamanan,
                     personInCharge: metadata.personInCharge,
@@ -340,6 +410,12 @@ export class ArsipService {
         jraUraian?: string;
         retensiAktif?: string;
         retensiInaktif?: string;
+        retentionTriggerType?: ArchiveRetentionMetadata['retentionTriggerType'];
+        retentionTriggerLabel?: string;
+        retentionTriggerDate?: string;
+        retentionTriggerEvidence?: string;
+        jraVersion?: string;
+        jraReference?: string;
         hasilAkhir?: string;
         keterangan?: string;
         klasifikasiKeamanan?: string;
@@ -354,6 +430,7 @@ export class ArsipService {
         createdBy?: string;
     }) {
         const { suratKeluar } = await import('../db/schema');
+        this.assertRetentionTriggerDocumented(metadata);
 
         return await db.transaction(async (tx: any) => {
             // Get the surat keluar — locked so concurrent requests cannot both pass the
@@ -383,14 +460,13 @@ export class ArsipService {
                 throw new Error('Surat keluar sudah diarsipkan');
             }
 
-            // Calculate retention dates
-            const retentionDates = metadata.retensiAktif || metadata.retensiInaktif
-                ? this.calculateRetentionDates(
-                    surat.tanggalSurat || new Date().toISOString().split('T')[0],
-                    metadata.retensiAktif || null,
-                    metadata.retensiInaktif || null
-                )
-                : { tanggalKadaluarsa: null };
+            // Do not infer a trigger from the letter/archive date. Missing explicit
+            // trigger means missing expiry and therefore no disposal eligibility.
+            const retentionDates = this.calculateRetentionDates(
+                metadata.retentionTriggerDate || null,
+                metadata.retensiAktif || null,
+                metadata.retensiInaktif || null,
+            );
 
             // Create arsip entry
             const [arsipEntry] = await tx
@@ -411,6 +487,12 @@ export class ArsipService {
                     jraUraian: metadata.jraUraian,
                     retensiAktif: metadata.retensiAktif,
                     retensiInaktif: metadata.retensiInaktif,
+                    retentionTriggerType: metadata.retentionTriggerType,
+                    retentionTriggerLabel: metadata.retentionTriggerLabel,
+                    retentionTriggerDate: metadata.retentionTriggerDate,
+                    retentionTriggerEvidence: metadata.retentionTriggerEvidence,
+                    jraVersion: metadata.jraVersion,
+                    jraReference: metadata.jraReference,
                     hasilAkhir: metadata.hasilAkhir,
                     klasifikasiKeamanan: metadata.klasifikasiKeamanan,
                     personInCharge: metadata.personInCharge,
@@ -499,7 +581,11 @@ export class ArsipService {
     }
 
     // Get arsip that will expire within N days
-    async getExpiring(unitKerjaId: string, daysAhead: number = 30) {
+    async getExpiring(
+        unitKerjaId: string,
+        daysAhead: number = 30,
+        securityClassifications?: string[] | null,
+    ) {
         const today = new Date();
         const futureDate = new Date();
         futureDate.setDate(today.getDate() + daysAhead);
@@ -509,6 +595,9 @@ export class ArsipService {
             .from(arsip)
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
+                archiveSecurityCondition(securityClassifications),
+                eq(arsip.legalHold, false),
+                isNotNull(arsip.retentionTriggerDate),
                 gte(arsip.tanggalKadaluarsa, today.toISOString().split('T')[0]),
                 lte(arsip.tanggalKadaluarsa, futureDate.toISOString().split('T')[0])
             ))
@@ -517,8 +606,103 @@ export class ArsipService {
         return data;
     }
 
-    async getStats(unitKerjaId: string, tahun?: number) {
-        const conditions = [eq(arsip.unitKerjaId, unitKerjaId)];
+    async getLegalHolds(unitKerjaId: string, securityClassifications?: string[] | null) {
+        return db
+            .select()
+            .from(arsip)
+            .where(and(
+                eq(arsip.unitKerjaId, unitKerjaId),
+                archiveSecurityCondition(securityClassifications),
+                eq(arsip.legalHold, true),
+            ))
+            .orderBy(desc(arsip.legalHoldPlacedAt), desc(arsip.updatedAt));
+    }
+
+    async placeLegalHold(id: string, unitKerjaId: string, reason: string, userId?: string) {
+        if (reason.trim().length < 10) {
+            throw new ValidationError('Alasan legal hold minimal 10 karakter.');
+        }
+        const [existing] = await db
+            .select()
+            .from(arsip)
+            .where(and(eq(arsip.id, id), eq(arsip.unitKerjaId, unitKerjaId)))
+            .limit(1);
+
+        if (!existing) throw new NotFoundError('Arsip');
+        if (existing.legalHold) throw new ConflictError('Arsip sudah dalam status legal hold.');
+        if (existing.disposalStatus === 'executed') {
+            throw new ConflictError('Legal hold tidak dapat diterapkan setelah penyusutan selesai dieksekusi.');
+        }
+
+        const [updated] = await db
+            .update(arsip)
+            .set({
+                legalHold: true,
+                legalHoldReason: reason.trim(),
+                legalHoldPlacedAt: new Date(),
+                legalHoldPlacedBy: userId || null,
+                legalHoldReleasedAt: null,
+                legalHoldReleasedBy: null,
+                legalHoldReleaseReason: null,
+                updatedAt: new Date(),
+            })
+            .where(and(
+                eq(arsip.id, id),
+                eq(arsip.unitKerjaId, unitKerjaId),
+                eq(arsip.legalHold, false),
+                or(
+                    isNull(arsip.disposalStatus),
+                    ne(arsip.disposalStatus, 'executed'),
+                ),
+            ))
+            .returning();
+
+        if (!updated) throw new ConflictError('Status legal hold berubah. Muat ulang data dan coba kembali.');
+        return { before: existing, after: updated };
+    }
+
+    async releaseLegalHold(id: string, unitKerjaId: string, reason: string, userId?: string) {
+        if (reason.trim().length < 10) {
+            throw new ValidationError('Alasan pelepasan legal hold minimal 10 karakter.');
+        }
+        const [existing] = await db
+            .select()
+            .from(arsip)
+            .where(and(eq(arsip.id, id), eq(arsip.unitKerjaId, unitKerjaId)))
+            .limit(1);
+
+        if (!existing) throw new NotFoundError('Arsip');
+        if (!existing.legalHold) throw new ConflictError('Arsip tidak sedang dalam status legal hold.');
+
+        const [updated] = await db
+            .update(arsip)
+            .set({
+                legalHold: false,
+                legalHoldReleasedAt: new Date(),
+                legalHoldReleasedBy: userId || null,
+                legalHoldReleaseReason: reason.trim(),
+                updatedAt: new Date(),
+            })
+            .where(and(
+                eq(arsip.id, id),
+                eq(arsip.unitKerjaId, unitKerjaId),
+                eq(arsip.legalHold, true),
+            ))
+            .returning();
+
+        if (!updated) throw new ConflictError('Status legal hold berubah. Muat ulang data dan coba kembali.');
+        return { before: existing, after: updated };
+    }
+
+    async getStats(
+        unitKerjaId: string,
+        tahun?: number,
+        securityClassifications?: string[] | null,
+    ) {
+        const conditions = [
+            eq(arsip.unitKerjaId, unitKerjaId),
+            archiveSecurityCondition(securityClassifications),
+        ];
         if (tahun) {
             conditions.push(eq(arsip.tahun, tahun));
         }
@@ -552,16 +736,47 @@ export class ArsipService {
         return match ? parseInt(match[1], 10) : 0;
     }
 
-    calculateRetentionDates(tanggalArsip: string, retensiAktif: string | null, retensiInaktif: string | null) {
-        const arsipDate = new Date(tanggalArsip);
+    calculateRetentionDates(retentionTriggerDate: string | null, retensiAktif: string | null, retensiInaktif: string | null) {
+        if (!retentionTriggerDate) {
+            return {
+                tanggalAktifBerakhir: null,
+                tanggalInaktifBerakhir: null,
+                tanggalKadaluarsa: null,
+            };
+        }
+
+        const triggerDate = new Date(`${retentionTriggerDate}T00:00:00.000Z`);
+        if (Number.isNaN(triggerDate.getTime())) {
+            return {
+                tanggalAktifBerakhir: null,
+                tanggalInaktifBerakhir: null,
+                tanggalKadaluarsa: null,
+            };
+        }
+
         const aktifMonths = this.parseRetentionMonths(retensiAktif);
         const inaktifMonths = this.parseRetentionMonths(retensiInaktif);
 
-        const endAktif = new Date(arsipDate);
-        endAktif.setMonth(endAktif.getMonth() + aktifMonths);
+        const addMonths = (source: Date, months: number) => {
+            const year = source.getUTCFullYear();
+            const month = source.getUTCMonth();
+            const day = source.getUTCDate();
+            const targetMonthStart = new Date(Date.UTC(year, month + months, 1));
+            const lastTargetDay = new Date(Date.UTC(
+                targetMonthStart.getUTCFullYear(),
+                targetMonthStart.getUTCMonth() + 1,
+                0,
+            )).getUTCDate();
+            return new Date(Date.UTC(
+                targetMonthStart.getUTCFullYear(),
+                targetMonthStart.getUTCMonth(),
+                Math.min(day, lastTargetDay),
+            ));
+        };
 
-        const endInaktif = new Date(endAktif);
-        endInaktif.setMonth(endInaktif.getMonth() + inaktifMonths);
+        const endAktif = addMonths(triggerDate, aktifMonths);
+
+        const endInaktif = addMonths(endAktif, inaktifMonths);
 
         const totalMonths = aktifMonths + inaktifMonths;
 
@@ -574,14 +789,18 @@ export class ArsipService {
     }
 
     // Get archive lifecycle status
-    getArchiveStatus(tanggalArsip: string, retensiAktif: string | null, retensiInaktif: string | null):
-        'aktif' | 'akan_inaktif' | 'inaktif' | 'akan_kadaluarsa' | 'kadaluarsa' {
+    getArchiveStatus(retentionTriggerDate: string | null, retensiAktif: string | null, retensiInaktif: string | null):
+        'belum_ditentukan' | 'aktif' | 'akan_inaktif' | 'inaktif' | 'akan_kadaluarsa' | 'kadaluarsa' {
+        if (!retentionTriggerDate) return 'belum_ditentukan';
+
         const today = new Date();
-        const dates = this.calculateRetentionDates(tanggalArsip, retensiAktif, retensiInaktif);
+        const dates = this.calculateRetentionDates(retentionTriggerDate, retensiAktif, retensiInaktif);
 
-        if (!dates.tanggalAktifBerakhir) return 'aktif';
+        if (!dates.tanggalKadaluarsa) return 'aktif';
 
-        const aktifEnd = new Date(dates.tanggalAktifBerakhir);
+        const aktifEnd = dates.tanggalAktifBerakhir
+            ? new Date(dates.tanggalAktifBerakhir)
+            : new Date(retentionTriggerDate);
         const inaktifEnd = dates.tanggalInaktifBerakhir ? new Date(dates.tanggalInaktifBerakhir) : aktifEnd;
 
         const thirtyDaysFromNow = new Date();
@@ -595,19 +814,19 @@ export class ArsipService {
     }
 
     // Get lifecycle notifications for all archives in unit
-    async getLifecycleNotifications(unitKerjaId: string) {
-        const today = new Date();
-        const thirtyDaysFromNow = new Date();
-        thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-
-        const todayStr = today.toISOString().split('T')[0];
-        const thirtyDaysStr = thirtyDaysFromNow.toISOString().split('T')[0];
-
-        // Get all archives with expiry dates
+    async getLifecycleNotifications(
+        unitKerjaId: string,
+        securityClassifications?: string[] | null,
+    ) {
+        // Keep held/missing-trigger counts visible, but never mix them into actionable
+        // lifecycle collections.
         const allArchives = await db
             .select()
             .from(arsip)
-            .where(eq(arsip.unitKerjaId, unitKerjaId));
+            .where(and(
+                eq(arsip.unitKerjaId, unitKerjaId),
+                archiveSecurityCondition(securityClassifications),
+            ));
 
         const notifications = {
             willBeInactive: [] as typeof allArchives,      // Akan memasuki masa inaktif
@@ -615,12 +834,21 @@ export class ArsipService {
             willExpire: [] as typeof allArchives,          // Akan kadaluarsa (30 hari)
             expired: [] as typeof allArchives,             // Sudah kadaluarsa, perlu action
         };
+        let held = 0;
+        let missingTrigger = 0;
 
         for (const arch of allArchives) {
-            if (!arch.tanggalArsip) continue;
+            if (arch.legalHold) {
+                held += 1;
+                continue;
+            }
+            if (!arch.retentionTriggerDate) {
+                missingTrigger += 1;
+                continue;
+            }
 
             const status = this.getArchiveStatus(
-                arch.tanggalArsip,
+                arch.retentionTriggerDate,
                 arch.retensiAktif,
                 arch.retensiInaktif
             );
@@ -648,6 +876,8 @@ export class ArsipService {
                 alreadyInactive: notifications.alreadyInactive.length,
                 willExpire: notifications.willExpire.length,
                 expired: notifications.expired.length,
+                held,
+                missingTrigger,
                 total: allArchives.length,
             }
         };
@@ -659,11 +889,25 @@ export class ArsipService {
         status?: 'kadaluarsa' | 'akan_kadaluarsa' | 'inaktif';
         page?: number;
         limit?: number;
+        /** null means all classes (super_admin); [] fails closed. */
+        securityClassifications?: string[] | null;
     }) {
-        const { hasilAkhir, status, page = 1, limit = 20 } = filters || {};
+        const {
+            hasilAkhir,
+            status,
+            page = 1,
+            limit = 20,
+            securityClassifications,
+        } = filters || {};
         const offset = (page - 1) * limit;
 
-        const conditions = [eq(arsip.unitKerjaId, unitKerjaId)];
+        const conditions = [
+            eq(arsip.unitKerjaId, unitKerjaId),
+            eq(arsip.disposalStatus, 'active'),
+            eq(arsip.legalHold, false),
+            isNotNull(arsip.retentionTriggerDate),
+            archiveSecurityCondition(securityClassifications),
+        ];
         if (hasilAkhir) {
             conditions.push(eq(arsip.hasilAkhir, hasilAkhir));
         }
@@ -674,20 +918,31 @@ export class ArsipService {
             .where(and(...conditions))
             .orderBy(arsip.tanggalKadaluarsa);
 
+        // Recalculate from the explicit trigger so stale legacy tanggalKadaluarsa values
+        // can never make a record eligible.
+        const evaluatedArchives = allArchives.flatMap(arch => {
+            if (arch.legalHold || !arch.retentionTriggerDate) return [];
+            const retentionStatus = this.getArchiveStatus(
+                arch.retentionTriggerDate,
+                arch.retensiAktif,
+                arch.retensiInaktif,
+            );
+            const dates = this.calculateRetentionDates(
+                arch.retentionTriggerDate,
+                arch.retensiAktif,
+                arch.retensiInaktif,
+            );
+            return [{ ...arch, retentionStatus, tanggalKadaluarsa: dates.tanggalKadaluarsa }];
+        });
+
         // Filter by lifecycle status
-        let filteredArchives = allArchives;
+        let filteredArchives = evaluatedArchives;
         if (status) {
-            filteredArchives = allArchives.filter(arch => {
-                if (!arch.tanggalArsip) return false;
-                const archStatus = this.getArchiveStatus(arch.tanggalArsip, arch.retensiAktif, arch.retensiInaktif);
-                return archStatus === status;
-            });
+            filteredArchives = evaluatedArchives.filter(arch => arch.retentionStatus === status);
         } else {
-            filteredArchives = allArchives.filter(arch => {
-                if (!arch.tanggalArsip) return false;
-                const archStatus = this.getArchiveStatus(arch.tanggalArsip, arch.retensiAktif, arch.retensiInaktif);
-                return archStatus === 'kadaluarsa' || archStatus === 'akan_kadaluarsa';
-            });
+            filteredArchives = evaluatedArchives.filter(arch =>
+                arch.retentionStatus === 'kadaluarsa' || arch.retentionStatus === 'akan_kadaluarsa',
+            );
         }
 
         const grouped = {
@@ -713,8 +968,14 @@ export class ArsipService {
     }
 
     // Get monthly retention summary for dashboard
-    async getRetentionSummary(unitKerjaId: string) {
-        const lifecycle = await this.getLifecycleNotifications(unitKerjaId);
+    async getRetentionSummary(
+        unitKerjaId: string,
+        securityClassifications?: string[] | null,
+    ) {
+        const lifecycle = await this.getLifecycleNotifications(
+            unitKerjaId,
+            securityClassifications,
+        );
 
         const expiredByHasilAkhir = {
             musnah: lifecycle.expired.filter(a => a.hasilAkhir === 'Musnah').length,
@@ -737,18 +998,50 @@ export class ArsipService {
     }
 
     // Generate disposal report data
-    async generateDisposalReportData(unitKerjaId: string, archiveIds?: string[]) {
-        let archives;
+    async generateDisposalReportData(
+        unitKerjaId: string,
+        archiveIds?: string[],
+        securityClassifications?: string[] | null,
+    ) {
+        const requestedIds = archiveIds && archiveIds.length > 0
+            ? [...new Set(archiveIds)]
+            : undefined;
+        const allArchives = await db
+            .select()
+            .from(arsip)
+            .where(and(
+                eq(arsip.unitKerjaId, unitKerjaId),
+                archiveSecurityCondition(securityClassifications),
+            ));
 
-        if (archiveIds && archiveIds.length > 0) {
-            archives = await db.select().from(arsip).where(eq(arsip.unitKerjaId, unitKerjaId));
-            archives = archives.filter(a => archiveIds.includes(a.id));
-        } else {
-            const allArchives = await db.select().from(arsip).where(and(eq(arsip.unitKerjaId, unitKerjaId), eq(arsip.hasilAkhir, 'Musnah')));
-            archives = allArchives.filter(arch => {
-                if (!arch.tanggalArsip) return false;
-                return this.getArchiveStatus(arch.tanggalArsip, arch.retensiAktif, arch.retensiInaktif) === 'kadaluarsa';
-            });
+        const selectedArchives = requestedIds
+            ? allArchives.filter(a => requestedIds.includes(a.id))
+            : allArchives;
+
+        if (requestedIds) {
+            const foundIds = new Set(selectedArchives.map(a => a.id));
+            const missingIds = requestedIds.filter(id => !foundIds.has(id));
+            if (missingIds.length > 0) {
+                throw new ValidationError('Sebagian arsip tidak ditemukan pada unit kerja yang dipilih.');
+            }
+        }
+
+        const isEligibleForDestruction = (arch: Arsip) =>
+            !arch.legalHold &&
+            Boolean(arch.retentionTriggerDate) &&
+            arch.disposalStatus === 'active' &&
+            arch.hasilAkhir === 'Musnah' &&
+            this.getArchiveStatus(
+                arch.retentionTriggerDate,
+                arch.retensiAktif,
+                arch.retensiInaktif,
+            ) === 'kadaluarsa';
+
+        const archives = selectedArchives.filter(isEligibleForDestruction);
+        if (requestedIds && archives.length !== selectedArchives.length) {
+            throw new ValidationError(
+                'Berita acara hanya dapat dibuat untuk arsip Musnah yang retensinya telah berakhir, memiliki pemicu, tidak di-hold, dan belum masuk proses penyusutan.',
+            );
         }
 
         const now = new Date();
@@ -770,6 +1063,12 @@ export class ArsipService {
                 jraKode: arch.jraKode || '-',
                 retensiAktif: arch.retensiAktif || '-',
                 retensiInaktif: arch.retensiInaktif || '-',
+                retentionTriggerType: arch.retentionTriggerType || '-',
+                retentionTriggerLabel: arch.retentionTriggerLabel || '-',
+                retentionTriggerDate: arch.retentionTriggerDate || '-',
+                retentionTriggerEvidence: arch.retentionTriggerEvidence || '-',
+                jraVersion: arch.jraVersion || '-',
+                jraReference: arch.jraReference || '-',
                 hasilAkhir: arch.hasilAkhir || '-',
                 keterangan: arch.keterangan || '-',
             })),

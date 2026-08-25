@@ -5,13 +5,42 @@ import { arsip } from '../db/schema/arsip.js';
 import { unitKerja } from '../db/schema/unit-kerja.js';
 import { archiveLending } from '../db/schema/archive-lending.js';
 import { storageLocations } from '../db/schema/storage-locations.js';
-import { penyusutanArsip } from '../db/schema/penyusutan.js';
+import { penyusutanArsip, penyusutanItems } from '../db/schema/penyusutan.js';
 import { arsipVital } from '../db/schema/arsip-vital.js';
 import { arsipTerjaga } from '../db/schema/arsip-terjaga.js';
-import { sql, eq, and, gte, lte, lt, count, inArray, or, isNull } from 'drizzle-orm';
+import { sql, eq, and, gte, lte, lt, count, inArray, or, isNotNull } from 'drizzle-orm';
 import { createLogger } from '../utils/logger.js';
+import { arsipService } from './arsip.service.js';
 
 const log = createLogger('DashboardService');
+
+function arsipClassificationCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+    return inArray(
+        sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+        classes,
+    );
+}
+
+function incomingClassificationCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+    const normalized = sql<string>`CASE
+        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+        THEN 'biasa'
+        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+    END`;
+    return inArray(normalized, classes);
+}
+
+function outgoingClassificationCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    // The legacy table has no security column, so every outgoing record is
+    // treated as Terbatas until it is classified in the controlled archive.
+    return classes.includes('terbatas') ? undefined : sql`false`;
+}
 
 interface MonthlyStats {
     month: string;
@@ -36,11 +65,18 @@ interface DashboardStats {
 }
 
 export const dashboardService = {
-    async getStats(unitKerjaId?: string | null, tahun?: number): Promise<DashboardStats> {
+    async getStats(
+        unitKerjaId?: string | null,
+        tahun?: number,
+        securityClassifications?: string[] | null,
+    ): Promise<DashboardStats> {
         const currentYear = tahun || new Date().getFullYear();
         const currentMonth = new Date().getMonth() + 1;
         const currentDate = new Date();
         const thirtyDaysFromNow = new Date(currentDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const incomingClass = incomingClassificationCondition(securityClassifications);
+        const outgoingClass = outgoingClassificationCondition(securityClassifications);
+        const archiveClass = arsipClassificationCondition(securityClassifications);
 
         // Build unit filter fragments for raw SQL
         const unitMasukFilter = unitKerjaId ? sql`AND ${suratMasuk.unitKerjaId} = ${unitKerjaId}` : sql``;
@@ -70,24 +106,44 @@ export const dashboardService = {
         ] = await Promise.all([
             // Total counts (ALL years)
             db.select({ count: count() }).from(suratMasuk)
-                .where(unitKerjaId ? eq(suratMasuk.unitKerjaId, unitKerjaId) : undefined),
+                .where(and(
+                    unitKerjaId ? eq(suratMasuk.unitKerjaId, unitKerjaId) : undefined,
+                    incomingClass,
+                )),
             db.select({ count: count() }).from(suratKeluar)
-                .where(unitKerjaId ? eq(suratKeluar.unitKerjaId, unitKerjaId) : undefined),
+                .where(and(
+                    unitKerjaId ? eq(suratKeluar.unitKerjaId, unitKerjaId) : undefined,
+                    outgoingClass,
+                )),
             db.select({ count: count() }).from(arsip)
-                .where(unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined),
+                .where(and(
+                    unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
+                    archiveClass,
+                )),
 
             // Arsip masuk/keluar breakdown
             db.select({ count: count() }).from(arsip)
-                .where(and(eq(arsip.jenisArsip, 'masuk'), ...(unitKerjaId ? [eq(arsip.unitKerjaId, unitKerjaId)] : []))),
+                .where(and(
+                    eq(arsip.jenisArsip, 'masuk'),
+                    unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
+                    archiveClass,
+                )),
             db.select({ count: count() }).from(arsip)
-                .where(and(eq(arsip.jenisArsip, 'keluar'), ...(unitKerjaId ? [eq(arsip.unitKerjaId, unitKerjaId)] : []))),
+                .where(and(
+                    eq(arsip.jenisArsip, 'keluar'),
+                    unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
+                    archiveClass,
+                )),
 
             // Expiring archives (next 30 days)
             db.select({ count: count() }).from(arsip)
                 .where(and(
+                    eq(arsip.legalHold, false),
+                    isNotNull(arsip.retentionTriggerDate),
                     gte(arsip.tanggalKadaluarsa, currentDate.toISOString().split('T')[0]),
                     lte(arsip.tanggalKadaluarsa, thirtyDaysFromNow.toISOString().split('T')[0]),
-                    ...(unitKerjaId ? [eq(arsip.unitKerjaId, unitKerjaId)] : [])
+                    unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
+                    archiveClass,
                 )),
 
             // Current month counts
@@ -95,13 +151,15 @@ export const dashboardService = {
                 .where(and(
                     gte(suratMasuk.tanggalSurat, startOfMonth),
                     lte(suratMasuk.tanggalSurat, endOfMonth),
-                    ...(unitKerjaId ? [eq(suratMasuk.unitKerjaId, unitKerjaId)] : [])
+                    unitKerjaId ? eq(suratMasuk.unitKerjaId, unitKerjaId) : undefined,
+                    incomingClass,
                 )),
             db.select({ count: count() }).from(suratKeluar)
                 .where(and(
                     gte(suratKeluar.tanggalSurat, startOfMonth),
                     lte(suratKeluar.tanggalSurat, endOfMonth),
-                    ...(unitKerjaId ? [eq(suratKeluar.unitKerjaId, unitKerjaId)] : [])
+                    unitKerjaId ? eq(suratKeluar.unitKerjaId, unitKerjaId) : undefined,
+                    outgoingClass,
                 )),
 
             // Monthly trend: 1 aggregated query per table instead of 24 sequential queries
@@ -112,7 +170,8 @@ export const dashboardService = {
                 .where(and(
                     gte(suratMasuk.tanggalSurat, yearStart),
                     lte(suratMasuk.tanggalSurat, yearEnd),
-                    ...(unitKerjaId ? [eq(suratMasuk.unitKerjaId, unitKerjaId)] : [])
+                    unitKerjaId ? eq(suratMasuk.unitKerjaId, unitKerjaId) : undefined,
+                    incomingClass,
                 ))
                 .groupBy(sql`EXTRACT(MONTH FROM ${suratMasuk.tanggalSurat})`),
 
@@ -123,19 +182,28 @@ export const dashboardService = {
                 .where(and(
                     gte(suratKeluar.tanggalSurat, yearStart),
                     lte(suratKeluar.tanggalSurat, yearEnd),
-                    ...(unitKerjaId ? [eq(suratKeluar.unitKerjaId, unitKerjaId)] : [])
+                    unitKerjaId ? eq(suratKeluar.unitKerjaId, unitKerjaId) : undefined,
+                    outgoingClass,
                 ))
                 .groupBy(sql`EXTRACT(MONTH FROM ${suratKeluar.tanggalSurat})`),
 
             // Status breakdowns (year-filtered)
             db.select({ status: suratMasuk.status, count: count() })
                 .from(suratMasuk)
-                .where(and(eq(suratMasuk.tahun, currentYear), ...(unitKerjaId ? [eq(suratMasuk.unitKerjaId, unitKerjaId)] : [])))
+                .where(and(
+                    eq(suratMasuk.tahun, currentYear),
+                    unitKerjaId ? eq(suratMasuk.unitKerjaId, unitKerjaId) : undefined,
+                    incomingClass,
+                ))
                 .groupBy(suratMasuk.status),
 
             db.select({ status: suratKeluar.naskahDinas, count: count() })
                 .from(suratKeluar)
-                .where(and(eq(suratKeluar.tahun, currentYear), ...(unitKerjaId ? [eq(suratKeluar.unitKerjaId, unitKerjaId)] : [])))
+                .where(and(
+                    eq(suratKeluar.tahun, currentYear),
+                    unitKerjaId ? eq(suratKeluar.unitKerjaId, unitKerjaId) : undefined,
+                    outgoingClass,
+                ))
                 .groupBy(suratKeluar.naskahDinas),
         ]);
 
@@ -167,7 +235,12 @@ export const dashboardService = {
         };
     },
 
-    async getRecentActivity(unitKerjaId?: string | null, limit: number = 10) {
+    async getRecentActivity(
+        unitKerjaId?: string | null,
+        limit: number = 10,
+        securityClassifications?: string[] | null,
+    ) {
+        const incomingClass = incomingClassificationCondition(securityClassifications);
         // Get recent surat masuk
         const recentMasuk = await db
             .select({
@@ -179,12 +252,18 @@ export const dashboardService = {
                 createdAt: suratMasuk.createdAt,
             })
             .from(suratMasuk)
-            .where(unitKerjaId ? eq(suratMasuk.unitKerjaId, unitKerjaId) : undefined)
+            .where(and(
+                unitKerjaId ? eq(suratMasuk.unitKerjaId, unitKerjaId) : undefined,
+                incomingClass,
+            ))
             .orderBy(sql`${suratMasuk.createdAt} DESC`)
             .limit(limit);
 
         // Get recent surat keluar
-        const recentKeluar = await db
+        const recentKeluar = securityClassifications === undefined
+            || securityClassifications === null
+            || securityClassifications.includes('terbatas')
+            ? await db
             .select({
                 id: suratKeluar.id,
                 type: sql<string>`'keluar'`,
@@ -196,7 +275,8 @@ export const dashboardService = {
             .from(suratKeluar)
             .where(unitKerjaId ? eq(suratKeluar.unitKerjaId, unitKerjaId) : undefined)
             .orderBy(sql`${suratKeluar.createdAt} DESC`)
-            .limit(limit);
+            .limit(limit)
+            : [];
 
         // Combine and sort by createdAt
         const combined = [...recentMasuk, ...recentKeluar]
@@ -206,7 +286,11 @@ export const dashboardService = {
         return combined;
     },
 
-    async getExpiringArchives(unitKerjaId?: string | null, daysAhead: number = 30) {
+    async getExpiringArchives(
+        unitKerjaId?: string | null,
+        daysAhead: number = 30,
+        securityClassifications?: string[] | null,
+    ) {
         const currentDate = new Date();
         const futureDate = new Date(currentDate.getTime() + daysAhead * 24 * 60 * 60 * 1000);
 
@@ -216,17 +300,24 @@ export const dashboardService = {
                 uraianBerkas: arsip.uraianBerkas,
                 kodeKlasifikasi: arsip.kodeKlasifikasi,
                 tanggalKadaluarsa: arsip.tanggalKadaluarsa,
+                retentionTriggerDate: arsip.retentionTriggerDate,
+                legalHold: arsip.legalHold,
             })
             .from(arsip)
             .where(and(
                 ...(unitKerjaId ? [eq(arsip.unitKerjaId, unitKerjaId)] : []),
+                arsipClassificationCondition(securityClassifications),
+                eq(arsip.legalHold, false),
+                isNotNull(arsip.retentionTriggerDate),
                 gte(arsip.tanggalKadaluarsa, currentDate.toISOString().split('T')[0]),
                 lte(arsip.tanggalKadaluarsa, futureDate.toISOString().split('T')[0])
             ))
             .orderBy(arsip.tanggalKadaluarsa)
             .limit(10);
 
-        return expiringArchives.map((a: any) => ({
+        return expiringArchives
+            .filter((a: any) => !a.legalHold && a.retentionTriggerDate)
+            .map((a: any) => ({
             ...a,
             daysLeft: Math.ceil(
                 (new Date(a.tanggalKadaluarsa as string).getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
@@ -234,14 +325,27 @@ export const dashboardService = {
         }));
     },
 
-    async getUnitKerjaComparison(unitKerjaId?: string | null, tahun?: number) {
+    async getUnitKerjaComparison(
+        unitKerjaId?: string | null,
+        tahun?: number,
+        securityClassifications?: string[] | null,
+        allowRelatedUnits = false,
+    ) {
         try {
             const currentYear = tahun || new Date().getFullYear();
+            const incomingClass = incomingClassificationCondition(securityClassifications);
+            const outgoingClass = outgoingClassificationCondition(securityClassifications);
+            const archiveClass = arsipClassificationCondition(securityClassifications);
 
             // 1. Determine which units to compare
             let targetUnitIds: string[] = [];
 
-            if (!unitKerjaId) {
+            if (!allowRelatedUnits) {
+                // A scoped user may only see their own unit, never sibling or
+                // child-unit aggregates that could reveal protected activity.
+                if (!unitKerjaId) return [];
+                targetUnitIds = [unitKerjaId];
+            } else if (!unitKerjaId) {
                 const allTopUnits = await db
                     .select({ id: unitKerja.id, name: unitKerja.name })
                     .from(unitKerja)
@@ -291,7 +395,8 @@ export const dashboardService = {
                     .from(suratMasuk)
                     .where(and(
                         inArray(suratMasuk.unitKerjaId, targetUnitIds),
-                        eq(suratMasuk.tahun, currentYear)
+                        eq(suratMasuk.tahun, currentYear),
+                        incomingClass,
                     ))
                     .groupBy(suratMasuk.unitKerjaId),
 
@@ -299,7 +404,8 @@ export const dashboardService = {
                     .from(suratKeluar)
                     .where(and(
                         inArray(suratKeluar.unitKerjaId, targetUnitIds),
-                        eq(suratKeluar.tahun, currentYear)
+                        eq(suratKeluar.tahun, currentYear),
+                        outgoingClass,
                     ))
                     .groupBy(suratKeluar.unitKerjaId),
 
@@ -307,7 +413,8 @@ export const dashboardService = {
                     .from(arsip)
                     .where(and(
                         inArray(arsip.unitKerjaId, targetUnitIds),
-                        eq(arsip.tahun, currentYear)
+                        eq(arsip.tahun, currentYear),
+                        archiveClass,
                     ))
                     .groupBy(arsip.unitKerjaId),
             ]);
@@ -332,10 +439,14 @@ export const dashboardService = {
         }
     },
 
-    async getWidgetData(unitKerjaId?: string | null) {
+    async getWidgetData(
+        unitKerjaId?: string | null,
+        securityClassifications?: string[] | null,
+    ) {
         try {
             const today = new Date().toISOString().split('T')[0];
             const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            const archiveClass = arsipClassificationCondition(securityClassifications);
 
             // Build unit kerja filter conditions for each table
             const arsipUnitFilter = unitKerjaId ? [eq(arsip.unitKerjaId, unitKerjaId)] : [];
@@ -345,11 +456,8 @@ export const dashboardService = {
             const terjagaUnitFilter = unitKerjaId ? [eq(arsipTerjaga.unitKerjaId, unitKerjaId)] : [];
 
             const [
-                // Archive Lifecycle — compute status from retention dates using SQL
-                arsipAktifResult,
-                arsipInaktifResult,
-                arsipKadaluarsaResult,
-                arsipTotalResult,
+                // Archive Lifecycle — evaluated from an explicit retention trigger
+                arsipLifecycleData,
                 // Storage Capacity
                 storageData,
                 // Lending Overview
@@ -365,39 +473,18 @@ export const dashboardService = {
                 // Media Breakdown
                 mediaData,
             ] = await Promise.all([
-                // 1. Arsip Aktif: has retensi_aktif set AND aktif period hasn't ended yet
-                db.select({ count: count() }).from(arsip)
-                    .where(and(
-                        ...arsipUnitFilter,
-                        sql`${arsip.tanggalArsip} IS NOT NULL`,
-                        sql`${arsip.retensiAktif} IS NOT NULL`,
-                        sql`(${arsip.tanggalArsip}::date + (COALESCE(NULLIF(regexp_replace(${arsip.retensiAktif}, '[^0-9]', '', 'g'), ''), '0')::int * INTERVAL '1 year')) > ${today}::date`,
-                    )),
+                // 1. Fetch only the fields required for a single, shared lifecycle
+                // evaluation. Held and missing-trigger records are never classified as
+                // active/inactive/expired.
+                db.select({
+                    retentionTriggerDate: arsip.retentionTriggerDate,
+                    retensiAktif: arsip.retensiAktif,
+                    retensiInaktif: arsip.retensiInaktif,
+                    legalHold: arsip.legalHold,
+                }).from(arsip)
+                    .where(and(...arsipUnitFilter, archiveClass)),
 
-                // 2. Arsip Inaktif: aktif period ended, but inaktif period hasn't ended yet
-                db.select({ count: count() }).from(arsip)
-                    .where(and(
-                        ...arsipUnitFilter,
-                        sql`${arsip.tanggalArsip} IS NOT NULL`,
-                        sql`${arsip.retensiAktif} IS NOT NULL`,
-                        sql`(${arsip.tanggalArsip}::date + (COALESCE(NULLIF(regexp_replace(${arsip.retensiAktif}, '[^0-9]', '', 'g'), ''), '0')::int * INTERVAL '1 year')) <= ${today}::date`,
-                        sql`(${arsip.tanggalArsip}::date + ((COALESCE(NULLIF(regexp_replace(${arsip.retensiAktif}, '[^0-9]', '', 'g'), ''), '0')::int + COALESCE(NULLIF(regexp_replace(COALESCE(${arsip.retensiInaktif}, '0'), '[^0-9]', '', 'g'), ''), '0')::int) * INTERVAL '1 year')) > ${today}::date`,
-                    )),
-
-                // 3. Arsip Kadaluarsa: both aktif + inaktif periods ended
-                db.select({ count: count() }).from(arsip)
-                    .where(and(
-                        ...arsipUnitFilter,
-                        sql`${arsip.tanggalArsip} IS NOT NULL`,
-                        sql`${arsip.retensiAktif} IS NOT NULL`,
-                        sql`(${arsip.tanggalArsip}::date + ((COALESCE(NULLIF(regexp_replace(${arsip.retensiAktif}, '[^0-9]', '', 'g'), ''), '0')::int + COALESCE(NULLIF(regexp_replace(COALESCE(${arsip.retensiInaktif}, '0'), '[^0-9]', '', 'g'), ''), '0')::int) * INTERVAL '1 year')) <= ${today}::date`,
-                    )),
-
-                // 4. Total arsip (for "no retensi" count calculation)
-                db.select({ count: count() }).from(arsip)
-                    .where(and(...arsipUnitFilter)),
-
-                // 5. Storage Capacity — top-level locations (gedung) with aggregate capacity
+                // 2. Storage Capacity — top-level locations (gedung) with aggregate capacity
                 db.select({
                     id: storageLocations.id,
                     name: storageLocations.name,
@@ -413,61 +500,69 @@ export const dashboardService = {
                     .orderBy(storageLocations.code)
                     .limit(10),
 
-                // 6. Lending — active borrowed
+                // 3. Lending — active borrowed
                 db.select({ count: count() }).from(archiveLending)
+                    .innerJoin(arsip, eq(archiveLending.arsipId, arsip.id))
                     .where(and(
                         eq(archiveLending.status, 'borrowed'),
-                        ...(unitKerjaId ? [
-                            sql`${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`
-                        ] : []),
+                        unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
+                        archiveClass,
                     )),
 
-                // 7. Lending — overdue
+                // 4. Lending — overdue
                 db.select({ count: count() }).from(archiveLending)
+                    .innerJoin(arsip, eq(archiveLending.arsipId, arsip.id))
                     .where(and(
                         eq(archiveLending.status, 'borrowed'),
                         lt(archiveLending.dueDate, today),
-                        ...(unitKerjaId ? [
-                            sql`${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`
-                        ] : []),
+                        unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
+                        archiveClass,
                     )),
 
-                // 8. Penyusutan — count per status
+                // 5. Penyusutan — count per status
                 db.select({
                     status: penyusutanArsip.status,
-                    count: count(),
+                    count: sql<number>`count(distinct ${penyusutanArsip.id})::int`,
                 }).from(penyusutanArsip)
-                    .where(and(...penyusutanUnitFilter))
+                    .innerJoin(penyusutanItems, eq(penyusutanItems.penyusutanId, penyusutanArsip.id))
+                    .innerJoin(arsip, eq(penyusutanItems.arsipId, arsip.id))
+                    .where(and(...penyusutanUnitFilter, archiveClass))
                     .groupBy(penyusutanArsip.status),
 
-                // 9. Vital — unprotected
+                // 6. Vital — unprotected
                 db.select({ count: count() }).from(arsipVital)
+                    .innerJoin(arsip, eq(arsipVital.arsipId, arsip.id))
                     .where(and(
                         ...vitalUnitFilter,
                         eq(arsipVital.statusProteksi, 'belum_diproteksi'),
+                        archiveClass,
                     )),
 
-                // 10. Terjaga — unreported
+                // 7. Terjaga — unreported
                 db.select({ count: count() }).from(arsipTerjaga)
+                    .innerJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
                     .where(and(
                         ...terjagaUnitFilter,
                         eq(arsipTerjaga.statusPelaporan, 'belum_dilaporkan'),
+                        archiveClass,
                     )),
 
-                // 11. Vital — total
+                // 8. Vital — total
                 db.select({ count: count() }).from(arsipVital)
-                    .where(and(...vitalUnitFilter)),
+                    .innerJoin(arsip, eq(arsipVital.arsipId, arsip.id))
+                    .where(and(...vitalUnitFilter, archiveClass)),
 
-                // 12. Terjaga — total
+                // 9. Terjaga — total
                 db.select({ count: count() }).from(arsipTerjaga)
-                    .where(and(...terjagaUnitFilter)),
+                    .innerJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
+                    .where(and(...terjagaUnitFilter, archiveClass)),
 
-                // 13. Media breakdown
+                // 10. Media breakdown
                 db.select({
                     mediaType: arsip.mediaType,
                     count: count(),
                 }).from(arsip)
-                    .where(and(...arsipUnitFilter))
+                    .where(and(...arsipUnitFilter, archiveClass))
                     .groupBy(arsip.mediaType),
             ]);
 
@@ -519,12 +614,44 @@ export const dashboardService = {
                 count: penyusutanMap.get(status) || 0,
             }));
 
-            // Calculate counts
-            const aktifCount = arsipAktifResult[0]?.count || 0;
-            const inaktifCount = arsipInaktifResult[0]?.count || 0;
-            const kadaluarsaCount = arsipKadaluarsaResult[0]?.count || 0;
-            const totalArsip = arsipTotalResult[0]?.count || 0;
-            const belumDitentukan = Math.max(0, totalArsip - aktifCount - inaktifCount - kadaluarsaCount);
+            // Calculate lifecycle counts through the same trigger-aware logic used by
+            // retention candidates and penyusutan workflows.
+            let aktifCount = 0;
+            let inaktifCount = 0;
+            let kadaluarsaCount = 0;
+            let belumDitentukan = 0;
+            let heldCount = 0;
+            let missingTriggerCount = 0;
+
+            for (const archive of arsipLifecycleData) {
+                if (archive.legalHold) {
+                    heldCount += 1;
+                    continue;
+                }
+                if (!archive.retentionTriggerDate) {
+                    missingTriggerCount += 1;
+                    continue;
+                }
+
+                const totalRetentionMonths =
+                    arsipService.parseRetentionMonths(archive.retensiAktif) +
+                    arsipService.parseRetentionMonths(archive.retensiInaktif);
+                if (totalRetentionMonths === 0) {
+                    belumDitentukan += 1;
+                    continue;
+                }
+
+                const status = arsipService.getArchiveStatus(
+                    archive.retentionTriggerDate,
+                    archive.retensiAktif,
+                    archive.retensiInaktif,
+                );
+                if (status === 'aktif' || status === 'akan_inaktif') aktifCount += 1;
+                if (status === 'inaktif' || status === 'akan_kadaluarsa') inaktifCount += 1;
+                if (status === 'kadaluarsa') kadaluarsaCount += 1;
+            }
+
+            const totalArsip = arsipLifecycleData.length;
 
             return {
                 archiveLifecycle: {
@@ -532,6 +659,8 @@ export const dashboardService = {
                     inaktif: inaktifCount,
                     kadaluarsa: kadaluarsaCount,
                     belumDitentukan,
+                    held: heldCount,
+                    missingTrigger: missingTriggerCount,
                     total: totalArsip,
                 },
                 storageCapacity,

@@ -1,6 +1,10 @@
 import { db } from '../config/database';
 import { arsipTerjaga, NewArsipTerjaga, ArsipTerjaga, arsip } from '../db/schema';
-import { eq, and, desc, sql, lte, ilike, or } from 'drizzle-orm';
+import { eq, and, desc, sql, lte, ilike, or, inArray } from 'drizzle-orm';
+import {
+    scopedRecordByIdWhere,
+    type RecordUnitScope,
+} from '../utils/record-unit-scope.js';
 
 interface ArsipTerjagaFilters {
     unitKerjaId?: string;
@@ -10,6 +14,16 @@ interface ArsipTerjagaFilters {
     search?: string;
     page?: number;
     limit?: number;
+    securityClassifications?: string[] | null;
+}
+
+function archiveSecurityCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+    return inArray(
+        sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+        classes,
+    );
 }
 
 class ArsipTerjagaService {
@@ -23,7 +37,8 @@ class ArsipTerjagaService {
             statusKepatuhan,
             search,
             page = 1,
-            limit = 20
+            limit = 20,
+            securityClassifications,
         } = filters;
 
         const conditions = [];
@@ -50,6 +65,7 @@ class ArsipTerjagaService {
                 )!
             );
         }
+        conditions.push(archiveSecurityCondition(securityClassifications));
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -79,7 +95,10 @@ class ArsipTerjagaService {
                 kurunWaktu: arsip.kurunWaktu,
             })
                 .from(arsipTerjaga)
-                .leftJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
+                .innerJoin(arsip, and(
+                    eq(arsipTerjaga.arsipId, arsip.id),
+                    eq(arsip.unitKerjaId, arsipTerjaga.unitKerjaId),
+                ))
                 .where(whereClause)
                 .orderBy(desc(arsipTerjaga.createdAt))
                 .limit(limit)
@@ -87,6 +106,10 @@ class ArsipTerjagaService {
 
             db.select({ count: sql<number>`count(*)::int` })
                 .from(arsipTerjaga)
+                .innerJoin(arsip, and(
+                    eq(arsipTerjaga.arsipId, arsip.id),
+                    eq(arsip.unitKerjaId, arsipTerjaga.unitKerjaId),
+                ))
                 .where(whereClause),
         ]);
 
@@ -101,7 +124,11 @@ class ArsipTerjagaService {
     }
 
     // Get single arsip terjaga with arsip details
-    async findById(id: string) {
+    async findById(
+        id: string,
+        unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
+    ) {
         const [result] = await db
             .select({
                 id: arsipTerjaga.id,
@@ -132,8 +159,19 @@ class ArsipTerjagaService {
                 jenisArsip: arsip.jenisArsip,
             })
             .from(arsipTerjaga)
-            .leftJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
-            .where(eq(arsipTerjaga.id, id))
+            .innerJoin(arsip, and(
+                eq(arsipTerjaga.arsipId, arsip.id),
+                eq(arsip.unitKerjaId, arsipTerjaga.unitKerjaId),
+            ))
+            .where(and(
+                scopedRecordByIdWhere(
+                    arsipTerjaga.id,
+                    id,
+                    arsipTerjaga.unitKerjaId,
+                    unitScope,
+                ),
+                archiveSecurityCondition(securityClassifications),
+            ))
             .limit(1);
 
         return result || null;
@@ -150,26 +188,41 @@ class ArsipTerjagaService {
     }
 
     // Update arsip terjaga
-    async update(id: string, data: Partial<ArsipTerjaga>) {
+    async update(id: string, data: Partial<ArsipTerjaga>, unitScope: RecordUnitScope) {
         const [result] = await db
             .update(arsipTerjaga)
             .set({ ...data, updatedAt: new Date() })
-            .where(eq(arsipTerjaga.id, id))
+            .where(scopedRecordByIdWhere(
+                arsipTerjaga.id,
+                id,
+                arsipTerjaga.unitKerjaId,
+                unitScope,
+            ))
             .returning();
         return result;
     }
 
     // Remove terjaga designation
-    async delete(id: string) {
+    async delete(id: string, unitScope: RecordUnitScope) {
         const [result] = await db
             .delete(arsipTerjaga)
-            .where(eq(arsipTerjaga.id, id))
+            .where(scopedRecordByIdWhere(
+                arsipTerjaga.id,
+                id,
+                arsipTerjaga.unitKerjaId,
+                unitScope,
+            ))
             .returning();
         return result;
     }
 
     // Mark as reported to ANRI
-    async markAsReported(id: string, nomorLaporan: string, tanggalPelaporan: string) {
+    async markAsReported(
+        id: string,
+        nomorLaporan: string,
+        tanggalPelaporan: string,
+        unitScope: RecordUnitScope,
+    ) {
         const [result] = await db
             .update(arsipTerjaga)
             .set({
@@ -179,18 +232,27 @@ class ArsipTerjagaService {
                 statusKepatuhan: 'patuh',
                 updatedAt: new Date(),
             })
-            .where(eq(arsipTerjaga.id, id))
+            .where(scopedRecordByIdWhere(
+                arsipTerjaga.id,
+                id,
+                arsipTerjaga.unitKerjaId,
+                unitScope,
+            ))
             .returning();
         return result;
     }
 
     // Get statistics for dashboard
-    async getStats(unitKerjaId: string) {
-        const conditions = [eq(arsipTerjaga.unitKerjaId, unitKerjaId)];
+    async getStats(unitKerjaId: string, securityClassifications?: string[] | null) {
+        const conditions = [
+            eq(arsipTerjaga.unitKerjaId, unitKerjaId),
+            archiveSecurityCondition(securityClassifications),
+        ];
 
         const [total, byKategori, byPelaporan, byKepatuhan] = await Promise.all([
             db.select({ count: sql<number>`count(*)::int` })
                 .from(arsipTerjaga)
+                .innerJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
                 .where(and(...conditions)),
 
             db.select({
@@ -198,6 +260,7 @@ class ArsipTerjagaService {
                 count: sql<number>`count(*)::int`,
             })
                 .from(arsipTerjaga)
+                .innerJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
                 .where(and(...conditions))
                 .groupBy(arsipTerjaga.kategoriTerjaga),
 
@@ -206,6 +269,7 @@ class ArsipTerjagaService {
                 count: sql<number>`count(*)::int`,
             })
                 .from(arsipTerjaga)
+                .innerJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
                 .where(and(...conditions))
                 .groupBy(arsipTerjaga.statusPelaporan),
 
@@ -214,6 +278,7 @@ class ArsipTerjagaService {
                 count: sql<number>`count(*)::int`,
             })
                 .from(arsipTerjaga)
+                .innerJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
                 .where(and(...conditions))
                 .groupBy(arsipTerjaga.statusKepatuhan),
         ]);
@@ -227,7 +292,11 @@ class ArsipTerjagaService {
     }
 
     // Get arsip terjaga approaching reporting deadline
-    async getDueForReporting(unitKerjaId: string, daysAhead: number = 30) {
+    async getDueForReporting(
+        unitKerjaId: string,
+        daysAhead: number = 30,
+        securityClassifications?: string[] | null,
+    ) {
         const futureDate = new Date();
         futureDate.setDate(futureDate.getDate() + daysAhead);
         const futureDateStr = futureDate.toISOString().split('T')[0];
@@ -247,11 +316,15 @@ class ArsipTerjagaService {
                 nomorSuratOriginal: arsip.nomorSuratOriginal,
             })
             .from(arsipTerjaga)
-            .leftJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
+            .innerJoin(arsip, and(
+                eq(arsipTerjaga.arsipId, arsip.id),
+                eq(arsip.unitKerjaId, arsipTerjaga.unitKerjaId),
+            ))
             .where(
                 and(
                     eq(arsipTerjaga.unitKerjaId, unitKerjaId),
                     eq(arsipTerjaga.statusPelaporan, 'belum_dilaporkan'),
+                    archiveSecurityCondition(securityClassifications),
                     sql`COALESCE(
                         ${arsipTerjaga.tanggalReviewSelanjutnya},
                         ${arsipTerjaga.tanggalPenetapan} + make_interval(days => COALESCE(${arsipTerjaga.periodePelaporanHari}, 365))
@@ -264,8 +337,15 @@ class ArsipTerjagaService {
     }
 
     // Generate ANRI report data
-    async generateLaporanANRI(unitKerjaId: string, tahun?: number) {
-        const conditions = [eq(arsipTerjaga.unitKerjaId, unitKerjaId)];
+    async generateLaporanANRI(
+        unitKerjaId: string,
+        tahun?: number,
+        securityClassifications?: string[] | null,
+    ) {
+        const conditions = [
+            eq(arsipTerjaga.unitKerjaId, unitKerjaId),
+            archiveSecurityCondition(securityClassifications),
+        ];
         if (tahun) {
             conditions.push(sql`EXTRACT(YEAR FROM ${arsipTerjaga.tanggalPenetapan}) = ${tahun}`);
         }
@@ -294,7 +374,10 @@ class ArsipTerjagaService {
                 jumlah: arsip.jumlah,
             })
             .from(arsipTerjaga)
-            .leftJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
+            .innerJoin(arsip, and(
+                eq(arsipTerjaga.arsipId, arsip.id),
+                eq(arsip.unitKerjaId, arsipTerjaga.unitKerjaId),
+            ))
             .where(and(...conditions))
             .orderBy(arsipTerjaga.kategoriTerjaga, arsipTerjaga.tanggalPenetapan);
 

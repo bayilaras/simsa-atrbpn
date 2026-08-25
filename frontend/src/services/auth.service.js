@@ -1,4 +1,5 @@
 import { authClient } from '../lib/auth-client';
+import { clearOfflineStorage } from '../lib/offline-storage';
 
 export const authService = {
     // Get current user session
@@ -93,15 +94,9 @@ export const authService = {
             await authClient.signOut();
         } catch (error) {
             console.error('Sign out failed:', error);
-        }
-        // Purge cached API responses so the next user on a shared machine cannot
-        // read the previous session's surat/arsip data from the service worker.
-        try {
-            if ('caches' in window) {
-                await caches.delete('api-cache');
-            }
-        } catch (error) {
-            console.error('Failed to clear API cache:', error);
+        } finally {
+            // Explicit and idle-timeout logout both flow through this method.
+            await clearOfflineStorage();
         }
     },
 

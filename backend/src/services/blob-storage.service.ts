@@ -1,4 +1,4 @@
-import { put, del, head, list } from '@vercel/blob';
+import { put, del, get, head, list } from '@vercel/blob';
 import { Readable } from 'stream';
 import { createLogger } from '../utils/logger';
 
@@ -15,7 +15,7 @@ export interface StoredFile {
     id: string;       // The blob URL (used as ID)
     name: string;
     mimeType: string;
-    url: string;       // Direct public URL — can be used in <img>, <iframe>, etc.
+    url: string;       // Internal object locator; never expose it as an access grant.
     downloadUrl: string;
     size?: number;
 }
@@ -31,7 +31,10 @@ export class BlobStorageService {
         log.info({ fileName, mimeType, bufferSize: buffer.length, pathname }, 'Uploading file to Vercel Blob');
 
         const blob = await put(pathname, buffer, {
-            access: 'public',
+            // Government records must not be reachable with an unauthenticated
+            // object URL. Application routes authenticate, authorize and audit
+            // every read before proxying this private stream.
+            access: 'private',
             contentType: mimeType,
             addRandomSuffix: true, // Prevents filename conflicts
         });
@@ -81,22 +84,27 @@ export class BlobStorageService {
     // Download file content as a readable stream
     async downloadFile(blobUrl: string): Promise<{ stream: Readable; mimeType: string; fileName: string } | null> {
         try {
-            // Fetch the file from the public URL
-            const response = await fetch(blobUrl);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch blob: ${response.status}`);
+            const parsedUrl = new URL(blobUrl);
+            if (
+                parsedUrl.protocol !== 'https:' ||
+                !parsedUrl.hostname.endsWith('.blob.vercel-storage.com')
+            ) {
+                throw new Error('Refusing to retrieve a non-Vercel object URL');
             }
 
-            const contentType = response.headers.get('content-type') || 'application/octet-stream';
-            const fileName = blobUrl.split('/').pop() || 'download';
-
-            // Convert web ReadableStream to Node.js Readable
-            const webStream = response.body;
-            if (!webStream) {
-                throw new Error('Response body is empty');
+            // New objects are private. The public mode is retained solely so
+            // legacy objects can be migrated without breaking record access.
+            const access = parsedUrl.hostname.includes('.private.blob.vercel-storage.com')
+                ? 'private'
+                : 'public';
+            const result = await get(blobUrl, { access, useCache: false });
+            if (!result || result.statusCode !== 200 || !result.stream) {
+                throw new Error('Blob was not found or returned no content');
             }
 
-            const nodeStream = Readable.fromWeb(webStream as any);
+            const contentType = result.blob.contentType || 'application/octet-stream';
+            const fileName = result.blob.pathname.split('/').pop() || 'download';
+            const nodeStream = Readable.fromWeb(result.stream as any);
 
             return {
                 stream: nodeStream,

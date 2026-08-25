@@ -725,7 +725,7 @@ export default function SuratMasuk() {
                 open={distributeDialogOpen}
                 onOpenChange={setDistributeDialogOpen}
                 suratData={selectedSurat}
-                sourceUnitId={user?.unitKerjaId || 'ditjen'}
+                sourceUnitId={user?.unitKerjaId || ''}
                 onSuccess={() => {
                     setDistributeDialogOpen(false);
                     fetchData();

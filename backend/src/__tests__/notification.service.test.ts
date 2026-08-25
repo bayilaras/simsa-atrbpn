@@ -70,10 +70,11 @@ describe('NotificationService', () => {
             enqueue([
                 {
                     id: 'arsip-1',
-                    noSurat: 'AR/001',
-                    perihal: 'Arsip Test',
-                    retensiAktif: 5,
-                    retensiInaktif: 10,
+                    nomorBerkas: 'AR/001',
+                    uraianBerkas: 'Arsip Test',
+                    tanggalKadaluarsa: '2090-01-01',
+                    retentionTriggerDate: '2085-01-01',
+                    legalHold: false,
                     createdAt: new Date('2020-01-01'),
                 },
             ]);
@@ -81,6 +82,18 @@ describe('NotificationService', () => {
 
             const result = await notificationService.getExpiringArchives('ditjen', 'user-1');
             expect(Array.isArray(result)).toBe(true);
+        });
+
+        it('should exclude held and missing-trigger archive notifications', async () => {
+            enqueue([
+                { id: 'eligible', tanggalKadaluarsa: '2090-01-01', retentionTriggerDate: '2085-01-01', legalHold: false, createdAt: new Date() },
+                { id: 'held', tanggalKadaluarsa: '2090-01-01', retentionTriggerDate: '2085-01-01', legalHold: true, createdAt: new Date() },
+                { id: 'missing-trigger', tanggalKadaluarsa: '2090-01-01', retentionTriggerDate: null, legalHold: false, createdAt: new Date() },
+            ]);
+            enqueue([]);
+
+            const result = await notificationService.getExpiringArchives('ditjen', 'user-1');
+            expect(result.map(item => item.referenceId)).toEqual(['eligible']);
         });
 
         it('should accept custom daysAhead parameter', async () => {

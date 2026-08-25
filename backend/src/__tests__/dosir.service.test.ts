@@ -42,16 +42,38 @@ describe('DosirService', () => {
     describe('update', () => {
         it('should update dosir details', async () => {
             enqueue([{ id: 'dosir-1', judul: 'Updated' }]);
-            const result = await dosirService.update('dosir-1', { judul: 'Updated' });
+            const result = await dosirService.update('dosir-1', { judul: 'Updated' }, 'u1');
             expect(result.judul).toBe('Updated');
         });
     });
 
     describe('delete', () => {
-        it('should delete dosir and return success', async () => {
-            // delete chain resolves via proxy
-            const result = await dosirService.delete('dosir-1');
-            expect(result).toEqual({ success: true });
+        it('should delete and return the unit-scoped dosir', async () => {
+            enqueue([{ id: 'dosir-1', unitKerjaId: 'u1' }]);
+            const result = await dosirService.delete('dosir-1', 'u1');
+            expect(result).toEqual({ id: 'dosir-1', unitKerjaId: 'u1' });
+        });
+
+        it('should return null when the scoped dosir is not found', async () => {
+            enqueue([]);
+            await expect(dosirService.delete('dosir-1', 'u2')).resolves.toBeNull();
+        });
+    });
+
+    describe('getById', () => {
+        it('should return a scoped dosir with linked surat', async () => {
+            enqueue([{ id: 'd1', unitKerjaId: 'u1' }]);
+            enqueue([{ link: { addedAt: 'now', notes: null }, surat: { id: 'sm1' } }]);
+            enqueue([{ link: { addedAt: 'now', notes: null }, surat: { id: 'sk1' } }]);
+
+            const result = await dosirService.getById('d1', 'u1');
+            expect(result?.suratMasuk).toHaveLength(1);
+            expect(result?.suratKeluar).toHaveLength(1);
+        });
+
+        it('should return null before loading links when the dosir is inaccessible', async () => {
+            enqueue([]);
+            await expect(dosirService.getById('d1', 'u2')).resolves.toBeNull();
         });
     });
 
@@ -81,29 +103,42 @@ describe('DosirService', () => {
 
     describe('addSuratMasuk', () => {
         it('should link surat masuk to dosir', async () => {
+            enqueue([{ id: 'd1', unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'sm1' }]);
             enqueue([{ dosirId: 'd1', suratMasukId: 'sm1' }]);
-            const result = await dosirService.addSuratMasuk('d1', 'sm1');
-            expect(result.dosirId).toBe('d1');
+            const result = await dosirService.addSuratMasuk('d1', 'sm1', undefined, 'u1');
+            expect(result?.dosirId).toBe('d1');
+        });
+
+        it('should deny linking when the dosir is outside the unit scope', async () => {
+            enqueue([]);
+            await expect(
+                dosirService.addSuratMasuk('d1', 'sm1', undefined, 'u2'),
+            ).resolves.toBeNull();
         });
     });
 
     describe('addSuratKeluar', () => {
         it('should link surat keluar to dosir', async () => {
+            enqueue([{ id: 'd1', unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'sk1' }]);
             enqueue([{ dosirId: 'd1', suratKeluarId: 'sk1' }]);
-            const result = await dosirService.addSuratKeluar('d1', 'sk1');
-            expect(result.dosirId).toBe('d1');
+            const result = await dosirService.addSuratKeluar('d1', 'sk1', undefined, 'u1');
+            expect(result?.dosirId).toBe('d1');
         });
     });
 
     describe('removeSuratMasuk', () => {
         it('should unlink surat masuk from dosir', async () => {
-            await expect(dosirService.removeSuratMasuk('d1', 'sm1')).resolves.not.toThrow();
+            enqueue([{ id: 'd1', unitKerjaId: 'u1' }]);
+            await expect(dosirService.removeSuratMasuk('d1', 'sm1', 'u1')).resolves.not.toThrow();
         });
     });
 
     describe('removeSuratKeluar', () => {
         it('should unlink surat keluar from dosir', async () => {
-            await expect(dosirService.removeSuratKeluar('d1', 'sk1')).resolves.not.toThrow();
+            enqueue([{ id: 'd1', unitKerjaId: 'u1' }]);
+            await expect(dosirService.removeSuratKeluar('d1', 'sk1', 'u1')).resolves.not.toThrow();
         });
     });
 

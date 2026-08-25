@@ -3,7 +3,7 @@ import { autentikasiService } from '../services/autentikasi.service.js';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
 import { upload } from '../middlewares/upload.middleware.js';
 import { HashVerificationService } from '../services/hash-verification.service.js';
-import { canWriteMiddleware } from '../middlewares/role.middleware.js';
+import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware.js';
 import { validateBody, validateQuery, uuidParamValidator } from '../middlewares/validate.middleware.js';
 import { createAutentikasiSchema, queryAutentikasiSchema } from '../validators/schemas.js';
 import auditLogService from '../services/audit-log.service.js';
@@ -11,6 +11,9 @@ import auditLogService from '../services/audit-log.service.js';
 const router = Router();
 
 router.use(authMiddleware);
+// Autentikasi currently has no mandatory unit dimension. Restrict the module
+// until its records and generated PDFs can be scoped without cross-unit leaks.
+router.use(roleMiddleware(['super_admin']));
 
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);

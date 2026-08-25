@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { dashboardService } from '../services/dashboard.service.js';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { allowedSecurityClassifications } from '../services/record-access.service.js';
 
 const router = Router();
 
@@ -15,7 +16,8 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 
         const stats = await dashboardService.getStats(
             unitKerjaId,
-            tahun ? Number(tahun) : undefined
+            tahun ? Number(tahun) : undefined,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data: stats });
@@ -32,7 +34,8 @@ router.get('/recent', async (req: AuthRequest, res, next) => {
 
         const activity = await dashboardService.getRecentActivity(
             unitKerjaId,
-            limit ? Number(limit) : 10
+            limit ? Number(limit) : 10,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data: activity });
@@ -49,7 +52,8 @@ router.get('/expiring', async (req: AuthRequest, res, next) => {
 
         const expiring = await dashboardService.getExpiringArchives(
             unitKerjaId,
-            daysAhead ? Number(daysAhead) : 30
+            daysAhead ? Number(daysAhead) : 30,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data: expiring });
@@ -66,7 +70,9 @@ router.get('/comparison', async (req: AuthRequest, res, next) => {
 
         const comparison = await dashboardService.getUnitKerjaComparison(
             unitKerjaId,
-            tahun ? Number(tahun) : undefined
+            tahun ? Number(tahun) : undefined,
+            allowedSecurityClassifications(req.user),
+            req.user?.role === 'super_admin',
         );
 
         res.json({ success: true, data: comparison });
@@ -80,7 +86,10 @@ router.get('/widgets', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req);
 
-        const widgets = await dashboardService.getWidgetData(unitKerjaId);
+        const widgets = await dashboardService.getWidgetData(
+            unitKerjaId,
+            allowedSecurityClassifications(req.user),
+        );
 
         res.json({ success: true, data: widgets });
     } catch (error) {

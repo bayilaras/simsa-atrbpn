@@ -11,10 +11,24 @@ import {
 import auditLogService from '../services/audit-log.service';
 import { fullTextSearchService } from '../services/fulltext-search.service';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { canAccessUnit, Role } from '../config/permissions';
+import {
+    allowedSecurityClassifications,
+    isAllowedForClassification,
+    recordAccessService,
+} from '../services/record-access.service.js';
 
 const router = Router();
 
 router.use(authMiddleware);
+
+function userCanAccessUnit(req: AuthRequest, unitKerjaId: string): boolean {
+    return canAccessUnit(
+        (req.user?.role || 'user') as Role,
+        req.user?.unitKerjaId || null,
+        unitKerjaId,
+    );
+}
 
 // GET /api/arsip - List with pagination
 router.get('/', validateQuery(queryArsipSchema), async (req: AuthRequest, res, next) => {
@@ -29,6 +43,7 @@ router.get('/', validateQuery(queryArsipSchema), async (req: AuthRequest, res, n
 
         const result = await arsipService.findAll({
             unitKerjaId,
+            securityClassifications: allowedSecurityClassifications(req.user),
             jenisArsip: jenisSurat,
             tahun,
             search,
@@ -54,7 +69,8 @@ router.get('/expiring', async (req: AuthRequest, res, next) => {
 
         const data = await arsipService.getExpiring(
             unitKerjaId as string,
-            daysAhead ? Number(daysAhead) : 30
+            daysAhead ? Number(daysAhead) : 30,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data });
@@ -75,7 +91,8 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 
         const stats = await arsipService.getStats(
             unitKerjaId as string,
-            tahun ? Number(tahun) : undefined
+            tahun ? Number(tahun) : undefined,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data: stats });
@@ -103,6 +120,7 @@ router.get('/search/fulltext', async (req: AuthRequest, res, next) => {
             unitKerjaId,
             jenisArsip: typeof jenisArsip === 'string' ? jenisArsip : undefined,
             tahun: tahun ? Number(tahun) : undefined,
+            securityClassifications: allowedSecurityClassifications(req.user),
             page: page ? Number(page) : 1,
             limit: limit ? Number(limit) : 20
         });
@@ -130,7 +148,8 @@ router.get('/search/suggestions', async (req: AuthRequest, res, next) => {
         const suggestions = await fullTextSearchService.getSuggestions(
             q,
             unitKerjaId,
-            limit ? Number(limit) : 10
+            limit ? Number(limit) : 10,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data: suggestions });
@@ -165,7 +184,11 @@ router.get('/search/keywords', async (req: AuthRequest, res, next) => {
         const result = await fullTextSearchService.searchByKeywords(
             keywordList,
             unitKerjaId,
-            { limit: limitNum, offset: (pageNum - 1) * limitNum }
+            {
+                limit: limitNum,
+                offset: (pageNum - 1) * limitNum,
+                securityClassifications: allowedSecurityClassifications(req.user),
+            }
         );
 
         res.json({
@@ -191,10 +214,16 @@ router.get('/:id/related', async (req: AuthRequest, res, next) => {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
 
+        const sourceAccess = await recordAccessService.check(req.user, 'arsip', id as string);
+        if (!sourceAccess.exists || !sourceAccess.allowed) {
+            return res.status(404).json({ error: 'Arsip not found' });
+        }
+
         const related = await fullTextSearchService.getRelatedDocuments(
             id as string,
             unitKerjaId,
-            limit ? Number(limit) : 5
+            limit ? Number(limit) : 5,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data: related });
@@ -212,6 +241,12 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         if (!result) {
             return res.status(404).json({ error: 'Arsip not found' });
         }
+        if (
+            !userCanAccessUnit(req, result.unitKerjaId)
+            || !isAllowedForClassification(req.user, result.klasifikasiKeamanan)
+        ) {
+            return res.status(404).json({ error: 'Arsip not found' });
+        }
 
         res.json({ success: true, data: result });
     } catch (error) {
@@ -225,6 +260,12 @@ router.post('/',
     validateBody(createArsipSchema),
     async (req: AuthRequest, res, next) => {
         try {
+            if (!userCanAccessUnit(req, req.body.unitKerjaId)) {
+                return res.status(403).json({ error: 'Anda tidak berwenang membuat arsip untuk unit kerja tersebut' });
+            }
+            if (!isAllowedForClassification(req.user, req.body.klasifikasiKeamanan)) {
+                return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
+            }
             const result = await arsipService.create({
                 ...req.body,
                 createdBy: req.user?.id,
@@ -255,6 +296,21 @@ router.put('/:id', validateIdParam(),
         try {
             const { id } = req.params;
             const existing = await arsipService.findById(id as string);
+            if (!existing) {
+                return res.status(404).json({ error: 'Arsip not found' });
+            }
+            if (
+                !userCanAccessUnit(req, existing.unitKerjaId)
+                || !isAllowedForClassification(req.user, existing.klasifikasiKeamanan)
+            ) {
+                return res.status(404).json({ error: 'Arsip not found' });
+            }
+            if (
+                req.body.klasifikasiKeamanan !== undefined
+                && !isAllowedForClassification(req.user, req.body.klasifikasiKeamanan)
+            ) {
+                return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
+            }
             const result = await arsipService.update(id as string, req.body);
 
             if (!result) {
@@ -280,29 +336,14 @@ router.put('/:id', validateIdParam(),
 
 // DELETE /api/arsip/:id
 router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthRequest, res, next) => {
-    try {
-        const { id } = req.params;
-        const existing = await arsipService.findById(id as string);
-        const result = await arsipService.delete(id as string);
-
-        if (!result) {
-            return res.status(404).json({ error: 'Arsip not found' });
-        }
-
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'delete',
-            entityType: 'arsip',
-            entityId: id as string,
-            changes: { before: { nomorBerkas: existing?.nomorBerkas } },
-            ipAddress: req.ip,
-        });
-
-        res.json({ success: true, message: 'Arsip deleted successfully' });
-    } catch (error) {
-        next(error);
-    }
+    // An archive is a record, not ordinary application data. Physical deletion
+    // here would bypass JRA appraisal, legal hold, approvals, witnesses and the
+    // permanent evidence of disposition. All outcomes therefore go through the
+    // penyusutan workflow; even super_admin cannot use CRUD deletion.
+    return res.status(409).json({
+        error: 'Direct archive deletion is disabled',
+        message: 'Gunakan workflow Penyusutan Arsip sesuai JRA dan legal hold.',
+    });
 });
 
 export default router;

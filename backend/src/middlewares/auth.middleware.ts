@@ -6,6 +6,13 @@ import { eq } from 'drizzle-orm';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('AuthMiddleware');
+const PROVISIONED_ROLES = new Set([
+    'super_admin',
+    'admin_dirjen',
+    'admin_sesditjen',
+    'staff',
+    'auditor',
+]);
 
 export interface AuthRequest extends Request {
     user?: {
@@ -57,6 +64,27 @@ export async function authMiddleware(
             return res.status(403).json({
                 error: 'Forbidden',
                 message: 'Akun Anda telah dinonaktifkan. Hubungi administrator.',
+            });
+        }
+
+        // New social-login accounts intentionally start with the `user` role while
+        // an administrator assigns an organisational role. Authentication alone is
+        // not authorisation: fail closed here so a forgotten route-level permission
+        // cannot expose records to an unprovisioned account.
+        if (!PROVISIONED_ROLES.has(authUser.role)) {
+            return res.status(403).json({
+                error: 'Access pending',
+                message: 'Akun belum memiliki role kearsipan. Hubungi administrator.',
+            });
+        }
+
+        // Staff queries are scoped with unitKerjaId. Letting an unassigned staff
+        // account continue would turn a missing filter into an all-unit query in a
+        // number of services, so incomplete provisioning must also fail closed.
+        if (['staff', 'auditor'].includes(authUser.role) && !authUser.unitKerjaId) {
+            return res.status(403).json({
+                error: 'Unit kerja required',
+                message: 'Akun belum memiliki mandat unit kerja. Hubungi administrator.',
             });
         }
 

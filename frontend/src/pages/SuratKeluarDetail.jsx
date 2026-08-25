@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
     ArrowLeft, Send, Calendar, Building, User, FileText,
@@ -35,11 +35,7 @@ export default function SuratKeluarDetail() {
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
 
-    useEffect(() => {
-        fetchSurat()
-    }, [id])
-
-    const fetchSurat = async () => {
+    const fetchSurat = useCallback(async () => {
         setLoading(true)
         try {
             const data = await suratKeluarService.getById(id)
@@ -54,7 +50,11 @@ export default function SuratKeluarDetail() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [id, toast])
+
+    useEffect(() => {
+        fetchSurat()
+    }, [fetchSurat])
 
     const formatDate = (dateString) => {
         if (!dateString) return '-'
@@ -72,23 +72,6 @@ export default function SuratKeluarDetail() {
         } catch {
             return ''
         }
-    }
-
-    const getFileUrl = (filePath) => {
-        if (!filePath) return null
-        if (filePath.startsWith('http')) return filePath
-        // Vercel Blob files stored as "blob:{url}" — use URL directly (public access)
-        if (filePath.startsWith('blob:')) {
-            return filePath.replace('blob:', '')
-        }
-        // Legacy Google Drive files stored as "gdrive:{fileId}" — route through proxy
-        if (filePath.startsWith('gdrive:')) {
-            const fileId = filePath.replace('gdrive:', '')
-            return `/api/drive-file/${fileId}`
-        }
-        // Legacy: local uploads go through Vercel proxy rewrite
-        if (filePath.startsWith('/uploads')) return filePath
-        return `${API_BASE_URL}${filePath}`
     }
 
     const getFileExtension = (filename) => {
@@ -161,7 +144,10 @@ export default function SuratKeluarDetail() {
         )
     }
 
-    const fileUrl = getFileUrl(surat.filePath)
+    const fileUrl = surat.filePath
+        ? `${API_BASE_URL}/api/files/surat_keluar/${encodeURIComponent(surat.id)}`
+        : null
+    const downloadUrl = fileUrl ? `${fileUrl}?download=1` : null
     const fileName = surat.fileOriginalName || surat.filePath?.split('/').pop()
 
     return (
@@ -462,7 +448,7 @@ export default function SuratKeluarDetail() {
 
                                 <div className="flex gap-2 p-4 border-t bg-muted/10">
                                     <Button variant="outline" className="flex-1" asChild>
-                                        <a href={fileUrl} download={fileName}>
+                                        <a href={downloadUrl}>
                                             <Download className="mr-2 h-4 w-4" />
                                             Download
                                         </a>

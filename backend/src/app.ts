@@ -11,6 +11,7 @@ import { isTrustedOrigin } from './config/trusted-origins';
 import { auth } from './config/auth';
 import { generalLimiter, authLimiter } from './middlewares/rate-limiter.middleware';
 import { authMiddleware } from './middlewares/auth.middleware';
+import { roleMiddleware } from './middlewares/role.middleware';
 import { csrfCookieSetter, csrfProtection } from './middlewares/csrf.middleware';
 import { sanitizeInput } from './middlewares/sanitize.middleware';
 import { setupSwagger } from './config/swagger';
@@ -55,6 +56,7 @@ import approvalRoutes from './routes/approval.routes';
 import securityRoutes from './routes/security.routes';
 import googleDriveImportRoutes from './routes/google-drive-import.routes';
 import clientUploadRoutes from './routes/client-upload.routes';
+import fileAccessRoutes from './routes/file-access.routes';
 
 
 const app = express();
@@ -219,49 +221,19 @@ app.use(compression({
     level: 6 // Compression level (0-9, 6 is default balance)
 }));
 
-// Blob file proxy — redirects to public Vercel Blob URL
-// Kept for backwards compatibility with older gdrive: and blob: references
-app.get('/api/drive-file/:fileId', authMiddleware as any, async (req: Request, res: Response) => {
-    try {
-        const { fileId } = req.params;
-        if (!fileId) {
-            return res.status(400).json({ error: 'Invalid file ID' });
-        }
-
-        // For blob: URLs, the fileId IS the URL — just redirect
-        // Decode the fileId in case it was URL-encoded
-        const decodedUrl = decodeURIComponent(fileId as string);
-        if (decodedUrl.startsWith('http')) {
-            // fileId is client-controlled, so only our own blob storage may be
-            // redirected to — anything else would make this an open redirect.
-            let target: URL;
-            try {
-                target = new URL(decodedUrl);
-            } catch {
-                return res.status(400).json({ error: 'Invalid file ID' });
-            }
-
-            const isBlobStorage = target.protocol === 'https:' &&
-                (target.hostname === 'blob.vercel-storage.com' ||
-                    target.hostname.endsWith('.blob.vercel-storage.com'));
-
-            if (!isBlobStorage) {
-                return res.status(400).json({ error: 'Invalid file ID' });
-            }
-
-            return res.redirect(decodedUrl);
-        }
-
-        return res.status(404).json({ error: 'File not found' });
-    } catch (error: any) {
-        logger.error({ err: error, fileId: req.params.fileId }, 'File proxy error');
-        res.status(500).json({ error: 'Failed to retrieve file' });
-    }
+// The legacy endpoint used to redirect callers to a public object URL, bypassing
+// record-level authorization and download auditing. It is intentionally retired;
+// clients must use the unit-scoped /api/files routes below.
+app.get('/api/drive-file/:fileId', authMiddleware as any, (_req: Request, res: Response) => {
+    res.status(410).json({
+        error: 'Legacy file proxy retired',
+        message: 'Gunakan endpoint akses berkas terkendali.',
+    });
 });
 
 // Blob storage diagnostic — test connectivity
 import { blobStorageService } from './services/blob-storage.service';
-app.get('/api/blob-test', authMiddleware as any, async (req: Request, res: Response) => {
+app.get('/api/blob-test', authMiddleware as any, roleMiddleware(['super_admin']) as any, async (req: Request, res: Response) => {
     try {
         const files = await blobStorageService.listFiles();
         res.json({
@@ -280,10 +252,15 @@ app.get('/api/blob-test', authMiddleware as any, async (req: Request, res: Respo
     }
 });
 
-// Static file serving for uploads — PROTECTED with authentication
-// Files in backend/uploads require a valid session to access (legacy support)
+// Legacy generated files do not yet carry a unit/classification dimension, so
+// ordinary authenticated users must not be able to enumerate them by path.
 const uploadsPath = path.join(process.cwd(), 'uploads');
-app.use('/uploads', authMiddleware as any, express.static(uploadsPath));
+app.use(
+    '/uploads',
+    authMiddleware as any,
+    roleMiddleware(['super_admin']) as any,
+    express.static(uploadsPath, { dotfiles: 'deny', index: false, fallthrough: false }),
+);
 
 // Apply general rate limiting to all API routes
 app.use('/api', generalLimiter);
@@ -326,6 +303,7 @@ app.use('/api/mapping', mappingRoutes);
 app.use('/api/security', securityRoutes); // Security utilities (password check, etc.)
 app.use('/api/import', googleDriveImportRoutes); // Google Drive import
 app.use('/api/client-upload', clientUploadRoutes); // Client-side Vercel Blob uploads (bypasses 4.5MB limit)
+app.use('/api/files', fileAccessRoutes); // Authenticated, unit-scoped private file streaming
 
 // Dev auth routes - ONLY available in development mode
 if (env.NODE_ENV === 'development') {

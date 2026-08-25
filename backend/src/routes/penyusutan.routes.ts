@@ -7,6 +7,8 @@ import { validateBody, uuidParamValidator } from '../middlewares/validate.middle
 import { createPenyusutanSchema, updatePenyusutanStatusSchema, removePenyusutanItemsSchema } from '../validators/schemas';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { printTemplateService } from '../services/print-template.service';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope';
+import { allowedSecurityClassifications } from '../services/record-access.service.js';
 
 const router = Router();
 
@@ -15,19 +17,28 @@ router.use(authMiddleware);
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);
 
+function isBatchNotFound(error: unknown): boolean {
+    return error instanceof Error && /batch not found/i.test(error.message);
+}
+
 // ==================== PRINT TEMPLATES ====================
 
 // GET /api/penyusutan/print/daftar-arsip-aktif - Formulir 4
 router.get('/print/daftar-arsip-aktif', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId;
         const { tahun } = req.query;
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
+        const callerRole = (req.user?.role || 'user') as Role;
+        if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
+            return res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
+        }
         const pdf = await printTemplateService.generateDaftarArsipAktif(
             unitKerjaId,
-            tahun ? Number(tahun) : undefined
+            tahun ? Number(tahun) : undefined,
+            allowedSecurityClassifications(req.user),
         );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=daftar-arsip-aktif-${unitKerjaId}.pdf`);
@@ -40,14 +51,19 @@ router.get('/print/daftar-arsip-aktif', async (req: AuthRequest, res, next) => {
 // GET /api/penyusutan/print/daftar-arsip-inaktif - Formulir 6
 router.get('/print/daftar-arsip-inaktif', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId;
         const { tahun } = req.query;
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
+        const callerRole = (req.user?.role || 'user') as Role;
+        if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
+            return res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
+        }
         const pdf = await printTemplateService.generateDaftarArsipInaktif(
             unitKerjaId,
-            tahun ? Number(tahun) : undefined
+            tahun ? Number(tahun) : undefined,
+            allowedSecurityClassifications(req.user),
         );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=daftar-arsip-inaktif-${unitKerjaId}.pdf`);
@@ -62,7 +78,7 @@ router.get('/print/daftar-arsip-inaktif', async (req: AuthRequest, res, next) =>
 // GET /api/penyusutan/candidates - Get disposal candidates
 router.get('/candidates', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId;
         const { type } = req.query;
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -70,7 +86,15 @@ router.get('/candidates', async (req: AuthRequest, res, next) => {
         if (!type || typeof type !== 'string') {
             return res.status(400).json({ error: 'type (pemindahan|pemusnahan|penyerahan) is required' });
         }
-        const candidates = await penyusutanService.getCandidates(unitKerjaId, type);
+        const callerRole = (req.user?.role || 'user') as Role;
+        if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
+            return res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
+        }
+        const candidates = await penyusutanService.getCandidates(
+            unitKerjaId,
+            type,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, data: candidates, total: candidates.length });
     } catch (error) {
         next(error);
@@ -82,7 +106,7 @@ router.get('/candidates', async (req: AuthRequest, res, next) => {
 // GET /api/penyusutan - List batches
 router.get('/', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId;
         const { jenisPenyusutan, status, page, limit } = req.query;
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -98,6 +122,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
             status: status as any,
             page: page ? Number(page) : 1,
             limit: limit ? Number(limit) : 20,
+            securityClassifications: allowedSecurityClassifications(req.user),
         });
         res.json({ success: true, ...result });
     } catch (error) {
@@ -108,7 +133,11 @@ router.get('/', async (req: AuthRequest, res, next) => {
 // GET /api/penyusutan/:id - Get batch detail
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
-        const result = await penyusutanService.findById(String(req.params.id));
+        const result = await penyusutanService.findById(
+            String(req.params.id),
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         if (!result) {
             return res.status(404).json({ error: 'Batch not found' });
         }
@@ -122,7 +151,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
 router.post('/', canWriteMiddleware(), sensitiveLimiter, validateBody(createPenyusutanSchema), async (req: AuthRequest, res, next) => {
     try {
         const { jenisPenyusutan, nomorBA, keterangan, arsipIds } = req.body;
-        const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId;
         if (!unitKerjaId || !jenisPenyusutan || !arsipIds || !Array.isArray(arsipIds)) {
             return res.status(400).json({
                 error: 'unitKerjaId, jenisPenyusutan, and arsipIds[] are required'
@@ -140,6 +169,7 @@ router.post('/', canWriteMiddleware(), sensitiveLimiter, validateBody(createPeny
             keterangan,
             arsipIds,
             createdBy: req.user?.id,
+            securityClassifications: allowedSecurityClassifications(req.user),
         });
         res.status(201).json({ success: true, data: result });
     } catch (error) {
@@ -158,9 +188,18 @@ router.put('/:id/status', canWriteMiddleware(), sensitiveLimiter, validateBody(u
                 role: req.user.role,
                 unitKerjaId: req.user.unitKerjaId || ''
             } : undefined,
-        });
+        }, resolveRecordUnitScope(req), allowedSecurityClassifications(req.user));
         res.json({ success: true, data: result });
     } catch (error: any) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+        if (error.message?.includes('changed concurrently')) {
+            return res.status(409).json({ error: error.message });
+        }
+        if (error.message?.includes('Unauthorized')) {
+            return res.status(403).json({ error: error.message });
+        }
         if (error.message?.includes('Cannot advance')) {
             return res.status(400).json({ error: error.message });
         }
@@ -175,9 +214,20 @@ router.post('/:id/items', canWriteMiddleware(), async (req: AuthRequest, res, ne
         if (!arsipIds || !Array.isArray(arsipIds)) {
             return res.status(400).json({ error: 'arsipIds[] is required' });
         }
-        const result = await penyusutanService.addItems(String(req.params.id), arsipIds);
+        const result = await penyusutanService.addItems(
+            String(req.params.id),
+            arsipIds,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, ...result });
     } catch (error: any) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+        if (error.message?.includes('changed concurrently')) {
+            return res.status(409).json({ error: error.message });
+        }
         if (error.message?.includes('draft')) {
             return res.status(400).json({ error: error.message });
         }
@@ -192,9 +242,20 @@ router.delete('/:id/items', canWriteMiddleware(), sensitiveLimiter, validateBody
         if (!arsipIds || !Array.isArray(arsipIds)) {
             return res.status(400).json({ error: 'arsipIds[] is required' });
         }
-        const result = await penyusutanService.removeItems(String(req.params.id), arsipIds);
+        const result = await penyusutanService.removeItems(
+            String(req.params.id),
+            arsipIds,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, ...result });
     } catch (error: any) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+        if (error.message?.includes('changed concurrently')) {
+            return res.status(409).json({ error: error.message });
+        }
         if (error.message?.includes('draft')) {
             return res.status(400).json({ error: error.message });
         }
@@ -205,9 +266,19 @@ router.delete('/:id/items', canWriteMiddleware(), sensitiveLimiter, validateBody
 // DELETE /api/penyusutan/:id - Delete draft batch
 router.delete('/:id', canWriteMiddleware(), sensitiveLimiter, async (req: AuthRequest, res, next) => {
     try {
-        const result = await penyusutanService.deleteBatch(String(req.params.id));
+        const result = await penyusutanService.deleteBatch(
+            String(req.params.id),
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, ...result });
     } catch (error: any) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+        if (error.message?.includes('changed concurrently')) {
+            return res.status(409).json({ error: error.message });
+        }
         if (error.message?.includes('draft')) {
             return res.status(400).json({ error: error.message });
         }
@@ -221,11 +292,18 @@ router.delete('/:id', canWriteMiddleware(), sensitiveLimiter, async (req: AuthRe
 router.get('/:id/print/usul-musnah', async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        const pdf = await printTemplateService.generateDaftarUsulMusnah(id);
+        const pdf = await printTemplateService.generateDaftarUsulMusnah(
+            id,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=usul-musnah-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
         next(error);
     }
 });
@@ -234,11 +312,18 @@ router.get('/:id/print/usul-musnah', async (req: AuthRequest, res, next) => {
 router.get('/:id/print/usul-pindah', async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        const pdf = await printTemplateService.generateDaftarUsulPindah(id);
+        const pdf = await printTemplateService.generateDaftarUsulPindah(
+            id,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=usul-pindah-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
         next(error);
     }
 });
@@ -247,11 +332,18 @@ router.get('/:id/print/usul-pindah', async (req: AuthRequest, res, next) => {
 router.get('/:id/print/usul-serah', async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        const pdf = await printTemplateService.generateDaftarUsulSerah(id);
+        const pdf = await printTemplateService.generateDaftarUsulSerah(
+            id,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=usul-serah-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
         next(error);
     }
 });
@@ -260,11 +352,18 @@ router.get('/:id/print/usul-serah', async (req: AuthRequest, res, next) => {
 router.get('/:id/print/berita-acara', async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        const pdf = await printTemplateService.generateBeritaAcara(id);
+        const pdf = await printTemplateService.generateBeritaAcara(
+            id,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=berita-acara-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
         next(error);
     }
 });
@@ -273,11 +372,18 @@ router.get('/:id/print/berita-acara', async (req: AuthRequest, res, next) => {
 router.get('/:id/print/berita-acara-pemindahan', async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        const pdf = await printTemplateService.generateBeritaAcaraPemindahan(id);
+        const pdf = await printTemplateService.generateBeritaAcaraPemindahan(
+            id,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=ba-pemindahan-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
         next(error);
     }
 });
@@ -286,11 +392,18 @@ router.get('/:id/print/berita-acara-pemindahan', async (req: AuthRequest, res, n
 router.get('/:id/print/berita-acara-pemusnahan', async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        const pdf = await printTemplateService.generateBeritaAcaraPemusnahan(id);
+        const pdf = await printTemplateService.generateBeritaAcaraPemusnahan(
+            id,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=ba-pemusnahan-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
         next(error);
     }
 });
@@ -299,11 +412,18 @@ router.get('/:id/print/berita-acara-pemusnahan', async (req: AuthRequest, res, n
 router.get('/:id/print/berita-acara-alih-media', async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        const pdf = await printTemplateService.generateBeritaAcaraAlihMedia(id);
+        const pdf = await printTemplateService.generateBeritaAcaraAlihMedia(
+            id,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=ba-alih-media-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
         next(error);
     }
 });
@@ -312,11 +432,18 @@ router.get('/:id/print/berita-acara-alih-media', async (req: AuthRequest, res, n
 router.get('/:id/print/berita-acara-penyerahan', async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        const pdf = await printTemplateService.generateBeritaAcaraPenyerahan(id);
+        const pdf = await printTemplateService.generateBeritaAcaraPenyerahan(
+            id,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=ba-penyerahan-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
         next(error);
     }
 });
@@ -325,11 +452,18 @@ router.get('/:id/print/berita-acara-penyerahan', async (req: AuthRequest, res, n
 router.get('/:id/print/surat-permohonan-penyerahan', async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        const pdf = await printTemplateService.generateSuratPermohonanPenyerahan(id);
+        const pdf = await printTemplateService.generateSuratPermohonanPenyerahan(
+            id,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename=surat-permohonan-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
+        if (isBatchNotFound(error)) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
         next(error);
     }
 });

@@ -1,16 +1,17 @@
 import { Router } from 'express';
 import { supervisionService } from '../services/supervision.service';
 import { authMiddleware as requireAuth } from '../middlewares/auth.middleware';
+import { roleMiddleware } from '../middlewares/role.middleware';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('SupervisionRoutes');
-// import { requireRole } from '../middlewares/role.middleware'; // Uncomment if needed
 
 const router = Router();
 
-// All supervision routes require authentication and appropriate role (admin/super_admin)
+// These aggregates currently contain cross-unit user and compliance activity.
+// Restrict them until every underlying event has an enforceable unit dimension.
 router.use(requireAuth);
-// Optionally restrict to admins: router.use(requireRole(['admin', 'super_admin']));
+router.use(roleMiddleware(['super_admin']));
 
 router.get('/stats/activity', async (req, res) => {
     try {

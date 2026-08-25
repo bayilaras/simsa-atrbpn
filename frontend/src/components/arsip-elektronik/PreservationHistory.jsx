@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { Loader2, History, User } from 'lucide-react';
@@ -10,22 +9,22 @@ export default function PreservationHistory({ arsipId }) {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (arsipId) {
-            loadHistory();
-        }
-    }, [arsipId]);
-
-    const loadHistory = async () => {
+    const loadHistory = useCallback(async () => {
         try {
-            const data = await api.get(`/arsip-elektronik/${arsipId}/preservasi`);
+            const data = await api.get(`/api/arsip-elektronik/${arsipId}/preservasi`);
             setHistory(data);
         } catch (error) {
             console.error('Failed to load preservation history:', error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [arsipId]);
+
+    useEffect(() => {
+        if (arsipId) {
+            loadHistory();
+        }
+    }, [arsipId, loadHistory]);
 
     if (loading) {
         return (
@@ -61,7 +60,7 @@ export default function PreservationHistory({ arsipId }) {
             </CardHeader>
             <CardContent>
                 <div className="space-y-6">
-                    {history.map((item, index) => (
+                    {history.map((item) => (
                         <div key={item.id} className="relative pl-6 border-l-2 border-muted pb-1 last:pb-0">
                             <div className="absolute -left-[9px] top-0 h-4 w-4 rounded-full bg-primary" />
                             <div className="space-y-2">

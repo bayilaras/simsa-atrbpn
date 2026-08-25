@@ -1,6 +1,17 @@
 import { db } from '../config/database.js';
-import { arsipElektronik, NewArsipElektronik, ArsipElektronik, arsip } from '../db/schema/index.js';
-import { eq, and, desc, sql, count } from 'drizzle-orm';
+import { arsipElektronik, ArsipElektronik, arsip, fileAttachments } from '../db/schema/index.js';
+import { eq, and, desc, sql, count, max } from 'drizzle-orm';
+import { randomUUID } from 'crypto';
+import { fileAttachmentService } from './file-attachment.service.js';
+import {
+    canDecideVerification,
+    createElectronicRegistrationCode,
+    ElectronicSourceType,
+    evaluateScanQuality,
+    identifyFileFormat,
+    isPreservationAction,
+    ScanCategory,
+} from './electronic-archive-policy.js';
 
 interface ArsipElektronikFilters {
     arsipId?: string;
@@ -10,9 +21,39 @@ interface ArsipElektronikFilters {
     unitKerjaId?: string;
     page?: number;
     limit?: number;
+    /** null means all classes (super_admin); [] fails closed. */
+    securityClassifications?: string[] | null;
 }
 
+export interface CreateArsipElektronikData {
+    arsipId: string;
+    fileAttachmentId: string;
+    sourceType: ElectronicSourceType;
+    scanCategory?: ScanCategory;
+    resolusiDPI?: number | null;
+    colorDepth?: number | null;
+    jumlahHalaman?: number | null;
+    mediaAsal?: string | null;
+    mediaTujuan?: string | null;
+    tanggalDigitalisasi?: string | null;
+    alatDigitalisasi?: string | null;
+    softwareDigitalisasi?: string | null;
+    catatanKonversi?: string | null;
+}
+
+type EditableArsipElektronikData = Omit<CreateArsipElektronikData, 'arsipId' | 'fileAttachmentId'>;
+
 class ArsipElektronikService {
+
+    private parentClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        const values = sql.join(classes.map(value => sql`${value}`), sql`, `);
+        return sql`${arsipElektronik.arsipId} IN (
+            SELECT id FROM arsip
+            WHERE lower(coalesce(klasifikasi_keamanan, 'biasa')) IN (${values})
+        )`;
+    }
 
     async findAll(filters: ArsipElektronikFilters = {}) {
         const { page = 1, limit = 20 } = filters;
@@ -27,6 +68,8 @@ class ArsipElektronikService {
                 sql`${arsipElektronik.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${filters.unitKerjaId})`
             );
         }
+        const classificationCondition = this.parentClassificationCondition(filters.securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -66,44 +109,209 @@ class ArsipElektronikService {
         return results[0] || null;
     }
 
-    async create(data: NewArsipElektronik) {
-        const result = await db.insert(arsipElektronik).values({
-            ...data,
+    async create(data: CreateArsipElektronikData, userId: string) {
+        const [source] = await db
+            .select({
+                unitKerjaId: arsip.unitKerjaId,
+                attachmentId: fileAttachments.id,
+                attachmentEntityType: fileAttachments.entityType,
+                attachmentEntityId: fileAttachments.entityId,
+                fileName: fileAttachments.fileName,
+                mimeType: fileAttachments.mimeType,
+                sizeBytes: fileAttachments.sizeBytes,
+                sha256: fileAttachments.sha256,
+            })
+            .from(arsip)
+            .innerJoin(fileAttachments, eq(fileAttachments.id, data.fileAttachmentId))
+            .where(eq(arsip.id, data.arsipId))
+            .limit(1);
+
+        if (
+            !source ||
+            source.attachmentEntityType !== 'arsip' ||
+            source.attachmentEntityId !== data.arsipId
+        ) {
+            throw new Error('Lampiran tidak terdaftar pada arsip yang dipilih');
+        }
+        if (!source.sha256) {
+            throw new Error('Lampiran belum memiliki baseline hash SHA-256; unggah ulang melalui ingest terkendali');
+        }
+
+        const quality = evaluateScanQuality({
+            sourceType: data.sourceType,
+            scanCategory: data.scanCategory,
+            resolutionDpi: data.resolusiDPI,
+            colorDepth: data.colorDepth,
+        });
+        const [versionResult] = await db
+            .select({ value: max(arsipElektronik.versiDokumen) })
+            .from(arsipElektronik)
+            .where(eq(arsipElektronik.arsipId, data.arsipId));
+        const version = Number(versionResult?.value || 0) + 1;
+
+        const [created] = await db.insert(arsipElektronik).values({
+            arsipId: data.arsipId,
+            fileAttachmentId: data.fileAttachmentId,
+            registrationCode: createElectronicRegistrationCode(
+                source.unitKerjaId,
+                randomUUID().replace(/-/g, '').slice(0, 10),
+            ),
+            formatFile: identifyFileFormat(source.mimeType, source.fileName),
+            ukuranFile: source.sizeBytes || null,
+            hashSHA256: source.sha256,
+            algoritmaHash: 'SHA-256',
+            waktuPembuatanHash: new Date(),
+            resolusiDPI: data.resolusiDPI || null,
+            jumlahHalaman: data.jumlahHalaman || null,
+            colorDepth: data.colorDepth || null,
+            scanCategory: data.sourceType === 'digitized' ? (data.scanCategory || 'paper') : 'born_digital',
+            sourceType: data.sourceType,
+            qcStatus: quality.passed ? 'passed' : 'failed',
+            qcNotes: quality.errors.join(' ') || null,
+            mediaAsal: data.mediaAsal || (data.sourceType === 'digitized' ? 'kertas' : 'digital'),
+            mediaTujuan: data.mediaTujuan || 'digital',
+            tanggalDigitalisasi: data.tanggalDigitalisasi || null,
+            didigitalisasiOleh: data.sourceType === 'digitized' ? userId : null,
+            alatDigitalisasi: data.alatDigitalisasi || null,
+            softwareDigitalisasi: data.softwareDigitalisasi || null,
+            catatanKonversi: data.catatanKonversi || null,
+            statusVerifikasi: 'pending',
+            versiDokumen: version,
+            immutable: false,
             updatedAt: new Date(),
         }).returning();
-        return result[0];
+        return created;
     }
 
-    async update(id: string, data: Partial<ArsipElektronik>) {
-        const result = await db.update(arsipElektronik)
-            .set({
-                ...data,
-                updatedAt: new Date(),
-            })
-            .where(eq(arsipElektronik.id, id))
+    async update(id: string, data: Partial<EditableArsipElektronikData>) {
+        const record = await this.findById(id);
+        if (!record) return null;
+        if (record.immutable || record.statusVerifikasi === 'verified') {
+            throw new Error('Metadata versi terverifikasi bersifat immutable; buat versi baru untuk perubahan');
+        }
+
+        const sourceType = data.sourceType || record.sourceType as ElectronicSourceType;
+        const scanCategory = data.scanCategory || record.scanCategory as ScanCategory;
+        const resolusiDPI = data.resolusiDPI !== undefined ? data.resolusiDPI : record.resolusiDPI;
+        const colorDepth = data.colorDepth !== undefined ? data.colorDepth : record.colorDepth;
+        const quality = evaluateScanQuality({ sourceType, scanCategory, resolutionDpi: resolusiDPI, colorDepth });
+
+        const editable = {
+            sourceType,
+            scanCategory: sourceType === 'digitized' ? scanCategory : 'born_digital',
+            resolusiDPI,
+            colorDepth,
+            jumlahHalaman: data.jumlahHalaman !== undefined ? data.jumlahHalaman : record.jumlahHalaman,
+            mediaAsal: data.mediaAsal !== undefined ? data.mediaAsal : record.mediaAsal,
+            mediaTujuan: data.mediaTujuan !== undefined ? data.mediaTujuan : record.mediaTujuan,
+            tanggalDigitalisasi: data.tanggalDigitalisasi !== undefined ? data.tanggalDigitalisasi : record.tanggalDigitalisasi,
+            alatDigitalisasi: data.alatDigitalisasi !== undefined ? data.alatDigitalisasi : record.alatDigitalisasi,
+            softwareDigitalisasi: data.softwareDigitalisasi !== undefined ? data.softwareDigitalisasi : record.softwareDigitalisasi,
+            catatanKonversi: data.catatanKonversi !== undefined ? data.catatanKonversi : record.catatanKonversi,
+            qcStatus: quality.passed ? 'passed' : 'failed',
+            qcNotes: quality.errors.join(' ') || null,
+            statusVerifikasi: 'pending',
+            updatedAt: new Date(),
+        };
+
+        const [updated] = await db.update(arsipElektronik)
+            .set(editable)
+            .where(and(
+                eq(arsipElektronik.id, id),
+                eq(arsipElektronik.statusVerifikasi, 'pending'),
+                eq(arsipElektronik.immutable, false),
+            ))
             .returning();
-        return result[0];
+        if (!updated) {
+            throw new Error('Status rekod berubah; metadata terverifikasi tidak dapat ditimpa');
+        }
+        return updated;
     }
 
     async verify(id: string, userId: string, status: 'verified' | 'rejected', catatan?: string) {
+        const record = await this.findById(id);
+        if (!record) return null;
+        if (!canDecideVerification(record.statusVerifikasi)) {
+            throw new Error('Keputusan verifikasi versi ini sudah final; koreksi harus dibuat sebagai versi/pending baru');
+        }
+
+        if (status === 'verified') {
+            if (!record.fileAttachmentId) {
+                throw new Error('Rekod legacy tanpa bitstream terkendali tidak dapat diverifikasi');
+            }
+            const quality = evaluateScanQuality({
+                sourceType: record.sourceType as ElectronicSourceType,
+                scanCategory: record.scanCategory as ScanCategory,
+                resolutionDpi: record.resolusiDPI,
+                colorDepth: record.colorDepth,
+            });
+            if (!quality.passed) {
+                throw new Error(`Kendali mutu belum terpenuhi: ${quality.errors.join(' ')}`);
+            }
+            const fixity = await fileAttachmentService.verifyIntegrity(record.fileAttachmentId);
+            if (!fixity?.matches) {
+                throw new Error('Verifikasi gagal: hash bitstream tidak cocok dengan baseline ingest');
+            }
+        }
+
         const result = await db.update(arsipElektronik)
             .set({
                 statusVerifikasi: status,
                 verifiedBy: userId,
                 verifiedAt: new Date(),
                 catatanVerifikasi: catatan || null,
+                immutable: status === 'verified',
                 updatedAt: new Date(),
             })
-            .where(eq(arsipElektronik.id, id))
+            // Prevent two reviewers from overwriting each other's decision after
+            // the potentially slow fixity read above.
+            .where(and(
+                eq(arsipElektronik.id, id),
+                eq(arsipElektronik.statusVerifikasi, 'pending'),
+            ))
             .returning();
+        if (!result[0]) {
+            throw new Error('Status verifikasi berubah; muat ulang rekod sebelum melanjutkan');
+        }
         return result[0];
     }
 
     async delete(id: string) {
-        await db.delete(arsipElektronik).where(eq(arsipElektronik.id, id));
+        const record = await this.findById(id);
+        if (!record) return false;
+        if (record.immutable || record.statusVerifikasi === 'verified') {
+            throw new Error('Versi terverifikasi tidak dapat dihapus; gunakan workflow penyusutan resmi');
+        }
+        const [deleted] = await db
+            .delete(arsipElektronik)
+            .where(and(
+                eq(arsipElektronik.id, id),
+                eq(arsipElektronik.statusVerifikasi, 'pending'),
+                eq(arsipElektronik.immutable, false),
+            ))
+            .returning({ id: arsipElektronik.id });
+        if (!deleted) {
+            throw new Error('Status rekod berubah; versi tidak dapat dihapus');
+        }
+        return true;
     }
 
-    async findPendingVerification(page = 1, limit = 20, unitKerjaId?: string) {
+    async findUnitKerjaId(id: string): Promise<string | null> {
+        const [result] = await db
+            .select({ unitKerjaId: arsip.unitKerjaId })
+            .from(arsipElektronik)
+            .innerJoin(arsip, eq(arsipElektronik.arsipId, arsip.id))
+            .where(eq(arsipElektronik.id, id))
+            .limit(1);
+        return result?.unitKerjaId || null;
+    }
+
+    async findPendingVerification(
+        page = 1,
+        limit = 20,
+        unitKerjaId?: string,
+        securityClassifications?: string[] | null,
+    ) {
         const offset = (page - 1) * limit;
         const conditions = [eq(arsipElektronik.statusVerifikasi, 'pending')];
         if (unitKerjaId) {
@@ -111,6 +319,8 @@ class ArsipElektronikService {
                 sql`${arsipElektronik.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`
             );
         }
+        const classificationCondition = this.parentClassificationCondition(securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
         const whereClause = and(...conditions);
 
         const [data, totalResult] = await Promise.all([
@@ -133,10 +343,14 @@ class ArsipElektronikService {
         };
     }
 
-    async getStats(unitKerjaId?: string) {
+    async getStats(unitKerjaId?: string, securityClassifications?: string[] | null) {
         const unitKerjaCondition = unitKerjaId
             ? sql`${arsipElektronik.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`
             : undefined;
+        const whereCondition = and(
+            unitKerjaCondition,
+            this.parentClassificationCondition(securityClassifications),
+        );
 
         const [byFormat, byStatus, byMedia, totalResult] = await Promise.all([
             db.select({
@@ -144,7 +358,7 @@ class ArsipElektronikService {
                 count: count(),
             })
                 .from(arsipElektronik)
-                .where(unitKerjaCondition)
+                .where(whereCondition)
                 .groupBy(arsipElektronik.formatFile),
 
             db.select({
@@ -152,7 +366,7 @@ class ArsipElektronikService {
                 count: count(),
             })
                 .from(arsipElektronik)
-                .where(unitKerjaCondition)
+                .where(whereCondition)
                 .groupBy(arsipElektronik.statusVerifikasi),
 
             db.select({
@@ -160,10 +374,10 @@ class ArsipElektronikService {
                 count: count(),
             })
                 .from(arsipElektronik)
-                .where(unitKerjaCondition)
+                .where(whereCondition)
                 .groupBy(arsipElektronik.mediaAsal),
 
-            db.select({ count: count() }).from(arsipElektronik).where(unitKerjaCondition),
+            db.select({ count: count() }).from(arsipElektronik).where(whereCondition),
         ]);
 
         return {
@@ -181,6 +395,23 @@ class ArsipElektronikService {
         performedBy: string;
         notes?: string;
     }) {
+        if (!isPreservationAction(data.action)) {
+            throw new Error('Aksi preservasi tidak dikenali');
+        }
+        const record = await this.findById(data.arsipElektronikId);
+        if (!record) throw new Error('Arsip elektronik tidak ditemukan');
+
+        let details = data.details;
+        if (data.action === 'integrity_check') {
+            if (!record.fileAttachmentId) throw new Error('Bitstream terkendali tidak tersedia');
+            const fixity = await fileAttachmentService.verifyIntegrity(record.fileAttachmentId);
+            if (!fixity) throw new Error('Pemeriksaan integritas tidak dapat dijalankan');
+            details = JSON.stringify({
+                result: fixity.matches ? 'match' : 'mismatch',
+                algorithm: 'SHA-256',
+                checkedAt: new Date().toISOString(),
+            });
+        }
         // Import dynamically to avoid circular dependency issues if any, though likely not needed here
         // better to import at top level if possible, but let's see if preservasiTrack is available
         // It is not imported at top level yet.
@@ -188,6 +419,7 @@ class ArsipElektronikService {
 
         const result = await db.insert(preservasiTrack).values({
             ...data,
+            details,
             performedAt: new Date(),
         }).returning();
         return result[0];

@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { auditLog, users, arsip, suratMasuk, suratKeluar } from '../db/schema';
-import { eq, and, desc, sql, gte, lte, count } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, count, isNotNull } from 'drizzle-orm';
 
 export class SupervisionService {
 
@@ -75,6 +75,8 @@ export class SupervisionService {
             .from(arsip)
             .where(
                 and(
+                    eq(arsip.legalHold, false),
+                    isNotNull(arsip.retentionTriggerDate),
                     lte(arsip.tanggalKadaluarsa, now.toISOString().split('T')[0]),
                     sql`${arsip.hasilAkhir} IS NULL` // Assuming active if no final outcome
                 )

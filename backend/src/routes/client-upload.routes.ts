@@ -3,6 +3,7 @@ import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
 import { uploadLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { createLogger } from '../utils/logger.js';
+import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 
 const log = createLogger('ClientUploadRoutes');
 
@@ -13,6 +14,7 @@ router.use(uploadLimiter);
 
 // All routes require authentication
 router.use(authMiddleware as any);
+router.use(canWriteMiddleware());
 
 /**
  * POST /api/client-upload
@@ -44,6 +46,14 @@ router.post('/', async (req: AuthRequest, res: Response) => {
             body,
             request: webRequest,
             onBeforeGenerateToken: async (pathname: string) => {
+                const allowedPrefixes = ['surat-masuk/', 'surat-keluar/'];
+                if (
+                    !allowedPrefixes.some(prefix => pathname.startsWith(prefix)) ||
+                    pathname.includes('..') ||
+                    pathname.includes('\\')
+                ) {
+                    throw new Error('Upload pathname is not permitted');
+                }
                 // User is already authenticated via authMiddleware
                 log.info(
                     { userId: req.user?.id, pathname },
@@ -61,10 +71,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
                         'image/png',
                         'image/gif',
                         'image/webp',
-                        'application/zip',
-                        'application/x-rar-compressed',
                     ],
                     maximumSizeInBytes: 10 * 1024 * 1024, // 10MB
+                    addRandomSuffix: true,
+                    validUntil: Date.now() + 10 * 60 * 1000,
                     tokenPayload: JSON.stringify({
                         userId: req.user?.id,
                         userEmail: req.user?.email,

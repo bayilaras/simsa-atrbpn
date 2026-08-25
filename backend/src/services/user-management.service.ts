@@ -1,7 +1,7 @@
 import { db } from '../config/database';
-import { users, unitKerja, sessions } from '../db/schema';
+import { users, unitKerja, sessions, accounts } from '../db/schema';
 import { eq, ilike, or, and, desc, sql } from 'drizzle-orm';
-import { auth } from '../config/auth';
+import { hashPassword } from 'better-auth/crypto';
 
 export interface UserFilters {
     search?: string;
@@ -31,7 +31,7 @@ export interface CreateUserData {
 }
 
 // Valid roles
-export const VALID_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'user'] as const;
+export const VALID_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user'] as const;
 export type Role = typeof VALID_ROLES[number];
 
 // Admin roles that can access user management
@@ -42,6 +42,7 @@ export const userManagementService = {
      * Create a new user (by Super Admin)
      */
     async createUser(data: CreateUserData) {
+        const normalizedEmail = data.email.trim().toLowerCase();
         // Validate role
         if (!VALID_ROLES.includes(data.role as Role)) {
             throw new Error(`Invalid role: ${data.role}`);
@@ -51,7 +52,7 @@ export const userManagementService = {
         const [existingUser] = await db
             .select({ id: users.id })
             .from(users)
-            .where(eq(users.email, data.email))
+            .where(ilike(users.email, normalizedEmail))
             .limit(1);
 
         if (existingUser) {
@@ -71,59 +72,38 @@ export const userManagementService = {
             }
         }
 
-        let userId: string;
-
-        if (data.password) {
-            // Use Better Auth signup API to create user with email/password credentials
-            // This creates both the user record AND the account (with hashed password)
-            const signupResult = await auth.api.signUpEmail({
-                body: {
-                    email: data.email,
-                    password: data.password,
-                    name: data.name,
-                },
-            });
-
-            if (!signupResult?.user?.id) {
-                throw new Error('Failed to create user with Better Auth');
-            }
-
-            userId = signupResult.user.id;
-
-            // Update additional fields that Better Auth doesn't handle
-            await db
-                .update(users)
-                .set({
-                    role: data.role,
-                    unitKerjaId: data.unitKerjaId || null,
-                    jabatan: data.jabatan || null,
-                    nip: data.nip || null,
-                    isActive: true,
-                    emailVerified: true, // Admin-created, auto-verified
-                })
-                .where(eq(users.id, userId));
-        } else {
-            // No password — user will login via Google OAuth only
-            const [newUser] = await db
+        // Public Better Auth sign-up is disabled in production. Provision the
+        // user and optional credential account atomically through the same
+        // supported password hasher, without temporarily exposing sign-up.
+        const passwordHash = data.password ? await hashPassword(data.password) : null;
+        const userId = await db.transaction(async (tx) => {
+            const [newUser] = await tx
                 .insert(users)
                 .values({
-                    email: data.email,
+                    email: normalizedEmail,
                     name: data.name,
                     role: data.role,
                     unitKerjaId: data.unitKerjaId || null,
                     jabatan: data.jabatan || null,
                     nip: data.nip || null,
                     isActive: true,
-                    emailVerified: false,
+                    emailVerified: Boolean(passwordHash),
                 })
                 .returning();
 
-            if (!newUser) {
-                throw new Error('Failed to create user');
+            if (!newUser) throw new Error('Failed to create user');
+
+            if (passwordHash) {
+                await tx.insert(accounts).values({
+                    userId: newUser.id,
+                    accountId: newUser.id,
+                    providerId: 'credential',
+                    password: passwordHash,
+                });
             }
 
-            userId = newUser.id;
-        }
+            return newUser.id;
+        });
 
         return this.getUserById(userId);
     },
@@ -271,19 +251,28 @@ export const userManagementService = {
             return null;
         }
 
-        // Return with unit kerja info
-        return this.getUserById(userId);
+        // Resolve the response before revoking sessions so callers still receive
+        // the updated profile even when the current administrator is editing
+        // their own account. Any authorization-relevant change must take effect
+        // immediately for already-issued sessions.
+        const result = await this.getUserById(userId);
+
+        if (
+            data.role !== undefined ||
+            data.unitKerjaId !== undefined ||
+            data.isActive !== undefined
+        ) {
+            await db.delete(sessions).where(eq(sessions.userId, userId));
+        }
+
+        return result;
     },
 
     /**
      * Deactivate user (soft delete)
      */
     async deactivateUser(userId: string) {
-        const result = await this.updateUser(userId, { isActive: false });
-        // Drop existing sessions so access ends immediately instead of lasting
-        // until the session naturally expires.
-        await db.delete(sessions).where(eq(sessions.userId, userId));
-        return result;
+        return this.updateUser(userId, { isActive: false });
     },
 
     /**
@@ -305,6 +294,7 @@ export const userManagementService = {
             'admin_dirjen': 'Admin Dirjen PTPP',
             'admin_sesditjen': 'Admin Sesditjen',
             'staff': 'Staff',
+            'auditor': 'Auditor (Unit Terbatas)',
             'user': 'User',
         };
         return labels[role] || role;

@@ -23,6 +23,7 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
+            docs-site/package-lock.json
 
       - name: Install backend dependencies
         run: npm ci
@@ -32,8 +33,16 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      - name: Install documentation dependencies
+        run: npm ci
+        working-directory: docs-site
+
       - name: TypeScript check (backend)
         run: npx tsc --noEmit
+        working-directory: backend
+
+      - name: Build backend
+        run: npm run build
         working-directory: backend
 
       # Non-blocking until the pre-existing eslint errors in frontend/src are cleared.
@@ -45,6 +54,10 @@ jobs:
       - name: Build frontend
         run: npx vite build
         working-directory: frontend
+
+      - name: Build documentation
+        run: npm run build
+        working-directory: docs-site
 
   test:
     name: Backend Tests
@@ -107,14 +120,16 @@ jobs:
         with:
           node-version: 20
 
-      # Non-blocking, but a failing step is surfaced in the run summary instead of
-      # being swallowed by `|| true`.
       - name: Audit backend
         run: npm audit --audit-level=high
         working-directory: backend
-        continue-on-error: true
 
       - name: Audit frontend
         run: npm audit --audit-level=high
         working-directory: frontend
-        continue-on-error: true
+
+      # Docusaurus currently has a no-fix high advisory in its trusted local-image
+      # build pipeline. Block critical regressions until upstream ships a patch.
+      - name: Audit documentation
+        run: npm audit --audit-level=critical
+        working-directory: docs-site

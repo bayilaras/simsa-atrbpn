@@ -1,10 +1,11 @@
 import { db } from '../config/database';
-import { storageLocations, NewStorageLocation, StorageLocation, arsip } from '../db/schema';
-import { eq, and, desc, sql, isNull } from 'drizzle-orm';
+import { storageLocations, NewStorageLocation, StorageLocation, arsip, archiveLending } from '../db/schema';
+import { eq, and, sql, isNull, ilike, or } from 'drizzle-orm';
 import QRCode from 'qrcode';
+import type { RecordUnitScope } from '../utils/record-unit-scope.js';
 
 export interface StorageLocationFilters {
-    unitKerjaId: string;
+    unitKerjaId: RecordUnitScope;
     level?: string;
     parentId?: string | null;
     search?: string;
@@ -13,11 +14,28 @@ export interface StorageLocationFilters {
 }
 
 export class StorageLocationService {
+    private scopedWhere(unitKerjaId: RecordUnitScope, ...conditions: any[]) {
+        const allConditions = unitKerjaId === null
+            ? conditions
+            : [eq(storageLocations.unitKerjaId, unitKerjaId), ...conditions];
+        return allConditions.length > 0 ? and(...allConditions) : undefined;
+    }
+
+    private expectedChildLevel(parentLevel: string): string | null {
+        const hierarchy: Record<string, string | null> = {
+            gedung: 'ruang',
+            ruang: 'rak',
+            rak: 'box',
+            box: null,
+        };
+        return hierarchy[parentLevel] ?? null;
+    }
+
     async findAll(filters: StorageLocationFilters) {
         const { unitKerjaId, level, parentId, search, page = 1, limit = 50 } = filters;
         const offset = (page - 1) * limit;
 
-        const conditions = [eq(storageLocations.unitKerjaId, unitKerjaId)];
+        const conditions: any[] = [];
 
         if (level) {
             conditions.push(eq(storageLocations.level, level));
@@ -27,16 +45,25 @@ export class StorageLocationService {
         } else if (parentId) {
             conditions.push(eq(storageLocations.parentId, parentId));
         }
+        if (search?.trim()) {
+            const pattern = `%${search.trim()}%`;
+            conditions.push(or(
+                ilike(storageLocations.code, pattern),
+                ilike(storageLocations.name, pattern),
+            ));
+        }
+
+        const whereClause = this.scopedWhere(unitKerjaId, ...conditions);
 
         const [{ count }] = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(storageLocations)
-            .where(and(...conditions));
+            .where(whereClause);
 
         const data = await db
             .select()
             .from(storageLocations)
-            .where(and(...conditions))
+            .where(whereClause)
             .orderBy(storageLocations.code)
             .limit(limit)
             .offset(offset);
@@ -52,22 +79,22 @@ export class StorageLocationService {
         };
     }
 
-    async findById(id: string) {
+    async findById(id: string, unitKerjaId: RecordUnitScope) {
         const [result] = await db
             .select()
             .from(storageLocations)
-            .where(eq(storageLocations.id, id))
+            .where(this.scopedWhere(unitKerjaId, eq(storageLocations.id, id)))
             .limit(1);
 
         return result || null;
     }
 
-    async getTree(unitKerjaId: string) {
+    async getTree(unitKerjaId: RecordUnitScope) {
         // Get all locations for this unit
         const allLocations = await db
             .select()
             .from(storageLocations)
-            .where(eq(storageLocations.unitKerjaId, unitKerjaId))
+            .where(this.scopedWhere(unitKerjaId))
             .orderBy(storageLocations.level, storageLocations.code);
 
         // Build hierarchical tree
@@ -92,61 +119,161 @@ export class StorageLocationService {
         return rootNodes;
     }
 
-    async create(data: NewStorageLocation) {
-        // Auto-generate code if not provided
-        if (!data.code) {
-            data.code = await this.generateCode(data.unitKerjaId, data.level, data.parentId || undefined);
-        }
+    async create(data: NewStorageLocation, unitKerjaId: string) {
+        return await db.transaction(async (tx: any) => {
+            let parent: StorageLocation | null = null;
+            if (data.parentId) {
+                [parent] = await tx
+                    .select()
+                    .from(storageLocations)
+                    .where(this.scopedWhere(
+                        unitKerjaId,
+                        eq(storageLocations.id, data.parentId),
+                    ))
+                    .limit(1)
+                    .for('update');
 
-        const [result] = await db
-            .insert(storageLocations)
-            .values(data)
-            .returning();
+                if (!parent) {
+                    throw new Error('Parent storage location not found in the selected unit');
+                }
 
-        return result;
+                const expectedLevel = this.expectedChildLevel(parent.level);
+                if (!expectedLevel || data.level !== expectedLevel) {
+                    throw new Error(`Child of ${parent.level} must use level ${expectedLevel || 'none'}`);
+                }
+            } else if (data.level !== 'gedung') {
+                throw new Error('Only gedung may be created without a parent location');
+            }
+
+            const code = data.code || await this.generateCode(
+                unitKerjaId,
+                data.level,
+                data.parentId || undefined,
+                tx,
+            );
+            const { unitKerjaId: _clientUnit, ...safeData } = data;
+
+            const [result] = await tx
+                .insert(storageLocations)
+                .values({
+                    ...safeData,
+                    code,
+                    unitKerjaId: parent?.unitKerjaId || unitKerjaId,
+                })
+                .returning();
+
+            return result;
+        });
     }
 
-    async update(id: string, data: Partial<StorageLocation>) {
-        const [result] = await db
-            .update(storageLocations)
-            .set({ ...data, updatedAt: new Date() })
-            .where(eq(storageLocations.id, id))
-            .returning();
+    async update(id: string, data: Partial<StorageLocation>, unitKerjaId: string) {
+        return await db.transaction(async (tx: any) => {
+            const [existing] = await tx
+                .select()
+                .from(storageLocations)
+                .where(this.scopedWhere(unitKerjaId, eq(storageLocations.id, id)))
+                .limit(1)
+                .for('update');
 
-        return result;
+            if (!existing) return null;
+            if (data.level && data.level !== existing.level) {
+                throw new Error('Storage location level cannot be changed after creation');
+            }
+
+            const parentId = data.parentId === undefined ? existing.parentId : data.parentId;
+            if (parentId) {
+                if (parentId === id) {
+                    throw new Error('Storage location cannot be its own parent');
+                }
+
+                const [parent] = await tx
+                    .select()
+                    .from(storageLocations)
+                    .where(this.scopedWhere(
+                        unitKerjaId,
+                        eq(storageLocations.id, parentId),
+                    ))
+                    .limit(1)
+                    .for('update');
+
+                if (!parent) {
+                    throw new Error('Parent storage location not found in the selected unit');
+                }
+
+                const expectedLevel = this.expectedChildLevel(parent.level);
+                if (!expectedLevel || existing.level !== expectedLevel) {
+                    throw new Error(`Child of ${parent.level} must use level ${expectedLevel || 'none'}`);
+                }
+            } else if (existing.level !== 'gedung') {
+                throw new Error('Only gedung may exist without a parent location');
+            }
+
+            const { unitKerjaId: _ignoredUnit, ...safeData } = data;
+            const [result] = await tx
+                .update(storageLocations)
+                .set({ ...safeData, updatedAt: new Date() })
+                .where(this.scopedWhere(unitKerjaId, eq(storageLocations.id, id)))
+                .returning();
+
+            return result || null;
+        });
     }
 
-    async delete(id: string) {
-        // Check for children
-        const [hasChildren] = await db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(storageLocations)
-            .where(eq(storageLocations.parentId, id));
+    async delete(id: string, unitKerjaId: string) {
+        return await db.transaction(async (tx: any) => {
+            const [existing] = await tx
+                .select()
+                .from(storageLocations)
+                .where(this.scopedWhere(unitKerjaId, eq(storageLocations.id, id)))
+                .limit(1)
+                .for('update');
 
-        if (hasChildren.count > 0) {
-            throw new Error('Cannot delete location with children. Delete children first.');
-        }
+            if (!existing) return null;
 
-        // Check for arsip items
-        const [hasArsip] = await db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(arsip)
-            .where(eq(arsip.storageLocationId, id));
+            const [hasChildren] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(storageLocations)
+                .where(this.scopedWhere(
+                    unitKerjaId,
+                    eq(storageLocations.parentId, id),
+                ));
 
-        if (hasArsip.count > 0) {
-            throw new Error('Cannot delete location with archived items. Move items first.');
-        }
+            if (hasChildren.count > 0) {
+                throw new Error('Cannot delete location with children. Delete children first.');
+            }
 
-        const [result] = await db
-            .delete(storageLocations)
-            .where(eq(storageLocations.id, id))
-            .returning();
+            const [hasArsip] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(arsip)
+                .where(and(
+                    eq(arsip.storageLocationId, id),
+                    eq(arsip.unitKerjaId, unitKerjaId),
+                ));
 
-        return result;
+            if (hasArsip.count > 0) {
+                throw new Error('Cannot delete location with archived items. Move items first.');
+            }
+
+            const [hasLendingHistory] = await tx
+                .select({ count: sql<number>`count(*)::int` })
+                .from(archiveLending)
+                .where(eq(archiveLending.storageLocationId, id));
+
+            if (hasLendingHistory.count > 0) {
+                throw new Error('Cannot delete location with lending history. Preserve the audit trail.');
+            }
+
+            const [result] = await tx
+                .delete(storageLocations)
+                .where(this.scopedWhere(unitKerjaId, eq(storageLocations.id, id)))
+                .returning();
+
+            return result || null;
+        });
     }
 
-    async generateQRCode(locationId: string, baseUrl: string) {
-        const location = await this.findById(locationId);
+    async generateQRCode(locationId: string, baseUrl: string, unitKerjaId: RecordUnitScope) {
+        const location = await this.findById(locationId, unitKerjaId);
         if (!location) {
             throw new Error('Storage location not found');
         }
@@ -165,11 +292,16 @@ export class StorageLocationService {
         };
     }
 
-    async generateArsipQRCode(arsipId: string, baseUrl: string) {
+    async generateArsipQRCode(arsipId: string, baseUrl: string, unitKerjaId: RecordUnitScope) {
         const [arsipItem] = await db
             .select()
             .from(arsip)
-            .where(eq(arsip.id, arsipId))
+            .where(unitKerjaId === null
+                ? eq(arsip.id, arsipId)
+                : and(
+                    eq(arsip.id, arsipId),
+                    eq(arsip.unitKerjaId, unitKerjaId),
+                ))
             .limit(1);
 
         if (!arsipItem) {
@@ -190,11 +322,14 @@ export class StorageLocationService {
         };
     }
 
-    async getArsipCount(locationId: string) {
+    async getArsipCount(locationId: string, unitKerjaId: string) {
         const [result] = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(arsip)
-            .where(eq(arsip.storageLocationId, locationId));
+            .where(and(
+                eq(arsip.storageLocationId, locationId),
+                eq(arsip.unitKerjaId, unitKerjaId),
+            ));
 
         return result.count;
     }
@@ -210,12 +345,17 @@ export class StorageLocationService {
             ));
 
         for (const box of boxes) {
-            const count = await this.getArsipCount(box.id);
-            await this.update(box.id, { currentCount: count });
+            const count = await this.getArsipCount(box.id, unitKerjaId);
+            await this.update(box.id, { currentCount: count }, unitKerjaId);
         }
     }
 
-    private async generateCode(unitKerjaId: string, level: string, parentId?: string): Promise<string> {
+    private async generateCode(
+        unitKerjaId: string,
+        level: string,
+        parentId?: string,
+        executor: any = db,
+    ): Promise<string> {
         const prefixes: Record<string, string> = {
             'gedung': 'G',
             'ruang': 'R',
@@ -225,7 +365,14 @@ export class StorageLocationService {
 
         let parentCode = '';
         if (parentId) {
-            const parent = await this.findById(parentId);
+            const [parent] = await executor
+                .select()
+                .from(storageLocations)
+                .where(this.scopedWhere(
+                    unitKerjaId,
+                    eq(storageLocations.id, parentId),
+                ))
+                .limit(1);
             if (parent) {
                 parentCode = parent.code + '-';
             }
@@ -242,7 +389,7 @@ export class StorageLocationService {
             conditions.push(isNull(storageLocations.parentId));
         }
 
-        const [{ count }] = await db
+        const [{ count }] = await executor
             .select({ count: sql<number>`count(*)::int` })
             .from(storageLocations)
             .where(and(...conditions));

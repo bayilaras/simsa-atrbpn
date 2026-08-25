@@ -95,10 +95,10 @@ describe('canAccessUnit', () => {
         expect(canAccessUnit('super_admin', null, 'any-unit')).toBe(true);
     });
 
-    it('auditor should access all units (wildcard, read-only role)', () => {
-        expect(canAccessUnit('auditor', null, 'ditjen')).toBe(true);
-        expect(canAccessUnit('auditor', null, 'sesditjen')).toBe(true);
-        expect(canAccessUnit('auditor', null, 'bagian_keuangan')).toBe(true);
+    it('auditor should only access an explicitly assigned mandate unit', () => {
+        expect(canAccessUnit('auditor', 'ditjen', 'ditjen')).toBe(true);
+        expect(canAccessUnit('auditor', 'ditjen', 'sesditjen')).toBe(false);
+        expect(canAccessUnit('auditor', null, 'bagian_keuangan')).toBe(false);
     });
 
     it('admin_dirjen should access only ditjen unit', () => {

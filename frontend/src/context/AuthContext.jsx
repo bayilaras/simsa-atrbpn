@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { authService } from '../services/auth.service';
+import { clearOfflineStorage } from '../lib/offline-storage';
 
 const AuthContext = createContext(null);
 
@@ -76,10 +77,12 @@ export function AuthProvider({ children }) {
             if (session?.user) {
                 setUser(session.user);
             } else {
+                await clearOfflineStorage();
                 setUser(null);
             }
         } catch (err) {
             console.error('Auth check failed:', err);
+            await clearOfflineStorage();
             setUser(null);
         } finally {
             setLoading(false);
@@ -186,6 +189,8 @@ export function AuthProvider({ children }) {
     );
 }
 
+// Context hooks intentionally live beside their provider for the existing API.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
     const context = useContext(AuthContext);
     if (!context) {

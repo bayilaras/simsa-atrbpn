@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratMasuk, suratKeluar, arsip, dosir } from '../db/schema';
-import { sql, or, ilike, desc, and, eq, isNull } from 'drizzle-orm';
+import { sql, or, ilike, desc, and, eq, isNull, inArray } from 'drizzle-orm';
 
 export interface GlobalSearchParams {
     query: string;
@@ -9,6 +9,8 @@ export interface GlobalSearchParams {
     tahun?: number;
     limit?: number;
     page?: number;
+    /** null means all classes (super_admin); [] fails closed. */
+    securityClassifications?: string[] | null;
 }
 
 export interface GlobalSearchResult {
@@ -49,6 +51,27 @@ class GlobalSearchService {
     // Upper bound on rows pulled per module before merging; caps the cost of deep paging
     private readonly MAX_SCAN = 1000;
 
+    private arsipClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        return inArray(
+            sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+            classes,
+        );
+    }
+
+    private suratMasukClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        const normalized = sql<string>`CASE
+            WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+                IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+            THEN 'biasa'
+            ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+        END`;
+        return inArray(normalized, classes);
+    }
+
     /**
      * Search across all modules
      */
@@ -59,7 +82,8 @@ class GlobalSearchService {
             modules = ['surat_masuk', 'surat_keluar', 'arsip', 'dosir'],
             tahun,
             limit = this.DEFAULT_LIMIT,
-            page = 1
+            page = 1,
+            securityClassifications,
         } = params;
 
         if (!query || query.trim().length < 2) {
@@ -80,7 +104,7 @@ class GlobalSearchService {
 
         if (modules.includes('surat_masuk')) {
             searchPromises.push(
-                this.searchSuratMasuk(searchTerms, unitKerjaId, tahun, fetchLimit).then(({ items, total }) => {
+                this.searchSuratMasuk(searchTerms, unitKerjaId, tahun, fetchLimit, securityClassifications).then(({ items, total }) => {
                     counts.surat_masuk = total;
                     results.push(...items);
                 })
@@ -89,7 +113,7 @@ class GlobalSearchService {
 
         if (modules.includes('surat_keluar')) {
             searchPromises.push(
-                this.searchSuratKeluar(searchTerms, unitKerjaId, tahun, fetchLimit).then(({ items, total }) => {
+                this.searchSuratKeluar(searchTerms, unitKerjaId, tahun, fetchLimit, securityClassifications).then(({ items, total }) => {
                     counts.surat_keluar = total;
                     results.push(...items);
                 })
@@ -98,7 +122,7 @@ class GlobalSearchService {
 
         if (modules.includes('arsip')) {
             searchPromises.push(
-                this.searchArsip(searchTerms, unitKerjaId, fetchLimit).then(({ items, total }) => {
+                this.searchArsip(searchTerms, unitKerjaId, fetchLimit, securityClassifications).then(({ items, total }) => {
                     counts.arsip = total;
                     results.push(...items);
                 })
@@ -139,7 +163,11 @@ class GlobalSearchService {
     /**
      * Search in file content (OCR extracted text)
      */
-    async searchByContent(query: string, unitKerjaId?: string): Promise<GlobalSearchResult[]> {
+    async searchByContent(
+        query: string,
+        unitKerjaId?: string,
+        securityClassifications?: string[] | null,
+    ): Promise<GlobalSearchResult[]> {
         const searchTerms = this.extractSearchTerms(query);
         if (searchTerms.length === 0) return [];
 
@@ -150,7 +178,8 @@ class GlobalSearchService {
             .from(arsip)
             .where(and(
                 ilike(arsip.extractedText, likePattern),
-                unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined
+                unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
+                this.arsipClassificationCondition(securityClassifications),
             ))
             .limit(50);
 
@@ -176,7 +205,8 @@ class GlobalSearchService {
         terms: string[],
         unitKerjaId: string | undefined,
         tahun: number | undefined,
-        fetchLimit: number
+        fetchLimit: number,
+        securityClassifications?: string[] | null,
     ): Promise<ModuleSearchResult> {
         const conditions: any[] = [
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted)),  // Exclude soft-deleted records (NULL-safe)
@@ -198,6 +228,8 @@ class GlobalSearchService {
         if (unitKerjaId) {
             conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
         }
+        const classificationCondition = this.suratMasukClassificationCondition(securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
         if (tahun) {
             conditions.push(eq(suratMasuk.tahun, tahun));
         }
@@ -251,8 +283,16 @@ class GlobalSearchService {
         terms: string[],
         unitKerjaId: string | undefined,
         tahun: number | undefined,
-        fetchLimit: number
+        fetchLimit: number,
+        securityClassifications?: string[] | null,
     ): Promise<ModuleSearchResult> {
+        // The legacy outgoing table has no security field. It is treated as
+        // Terbatas until re-registered in the controlled archive model.
+        if (securityClassifications !== undefined
+            && securityClassifications !== null
+            && !securityClassifications.includes('terbatas')) {
+            return { items: [], total: 0 };
+        }
         const conditions: any[] = [
             or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted)),  // Exclude soft-deleted records (NULL-safe)
         ];
@@ -312,7 +352,8 @@ class GlobalSearchService {
     private async searchArsip(
         terms: string[],
         unitKerjaId: string | undefined,
-        fetchLimit: number
+        fetchLimit: number,
+        securityClassifications?: string[] | null,
     ): Promise<ModuleSearchResult> {
         const conditions = [];
 
@@ -331,6 +372,8 @@ class GlobalSearchService {
         if (unitKerjaId) {
             conditions.push(eq(arsip.unitKerjaId, unitKerjaId));
         }
+        const classificationCondition = this.arsipClassificationCondition(securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
 
         const whereClause = and(...conditions);
 

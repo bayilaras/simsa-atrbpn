@@ -6,7 +6,7 @@
  * - admin_dirjen: always forced to 'ditjen'
  * - admin_sesditjen: always forced to 'sesditjen'
  * - staff: forced to their assigned unitKerjaId
- * - auditor: can query any unit (via query param) or null = all
+ * - auditor: forced to the explicitly assigned audit-mandate unit
  * - user: forced to their assigned unitKerjaId (but has no read permissions anyway)
  */
 import { AuthRequest } from '../middlewares/auth.middleware.js';
@@ -31,8 +31,9 @@ export function resolveUnitKerjaId(req: AuthRequest): string | null {
             return 'sesditjen';
 
         case 'auditor':
-            // Auditor can view any unit (read-only), or null = all
-            return queryUnitKerjaId || null;
+            // Cross-unit access requires an explicit mandate/approval model. Until
+            // that exists, an auditor is scoped like other assigned-unit users.
+            return userUnitKerjaId;
 
         case 'staff':
             // Staff can only see their own assigned unit

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-    Link2, Search, Plus, Trash2, RefreshCw, ArrowRight, ArrowLeft,
+    Link2, Search, Plus, Unlink, RefreshCw, ArrowRight, ArrowLeft,
     FileText, Mail, Send, FolderOpen, ChevronUp, Info, ExternalLink,
     Filter, MoreHorizontal, ArrowRightLeft, Target, GitMerge
 } from 'lucide-react'
@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
 import { tunjukSilangService } from '@/services/tunjuk-silang.service'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { useAuth } from '@/context/AuthContext'
 
 const ENTITY_TYPES = [
     { value: 'arsip', label: 'Arsip', icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-500/15' },
@@ -59,16 +60,18 @@ const getRelasiConfig = (relasi) => {
 }
 
 export default function TunjukSilang() {
+    const { user, canWrite } = useAuth()
+    const isAdmin = canWrite()
+    const canViewRegistry = user?.role === 'super_admin'
     const [data, setData] = useState([])
     const [stats, setStats] = useState(null)
     const [loading, setLoading] = useState(false)
     const [page, setPage] = useState(1)
     const [totalPages, setTotalPages] = useState(1)
-    const [total, setTotal] = useState(0)
     const [filterRelasi, setFilterRelasi] = useState('all')
     const [addDialogOpen, setAddDialogOpen] = useState(false)
     const { toast } = useToast()
-    const [activeTab, setActiveTab] = useState('list')
+    const [activeTab, setActiveTab] = useState('lookup')
 
     // Lookup state
     const [lookupType, setLookupType] = useState('arsip')
@@ -91,7 +94,6 @@ export default function TunjukSilang() {
             const result = await tunjukSilangService.getAll(filters)
             setData(result.data || [])
             setTotalPages(result.totalPages || 1)
-            setTotal(result.total || 0)
         } catch (err) {
             console.error('Error:', err)
         }
@@ -107,7 +109,14 @@ export default function TunjukSilang() {
         }
     }, [])
 
-    useEffect(() => { fetchData(); fetchStats(); }, [fetchData, fetchStats])
+    useEffect(() => {
+        if (!canViewRegistry) return undefined
+        const loadTimer = window.setTimeout(() => {
+            fetchData()
+            fetchStats()
+        }, 0)
+        return () => window.clearTimeout(loadTimer)
+    }, [canViewRegistry, fetchData, fetchStats])
 
     const handleLookup = async () => {
         if (!lookupId.trim()) return
@@ -136,8 +145,10 @@ export default function TunjukSilang() {
                 targetType: 'surat_masuk', targetId: '',
                 jenisRelasi: 'referensi', keterangan: '',
             })
-            fetchData()
-            fetchStats()
+            if (canViewRegistry) {
+                fetchData()
+                fetchStats()
+            }
             // Refresh lookup if active
             if (activeTab === 'lookup' && lookupId) handleLookup()
         } catch (err) {
@@ -145,13 +156,20 @@ export default function TunjukSilang() {
         }
     }
 
-    const handleDelete = async (id) => {
-        if (!confirm('Hapus tunjuk silang ini?')) return
+    const handleCancel = async (id) => {
+        const reason = window.prompt('Tuliskan alasan pembatalan tunjuk silang (minimal 10 karakter):')
+        if (reason === null) return
+        if (reason.trim().length < 10) {
+            toast({ title: 'Alasan terlalu singkat', description: 'Gunakan minimal 10 karakter agar koreksi dapat diaudit.', variant: 'destructive' })
+            return
+        }
         try {
-            await tunjukSilangService.delete(id)
-            toast({ title: 'Berhasil dihapus' })
-            fetchData()
-            fetchStats()
+            await tunjukSilangService.cancel(id, reason.trim())
+            toast({ title: 'Tunjuk silang dibatalkan', description: 'Rekod lama tetap disimpan sebagai jejak koreksi.' })
+            if (canViewRegistry) {
+                fetchData()
+                fetchStats()
+            }
             if (activeTab === 'lookup' && lookupId) handleLookup()
         } catch (err) {
             toast({ title: 'Gagal', description: err.message, variant: 'destructive' })
@@ -174,7 +192,7 @@ export default function TunjukSilang() {
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+                    {isAdmin && <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
                         <DialogTrigger asChild>
                             <Button className="bg-indigo-600 hover:bg-indigo-700 shadow-sm">
                                 <Plus className="mr-2 h-4 w-4" /> Tambah Referensi
@@ -286,12 +304,12 @@ export default function TunjukSilang() {
                                 <Button onClick={handleCreate} className="bg-indigo-600 hover:bg-indigo-700">Simpan Relasi</Button>
                             </DialogFooter>
                         </DialogContent>
-                    </Dialog>
+                    </Dialog>}
                 </div>
             </div>
 
             {/* Stats Overview */}
-            <div className="grid gap-4 lg:grid-cols-4">
+            {canViewRegistry && <div className="grid gap-4 lg:grid-cols-4">
                 <Card className="border-indigo-100 shadow-sm bg-indigo-50/30">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Referensi</CardTitle>
@@ -317,11 +335,11 @@ export default function TunjukSilang() {
                         </Card>
                     )
                 })}
-            </div>
+            </div>}
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-                <TabsList className="grid w-full max-w-[400px] grid-cols-2">
-                    <TabsTrigger value="list">Daftar Referensi</TabsTrigger>
+                <TabsList className={`grid w-full max-w-[400px] ${canViewRegistry ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    {canViewRegistry && <TabsTrigger value="list">Daftar Referensi</TabsTrigger>}
                     <TabsTrigger value="lookup">Cari & Telusuri</TabsTrigger>
                 </TabsList>
 
@@ -430,9 +448,10 @@ export default function TunjukSilang() {
                                                 <TableCell>
                                                     <Button
                                                         variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                                        onClick={() => handleDelete(ref.id)}
+                                                        onClick={() => handleCancel(ref.id)}
+                                                        title="Batalkan dengan jejak audit"
                                                     >
-                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                        <Unlink className="h-3.5 w-3.5" />
                                                     </Button>
                                                 </TableCell>
                                             </TableRow>
@@ -571,14 +590,15 @@ export default function TunjukSilang() {
                                                                 </div>
                                                             )}
 
-                                                            <div className="flex justify-end md:block">
+                                                            {isAdmin && <div className="flex justify-end md:block">
                                                                 <Button
                                                                     variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                                                    onClick={() => handleDelete(ref.id)}
+                                                                    onClick={() => handleCancel(ref.id)}
+                                                                    title="Batalkan dengan jejak audit"
                                                                 >
-                                                                    <Trash2 className="h-4 w-4" />
+                                                                    <Unlink className="h-4 w-4" />
                                                                 </Button>
-                                                            </div>
+                                                            </div>}
                                                         </div>
                                                     )
                                                 })}

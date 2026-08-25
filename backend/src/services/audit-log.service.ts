@@ -8,8 +8,8 @@ const log = createLogger('AuditLogService');
 export interface LogActionData {
     userId?: string;
     userEmail?: string;
-    action: 'create' | 'update' | 'delete' | 'archive' | 'restore' | 'status_change' | 'distribute' | 'receive_distribution' | 'process_distribution' | 'reject_distribution';
-    entityType: 'surat_masuk' | 'surat_keluar' | 'arsip' | 'user' | 'storage_location' | 'archive_lending' | 'surat_distribution' | 'autentikasi' | 'layanan_arsip' | 'dosir' | 'penyusutan';
+    action: 'create' | 'update' | 'delete' | 'archive' | 'restore' | 'status_change' | 'distribute' | 'receive_distribution' | 'process_distribution' | 'reject_distribution' | 'view' | 'download' | 'verify_integrity' | 'hold' | 'release_hold';
+    entityType: 'surat_masuk' | 'surat_keluar' | 'arsip' | 'user' | 'storage_location' | 'archive_lending' | 'surat_distribution' | 'autentikasi' | 'layanan_arsip' | 'dosir' | 'penyusutan' | 'file_attachment' | 'arsip_elektronik' | 'tunjuk_silang';
     entityId?: string;
     changes?: {
         before?: Record<string, any>;
@@ -190,6 +190,11 @@ export const auditLogService = {
             'receive_distribution': 'Menerima Distribusi',
             'process_distribution': 'Memproses Distribusi',
             'reject_distribution': 'Menolak Distribusi',
+            'view': 'Melihat',
+            'download': 'Mengunduh',
+            'verify_integrity': 'Memeriksa Integritas',
+            'hold': 'Menetapkan Legal Hold',
+            'release_hold': 'Melepas Legal Hold',
         };
         return labels[action] || action;
     },
@@ -205,6 +210,9 @@ export const auditLogService = {
             'user': 'User',
             'surat_distribution': 'Distribusi Surat',
             'autentikasi': 'Autentikasi Alih Media',
+            'file_attachment': 'Lampiran Berkas',
+            'arsip_elektronik': 'Arsip Elektronik',
+            'tunjuk_silang': 'Tunjuk Silang',
         };
         return labels[entityType] || entityType;
     },

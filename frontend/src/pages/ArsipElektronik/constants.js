@@ -6,7 +6,7 @@ export const STATUS_CONFIG = {
     rejected: { label: 'Ditolak', variant: 'destructive', icon: XCircle, color: 'text-red-600' },
 }
 
-export const FORMAT_OPTIONS = ['PDF/A', 'TIFF', 'JPEG', 'PNG', 'DOCX', 'XLSX']
+export const FORMAT_OPTIONS = ['PDF', 'PDF/A', 'TIFF', 'JPEG', 'PNG', 'DOCX', 'XLSX']
 export const MEDIA_OPTIONS = ['kertas', 'mikrofilm', 'digital', 'foto', 'video', 'audio']
 
 export const TABS = [
@@ -23,7 +23,7 @@ export const formatFileSize = (bytes) => {
 }
 
 export const INITIAL_FORM = {
-    arsipId: '', formatFile: 'PDF/A', ukuranFile: '', hashSHA256: '',
-    resolusiDPI: '', jumlahHalaman: '', mediaAsal: 'kertas', mediaTujuan: 'digital',
+    arsipId: '', fileAttachmentId: '', sourceType: 'digitized', scanCategory: 'paper',
+    resolusiDPI: '300', colorDepth: '24', jumlahHalaman: '', mediaAsal: 'kertas', mediaTujuan: 'digital',
     tanggalDigitalisasi: '', alatDigitalisasi: '', softwareDigitalisasi: '', catatanKonversi: '',
 }

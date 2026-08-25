@@ -5,6 +5,48 @@ export const uuidSchema = z.string().uuid('Invalid UUID format');
 export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format');
 export const timestampSchema = z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/));
 
+export type SuratBlobFolder = 'surat-masuk' | 'surat-keluar';
+
+/** Accept only private Vercel Blob locators created for the expected record type. */
+export function privateVercelBlobUrlSchema(folder: SuratBlobFolder) {
+    return z.string()
+        .max(2048, 'File URL is too long')
+        .superRefine((value, ctx) => {
+            try {
+                const url = new URL(value);
+                const decodedPath = decodeURIComponent(url.pathname);
+                const expectedPrefix = `/${folder}/`;
+                const privateBlobSuffix = '.private.blob.vercel-storage.com';
+                const pathSegments = decodedPath.split('/');
+
+                if (
+                    url.protocol !== 'https:' ||
+                    !url.hostname.endsWith(privateBlobSuffix) ||
+                    url.hostname.length <= privateBlobSuffix.length ||
+                    url.port !== '' ||
+                    !decodedPath.startsWith(expectedPrefix) ||
+                    decodedPath.length <= expectedPrefix.length ||
+                    decodedPath.includes('\\') ||
+                    pathSegments.some((segment) => segment === '.' || segment === '..') ||
+                    url.username ||
+                    url.password ||
+                    url.search ||
+                    url.hash
+                ) {
+                    ctx.addIssue({
+                        code: 'custom',
+                        message: `filePath must be a private Vercel Blob URL under ${folder}/`,
+                    });
+                }
+            } catch {
+                ctx.addIssue({
+                    code: 'custom',
+                    message: `filePath must be a private Vercel Blob URL under ${folder}/`,
+                });
+            }
+        });
+}
+
 // Pagination query schema
 export const paginationSchema = z.object({
     page: z.coerce.number().int().positive().optional().default(1),
@@ -35,7 +77,7 @@ export const createSuratMasukSchema = z.object({
     keterangan: z.string().max(2000).optional(),
     linkDokumen: z.string().url().optional().or(z.literal('')),
     // File attachment fields (set by client-side Vercel Blob upload)
-    filePath: z.string().optional(),
+    filePath: privateVercelBlobUrlSchema('surat-masuk').optional(),
     fileOriginalName: z.string().max(255).optional(),
     klasifikasiKode: z.string().max(50).optional(),
     klasifikasiUraian: z.string().max(1000).optional(),
@@ -56,18 +98,23 @@ export const querySuratMasukSchema = paginationSchema.extend({
 });
 
 // Surat Keluar schemas
+// Fields must match database schema in db/schema/surat-keluar.ts.
 export const createSuratKeluarSchema = z.object({
     unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
+    tahun: z.coerce.number().int().min(2000).max(2100).optional(),
+    naskahDinas: z.string().max(100).optional(),
     nomorSurat: z.string().min(1, 'Nomor surat is required').max(255),
     tanggalSurat: dateSchema,
-    tujuan: z.string().min(1, 'Tujuan is required').max(500),
-    perihal: z.string().min(1, 'Perihal is required').max(1000),
-    klasifikasiId: uuidSchema.optional(),
-    sifat: z.enum(['biasa', 'penting', 'rahasia', 'sangat_rahasia']).optional().default('biasa'),
-    lampiran: z.string().max(255).optional(),
-    konseptor: z.string().max(255).optional(),
-    penandatangan: z.string().max(255).optional(),
-    catatan: z.string().max(2000).optional(),
+    perihal: z.string().min(1, 'Perihal is required').max(2000),
+    kepada: z.string().min(1, 'Penerima is required').max(2000),
+    linkDokumen: z.string().url().optional().or(z.literal('')),
+    balasanUntuk: uuidSchema.optional().nullable(),
+    klasifikasiFasilitatifKode: z.string().max(50).optional(),
+    klasifikasiFasilitatif: z.string().max(2000).optional(),
+    klasifikasiSubstantifKode: z.string().max(50).optional(),
+    klasifikasiSubstantif: z.string().max(2000).optional(),
+    filePath: privateVercelBlobUrlSchema('surat-keluar').optional(),
+    fileOriginalName: z.string().max(255).optional(),
 });
 
 export const updateSuratKeluarSchema = createSuratKeluarSchema.partial().omit({ unitKerjaId: true });
@@ -85,7 +132,52 @@ export const querySuratKeluarSchema = paginationSchema.extend({
 });
 
 // Arsip schemas
-export const createArsipSchema = z.object({
+export const retentionTriggerTypeSchema = z.enum([
+    'kegiatan_selesai',
+    'berkas_ditutup',
+    'serah_terima',
+    'penetapan',
+    'lainnya',
+]);
+
+const retentionMetadataFields = {
+    jraKode: z.string().max(50).optional(),
+    jraUraian: z.string().max(2000).optional(),
+    retensiAktif: z.string().max(50).optional(),
+    retensiInaktif: z.string().max(50).optional(),
+    hasilAkhir: z.enum(['Musnah', 'Permanen', 'Dinilai Kembali']).optional(),
+    retentionTriggerType: retentionTriggerTypeSchema.optional(),
+    retentionTriggerLabel: z.string().max(255).optional(),
+    retentionTriggerDate: dateSchema.optional(),
+    retentionTriggerEvidence: z.string().max(4000).optional(),
+    jraVersion: z.string().max(100).optional(),
+    jraReference: z.string().max(2000).optional(),
+};
+
+function validateRetentionTrigger(
+    data: Record<string, unknown>,
+    ctx: z.RefinementCtx,
+) {
+    // A trigger date can only become legally actionable when its event and evidence
+    // are recorded. Existing integrations may omit all trigger fields; those rows are
+    // accepted for compatibility but remain safely outside every disposal candidate list.
+    if (!data.retentionTriggerDate) return;
+
+    const requiredFields = [
+        ['retentionTriggerType', 'Jenis pemicu retensi wajib diisi'],
+        ['retentionTriggerLabel', 'Label pemicu retensi wajib diisi'],
+        ['retentionTriggerEvidence', 'Bukti pemicu retensi wajib diisi'],
+    ] as const;
+
+    for (const [field, message] of requiredFields) {
+        const value = data[field];
+        if (typeof value !== 'string' || value.trim().length === 0) {
+            ctx.addIssue({ code: 'custom', path: [field], message });
+        }
+    }
+}
+
+const baseArsipSchema = z.object({
     unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
     kodeSurat: z.string().min(1, 'Kode surat is required').max(100),
     deskripsi: z.string().min(1, 'Deskripsi is required').max(2000),
@@ -98,9 +190,15 @@ export const createArsipSchema = z.object({
     lokasiPenyimpanan: z.string().max(255).optional(),
     catatan: z.string().max(2000).optional(),
     klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional().default('biasa'),
+    ...retentionMetadataFields,
 });
 
-export const updateArsipSchema = createArsipSchema.partial().omit({ unitKerjaId: true });
+export const createArsipSchema = baseArsipSchema.superRefine(validateRetentionTrigger);
+
+export const updateArsipSchema = baseArsipSchema
+    .partial()
+    .omit({ unitKerjaId: true })
+    .superRefine(validateRetentionTrigger);
 
 export const queryArsipSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -280,9 +378,25 @@ export const removePenyusutanItemsSchema = z.object({
     arsipIds: z.array(uuidSchema).min(1, 'Minimal satu arsip harus dipilih'),
 });
 
+export const legalHoldActionSchema = z.object({
+    unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
+    reason: z.string()
+        .trim()
+        .min(10, 'Alasan legal hold minimal 10 karakter')
+        .max(2000, 'Alasan legal hold maksimal 2000 karakter'),
+});
+
+export const calculateRetentionDatesSchema = z.object({
+    retentionTriggerDate: dateSchema,
+    retensiAktif: z.string().max(50).optional().nullable(),
+    retensiInaktif: z.string().max(50).optional().nullable(),
+});
+
 export type CreatePenyusutan = z.infer<typeof createPenyusutanSchema>;
 export type UpdatePenyusutanStatus = z.infer<typeof updatePenyusutanStatusSchema>;
 export type RemovePenyusutanItems = z.infer<typeof removePenyusutanItemsSchema>;
+export type LegalHoldAction = z.infer<typeof legalHoldActionSchema>;
+export type CalculateRetentionDates = z.infer<typeof calculateRetentionDatesSchema>;
 
 // ==================== Storage Location schemas ====================
 
@@ -306,6 +420,9 @@ export type UpdateStorageLocation = z.infer<typeof updateStorageLocationSchema>;
 // ==================== Archive Lending schemas ====================
 
 export const borrowArchiveSchema = z.object({
+    // Required explicitly for super_admin creates; ignored/overridden for
+    // assigned-unit users by the route.
+    unitKerjaId: z.string().min(1).max(50).optional(),
     lendingType: z.enum(['arsip', 'box']),
     arsipId: uuidSchema.optional(), // Required when lendingType = 'arsip'
     storageLocationId: uuidSchema.optional(), // Required when lendingType = 'box'

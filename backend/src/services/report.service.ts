@@ -3,7 +3,7 @@ import { suratMasuk } from '../db/schema/surat-masuk';
 import { suratKeluar } from '../db/schema/surat-keluar';
 import { arsip } from '../db/schema/arsip';
 import { archiveLending } from '../db/schema';
-import { eq, and, desc, sql, gte, lte, or, isNull } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, or, isNull, isNotNull, inArray } from 'drizzle-orm';
 
 // Types
 export interface ReportFilters {
@@ -15,6 +15,7 @@ export interface ReportFilters {
     tanggalSampai?: string;
     page?: number;
     limit?: number;
+    securityClassifications?: string[] | null;
 }
 
 export interface ArsipReportFilters {
@@ -25,6 +26,7 @@ export interface ArsipReportFilters {
     year?: number;
     page?: number;
     limit?: number;
+    securityClassifications?: string[] | null;
 }
 
 export interface LendingReportFilters {
@@ -37,14 +39,41 @@ export interface LendingReportFilters {
 }
 
 class ReportService {
+    private incomingClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        const normalized = sql<string>`CASE
+            WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+                IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+            THEN 'biasa'
+            ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+        END`;
+        return inArray(normalized, classes);
+    }
+
+    private arsipClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        return inArray(
+            sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+            classes,
+        );
+    }
+
+    private outgoingClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null || classes.includes('terbatas')) return undefined;
+        return sql`false`;
+    }
+
     // ==================== SURAT MASUK REPORTS ====================
     async getSuratMasukReport(filters: ReportFilters) {
-        const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
         const conditions = [
             eq(suratMasuk.unitKerjaId, unitKerjaId),
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+            this.incomingClassificationCondition(securityClassifications),
         ];
 
         if (tanggalDari) {
@@ -84,7 +113,7 @@ class ReportService {
             .limit(limit)
             .offset(offset);
 
-        const stats = await this.getSuratMasukStats(unitKerjaId, year);
+        const stats = await this.getSuratMasukStats(unitKerjaId, year, securityClassifications);
 
         return {
             data,
@@ -98,12 +127,17 @@ class ReportService {
         };
     }
 
-    async getSuratMasukStats(unitKerjaId: string, year?: number) {
+    async getSuratMasukStats(
+        unitKerjaId: string,
+        year?: number,
+        securityClassifications?: string[] | null,
+    ) {
         const currentYear = year || new Date().getFullYear();
         const conditions = [
             eq(suratMasuk.unitKerjaId, unitKerjaId),
             eq(suratMasuk.tahun, currentYear),
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+            this.incomingClassificationCondition(securityClassifications),
         ];
 
         const stats = await db
@@ -140,12 +174,13 @@ class ReportService {
 
     // ==================== SURAT KELUAR REPORTS ====================
     async getSuratKeluarReport(filters: ReportFilters) {
-        const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
         const conditions = [
             eq(suratKeluar.unitKerjaId, unitKerjaId),
             or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+            this.outgoingClassificationCondition(securityClassifications),
         ];
 
         if (tanggalDari) {
@@ -182,7 +217,7 @@ class ReportService {
             .limit(limit)
             .offset(offset);
 
-        const stats = await this.getSuratKeluarStats(unitKerjaId, year);
+        const stats = await this.getSuratKeluarStats(unitKerjaId, year, securityClassifications);
 
         return {
             data,
@@ -196,12 +231,17 @@ class ReportService {
         };
     }
 
-    async getSuratKeluarStats(unitKerjaId: string, year?: number) {
+    async getSuratKeluarStats(
+        unitKerjaId: string,
+        year?: number,
+        securityClassifications?: string[] | null,
+    ) {
         const currentYear = year || new Date().getFullYear();
         const conditions = [
             eq(suratKeluar.unitKerjaId, unitKerjaId),
             eq(suratKeluar.tahun, currentYear),
             or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+            this.outgoingClassificationCondition(securityClassifications),
         ];
 
         const stats = await db
@@ -236,10 +276,13 @@ class ReportService {
 
     // ==================== ARSIP REPORTS ====================
     async getArsipReport(filters: ArsipReportFilters) {
-        const { unitKerjaId, type = 'all', mediaType, daysAhead = 30, year, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, type = 'all', mediaType, daysAhead = 30, year, page = 1, limit = 50, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
-        const conditions = [eq(arsip.unitKerjaId, unitKerjaId)];
+        const conditions = [
+            eq(arsip.unitKerjaId, unitKerjaId),
+            this.arsipClassificationCondition(securityClassifications),
+        ];
 
         const now = new Date();
         const futureDate = new Date();
@@ -247,6 +290,8 @@ class ReportService {
 
         if (type === 'expiring') {
             // Archives expiring within daysAhead days
+            conditions.push(eq(arsip.legalHold, false));
+            conditions.push(isNotNull(arsip.retentionTriggerDate));
             conditions.push(gte(arsip.tanggalKadaluarsa, now.toISOString().split('T')[0]));
             conditions.push(lte(arsip.tanggalKadaluarsa, futureDate.toISOString().split('T')[0]));
         } else if (type === 'permanent') {
@@ -282,6 +327,8 @@ class ReportService {
                 retensiAktif: arsip.retensiAktif,
                 retensiInaktif: arsip.retensiInaktif,
                 tanggalKadaluarsa: arsip.tanggalKadaluarsa,
+                retentionTriggerDate: arsip.retentionTriggerDate,
+                legalHold: arsip.legalHold,
                 hasilAkhir: arsip.hasilAkhir,
                 createdAt: arsip.createdAt,
             })
@@ -291,10 +338,14 @@ class ReportService {
             .limit(limit)
             .offset(offset);
 
-        const stats = await this.getArsipStats(unitKerjaId, year);
+        const filteredData = type === 'expiring'
+            ? data.filter(item => !item.legalHold && item.retentionTriggerDate)
+            : data;
+
+        const stats = await this.getArsipStats(unitKerjaId, year, securityClassifications);
 
         return {
-            data,
+            data: filteredData,
             stats,
             pagination: {
                 page,
@@ -305,8 +356,15 @@ class ReportService {
         };
     }
 
-    async getArsipStats(unitKerjaId: string, year?: number) {
-        const conditions = [eq(arsip.unitKerjaId, unitKerjaId)];
+    async getArsipStats(
+        unitKerjaId: string,
+        year?: number,
+        securityClassifications?: string[] | null,
+    ) {
+        const conditions = [
+            eq(arsip.unitKerjaId, unitKerjaId),
+            this.arsipClassificationCondition(securityClassifications),
+        ];
         if (year) {
             conditions.push(eq(arsip.tahun, year));
         }
@@ -469,12 +527,16 @@ class ReportService {
     }
 
     // ==================== SUMMARY REPORTS ====================
-    async getSummaryReport(unitKerjaId: string, year?: number) {
+    async getSummaryReport(
+        unitKerjaId: string,
+        year?: number,
+        securityClassifications?: string[] | null,
+    ) {
         const currentYear = year || new Date().getFullYear();
 
-        const suratMasukStats = await this.getSuratMasukStats(unitKerjaId, currentYear);
-        const suratKeluarStats = await this.getSuratKeluarStats(unitKerjaId, currentYear);
-        const arsipStats = await this.getArsipStats(unitKerjaId, currentYear);
+        const suratMasukStats = await this.getSuratMasukStats(unitKerjaId, currentYear, securityClassifications);
+        const suratKeluarStats = await this.getSuratKeluarStats(unitKerjaId, currentYear, securityClassifications);
+        const arsipStats = await this.getArsipStats(unitKerjaId, currentYear, securityClassifications);
         const lendingStats = await this.getLendingStats(unitKerjaId);
 
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];

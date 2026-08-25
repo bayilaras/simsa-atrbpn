@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { suratKeluarService } from '../services/surat-keluar.service';
@@ -13,7 +13,17 @@ import {
 import auditLogService from '../services/audit-log.service';
 import { createLogger } from '../utils/logger';
 import { blobStorageService } from '../services/blob-storage.service';
-import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
+import {
+    sanitizeSuratKeluarWithLinks,
+    sanitizeSuratRecord,
+} from '../utils/sanitize-surat-response.js';
+import {
+    allowedSecurityClassifications,
+    isAllowedForClassification,
+} from '../services/record-access.service.js';
+import { fileAttachmentService } from '../services/file-attachment.service.js';
+import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
 const log = createLogger('SuratKeluarRoutes');
 
@@ -22,7 +32,7 @@ const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
-        const allowedTypes = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.zip', '.rar'];
+        const allowedTypes = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'];
         const ext = path.extname(file.originalname).toLowerCase();
         if (allowedTypes.includes(ext)) {
             cb(null, true);
@@ -34,6 +44,22 @@ const upload = multer({
 
 const router = Router();
 
+function resolveListUnitKerjaId(req: AuthRequest, requested?: string): string | null {
+    const scope = resolveRecordUnitScope(req);
+    return scope === null ? requested || null : scope;
+}
+
+function sendValidationFailure(res: Response, issues: Array<{ path: PropertyKey[]; message: string }>) {
+    return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        details: issues.map((issue) => ({
+            field: issue.path.join('.'),
+            message: issue.message,
+        })),
+    });
+}
+
 router.use(authMiddleware);
 
 // GET /api/surat-keluar - List with pagination
@@ -44,7 +70,7 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
         const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, page, limit } = validatedQuery;
 
         // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
-        const unitKerjaId = resolveUnitKerjaId(req) || validatedQuery.unitKerjaId;
+        const unitKerjaId = resolveListUnitKerjaId(req, validatedQuery.unitKerjaId);
 
         const result = await suratKeluarService.findAll({
             unitKerjaId,
@@ -57,9 +83,14 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
             search,
             page,
             limit,
+            securityClassifications: allowedSecurityClassifications(req.user),
         });
 
-        res.json({ success: true, ...result });
+        res.json({
+            success: true,
+            ...result,
+            data: result.data.map((item) => sanitizeSuratRecord(item, 'surat_keluar')),
+        });
     } catch (error) {
         next(error);
     }
@@ -68,7 +99,8 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
 // GET /api/surat-keluar/next-number - Get next number
 router.get('/next-number', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
+        const requestedUnit = typeof req.query.unitKerjaId === 'string' ? req.query.unitKerjaId : undefined;
+        const unitKerjaId = resolveListUnitKerjaId(req, requestedUnit);
         const { tahun } = req.query;
 
         if (!unitKerjaId) {
@@ -90,12 +122,14 @@ router.get('/next-number', async (req: AuthRequest, res, next) => {
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
         // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
-        const unitKerjaId = resolveUnitKerjaId(req);
+        const requestedUnit = typeof req.query.unitKerjaId === 'string' ? req.query.unitKerjaId : undefined;
+        const unitKerjaId = resolveListUnitKerjaId(req, requestedUnit);
         const { tahun } = req.query;
 
         const stats = await suratKeluarService.getStats(
             unitKerjaId,
-            tahun ? Number(tahun) : undefined
+            tahun ? Number(tahun) : undefined,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data: stats });
@@ -108,13 +142,13 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await suratKeluarService.findById(id);
+        const result = await suratKeluarService.findById(id, resolveRecordUnitScope(req));
 
-        if (!result) {
+        if (!result || !isAllowedForClassification(req.user, 'terbatas')) {
             return res.status(404).json({ error: 'Surat keluar not found' });
         }
 
-        res.json({ success: true, data: result });
+        res.json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
     } catch (error) {
         next(error);
     }
@@ -124,13 +158,26 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
 router.post('/',
     canWriteMiddleware(),
     upload.single('file'),
+    fileValidationMiddleware,
     async (req: AuthRequest, res, next) => {
         try {
             const file = req.file;
 
+            const bodyValidation = createSuratKeluarSchema.safeParse(req.body);
+            if (!bodyValidation.success) {
+                return sendValidationFailure(res, bodyValidation.error.issues);
+            }
+
+            if (file && bodyValidation.data.filePath) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Pilih salah satu metode unggah berkas.',
+                });
+            }
+
             // Determine file path — either from client-side Blob upload or server-side upload
-            let filePath: string | null = (req.body.filePath as string) || null;
-            let fileOriginalName: string | null = (req.body.fileOriginalName as string) || null;
+            let filePath: string | null = bodyValidation.data.filePath || null;
+            let fileOriginalName: string | null = bodyValidation.data.fileOriginalName || null;
 
             // If file was uploaded via multipart (legacy), upload to Vercel Blob server-side
             if (file && file.buffer && !filePath) {
@@ -139,6 +186,7 @@ router.post('/',
                         fileName: file.originalname,
                         mimeType: file.mimetype,
                         buffer: file.buffer,
+                        folder: 'surat-keluar',
                     });
                     filePath = `blob:${blobFile.url}`;
                     fileOriginalName = file.originalname;
@@ -149,12 +197,36 @@ router.post('/',
                 }
             }
 
+            const unitScope = resolveRecordUnitScope(req);
+            const serverUnitKerjaId = unitScope === null ? bodyValidation.data.unitKerjaId : unitScope;
+
+            if (!serverUnitKerjaId) {
+                return res.status(403).json({ error: 'Unit kerja pengguna belum ditetapkan.' });
+            }
+
             const result = await suratKeluarService.create({
-                ...req.body,
+                ...bodyValidation.data,
+                unitKerjaId: serverUnitKerjaId,
                 createdBy: req.user?.id,
                 filePath,
                 fileOriginalName,
             });
+
+            if (filePath && fileOriginalName) {
+                try {
+                    await fileAttachmentService.registerExisting({
+                        entityId: result.id,
+                        entityType: 'surat_keluar',
+                        fileName: fileOriginalName,
+                        locator: filePath,
+                        mimeType: file?.mimetype,
+                        buffer: file?.buffer,
+                        uploadedById: req.user?.id,
+                    });
+                } catch (registrationError) {
+                    log.error({ err: registrationError, suratId: result.id }, 'Bitstream registration failed');
+                }
+            }
 
             await auditLogService.logAction({
                 userId: req.user?.id,
@@ -166,7 +238,7 @@ router.post('/',
                 ipAddress: req.ip,
             });
 
-            res.status(201).json({ success: true, data: result });
+            res.status(201).json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error) {
             next(error);
         }
@@ -177,36 +249,38 @@ router.post('/',
 router.put('/:id', validateIdParam(),
     canWriteMiddleware(),
     upload.single('file'),
+    fileValidationMiddleware,
     async (req: AuthRequest, res, next) => {
         try {
             const id = req.params.id as string;
             const file = req.file;
-            const existing = await suratKeluarService.findById(id);
+            const unitScope = resolveRecordUnitScope(req);
+            const existing = await suratKeluarService.findById(id, unitScope);
 
             if (!existing) {
                 return res.status(404).json({ error: 'Surat keluar not found' });
+            }
+            if (existing.isArchived) {
+                return res.status(409).json({
+                    error: 'Surat yang telah diarsipkan bersifat immutable; buat versi/koreksi terkendali.',
+                });
             }
 
             // Validate and strip unknown fields from body
             const bodyValidation = updateSuratKeluarSchema.safeParse(req.body);
 
-            let updateData: any;
-            if (bodyValidation.success) {
-                updateData = bodyValidation.data;
-            } else {
-                // For multipart/form-data, manually pick only known fields
-                const knownFields = ['nomorSurat', 'tanggalSurat', 'tujuan', 'perihal',
-                    'sifat', 'lampiran', 'konseptor', 'penandatangan', 'catatan',
-                    'naskahDinas', 'klasifikasiFasilitatifKode', 'klasifikasiFasilitatif',
-                    'klasifikasiSubstantifKode', 'klasifikasiSubstantif',
-                    'linkDokumen', 'keterangan', 'filePath', 'fileOriginalName'];
-                updateData = {} as any;
-                for (const field of knownFields) {
-                    if (req.body[field] !== undefined && req.body[field] !== '') {
-                        updateData[field] = req.body[field];
-                    }
-                }
+            if (!bodyValidation.success) {
+                return sendValidationFailure(res, bodyValidation.error.issues);
             }
+
+            if (file && bodyValidation.data.filePath) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Pilih salah satu metode unggah berkas.',
+                });
+            }
+
+            const updateData: any = bodyValidation.data;
 
             // If filePath is already provided (from client-side Blob upload), use it directly
             // Otherwise, if a file was uploaded via multipart (legacy), upload to Blob server-side
@@ -216,6 +290,7 @@ router.put('/:id', validateIdParam(),
                         fileName: file.originalname,
                         mimeType: file.mimetype,
                         buffer: file.buffer,
+                        folder: 'surat-keluar',
                     });
                     updateData.filePath = `blob:${blobFile.url}`;
                     updateData.fileOriginalName = file.originalname;
@@ -226,7 +301,40 @@ router.put('/:id', validateIdParam(),
                 }
             }
 
-            const result = await suratKeluarService.update(id, updateData);
+            if (
+                updateData.balasanUntuk &&
+                !(await suratKeluarService.replyTargetExistsInUnit(
+                    updateData.balasanUntuk,
+                    existing.unitKerjaId,
+                ))
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Surat masuk balasan tidak ditemukan pada unit kerja yang sama.',
+                });
+            }
+
+            const result = await suratKeluarService.update(id, updateData, unitScope);
+
+            if (!result) {
+                return res.status(404).json({ error: 'Surat keluar not found' });
+            }
+
+            if (updateData.filePath && updateData.fileOriginalName) {
+                try {
+                    await fileAttachmentService.registerExisting({
+                        entityId: result.id,
+                        entityType: 'surat_keluar',
+                        fileName: updateData.fileOriginalName,
+                        locator: updateData.filePath,
+                        mimeType: file?.mimetype,
+                        buffer: file?.buffer,
+                        uploadedById: req.user?.id,
+                    });
+                } catch (registrationError) {
+                    log.error({ err: registrationError, suratId: result.id }, 'Bitstream registration failed');
+                }
+            }
 
             await auditLogService.logAction({
                 userId: req.user?.id,
@@ -234,18 +342,18 @@ router.put('/:id', validateIdParam(),
                 action: 'update',
                 entityType: 'surat_keluar',
                 entityId: id,
-                changes: { before: existing, after: result, fields: Object.keys(updateData) },
+                changes: {
+                    before: sanitizeSuratRecord(existing, 'surat_keluar'),
+                    after: sanitizeSuratRecord(result, 'surat_keluar'),
+                    fields: Object.keys(updateData),
+                },
                 ipAddress: req.ip,
             });
 
-            res.json({ success: true, data: result });
+            res.json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error: any) {
             log.error({ err: error, message: error?.message, stack: error?.stack }, '[PUT /surat-keluar/:id] Error:');
-            res.status(500).json({
-                success: false,
-                error: 'Gagal memperbarui surat keluar',
-                message: error?.message || 'Unknown error',
-            });
+            next(error);
         }
     }
 );
@@ -254,8 +362,17 @@ router.put('/:id', validateIdParam(),
 router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const existing = await suratKeluarService.findById(id);
-        const result = await suratKeluarService.delete(id);
+        const unitScope = resolveRecordUnitScope(req);
+        const existing = await suratKeluarService.findById(id, unitScope);
+        if (!existing) {
+            return res.status(404).json({ error: 'Surat keluar not found' });
+        }
+        if (existing.isArchived) {
+            return res.status(409).json({
+                error: 'Surat yang telah diarsipkan tidak dapat dihapus melalui CRUD.',
+            });
+        }
+        const result = await suratKeluarService.delete(id, req.user?.id, unitScope);
 
         if (!result) {
             return res.status(404).json({ error: 'Surat keluar not found' });
@@ -281,6 +398,12 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
 router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
+        const existing = await suratKeluarService.findById(id, resolveRecordUnitScope(req));
+
+        if (!existing) {
+            return res.status(404).json({ error: 'Surat keluar not found' });
+        }
+
         const { arsipService } = await import('../services/arsip.service');
 
         const result = await arsipService.archiveFromSuratKeluar(id, {
@@ -311,7 +434,7 @@ router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, 
 router.post('/:id/archive', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await suratKeluarService.archive(id);
+        const result = await suratKeluarService.archive(id, resolveRecordUnitScope(req));
 
         if (!result) {
             return res.status(404).json({ error: 'Surat keluar not found' });
@@ -327,7 +450,11 @@ router.post('/:id/archive', canWriteMiddleware(), async (req: AuthRequest, res, 
             ipAddress: req.ip,
         });
 
-        res.json({ success: true, data: result, message: 'Surat keluar archived successfully' });
+        res.json({
+            success: true,
+            data: sanitizeSuratRecord(result, 'surat_keluar'),
+            message: 'Surat keluar archived successfully',
+        });
     } catch (error) {
         next(error);
     }
@@ -337,8 +464,20 @@ router.post('/:id/archive', canWriteMiddleware(), async (req: AuthRequest, res, 
 router.get('/:id/source', async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const source = await suratKeluarService.getSourceSuratMasuk(id);
-        res.json({ success: true, data: source });
+        const unitScope = resolveRecordUnitScope(req);
+        const existing = await suratKeluarService.findById(id, unitScope);
+
+        if (!existing || !isAllowedForClassification(req.user, 'terbatas')) {
+            return res.status(404).json({ error: 'Surat keluar not found' });
+        }
+
+        const source = await suratKeluarService.getSourceSuratMasuk(id, unitScope);
+        res.json({
+            success: true,
+            data: source && isAllowedForClassification(req.user, source.sifatSurat)
+                ? sanitizeSuratRecord(source, 'surat_masuk')
+                : null,
+        });
     } catch (error) {
         next(error);
     }
@@ -348,13 +487,20 @@ router.get('/:id/source', async (req: AuthRequest, res, next) => {
 router.get('/:id/with-links', async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await suratKeluarService.findByIdWithLinks(id);
+        const result = await suratKeluarService.findByIdWithLinks(id, resolveRecordUnitScope(req));
 
-        if (!result) {
+        if (!result || !isAllowedForClassification(req.user, 'terbatas')) {
             return res.status(404).json({ error: 'Surat keluar not found' });
         }
 
-        res.json({ success: true, data: result });
+        const sanitized = sanitizeSuratKeluarWithLinks(result);
+        if (
+            sanitized.sourceSuratMasuk
+            && !isAllowedForClassification(req.user, result.sourceSuratMasuk?.sifatSurat)
+        ) {
+            sanitized.sourceSuratMasuk = null;
+        }
+        res.json({ success: true, data: sanitized });
     } catch (error) {
         next(error);
     }

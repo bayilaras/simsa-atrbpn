@@ -7,8 +7,22 @@ import { canAccessUnit, Role } from '../config/permissions';
 import auditLogService from '../services/audit-log.service';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createDistributionSchema, rejectDistributionSchema } from '../validators/schemas';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope';
+import { sanitizeSuratRecord } from '../utils/sanitize-surat-response';
+import {
+    allowedSecurityClassifications,
+    isAllowedForClassification,
+    recordAccessService,
+} from '../services/record-access.service';
 
 const router = Router();
+
+async function canAccessDistributionRecord(req: AuthRequest, id: string) {
+    const record = await distributionService.findById(id, resolveRecordUnitScope(req));
+    return record && isAllowedForClassification(req.user, record.surat.sifatSurat)
+        ? record
+        : null;
+}
 
 // Helper to get IP as string
 const getIpAddress = (req: AuthRequest): string | undefined => {
@@ -53,7 +67,7 @@ router.get('/inbox', async (req: AuthRequest, res, next) => {
             status: status as string,
             page: page ? parseInt(page as string) : 1,
             limit: limit ? parseInt(limit as string) : 20,
-        });
+        }, allowedSecurityClassifications(req.user));
 
         res.json({ success: true, ...result });
     } catch (error) {
@@ -79,7 +93,7 @@ router.get('/outbox', async (req: AuthRequest, res, next) => {
             status: status as string,
             page: page ? parseInt(page as string) : 1,
             limit: limit ? parseInt(limit as string) : 20,
-        });
+        }, allowedSecurityClassifications(req.user));
 
         res.json({ success: true, ...result });
     } catch (error) {
@@ -114,7 +128,17 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 router.get('/surat/:suratId', async (req: AuthRequest, res, next) => {
     try {
         const suratId = req.params.suratId as string;
-        const history = await distributionService.getHistoryBySurat(suratId);
+        const sourceAccess = await recordAccessService.check(req.user, 'surat_masuk', suratId);
+        if (!sourceAccess.exists || !sourceAccess.allowed) {
+            return res.status(404).json({ error: 'Distribution history not found' });
+        }
+        const history = await distributionService.getHistoryBySurat(
+            suratId,
+            resolveRecordUnitScope(req),
+        );
+        if (history.length === 0) {
+            return res.status(404).json({ error: 'Distribution history not found' });
+        }
         res.json({ success: true, data: history });
     } catch (error) {
         next(error);
@@ -128,13 +152,19 @@ router.get('/surat/:suratId', async (req: AuthRequest, res, next) => {
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await distributionService.findById(id);
+        const result = await distributionService.findById(id, resolveRecordUnitScope(req));
 
-        if (!result) {
+        if (!result || !isAllowedForClassification(req.user, result.surat.sifatSurat)) {
             return res.status(404).json({ error: 'Distribution not found' });
         }
 
-        res.json({ success: true, data: result });
+        res.json({
+            success: true,
+            data: {
+                ...result,
+                surat: sanitizeSuratRecord(result.surat, 'surat_masuk'),
+            },
+        });
     } catch (error) {
         next(error);
     }
@@ -159,6 +189,11 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
             return res.status(403).json({ error: 'Anda tidak berwenang mendistribusikan surat atas nama unit tersebut' });
         }
 
+        const sourceAccess = await recordAccessService.check(req.user, 'surat_masuk', suratMasukId);
+        if (!sourceAccess.exists || !sourceAccess.allowed || sourceAccess.unitKerjaId !== sourceUnitId) {
+            return res.status(404).json({ error: 'Data not found' });
+        }
+
         const result = await distributionService.distribute({
             suratMasukId,
             sourceUnitId,
@@ -180,6 +215,10 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
 
         res.status(201).json({ success: true, data: result });
     } catch (error: any) {
+        if (error.message.includes('not found')) {
+            return res.status(404).json({ error: 'Data not found' });
+        }
+
         if (error.message.includes('sudah didistribusikan')) {
             return res.status(400).json({ error: error.message });
         }
@@ -194,7 +233,14 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
 router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await distributionService.receive(id, req.user?.id || '', resolveUnitKerjaId(req));
+        if (!(await canAccessDistributionRecord(req, id))) {
+            return res.status(404).json({ error: 'Distribution not found' });
+        }
+        const result = await distributionService.receive(
+            id,
+            req.user?.id || '',
+            resolveRecordUnitScope(req),
+        );
 
         await auditLogService.logAction({
             userId: req.user?.id,
@@ -208,7 +254,10 @@ router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, n
 
         res.json({ success: true, data: result });
     } catch (error: any) {
-        if (error.message.includes('not found') || error.message.includes('sudah')) {
+        if (error.message.includes('not found')) {
+            return res.status(404).json({ error: 'Distribution not found' });
+        }
+        if (error.message.includes('sudah')) {
             return res.status(400).json({ error: error.message });
         }
         next(error);
@@ -222,7 +271,10 @@ router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, n
 router.put('/:id/process', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await distributionService.process(id, resolveUnitKerjaId(req));
+        if (!(await canAccessDistributionRecord(req, id))) {
+            return res.status(404).json({ error: 'Distribution not found' });
+        }
+        const result = await distributionService.process(id, resolveRecordUnitScope(req));
 
         await auditLogService.logAction({
             userId: req.user?.id,
@@ -236,7 +288,10 @@ router.put('/:id/process', canWriteMiddleware(), async (req: AuthRequest, res, n
 
         res.json({ success: true, data: result });
     } catch (error: any) {
-        if (error.message.includes('not found') || error.message.includes('sudah')) {
+        if (error.message.includes('not found')) {
+            return res.status(404).json({ error: 'Distribution not found' });
+        }
+        if (error.message.includes('sudah') || error.message.includes('diproses')) {
             return res.status(400).json({ error: error.message });
         }
         next(error);
@@ -255,8 +310,15 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
         if (!reason) {
             return res.status(400).json({ error: 'Alasan penolakan wajib diisi' });
         }
+        if (!(await canAccessDistributionRecord(req, id))) {
+            return res.status(404).json({ error: 'Distribution not found' });
+        }
 
-        const result = await distributionService.reject(id, reason, resolveUnitKerjaId(req));
+        const result = await distributionService.reject(
+            id,
+            reason,
+            resolveRecordUnitScope(req),
+        );
 
         await auditLogService.logAction({
             userId: req.user?.id,
@@ -270,7 +332,10 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
 
         res.json({ success: true, data: result });
     } catch (error: any) {
-        if (error.message.includes('not found') || error.message.includes('tidak bisa')) {
+        if (error.message.includes('not found')) {
+            return res.status(404).json({ error: 'Distribution not found' });
+        }
+        if (error.message.includes('tidak bisa')) {
             return res.status(400).json({ error: error.message });
         }
         next(error);

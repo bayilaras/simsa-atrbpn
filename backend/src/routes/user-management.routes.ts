@@ -1,11 +1,8 @@
-import { Router, Request, Response } from 'express';
-import { auth } from '../config/auth';
-import { db } from '../config/database';
-import { users } from '../db/schema';
-import { eq } from 'drizzle-orm';
-import userManagementService, { ADMIN_ROLES } from '../services/user-management.service';
+import { Router, Request, Response, NextFunction } from 'express';
+import userManagementService from '../services/user-management.service';
 import { listUsersSchema, updateUserSchema, userIdParamSchema, createUserSchema } from '../validations/user-management.validation';
 import auditLogService from '../services/audit-log.service';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
 
@@ -16,39 +13,26 @@ const router = Router();
 // Apply rate limiting to user management operations
 router.use(sensitiveLimiter);
 
-// Middleware to check if user is admin
-async function requireAdmin(req: Request, res: Response, next: any) {
-    try {
-        const session = await auth.api.getSession({
-            headers: req.headers as any,
+// Authentication is deliberately centralized. Besides validating the Better Auth
+// session, authMiddleware rejects deactivated and not-yet-provisioned `user`
+// accounts before this module evaluates authorization.
+router.use(authMiddleware);
+
+function requireSuperAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+    if (req.user?.role !== 'super_admin') {
+        return res.status(403).json({
+            error: 'Access denied',
+            message: 'Super admin access required'
         });
-
-        if (!session) {
-            return res.status(401).json({ error: 'Not authenticated' });
-        }
-
-        // Get user role
-        const [currentUser] = await db
-            .select({ role: users.role, email: users.email })
-            .from(users)
-            .where(eq(users.id, session.user.id))
-            .limit(1);
-
-        if (!currentUser || !ADMIN_ROLES.includes(currentUser.role as any)) {
-            return res.status(403).json({
-                error: 'Access denied',
-                message: 'Super admin access required'
-            });
-        }
-
-        // Attach user to request
-        (req as any).currentUser = { id: session.user.id, role: currentUser.role, email: currentUser.email };
-        next();
-    } catch (error) {
-        log.error({ err: error }, 'Auth check error:');
-        res.status(500).json({ error: 'Internal server error' });
     }
+
+    // Preserve the existing handler contract while sourcing identity only from the
+    // centralized middleware, never from a second session/database implementation.
+    (req as any).currentUser = req.user;
+    next();
 }
+
+router.use(requireSuperAdmin);
 
 /**
  * @swagger
@@ -91,7 +75,7 @@ async function requireAdmin(req: Request, res: Response, next: any) {
  *       200:
  *         description: List of users with pagination
  */
-router.get('/', requireAdmin, async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
     try {
         const parseResult = listUsersSchema.safeParse(req.query);
         if (!parseResult.success) {
@@ -147,7 +131,7 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
  *       400:
  *         description: Validation error or email already exists
  */
-router.post('/', requireAdmin, async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
     try {
         const bodyResult = createUserSchema.safeParse(req.body);
         if (!bodyResult.success) {
@@ -199,7 +183,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
  *       200:
  *         description: List of available roles
  */
-router.get('/roles', requireAdmin, async (req: Request, res: Response) => {
+router.get('/roles', async (req: Request, res: Response) => {
     try {
         const roles = userManagementService.getRoles();
         res.json({ success: true, data: roles });
@@ -221,7 +205,7 @@ router.get('/roles', requireAdmin, async (req: Request, res: Response) => {
  *       200:
  *         description: List of unit kerja
  */
-router.get('/unit-kerja', requireAdmin, async (req: Request, res: Response) => {
+router.get('/unit-kerja', async (req: Request, res: Response) => {
     try {
         const unitKerjaList = await userManagementService.listUnitKerja();
         res.json({ success: true, data: unitKerjaList });
@@ -252,7 +236,7 @@ router.get('/unit-kerja', requireAdmin, async (req: Request, res: Response) => {
  *       404:
  *         description: User not found
  */
-router.get('/:userId', requireAdmin, async (req: Request, res: Response) => {
+router.get('/:userId', async (req: Request, res: Response) => {
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);
         if (!parseResult.success) {
@@ -317,7 +301,7 @@ router.get('/:userId', requireAdmin, async (req: Request, res: Response) => {
  *       200:
  *         description: User updated successfully
  */
-router.put('/:userId', requireAdmin, async (req: Request, res: Response) => {
+router.put('/:userId', async (req: Request, res: Response) => {
     try {
         const paramResult = userIdParamSchema.safeParse(req.params);
         if (!paramResult.success) {
@@ -397,7 +381,7 @@ router.put('/:userId', requireAdmin, async (req: Request, res: Response) => {
  *       200:
  *         description: User deactivated successfully
  */
-router.delete('/:userId', requireAdmin, async (req: Request, res: Response) => {
+router.delete('/:userId', async (req: Request, res: Response) => {
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);
         if (!parseResult.success) {

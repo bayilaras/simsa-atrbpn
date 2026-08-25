@@ -173,7 +173,7 @@ export default function SuratMasukDetail() {
                     nomorSurat: surat.nomorSurat,
                     perihal: surat.perihal,
                 }}
-                sourceUnitId={user?.unitKerjaId || 'ditjen'}
+                sourceUnitId={user?.unitKerjaId || ''}
                 onSuccess={() => {
                     setDistributeDialogOpen(false)
                     toast({

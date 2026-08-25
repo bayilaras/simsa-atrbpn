@@ -6,8 +6,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, AlertTriangle, FileText, Download, Archive, Clock, CheckCircle2, XCircle, Calendar, Trash2, Eye, Filter, Printer, Scale, History } from 'lucide-react'
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Loader2, AlertTriangle, FileText, Download, Archive, Clock, CheckCircle2, XCircle, Calendar, Trash2, Eye, Filter, Printer, Scale, History, Lock, Unlock } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { useToast } from '@/hooks/use-toast'
 import retentionService from '@/services/retention.service'
 import { format, parseISO } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
@@ -29,7 +32,8 @@ const HASIL_AKHIR_OPTIONS = {
 
 export default function RetentionManagement() {
     const { user } = useAuth()
-    const unitKerjaId = user?.unitKerjaId || 'ditjen'
+    const { toast } = useToast()
+    const unitKerjaId = user?.unitKerjaId || ''
 
     const [summary, setSummary] = useState(null)
     const [candidates, setCandidates] = useState({ data: [], summary: {}, pagination: {} })
@@ -44,6 +48,12 @@ export default function RetentionManagement() {
     const [reportDialogOpen, setReportDialogOpen] = useState(false)
     const [reportData, setReportData] = useState(null)
     const [generatingReport, setGeneratingReport] = useState(false)
+    const [holds, setHolds] = useState([])
+    const [holdDialogOpen, setHoldDialogOpen] = useState(false)
+    const [holdTarget, setHoldTarget] = useState(null)
+    const [holdMode, setHoldMode] = useState('hold')
+    const [holdReason, setHoldReason] = useState('')
+    const [holdSaving, setHoldSaving] = useState(false)
 
     // Fetch summary
     const fetchSummary = useCallback(async () => {
@@ -72,14 +82,23 @@ export default function RetentionManagement() {
         }
     }, [unitKerjaId, statusFilter, hasilAkhirFilter, page])
 
+    const fetchHolds = useCallback(async () => {
+        try {
+            const res = await retentionService.getHolds(unitKerjaId)
+            setHolds(res.data || [])
+        } catch (error) {
+            console.error('Error fetching legal holds:', error)
+        }
+    }, [unitKerjaId])
+
     useEffect(() => {
         const init = async () => {
             setLoading(true)
-            await Promise.all([fetchSummary(), fetchCandidates()])
+            await Promise.all([fetchSummary(), fetchCandidates(), fetchHolds()])
             setLoading(false)
         }
         init()
-    }, [fetchSummary, fetchCandidates])
+    }, [fetchSummary, fetchCandidates, fetchHolds])
 
     const handleSelectArchive = (id, checked) => {
         if (checked) {
@@ -108,8 +127,47 @@ export default function RetentionManagement() {
             setReportDialogOpen(true)
         } catch (error) {
             console.error('Error generating report:', error)
+            toast({ title: 'Gagal membuat berita acara', description: error.message, variant: 'destructive' })
         } finally {
             setGeneratingReport(false)
+        }
+    }
+
+    const openHoldDialog = (archiveRecord, mode) => {
+        setHoldTarget(archiveRecord)
+        setHoldMode(mode)
+        setHoldReason('')
+        setHoldDialogOpen(true)
+    }
+
+    const handleHoldAction = async () => {
+        if (!holdTarget || holdReason.trim().length < 10) {
+            toast({
+                title: 'Alasan belum lengkap',
+                description: 'Alasan legal hold atau pelepasan minimal 10 karakter.',
+                variant: 'destructive',
+            })
+            return
+        }
+
+        try {
+            setHoldSaving(true)
+            if (holdMode === 'hold') {
+                await retentionService.placeLegalHold(holdTarget.id, unitKerjaId, holdReason.trim())
+            } else {
+                await retentionService.releaseLegalHold(holdTarget.id, unitKerjaId, holdReason.trim())
+            }
+            setHoldDialogOpen(false)
+            setSelectedArchives(prev => prev.filter(id => id !== holdTarget.id))
+            await Promise.all([fetchSummary(), fetchCandidates(), fetchHolds()])
+            toast({
+                title: holdMode === 'hold' ? 'Legal hold diterapkan' : 'Legal hold dilepas',
+                description: 'Status dan alasannya telah dicatat pada jejak audit.',
+            })
+        } catch (error) {
+            toast({ title: 'Perubahan legal hold gagal', description: error.message, variant: 'destructive' })
+        } finally {
+            setHoldSaving(false)
         }
     }
 
@@ -158,6 +216,9 @@ export default function RetentionManagement() {
                             <th>Jumlah</th>
                             <th>Retensi Aktif</th>
                             <th>Retensi Inaktif</th>
+                            <th>Pemicu Retensi</th>
+                            <th>Bukti Pemicu</th>
+                            <th>Versi/Referensi JRA</th>
                             <th>Hasil Akhir</th>
                             <th>Keterangan</th>
                         </tr>
@@ -173,6 +234,9 @@ export default function RetentionManagement() {
                                 <td>${a.jumlah}</td>
                                 <td>${a.retensiAktif}</td>
                                 <td>${a.retensiInaktif}</td>
+                                <td>${a.retentionTriggerLabel} (${a.retentionTriggerDate})</td>
+                                <td>${a.retentionTriggerEvidence}</td>
+                                <td>${a.jraVersion} / ${a.jraReference}</td>
                                 <td>${a.hasilAkhir}</td>
                                 <td>${a.keterangan}</td>
                             </tr>
@@ -350,6 +414,65 @@ export default function RetentionManagement() {
                 </div>
             )}
 
+            {(summary?.summary?.missingTrigger > 0 || summary?.summary?.held > 0) && (
+                <Alert className="border-amber-200 bg-amber-50/60 dark:bg-amber-500/10">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertTitle>Kontrol retensi aman</AlertTitle>
+                    <AlertDescription>
+                        {summary?.summary?.missingTrigger || 0} arsip belum memiliki pemicu retensi dan {summary?.summary?.held || 0} arsip sedang legal hold. Keduanya dikeluarkan dari kandidat penyusutan.
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            <Card className="border-amber-200/70 shadow-sm">
+                <CardHeader className="pb-3 bg-amber-50/40 dark:bg-amber-500/10">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="text-base font-semibold flex items-center gap-2">
+                                <Lock className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                                Legal Hold Aktif
+                            </CardTitle>
+                            <CardDescription className="text-xs mt-1">
+                                Arsip di bawah sengketa, audit, pemeriksaan, atau kewajiban hukum ditangguhkan dari penyusutan.
+                            </CardDescription>
+                        </div>
+                        <Badge variant="outline" className="bg-card">{holds.length} arsip</Badge>
+                    </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                    {holds.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-8">Tidak ada legal hold aktif.</p>
+                    ) : (
+                        <Table responsive>
+                            <TableHeader className="bg-muted/40">
+                                <TableRow>
+                                    <TableHead>Nomor Berkas</TableHead>
+                                    <TableHead>Uraian</TableHead>
+                                    <TableHead>Alasan Hold</TableHead>
+                                    <TableHead>Diterapkan</TableHead>
+                                    <TableHead className="text-right">Aksi</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {holds.map(arch => (
+                                    <TableRow key={arch.id}>
+                                        <TableCell data-label="Nomor Berkas" className="font-mono text-xs">{arch.nomorBerkas || '-'}</TableCell>
+                                        <TableCell data-label="Uraian" className="max-w-xs truncate text-sm">{arch.uraianBerkas || arch.uraianItem || '-'}</TableCell>
+                                        <TableCell data-label="Alasan Hold" className="max-w-sm text-xs">{arch.legalHoldReason || '-'}</TableCell>
+                                        <TableCell data-label="Diterapkan" className="text-xs text-muted-foreground">{formatDate(arch.legalHoldPlacedAt)}</TableCell>
+                                        <TableCell data-label="Aksi" className="text-right">
+                                            <Button variant="outline" size="sm" onClick={() => openHoldDialog(arch, 'release')}>
+                                                <Unlock className="h-3.5 w-3.5 mr-1.5" /> Lepas Hold
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
+
             {/* Candidates Table */}
             <Card className="border-border/60 shadow-sm">
                 <CardHeader className="pb-4 bg-muted/20">
@@ -444,9 +567,10 @@ export default function RetentionManagement() {
                                     <TableHead className="w-[150px]">Nomor Berkas</TableHead>
                                     <TableHead className="w-[100px]">Kode</TableHead>
                                     <TableHead>Uraian</TableHead>
+                                    <TableHead className="w-[180px]">Pemicu Retensi</TableHead>
                                     <TableHead className="w-[150px]">Tgl Kadaluarsa</TableHead>
                                     <TableHead className="w-[120px]">Hasil Akhir</TableHead>
-                                    <TableHead className="w-[200px]">Keterangan</TableHead>
+                                    <TableHead className="w-[110px] text-right">Aksi</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -465,6 +589,10 @@ export default function RetentionManagement() {
                                         <TableCell data-label="Uraian" className="max-w-xs truncate text-sm" title={arch.uraianBerkas}>
                                             {arch.uraianBerkas || arch.uraianItem || '-'}
                                         </TableCell>
+                                        <TableCell data-label="Pemicu Retensi" className="text-xs">
+                                            <p className="font-medium truncate max-w-[170px]" title={arch.retentionTriggerLabel}>{arch.retentionTriggerLabel || '-'}</p>
+                                            <p className="text-muted-foreground">{formatDate(arch.retentionTriggerDate)}</p>
+                                        </TableCell>
                                         <TableCell data-label="Tgl Kadaluarsa" className="text-xs text-muted-foreground">
                                             {formatDate(arch.tanggalKadaluarsa)}
                                         </TableCell>
@@ -480,7 +608,16 @@ export default function RetentionManagement() {
                                                 <span className="text-muted-foreground text-xs">-</span>
                                             )}
                                         </TableCell>
-                                        <TableCell data-label="Keterangan" className="max-w-xs truncate text-xs text-muted-foreground">{arch.keterangan || '-'}</TableCell>
+                                        <TableCell data-label="Aksi" className="text-right">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => openHoldDialog(arch, 'hold')}
+                                                title="Terapkan legal hold"
+                                            >
+                                                <Lock className="h-3.5 w-3.5 mr-1.5" /> Hold
+                                            </Button>
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -517,6 +654,55 @@ export default function RetentionManagement() {
                     </div>
                 )}
             </Card>
+
+            <Dialog open={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            {holdMode === 'hold' ? <Lock className="h-5 w-5 text-amber-600" /> : <Unlock className="h-5 w-5 text-emerald-600" />}
+                            {holdMode === 'hold' ? 'Terapkan Legal Hold' : 'Lepas Legal Hold'}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {holdMode === 'hold'
+                                ? 'Legal hold menghentikan arsip ini dari seluruh kandidat dan workflow penyusutan.'
+                                : 'Pelepasan mengaktifkan kembali evaluasi retensi. Alasan pelepasan akan diaudit.'}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2">
+                        <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                            <p className="font-medium">{holdTarget?.nomorBerkas || 'Arsip'}</p>
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                {holdTarget?.uraianBerkas || holdTarget?.uraianItem || '-'}
+                            </p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="legal-hold-reason">
+                                {holdMode === 'hold' ? 'Alasan legal hold' : 'Alasan pelepasan'} <span className="text-red-500">*</span>
+                            </Label>
+                            <Textarea
+                                id="legal-hold-reason"
+                                value={holdReason}
+                                onChange={(event) => setHoldReason(event.target.value)}
+                                placeholder={holdMode === 'hold'
+                                    ? 'Contoh: Dokumen diperlukan untuk pemeriksaan yang masih berlangsung...'
+                                    : 'Contoh: Pemeriksaan telah selesai berdasarkan surat...'}
+                                className="min-h-[110px]"
+                                maxLength={2000}
+                            />
+                            <p className="text-xs text-muted-foreground">Minimal 10 karakter; identitas pengguna, waktu, dan alasan dicatat dalam audit.</p>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setHoldDialogOpen(false)} disabled={holdSaving}>Batal</Button>
+                        <Button onClick={handleHoldAction} disabled={holdSaving || holdReason.trim().length < 10}>
+                            {holdSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            {holdMode === 'hold' ? 'Terapkan Hold' : 'Lepas Hold'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Report Preview Dialog */}
             <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
@@ -557,6 +743,8 @@ export default function RetentionManagement() {
                                                 <TableHead className="text-black font-bold border-r">Nomor Berkas</TableHead>
                                                 <TableHead className="text-black font-bold border-r">Kode</TableHead>
                                                 <TableHead className="text-black font-bold border-r">Uraian</TableHead>
+                                                <TableHead className="text-black font-bold border-r">Pemicu Retensi</TableHead>
+                                                <TableHead className="text-black font-bold border-r">Referensi JRA</TableHead>
                                                 <TableHead className="text-black font-bold">Hasil Akhir</TableHead>
                                             </TableRow>
                                         </TableHeader>
@@ -567,6 +755,8 @@ export default function RetentionManagement() {
                                                     <TableCell data-label="Nomor Berkas" className="border-r py-2">{a.nomorBerkas}</TableCell>
                                                     <TableCell data-label="Kode" className="border-r py-2">{a.kodeKlasifikasi}</TableCell>
                                                     <TableCell data-label="Uraian" className="border-r py-2 max-w-xs truncate">{a.uraian}</TableCell>
+                                                    <TableCell data-label="Pemicu Retensi" className="border-r py-2">{a.retentionTriggerLabel}<br />{a.retentionTriggerDate}</TableCell>
+                                                    <TableCell data-label="Referensi JRA" className="border-r py-2">{a.jraVersion}<br />{a.jraReference}</TableCell>
                                                     <TableCell data-label="Hasil Akhir" className="py-2">{a.hasilAkhir}</TableCell>
                                                 </TableRow>
                                             ))}

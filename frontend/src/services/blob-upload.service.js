@@ -26,7 +26,9 @@ export async function uploadFileToBlob(file, { folder = 'uploads', onProgress } 
     const pathname = `${folder}/${file.name}`;
 
     const blob = await upload(pathname, file, {
-        access: 'public',
+        // The returned URL is an object locator, not a public download link.
+        // Reads are proxied through the authenticated /api/files endpoints.
+        access: 'private',
         handleUploadUrl: '/api/client-upload',
         multipart: file.size > 4 * 1024 * 1024, // Use multipart for files > 4MB
         onUploadProgress: onProgress,

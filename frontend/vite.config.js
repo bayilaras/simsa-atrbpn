@@ -1,8 +1,11 @@
 import path from "path"
+import { fileURLToPath } from "node:url"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
+
+const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -66,20 +69,11 @@ export default defineConfig({
             handler: 'NetworkOnly'
           },
           {
-            // Cache API responses with NetworkFirst strategy
+            // Records, audit logs, reports and document metadata are authenticated
+            // and may be classified. Never persist API responses in a service-worker
+            // cache on a shared workstation.
             urlPattern: /\/api\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 // 1 hour
-              },
-              cacheableResponse: {
-                statuses: [200]
-              },
-              networkTimeoutSeconds: 10
-            }
+            handler: 'NetworkOnly'
           },
           {
             // Cache images
@@ -94,8 +88,8 @@ export default defineConfig({
             }
           }
         ],
-        // Don't cache the auth endpoints
-        navigateFallbackDenylist: [/^\/api\/auth/],
+        // API URLs are never navigation fallbacks or precache candidates.
+        navigateFallbackDenylist: [/^\/api\//],
         // Precache important static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}']
       },
@@ -107,7 +101,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(currentDirectory, "./src"),
     },
   },
   server: {

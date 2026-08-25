@@ -62,6 +62,14 @@ const UNIT_PENGOLAH_OPTIONS = [
     { value: 'Dit. KTPP', label: 'Dit. KTPP' },
 ]
 
+const RETENTION_TRIGGER_OPTIONS = [
+    { value: 'kegiatan_selesai', label: 'Kegiatan selesai' },
+    { value: 'berkas_ditutup', label: 'Berkas ditutup' },
+    { value: 'serah_terima', label: 'Serah terima' },
+    { value: 'penetapan', label: 'Penetapan/keputusan' },
+    { value: 'lainnya', label: 'Peristiwa lainnya' },
+]
+
 const buildFormData = ({ nomorSurat, klasifikasiKode, perihal }) => ({
     nomorBerkas: nomorSurat || '',
     kodeKlasifikasi: klasifikasiKode || '',
@@ -76,6 +84,12 @@ const buildFormData = ({ nomorSurat, klasifikasiKode, perihal }) => ({
     retensiAktif: '',
     retensiInaktif: '',
     hasilAkhir: '',
+    retentionTriggerType: '',
+    retentionTriggerLabel: '',
+    retentionTriggerDate: '',
+    retentionTriggerEvidence: '',
+    jraVersion: '',
+    jraReference: '',
     // Keamanan & PIC
     klasifikasiKeamanan: 'biasa',
     personInCharge: '',
@@ -96,11 +110,12 @@ const buildItems = ({ perihal, tanggalSurat }) => ([
 ])
 
 // Section Header Component with Dashboard Theme Colors
-function SectionHeader({ number, title, icon: Icon, colorClass = "text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-500/15 border-teal-100" }) {
+function SectionHeader({ number, title, icon, colorClass = "text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-500/15 border-teal-100" }) {
+    const HeaderIcon = icon
     return (
         <div className={`flex items-center gap-3 pb-3 border-b-2 ${colorClass.split(' ')[2]}`}>
             <div className={`flex items-center justify-center w-8 h-8 rounded-full ${colorClass.split(' ')[1]} ${colorClass.split(' ')[0]}`}>
-                <Icon className="h-4 w-4" />
+                <HeaderIcon className="h-4 w-4" />
             </div>
             <h3 className={`${colorClass.split(' ')[0]} font-semibold text-base`}>
                 {number}. {title}
@@ -129,11 +144,11 @@ function FormField({ label, required, hint, children, icon: Icon }) {
 export function ArchiveDialog({
     open,
     onOpenChange,
-    suratType,
     suratData,
     onArchive
 }) {
     const [loading, setLoading] = useState(false)
+    const [formError, setFormError] = useState('')
 
     const { nomorSurat, klasifikasiKode, perihal, tanggalSurat } = suratData || {}
 
@@ -148,6 +163,7 @@ export function ArchiveDialog({
         if (!open) return
         setFormData(buildFormData({ nomorSurat, klasifikasiKode, perihal }))
         setItems(buildItems({ perihal, tanggalSurat }))
+        setFormError('')
     }, [open, nomorSurat, klasifikasiKode, perihal, tanggalSurat])
 
     const handleChange = (field, value) => {
@@ -186,6 +202,18 @@ export function ArchiveDialog({
 
     const handleSubmit = async (e) => {
         e.preventDefault()
+        const retentionConfigured = Boolean(formData.retensiAktif || formData.retensiInaktif)
+        if (retentionConfigured && (
+            !formData.retentionTriggerType ||
+            !formData.retentionTriggerLabel.trim() ||
+            !formData.retentionTriggerDate ||
+            !formData.retentionTriggerEvidence.trim()
+        )) {
+            setFormError('Lengkapi jenis, label, tanggal, dan bukti pemicu retensi. Tanggal surat/arsip tidak digunakan sebagai pemicu otomatis.')
+            return
+        }
+
+        setFormError('')
         setLoading(true)
         try {
             // Flatten items[0] data into payload for backward compat
@@ -290,12 +318,16 @@ export function ArchiveDialog({
                                                     handleChange('retensiAktif', jra.retensiAktif || '')
                                                     handleChange('retensiInaktif', jra.retensiInaktif || '')
                                                     handleChange('hasilAkhir', jra.keterangan || '')
+                                                    handleChange('jraVersion', jra.version || '')
+                                                    handleChange('jraReference', jra.referensi || jra.reference || jra.kode || '')
                                                 } else {
                                                     handleChange('jraKode', '')
                                                     handleChange('jraUraian', '')
                                                     handleChange('retensiAktif', '')
                                                     handleChange('retensiInaktif', '')
                                                     handleChange('hasilAkhir', '')
+                                                    handleChange('jraVersion', '')
+                                                    handleChange('jraReference', '')
                                                 }
                                             }}
                                             label="Klik untuk memilih klasifikasi arsip..."
@@ -389,6 +421,88 @@ export function ArchiveDialog({
                                         </div>
                                     </FormField>
                                 </div>
+
+                                <div className="space-y-5 p-5 rounded-lg border border-amber-200 bg-amber-50/40 dark:bg-amber-500/10 dark:border-amber-500/30">
+                                    <div className="flex items-start gap-3">
+                                        <Calendar className="h-5 w-5 text-amber-700 dark:text-amber-300 mt-0.5" />
+                                        <div>
+                                            <p className="font-semibold text-sm text-amber-900 dark:text-amber-200">Pemicu Retensi Berbasis Peristiwa</p>
+                                            <p className="text-xs text-amber-800/80 dark:text-amber-200/80">
+                                                Retensi dihitung dari peristiwa yang ditetapkan JRA, bukan dari tanggal arsip. Bukti wajib dicatat agar arsip dapat dinilai untuk penyusutan.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                        <FormField label="Jenis Pemicu" required>
+                                            <Select
+                                                value={formData.retentionTriggerType}
+                                                onValueChange={(value) => handleChange('retentionTriggerType', value)}
+                                            >
+                                                <SelectTrigger className="bg-card border-border h-10">
+                                                    <SelectValue placeholder="Pilih peristiwa pemicu" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {RETENTION_TRIGGER_OPTIONS.map(option => (
+                                                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </FormField>
+
+                                        <FormField label="Label Peristiwa" required hint="Contoh: Berita Acara Serah Terima final">
+                                            <Input
+                                                value={formData.retentionTriggerLabel}
+                                                onChange={(e) => handleChange('retentionTriggerLabel', e.target.value)}
+                                                placeholder="Nama peristiwa pemicu"
+                                                className="bg-card border-border h-10"
+                                            />
+                                        </FormField>
+
+                                        <FormField label="Tanggal Pemicu" required>
+                                            <Input
+                                                type="date"
+                                                value={formData.retentionTriggerDate}
+                                                onChange={(e) => handleChange('retentionTriggerDate', e.target.value)}
+                                                className="bg-card border-border h-10"
+                                            />
+                                        </FormField>
+                                    </div>
+
+                                    <FormField label="Bukti Pemicu" required hint="Nomor/tanggal berita acara, keputusan, tautan dokumen, atau referensi bukti lain">
+                                        <Textarea
+                                            value={formData.retentionTriggerEvidence}
+                                            onChange={(e) => handleChange('retentionTriggerEvidence', e.target.value)}
+                                            placeholder="Contoh: BAST Nomor 12/BAST/VIII/2026 tanggal 20-08-2026"
+                                            className="min-h-[72px] bg-card border-border resize-none"
+                                        />
+                                    </FormField>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                        <FormField label="Versi JRA" hint="Tahun/versi jadwal retensi yang digunakan">
+                                            <Input
+                                                value={formData.jraVersion}
+                                                onChange={(e) => handleChange('jraVersion', e.target.value)}
+                                                placeholder="Contoh: JRA 2026 / Revisi 1"
+                                                className="bg-card border-border h-10"
+                                            />
+                                        </FormField>
+                                        <FormField label="Referensi JRA" hint="Nomor peraturan/keputusan atau referensi baris JRA">
+                                            <Input
+                                                value={formData.jraReference}
+                                                onChange={(e) => handleChange('jraReference', e.target.value)}
+                                                placeholder="Nomor dan referensi JRA"
+                                                className="bg-card border-border h-10"
+                                            />
+                                        </FormField>
+                                    </div>
+                                </div>
+
+                                {formError && (
+                                    <Alert className="border-red-200 bg-red-50 text-red-800 dark:bg-red-500/10 dark:text-red-200">
+                                        <AlertDescription>{formError}</AlertDescription>
+                                    </Alert>
+                                )}
 
                                 <Separator className="my-2 bg-muted" />
 

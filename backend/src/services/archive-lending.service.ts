@@ -1,9 +1,10 @@
 import { db } from '../config/database';
-import { archiveLending, NewArchiveLending, ArchiveLending, arsip, storageLocations, users } from '../db/schema';
-import { eq, and, desc, sql, lte, lt, isNull, inArray } from 'drizzle-orm';
+import { archiveLending, arsip, storageLocations, users } from '../db/schema';
+import { eq, and, desc, sql, lt, inArray } from 'drizzle-orm';
+import type { RecordUnitScope } from '../utils/record-unit-scope.js';
 
 export interface LendingFilters {
-    unitKerjaId?: string;
+    unitKerjaId: RecordUnitScope;
     status?: 'borrowed' | 'returned' | 'overdue';
     lendingType?: 'arsip' | 'box';
     borrowerId?: string;
@@ -14,6 +15,35 @@ export interface LendingFilters {
 }
 
 export class ArchiveLendingService {
+    private unitCondition(unitKerjaId: RecordUnitScope) {
+        if (unitKerjaId === null) return undefined;
+
+        // archive_lending has no unit column. Resolve ownership from the
+        // authoritative target for both lending types and fail closed for
+        // malformed/legacy rows whose target no longer exists.
+        return sql`(
+            (${archiveLending.lendingType} = 'arsip' AND EXISTS (
+                SELECT 1 FROM arsip a
+                WHERE a.id = ${archiveLending.arsipId}
+                  AND a.unit_kerja_id = ${unitKerjaId}
+            ))
+            OR
+            (${archiveLending.lendingType} = 'box' AND EXISTS (
+                SELECT 1 FROM storage_locations sl
+                WHERE sl.id = ${archiveLending.storageLocationId}
+                  AND sl.unit_kerja_id = ${unitKerjaId}
+            ))
+        )`;
+    }
+
+    private scopedWhere(unitKerjaId: RecordUnitScope, ...conditions: any[]) {
+        const unitCondition = this.unitCondition(unitKerjaId);
+        const allConditions = unitCondition
+            ? [...conditions, unitCondition]
+            : conditions;
+        return allConditions.length > 0 ? and(...allConditions) : undefined;
+    }
+
     async findAll(filters: LendingFilters) {
         const { unitKerjaId, status, lendingType, borrowerId, arsipId, storageLocationId, page = 1, limit = 20 } = filters;
         const offset = (page - 1) * limit;
@@ -35,14 +65,7 @@ export class ArchiveLendingService {
         if (storageLocationId) {
             conditions.push(eq(archiveLending.storageLocationId, storageLocationId));
         }
-        if (unitKerjaId) {
-            // Filter via arsip's unitKerjaId using subquery
-            conditions.push(
-                sql`(${archiveLending.arsipId} IS NULL OR ${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId}))`
-            );
-        }
-
-        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+        const whereClause = this.scopedWhere(unitKerjaId, ...conditions);
 
         const [{ count }] = await db
             .select({ count: sql<number>`count(*)::int` })
@@ -76,29 +99,29 @@ export class ArchiveLendingService {
         };
     }
 
-    async findById(id: string) {
+    async findById(id: string, unitKerjaId: RecordUnitScope) {
         const [result] = await db
             .select()
             .from(archiveLending)
-            .where(eq(archiveLending.id, id))
+            .where(this.scopedWhere(unitKerjaId, eq(archiveLending.id, id)))
             .limit(1);
 
         return result || null;
     }
 
-    async getHistoryByArsipId(arsipId: string) {
+    async getHistoryByArsipId(arsipId: string, unitKerjaId: RecordUnitScope) {
         return await db
             .select()
             .from(archiveLending)
-            .where(eq(archiveLending.arsipId, arsipId))
+            .where(this.scopedWhere(unitKerjaId, eq(archiveLending.arsipId, arsipId)))
             .orderBy(desc(archiveLending.borrowDate));
     }
 
-    async getHistoryByLocationId(locationId: string) {
+    async getHistoryByLocationId(locationId: string, unitKerjaId: RecordUnitScope) {
         return await db
             .select()
             .from(archiveLending)
-            .where(eq(archiveLending.storageLocationId, locationId))
+            .where(this.scopedWhere(unitKerjaId, eq(archiveLending.storageLocationId, locationId)))
             .orderBy(desc(archiveLending.borrowDate));
     }
 
@@ -113,7 +136,7 @@ export class ArchiveLendingService {
         purpose?: string;
         approvedBy?: string;
         createdBy?: string;
-    }) {
+    }, unitKerjaId: string) {
         const borrowDate = new Date().toISOString().split('T')[0];
 
         // Validate type-specific IDs
@@ -130,7 +153,10 @@ export class ArchiveLendingService {
                 const [existingArsip] = await tx
                     .select()
                     .from(arsip)
-                    .where(eq(arsip.id, data.arsipId))
+                    .where(and(
+                        eq(arsip.id, data.arsipId),
+                        eq(arsip.unitKerjaId, unitKerjaId),
+                    ))
                     .limit(1)
                     .for('update');
 
@@ -145,6 +171,21 @@ export class ArchiveLendingService {
             // A box can only be out on one loan at a time, otherwise the first return
             // would flip every arsip back to available while the second loan is still open
             if (data.lendingType === 'box' && data.storageLocationId) {
+                const [box] = await tx
+                    .select()
+                    .from(storageLocations)
+                    .where(and(
+                        eq(storageLocations.id, data.storageLocationId),
+                        eq(storageLocations.unitKerjaId, unitKerjaId),
+                        eq(storageLocations.level, 'box'),
+                    ))
+                    .limit(1)
+                    .for('update');
+
+                if (!box) {
+                    throw new Error('Storage box not found');
+                }
+
                 const [openBoxLending] = await tx
                     .select()
                     .from(archiveLending)
@@ -164,6 +205,10 @@ export class ArchiveLendingService {
                 .insert(archiveLending)
                 .values({
                     ...data,
+                    // A lending row has exactly one authoritative target. Never
+                    // persist an irrelevant client-supplied cross-unit locator.
+                    arsipId: data.lendingType === 'arsip' ? data.arsipId : null,
+                    storageLocationId: data.lendingType === 'box' ? data.storageLocationId : null,
                     borrowDate,
                     status: 'borrowed',
                 })
@@ -174,7 +219,10 @@ export class ArchiveLendingService {
                 await tx
                     .update(arsip)
                     .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
-                    .where(eq(arsip.id, data.arsipId));
+                    .where(and(
+                        eq(arsip.id, data.arsipId),
+                        eq(arsip.unitKerjaId, unitKerjaId),
+                    ));
             }
 
             // If per-box, update all arsip in that box
@@ -182,25 +230,36 @@ export class ArchiveLendingService {
                 await tx
                     .update(arsip)
                     .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
-                    .where(eq(arsip.storageLocationId, data.storageLocationId));
+                    .where(and(
+                        eq(arsip.storageLocationId, data.storageLocationId),
+                        eq(arsip.unitKerjaId, unitKerjaId),
+                    ));
             }
 
             return lending;
         });
     }
 
-    async return(lendingId: string, notes?: string) {
-        const lending = await this.findById(lendingId);
-        if (!lending) {
-            throw new Error('Lending record not found');
-        }
-        if (lending.status === 'returned') {
-            throw new Error('Already returned');
-        }
-
+    async return(lendingId: string, unitKerjaId: string, notes?: string) {
         const returnDate = new Date().toISOString().split('T')[0];
 
         return await db.transaction(async (tx: any) => {
+            // Lock and scope the authoritative lending row inside the same
+            // transaction used for all state changes.
+            const [lending] = await tx
+                .select()
+                .from(archiveLending)
+                .where(this.scopedWhere(unitKerjaId, eq(archiveLending.id, lendingId)))
+                .limit(1)
+                .for('update');
+
+            if (!lending) {
+                throw new Error('Lending record not found');
+            }
+            if (lending.status === 'returned') {
+                throw new Error('Already returned');
+            }
+
             // Update lending record
             const [updated] = await tx
                 .update(archiveLending)
@@ -210,15 +269,31 @@ export class ArchiveLendingService {
                     notes: notes || lending.notes,
                     updatedAt: new Date(),
                 })
-                .where(eq(archiveLending.id, lendingId))
+                .where(this.scopedWhere(
+                    unitKerjaId,
+                    eq(archiveLending.id, lendingId),
+                    inArray(archiveLending.status, ['borrowed', 'overdue']),
+                ))
                 .returning();
+
+            if (!updated) {
+                throw new Error('Lending record changed before it could be returned');
+            }
 
             // Update arsip lending status
             if (lending.lendingType === 'arsip' && lending.arsipId) {
                 await tx
                     .update(arsip)
                     .set({ lendingStatus: 'available', updatedAt: new Date() })
-                    .where(eq(arsip.id, lending.arsipId));
+                    .where(and(
+                        eq(arsip.id, lending.arsipId),
+                        eq(arsip.unitKerjaId, unitKerjaId),
+                        sql`NOT EXISTS (
+                            SELECT 1 FROM archive_lending al
+                            WHERE al.storage_location_id = ${arsip.storageLocationId}
+                              AND al.status IN ('borrowed', 'overdue')
+                        )`,
+                    ));
             }
 
             // If per-box, update all arsip in that box, except those still out on a
@@ -229,7 +304,8 @@ export class ArchiveLendingService {
                     .set({ lendingStatus: 'available', updatedAt: new Date() })
                     .where(and(
                         eq(arsip.storageLocationId, lending.storageLocationId),
-                        sql`NOT EXISTS (SELECT 1 FROM archive_lending al WHERE al.arsip_id = arsip.id AND al.status <> 'returned')`
+                        eq(arsip.unitKerjaId, unitKerjaId),
+                        sql`NOT EXISTS (SELECT 1 FROM archive_lending al WHERE al.arsip_id = arsip.id AND al.status IN ('borrowed', 'overdue'))`
                     ));
             }
 
@@ -237,29 +313,45 @@ export class ArchiveLendingService {
         });
     }
 
-    async extend(lendingId: string, newDueDate: string) {
-        const lending = await this.findById(lendingId);
-        if (!lending) {
-            throw new Error('Lending record not found');
-        }
-        if (lending.status === 'returned') {
-            throw new Error('Cannot extend returned item');
-        }
+    async extend(lendingId: string, unitKerjaId: string, newDueDate: string) {
+        return await db.transaction(async (tx: any) => {
+            const [lending] = await tx
+                .select()
+                .from(archiveLending)
+                .where(this.scopedWhere(unitKerjaId, eq(archiveLending.id, lendingId)))
+                .limit(1)
+                .for('update');
 
-        const [updated] = await db
-            .update(archiveLending)
-            .set({
-                dueDate: newDueDate,
-                status: 'borrowed', // Reset overdue status
-                updatedAt: new Date(),
-            })
-            .where(eq(archiveLending.id, lendingId))
-            .returning();
+            if (!lending) {
+                throw new Error('Lending record not found');
+            }
+            if (lending.status === 'returned') {
+                throw new Error('Cannot extend returned item');
+            }
 
-        return updated;
+            const [updated] = await tx
+                .update(archiveLending)
+                .set({
+                    dueDate: newDueDate,
+                    status: 'borrowed', // Reset overdue status
+                    updatedAt: new Date(),
+                })
+                .where(this.scopedWhere(
+                    unitKerjaId,
+                    eq(archiveLending.id, lendingId),
+                    inArray(archiveLending.status, ['borrowed', 'overdue']),
+                ))
+                .returning();
+
+            if (!updated) {
+                throw new Error('Lending record changed before it could be extended');
+            }
+
+            return updated;
+        });
     }
 
-    async getOverdue(unitKerjaId?: string) {
+    async getOverdue(unitKerjaId: RecordUnitScope) {
         const todayStr = new Date().toISOString().split('T')[0];
 
         const overdue = await db
@@ -273,22 +365,15 @@ export class ArchiveLendingService {
             })
             .from(archiveLending)
             .leftJoin(users, eq(archiveLending.borrowerId, users.id))
-            .where(and(
+            .where(this.scopedWhere(
+                unitKerjaId,
                 inArray(archiveLending.status, ['borrowed', 'overdue']),
                 lt(archiveLending.dueDate, todayStr),
-                ...(unitKerjaId ? [sql`(${archiveLending.arsipId} IS NULL OR ${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId}))`] : [])
             ))
             .orderBy(archiveLending.dueDate);
 
-        // Update status to overdue
-        for (const item of overdue) {
-            if (item.lending.status === 'overdue') continue;
-            await db
-                .update(archiveLending)
-                .set({ status: 'overdue', updatedAt: new Date() })
-                .where(eq(archiveLending.id, item.lending.id));
-        }
-
+        // Keep GET side-effect free. The response derives overdue state from
+        // dueDate, while an explicit job may persist status separately.
         return overdue.map(d => ({
             ...d.lending,
             status: 'overdue' as const,
@@ -297,12 +382,8 @@ export class ArchiveLendingService {
         }));
     }
 
-    async getStats(unitKerjaId?: string) {
+    async getStats(unitKerjaId: RecordUnitScope) {
         const todayStr = new Date().toISOString().split('T')[0];
-
-        const unitKerjaCondition = unitKerjaId
-            ? sql`(${archiveLending.arsipId} IS NULL OR ${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId}))`
-            : undefined;
 
         const stats = await db
             .select({
@@ -312,7 +393,7 @@ export class ArchiveLendingService {
                 returned: sql<number>`count(*) filter (where ${archiveLending.status} = 'returned')::int`,
             })
             .from(archiveLending)
-            .where(unitKerjaCondition);
+            .where(this.scopedWhere(unitKerjaId));
 
         return stats[0];
     }

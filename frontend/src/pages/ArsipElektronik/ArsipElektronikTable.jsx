@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/table'
 import { RefreshCw, Eye, Trash2, ChevronUp } from 'lucide-react'
 import { STATUS_CONFIG, FORMAT_OPTIONS, MEDIA_OPTIONS, formatFileSize } from './constants'
+import { useAuth } from '@/context/AuthContext'
 
 export default function ArsipElektronikTable({
     data, loading, page, totalPages, total,
@@ -16,6 +17,7 @@ export default function ArsipElektronikTable({
     onFilterFormatChange, onFilterStatusChange, onFilterMediaChange,
     onPageChange, onOpenVerify, onDelete
 }) {
+    const { user } = useAuth()
     return (
         <>
             {/* Filters */}
@@ -57,6 +59,7 @@ export default function ArsipElektronikTable({
                         <TableHeader>
                             <TableRow>
                                 <TableHead className="w-[50px]">No.</TableHead>
+                                <TableHead>Kode Registrasi</TableHead>
                                 <TableHead>Format</TableHead>
                                 <TableHead>Ukuran</TableHead>
                                 <TableHead>Resolusi</TableHead>
@@ -64,6 +67,7 @@ export default function ArsipElektronikTable({
                                 <TableHead>Hash SHA-256</TableHead>
                                 <TableHead>Versi</TableHead>
                                 <TableHead>Status</TableHead>
+                                <TableHead>QC</TableHead>
                                 <TableHead>Tanggal</TableHead>
                                 <TableHead className="w-[80px]">Aksi</TableHead>
                             </TableRow>
@@ -71,14 +75,14 @@ export default function ArsipElektronikTable({
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={10} className="text-center py-8">
+                                    <TableCell colSpan={12} className="text-center py-8">
                                         <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />
                                         Memuat...
                                     </TableCell>
                                 </TableRow>
                             ) : data.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                                         Tidak ada data arsip elektronik
                                     </TableCell>
                                 </TableRow>
@@ -87,6 +91,7 @@ export default function ArsipElektronikTable({
                                 return (
                                     <TableRow key={item.id}>
                                         <TableCell data-label="No.">{(page - 1) * 20 + index + 1}</TableCell>
+                                        <TableCell data-label="Kode Registrasi" className="font-mono text-xs">{item.registrationCode || 'LEGACY'}</TableCell>
                                         <TableCell data-label="Format"><Badge variant="outline">{item.formatFile}</Badge></TableCell>
                                         <TableCell data-label="Ukuran" className="text-xs">{formatFileSize(item.ukuranFile)}</TableCell>
                                         <TableCell data-label="Resolusi" className="text-xs">{item.resolusiDPI ? `${item.resolusiDPI} DPI` : '-'}</TableCell>
@@ -101,6 +106,11 @@ export default function ArsipElektronikTable({
                                                 {status.label}
                                             </Badge>
                                         </TableCell>
+                                        <TableCell data-label="QC">
+                                            <Badge variant={item.qcStatus === 'passed' ? 'default' : 'destructive'}>
+                                                {item.qcStatus === 'passed' ? 'Lulus' : item.qcStatus === 'failed' ? 'Gagal' : 'Pending'}
+                                            </Badge>
+                                        </TableCell>
                                         <TableCell data-label="Tanggal" className="text-xs">
                                             {item.tanggalDigitalisasi || new Date(item.createdAt).toLocaleDateString('id-ID')}
                                         </TableCell>
@@ -109,9 +119,11 @@ export default function ArsipElektronikTable({
                                                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onOpenVerify(item)}>
                                                     <Eye className="h-3.5 w-3.5" />
                                                 </Button>
-                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(item.id)}>
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </Button>
+                                                {user?.role === 'super_admin' && !item.immutable && (
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(item.id)}>
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                )}
                                             </div>
                                         </TableCell>
                                     </TableRow>

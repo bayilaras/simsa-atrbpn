@@ -125,4 +125,24 @@ describe('TunjukSilangService', () => {
             expect(result).toBeNull();
         });
     });
+
+    describe('cancel', () => {
+        it('preserves a traceable cancellation instead of hard-deleting the relation', async () => {
+            enqueue([{
+                id: 'ref-1',
+                cancelledBy: 'user-1',
+                cancellationReason: 'Hubungan salah input',
+                cancelledAt: new Date(),
+            }]);
+
+            const result = await tunjukSilangService.cancel(
+                'ref-1',
+                'user-1',
+                'Hubungan salah input',
+            );
+
+            expect(result?.cancelledBy).toBe('user-1');
+            expect(result?.cancellationReason).toBe('Hubungan salah input');
+        });
+    });
 });

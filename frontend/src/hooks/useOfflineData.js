@@ -1,51 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
 import { isOnline, onConnectivityChange } from '@/lib/offline-storage';
 
-/**
- * Hook for handling data with offline support
- * @param {Function} fetchFn - Function to fetch data online
- * @param {Object} offlineStore - Offline storage object (e.g., suratMasukOffline)
- * @param {Object} options - Additional options
- */
-export function useOfflineData(fetchFn, offlineStore, options = {}) {
-    const {
-        cacheKey = 'default',
-        autoFetch = true,
-        staleTime = 5 * 60 * 1000 // 5 minutes
-    } = options;
+const OFFLINE_MESSAGE = 'Mode offline untuk data arsip dinonaktifkan demi keamanan. Sambungkan kembali ke jaringan.';
 
+/**
+ * Network-only data hook retained under its historical name for compatibility.
+ * The offlineStore argument is deliberately ignored: sensitive records are never
+ * persisted to IndexedDB or restored across sessions.
+ */
+export function useOfflineData(fetchFn, _offlineStore, options = {}) {
+    const { autoFetch = true } = options;
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [isFromCache, setIsFromCache] = useState(false);
     const [lastFetched, setLastFetched] = useState(null);
     const [online, setOnline] = useState(isOnline());
 
-    // Load cached data
-    const loadFromCache = useCallback(async () => {
-        try {
-            const cached = await offlineStore.getAll();
-            if (cached && cached.length > 0) {
-                setData(cached);
-                setIsFromCache(true);
-                const lastCached = await offlineStore.getLastCached();
-                setLastFetched(lastCached);
-            }
-        } catch (err) {
-            console.warn('Failed to load from cache:', err);
-        }
-    }, [offlineStore]);
-
-    // Fetch fresh data
-    const fetchData = useCallback(async (force = false) => {
-        // Check if cache is still fresh
-        if (!force && lastFetched && Date.now() - lastFetched < staleTime) {
-            return;
-        }
-
+    const fetchData = useCallback(async () => {
         if (!isOnline()) {
-            // Load from cache if offline
-            await loadFromCache();
+            setData(null);
+            setError(OFFLINE_MESSAGE);
             setLoading(false);
             return;
         }
@@ -55,115 +29,86 @@ export function useOfflineData(fetchFn, offlineStore, options = {}) {
 
         try {
             const result = await fetchFn();
-            const items = result.data || result;
-
-            setData(items);
-            setIsFromCache(false);
+            setData(result.data || result);
             setLastFetched(Date.now());
-
-            // Cache the data for offline use
-            if (offlineStore && items?.length > 0) {
-                await offlineStore.cache(items);
-            }
         } catch (err) {
             console.error('Fetch error:', err);
+            setData(null);
             setError(err.message || 'Failed to fetch data');
-
-            // Fallback to cache on error
-            await loadFromCache();
         } finally {
             setLoading(false);
         }
-    }, [fetchFn, offlineStore, lastFetched, staleTime, loadFromCache]);
+    }, [fetchFn]);
 
-    // Initial load
     useEffect(() => {
         if (autoFetch) {
-            // First try to load from cache for instant UI
-            loadFromCache().then(() => {
-                // Then fetch fresh data in background
-                fetchData();
-            });
+            void fetchData();
         }
-    }, [autoFetch, loadFromCache, fetchData]);
+    }, [autoFetch, fetchData]);
 
-    // Listen for connectivity changes
-    useEffect(() => {
-        const cleanup = onConnectivityChange((isNowOnline) => {
-            setOnline(isNowOnline);
-            if (isNowOnline) {
-                // Refetch when back online
-                fetchData(true);
-            }
-        });
-        return cleanup;
-    }, [fetchData]);
+    useEffect(() => onConnectivityChange((isNowOnline) => {
+        setOnline(isNowOnline);
+        if (isNowOnline) {
+            void fetchData();
+        } else {
+            setData(null);
+            setError(OFFLINE_MESSAGE);
+        }
+    }), [fetchData]);
 
     return {
         data,
         loading,
         error,
-        isFromCache,
+        isFromCache: false,
         lastFetched,
         online,
-        refetch: () => fetchData(true),
-        refresh: () => fetchData(true)
+        refetch: fetchData,
+        refresh: fetchData,
     };
 }
 
-/**
- * Hook for single cached value (like dashboard stats)
- */
-export function useOfflineValue(fetchFn, cacheStore, cacheKey, options = {}) {
-    const { staleTime = 5 * 60 * 1000 } = options;
-
+/** Network-only variant for single values such as dashboard statistics. */
+export function useOfflineValue(fetchFn) {
     const [value, setValue] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [isFromCache, setIsFromCache] = useState(false);
+    const [error, setError] = useState(null);
 
     const load = useCallback(async () => {
+        if (!isOnline()) {
+            setValue(null);
+            setError(OFFLINE_MESSAGE);
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
-
-        // Try to get from cache first
+        setError(null);
         try {
-            const cached = await cacheStore.get(cacheKey);
-            if (cached) {
-                setValue(cached);
-                setIsFromCache(true);
-            }
+            setValue(await fetchFn());
         } catch (err) {
-            console.warn('Cache read error:', err);
+            console.error('Fetch error:', err);
+            setValue(null);
+            setError(err.message || 'Failed to fetch data');
+        } finally {
+            setLoading(false);
         }
-
-        // Fetch fresh if online
-        if (isOnline()) {
-            try {
-                const result = await fetchFn();
-                setValue(result);
-                setIsFromCache(false);
-                await cacheStore.cache(cacheKey, result);
-            } catch (err) {
-                console.error('Fetch error:', err);
-            }
-        }
-
-        setLoading(false);
-    }, [fetchFn, cacheStore, cacheKey]);
+    }, [fetchFn]);
 
     useEffect(() => {
-        load();
+        void load();
     }, [load]);
 
-    useEffect(() => {
-        const cleanup = onConnectivityChange((isNowOnline) => {
-            if (isNowOnline) {
-                load();
-            }
-        });
-        return cleanup;
-    }, [load]);
+    useEffect(() => onConnectivityChange((isNowOnline) => {
+        if (isNowOnline) {
+            void load();
+        } else {
+            setValue(null);
+            setError(OFFLINE_MESSAGE);
+        }
+    }), [load]);
 
-    return { value, loading, isFromCache, refetch: load };
+    return { value, loading, error, isFromCache: false, refetch: load };
 }
 
 export default useOfflineData;

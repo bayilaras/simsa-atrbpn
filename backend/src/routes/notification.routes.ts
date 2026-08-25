@@ -5,6 +5,7 @@ import { validateBody } from '../middlewares/validate.middleware.js';
 import { markAllReadSchema } from '../validators/schemas.js';
 import { createLogger } from '../utils/logger.js';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { allowedSecurityClassifications } from '../services/record-access.service.js';
 
 const log = createLogger('NotificationRoutes');
 
@@ -39,7 +40,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         const { limit } = req.query;
         // Use user's unitKerjaId if not provided in query (or override if strict)
         // For now, allow query param but default to user's
-        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
             res.status(400).json({ error: 'unitKerjaId is required' });
@@ -55,7 +56,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         const result = await notificationService.getAllNotifications(
             unitKerjaId,
             userId,
-            limit ? parseInt(limit as string) : 10
+            limit ? parseInt(limit as string) : 10,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json(result);
@@ -83,7 +85,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
  */
 router.get('/count', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
             res.status(400).json({ error: 'unitKerjaId is required' });
@@ -96,7 +98,11 @@ router.get('/count', async (req: AuthRequest, res: Response) => {
             return;
         }
 
-        const counts = await notificationService.getNotificationCount(unitKerjaId, userId);
+        const counts = await notificationService.getNotificationCount(
+            unitKerjaId,
+            userId,
+            allowedSecurityClassifications(req.user),
+        );
         res.json(counts);
     } catch (error) {
         log.error({ err: error }, 'Error fetching notification count:');
@@ -113,7 +119,7 @@ router.get('/count', async (req: AuthRequest, res: Response) => {
  */
 router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
             res.status(400).json({ error: 'unitKerjaId is required' });
@@ -126,7 +132,11 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
             return;
         }
 
-        const notifications = await notificationService.getPendingSuratMasuk(unitKerjaId, userId);
+        const notifications = await notificationService.getPendingSuratMasuk(
+            unitKerjaId,
+            userId,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ notifications });
     } catch (error) {
         log.error({ err: error }, 'Error fetching surat masuk notifications:');
@@ -144,7 +154,7 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
 router.get('/arsip', async (req: AuthRequest, res: Response) => {
     try {
         const { daysAhead } = req.query;
-        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
             res.status(400).json({ error: 'unitKerjaId is required' });
@@ -160,7 +170,8 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
         const notifications = await notificationService.getExpiringArchives(
             unitKerjaId,
             userId,
-            daysAhead ? parseInt(daysAhead as string) : 30
+            daysAhead ? parseInt(daysAhead as string) : 30,
+            allowedSecurityClassifications(req.user),
         );
         res.json({ notifications });
     } catch (error) {

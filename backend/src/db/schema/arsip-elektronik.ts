@@ -1,8 +1,9 @@
-import { pgTable, uuid, varchar, text, integer, timestamp, date } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, text, integer, timestamp, date, boolean, check, uniqueIndex } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { arsip } from './arsip.js';
 import { users } from './users.js';
 import { autentikasi } from './autentikasi.js';
+import { fileAttachments } from './file-attachments.js';
 
 /**
  * Arsip Elektronik — extended metadata for digitized/electronic archives
@@ -11,6 +12,8 @@ import { autentikasi } from './autentikasi.js';
 export const arsipElektronik = pgTable('arsip_elektronik', {
     id: uuid('id').primaryKey().defaultRandom(),
     arsipId: uuid('arsip_id').notNull().references(() => arsip.id, { onDelete: 'cascade' }),
+    fileAttachmentId: uuid('file_attachment_id').references(() => fileAttachments.id, { onDelete: 'restrict' }),
+    registrationCode: varchar('registration_code', { length: 100 }),
 
     // File metadata
     formatFile: varchar('format_file', { length: 20 }).notNull(), // PDF/A, TIFF, JPEG, PNG, DOCX
@@ -20,6 +23,13 @@ export const arsipElektronik = pgTable('arsip_elektronik', {
     waktuPembuatanHash: timestamp('waktu_pembuatan_hash'),
     resolusiDPI: integer('resolusi_dpi'), // for scanned docs
     jumlahHalaman: integer('jumlah_halaman'),
+    colorDepth: integer('color_depth'),
+    scanCategory: varchar('scan_category', { length: 30 }).default('paper'),
+    // 'paper' | 'cartographic' | 'photo' | 'born_digital'
+    sourceType: varchar('source_type', { length: 30 }).default('digitized').notNull(),
+    // 'digitized' | 'born_digital' | 'received'
+    qcStatus: varchar('qc_status', { length: 20 }).default('pending').notNull(),
+    qcNotes: text('qc_notes'),
 
     // Media info
     mediaAsal: varchar('media_asal', { length: 30 }).default('kertas'),
@@ -49,15 +59,36 @@ export const arsipElektronik = pgTable('arsip_elektronik', {
     // Versioning
     versiDokumen: integer('versi_dokumen').default(1).notNull(),
     catatanKonversi: text('catatan_konversi'), // conversion notes
+    immutable: boolean('immutable').default(false).notNull(),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => [
+    uniqueIndex('arsip_elektronik_attachment_unique').on(table.fileAttachmentId),
+    uniqueIndex('arsip_elektronik_registration_code_unique').on(table.registrationCode),
+    uniqueIndex('arsip_elektronik_arsip_version_unique').on(table.arsipId, table.versiDokumen),
+    check(
+        'arsip_elektronik_source_type_check',
+        sql`${table.sourceType} in ('digitized', 'born_digital', 'received')`,
+    ),
+    check(
+        'arsip_elektronik_scan_category_check',
+        sql`${table.scanCategory} is null or ${table.scanCategory} in ('paper', 'cartographic', 'photo', 'born_digital')`,
+    ),
+    check(
+        'arsip_elektronik_qc_status_check',
+        sql`${table.qcStatus} in ('pending', 'passed', 'failed')`,
+    ),
+]);
 
 export const arsipElektronikRelations = relations(arsipElektronik, ({ one }) => ({
     arsip: one(arsip, {
         fields: [arsipElektronik.arsipId],
         references: [arsip.id],
+    }),
+    fileAttachment: one(fileAttachments, {
+        fields: [arsipElektronik.fileAttachmentId],
+        references: [fileAttachments.id],
     }),
     digitizedByUser: one(users, {
         fields: [arsipElektronik.didigitalisasiOleh],

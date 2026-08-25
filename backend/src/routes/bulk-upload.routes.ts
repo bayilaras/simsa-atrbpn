@@ -1,13 +1,97 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
-import { bulkUploadService, BulkUploadFile } from '../services/bulk-upload.service';
+import { canWriteMiddleware } from '../middlewares/role.middleware';
+import { canAccessUnit, type Role } from '../config/permissions';
+import { bulkUploadService } from '../services/bulk-upload.service';
+import type { BulkUploadBatch, BulkUploadFile } from '../services/bulk-upload.service';
 import { uploadLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope';
 
 const log = createLogger('BulkUploadRoutes');
 
 const router = Router();
+
+/**
+ * Resolve the upload destination from the authenticated user's mandate. A
+ * caller-supplied unit is only a consistency check for scoped users; it must
+ * never be allowed to widen their access. Super admins must choose a concrete
+ * destination because a batch cannot belong to the all-unit (`null`) scope.
+ */
+function resolveUploadUnit(req: AuthRequest, res: Response): string | undefined {
+    const requestedUnit = typeof req.body?.unitKerjaId === 'string'
+        ? req.body.unitKerjaId.trim()
+        : '';
+    const assignedScope = resolveRecordUnitScope(req);
+
+    if (assignedScope === null && !requestedUnit) {
+        res.status(400).json({
+            success: false,
+            error: 'unitKerjaId diperlukan untuk super_admin',
+        });
+        return undefined;
+    }
+
+    if (assignedScope !== null && !assignedScope) {
+        res.status(403).json({
+            success: false,
+            error: 'Mandat unit kerja tidak tersedia',
+        });
+        return undefined;
+    }
+
+    if (assignedScope !== null && requestedUnit && requestedUnit !== assignedScope) {
+        res.status(403).json({
+            success: false,
+            error: 'Unit kerja tidak berada dalam cakupan akses',
+        });
+        return undefined;
+    }
+
+    const targetUnit = assignedScope === null ? requestedUnit : assignedScope;
+    const role = req.user?.role as Role;
+    if (!targetUnit || !canAccessUnit(role, req.user?.unitKerjaId || null, targetUnit)) {
+        res.status(403).json({
+            success: false,
+            error: 'Unit kerja tidak berada dalam cakupan akses',
+        });
+        return undefined;
+    }
+
+    return targetUnit;
+}
+
+/**
+ * Batch status and confirmation are private to the creator. Super admins may
+ * inspect/confirm across creators, but an explicit unit query still narrows
+ * their request. Returning false is deliberately surfaced as 404 so batch IDs
+ * cannot be used to enumerate work belonging to another user or unit.
+ */
+function canAccessBatch(req: AuthRequest, batch: BulkUploadBatch): boolean {
+    if (!req.user || !batch.unitKerjaId) return false;
+
+    const role = req.user.role as Role;
+    const unitScope = resolveRecordUnitScope(req);
+    const requestedSuperUnit = role === 'super_admin'
+        && typeof req.query?.unitKerjaId === 'string'
+        ? req.query.unitKerjaId.trim()
+        : '';
+
+    if (unitScope !== null && (!unitScope || unitScope !== batch.unitKerjaId)) {
+        return false;
+    }
+
+    if (requestedSuperUnit && requestedSuperUnit !== batch.unitKerjaId) {
+        return false;
+    }
+
+    if (role !== 'super_admin' && batch.createdBy !== req.user.id) {
+        return false;
+    }
+
+    return canAccessUnit(role, req.user.unitKerjaId || null, batch.unitKerjaId);
+}
 
 // Configure multer for multiple file uploads
 const upload = multer({
@@ -59,19 +143,15 @@ const upload = multer({
 router.post(
     '/',
     authMiddleware,
+    canWriteMiddleware(),
     uploadLimiter,
     upload.array('files', 50),
     async (req: AuthRequest, res: Response) => {
         try {
-            const { unitKerjaId, folderId } = req.body;
+            const { folderId } = req.body;
             const files = req.files as Express.Multer.File[];
-
-            if (!unitKerjaId) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'unitKerjaId diperlukan'
-                });
-            }
+            const unitKerjaId = resolveUploadUnit(req, res);
+            if (!unitKerjaId) return;
 
             if (!files || files.length === 0) {
                 return res.status(400).json({
@@ -97,7 +177,7 @@ router.post(
             }
 
             // Create batch
-            const userId = req.user?.id || 'unknown';
+            const userId = req.user!.id;
             const batch = bulkUploadService.createBatch(uploadFiles, unitKerjaId, userId);
 
             // Start processing in background
@@ -148,7 +228,7 @@ router.get('/:batchId', authMiddleware, async (req: AuthRequest, res: Response) 
         const { batchId } = req.params;
 
         const batch = bulkUploadService.getBatch(batchId as string);
-        if (!batch) {
+        if (!batch || !canAccessBatch(req, batch)) {
             return res.status(404).json({
                 success: false,
                 error: 'Batch tidak ditemukan'
@@ -214,10 +294,18 @@ router.get('/:batchId', authMiddleware, async (req: AuthRequest, res: Response) 
  *       200:
  *         description: Batch confirmed and saved successfully
  */
-router.post('/:batchId/confirm', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post('/:batchId/confirm', authMiddleware, canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
     try {
         const { batchId } = req.params;
         const { items, folderId } = req.body;
+
+        const batch = bulkUploadService.getBatch(batchId as string);
+        if (!batch || !canAccessBatch(req, batch)) {
+            return res.status(404).json({
+                success: false,
+                error: 'Batch tidak ditemukan',
+            });
+        }
 
         if (!items || !Array.isArray(items)) {
             return res.status(400).json({

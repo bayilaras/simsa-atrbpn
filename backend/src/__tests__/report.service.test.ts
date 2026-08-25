@@ -89,6 +89,26 @@ describe('ReportService', () => {
         });
     });
 
+    describe('getArsipReport expiring', () => {
+        it('excludes held and missing-trigger records from expiry reports', async () => {
+            enqueue([{ count: 1 }]);
+            enqueue([
+                { id: 'eligible', retentionTriggerDate: '2085-01-01', legalHold: false },
+                { id: 'held', retentionTriggerDate: '2085-01-01', legalHold: true },
+                { id: 'missing-trigger', retentionTriggerDate: null, legalHold: false },
+            ]);
+            enqueue([{ total: 3, masuk: 2, keluar: 1, permanen: 0 }]);
+            enqueue([]);
+            enqueue([]);
+
+            const result = await reportService.getArsipReport({
+                unitKerjaId: 'ditjen',
+                type: 'expiring',
+            });
+            expect(result.data.map(item => item.id)).toEqual(['eligible']);
+        });
+    });
+
     describe('getLendingStats', () => {
         it('should return lending statistics', async () => {
             enqueue([{ total: 100, borrowed: 20, overdue: 5, returned: 75 }]);

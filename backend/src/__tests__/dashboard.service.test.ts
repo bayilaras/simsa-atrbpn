@@ -110,7 +110,7 @@ describe('DashboardService', () => {
     describe('getExpiringArchives', () => {
         it('should return expiring archives array', async () => {
             enqueue([
-                { id: 'arsip-1', retentionDate: new Date('2025-06-01') },
+                { id: 'arsip-1', tanggalKadaluarsa: '2090-06-01', retentionTriggerDate: '2089-06-01', legalHold: false },
             ]);
 
             const result = await dashboardService.getExpiringArchives();
@@ -129,6 +129,17 @@ describe('DashboardService', () => {
 
             const result = await dashboardService.getExpiringArchives();
             expect(result).toHaveLength(0);
+        });
+
+        it('should exclude held and missing-trigger records defensively', async () => {
+            enqueue([
+                { id: 'eligible', tanggalKadaluarsa: '2090-06-01', retentionTriggerDate: '2089-06-01', legalHold: false },
+                { id: 'held', tanggalKadaluarsa: '2090-06-01', retentionTriggerDate: '2089-06-01', legalHold: true },
+                { id: 'missing-trigger', tanggalKadaluarsa: '2090-06-01', retentionTriggerDate: null, legalHold: false },
+            ]);
+
+            const result = await dashboardService.getExpiringArchives();
+            expect(result.map(item => item.id)).toEqual(['eligible']);
         });
     });
 
@@ -159,6 +170,38 @@ describe('DashboardService', () => {
 
             const result = await dashboardService.getUnitKerjaComparison('ditjen');
             expect(Array.isArray(result)).toBe(true);
+        });
+    });
+
+    describe('getWidgetData retention lifecycle', () => {
+        it('uses explicit triggers and excludes held/missing-trigger records from lifecycle statuses', async () => {
+            enqueue([
+                { retentionTriggerDate: '2090-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false },
+                { retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false },
+                { retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: true },
+                { retentionTriggerDate: null, retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false },
+                { retentionTriggerDate: '2026-01-01', retensiAktif: null, retensiInaktif: null, legalHold: false },
+            ]); // lifecycle data
+            enqueue([]); // storage
+            enqueue([{ count: 0 }]); // lending borrowed
+            enqueue([{ count: 0 }]); // lending overdue
+            enqueue([]); // penyusutan statuses
+            enqueue([{ count: 0 }]); // vital unprotected
+            enqueue([{ count: 0 }]); // terjaga unreported
+            enqueue([{ count: 0 }]); // vital total
+            enqueue([{ count: 0 }]); // terjaga total
+            enqueue([]); // media breakdown
+
+            const result = await dashboardService.getWidgetData('u1');
+            expect(result.archiveLifecycle).toMatchObject({
+                aktif: 1,
+                inaktif: 0,
+                kadaluarsa: 1,
+                belumDitentukan: 1,
+                held: 1,
+                missingTrigger: 1,
+                total: 5,
+            });
         });
     });
 });

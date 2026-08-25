@@ -4,23 +4,6 @@ import { Button } from '@/components/ui/button';
 import { API_BASE_URL } from '@/services/api';
 
 export function FilePreviewSection({ surat }) {
-    const getFileUrl = (filePath) => {
-        if (!filePath) return null;
-        if (filePath.startsWith('http')) return filePath;
-        // Vercel Blob files stored as "blob:{url}" — use URL directly (public access)
-        if (filePath.startsWith('blob:')) {
-            return filePath.replace('blob:', '');
-        }
-        // Legacy Google Drive files stored as "gdrive:{fileId}" — route through proxy
-        if (filePath.startsWith('gdrive:')) {
-            const fileId = filePath.replace('gdrive:', '');
-            return `/api/drive-file/${fileId}`;
-        }
-        // Legacy: local uploads go through Vercel proxy rewrite
-        if (filePath.startsWith('/uploads')) return filePath;
-        return `${API_BASE_URL}${filePath}`;
-    };
-
     const getFileExtension = (filename) => {
         if (!filename) return '';
         return filename.split('.').pop()?.toLowerCase() || '';
@@ -35,7 +18,12 @@ export function FilePreviewSection({ surat }) {
         return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
     };
 
-    const fileUrl = getFileUrl(surat.filePath);
+    // Never render the object-storage locator. The application endpoint checks
+    // session, role and unit before streaming the private bitstream.
+    const fileUrl = surat.filePath
+        ? `${API_BASE_URL}/api/files/surat_masuk/${encodeURIComponent(surat.id)}`
+        : null;
+    const downloadUrl = fileUrl ? `${fileUrl}?download=1` : null;
     const fileName = surat.fileOriginalName || surat.filePath?.split('/').pop();
 
     if (!fileUrl) return null;
@@ -82,7 +70,7 @@ export function FilePreviewSection({ surat }) {
                 {/* Download/Open Buttons */}
                 <div className="flex gap-2 p-4 border-t bg-muted/10">
                     <Button variant="outline" className="flex-1" asChild>
-                        <a href={fileUrl} download={fileName}>
+                        <a href={downloadUrl}>
                             <Download className="mr-2 h-4 w-4" />
                             Download
                         </a>

@@ -7,8 +7,16 @@ import { createArsipTerjagaSchema, updateArsipTerjagaSchema } from '../validator
 
 import { printTemplateService } from '../services/print-template.service';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
+import {
+    allowedSecurityClassifications,
+    recordAccessService,
+} from '../services/record-access.service.js';
 
 const router = Router();
+
+// Authentication must run before every authorization check, including print.
+router.use(authMiddleware);
 
 // Print Daftar Arsip Terjaga
 router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, next) => {
@@ -16,7 +24,10 @@ router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, n
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         if (!unitKerjaId) return res.status(400).json({ error: 'Unit Kerja ID required' });
 
-        const pdfBuffer = await printTemplateService.generateDaftarArsipTerjaga(unitKerjaId);
+        const pdfBuffer = await printTemplateService.generateDaftarArsipTerjaga(
+            unitKerjaId,
+            allowedSecurityClassifications(req.user),
+        );
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="daftar-arsip-terjaga-${unitKerjaId}.pdf"`);
@@ -25,9 +36,6 @@ router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, n
         next(error);
     }
 });
-
-// All routes require authentication
-router.use(authMiddleware);
 
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);
@@ -50,6 +58,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
             search: search as string,
             page: page ? Number(page) : 1,
             limit: limit ? Number(limit) : 20,
+            securityClassifications: allowedSecurityClassifications(req.user),
         });
 
         res.json({ success: true, ...result });
@@ -67,7 +76,10 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
 
-        const stats = await arsipTerjagaService.getStats(unitKerjaId as string);
+        const stats = await arsipTerjagaService.getStats(
+            unitKerjaId as string,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, data: stats });
     } catch (error) {
         next(error);
@@ -86,7 +98,8 @@ router.get('/due-reporting', async (req: AuthRequest, res, next) => {
 
         const data = await arsipTerjagaService.getDueForReporting(
             unitKerjaId as string,
-            daysAhead ? Number(daysAhead) : 30
+            daysAhead ? Number(daysAhead) : 30,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data });
@@ -107,7 +120,8 @@ router.get('/laporan-anri', async (req: AuthRequest, res, next) => {
 
         const data = await arsipTerjagaService.generateLaporanANRI(
             unitKerjaId as string,
-            tahun ? Number(tahun) : undefined
+            tahun ? Number(tahun) : undefined,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data });
@@ -120,7 +134,11 @@ router.get('/laporan-anri', async (req: AuthRequest, res, next) => {
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const result = await arsipTerjagaService.findById(id as string);
+        const result = await arsipTerjagaService.findById(
+            id as string,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
 
         if (!result) {
             return res.status(404).json({ error: 'Arsip terjaga not found' });
@@ -138,8 +156,16 @@ router.post('/',
     validateBody(createArsipTerjagaSchema),
     async (req: AuthRequest, res, next) => {
         try {
+            const access = await recordAccessService.check(req.user, 'arsip', req.body.arsipId);
+            if (!access.exists || !access.allowed || !access.unitKerjaId) {
+                return res.status(404).json({ error: 'Arsip not found' });
+            }
+
             const result = await arsipTerjagaService.create({
                 ...req.body,
+                // Unit is authoritative metadata of the parent archive, never a
+                // client-selected value.
+                unitKerjaId: access.unitKerjaId,
                 createdBy: req.user?.id,
             });
 
@@ -157,13 +183,22 @@ router.put('/:id',
     async (req: AuthRequest, res, next) => {
         try {
             const { id } = req.params;
-            const existing = await arsipTerjagaService.findById(id as string);
+            const unitScope = resolveRecordUnitScope(req);
+            const existing = await arsipTerjagaService.findById(
+                id as string,
+                unitScope,
+                allowedSecurityClassifications(req.user),
+            );
 
             if (!existing) {
                 return res.status(404).json({ error: 'Arsip terjaga not found' });
             }
 
-            const result = await arsipTerjagaService.update(id as string, req.body);
+            const result = await arsipTerjagaService.update(id as string, req.body, unitScope);
+            if (!result) {
+                return res.status(404).json({ error: 'Arsip terjaga not found' });
+            }
+
             res.json({ success: true, data: result });
         } catch (error) {
             next(error);
@@ -178,17 +213,31 @@ router.put('/:id/report',
         try {
             const { id } = req.params;
             const { nomorLaporan, tanggalPelaporan } = req.body;
+            const unitScope = resolveRecordUnitScope(req);
 
             if (!nomorLaporan || !tanggalPelaporan) {
                 return res.status(400).json({ error: 'nomorLaporan and tanggalPelaporan are required' });
             }
 
-            const existing = await arsipTerjagaService.findById(id as string);
+            const existing = await arsipTerjagaService.findById(
+                id as string,
+                unitScope,
+                allowedSecurityClassifications(req.user),
+            );
             if (!existing) {
                 return res.status(404).json({ error: 'Arsip terjaga not found' });
             }
 
-            const result = await arsipTerjagaService.markAsReported(id as string, nomorLaporan, tanggalPelaporan);
+            const result = await arsipTerjagaService.markAsReported(
+                id as string,
+                nomorLaporan,
+                tanggalPelaporan,
+                unitScope,
+            );
+            if (!result) {
+                return res.status(404).json({ error: 'Arsip terjaga not found' });
+            }
+
             res.json({ success: true, data: result });
         } catch (error) {
             next(error);
@@ -200,13 +249,22 @@ router.put('/:id/report',
 router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const existing = await arsipTerjagaService.findById(id as string);
+        const unitScope = resolveRecordUnitScope(req);
+        const existing = await arsipTerjagaService.findById(
+            id as string,
+            unitScope,
+            allowedSecurityClassifications(req.user),
+        );
 
         if (!existing) {
             return res.status(404).json({ error: 'Arsip terjaga not found' });
         }
 
-        await arsipTerjagaService.delete(id as string);
+        const deleted = await arsipTerjagaService.delete(id as string, unitScope);
+        if (!deleted) {
+            return res.status(404).json({ error: 'Arsip terjaga not found' });
+        }
+
         res.json({ success: true, message: 'Arsip terjaga designation removed' });
     } catch (error) {
         next(error);

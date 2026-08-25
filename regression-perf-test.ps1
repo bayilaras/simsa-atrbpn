@@ -11,6 +11,17 @@ $baseUrl = "http://localhost:3001"
 $results = @()
 $phaseTimings = @{}
 
+function Get-RequiredTestCredential([string]$name) {
+    $value = [Environment]::GetEnvironmentVariable($name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "Required environment variable $name is not set. Refusing to run with a default credential."
+    }
+    return $value
+}
+
+$testLoginEmail = Get-RequiredTestCredential "SIMSA_TEST_EMAIL"
+$testLoginPassword = Get-RequiredTestCredential "SIMSA_TEST_PASSWORD"
+
 function Add-Result($phase, $id, $name, $status, $severity, $detail) {
     $script:results += [PSCustomObject]@{
         Phase    = $phase
@@ -75,7 +86,7 @@ if ($backendAlive.Code -ne 200) {
 Write-Host "Backend: ONLINE`n" -ForegroundColor Green
 
 # AUTHENTICATE + GET CSRF TOKEN
-$loginBody = '{"email":"tester@simsa.atrbpn.go.id","password":"Password123!@#"}'
+$loginBody = @{ email = $testLoginEmail; password = $testLoginPassword } | ConvertTo-Json -Compress
 try {
     $loginResp = Invoke-WebRequest -Uri "$baseUrl/api/auth/sign-in/email" -Method POST -Body $loginBody -ContentType "application/json" -UseBasicParsing -SessionVariable adminSession
     Write-Host "Login OK" -ForegroundColor Green

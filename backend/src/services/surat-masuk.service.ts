@@ -1,10 +1,14 @@
 import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
-import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull } from 'drizzle-orm';
+import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, inArray } from 'drizzle-orm';
 import { DatabaseError } from '../utils/errors';
+import {
+    scopedRecordByIdWhere,
+    type RecordUnitScope,
+} from '../utils/record-unit-scope.js';
 
 export interface SuratMasukFilters {
-    unitKerjaId: string;
+    unitKerjaId?: string | null;
     tahun?: number;
     tanggalDari?: string;
     tanggalSampai?: string;
@@ -15,11 +19,26 @@ export interface SuratMasukFilters {
     search?: string;
     page?: number;
     limit?: number;
+    /** null means all classes (super_admin); [] fails closed. */
+    securityClassifications?: string[] | null;
+}
+
+function securityClassificationCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+
+    const normalized = sql<string>`CASE
+        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+        THEN 'biasa'
+        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+    END`;
+    return inArray(normalized, classes);
 }
 
 export class SuratMasukService {
     async findAll(filters: SuratMasukFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, search, page = 1, limit = 20 } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, search, page = 1, limit = 20, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
         // Build where conditions
@@ -28,9 +47,11 @@ export class SuratMasukService {
         ];
 
         // Only filter by unitKerjaId when provided (super_admin sees all)
-        if (unitKerjaId) {
+        if (unitKerjaId !== null && unitKerjaId !== undefined) {
             conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
         }
+        const classificationCondition = securityClassificationCondition(securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
 
         if (tahun) {
             conditions.push(eq(suratMasuk.tahun, tahun));
@@ -94,16 +115,16 @@ export class SuratMasukService {
         };
     }
 
-    async findById(id: string, unitKerjaId?: string | null) {
+    async findById(id: string, unitScope: RecordUnitScope) {
         const conditions = [
-            eq(suratMasuk.id, id),
+            scopedRecordByIdWhere(
+                suratMasuk.id,
+                id,
+                suratMasuk.unitKerjaId,
+                unitScope,
+            ),
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
         ];
-
-        // Only scope to a unit when the caller resolved one (super_admin sees all)
-        if (unitKerjaId) {
-            conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
-        }
 
         const [result] = await db
             .select()
@@ -152,16 +173,16 @@ export class SuratMasukService {
         }
     }
 
-    async update(id: string, data: Partial<SuratMasuk>, unitKerjaId?: string | null) {
+    async update(id: string, data: Partial<SuratMasuk>, unitScope: RecordUnitScope) {
         const conditions = [
-            eq(suratMasuk.id, id),
+            scopedRecordByIdWhere(
+                suratMasuk.id,
+                id,
+                suratMasuk.unitKerjaId,
+                unitScope,
+            ),
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Never mutate soft-deleted records (NULL-safe)
         ];
-
-        // Only scope to a unit when the caller resolved one (super_admin sees all)
-        if (unitKerjaId) {
-            conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
-        }
 
         const [result] = await db
             .update(suratMasuk)
@@ -172,17 +193,17 @@ export class SuratMasukService {
         return result;
     }
 
-    async delete(id: string, deletedByUserId?: string, unitKerjaId?: string | null) {
+    async delete(id: string, deletedByUserId: string | undefined, unitScope: RecordUnitScope) {
         // Soft delete - mark as deleted instead of permanently removing
         const conditions = [
-            eq(suratMasuk.id, id),
+            scopedRecordByIdWhere(
+                suratMasuk.id,
+                id,
+                suratMasuk.unitKerjaId,
+                unitScope,
+            ),
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Keep deletedAt/deletedBy of an already deleted record intact
         ];
-
-        // Only scope to a unit when the caller resolved one (super_admin sees all)
-        if (unitKerjaId) {
-            conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
-        }
 
         const [result] = await db
             .update(suratMasuk)
@@ -223,8 +244,8 @@ export class SuratMasukService {
         return result;
     }
 
-    async archive(id: string, unitKerjaId?: string | null) {
-        return this.update(id, { isArchived: true }, unitKerjaId);
+    async archive(id: string, unitScope: RecordUnitScope) {
+        return this.update(id, { isArchived: true }, unitScope);
     }
 
     async getNextNumber(unitKerjaId: string, tahun?: number) {
@@ -243,17 +264,23 @@ export class SuratMasukService {
         return (lastSurat?.noUrut || 0) + 1;
     }
 
-    async getStats(unitKerjaId: string | null, tahun?: number) {
+    async getStats(
+        unitKerjaId: string | null,
+        tahun?: number,
+        securityClassifications?: string[] | null,
+    ) {
         try {
             // Mirror dashboard service pattern exactly:
             // - When unitKerjaId is null → skip WHERE clause (query all records)
             // - Use individual count queries in parallel (proven working in dashboard)
             // Dashboard shows 1721 surat masuk correctly using this approach
 
+            const classificationCondition = securityClassificationCondition(securityClassifications);
             const baseConditions = [
                 or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,
-                ...(unitKerjaId ? [eq(suratMasuk.unitKerjaId, unitKerjaId)] : []),
+                ...(unitKerjaId !== null ? [eq(suratMasuk.unitKerjaId, unitKerjaId)] : []),
                 ...(tahun ? [eq(suratMasuk.tahun, tahun)] : []),
+                ...(classificationCondition ? [classificationCondition] : []),
             ];
 
             // Run all counts in parallel (same approach as dashboard service)
@@ -293,7 +320,7 @@ export class SuratMasukService {
     }
 
     // Get surat keluar yang merupakan balasan dari surat masuk ini
-    async getBalasan(suratMasukId: string) {
+    async getBalasan(suratMasukId: string, unitKerjaId: string) {
         const { suratKeluar } = await import('../db/schema');
 
         const balasan = await db
@@ -301,6 +328,7 @@ export class SuratMasukService {
             .from(suratKeluar)
             .where(and(
                 eq(suratKeluar.balasanUntuk, suratMasukId),
+                eq(suratKeluar.unitKerjaId, unitKerjaId),
                 or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!  // Exclude soft-deleted records (NULL-safe)
             ))
             .orderBy(desc(suratKeluar.createdAt));
@@ -309,7 +337,11 @@ export class SuratMasukService {
     }
 
     // Get all pending surat masuk (belum dibalas) for reply selection dropdown
-    async getPendingForReply(unitKerjaId: string) {
+    async getPendingForReply(
+        unitKerjaId: string,
+        securityClassifications?: string[] | null,
+    ) {
+        const classificationCondition = securityClassificationCondition(securityClassifications);
         const pending = await db
             .select({
                 id: suratMasuk.id,
@@ -321,6 +353,7 @@ export class SuratMasukService {
             .from(suratMasuk)
             .where(and(
                 eq(suratMasuk.unitKerjaId, unitKerjaId),
+                ...(classificationCondition ? [classificationCondition] : []),
                 eq(suratMasuk.status, 'belum_dibalas'),
                 or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!  // Exclude soft-deleted records (NULL-safe)
             ))
@@ -330,11 +363,11 @@ export class SuratMasukService {
     }
 
     // Get full detail with linked arsip info
-    async findByIdWithLinks(id: string, unitKerjaId?: string | null) {
-        const surat = await this.findById(id, unitKerjaId);
+    async findByIdWithLinks(id: string, unitScope: RecordUnitScope) {
+        const surat = await this.findById(id, unitScope);
         if (!surat) return null;
 
-        const balasan = await this.getBalasan(id);
+        const balasan = await this.getBalasan(id, surat.unitKerjaId);
 
         // Check if this surat is archived
         const { arsip } = await import('../db/schema');
@@ -343,7 +376,8 @@ export class SuratMasukService {
             .from(arsip)
             .where(and(
                 eq(arsip.sourceSuratId, id),
-                eq(arsip.jenisArsip, 'masuk')
+                eq(arsip.jenisArsip, 'masuk'),
+                eq(arsip.unitKerjaId, surat.unitKerjaId)
             ))
             .limit(1);
 

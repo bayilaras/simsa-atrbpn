@@ -1,12 +1,25 @@
 import { db } from '../config/database';
 import { suratDistributions, NewSuratDistribution, SuratDistribution, suratMasuk, unitKerja, users } from '../db/schema';
-import { eq, and, desc, sql, or, ne, notInArray } from 'drizzle-orm';
+import { eq, and, desc, sql, or, notInArray, inArray } from 'drizzle-orm';
+import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
 
 export interface DistributionFilters {
     unitKerjaId?: string;
     status?: string;
     page?: number;
     limit?: number;
+}
+
+function incomingSecurityCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+    const normalized = sql<string>`CASE
+        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+        THEN 'biasa'
+        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+    END`;
+    return inArray(normalized, classes);
 }
 
 export class DistributionService {
@@ -21,6 +34,20 @@ export class DistributionService {
         ccUnits?: string[];
         sentBy?: string;
     }) {
+        // The source unit supplied by the client must own the source letter. This
+        // prevents an authorised unit from distributing another unit's letter by ID.
+        const [sourceSurat] = await db
+            .select({ id: suratMasuk.id })
+            .from(suratMasuk)
+            .where(and(
+                eq(suratMasuk.id, data.suratMasukId),
+                eq(suratMasuk.unitKerjaId, data.sourceUnitId),
+            ))
+            .limit(1);
+        if (!sourceSurat) {
+            throw new Error('Surat not found');
+        }
+
         // Check if already distributed to this target
         const [existing] = await db
             .select()
@@ -55,7 +82,11 @@ export class DistributionService {
     /**
      * Get inbox (incoming distributions for a unit)
      */
-    async findInbox(unitKerjaId: string, filters: DistributionFilters = {}) {
+    async findInbox(
+        unitKerjaId: string,
+        filters: DistributionFilters = {},
+        securityClassifications?: string[] | null,
+    ) {
         const { status, page = 1, limit = 20 } = filters;
         const offset = (page - 1) * limit;
 
@@ -63,10 +94,13 @@ export class DistributionService {
         if (status) {
             conditions.push(eq(suratDistributions.status, status));
         }
+        const classificationCondition = incomingSecurityCondition(securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
 
         const [{ count }] = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(suratDistributions)
+            .innerJoin(suratMasuk, eq(suratDistributions.suratMasukId, suratMasuk.id))
             .where(and(...conditions));
 
         const data = await db
@@ -111,7 +145,11 @@ export class DistributionService {
     /**
      * Get outbox (sent distributions from a unit)
      */
-    async findOutbox(unitKerjaId: string, filters: DistributionFilters = {}) {
+    async findOutbox(
+        unitKerjaId: string,
+        filters: DistributionFilters = {},
+        securityClassifications?: string[] | null,
+    ) {
         const { status, page = 1, limit = 20 } = filters;
         const offset = (page - 1) * limit;
 
@@ -119,10 +157,13 @@ export class DistributionService {
         if (status) {
             conditions.push(eq(suratDistributions.status, status));
         }
+        const classificationCondition = incomingSecurityCondition(securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
 
         const [{ count }] = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(suratDistributions)
+            .innerJoin(suratMasuk, eq(suratDistributions.suratMasukId, suratMasuk.id))
             .where(and(...conditions));
 
         const data = await db
@@ -167,21 +208,39 @@ export class DistributionService {
      * Scope a distribution to the target unit when the caller resolved one
      * (super_admin passes nothing and may act on any unit).
      */
-    private targetScope(targetUnitId?: string | null) {
-        return targetUnitId ? [eq(suratDistributions.targetUnitId, targetUnitId)] : [];
+    private targetRecordWhere(distributionId: string, unitScope: RecordUnitScope) {
+        const idCondition = eq(suratDistributions.id, distributionId);
+        return unitScope === null
+            ? idCondition
+            : and(idCondition, eq(suratDistributions.targetUnitId, unitScope))!;
+    }
+
+    /** Read access is limited to a distribution's source or target unit. */
+    private accessibleRecordWhere(distributionId: string, unitScope: RecordUnitScope) {
+        const idCondition = eq(suratDistributions.id, distributionId);
+        return unitScope === null
+            ? idCondition
+            : and(
+                idCondition,
+                or(
+                    eq(suratDistributions.sourceUnitId, unitScope),
+                    eq(suratDistributions.targetUnitId, unitScope),
+                ),
+            )!;
     }
 
     /**
      * Mark distribution as received by target unit
      */
-    async receive(distributionId: string, receivedBy: string, targetUnitId?: string | null) {
+    async receive(
+        distributionId: string,
+        receivedBy: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+    ) {
         const [distribution] = await db
             .select()
             .from(suratDistributions)
-            .where(and(
-                eq(suratDistributions.id, distributionId),
-                ...this.targetScope(targetUnitId)
-            ))
+            .where(this.targetRecordWhere(distributionId, unitScope))
             .limit(1);
 
         if (!distribution) {
@@ -201,9 +260,8 @@ export class DistributionService {
             })
             // Repeat the status guard so a concurrent call cannot also win the check above
             .where(and(
-                eq(suratDistributions.id, distributionId),
+                this.targetRecordWhere(distributionId, unitScope),
                 eq(suratDistributions.status, 'sent'),
-                ...this.targetScope(targetUnitId)
             ))
             .returning();
 
@@ -217,21 +275,21 @@ export class DistributionService {
     /**
      * Mark distribution as processed/completed
      */
-    async process(distributionId: string, targetUnitId?: string | null) {
+    async process(
+        distributionId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+    ) {
         const [distribution] = await db
             .select()
             .from(suratDistributions)
-            .where(and(
-                eq(suratDistributions.id, distributionId),
-                ...this.targetScope(targetUnitId)
-            ))
+            .where(this.targetRecordWhere(distributionId, unitScope))
             .limit(1);
 
         if (!distribution) {
             throw new Error('Distribution not found');
         }
-        if (distribution.status === 'processed') {
-            throw new Error('Distribution sudah selesai diproses');
+        if (distribution.status !== 'received') {
+            throw new Error('Distribution hanya dapat diproses setelah diterima');
         }
 
         const [result] = await db
@@ -241,16 +299,16 @@ export class DistributionService {
                 processedAt: new Date(),
                 updatedAt: new Date(),
             })
-            // Repeat the status guard so a concurrent call cannot also win the check above
+            // Require the exact previous state so sent/rejected rows can never jump
+            // directly to processed, including under concurrent requests.
             .where(and(
-                eq(suratDistributions.id, distributionId),
-                ne(suratDistributions.status, 'processed'),
-                ...this.targetScope(targetUnitId)
+                this.targetRecordWhere(distributionId, unitScope),
+                eq(suratDistributions.status, 'received'),
             ))
             .returning();
 
         if (!result) {
-            throw new Error('Distribution sudah selesai diproses');
+            throw new Error('Distribution hanya dapat diproses setelah diterima');
         }
 
         return result;
@@ -259,14 +317,15 @@ export class DistributionService {
     /**
      * Reject distribution (return to sender)
      */
-    async reject(distributionId: string, reason: string, targetUnitId?: string | null) {
+    async reject(
+        distributionId: string,
+        reason: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+    ) {
         const [distribution] = await db
             .select()
             .from(suratDistributions)
-            .where(and(
-                eq(suratDistributions.id, distributionId),
-                ...this.targetScope(targetUnitId)
-            ))
+            .where(this.targetRecordWhere(distributionId, unitScope))
             .limit(1);
 
         if (!distribution) {
@@ -285,9 +344,8 @@ export class DistributionService {
             })
             // Repeat the status guard so a concurrent call cannot also win the check above
             .where(and(
-                eq(suratDistributions.id, distributionId),
+                this.targetRecordWhere(distributionId, unitScope),
                 notInArray(suratDistributions.status, ['processed', 'rejected']),
-                ...this.targetScope(targetUnitId)
             ))
             .returning();
 
@@ -301,7 +359,7 @@ export class DistributionService {
     /**
      * Get distribution by ID with full details
      */
-    async findById(id: string) {
+    async findById(id: string, unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS) {
         const [result] = await db
             .select({
                 distribution: suratDistributions,
@@ -309,7 +367,7 @@ export class DistributionService {
             })
             .from(suratDistributions)
             .innerJoin(suratMasuk, eq(suratDistributions.suratMasukId, suratMasuk.id))
-            .where(eq(suratDistributions.id, id))
+            .where(this.accessibleRecordWhere(id, unitScope))
             .limit(1);
 
         return result ? { ...result.distribution, surat: result.surat } : null;
@@ -373,11 +431,21 @@ export class DistributionService {
     /**
      * Check if surat is already distributed
      */
-    async isDistributed(suratMasukId: string) {
+    async isDistributed(
+        suratMasukId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+    ) {
+        const conditions = [eq(suratDistributions.suratMasukId, suratMasukId)];
+        if (unitScope !== null) {
+            conditions.push(or(
+                eq(suratDistributions.sourceUnitId, unitScope),
+                eq(suratDistributions.targetUnitId, unitScope),
+            )!);
+        }
         const [result] = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(suratDistributions)
-            .where(eq(suratDistributions.suratMasukId, suratMasukId));
+            .where(and(...conditions));
 
         return result.count > 0;
     }
@@ -385,7 +453,17 @@ export class DistributionService {
     /**
      * Get distribution history for a surat
      */
-    async getHistoryBySurat(suratMasukId: string) {
+    async getHistoryBySurat(
+        suratMasukId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+    ) {
+        const conditions = [eq(suratDistributions.suratMasukId, suratMasukId)];
+        if (unitScope !== null) {
+            conditions.push(or(
+                eq(suratDistributions.sourceUnitId, unitScope),
+                eq(suratDistributions.targetUnitId, unitScope),
+            )!);
+        }
         return await db
             .select({
                 distribution: suratDistributions,
@@ -396,7 +474,7 @@ export class DistributionService {
             })
             .from(suratDistributions)
             .innerJoin(unitKerja, eq(suratDistributions.targetUnitId, unitKerja.id))
-            .where(eq(suratDistributions.suratMasukId, suratMasukId))
+            .where(and(...conditions))
             .orderBy(desc(suratDistributions.sentAt));
     }
 }

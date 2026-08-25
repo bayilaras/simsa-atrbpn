@@ -29,7 +29,7 @@ import {
 export default function Laporan() {
     const { user } = useAuth();
     const { toast } = useToast();
-    const unitKerjaId = user?.unitKerjaId || 'ditjen';
+    const unitKerjaId = user?.unitKerjaId || '';
 
     const [activeTab, setActiveTab] = useState('summary');
     const [loading, setLoading] = useState(false);

@@ -3,6 +3,7 @@ import { globalSearchService } from '../services/global-search.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { ocrLimiter } from '../middlewares/rate-limiter.middleware';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { allowedSecurityClassifications } from '../services/record-access.service.js';
 
 const router = Router();
 
@@ -39,7 +40,8 @@ router.get('/', async (req: AuthRequest, res, next) => {
             modules: modules ? (modules as string).split(',') as any[] : undefined,
             tahun: tahun ? Number(tahun) : undefined,
             limit: limit ? Number(limit) : undefined,
-            page: page ? Number(page) : undefined
+            page: page ? Number(page) : undefined,
+            securityClassifications: allowedSecurityClassifications(req.user),
         });
 
         res.json({
@@ -72,7 +74,8 @@ router.get('/content', ocrLimiter, async (req: AuthRequest, res, next) => {
 
         const results = await globalSearchService.searchByContent(
             q,
-            unitKerjaId as string
+            unitKerjaId as string,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({
@@ -103,7 +106,8 @@ router.get('/suggestions', async (req: AuthRequest, res, next) => {
         const result = await globalSearchService.search({
             query: q,
             unitKerjaId: unitKerjaId as string,
-            limit: 5
+            limit: 5,
+            securityClassifications: allowedSecurityClassifications(req.user),
         });
 
         const suggestions = result.results.map(r => ({

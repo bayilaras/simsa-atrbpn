@@ -26,7 +26,10 @@ export const penyusutanArsip = pgTable('penyusutan_arsip', {
     totalVolume: integer('total_volume').default(0),
     keterangan: text('keterangan'),
     createdBy: uuid('created_by').references(() => users.id),
+    proposedBy: uuid('proposed_by').references(() => users.id),
+    reviewedBy: uuid('reviewed_by').references(() => users.id),
     approvedBy: uuid('approved_by').references(() => users.id),
+    executedBy: uuid('executed_by').references(() => users.id),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -60,6 +63,21 @@ export const penyusutanArsipRelations = relations(penyusutanArsip, ({ one, many 
         fields: [penyusutanArsip.approvedBy],
         references: [users.id],
         relationName: 'penyusutanApprover',
+    }),
+    proposedByUser: one(users, {
+        fields: [penyusutanArsip.proposedBy],
+        references: [users.id],
+        relationName: 'penyusutanProposer',
+    }),
+    reviewedByUser: one(users, {
+        fields: [penyusutanArsip.reviewedBy],
+        references: [users.id],
+        relationName: 'penyusutanReviewer',
+    }),
+    executedByUser: one(users, {
+        fields: [penyusutanArsip.executedBy],
+        references: [users.id],
+        relationName: 'penyusutanExecutor',
     }),
     items: many(penyusutanItems),
 }));

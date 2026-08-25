@@ -2,10 +2,12 @@
 import { Router } from 'express';
 import { layananArsipService } from '../services/layanan-arsip.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
-import { canWriteMiddleware } from '../middlewares/role.middleware';
+import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware';
 import auditLogService from '../services/audit-log.service';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createLayananArsipSchema, updateLayananStatusSchema } from '../validators/schemas';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope';
+import { allowedSecurityClassifications } from '../services/record-access.service';
 
 const router = Router();
 
@@ -19,6 +21,15 @@ const LAYANAN_STATUS_TRANSITIONS: Record<string, string[]> = {
     selesai: [],
     ditolak: [],
 };
+
+function resolveLayananAccess(req: AuthRequest) {
+    return {
+        unitScope: resolveRecordUnitScope(req),
+        requesterId: req.user?.id,
+        canReviewUnit: LAYANAN_REVIEWER_ROLES.includes(req.user?.role || ''),
+        securityClassifications: allowedSecurityClassifications(req.user),
+    };
+}
 
 router.use(authMiddleware);
 
@@ -42,7 +53,11 @@ router.get('/', async (req: AuthRequest, res, next) => {
             filters.userId = req.user?.id;
         }
 
-        const result = await layananArsipService.findAll(filters);
+        const result = await layananArsipService.findAll(
+            filters,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, ...result });
     } catch (error) {
         next(error);
@@ -53,7 +68,10 @@ router.get('/', async (req: AuthRequest, res, next) => {
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const result = await layananArsipService.findById(id as string);
+        const result = await layananArsipService.findById(
+            id as string,
+            resolveLayananAccess(req),
+        );
         if (!result) return res.status(404).json({ error: 'Data not found' });
         res.json({ success: true, data: result });
     } catch (error) {
@@ -62,7 +80,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
 });
 
 // POST /api/layanan-arsip
-router.post('/', validateBody(createLayananArsipSchema), async (req: AuthRequest, res, next) => {
+router.post('/', roleMiddleware(['staff']), validateBody(createLayananArsipSchema), async (req: AuthRequest, res, next) => {
     try {
         if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -70,7 +88,7 @@ router.post('/', validateBody(createLayananArsipSchema), async (req: AuthRequest
             ...req.body,
             diajukanOleh: req.user.id,
             status: 'diajukan'
-        });
+        }, resolveRecordUnitScope(req), allowedSecurityClassifications(req.user));
 
         await auditLogService.logAction({
             userId: req.user.id,
@@ -99,7 +117,11 @@ router.post('/:id/status', canWriteMiddleware(), validateBody(updateLayananStatu
             return res.status(400).json({ error: 'Invalid status' });
         }
 
-        const existing = await layananArsipService.findById(id as string);
+        const unitScope = resolveRecordUnitScope(req);
+        const existing = await layananArsipService.findById(
+            id as string,
+            resolveLayananAccess(req),
+        );
         if (!existing) return res.status(404).json({ error: 'Data not found' });
 
         if (!LAYANAN_STATUS_TRANSITIONS[existing.status]?.includes(status)) {
@@ -108,7 +130,15 @@ router.post('/:id/status', canWriteMiddleware(), validateBody(updateLayananStatu
             });
         }
 
-        const result = await layananArsipService.updateStatus(id as string, status, req.user?.id, notes);
+        const result = await layananArsipService.updateStatus(
+            id as string,
+            status,
+            req.user?.id,
+            notes,
+            unitScope,
+            existing.status,
+            allowedSecurityClassifications(req.user),
+        );
 
         await auditLogService.logAction({
             userId: req.user?.id,

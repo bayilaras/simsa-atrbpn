@@ -45,7 +45,7 @@ export const penyusutanService = {
 
     // Remove items from batch
     async removeItems(id, arsipIds) {
-        const { data } = await api.delete(`${BASE_URL}/${id}/items`, { data: { arsipIds } });
+        const { data } = await api.delete(`${BASE_URL}/${id}/items`, { arsipIds });
         return data;
     },
 

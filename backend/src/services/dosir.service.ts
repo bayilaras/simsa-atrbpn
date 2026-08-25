@@ -1,6 +1,10 @@
 import { db } from '../config/database';
 import { dosir, dosirSuratMasuk, dosirSuratKeluar, suratMasuk, suratKeluar, Dosir } from '../db/schema';
 import { eq, and, desc, asc, ilike, or, sql, inArray } from 'drizzle-orm';
+import {
+    scopedRecordByIdWhere,
+    type RecordUnitScope,
+} from '../utils/record-unit-scope.js';
 
 interface CreateDosirInput {
     unitKerjaId: string;
@@ -22,12 +26,44 @@ interface UpdateDosirInput {
 }
 
 interface DosirFilters {
-    unitKerjaId?: string;
+    /** null is the explicit all-unit scope reserved for super_admin. */
+    unitKerjaId?: RecordUnitScope;
     status?: string;
     kategori?: string;
     search?: string;
     limit?: number;
     offset?: number;
+}
+
+function incomingSecurityCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+    const normalized = sql<string>`CASE
+        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+        THEN 'biasa'
+        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+    END`;
+    return inArray(normalized, classes);
+}
+
+function canReadLegacyOutgoing(classes: string[] | null | undefined) {
+    return classes === undefined || classes === null || classes.includes('terbatas');
+}
+
+async function findAccessibleDosir(id: string, unitScope: RecordUnitScope) {
+    const [result] = await db
+        .select()
+        .from(dosir)
+        .where(scopedRecordByIdWhere(
+            dosir.id,
+            id,
+            dosir.unitKerjaId,
+            unitScope,
+        ))
+        .limit(1);
+
+    return result || null;
 }
 
 export const dosirService = {
@@ -50,13 +86,18 @@ export const dosirService = {
     /**
      * Update dosir details
      */
-    async update(id: string, data: UpdateDosirInput) {
+    async update(id: string, data: UpdateDosirInput, unitScope: RecordUnitScope) {
         const [updated] = await db.update(dosir)
             .set({
                 ...data,
                 updatedAt: new Date(),
             })
-            .where(eq(dosir.id, id))
+            .where(scopedRecordByIdWhere(
+                dosir.id,
+                id,
+                dosir.unitKerjaId,
+                unitScope,
+            ))
             .returning();
         return updated;
     },
@@ -64,16 +105,29 @@ export const dosirService = {
     /**
      * Delete dosir (cascade deletes junction table entries)
      */
-    async delete(id: string) {
-        await db.delete(dosir).where(eq(dosir.id, id));
-        return { success: true };
+    async delete(id: string, unitScope: RecordUnitScope) {
+        const [deleted] = await db
+            .delete(dosir)
+            .where(scopedRecordByIdWhere(
+                dosir.id,
+                id,
+                dosir.unitKerjaId,
+                unitScope,
+            ))
+            .returning();
+
+        return deleted || null;
     },
 
     /**
      * Get single dosir by ID with linked surat
      */
-    async getById(id: string) {
-        const [result] = await db.select().from(dosir).where(eq(dosir.id, id));
+    async getById(
+        id: string,
+        unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
+    ) {
+        const result = await findAccessibleDosir(id, unitScope);
         if (!result) return null;
 
         // Get linked surat masuk
@@ -84,17 +138,24 @@ export const dosirService = {
             })
             .from(dosirSuratMasuk)
             .innerJoin(suratMasuk, eq(dosirSuratMasuk.suratMasukId, suratMasuk.id))
-            .where(eq(dosirSuratMasuk.dosirId, id));
+            .where(and(
+                eq(dosirSuratMasuk.dosirId, id),
+                eq(suratMasuk.unitKerjaId, result.unitKerjaId),
+                incomingSecurityCondition(securityClassifications),
+            ));
 
         // Get linked surat keluar
-        const linkedKeluar = await db
+        const linkedKeluar = canReadLegacyOutgoing(securityClassifications) ? await db
             .select({
                 link: dosirSuratKeluar,
                 surat: suratKeluar,
             })
             .from(dosirSuratKeluar)
             .innerJoin(suratKeluar, eq(dosirSuratKeluar.suratKeluarId, suratKeluar.id))
-            .where(eq(dosirSuratKeluar.dosirId, id));
+            .where(and(
+                eq(dosirSuratKeluar.dosirId, id),
+                eq(suratKeluar.unitKerjaId, result.unitKerjaId),
+            )) : [];
 
         return {
             ...result,
@@ -112,7 +173,9 @@ export const dosirService = {
         let query = db.select().from(dosir);
         const conditions = [];
 
-        if (unitKerjaId) conditions.push(eq(dosir.unitKerjaId, unitKerjaId));
+        if (unitKerjaId !== undefined && unitKerjaId !== null) {
+            conditions.push(eq(dosir.unitKerjaId, unitKerjaId));
+        }
         if (status) conditions.push(eq(dosir.status, status));
         if (kategori) conditions.push(eq(dosir.kategori, kategori));
         if (search) {
@@ -169,7 +232,14 @@ export const dosirService = {
     /**
      * Get chronological timeline of all surat in a dosir
      */
-    async getTimeline(dosirId: string) {
+    async getTimeline(
+        dosirId: string,
+        unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
+    ) {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope);
+        if (!accessibleDosir) return null;
+
         // Get surat masuk
         const masukList = await db
             .select({
@@ -184,10 +254,14 @@ export const dosirService = {
             })
             .from(dosirSuratMasuk)
             .innerJoin(suratMasuk, eq(dosirSuratMasuk.suratMasukId, suratMasuk.id))
-            .where(eq(dosirSuratMasuk.dosirId, dosirId));
+            .where(and(
+                eq(dosirSuratMasuk.dosirId, dosirId),
+                eq(suratMasuk.unitKerjaId, accessibleDosir.unitKerjaId),
+                incomingSecurityCondition(securityClassifications),
+            ));
 
         // Get surat keluar
-        const keluarList = await db
+        const keluarList = canReadLegacyOutgoing(securityClassifications) ? await db
             .select({
                 id: suratKeluar.id,
                 type: sql<string>`'keluar'`.as('type'),
@@ -200,7 +274,10 @@ export const dosirService = {
             })
             .from(dosirSuratKeluar)
             .innerJoin(suratKeluar, eq(dosirSuratKeluar.suratKeluarId, suratKeluar.id))
-            .where(eq(dosirSuratKeluar.dosirId, dosirId));
+            .where(and(
+                eq(dosirSuratKeluar.dosirId, dosirId),
+                eq(suratKeluar.unitKerjaId, accessibleDosir.unitKerjaId),
+            )) : [];
 
         // Combine and sort by tanggal (chronologically)
         const timeline = [...masukList, ...keluarList].sort((a, b) => {
@@ -215,7 +292,26 @@ export const dosirService = {
     /**
      * Add surat masuk to dosir
      */
-    async addSuratMasuk(dosirId: string, suratMasukId: string, notes?: string) {
+    async addSuratMasuk(
+        dosirId: string,
+        suratMasukId: string,
+        notes: string | undefined,
+        unitScope: RecordUnitScope,
+    ) {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope);
+        if (!accessibleDosir) return null;
+
+        const [accessibleSurat] = await db
+            .select({ id: suratMasuk.id })
+            .from(suratMasuk)
+            .where(and(
+                eq(suratMasuk.id, suratMasukId),
+                eq(suratMasuk.unitKerjaId, accessibleDosir.unitKerjaId),
+            ))
+            .limit(1);
+
+        if (!accessibleSurat) return null;
+
         const [link] = await db.insert(dosirSuratMasuk).values({
             dosirId,
             suratMasukId,
@@ -227,7 +323,26 @@ export const dosirService = {
     /**
      * Add surat keluar to dosir
      */
-    async addSuratKeluar(dosirId: string, suratKeluarId: string, notes?: string) {
+    async addSuratKeluar(
+        dosirId: string,
+        suratKeluarId: string,
+        notes: string | undefined,
+        unitScope: RecordUnitScope,
+    ) {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope);
+        if (!accessibleDosir) return null;
+
+        const [accessibleSurat] = await db
+            .select({ id: suratKeluar.id })
+            .from(suratKeluar)
+            .where(and(
+                eq(suratKeluar.id, suratKeluarId),
+                eq(suratKeluar.unitKerjaId, accessibleDosir.unitKerjaId),
+            ))
+            .limit(1);
+
+        if (!accessibleSurat) return null;
+
         const [link] = await db.insert(dosirSuratKeluar).values({
             dosirId,
             suratKeluarId,
@@ -239,7 +354,14 @@ export const dosirService = {
     /**
      * Remove surat masuk from dosir
      */
-    async removeSuratMasuk(dosirId: string, suratMasukId: string) {
+    async removeSuratMasuk(
+        dosirId: string,
+        suratMasukId: string,
+        unitScope: RecordUnitScope,
+    ) {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope);
+        if (!accessibleDosir) return null;
+
         await db.delete(dosirSuratMasuk).where(
             and(
                 eq(dosirSuratMasuk.dosirId, dosirId),
@@ -252,7 +374,14 @@ export const dosirService = {
     /**
      * Remove surat keluar from dosir
      */
-    async removeSuratKeluar(dosirId: string, suratKeluarId: string) {
+    async removeSuratKeluar(
+        dosirId: string,
+        suratKeluarId: string,
+        unitScope: RecordUnitScope,
+    ) {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope);
+        if (!accessibleDosir) return null;
+
         await db.delete(dosirSuratKeluar).where(
             and(
                 eq(dosirSuratKeluar.dosirId, dosirId),
@@ -265,8 +394,10 @@ export const dosirService = {
     /**
      * Get stats for dosir
      */
-    async getStats(unitKerjaId?: string) {
-        const conditions = unitKerjaId ? eq(dosir.unitKerjaId, unitKerjaId) : undefined;
+    async getStats(unitKerjaId: RecordUnitScope) {
+        const conditions = unitKerjaId === null
+            ? undefined
+            : eq(dosir.unitKerjaId, unitKerjaId);
 
         const stats = await db
             .select({

@@ -1,12 +1,16 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
 
+// Draft metadata can contain personal or classified information. Keep it only in
+// the running tab's JavaScript memory; never persist it to browser storage.
+const memoryDrafts = new Map();
+
 /**
- * Hook to auto-save form data to localStorage as a draft.
+ * Hook to auto-save form data in volatile browser memory as a draft.
  *
  * Features:
  * - Auto-saves form state every `intervalMs` milliseconds (default 30s)
  * - Provides status indicator ("Draft tersimpan", "Menyimpan...")
- * - Restores saved draft when component mounts
+ * - Restores a saved draft while the same application tab remains open
  * - Clears draft after successful form submission
  *
  * Usage:
@@ -29,23 +33,23 @@ import { useEffect, useCallback, useRef, useState } from 'react';
  *     clearDraft();
  *   };
  *
- * @param {string} key - Unique key to identify this form's draft in localStorage
+ * @param {string} key - Unique key to identify this in-memory form draft
  * @param {number} intervalMs - Auto-save interval in milliseconds (default: 30000)
  */
 export function useAutoSave(key, intervalMs = 30000) {
     const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'saved' | 'restored'
     const pendingDataRef = useRef(null);
     const timerRef = useRef(null);
-    const storageKey = `simsa-draft-${key}`;
+    const draftKey = `simsa-draft-${key}`;
 
-    // Save data to localStorage
+    // Save data only in memory. A refresh intentionally clears the draft.
     const writeDraft = useCallback((data) => {
         try {
             const payload = {
                 data,
                 timestamp: Date.now(),
             };
-            localStorage.setItem(storageKey, JSON.stringify(payload));
+            memoryDrafts.set(draftKey, payload);
             setSaveStatus('saved');
 
             // Auto-clear status after 3 seconds
@@ -53,7 +57,16 @@ export function useAutoSave(key, intervalMs = 30000) {
         } catch (err) {
             console.warn('[AutoSave] Failed to save draft:', err);
         }
-    }, [storageKey]);
+    }, [draftKey]);
+
+    // Remove plaintext drafts created by older releases.
+    useEffect(() => {
+        try {
+            window.localStorage?.removeItem(draftKey);
+        } catch {
+            // Storage can be unavailable under hardened browser policies.
+        }
+    }, [draftKey]);
 
     // Queue data for next auto-save cycle
     const saveDraft = useCallback((data) => {
@@ -75,18 +88,18 @@ export function useAutoSave(key, intervalMs = 30000) {
         };
     }, [intervalMs, writeDraft]);
 
-    // Restore draft from localStorage
+    // Restore a draft retained by this tab's current application session.
     const restoreDraft = useCallback(() => {
         try {
-            const raw = localStorage.getItem(storageKey);
-            if (!raw) return null;
+            const draft = memoryDrafts.get(draftKey);
+            if (!draft) return null;
 
-            const { data, timestamp } = JSON.parse(raw);
+            const { data, timestamp } = draft;
 
             // Ignore drafts older than 24 hours
             const MAX_AGE_MS = 24 * 60 * 60 * 1000;
             if (Date.now() - timestamp > MAX_AGE_MS) {
-                localStorage.removeItem(storageKey);
+                memoryDrafts.delete(draftKey);
                 return null;
             }
 
@@ -97,19 +110,24 @@ export function useAutoSave(key, intervalMs = 30000) {
             console.warn('[AutoSave] Failed to restore draft:', err);
             return null;
         }
-    }, [storageKey]);
+    }, [draftKey]);
 
-    // Clear draft from localStorage
+    // Clear the in-memory draft and any legacy plaintext copy.
     const clearDraft = useCallback(() => {
-        localStorage.removeItem(storageKey);
+        memoryDrafts.delete(draftKey);
+        try {
+            window.localStorage?.removeItem(draftKey);
+        } catch {
+            // Storage can be unavailable under hardened browser policies.
+        }
         pendingDataRef.current = null;
         setSaveStatus(null);
-    }, [storageKey]);
+    }, [draftKey]);
 
     // Check if a draft exists
     const hasDraft = useCallback(() => {
-        return localStorage.getItem(storageKey) !== null;
-    }, [storageKey]);
+        return memoryDrafts.has(draftKey);
+    }, [draftKey]);
 
     return {
         saveDraft,

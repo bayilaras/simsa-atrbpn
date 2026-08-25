@@ -222,7 +222,7 @@ export default function TambahSuratKeluar() {
         try {
             setLoadingSuratMasuk(true);
             const response = await suratMasukService.getBelumDibalas({
-                unitKerjaId: user?.unitKerjaId || 'ditjen',
+                unitKerjaId: user?.unitKerjaId || '',
             });
             setSuratMasukOptions(response.data || []);
         } catch (err) {
@@ -320,7 +320,7 @@ export default function TambahSuratKeluar() {
                 switch (user?.role) {
                     case 'admin_sesditjen': return 'sesditjen';
                     case 'admin_dirjen': return 'ditjen';
-                    default: return user?.unitKerjaId || 'ditjen';
+                    default: return user?.unitKerjaId || '';
                 }
             })();
 

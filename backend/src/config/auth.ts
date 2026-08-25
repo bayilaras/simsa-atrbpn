@@ -27,8 +27,8 @@ function resolveBaseURL(): string {
     return configured || 'http://localhost:3001';
 }
 
-// Better Auth's built-in CSRF check is disabled (it conflicts with the Vercel proxy) and
-// the custom CSRF middleware skips /auth, so state-changing auth requests are guarded here.
+// This origin guard is an additional boundary around Better Auth's built-in
+// state-cookie, PKCE and CSRF protections.
 // A browser always sends Origin (or at least Referer) on a cross-site POST, so rejecting
 // untrusted origins blocks login/sign-out CSRF, while origin-less traffic (OAuth redirects,
 // server-to-server calls through the proxy) keeps working as before.
@@ -56,7 +56,11 @@ export const auth = betterAuth({
         usePlural: true,
     }),
     emailAndPassword: {
-        enabled: true, // Enable email/password for testing
+        enabled: true,
+        // Production accounts are provisioned by an administrator. Existing
+        // credential accounts may still sign in, but the public sign-up endpoint
+        // cannot create unmanaged government-system users.
+        disableSignUp: env.NODE_ENV === 'production',
         autoSignIn: true,
     },
     socialProviders: {
@@ -64,13 +68,6 @@ export const auth = betterAuth({
             clientId: env.GOOGLE_CLIENT_ID,
             clientSecret: env.GOOGLE_CLIENT_SECRET,
         },
-    },
-    account: {
-        // TEMP FIX: .vercel.app is a public suffix — browsers can't share cookies
-        // across subdomains (simsa-frontend.vercel.app ↔ simsa-backend.vercel.app).
-        // This causes state_mismatch on OAuth callback.
-        // Permanent fix: use custom domain (e.g., api.simsa.atrbpn.go.id).
-        skipStateCookieCheck: true,
     },
     trustedOrigins: getTrustedOrigins(),
     session: {
@@ -83,6 +80,11 @@ export const auth = betterAuth({
                 type: 'string',
                 defaultValue: 'user',
                 required: false,
+                // Role assignment is exclusively handled by the protected admin
+                // user-management API. Without this flag Better Auth accepts the
+                // additional field from sign-up/update-user payloads, allowing a
+                // client to request `super_admin` for itself.
+                input: false,
             },
         },
     },
@@ -91,12 +93,17 @@ export const auth = betterAuth({
     },
     advanced: {
         useSecureCookies: env.NODE_ENV === 'production',
-        disableCSRFCheck: true, // Better Auth's check conflicts with the Vercel proxy; originGuard above replaces it
+        // Keep the library's state/CSRF validation enabled. Production must use
+        // a same-site custom frontend/API domain; weakening OAuth state checking
+        // to accommodate separate *.vercel.app hosts is not acceptable here.
+        disableCSRFCheck: false,
         defaultCookieAttributes: env.NODE_ENV === 'production'
             ? {
-                sameSite: 'none' as const,   // Required for cross-domain cookies on .vercel.app (public suffix)
+                // Production is intentionally constrained to a same-site custom
+                // frontend/API domain. Lax preserves top-level OAuth callbacks
+                // while refusing cross-site subresource requests.
+                sameSite: 'lax' as const,
                 secure: true,
-                partitioned: true,           // Required by modern browsers for third-party cookies
             }
             : {},
         crossSubDomainCookies: env.COOKIE_DOMAIN

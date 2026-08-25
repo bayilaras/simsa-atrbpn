@@ -66,9 +66,12 @@ export default function ArsipElektronik() {
     }, [])
 
     useEffect(() => {
-        if (activeTab === 'daftar') fetchData()
-        if (activeTab === 'statistik') fetchStats()
-        if (activeTab === 'verifikasi') fetchPending()
+        const timer = window.setTimeout(() => {
+            if (activeTab === 'daftar') fetchData()
+            if (activeTab === 'statistik') fetchStats()
+            if (activeTab === 'verifikasi') fetchPending()
+        }, 0)
+        return () => window.clearTimeout(timer)
     }, [activeTab, fetchData, fetchStats, fetchPending])
 
     // Handlers
@@ -84,16 +87,19 @@ export default function ArsipElektronik() {
 
     const handleCreate = async () => {
         try {
-            if (!newForm.arsipId || !newForm.formatFile) {
-                toast({ title: 'Arsip ID dan Format File wajib diisi', variant: 'destructive' }); return
+            if (!newForm.arsipId || !newForm.fileAttachmentId) {
+                toast({ title: 'Pilih arsip dan lampiran terkendali terlebih dahulu', variant: 'destructive' }); return
             }
+            const cleanForm = Object.fromEntries(
+                Object.entries(newForm).filter(([, value]) => value !== '' && value !== null)
+            )
             await arsipElektronikService.create({
-                ...newForm,
-                ukuranFile: newForm.ukuranFile ? Number(newForm.ukuranFile) : undefined,
-                resolusiDPI: newForm.resolusiDPI ? Number(newForm.resolusiDPI) : undefined,
-                jumlahHalaman: newForm.jumlahHalaman ? Number(newForm.jumlahHalaman) : undefined,
+                ...cleanForm,
+                resolusiDPI: cleanForm.resolusiDPI ? Number(cleanForm.resolusiDPI) : undefined,
+                colorDepth: cleanForm.colorDepth ? Number(cleanForm.colorDepth) : undefined,
+                jumlahHalaman: cleanForm.jumlahHalaman ? Number(cleanForm.jumlahHalaman) : undefined,
             })
-            toast({ title: 'Metadata elektronik berhasil ditambahkan' })
+            toast({ title: 'Bitstream dan metadata elektronik berhasil diregistrasi' })
             setAddDialogOpen(false); setNewForm(INITIAL_FORM); fetchData()
         } catch (err) { toast({ title: 'Gagal', description: err.message, variant: 'destructive' }) }
     }

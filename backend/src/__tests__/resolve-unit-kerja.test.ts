@@ -81,14 +81,14 @@ describe('resolveUnitKerjaId', () => {
     });
 
     describe('auditor', () => {
-        it('should return null when no query param (can see all data)', () => {
-            const req = createMockReq({ role: 'auditor' });
-            expect(resolveUnitKerjaId(req)).toBeNull();
+        it('should use the assigned audit-mandate unit', () => {
+            const req = createMockReq({ role: 'auditor', unitKerjaId: 'sesditjen' });
+            expect(resolveUnitKerjaId(req)).toBe('sesditjen');
         });
 
-        it('should return the requested unitKerjaId if provided', () => {
-            const req = createMockReq({ role: 'auditor', queryUnitKerjaId: 'ditjen' });
-            expect(resolveUnitKerjaId(req)).toBe('ditjen');
+        it('should ignore a requested unit outside that mandate', () => {
+            const req = createMockReq({ role: 'auditor', unitKerjaId: 'sesditjen', queryUnitKerjaId: 'ditjen' });
+            expect(resolveUnitKerjaId(req)).toBe('sesditjen');
         });
     });
 

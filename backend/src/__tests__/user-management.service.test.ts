@@ -16,18 +16,23 @@ const mockChain: any = new Proxy({}, {
 
 const mockDb = {
     select: (..._a: any[]) => mockChain,
-    insert: (..._a: any[]) => mockChain,
+    insert: vi.fn((..._a: any[]) => mockChain),
     update: (..._a: any[]) => mockChain,
-    delete: (..._a: any[]) => mockChain,
+    delete: vi.fn((..._a: any[]) => mockChain),
+    transaction: vi.fn(async (callback: any) => callback(mockDb)),
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('better-auth/crypto', () => ({
+    hashPassword: vi.fn().mockResolvedValue('secure-password-hash'),
+}));
 
 const { userManagementService, VALID_ROLES, ADMIN_ROLES } = await import('../services/user-management.service');
 
 describe('userManagementService', () => {
     beforeEach(() => {
         resultQueue.length = 0;
+        vi.clearAllMocks();
     });
 
     // ── Pure functions (no DB) ──
@@ -46,13 +51,14 @@ describe('userManagementService', () => {
             expect(superAdmin!.label).toBe('Super Admin');
         });
 
-        it('should include all 5 roles', () => {
+        it('should include all 6 roles', () => {
             const roles = userManagementService.getRoles();
             const values = roles.map((r: any) => r.value);
             expect(values).toContain('super_admin');
             expect(values).toContain('admin_dirjen');
             expect(values).toContain('admin_sesditjen');
             expect(values).toContain('staff');
+            expect(values).toContain('auditor');
             expect(values).toContain('user');
         });
     });
@@ -62,6 +68,7 @@ describe('userManagementService', () => {
             expect(userManagementService.getRoleLabel('super_admin')).toBe('Super Admin');
             expect(userManagementService.getRoleLabel('admin_dirjen')).toBe('Admin Dirjen PTPP');
             expect(userManagementService.getRoleLabel('admin_sesditjen')).toBe('Admin Sesditjen');
+            expect(userManagementService.getRoleLabel('auditor')).toBe('Auditor (Unit Terbatas)');
             expect(userManagementService.getRoleLabel('user')).toBe('User');
         });
 
@@ -72,8 +79,8 @@ describe('userManagementService', () => {
 
     // ── Constants ──
     describe('VALID_ROLES', () => {
-        it('should contain exactly 5 roles', () => {
-            expect(VALID_ROLES).toHaveLength(5);
+        it('should contain exactly 6 roles', () => {
+            expect(VALID_ROLES).toHaveLength(6);
         });
 
         it('should be an array of strings', () => {
@@ -89,6 +96,29 @@ describe('userManagementService', () => {
     });
 
     // ── DB operations (with mock) ──
+    describe('createUser', () => {
+        it('provisions a credential account without using the public sign-up endpoint', async () => {
+            enqueue(
+                [],
+                [{ id: 'u-new' }],
+                [],
+                [{ id: 'u-new', email: 'new@example.go.id', role: 'staff' }],
+            );
+
+            const result = await userManagementService.createUser({
+                email: ' New@Example.go.id ',
+                name: 'New User',
+                role: 'staff',
+                unitKerjaId: null,
+                password: 'Strong-Password-2026!',
+            });
+
+            expect(result).toEqual({ id: 'u-new', email: 'new@example.go.id', role: 'staff' });
+            expect(mockDb.transaction).toHaveBeenCalledOnce();
+            expect(mockDb.insert).toHaveBeenCalledTimes(2);
+        });
+    });
+
     describe('getUserById', () => {
         it('should return user when found', async () => {
             const mockUser = { id: 'u1', name: 'Test User', email: 'test@test.com', role: 'user' };
@@ -143,6 +173,19 @@ describe('userManagementService', () => {
             await expect(
                 userManagementService.updateUser('u1', { role: 'invalid' as any })
             ).rejects.toThrow('Invalid role: invalid');
+        });
+
+        it('should revoke existing sessions after a role change', async () => {
+            enqueue(
+                [{ id: 'u1', role: 'staff' }],
+                [{ id: 'u1', role: 'staff' }],
+                [],
+            );
+
+            const result = await userManagementService.updateUser('u1', { role: 'staff' });
+
+            expect(result).toEqual({ id: 'u1', role: 'staff' });
+            expect(mockDb.delete).toHaveBeenCalledTimes(1);
         });
     });
 

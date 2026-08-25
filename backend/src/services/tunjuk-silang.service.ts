@@ -1,6 +1,6 @@
 import { db } from '../config/database.js';
 import { tunjukSilang, NewTunjukSilang, TunjukSilang } from '../db/schema/index.js';
-import { eq, or, and, desc, count } from 'drizzle-orm';
+import { eq, or, and, desc, count, isNull } from 'drizzle-orm';
 
 const VALID_ENTITY_TYPES = ['arsip', 'surat_masuk', 'surat_keluar', 'dosir'];
 const VALID_RELASI_TYPES = ['balasan', 'tindak_lanjut', 'lampiran', 'referensi', 'revisi', 'duplikat', 'berkaitan'];
@@ -32,16 +32,19 @@ class TunjukSilangService {
         const results = await db.select()
             .from(tunjukSilang)
             .where(
-                or(
-                    and(
-                        eq(tunjukSilang.sourceType, entityType),
-                        eq(tunjukSilang.sourceId, entityId)
+                and(
+                    or(
+                        and(
+                            eq(tunjukSilang.sourceType, entityType),
+                            eq(tunjukSilang.sourceId, entityId)
+                        ),
+                        and(
+                            eq(tunjukSilang.targetType, entityType),
+                            eq(tunjukSilang.targetId, entityId)
+                        )
                     ),
-                    and(
-                        eq(tunjukSilang.targetType, entityType),
-                        eq(tunjukSilang.targetId, entityId)
-                    )
-                )
+                    isNull(tunjukSilang.cancelledAt),
+                ),
             )
             .orderBy(desc(tunjukSilang.createdAt));
 
@@ -63,15 +66,29 @@ class TunjukSilangService {
     async findById(id: string) {
         const results = await db.select()
             .from(tunjukSilang)
-            .where(eq(tunjukSilang.id, id));
+            .where(and(
+                eq(tunjukSilang.id, id),
+                isNull(tunjukSilang.cancelledAt),
+            ));
         return results[0] || null;
     }
 
     /**
-     * Delete a cross-reference
+     * Cancel a cross-reference while preserving its provenance
      */
-    async delete(id: string) {
-        await db.delete(tunjukSilang).where(eq(tunjukSilang.id, id));
+    async cancel(id: string, cancelledBy: string, cancellationReason: string) {
+        const [cancelled] = await db.update(tunjukSilang)
+            .set({
+                cancelledAt: new Date(),
+                cancelledBy,
+                cancellationReason,
+            })
+            .where(and(
+                eq(tunjukSilang.id, id),
+                isNull(tunjukSilang.cancelledAt),
+            ))
+            .returning();
+        return cancelled || null;
     }
 
     /**
@@ -81,7 +98,7 @@ class TunjukSilangService {
         const { page = 1, limit = 20 } = filters;
         const offset = (page - 1) * limit;
 
-        const conditions = [];
+        const conditions = [isNull(tunjukSilang.cancelledAt)];
         if (filters.jenisRelasi) conditions.push(eq(tunjukSilang.jenisRelasi, filters.jenisRelasi));
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -117,6 +134,7 @@ class TunjukSilangService {
                 count: count(),
             })
                 .from(tunjukSilang)
+                .where(isNull(tunjukSilang.cancelledAt))
                 .groupBy(tunjukSilang.jenisRelasi),
 
             db.select({
@@ -124,9 +142,12 @@ class TunjukSilangService {
                 count: count(),
             })
                 .from(tunjukSilang)
+                .where(isNull(tunjukSilang.cancelledAt))
                 .groupBy(tunjukSilang.sourceType),
 
-            db.select({ count: count() }).from(tunjukSilang),
+            db.select({ count: count() })
+                .from(tunjukSilang)
+                .where(isNull(tunjukSilang.cancelledAt)),
         ]);
 
         return { total: totalResult[0]?.count || 0, byRelasi, byType };

@@ -21,8 +21,8 @@ export const tunjukSilangService = {
         return response.data || response;
     },
 
-    async delete(id) {
-        await api.delete(`/api/tunjuk-silang/${id}`);
+    async cancel(id, reason) {
+        await api.delete(`/api/tunjuk-silang/${id}`, { reason });
     },
 };
 

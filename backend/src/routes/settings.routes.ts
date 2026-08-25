@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { settingsService } from '../services/settings.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { createLogger } from '../utils/logger';
+import { canAccessUnit, type Role } from '../config/permissions.js';
 
 const log = createLogger('SettingsRoutes');
 
@@ -15,6 +16,35 @@ const stripDriveConfig = (unit: any) => {
     const { driveFolderId, driveUploadFolderId, ...rest } = unit;
     return rest;
 };
+
+function canSeeDriveConfig(req: Request, unitKerjaId: string): boolean {
+    const user = (req as AuthRequest).user;
+    const role = (user?.role || 'user') as Role;
+    return ADMIN_ROLES.includes(role)
+        && canAccessUnit(role, user?.unitKerjaId || null, unitKerjaId);
+}
+
+function resolveTemplateUnit(req: Request, res: Response, requestedUnit: unknown): string | null {
+    const user = (req as AuthRequest).user;
+    const requested = typeof requestedUnit === 'string' ? requestedUnit.trim() : '';
+    const unitKerjaId = requested || user?.unitKerjaId || '';
+
+    if (!unitKerjaId) {
+        res.status(400).json({ error: 'unitKerjaId is required' });
+        return null;
+    }
+
+    if (!canAccessUnit(
+        (user?.role || 'user') as Role,
+        user?.unitKerjaId || null,
+        unitKerjaId,
+    )) {
+        res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
+        return null;
+    }
+
+    return unitKerjaId;
+}
 
 // Apply auth middleware to ALL settings routes
 router.use(authMiddleware as any);
@@ -101,8 +131,7 @@ router.put('/profile', async (req: Request, res: Response) => {
 router.get('/unit-kerja', async (req: Request, res: Response) => {
     try {
         const units = await settingsService.getAllUnitKerja();
-        const isAdmin = ADMIN_ROLES.includes((req as any).user?.role);
-        res.json(isAdmin ? units : units.map(stripDriveConfig));
+        res.json(units.map(unit => canSeeDriveConfig(req, unit.id) ? unit : stripDriveConfig(unit)));
     } catch (error) {
         log.error({ err: error }, 'Error getting unit kerja:');
         res.status(500).json({ error: 'Failed to get unit kerja' });
@@ -126,8 +155,7 @@ router.get('/unit-kerja/:id', async (req: Request, res: Response) => {
             return;
         }
 
-        const isAdmin = ADMIN_ROLES.includes((req as any).user?.role);
-        res.json(isAdmin ? unit : stripDriveConfig(unit));
+        res.json(canSeeDriveConfig(req, unit.id) ? unit : stripDriveConfig(unit));
     } catch (error) {
         log.error({ err: error }, 'Error getting unit kerja:');
         res.status(500).json({ error: 'Failed to get unit kerja' });
@@ -152,6 +180,15 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
         }
 
         const { id } = req.params;
+        const user = (req as AuthRequest).user;
+        if (!canAccessUnit(
+            (user?.role || 'user') as Role,
+            user?.unitKerjaId || null,
+            id as string,
+        )) {
+            res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
+            return;
+        }
         const { name, description, driveFolderId, driveUploadFolderId, canReceiveDistribution } = req.body;
 
         const updated = await settingsService.updateUnitKerja(id as string, {
@@ -225,7 +262,8 @@ router.post('/unit-kerja', async (req: Request, res: Response) => {
  */
 router.get('/surat-templates', async (req: Request, res: Response) => {
     try {
-        const unitKerjaId = (req as any).user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveTemplateUnit(req, res, req.query.unitKerjaId);
+        if (!unitKerjaId) return;
         const templates = await settingsService.getSuratTemplates(unitKerjaId);
         res.json(templates);
     } catch (error) {
@@ -250,7 +288,8 @@ router.put('/surat-templates', async (req: Request, res: Response) => {
             return;
         }
 
-        const unitKerjaId = (req as any).user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveTemplateUnit(req, res, req.body.unitKerjaId);
+        if (!unitKerjaId) return;
         const { masukFormat, keluarFormat } = req.body;
 
         const updated = await settingsService.updateSuratTemplates(unitKerjaId, {

@@ -127,7 +127,7 @@ describe('SuratMasukService', () => {
             };
             mockDb.select.mockReturnValue(mockChain);
 
-            const result = await service.findById('123');
+            const result = await service.findById('123', 'ditjen');
             expect(result).toEqual(mockSurat);
         });
 
@@ -139,7 +139,7 @@ describe('SuratMasukService', () => {
             };
             mockDb.select.mockReturnValue(mockChain);
 
-            const result = await service.findById('999');
+            const result = await service.findById('999', 'ditjen');
             expect(result).toBeNull();
         });
     });

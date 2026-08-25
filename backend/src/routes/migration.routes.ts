@@ -6,7 +6,26 @@ import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { canAccessUnit, Role } from '../config/permissions';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const CSV_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
+const CSV_MIME_TYPES = new Set([
+    'text/csv',
+    'application/csv',
+    'application/vnd.ms-excel',
+    'text/plain',
+    'application/octet-stream',
+]);
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: CSV_UPLOAD_LIMIT_BYTES, files: 1 },
+    fileFilter: (_req, file, callback) => {
+        const hasCsvExtension = file.originalname.toLowerCase().endsWith('.csv');
+        if (!hasCsvExtension || !CSV_MIME_TYPES.has(file.mimetype.toLowerCase())) {
+            callback(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname));
+            return;
+        }
+        callback(null, true);
+    },
+});
 
 // All routes require authentication and write permission
 router.use(authMiddleware);
@@ -20,7 +39,7 @@ router.post('/surat-masuk',
     upload.single('file'),
     async (req: AuthRequest, res, next) => {
         try {
-            const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId || 'ditjen';
+            const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId;
 
             if (!unitKerjaId) {
                 return res.status(400).json({
@@ -73,7 +92,7 @@ router.post('/surat-keluar',
     upload.single('file'),
     async (req: AuthRequest, res, next) => {
         try {
-            const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId || 'ditjen';
+            const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId;
 
             if (!unitKerjaId) {
                 return res.status(400).json({
@@ -126,7 +145,7 @@ router.post('/arsip',
     upload.single('file'),
     async (req: AuthRequest, res, next) => {
         try {
-            const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId || 'ditjen';
+            const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId;
 
             if (!unitKerjaId) {
                 return res.status(400).json({

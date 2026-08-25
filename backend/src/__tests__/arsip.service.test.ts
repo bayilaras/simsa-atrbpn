@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
+const capturedValues: any[] = [];
+const capturedSets: any[] = [];
 function enqueue(...results: any[]) { resultQueue.push(...results); }
 
 const mockChain: any = new Proxy({}, {
@@ -10,7 +12,11 @@ const mockChain: any = new Proxy({}, {
             const val = resultQueue.shift() ?? [];
             return (resolve: any) => resolve(val);
         }
-        return (..._args: any[]) => mockChain;
+        return (...args: any[]) => {
+            if (prop === 'values') capturedValues.push(args[0]);
+            if (prop === 'set') capturedSets.push(args[0]);
+            return mockChain;
+        };
     },
 });
 
@@ -32,6 +38,8 @@ describe('ArsipService', () => {
     beforeEach(() => {
         svc = new ArsipService();
         resultQueue.length = 0;
+        capturedValues.length = 0;
+        capturedSets.length = 0;
     });
 
     // ── findAll ──
@@ -92,34 +100,131 @@ describe('ArsipService', () => {
     // ── update ──
     describe('update', () => {
         it('should update and return arsip', async () => {
-            enqueue([{ id: '1', keterangan: 'updated' }]);
+            enqueue(
+                [{
+                    id: '1',
+                    disposalStatus: 'active',
+                    disposalBatchId: null,
+                    legalHold: false,
+                }],
+                [{ id: '1', keterangan: 'updated' }],
+            );
             const res = await svc.update('1', { keterangan: 'updated' } as any);
             expect(res.keterangan).toBe('updated');
+        });
+
+        it('should allow non-retention metadata while an archive is held or in a batch', async () => {
+            enqueue(
+                [{
+                    id: '1',
+                    disposalStatus: 'approved',
+                    disposalBatchId: 'batch-1',
+                    legalHold: true,
+                }],
+                [{ id: '1', keterangan: 'Koreksi deskripsi' }],
+            );
+
+            const result = await svc.update('1', { keterangan: 'Koreksi deskripsi' } as any);
+
+            expect(result.keterangan).toBe('Koreksi deskripsi');
+        });
+
+        it('should block retention and JRA decisions while legal hold is active', async () => {
+            enqueue([{
+                id: '1',
+                disposalStatus: 'active',
+                disposalBatchId: null,
+                legalHold: true,
+            }]);
+
+            await expect(svc.update('1', { jraVersion: 'JRA-2026-v2' } as any))
+                .rejects.toThrow(/legal hold|workflow penyusutan/i);
+        });
+
+        it('should block retention and JRA decisions after entering a disposal batch', async () => {
+            enqueue([{
+                id: '1',
+                disposalStatus: 'active',
+                disposalBatchId: 'batch-1',
+                legalHold: false,
+            }]);
+
+            await expect(svc.update('1', { hasilAkhir: 'Permanen' } as any))
+                .rejects.toThrow(/workflow penyusutan/i);
+        });
+
+        it('should block retention and JRA decisions in a non-active disposal state', async () => {
+            enqueue([{
+                id: '1',
+                disposalStatus: 'proposed',
+                disposalBatchId: null,
+                legalHold: false,
+            }]);
+
+            await expect(svc.update('1', { retentionTriggerDate: '2026-01-01' } as any))
+                .rejects.toThrow(/workflow penyusutan/i);
+        });
+
+        it('should make an executed archive immutable', async () => {
+            enqueue([{
+                id: '1',
+                disposalStatus: 'executed',
+                disposalBatchId: 'batch-1',
+                legalHold: false,
+            }]);
+
+            await expect(svc.update('1', { keterangan: 'Tidak boleh berubah' } as any))
+                .rejects.toThrow(/immutable/i);
+        });
+
+        it('should reject direct mutation of workflow-managed fields', async () => {
+            await expect(svc.update('1', { legalHold: true } as any))
+                .rejects.toThrow(/workflow khusus/i);
+        });
+
+        it('should derive expiry when an active archive retention decision changes', async () => {
+            enqueue(
+                [{
+                    id: '1',
+                    disposalStatus: 'active',
+                    disposalBatchId: null,
+                    legalHold: false,
+                    retentionTriggerType: 'berkas_ditutup',
+                    retentionTriggerLabel: 'Berkas perkara ditutup',
+                    retentionTriggerDate: '2020-01-15',
+                    retentionTriggerEvidence: 'Berita acara penutupan nomor 1/2020',
+                    retensiAktif: '2 tahun',
+                    retensiInaktif: '3 tahun',
+                }],
+                [{ id: '1', retensiAktif: '4 tahun', tanggalKadaluarsa: '2027-01-15' }],
+            );
+
+            await svc.update('1', { retensiAktif: '4 tahun' } as any);
+
+            expect(capturedSets[0]).toMatchObject({
+                retensiAktif: '4 tahun',
+                tanggalKadaluarsa: '2027-01-15',
+            });
+        });
+
+        it('should require evidence when adding a retention trigger', async () => {
+            enqueue([{
+                id: '1',
+                disposalStatus: 'active',
+                disposalBatchId: null,
+                legalHold: false,
+                retentionTriggerDate: null,
+            }]);
+
+            await expect(svc.update('1', { retentionTriggerDate: '2026-01-01' } as any))
+                .rejects.toThrow(/bukti pendukung/i);
         });
     });
 
     // ── delete ──
     describe('delete', () => {
-        it('should delete and return arsip', async () => {
-            enqueue([{ id: '1' }]);          // load arsip
-            enqueue([], [], [], [], []);     // blocker checks: lending, layanan, vital, terjaga, penyusutan
-            enqueue([]);                     // file_attachments lookup
-            enqueue([]);                     // delete file_attachments
-            enqueue([{ id: '1' }]);          // delete arsip .returning()
-            const res = await svc.delete('1');
-            expect(res).toEqual({ id: '1' });
-        });
-
-        it('should refuse to delete an arsip that is currently borrowed', async () => {
-            enqueue([{ id: '1', lendingStatus: 'borrowed' }]);
-            await expect(svc.delete('1')).rejects.toThrow(/dipinjam/);
-        });
-
-        it('should refuse to delete an arsip still referenced elsewhere', async () => {
-            enqueue([{ id: '1' }]);                  // load arsip
-            enqueue([{ id: 'lend-1' }]);             // lending blocker hit
-            enqueue([], [], [], []);                 // remaining blocker checks
-            await expect(svc.delete('1')).rejects.toThrow(/tidak dapat dihapus/);
+        it('should always require the formal penyusutan workflow', async () => {
+            await expect(svc.delete('1')).rejects.toThrow(/workflow penyusutan/i);
         });
     });
 
@@ -156,7 +261,7 @@ describe('ArsipService', () => {
 
     // ── Pure function: calculateRetentionDates ──
     describe('calculateRetentionDates', () => {
-        it('should calculate active and inactive end dates', () => {
+        it('should calculate active and inactive end dates from the explicit trigger', () => {
             const result = svc.calculateRetentionDates('2020-01-15', '2 tahun', '3 tahun');
             expect(result.tanggalAktifBerakhir).toBe('2022-01-15');
             expect(result.tanggalInaktifBerakhir).toBe('2025-01-15');
@@ -174,6 +279,13 @@ describe('ArsipService', () => {
             expect(result.tanggalAktifBerakhir).toBeNull();
             expect(result.tanggalInaktifBerakhir).toBeNull();
             // No parsable retention means no expiry date at all, not "expired on day one"
+            expect(result.tanggalKadaluarsa).toBeNull();
+        });
+
+        it('should never calculate an expiry without a retention trigger', () => {
+            const result = svc.calculateRetentionDates(null, '2 tahun', '3 tahun');
+            expect(result.tanggalAktifBerakhir).toBeNull();
+            expect(result.tanggalInaktifBerakhir).toBeNull();
             expect(result.tanggalKadaluarsa).toBeNull();
         });
 
@@ -205,6 +317,119 @@ describe('ArsipService', () => {
 
         it('should return "aktif" when no active retention is set', () => {
             expect(svc.getArchiveStatus('2020-01-01', null, null)).toBe('aktif');
+        });
+
+        it('should return an undetermined status when the trigger is missing', () => {
+            expect(svc.getArchiveStatus(null, '1 tahun', '1 tahun')).toBe('belum_ditentukan');
+        });
+    });
+
+    describe('archiveFromSuratMasuk retention trigger', () => {
+        it('should not infer retention expiry from the letter/archive date', async () => {
+            enqueue([
+                { id: 'sm-1', unitKerjaId: 'u1', tahun: 2020, tanggalSurat: '2020-01-15', nomorSurat: '1/2020', perihal: 'Test' },
+            ]);
+            enqueue([]); // duplicate check
+            enqueue([{ id: 'a1' }]); // inserted archive
+            enqueue([]); // mark source as archived
+
+            await svc.archiveFromSuratMasuk('sm-1', {
+                retensiAktif: '2 tahun',
+                retensiInaktif: '3 tahun',
+                tanggalArsip: '2020-01-15',
+            });
+
+            expect(capturedValues[0].tanggalArsip).toBe('2020-01-15');
+            expect(capturedValues[0].retentionTriggerDate).toBeUndefined();
+            expect(capturedValues[0].tanggalKadaluarsa).toBeNull();
+        });
+
+        it('should derive expiry from a documented trigger instead', async () => {
+            enqueue([
+                { id: 'sm-1', unitKerjaId: 'u1', tahun: 2020, tanggalSurat: '2020-01-15', nomorSurat: '1/2020', perihal: 'Test' },
+            ]);
+            enqueue([]);
+            enqueue([{ id: 'a1' }]);
+            enqueue([]);
+
+            await svc.archiveFromSuratMasuk('sm-1', {
+                retensiAktif: '2 tahun',
+                retensiInaktif: '3 tahun',
+                retentionTriggerType: 'serah_terima',
+                retentionTriggerLabel: 'BAST final',
+                retentionTriggerDate: '2021-06-30',
+                retentionTriggerEvidence: 'BAST Nomor 12/2021 tanggal 30 Juni 2021',
+            });
+
+            expect(capturedValues[0].tanggalKadaluarsa).toBe('2026-06-30');
+            expect(capturedValues[0].tanggalKadaluarsa).not.toBe('2025-01-15');
+        });
+    });
+
+    describe('getDisposalCandidates', () => {
+        it('should exclude legal holds and archives without an explicit trigger', async () => {
+            enqueue([
+                {
+                    id: 'eligible', unitKerjaId: 'u1', disposalStatus: 'active', legalHold: false,
+                    retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
+                    hasilAkhir: 'Musnah',
+                },
+                {
+                    id: 'held', unitKerjaId: 'u1', disposalStatus: 'active', legalHold: true,
+                    retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
+                    hasilAkhir: 'Musnah',
+                },
+                {
+                    id: 'missing-trigger', unitKerjaId: 'u1', disposalStatus: 'active', legalHold: false,
+                    retentionTriggerDate: null, retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
+                    hasilAkhir: 'Musnah',
+                },
+            ]);
+
+            const result = await svc.getDisposalCandidates('u1');
+            expect(result.data.map(item => item.id)).toEqual(['eligible']);
+        });
+    });
+
+    describe('getLifecycleNotifications', () => {
+        it('reports held and missing-trigger records without treating them as actionable', async () => {
+            enqueue([
+                { id: 'held', legalHold: true, retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
+                { id: 'missing-trigger', legalHold: false, retentionTriggerDate: null, retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
+                { id: 'expired', legalHold: false, retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
+            ]);
+
+            const result = await svc.getLifecycleNotifications('u1');
+            expect(result.summary).toMatchObject({ held: 1, missingTrigger: 1, expired: 1 });
+            expect(result.expired.map(item => item.id)).toEqual(['expired']);
+        });
+    });
+
+    describe('legal hold', () => {
+        it('should require a meaningful reason', async () => {
+            await expect(svc.placeLegalHold('a1', 'u1', 'singkat', 'user-1'))
+                .rejects.toThrow(/minimal 10 karakter/);
+        });
+
+        it('should place a unit-scoped legal hold', async () => {
+            enqueue([{ id: 'a1', unitKerjaId: 'u1', legalHold: false }]);
+            enqueue([{ id: 'a1', unitKerjaId: 'u1', legalHold: true, legalHoldReason: 'Pemeriksaan masih berjalan' }]);
+
+            const result = await svc.placeLegalHold('a1', 'u1', 'Pemeriksaan masih berjalan', 'user-1');
+            expect(result.after.legalHold).toBe(true);
+            expect(result.after.legalHoldReason).toBe('Pemeriksaan masih berjalan');
+        });
+
+        it('should fail if disposal finishes before the conditional hold update', async () => {
+            enqueue([{ id: 'a1', unitKerjaId: 'u1', legalHold: false, disposalStatus: 'approved' }]);
+            enqueue([]); // disposal became executed while the hold update waited for its row lock
+
+            await expect(svc.placeLegalHold(
+                'a1',
+                'u1',
+                'Perkara hukum masih berlangsung',
+                'user-1',
+            )).rejects.toThrow(/Status legal hold berubah/);
         });
     });
 
