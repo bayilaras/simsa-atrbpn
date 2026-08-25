@@ -6,7 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { AlertCircle, Loader2 } from 'lucide-react';
+import appConfig from '@/lib/app-config';
 
 export default function Login() {
     const { signInWithGoogle, signInWithEmail, loading, error, isAuthenticated } = useAuth();
@@ -47,14 +49,15 @@ export default function Login() {
                     <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-card/10 backdrop-blur-sm border border-white/20 shadow-xl mb-2">
                         <img
                             src="/logo-simsa.png"
-                            alt="Logo SIMSA"
+                            alt={appConfig.name}
                             className="w-12 h-12"
                         />
                     </div>
                     <div className="space-y-0.5">
-                        <h1 className="text-3xl font-bold tracking-tight text-white drop-shadow-sm">SIMSA</h1>
+                        <h1 className="text-2xl font-bold tracking-tight text-white drop-shadow-sm sm:text-3xl">{appConfig.name}</h1>
                         <p className="text-primary-foreground/90 font-medium text-sm tracking-wide uppercase opacity-90">Sistem Informasi Manajemen Surat & Arsip</p>
-                        <p className="text-primary-foreground/70 text-xs">ATR/BPN - Dirjen PTPP</p>
+                        <p className="text-primary-foreground/70 text-xs">{appConfig.organization}</p>
+                        <Badge variant="secondary" className="mt-2">{appConfig.usageBadge}</Badge>
                     </div>
                 </div>
 
@@ -62,7 +65,7 @@ export default function Login() {
                     <CardHeader className="space-y-1 pb-4">
                         <CardTitle className="text-xl font-semibold text-center text-foreground/80">Selamat Datang</CardTitle>
                         <CardDescription className="text-center">
-                            Silakan masuk untuk mengakses sistem
+                            Masuk menggunakan akun kedinasan yang telah diberi kewenangan.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4 pt-0">
@@ -151,8 +154,7 @@ export default function Login() {
                     </CardContent>
                     <CardFooter className="flex flex-col gap-2 pb-6 pt-2">
                         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground/80">
-                            <CheckCircle2 className="h-3 w-3 text-primary" />
-                            <span>Secure System</span>
+                            <Badge variant="outline" className="text-[10px]">{appConfig.usageBadge}</Badge>
                             <span className="text-border">|</span>
                             <span>Versi 1.0.0 (BETA)</span>
                         </div>

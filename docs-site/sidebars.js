@@ -2,6 +2,7 @@
 const sidebars = {
   panduanSidebar: [
     'index',
+    'profil-aplikasi-internal',
     {
       type: 'category',
       label: '🔐 Akses SIMSA',

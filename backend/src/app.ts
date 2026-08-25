@@ -7,6 +7,8 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { toNodeHandler } from 'better-auth/node';
 import { env, validateEnv } from './config/env';
+import { getPublicAppMetadata } from './config/app-profile.js';
+import { srikandiConfig } from './config/srikandi.js';
 import { isTrustedOrigin } from './config/trusted-origins';
 import { auth } from './config/auth';
 import { generalLimiter, authLimiter } from './middlewares/rate-limiter.middleware';
@@ -68,6 +70,7 @@ if (env.NODE_ENV === 'production' || process.env.VERCEL) {
 }
 
 const app = express();
+const publicAppMetadata = getPublicAppMetadata(env.APP_PROFILE, srikandiConfig.enabled);
 
 // Trust first proxy (Vercel's load balancer) for X-Forwarded-For headers
 // Required for express-rate-limit to correctly identify users behind a proxy
@@ -145,7 +148,11 @@ app.use('/api', csrfCookieSetter);
 
 // Health check (no body parsing needed) — for uptime monitoring & load balancers
 app.get('/health', (req: Request, res: Response) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        application: publicAppMetadata,
+    });
 });
 app.get('/api/health', (req: Request, res: Response) => {
     res.json({
@@ -153,6 +160,7 @@ app.get('/api/health', (req: Request, res: Response) => {
         timestamp: new Date().toISOString(),
         version: process.env.npm_package_version || '1.0.0',
         uptime: Math.floor(process.uptime()),
+        application: publicAppMetadata,
     });
 });
 

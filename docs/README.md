@@ -4,6 +4,8 @@ Website ini adalah Kumpulan Panduan Penggunaan **Aplikasi SIMSA** (Sistem Inform
 
 Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar tanpa hambatan.
 
+> **Profil aplikasi:** SIMSA adalah aplikasi internal/beta, bukan produk yang dinyatakan tersertifikasi atau sepenuhnya patuh. Permen ATR/BPN Nomor 2 Tahun 2026 dan ketentuan ANRI menjadi rujukan desain. Integrasi SRIKANDI, BSrE/PSrE, WORM, dan SIEM bersifat kondisional serta tetap nonaktif/deferred sampai diwajibkan kebijakan internal dan siap secara resmi. Kontrol keamanan dasar tetap berlaku. Baca [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md).
+
 ---
 
 ## 📌 Tutorial Penting
@@ -73,9 +75,18 @@ Login dan Daftar
 | [📂 Master Data](administrasi/master-data.md) | Kelola data klasifikasi dan template |
 | [⚙️ Settings](administrasi/settings.md) | Pengaturan profil, unit kerja, dan template |
 
+### Tata Kelola Internal
+
+| Dokumen | Keterangan |
+|----------|------------|
+| [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md) | Ruang lingkup, prioritas, baseline keamanan, dan integrasi kondisional |
+| [Ringkasan Implementasi dan Verifikasi](RINGKASAN_IMPLEMENTASI_DAN_VERIFIKASI.md) | Ringkasan kontrol yang tersedia dan batas verifikasi |
+| [Checklist Deployment Arsip Digital](DEPLOYMENT_CHECKLIST_ARSIP_DIGITAL.md) | Gerbang operasional profil inti dan ekstensi kondisional |
+| [Peta Rujukan Desain Permen 2/2026 dan ANRI](KEPATUHAN_PERMEN_2_2026_DAN_ANRI.md) | Pemetaan rujukan ke kontrol, bukan sertifikasi |
+
 ---
 
 > **Butuh Bantuan?**\
 > Hubungi Administrator IT atau Super Admin di unit kerja kamu.
 
-*© 2026 Kementerian Agraria dan Tata Ruang / BPN — SIMSA v1.0.0 (BETA)*
+*© 2026 Kementerian Agraria dan Tata Ruang / BPN — SIMSA v1.0.0 (INTERNAL BETA)*

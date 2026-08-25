@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, MoreHorizontal, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -39,6 +39,7 @@ import { useAuth } from '@/context/AuthContext'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import DashboardPengawasan from '@/components/dashboard/DashboardPengawasan'
 import { PageHeader } from '@/components/PageHeader';
+import appConfig from '@/lib/app-config';
 
 ChartJS.register(
     CategoryScale,
@@ -311,9 +312,12 @@ export default function Dashboard() {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
             <PageHeader
                 title={`Halo, ${user?.name?.split(' ')[0] || 'Pengguna'}`}
-                description="Ringkasan surat dan arsip unit kerja Anda hari ini."
+                description={`${appConfig.name} — ringkasan surat dan arsip unit kerja Anda hari ini.`}
                 actions={
                     <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
+                        <Badge variant="outline" className="w-fit self-start sm:self-end">
+                            {appConfig.usageBadge}
+                        </Badge>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <CalendarClock className="h-4 w-4 shrink-0" />
                             <span>{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>

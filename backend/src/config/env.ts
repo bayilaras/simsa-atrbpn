@@ -1,13 +1,16 @@
 import dotenv from 'dotenv';
+import { loadAppProfile, validateAppProfileEnvironment } from './app-profile.js';
 import { assertValidSrikandiEnvironment } from './srikandi.js';
 import { loadMalwareScanConfig, validateMalwareScanConfig } from './malware-scanner.js';
 
 dotenv.config();
 
 export const malwareScanConfig = loadMalwareScanConfig();
+const appProfile = loadAppProfile();
 
 export const env = {
     NODE_ENV: process.env.NODE_ENV || 'development',
+    APP_PROFILE: appProfile,
     PORT: parseInt(process.env.PORT || '3001', 10),
 
     // Database
@@ -94,6 +97,8 @@ export function validateEnv() {
     if (driveMissing.length > 0 && driveMissing.length < driveVars.length) {
         process.stderr.write(`WARNING: Partial Google Drive configuration. Missing: ${driveMissing.join(', ')}\n`);
     }
+
+    validateAppProfileEnvironment(env.APP_PROFILE, process.env);
 
     // Production bitstreams require a real scanner; disabled or ambiguous
     // scanner configuration never constitutes a successful scan.

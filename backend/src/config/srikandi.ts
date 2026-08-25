@@ -207,9 +207,12 @@ export function buildSrikandiConfig(source: NodeJS.ProcessEnv = process.env): Sr
 
 export function assertValidSrikandiEnvironment(source: NodeJS.ProcessEnv = process.env): void {
     const config = buildSrikandiConfig(source);
-    const explicitlyConfigured = source.SRIKANDI_ENABLED !== undefined;
+    const enabledRaw = source.SRIKANDI_ENABLED?.trim().toLowerCase();
 
-    if ((config.enabled || explicitlyConfigured) && config.validationErrors.length > 0) {
+    // Disabled external delivery is never an internal-profile startup
+    // dependency. Invalid enablement values and enabled-but-incomplete
+    // configurations still fail closed.
+    if (enabledRaw !== undefined && enabledRaw !== 'false' && config.validationErrors.length > 0) {
         throw new Error(`Invalid SRIKANDI configuration: ${config.validationErrors.join('; ')}`);
     }
 }

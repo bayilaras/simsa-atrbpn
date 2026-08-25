@@ -1,10 +1,10 @@
 # Fondasi Integrasi SRIKANDI
 
-Integrasi ini masih berupa fondasi teknis dan **tidak menyatakan SIMSA sudah terintegrasi secara resmi dengan SRIKANDI**. Lalu lintas keluar dinonaktifkan secara default sampai kontrak API resmi, endpoint HTTPS, kredensial, dan aturan validasi respons telah disetujui serta dikonfigurasi lengkap.
+Integrasi ini masih berupa fondasi teknis dan **tidak menyatakan SIMSA sudah terintegrasi secara resmi dengan SRIKANDI**. Dalam [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md), integrasi SRIKANDI bersifat opsional/deferred dan bukan syarat operasi inti kecuali kebijakan internal mewajibkannya. Lalu lintas keluar dinonaktifkan secara default sampai kontrak API resmi, endpoint HTTPS, kredensial, dan aturan validasi respons telah disetujui serta dikonfigurasi lengkap.
 
 ## Arsitektur
 
-Alur produksi yang dimaksud adalah:
+Jika integrasi diwajibkan dan disetujui, alur produksi yang dimaksud adalah:
 
 1. layanan bisnis memasukkan pesan ke `srikandi_outbox` melalui `SrikandiService.enqueue()` dalam alur yang terkontrol;
 2. outbox menyimpan versi kontrak, hash pesan, idempotency key, unit kerja, payload, status, dan audit append-only;
@@ -17,7 +17,7 @@ HTTP 2xx, koneksi yang berhasil, atau body yang selesai dibaca tidak pernah cuku
 
 ## Worker produksi
 
-Pemrosesan antrean produksi harus dijalankan sebagai proses persisten terpisah dari Vercel/serverless request:
+Jika connector diaktifkan, pemrosesan antrean produksi harus dijalankan sebagai proses persisten terpisah dari Vercel/serverless request:
 
 ```text
 npm run build
@@ -63,9 +63,9 @@ Kesalahan HTTP 408, 429, dan 5xx—termasuk kegagalan decode/parse body pada sta
 
 Retry manual memerlukan alasan dan dicatat dalam audit outbox. Audit state transition ditulis dalam transaksi yang sama; kegagalan audit membatalkan perubahan status.
 
-## Kontrak resmi yang masih menjadi blocker
+## Syarat kondisional sebelum aktivasi
 
-Sebelum mengaktifkan produksi, ATR/BPN/ANRI atau pengelola SRIKANDI perlu memberikan dan menyetujui:
+Syarat berikut memblokir **aktivasi connector SRIKANDI**, bukan penggunaan profil internal inti. Sebelum connector diaktifkan, ATR/BPN/ANRI atau pengelola SRIKANDI perlu memberikan dan menyetujui:
 
 - hostname, path, dan lingkungan production/sandbox resmi;
 - metode autentikasi, rotasi secret, mTLS, allowlist jaringan, atau signature;
@@ -75,4 +75,4 @@ Sebelum mengaktifkan produksi, ATR/BPN/ANRI atau pengelola SRIKANDI perlu member
 - rate limit, SLA, retry guidance, dan prosedur rekonsiliasi;
 - aturan data pribadi/rahasia dan larangan field yang boleh dikirim.
 
-Sampai blocker tersebut selesai, producer bisnis tidak boleh dihubungkan ke mutasi arsip/surat dan `SRIKANDI_ENABLED` harus tetap `false`.
+Sampai syarat tersebut selesai, producer bisnis tidak boleh dihubungkan ke mutasi arsip/surat dan `SRIKANDI_ENABLED` harus tetap `false`. Kondisi nonaktif ini adalah konfigurasi aman yang sah untuk profil internal bila tidak ada mandat integrasi.

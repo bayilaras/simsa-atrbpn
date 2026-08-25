@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "lint:profile": "eslint src/App.jsx src/main.jsx src/components/app-header.jsx src/components/app-sidebar.jsx src/pages/Dashboard.jsx src/pages/Login.jsx src/pages/NotFound.jsx src/lib/app-config.js src/lib/app-config.test.js src/context/AppConfigContext.jsx src/context/app-config-context.js",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {

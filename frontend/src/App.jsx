@@ -11,6 +11,8 @@ import { IdleWarningBanner } from '@/components/IdleWarningBanner'
 import { useAuth } from './context/AuthContext'
 import Login from '@/pages/Login' // Eager: first page users see
 import PrintLayout from '@/layouts/PrintLayout'
+import appConfig from '@/lib/app-config'
+import { useAppConfig } from '@/context/app-config-context'
 import './index.css'
 
 // Lazy-loaded pages — each becomes a separate chunk for faster initial load
@@ -49,7 +51,10 @@ const LayananArsipIndex = lazy(() => import('@/pages/LayananArsip/Index'))
 const LayananArsipCreate = lazy(() => import('@/pages/LayananArsip/Create'))
 const LayananArsipDetail = lazy(() => import('@/pages/LayananArsip/Detail'))
 const RecordAccessGrants = lazy(() => import('@/pages/RecordAccessGrants'))
-const SrikandiIntegration = lazy(() => import('@/pages/SrikandiIntegration'))
+const NotFound = lazy(() => import('@/pages/NotFound'))
+const SrikandiIntegration = appConfig.features.srikandi
+  ? lazy(() => import('@/pages/SrikandiIntegration'))
+  : null
 
 // Suspense loading fallback
 function PageLoader() {
@@ -66,7 +71,7 @@ function PageLoader() {
           />
         </div>
         <div className="flex flex-col items-center gap-1">
-          <h3 className="font-semibold text-lg text-primary tracking-tight">SIMSA</h3>
+          <h3 className="font-semibold text-lg text-primary tracking-tight">{appConfig.shortName}</h3>
           <div className="flex items-center gap-1">
             <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.3s]"></div>
             <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.15s]"></div>
@@ -102,6 +107,15 @@ function RoleGuard({ allowedRoles, children }) {
   }
 
   return children;
+}
+
+function SrikandiFeatureGuard({ children }) {
+  const { features, loading } = useAppConfig()
+
+  if (loading) return <PageLoader />
+  if (!features.srikandi) return <Navigate to="/not-found" replace />
+
+  return children
 }
 
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
@@ -168,7 +182,16 @@ const router = createBrowserRouter([
       { path: "/laporan", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><Laporan /></RoleGuard> },
       { path: "/audit-log", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><AuditLog /></RoleGuard> },
       { path: "/record-access-grants", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><RecordAccessGrants /></RoleGuard> },
-      { path: "/integrations/srikandi", element: <RoleGuard allowedRoles={ADMIN_ROLES}><SrikandiIntegration /></RoleGuard> },
+      {
+        path: "/integrations/srikandi",
+        element: appConfig.features.srikandi && SrikandiIntegration
+          ? (
+            <SrikandiFeatureGuard>
+              <RoleGuard allowedRoles={ADMIN_ROLES}><SrikandiIntegration /></RoleGuard>
+            </SrikandiFeatureGuard>
+          )
+          : <Navigate to="/not-found" replace />,
+      },
       { path: "/settings", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><Settings /></RoleGuard> },
       { path: "/users", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><UserManagement /></RoleGuard> },
       { path: "/master/klasifikasi", element: <RoleGuard allowedRoles={ADMIN_ROLES}><KlasifikasiArsip /></RoleGuard> },
@@ -189,6 +212,8 @@ const router = createBrowserRouter([
       { path: "/layanan-arsip", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><LayananArsipIndex /></RoleGuard> },
       { path: "/layanan-arsip/create", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><LayananArsipCreate /></RoleGuard> },
       { path: "/layanan-arsip/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><LayananArsipDetail /></RoleGuard> },
+      { path: "/not-found", element: <NotFound /> },
+      { path: "*", element: <NotFound /> },
     ],
   },
   {
@@ -207,10 +232,6 @@ const router = createBrowserRouter([
         ),
       },
     ],
-  },
-  {
-    path: "*",
-    element: <Navigate to="/login" replace />,
   },
 ]);
 

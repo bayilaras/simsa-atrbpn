@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { Bell, Building2, Users, ChevronDown, LogOut, User, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw, BookOpen, ExternalLink } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,7 @@ import { useTheme } from '@/components/theme-provider'
 import { GlobalSearch, useGlobalSearchShortcut } from '@/components/GlobalSearch'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import appConfig from '@/lib/app-config'
 
 // Role label mapping for display in Indonesian
 const ROLE_LABELS = {
@@ -56,16 +57,11 @@ export function AppHeader() {
     const [selectedUnitKerja, setSelectedUnitKerja] = useState(authUser?.unitKerjaId || '')
     const notifUnitKerjaId = isSuperAdmin ? selectedUnitKerja : authUser?.unitKerjaId
 
-    const { notifications, counts, loading, hasUrgent, refresh, markAsRead, markAllAsRead, getByCategory, suratCount, arsipCount } = useNotifications({
+    const { counts, loading, hasUrgent, refresh, markAsRead, markAllAsRead, getByCategory, suratCount, arsipCount } = useNotifications({
         unitKerjaId: notifUnitKerjaId,
         limit: 20,
         refreshInterval: 60000, // Refresh every minute
     })
-
-    // Get label for selected unit kerja
-    const selectedUnitLabel = useMemo(() => {
-        return UNIT_KERJA_OPTIONS.find(u => u.id === selectedUnitKerja)?.label || selectedUnitKerja
-    }, [selectedUnitKerja])
 
     const filteredNotifications = getByCategory(activeTab)
 
@@ -104,6 +100,13 @@ export function AppHeader() {
             <header className="sticky top-0 z-50 flex h-14 items-center gap-2 border-b border-border bg-background px-4 sm:h-16 sm:gap-3 sm:px-6">
                 <SidebarTrigger className="-ml-1" />
                 <Separator orientation="vertical" className="hidden h-5 sm:block" />
+
+                <div className="hidden items-center gap-2 xl:flex">
+                    <span className="text-sm font-semibold tracking-tight">{appConfig.shortName}</span>
+                    <Badge variant="outline" className="text-[10px] font-medium">
+                        {appConfig.usageBadge}
+                    </Badge>
+                </div>
 
                 {/* Unit kerja — context, not a control; it yields space first on narrow screens */}
                 {authUser?.unitKerjaId && (

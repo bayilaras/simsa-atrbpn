@@ -1,16 +1,33 @@
-# React + Vite
+# SIMSA Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend SIMSA untuk Ditjen Pengadaan Tanah dan Pengembangan Pertanahan. Profil build default adalah `internal`, dengan branding **SIMSA Internal Ditjen PTPP** dan penanda **Penggunaan Internal**.
 
-Currently, two official plugins are available:
+## Menjalankan lokal
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+npm install
+copy .env.example .env.local
+npm run dev
+```
 
-## React Compiler
+Konfigurasi build utama:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```dotenv
+VITE_API_URL=http://localhost:3001
+VITE_APP_PROFILE=internal
+VITE_FEATURE_SRIKANDI=false
+```
 
-## Expanding the ESLint configuration
+- `VITE_APP_PROFILE` menerima `internal` atau `integrated`. Nilai kosong/tidak dikenal kembali ke `internal`.
+- `VITE_FEATURE_SRIKANDI` default `false`. Menu dan route SRIKANDI hanya tersedia jika profil build `integrated`, flag bernilai `true`, dan metadata `/api/health` mengonfirmasi backend `integrated` dengan connector aktif. Kegagalan verifikasi menyembunyikan fitur.
+- Profil frontend dan backend harus sama pada deployment terintegrasi. Menampilkan menu bukan pengganti autentikasi, otorisasi role, dan kontrol akses API.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Verifikasi
+
+```bash
+npm test
+npm run lint:profile
+npm run build
+```
+
+`npm run lint` tetap tersedia untuk audit seluruh source tree. Baseline lama masih memuat temuan pada file generated/legacy yang tidak terkait profil aplikasi; `lint:profile` memeriksa seluruh modul yang disentuh oleh perubahan profil internal.

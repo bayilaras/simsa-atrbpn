@@ -1,6 +1,6 @@
 # ☁️ Integrasi SRIKANDI
 
-Halaman **Integrasi SRIKANDI** adalah panel operasional outbox SIMSA. Halaman ini tidak mengaktifkan integrasi secara otomatis dan tidak menggantikan SRIKANDI.
+Halaman **Integrasi SRIKANDI** adalah panel operasional outbox SIMSA. Sesuai [Profil Aplikasi Internal](/profil-aplikasi-internal), connector ini opsional/deferred dan bukan syarat operasi inti kecuali kebijakan internal mewajibkannya. Halaman ini tidak mengaktifkan integrasi secara otomatis dan tidak menggantikan SRIKANDI.
 
 > Outbound harus tetap nonaktif sampai endpoint, autentikasi, kontrak payload, field ACK, dan ID resmi telah disahkan serta diuji di sandbox bersama pengelola SRIKANDI.
 
@@ -35,7 +35,9 @@ HTTP 2xx saja tidak pernah dianggap sebagai bukti sinkronisasi. Status berhasil 
 
 Setiap enqueue, claim, keberhasilan, retry, dead-letter, dan manual retry dicatat pada audit append-only dalam transaksi yang sama dengan perubahan status.
 
-## Sebelum mengaktifkan outbound
+## Syarat kondisional sebelum mengaktifkan outbound
+
+Daftar ini memblokir aktivasi connector SRIKANDI, bukan penggunaan profil internal inti. Bila tidak ada mandat integrasi, pertahankan outbound nonaktif.
 
 1. Dapatkan kontrak dan sandbox resmi.
 2. Verifikasi mTLS/autentikasi, rate limit, signature, idempotency server, SLA, dan perubahan skema.
@@ -44,4 +46,4 @@ Setiap enqueue, claim, keberhasilan, retry, dead-letter, dan manual retry dicata
 5. Jalankan uji timeout, retry, duplicate delivery, respons tidak valid, dead-letter, dan rekonsiliasi.
 6. Simpan berita acara serta persetujuan Unit Kearsipan/pengelola SRIKANDI.
 
-Selama producer belum dihubungkan dan sandbox belum diterima, outbox adalah **fondasi teknis**, bukan integrasi produksi.
+Selama producer belum dihubungkan dan sandbox belum diterima, outbox adalah **fondasi teknis**, bukan integrasi produksi. Status nonaktif adalah konfigurasi aman untuk profil internal.

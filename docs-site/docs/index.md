@@ -13,6 +13,10 @@ title: 👋 Selamat Datang
 
 Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar tanpa hambatan.
 
+:::important Profil aplikasi internal
+SIMSA adalah aplikasi internal/beta, bukan produk yang dinyatakan tersertifikasi atau sepenuhnya patuh. Pedoman ATR/BPN dan ANRI menjadi rujukan desain. SRIKANDI, BSrE/PSrE, WORM, dan SIEM bersifat kondisional serta tetap nonaktif/deferred sampai diwajibkan kebijakan internal dan siap secara resmi. [Baca profil aplikasi internal](/profil-aplikasi-internal).
+:::
+
 ---
 
 ## 🚀 Mulai dari Sini
@@ -165,4 +169,4 @@ Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar t
 Hubungi Administrator IT atau Super Admin di unit kerja kamu.
 :::
 
-*© 2026 Kementerian Agraria dan Tata Ruang / BPN — SIMSA v1.0.0 (BETA)*
+*© 2026 Kementerian Agraria dan Tata Ruang / BPN — SIMSA v1.0.0 (INTERNAL BETA)*

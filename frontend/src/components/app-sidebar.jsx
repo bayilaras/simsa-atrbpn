@@ -47,6 +47,8 @@ import {
     CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Badge } from '@/components/ui/badge'
+import appConfig from '@/lib/app-config'
+import { useAppConfig } from '@/context/app-config-context'
 
 // Role constants for menu access
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen']
@@ -213,6 +215,7 @@ const menuGroups = [
                 url: '/integrations/srikandi',
                 icon: CloudCog,
                 allowedRoles: ADMIN_ROLES,
+                feature: 'srikandi',
             },
             {
                 title: 'User Management',
@@ -239,12 +242,14 @@ import { useAuth } from '@/context/AuthContext'
 const DOCS_URL = 'https://panduan-simsa.vercel.app'
 
 export function AppSidebar() {
+    const { features } = useAppConfig()
     const location = useLocation()
     const { user } = useAuth()
     const userRole = user?.role || 'user'
 
     // Check if a menu item is visible to the current user
     const isAllowed = (item) => {
+        if (item.feature && !features[item.feature]) return false
         if (!item.allowedRoles) return true
         return item.allowedRoles.includes(userRole)
     }
@@ -271,8 +276,8 @@ export function AppSidebar() {
                         className="h-8 w-8 shrink-0 rounded-md bg-card p-1 ring-1 ring-sidebar-border"
                     />
                     <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
-                        <span className="text-base font-semibold leading-none tracking-tight">SIMSA</span>
-                        <span className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">ATR/BPN</span>
+                        <span className="truncate text-sm font-semibold leading-none tracking-tight">{appConfig.shortName}</span>
+                        <span className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Ditjen PTPP</span>
                     </div>
                 </div>
             </SidebarHeader>
@@ -361,9 +366,11 @@ export function AppSidebar() {
             </SidebarContent>
 
             <SidebarFooter className="border-t border-sidebar-border/50 p-4">
-                <div className="flex items-center justify-between group-data-[collapsible=icon]:hidden">
-                    <div className="text-[10px] text-sidebar-foreground/50 font-medium">SIMSA v1.0.0</div>
-                    <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-sidebar-border/50 text-sidebar-foreground/50">BETA</Badge>
+                <div className="flex flex-col items-start gap-1.5 group-data-[collapsible=icon]:hidden">
+                    <div className="text-[10px] font-medium text-sidebar-foreground/50">{appConfig.name} v1.0.0</div>
+                    <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-sidebar-foreground/70">
+                        {appConfig.usageBadge}
+                    </Badge>
                 </div>
             </SidebarFooter>
         </Sidebar>
