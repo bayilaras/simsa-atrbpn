@@ -22,6 +22,10 @@ const ACTION_CONFIG = {
     'archive': { label: 'Mengarsipkan', icon: Archive, color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-800 dark:text-purple-300', borderColor: 'border-purple-200', iconColor: 'text-purple-600' },
     'restore': { label: 'Memulihkan', icon: RefreshCw, color: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-800 dark:text-yellow-300', borderColor: 'border-yellow-200', iconColor: 'text-yellow-600' },
     'status_change': { label: 'Ubah Status', icon: RefreshCw, color: 'bg-orange-100 dark:bg-orange-500/15 text-orange-800 dark:text-orange-300', borderColor: 'border-orange-200', iconColor: 'text-orange-600' },
+    'request_access': { label: 'Meminta Akses', icon: Shield, color: 'bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300', borderColor: 'border-amber-200', iconColor: 'text-amber-600' },
+    'approve_access': { label: 'Menyetujui Akses', icon: Shield, color: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300', borderColor: 'border-emerald-200', iconColor: 'text-emerald-600' },
+    'deny_access': { label: 'Menolak Akses', icon: Shield, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
+    'revoke_access': { label: 'Mencabut Akses', icon: Shield, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
 };
 
 const ENTITY_CONFIG = {
@@ -29,6 +33,7 @@ const ENTITY_CONFIG = {
     'surat_keluar': { label: 'Surat Keluar', color: 'text-green-600', bgColor: 'bg-green-50 dark:bg-green-500/15' },
     'arsip': { label: 'Arsip', color: 'text-purple-600', bgColor: 'bg-purple-50 dark:bg-purple-500/15' },
     'user': { label: 'User', color: 'text-orange-600', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
+    'record_access_grant': { label: 'Persetujuan Akses', color: 'text-amber-700', bgColor: 'bg-amber-50 dark:bg-amber-500/15' },
 };
 
 export default function AuditLog() {
@@ -46,11 +51,6 @@ export default function AuditLog() {
 
     // Pagination
     const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
-
-    useEffect(() => {
-        const timer = setTimeout(() => loadLogs(), 300);
-        return () => clearTimeout(timer);
-    }, [entityType, action, search, startDate, endDate, pagination.page]);
 
     // Applying a filter must restart from the first page, otherwise the filtered
     // query keeps requesting a now out-of-range page and the table looks empty.
@@ -85,6 +85,11 @@ export default function AuditLog() {
             setLoading(false);
         }
     }, [entityType, action, search, startDate, endDate, pagination.page, pagination.limit]);
+
+    useEffect(() => {
+        const timer = setTimeout(loadLogs, 300);
+        return () => clearTimeout(timer);
+    }, [loadLogs]);
 
     const formatDate = (date) => {
         return new Date(date).toLocaleString('id-ID', {
@@ -214,6 +219,7 @@ export default function AuditLog() {
                                     <SelectItem value="surat_keluar">Surat Keluar</SelectItem>
                                     <SelectItem value="arsip">Arsip</SelectItem>
                                     <SelectItem value="user">User</SelectItem>
+                                    <SelectItem value="record_access_grant">Persetujuan Akses</SelectItem>
                                 </SelectContent>
                             </Select>
                             <Select value={action} onValueChange={applyFilter(setAction)}>
@@ -226,6 +232,10 @@ export default function AuditLog() {
                                     <SelectItem value="update">Mengubah</SelectItem>
                                     <SelectItem value="delete">Menghapus</SelectItem>
                                     <SelectItem value="archive">Mengarsipkan</SelectItem>
+                                    <SelectItem value="request_access">Meminta Akses</SelectItem>
+                                    <SelectItem value="approve_access">Menyetujui Akses</SelectItem>
+                                    <SelectItem value="deny_access">Menolak Akses</SelectItem>
+                                    <SelectItem value="revoke_access">Mencabut Akses</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>

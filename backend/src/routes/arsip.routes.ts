@@ -241,10 +241,8 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         if (!result) {
             return res.status(404).json({ error: 'Arsip not found' });
         }
-        if (
-            !userCanAccessUnit(req, result.unitKerjaId)
-            || !isAllowedForClassification(req.user, result.klasifikasiKeamanan)
-        ) {
+        const access = await recordAccessService.check(req.user, 'arsip', id as string);
+        if (!access.exists || !access.allowed) {
             return res.status(404).json({ error: 'Arsip not found' });
         }
 
@@ -299,10 +297,8 @@ router.put('/:id', validateIdParam(),
             if (!existing) {
                 return res.status(404).json({ error: 'Arsip not found' });
             }
-            if (
-                !userCanAccessUnit(req, existing.unitKerjaId)
-                || !isAllowedForClassification(req.user, existing.klasifikasiKeamanan)
-            ) {
+            const access = await recordAccessService.check(req.user, 'arsip', id as string);
+            if (!access.exists || !access.mutable) {
                 return res.status(404).json({ error: 'Arsip not found' });
             }
             if (

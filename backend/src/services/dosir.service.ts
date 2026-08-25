@@ -165,6 +165,28 @@ export const dosirService = {
     },
 
     /**
+     * Resolve only the metadata needed for batched authorization checks.
+     * This avoids loading every linked surat when a caller merely needs to
+     * filter tunjuk-silang results.
+     */
+    async getAccessMetadata(ids: string[], unitScope: RecordUnitScope) {
+        const uniqueIds = [...new Set(ids)];
+        if (uniqueIds.length === 0) return [];
+
+        return db
+            .select({
+                id: dosir.id,
+                unitKerjaId: dosir.unitKerjaId,
+                status: dosir.status,
+            })
+            .from(dosir)
+            .where(and(
+                inArray(dosir.id, uniqueIds),
+                unitScope === null ? undefined : eq(dosir.unitKerjaId, unitScope),
+            ));
+    },
+
+    /**
      * Get all dosir with filters
      */
     async getAll(filters: DosirFilters = {}) {

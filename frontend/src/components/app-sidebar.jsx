@@ -22,6 +22,8 @@ import {
     Link2,
     BookOpen,
     ExternalLink,
+    FileKey2,
+    CloudCog,
 } from 'lucide-react'
 
 import {
@@ -50,6 +52,7 @@ import { Badge } from '@/components/ui/badge'
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen']
 const STAFF_AND_ABOVE = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff']
 const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor']
+const ALL_PROVISIONED_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']
 
 // Menu items grouped by section
 // allowedRoles: if set, only users with these roles can see the menu item
@@ -198,6 +201,18 @@ const menuGroups = [
                 url: '/audit-log',
                 icon: ClipboardList,
                 allowedRoles: ADMIN_AND_AUDITOR,
+            },
+            {
+                title: 'Persetujuan Akses',
+                url: '/record-access-grants',
+                icon: FileKey2,
+                allowedRoles: ALL_PROVISIONED_ROLES,
+            },
+            {
+                title: 'Integrasi SRIKANDI',
+                url: '/integrations/srikandi',
+                icon: CloudCog,
+                allowedRoles: ADMIN_ROLES,
             },
             {
                 title: 'User Management',

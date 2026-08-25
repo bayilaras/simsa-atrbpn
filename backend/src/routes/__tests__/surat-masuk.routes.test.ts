@@ -36,6 +36,24 @@ vi.mock('../../services/surat-masuk.service', () => ({
     },
 }));
 
+vi.mock('../../services/record-access.service', () => ({
+    allowedSecurityClassifications: vi.fn(() => ['biasa', 'terbatas']),
+    isAllowedForClassification: vi.fn(() => true),
+    recordAccessService: {
+        check: vi.fn(async () => ({
+            exists: true,
+            allowed: true,
+            mutable: true,
+            unitKerjaId: 'ditjen',
+            classification: 'biasa',
+            grantId: null,
+            accessPurpose: null,
+            grantAccessMode: null,
+            grantExpiresAt: null,
+        })),
+    },
+}));
+
 // Mock Audit Log
 vi.mock('../../services/audit-log.service', () => ({
     default: {

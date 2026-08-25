@@ -4,7 +4,6 @@ import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware
 import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware.js';
 import { uuidParamValidator } from '../middlewares/validate.middleware.js';
 import {
-    allowedSecurityClassifications,
     recordAccessService,
     type RecordAccessResult,
     type RecordEntityType,
@@ -39,30 +38,80 @@ async function checkEntityAccess(
     entityType: string,
     entityId: string,
 ): Promise<RecordAccessResult> {
-    if (entityType === 'dosir') {
-        const record = await dosirService.getById(
-            entityId,
-            resolveRecordUnitScope(req),
-            allowedSecurityClassifications(req.user),
-        );
-        return {
-            exists: Boolean(record),
-            allowed: Boolean(record),
-            mutable: record?.status === 'open',
-            unitKerjaId: record?.unitKerjaId || null,
-            classification: null,
-        };
-    }
+    const results = await checkEntityAccessMany(req, [{ entityType, entityId }]);
+    return results.get(entityAccessKey(entityType, entityId)) || inaccessibleResult();
+}
 
-    if (!['arsip', 'surat_masuk', 'surat_keluar'].includes(entityType)) {
-        return { exists: false, allowed: false, mutable: false, unitKerjaId: null, classification: null };
-    }
+function entityAccessKey(entityType: string, entityId: string) {
+    return `${entityType}:${entityId}`;
+}
 
-    return recordAccessService.check(
-        req.user,
-        entityType as RecordEntityType,
-        entityId,
+function inaccessibleResult(): RecordAccessResult {
+    return {
+        exists: false,
+        allowed: false,
+        mutable: false,
+        unitKerjaId: null,
+        classification: null,
+        grantId: null,
+        accessPurpose: null,
+        grantAccessMode: null,
+        grantExpiresAt: null,
+    };
+}
+
+async function checkEntityAccessMany(
+    req: AuthRequest,
+    subjects: Array<{ entityType: string; entityId: string }>,
+): Promise<Map<string, RecordAccessResult>> {
+    const uniqueSubjects = [...new Map(subjects.map((subject) => [
+        entityAccessKey(subject.entityType, subject.entityId),
+        subject,
+    ])).values()];
+    const dosirIds = uniqueSubjects
+        .filter((subject) => subject.entityType === 'dosir')
+        .map((subject) => subject.entityId);
+    const recordSubjects = uniqueSubjects.filter((subject) =>
+        ['arsip', 'surat_masuk', 'surat_keluar'].includes(subject.entityType),
     );
+
+    const [dosirRows, recordResults] = await Promise.all([
+        dosirService.getAccessMetadata(dosirIds, resolveRecordUnitScope(req)),
+        Promise.all(recordSubjects.map(async (subject) => ({
+            subject,
+            access: await recordAccessService.check(
+                req.user,
+                subject.entityType as RecordEntityType,
+                subject.entityId,
+            ),
+        }))),
+    ]);
+
+    const results = new Map<string, RecordAccessResult>();
+    const dosirById = new Map(dosirRows.map((record) => [record.id, record]));
+    for (const subject of uniqueSubjects) {
+        const key = entityAccessKey(subject.entityType, subject.entityId);
+        if (subject.entityType === 'dosir') {
+            const record = dosirById.get(subject.entityId);
+            results.set(key, record ? {
+                exists: true,
+                allowed: true,
+                mutable: record.status === 'open' && req.user?.role !== 'auditor',
+                unitKerjaId: record.unitKerjaId,
+                classification: null,
+                grantId: null,
+                accessPurpose: null,
+                grantAccessMode: null,
+                grantExpiresAt: null,
+            } : inaccessibleResult());
+        } else if (!['arsip', 'surat_masuk', 'surat_keluar'].includes(subject.entityType)) {
+            results.set(key, inaccessibleResult());
+        }
+    }
+    for (const { subject, access } of recordResults) {
+        results.set(entityAccessKey(subject.entityType, subject.entityId), access);
+    }
+    return results;
 }
 
 // GET /api/tunjuk-silang — List all cross-references
@@ -103,21 +152,26 @@ router.get('/:type/:id', async (req: AuthRequest, res: Response, next: NextFunct
         if (!ENTITY_TYPES.has(entityType)) {
             return res.status(400).json({ error: 'Invalid entity type' });
         }
+        const page = req.query.page ? Number(req.query.page) : 1;
+        const limit = req.query.limit ? Number(req.query.limit) : 100;
+        if (!Number.isInteger(page) || page < 1 ||
+            !Number.isInteger(limit) || limit < 1 || limit > 100) {
+            return res.status(400).json({ error: 'Invalid cross-reference pagination' });
+        }
         const sourceAccess = await checkEntityAccess(req, entityType, entityId);
         if (!sourceAccess.exists || !sourceAccess.allowed) {
             return res.status(404).json({ error: 'Cross-reference not found' });
         }
-        const references = await tunjukSilangService.findByEntity(entityType, entityId);
-        const filtered = [];
-        for (const reference of references) {
-            const relatedAccess = await checkEntityAccess(
-                req,
-                reference.relatedType,
-                reference.relatedId,
-            );
-            if (relatedAccess.exists && relatedAccess.allowed) filtered.push(reference);
-        }
-        res.json({ data: filtered });
+        const references = await tunjukSilangService.findByEntity(entityType, entityId, { page, limit });
+        const relatedAccess = await checkEntityAccessMany(req, references.map((reference) => ({
+            entityType: reference.relatedType,
+            entityId: reference.relatedId,
+        })));
+        const filtered = references.filter((reference) => {
+            const access = relatedAccess.get(entityAccessKey(reference.relatedType, reference.relatedId));
+            return access?.exists === true && access.allowed === true;
+        });
+        res.json({ data: filtered, pagination: { page, limit } });
     } catch (error) {
         next(error);
     }
@@ -144,11 +198,14 @@ router.post('/', canWriteMiddleware(), async (req: AuthRequest, res: Response, n
             return res.status(400).json({ error: 'A record cannot reference itself' });
         }
 
-        const [sourceAccess, targetAccess] = await Promise.all([
-            checkEntityAccess(req, sourceType, sourceId),
-            checkEntityAccess(req, targetType, targetId),
+        const entityAccess = await checkEntityAccessMany(req, [
+            { entityType: sourceType, entityId: sourceId },
+            { entityType: targetType, entityId: targetId },
         ]);
-        if (!sourceAccess.exists || !sourceAccess.mutable || !targetAccess.exists || !targetAccess.mutable) {
+        const sourceAccess = entityAccess.get(entityAccessKey(sourceType, sourceId)) || inaccessibleResult();
+        const targetAccess = entityAccess.get(entityAccessKey(targetType, targetId)) || inaccessibleResult();
+        if (!sourceAccess.exists || !sourceAccess.allowed || !sourceAccess.mutable ||
+            !targetAccess.exists || !targetAccess.allowed || !targetAccess.mutable) {
             return res.status(404).json({ error: 'Source or target record not found' });
         }
         if (!sourceAccess.unitKerjaId || sourceAccess.unitKerjaId !== targetAccess.unitKerjaId) {
@@ -193,10 +250,20 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res: Respon
         }
         const reference = await tunjukSilangService.findById(id);
         if (!reference) return res.status(404).json({ error: 'Cross-reference not found' });
-        const [sourceAccess, targetAccess] = await Promise.all([
-            checkEntityAccess(req, reference.sourceType as CrossReferenceEntityType, reference.sourceId),
-            checkEntityAccess(req, reference.targetType as CrossReferenceEntityType, reference.targetId),
+        const ownerId = req.user!.role === 'super_admin' ? null : req.user!.id;
+        if (ownerId !== null && reference.createdBy !== ownerId) {
+            return res.status(404).json({ error: 'Cross-reference not found' });
+        }
+        const entityAccess = await checkEntityAccessMany(req, [
+            { entityType: reference.sourceType, entityId: reference.sourceId },
+            { entityType: reference.targetType, entityId: reference.targetId },
         ]);
+        const sourceAccess = entityAccess.get(
+            entityAccessKey(reference.sourceType, reference.sourceId),
+        ) || inaccessibleResult();
+        const targetAccess = entityAccess.get(
+            entityAccessKey(reference.targetType, reference.targetId),
+        ) || inaccessibleResult();
         if (!sourceAccess.allowed || !targetAccess.allowed) {
             return res.status(404).json({ error: 'Cross-reference not found' });
         }
@@ -206,12 +273,12 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res: Respon
             });
         }
 
-        const cancelled = await tunjukSilangService.cancel(id, req.user!.id, reason);
+        const cancelled = await tunjukSilangService.cancel(id, req.user!.id, reason, ownerId);
         if (!cancelled) return res.status(404).json({ error: 'Cross-reference not found' });
         await auditLogService.logAction({
             userId: req.user?.id,
             userEmail: req.user?.email,
-            action: 'update',
+            action: 'cancel',
             entityType: 'tunjuk_silang',
             entityId: id,
             changes: {

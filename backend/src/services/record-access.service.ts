@@ -1,10 +1,12 @@
 import { db } from '../config/database';
-import { arsip, suratKeluar, suratMasuk } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { arsip, recordAccessGrants, suratKeluar, suratMasuk } from '../db/schema';
+import { and, desc, eq, gt } from 'drizzle-orm';
 
 export type RecordEntityType = 'surat_masuk' | 'surat_keluar' | 'arsip';
+export type RecordGrantAccessMode = 'view' | 'download' | 'manage';
 
 export interface RecordUser {
+    id?: string | null;
     role?: string | null;
     unitKerjaId?: string | null;
 }
@@ -15,13 +17,24 @@ export interface RecordAccessResult {
     mutable: boolean;
     unitKerjaId: string | null;
     classification: string | null;
+    grantId: string | null;
+    accessPurpose: string | null;
+    grantAccessMode: RecordGrantAccessMode | null;
+    grantExpiresAt: Date | null;
 }
 
-/** null means every class; an empty array means no class. */
+const RECOGNIZED_CLASSIFICATIONS = ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'];
+const RECOGNIZED_CLASSIFICATION_SET = new Set(RECOGNIZED_CLASSIFICATIONS);
+const CONTROLLED_CLASSIFICATIONS = new Set(['terbatas', 'rahasia', 'sangat_rahasia']);
+
 export function allowedSecurityClassifications(
     user: RecordUser | undefined,
-): string[] | null {
-    if (user?.role === 'super_admin') return null;
+): string[] {
+    // Even a super administrator is limited to classifications recognized by
+    // the records policy. Returning null here used to disable downstream SQL
+    // filters and accidentally expose records containing malformed/unknown
+    // classifications.
+    if (user?.role === 'super_admin') return [...RECOGNIZED_CLASSIFICATIONS];
     if (['admin_dirjen', 'admin_sesditjen'].includes(user?.role || '')) {
         return ['biasa', 'terbatas'];
     }
@@ -53,7 +66,7 @@ export function normalizeSecurityClassification(
     return normalized;
 }
 
-function isAllowedForUnit(user: RecordUser | undefined, unitKerjaId: string): boolean {
+export function isAllowedForRecordUnit(user: RecordUser | undefined, unitKerjaId: string): boolean {
     if (!user?.role) return false;
     if (user.role === 'super_admin') return true;
     if (user.role === 'admin_dirjen') return unitKerjaId === 'ditjen';
@@ -68,8 +81,17 @@ export function isAllowedForClassification(
     classification?: string | null,
 ): boolean {
     const normalized = normalizeSecurityClassification(classification);
+    if (!RECOGNIZED_CLASSIFICATION_SET.has(normalized)) return false;
     const allowed = allowedSecurityClassifications(user);
-    return allowed === null || allowed.includes(normalized);
+    return allowed.includes(normalized);
+}
+
+export function requiresExplicitAccessGrant(
+    classification?: string | null,
+): boolean {
+    return CONTROLLED_CLASSIFICATIONS.has(
+        normalizeSecurityClassification(classification),
+    );
 }
 
 async function findAccessMetadata(
@@ -141,6 +163,27 @@ async function findAccessMetadata(
 }
 
 export const recordAccessService = {
+    async inspect(
+        user: RecordUser | undefined,
+        entityType: RecordEntityType,
+        entityId: string,
+    ) {
+        const metadata = await findAccessMetadata(entityType, entityId);
+        const unitKerjaId = metadata?.unitKerjaId || null;
+        const normalizedClassification = normalizeSecurityClassification(
+            metadata?.classification,
+        );
+        return {
+            exists: Boolean(unitKerjaId),
+            requestable: Boolean(unitKerjaId) && metadata?.readable === true &&
+                RECOGNIZED_CLASSIFICATION_SET.has(normalizedClassification) &&
+                isAllowedForRecordUnit(user, unitKerjaId!),
+            mutable: metadata?.mutable === true,
+            unitKerjaId,
+            classification: metadata?.classification || null,
+        };
+    },
+
     async check(
         user: RecordUser | undefined,
         entityType: RecordEntityType,
@@ -148,18 +191,87 @@ export const recordAccessService = {
     ): Promise<RecordAccessResult> {
         const metadata = await findAccessMetadata(entityType, entityId);
         const unitKerjaId = metadata?.unitKerjaId || null;
+        const normalizedClassification = normalizeSecurityClassification(
+            metadata?.classification,
+        );
+        const unitAllowed = Boolean(unitKerjaId) && metadata?.readable === true &&
+            isAllowedForRecordUnit(user, unitKerjaId!);
+
+        let grant: {
+            id: string;
+            purpose: string;
+            accessMode: string;
+            expiresAt: Date | null;
+        } | null = null;
+
+        if (
+            unitAllowed &&
+            user?.id &&
+            requiresExplicitAccessGrant(normalizedClassification)
+        ) {
+            const [activeGrant] = await db
+                .select({
+                    id: recordAccessGrants.id,
+                    purpose: recordAccessGrants.purpose,
+                    accessMode: recordAccessGrants.accessMode,
+                    expiresAt: recordAccessGrants.expiresAt,
+                })
+                .from(recordAccessGrants)
+                .where(and(
+                    eq(recordAccessGrants.targetUserId, user.id),
+                    eq(recordAccessGrants.entityType, entityType),
+                    eq(recordAccessGrants.entityId, entityId),
+                    // A grant follows the record scope captured at approval
+                    // time. Moving a record to another unit must invalidate the
+                    // old authorization instead of silently carrying it over.
+                    eq(recordAccessGrants.unitKerjaId, unitKerjaId!),
+                    eq(recordAccessGrants.requiredClassification, normalizedClassification),
+                    eq(recordAccessGrants.status, 'approved'),
+                    gt(recordAccessGrants.expiresAt, new Date()),
+                ))
+                .orderBy(desc(recordAccessGrants.decidedAt))
+                .limit(1);
+            grant = activeGrant || null;
+        }
+
+        const controlled = requiresExplicitAccessGrant(normalizedClassification);
+        const classificationAllowed = controlled
+            ? Boolean(grant)
+            : isAllowedForClassification(user, normalizedClassification);
+        const grantAccessMode: RecordGrantAccessMode | null =
+            grant?.accessMode === 'download' || grant?.accessMode === 'manage'
+                ? grant.accessMode
+                : grant
+                    ? 'view'
+                    : null;
+
         return {
             exists: Boolean(unitKerjaId),
-            allowed: Boolean(unitKerjaId) && metadata?.readable === true &&
-                isAllowedForUnit(user, unitKerjaId!) &&
-                isAllowedForClassification(user, metadata?.classification),
-            mutable: Boolean(unitKerjaId) && metadata?.readable === true &&
+            allowed: unitAllowed && classificationAllowed,
+            mutable: unitAllowed && classificationAllowed &&
                 metadata?.mutable === true &&
-                isAllowedForUnit(user, unitKerjaId!) &&
-                isAllowedForClassification(user, metadata?.classification),
+                user?.role !== 'auditor' &&
+                (!controlled || grantAccessMode === 'manage'),
             unitKerjaId,
             classification: metadata?.classification || null,
+            grantId: grant?.id || null,
+            accessPurpose: grant?.purpose || null,
+            grantAccessMode,
+            grantExpiresAt: grant?.expiresAt || null,
         };
+    },
+
+    async markGrantUsed(grantId: string): Promise<boolean> {
+        const [updated] = await db
+            .update(recordAccessGrants)
+            .set({ lastUsedAt: new Date(), updatedAt: new Date() })
+            .where(and(
+                eq(recordAccessGrants.id, grantId),
+                eq(recordAccessGrants.status, 'approved'),
+                gt(recordAccessGrants.expiresAt, new Date()),
+            ))
+            .returning({ id: recordAccessGrants.id });
+        return Boolean(updated);
     },
 };
 

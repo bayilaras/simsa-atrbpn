@@ -25,9 +25,11 @@ export * from './autentikasi.js';
 export * from './layanan-arsip.js';
 export * from './notification-reads.js';
 export * from './preservasi-track.js';
+export * from './srikandi-outbox.js';
 // NOTE: Standalone indexes disabled — they crash at runtime with Drizzle ORM's
 // index().on() API due to JSON.parse(undefined). Use inline indexes in pgTable
 // or create indexes via raw SQL migrations instead.
 // export * from './indexes.js';
 export * from './approvals.js';
 export * from './signatures.js';
+export * from './record-access-grants.js';

@@ -238,7 +238,7 @@ router.put(
             if (!unitKerjaId) return;
 
             const access = await recordAccessService.check(req.user, 'arsip', String(req.params.id));
-            if (!access.exists || !access.allowed || access.unitKerjaId !== unitKerjaId) {
+            if (!access.exists || !access.mutable || access.unitKerjaId !== unitKerjaId) {
                 return res.status(404).json({ error: 'Arsip tidak ditemukan' });
             }
 
@@ -288,7 +288,7 @@ router.put(
             if (!unitKerjaId) return;
 
             const access = await recordAccessService.check(req.user, 'arsip', String(req.params.id));
-            if (!access.exists || !access.allowed || access.unitKerjaId !== unitKerjaId) {
+            if (!access.exists || !access.mutable || access.unitKerjaId !== unitKerjaId) {
                 return res.status(404).json({ error: 'Arsip tidak ditemukan' });
             }
 

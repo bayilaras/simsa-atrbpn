@@ -114,6 +114,7 @@ describe('record route unit scoping', () => {
         mocks.recordAccess.check.mockResolvedValue({
             exists: true,
             allowed: true,
+            mutable: true,
             unitKerjaId: 'unit-a',
             classification: 'biasa',
         });

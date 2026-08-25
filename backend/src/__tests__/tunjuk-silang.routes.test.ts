@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
         cancel: vi.fn(),
     },
     recordAccess: { check: vi.fn() },
-    dosir: { getById: vi.fn() },
+    dosir: { getById: vi.fn(), getAccessMetadata: vi.fn() },
     audit: { logAction: vi.fn() },
 }));
 
@@ -77,6 +77,10 @@ function access(unitKerjaId = 'ditjen', mutable = true, allowed = true) {
         mutable,
         unitKerjaId,
         classification: 'biasa',
+        grantId: null,
+        accessPurpose: null,
+        grantAccessMode: null,
+        grantExpiresAt: null,
     };
 }
 
@@ -85,6 +89,7 @@ describe('tunjuk silang route policy', () => {
         vi.clearAllMocks();
         Object.assign(mocks.user, { role: 'admin_dirjen', unitKerjaId: 'ditjen' });
         mocks.recordAccess.check.mockResolvedValue(access());
+        mocks.dosir.getAccessMetadata.mockResolvedValue([]);
         mocks.service.findByEntity.mockResolvedValue([]);
         mocks.service.create.mockResolvedValue({ id: REF_ID });
         mocks.service.findById.mockResolvedValue({
@@ -93,6 +98,7 @@ describe('tunjuk silang route policy', () => {
             sourceId: SOURCE_ID,
             targetType: 'arsip',
             targetId: TARGET_ID,
+            createdBy: mocks.user.id,
         });
         mocks.service.cancel.mockResolvedValue({
             id: REF_ID,
@@ -104,6 +110,15 @@ describe('tunjuk silang route policy', () => {
 
     it('hides the global registry from non-super administrators', async () => {
         await request(app).get('/tunjuk-silang').expect(403);
+        expect(mocks.service.findAll).not.toHaveBeenCalled();
+    });
+
+    it('validates global registry filters before querying', async () => {
+        Object.assign(mocks.user, { role: 'super_admin', unitKerjaId: null });
+
+        await request(app).get('/tunjuk-silang?page=0&limit=101').expect(400);
+        await request(app).get('/tunjuk-silang?jenisRelasi=not-valid').expect(400);
+
         expect(mocks.service.findAll).not.toHaveBeenCalled();
     });
 
@@ -162,6 +177,63 @@ describe('tunjuk silang route policy', () => {
         }).expect(409);
     });
 
+    it('records creation with the server-authenticated owner', async () => {
+        await request(app).post('/tunjuk-silang').send({
+            sourceType: 'arsip', sourceId: SOURCE_ID,
+            targetType: 'arsip', targetId: TARGET_ID,
+            jenisRelasi: 'referensi',
+        }).expect(201);
+
+        expect(mocks.service.create).toHaveBeenCalledWith(expect.objectContaining({
+            createdBy: mocks.user.id,
+        }));
+        expect(mocks.audit.logAction).toHaveBeenCalledWith(expect.objectContaining({
+            action: 'create',
+            entityType: 'tunjuk_silang',
+            entityId: REF_ID,
+        }));
+    });
+
+    it('rejects malformed IDs, invalid pagination, and self-references before service calls', async () => {
+        await request(app).post('/tunjuk-silang').send({
+            sourceType: 'arsip', sourceId: 'not-a-uuid',
+            targetType: 'arsip', targetId: TARGET_ID,
+            jenisRelasi: 'referensi',
+        }).expect(400);
+
+        await request(app).post('/tunjuk-silang').send({
+            sourceType: 'arsip', sourceId: SOURCE_ID,
+            targetType: 'arsip', targetId: SOURCE_ID,
+            jenisRelasi: 'referensi',
+        }).expect(400);
+
+        await request(app)
+            .get(`/tunjuk-silang/arsip/${SOURCE_ID}?page=0&limit=101`)
+            .expect(400);
+
+        expect(mocks.service.create).not.toHaveBeenCalled();
+        expect(mocks.service.findByEntity).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates and bounds related access checks on a paginated detail request', async () => {
+        mocks.service.findByEntity.mockResolvedValue([
+            { id: 'ref-a', relatedType: 'arsip', relatedId: TARGET_ID },
+            { id: 'ref-b', relatedType: 'arsip', relatedId: TARGET_ID },
+        ]);
+
+        await request(app)
+            .get(`/tunjuk-silang/arsip/${SOURCE_ID}?page=2&limit=25`)
+            .expect(200);
+
+        expect(mocks.service.findByEntity).toHaveBeenCalledWith(
+            'arsip',
+            SOURCE_ID,
+            { page: 2, limit: 25 },
+        );
+        // One check for the source and one for the deduplicated related record.
+        expect(mocks.recordAccess.check).toHaveBeenCalledTimes(2);
+    });
+
     it('requires a reason and records a traceable cancellation', async () => {
         await request(app).delete(`/tunjuk-silang/${REF_ID}`).send({ reason: 'singkat' }).expect(400);
 
@@ -173,11 +245,52 @@ describe('tunjuk silang route policy', () => {
             REF_ID,
             mocks.user.id,
             'Hubungan salah input',
+            mocks.user.id,
         );
         expect(mocks.audit.logAction).toHaveBeenCalledWith(expect.objectContaining({
-            action: 'update',
+            action: 'cancel',
             entityType: 'tunjuk_silang',
             entityId: REF_ID,
         }));
+    });
+
+    it('blocks cancellation when an endpoint became immutable', async () => {
+        mocks.recordAccess.check
+            .mockResolvedValueOnce(access('ditjen', false))
+            .mockResolvedValueOnce(access());
+
+        await request(app).delete(`/tunjuk-silang/${REF_ID}`).send({
+            reason: 'Hubungan salah input',
+        }).expect(409);
+
+        expect(mocks.service.cancel).not.toHaveBeenCalled();
+        expect(mocks.audit.logAction).not.toHaveBeenCalled();
+    });
+
+    it('allows only the creator to cancel, with a super-admin maintenance override', async () => {
+        mocks.service.findById.mockResolvedValue({
+            id: REF_ID,
+            sourceType: 'arsip',
+            sourceId: SOURCE_ID,
+            targetType: 'arsip',
+            targetId: TARGET_ID,
+            createdBy: '550e8400-e29b-41d4-a716-446655440099',
+        });
+
+        await request(app).delete(`/tunjuk-silang/${REF_ID}`).send({
+            reason: 'Hubungan salah input',
+        }).expect(404);
+        expect(mocks.service.cancel).not.toHaveBeenCalled();
+
+        Object.assign(mocks.user, { role: 'super_admin', unitKerjaId: null });
+        await request(app).delete(`/tunjuk-silang/${REF_ID}`).send({
+            reason: 'Hubungan salah input',
+        }).expect(200);
+        expect(mocks.service.cancel).toHaveBeenCalledWith(
+            REF_ID,
+            mocks.user.id,
+            'Hubungan salah input',
+            null,
+        );
     });
 });

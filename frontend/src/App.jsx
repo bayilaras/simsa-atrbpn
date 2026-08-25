@@ -48,6 +48,8 @@ const FormulirViewer = lazy(() => import('@/pages/Formulir/FormulirViewer'))
 const LayananArsipIndex = lazy(() => import('@/pages/LayananArsip/Index'))
 const LayananArsipCreate = lazy(() => import('@/pages/LayananArsip/Create'))
 const LayananArsipDetail = lazy(() => import('@/pages/LayananArsip/Detail'))
+const RecordAccessGrants = lazy(() => import('@/pages/RecordAccessGrants'))
+const SrikandiIntegration = lazy(() => import('@/pages/SrikandiIntegration'))
 
 // Suspense loading fallback
 function PageLoader() {
@@ -107,6 +109,7 @@ const SUPER_ADMIN_ONLY = ['super_admin'];
 const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
 const ALL_ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
 const STAFF_AND_ABOVE = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff'];
+const ALL_PROVISIONED_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor'];
 
 function AppLayout() {
   return (
@@ -164,6 +167,8 @@ const router = createBrowserRouter([
       { path: "/bulk-upload", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard> },
       { path: "/laporan", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><Laporan /></RoleGuard> },
       { path: "/audit-log", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><AuditLog /></RoleGuard> },
+      { path: "/record-access-grants", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><RecordAccessGrants /></RoleGuard> },
+      { path: "/integrations/srikandi", element: <RoleGuard allowedRoles={ADMIN_ROLES}><SrikandiIntegration /></RoleGuard> },
       { path: "/settings", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><Settings /></RoleGuard> },
       { path: "/users", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><UserManagement /></RoleGuard> },
       { path: "/master/klasifikasi", element: <RoleGuard allowedRoles={ADMIN_ROLES}><KlasifikasiArsip /></RoleGuard> },

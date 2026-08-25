@@ -92,6 +92,20 @@
       "when": 1787620800000,
       "tag": "0012_traceable_cross_reference_cancellation",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787621400000,
+      "tag": "0013_srikandi_durable_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787622000000,
+      "tag": "0014_purpose_bound_record_access",
+      "breakpoints": true
     }
   ]
 }

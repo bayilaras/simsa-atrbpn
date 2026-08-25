@@ -68,6 +68,8 @@ const sidebars = {
       items: [
         'administrasi/laporan',
         'administrasi/audit-log',
+        'administrasi/persetujuan-akses',
+        'administrasi/integrasi-srikandi',
         'administrasi/user-management',
         'administrasi/master-data',
         'administrasi/settings',

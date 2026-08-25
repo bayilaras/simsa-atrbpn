@@ -1,6 +1,10 @@
 import dotenv from 'dotenv';
+import { assertValidSrikandiEnvironment } from './srikandi.js';
+import { loadMalwareScanConfig, validateMalwareScanConfig } from './malware-scanner.js';
 
 dotenv.config();
+
+export const malwareScanConfig = loadMalwareScanConfig();
 
 export const env = {
     NODE_ENV: process.env.NODE_ENV || 'development',
@@ -90,5 +94,17 @@ export function validateEnv() {
     if (driveMissing.length > 0 && driveMissing.length < driveVars.length) {
         process.stderr.write(`WARNING: Partial Google Drive configuration. Missing: ${driveMissing.join(', ')}\n`);
     }
+
+    // Production bitstreams require a real scanner; disabled or ambiguous
+    // scanner configuration never constitutes a successful scan.
+    validateMalwareScanConfig(
+        malwareScanConfig,
+        process.env.NODE_ENV === 'production' || process.env.VERCEL ? 'production' : (process.env.NODE_ENV || 'development'),
+    );
+
+    // Outbound SRIKANDI traffic is disabled by default. If an operator opts in,
+    // fail startup unless endpoint, credential, and official response contract
+    // validation are all complete.
+    assertValidSrikandiEnvironment(process.env);
 }
 

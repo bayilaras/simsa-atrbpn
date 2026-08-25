@@ -21,6 +21,7 @@ import {
 import {
     allowedSecurityClassifications,
     isAllowedForClassification,
+    recordAccessService,
 } from '../services/record-access.service.js';
 import { fileAttachmentService } from '../services/file-attachment.service.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
@@ -176,7 +177,11 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         const id = req.params.id as string;
         const result = await suratMasukService.findById(id, resolveRecordUnitScope(req));
 
-        if (!result || !isAllowedForClassification(req.user, result.sifatSurat)) {
+        if (!result) {
+            return res.status(404).json({ error: 'Surat masuk not found' });
+        }
+        const access = await recordAccessService.check(req.user, 'surat_masuk', id);
+        if (!access.exists || !access.allowed) {
             return res.status(404).json({ error: 'Surat masuk not found' });
         }
 
@@ -305,7 +310,11 @@ router.put('/:id', validateIdParam(),
             const unitScope = resolveRecordUnitScope(req);
             const existing = await suratMasukService.findById(id, unitScope);
 
-            if (!existing || !isAllowedForClassification(req.user, existing.sifatSurat)) {
+            if (!existing) {
+                return res.status(404).json({ error: 'Surat masuk not found' });
+            }
+            const access = await recordAccessService.check(req.user, 'surat_masuk', id);
+            if (!access.exists || !access.mutable) {
                 return res.status(404).json({ error: 'Surat masuk not found' });
             }
             if (existing.isArchived) {
@@ -413,7 +422,11 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
         const id = req.params.id as string;
         const unitScope = resolveRecordUnitScope(req);
         const existing = await suratMasukService.findById(id, unitScope);
-        if (!existing || !isAllowedForClassification(req.user, existing.sifatSurat)) {
+        if (!existing) {
+            return res.status(404).json({ error: 'Surat masuk not found' });
+        }
+        const access = await recordAccessService.check(req.user, 'surat_masuk', id);
+        if (!access.exists || !access.mutable) {
             return res.status(404).json({ error: 'Surat masuk not found' });
         }
         if (existing.isArchived) {
@@ -450,7 +463,11 @@ router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, 
         const id = req.params.id as string;
         const existing = await suratMasukService.findById(id, resolveRecordUnitScope(req));
 
-        if (!existing || !isAllowedForClassification(req.user, existing.sifatSurat)) {
+        if (!existing) {
+            return res.status(404).json({ error: 'Surat masuk not found' });
+        }
+        const access = await recordAccessService.check(req.user, 'surat_masuk', id);
+        if (!access.exists || !access.mutable) {
             return res.status(404).json({ error: 'Surat masuk not found' });
         }
         if (!isAllowedForClassification(req.user, req.body.klasifikasiKeamanan)) {
@@ -489,7 +506,11 @@ router.post('/:id/archive', canWriteMiddleware(), async (req: AuthRequest, res, 
     try {
         const id = req.params.id as string;
         const existing = await suratMasukService.findById(id, resolveRecordUnitScope(req));
-        if (!existing || !isAllowedForClassification(req.user, existing.sifatSurat)) {
+        if (!existing) {
+            return res.status(404).json({ error: 'Surat masuk not found' });
+        }
+        const access = await recordAccessService.check(req.user, 'surat_masuk', id);
+        if (!access.exists || !access.mutable) {
             return res.status(404).json({ error: 'Surat masuk not found' });
         }
         const result = await suratMasukService.archive(id, resolveRecordUnitScope(req));
@@ -525,14 +546,22 @@ router.get('/:id/balasan', async (req: AuthRequest, res, next) => {
         const id = req.params.id as string;
         const parent = await suratMasukService.findById(id, resolveRecordUnitScope(req));
 
-        if (!parent || !isAllowedForClassification(req.user, parent.sifatSurat)) {
+        if (!parent) {
+            return res.status(404).json({ error: 'Surat masuk not found' });
+        }
+        const parentAccess = await recordAccessService.check(req.user, 'surat_masuk', id);
+        if (!parentAccess.exists || !parentAccess.allowed) {
             return res.status(404).json({ error: 'Surat masuk not found' });
         }
 
         const balasan = await suratMasukService.getBalasan(id, parent.unitKerjaId);
+        const visibleBalasan = (await Promise.all(balasan.map(async (item) => ({
+            item,
+            access: await recordAccessService.check(req.user, 'surat_keluar', item.id),
+        })))).filter(({ access }) => access.exists && access.allowed);
         res.json({
             success: true,
-            data: balasan.map((item) => sanitizeSuratRecord(item, 'surat_keluar')),
+            data: visibleBalasan.map(({ item }) => sanitizeSuratRecord(item, 'surat_keluar')),
         });
     } catch (error) {
         next(error);
@@ -545,11 +574,31 @@ router.get('/:id/with-links', async (req: AuthRequest, res, next) => {
         const id = req.params.id as string;
         const result = await suratMasukService.findByIdWithLinks(id, resolveRecordUnitScope(req));
 
-        if (!result || !isAllowedForClassification(req.user, result.sifatSurat)) {
+        if (!result) {
+            return res.status(404).json({ error: 'Surat masuk not found' });
+        }
+        const parentAccess = await recordAccessService.check(req.user, 'surat_masuk', id);
+        if (!parentAccess.exists || !parentAccess.allowed) {
             return res.status(404).json({ error: 'Surat masuk not found' });
         }
 
-        res.json({ success: true, data: sanitizeSuratMasukWithLinks(result) });
+        const [visibleBalasan, archiveAccess] = await Promise.all([
+            Promise.all(result.balasan.map(async (item) => ({
+                item,
+                access: await recordAccessService.check(req.user, 'surat_keluar', item.id),
+            }))),
+            result.arsipEntry
+                ? recordAccessService.check(req.user, 'arsip', result.arsipEntry.id)
+                : Promise.resolve(null),
+        ]);
+        const scopedResult = {
+            ...result,
+            balasan: visibleBalasan
+                .filter(({ access }) => access.exists && access.allowed)
+                .map(({ item }) => item),
+            arsipEntry: archiveAccess?.exists && archiveAccess.allowed ? result.arsipEntry : null,
+        };
+        res.json({ success: true, data: sanitizeSuratMasukWithLinks(scopedResult) });
     } catch (error) {
         next(error);
     }

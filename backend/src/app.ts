@@ -6,7 +6,7 @@ const helmet = (helmetModule as any).default || helmetModule;
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { toNodeHandler } from 'better-auth/node';
-import { env } from './config/env';
+import { env, validateEnv } from './config/env';
 import { isTrustedOrigin } from './config/trusted-origins';
 import { auth } from './config/auth';
 import { generalLimiter, authLimiter } from './middlewares/rate-limiter.middleware';
@@ -57,7 +57,15 @@ import securityRoutes from './routes/security.routes';
 import googleDriveImportRoutes from './routes/google-drive-import.routes';
 import clientUploadRoutes from './routes/client-upload.routes';
 import fileAccessRoutes from './routes/file-access.routes';
+import srikandiRoutes from './routes/srikandi.routes';
+import recordAccessGrantRoutes from './routes/record-access-grant.routes';
 
+// Vercel imports app.ts directly and never executes index.ts. Validate the
+// production environment during module cold-start as well, while unit tests
+// and local development retain their existing lightweight import behavior.
+if (env.NODE_ENV === 'production' || process.env.VERCEL) {
+    validateEnv();
+}
 
 const app = express();
 
@@ -304,6 +312,8 @@ app.use('/api/security', securityRoutes); // Security utilities (password check,
 app.use('/api/import', googleDriveImportRoutes); // Google Drive import
 app.use('/api/client-upload', clientUploadRoutes); // Client-side Vercel Blob uploads (bypasses 4.5MB limit)
 app.use('/api/files', fileAccessRoutes); // Authenticated, unit-scoped private file streaming
+app.use('/api/integrations/srikandi', srikandiRoutes);
+app.use('/api/record-access-grants', recordAccessGrantRoutes); // Purpose-bound, time-limited need-to-know workflow
 
 // Dev auth routes - ONLY available in development mode
 if (env.NODE_ENV === 'development') {

@@ -42,14 +42,27 @@ const electronicUpdateSchema = electronicInputSchema.omit({
     fileAttachmentId: true,
 }).partial().strict();
 
-async function canAccessArsip(req: AuthRequest, arsipId: string): Promise<boolean> {
+async function canReadArsip(req: AuthRequest, arsipId: string): Promise<boolean> {
     const access = await recordAccessService.check(req.user, 'arsip', arsipId);
     return access.exists && access.allowed;
 }
 
-async function getAuthorizedRecord(req: AuthRequest, id: string) {
+async function canMutateArsip(req: AuthRequest, arsipId: string): Promise<boolean> {
+    const access = await recordAccessService.check(req.user, 'arsip', arsipId);
+    return access.exists && access.mutable;
+}
+
+async function getAuthorizedRecord(
+    req: AuthRequest,
+    id: string,
+    intent: 'read' | 'mutate' = 'read',
+) {
     const record = await arsipElektronikService.findById(id);
-    if (!record || !(await canAccessArsip(req, record.arsipId))) return null;
+    if (!record) return null;
+    const authorized = intent === 'mutate'
+        ? await canMutateArsip(req, record.arsipId)
+        : await canReadArsip(req, record.arsipId);
+    if (!authorized) return null;
     return record;
 }
 
@@ -113,7 +126,7 @@ router.get('/pending', async (req: AuthRequest, res: Response, next: NextFunctio
 router.get('/arsip/:arsipId', async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const arsipId = String(req.params.arsipId);
-        if (!(await canAccessArsip(req, arsipId))) {
+        if (!(await canReadArsip(req, arsipId))) {
             return res.status(404).json({ error: 'Record not found' });
         }
         const data = await arsipElektronikService.findByArsipId(arsipId);
@@ -142,7 +155,7 @@ router.post('/', permissionMiddleware('arsip', 'create'), async (req: AuthReques
     try {
         const parsed = electronicInputSchema.safeParse(req.body);
         if (!parsed.success) return validationError(res, parsed.error);
-        if (!(await canAccessArsip(req, parsed.data.arsipId))) {
+        if (!(await canMutateArsip(req, parsed.data.arsipId))) {
             return res.status(404).json({ error: 'Record not found' });
         }
         const result = await arsipElektronikService.create(parsed.data, req.user!.id);
@@ -165,7 +178,7 @@ router.post('/', permissionMiddleware('arsip', 'create'), async (req: AuthReques
 router.put('/:id', permissionMiddleware('arsip', 'update'), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const id = String(req.params.id);
-        const record = await getAuthorizedRecord(req, id);
+        const record = await getAuthorizedRecord(req, id, 'mutate');
         if (!record) {
             return res.status(404).json({ error: 'Record not found' });
         }
@@ -187,7 +200,7 @@ router.put('/:id', permissionMiddleware('arsip', 'update'), async (req: AuthRequ
 router.post('/:id/verify', permissionMiddleware('arsip', 'update'), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const id = String(req.params.id);
-        if (!(await getAuthorizedRecord(req, id))) {
+        if (!(await getAuthorizedRecord(req, id, 'mutate'))) {
             return res.status(404).json({ error: 'Record not found' });
         }
         const { status, catatan } = req.body;
@@ -214,7 +227,7 @@ router.post('/:id/verify', permissionMiddleware('arsip', 'update'), async (req: 
 router.post('/:id/preservasi', permissionMiddleware('arsip', 'update'), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const id = String(req.params.id);
-        if (!(await getAuthorizedRecord(req, id))) {
+        if (!(await getAuthorizedRecord(req, id, 'mutate'))) {
             return res.status(404).json({ error: 'Record not found' });
         }
         const { action, details, notes } = req.body;
@@ -259,7 +272,7 @@ router.delete('/:id', permissionMiddleware('arsip', 'delete'), async (req: AuthR
         if (req.user?.role !== 'super_admin') {
             return res.status(403).json({ error: 'Only super_admin may remove unverified metadata' });
         }
-        if (!(await getAuthorizedRecord(req, id))) {
+        if (!(await getAuthorizedRecord(req, id, 'mutate'))) {
             return res.status(404).json({ error: 'Record not found' });
         }
         const deleted = await arsipElektronikService.delete(id);

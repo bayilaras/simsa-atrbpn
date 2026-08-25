@@ -77,6 +77,21 @@ describe('DosirService', () => {
         });
     });
 
+    describe('getAccessMetadata', () => {
+        it('returns scoped status metadata without loading linked surat', async () => {
+            enqueue([{ id: 'd1', unitKerjaId: 'u1', status: 'open' }]);
+
+            const result = await dosirService.getAccessMetadata(['d1', 'd1'], 'u1');
+
+            expect(result).toEqual([{ id: 'd1', unitKerjaId: 'u1', status: 'open' }]);
+            expect(resultQueue).toHaveLength(0);
+        });
+
+        it('does not query for an empty batch', async () => {
+            await expect(dosirService.getAccessMetadata([], 'u1')).resolves.toEqual([]);
+        });
+    });
+
     describe('getAll', () => {
         it('should return results with surat counts', async () => {
             // Main query results

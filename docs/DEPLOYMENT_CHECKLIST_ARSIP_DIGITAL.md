@@ -46,13 +46,15 @@ SIMSA tetap merupakan DMS substantif Ditjen PTPP yang terintegrasi dengan SRIKAN
 - [ ] Catat waktu cut-off dan batasi write selama langkah yang memerlukan konsistensi.
 - [ ] Verifikasi bahwa backup mencakup database **dan bitstream**; backup database saja tidak cukup.
 
-## 5. Migrasi database 0010, 0011, dan 0012
+## 5. Migrasi database 0010 sampai 0014
 
 Migrasi yang harus berurutan:
 
 1. `backend/src/db/migrations/0010_retention_trigger_legal_hold.sql`
 2. `backend/src/db/migrations/0011_private_bitstream_fixity.sql`
 3. `backend/src/db/migrations/0012_traceable_cross_reference_cancellation.sql`
+4. `backend/src/db/migrations/0013_srikandi_durable_outbox.sql`
+5. `backend/src/db/migrations/0014_purpose_bound_record_access.sql`
 
 `0010` menambahkan pemicu retensi berbasis peristiwa, bukti/versi/rujukan JRA, legal hold, constraint, dan indeks kandidat. Migrasi ini sengaja **tidak** mengisi pemicu dari `tanggal_arsip`; rekod legacy tetap tidak layak menjadi kandidat penyusutan sampai arsiparis memasukkan bukti peristiwa yang sah.
 
@@ -60,10 +62,14 @@ Migrasi yang harus berurutan:
 
 `0012` mengganti penghapusan permanen tunjuk silang dengan pembatalan yang menyimpan pelaku, waktu, dan alasan. Migrasi sengaja berhenti bila terdapat hubungan aktif duplikat agar rekonsiliasi provenans dilakukan sebelum unique index diterapkan.
 
+`0013` menambahkan outbox SRIKANDI durable, snapshot versi kontrak, status retry/dead-letter, idempotency, bukti respons resmi, dan audit append-only. Tabel tersebut belum mengaktifkan pengiriman; outbound tetap memerlukan kontrak dan konfigurasi resmi.
+
+`0014` menambahkan permohonan akses per-rekod dengan tujuan, klasifikasi, mode tayang/unduh/kelola, keputusan, kedaluwarsa, dan pencabutan. Unique index mencegah permohonan atau grant aktif ganda untuk pengguna dan rekod yang sama.
+
 Langkah eksekusi:
 
-- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan tiga file SQL dan pastikan tidak ada migration ID ganda.
-- [ ] Uji ketiga migrasi pada salinan production yang telah dianonimkan; catat durasi, lock, ukuran indeks, dan error.
+- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan kelima file SQL dan pastikan tidak ada migration ID ganda.
+- [ ] Uji kelima migrasi pada salinan production yang telah dianonimkan; catat durasi, lock, ukuran indeks, dan error.
 - [ ] Jalankan preflight duplikasi `(arsip_id, versi_dokumen)`. Migrasi `0011` sengaja berhenti bila data legacy ambigu; rekonsiliasi provenans bersama arsiparis dan jangan melakukan auto-renumber.
 - [ ] Jalankan preflight hubungan tunjuk silang aktif duplikat. Migrasi `0012` juga sengaja berhenti sampai duplikasi direkonsiliasi dan keputusannya dicatat.
 - [ ] Jalankan dari direktori `backend` dengan `npm run db:migrate`; jangan memakai `db:push` untuk produksi terkontrol.
@@ -76,13 +82,13 @@ Langkah eksekusi:
 
 1. Aktifkan maintenance window atau kontrol write yang disetujui.
 2. Ambil backup dan bukti restore.
-3. Jalankan migrasi `0010`, `0011`, lalu `0012`.
+3. Jalankan migrasi `0010`, `0011`, `0012`, `0013`, lalu `0014`.
 4. Deploy backend baru dan lakukan health check internal.
 5. Deploy frontend baru; invalidasi asset cache, tetapi jangan cache respons `/api/*`.
 6. Verifikasi provisioning super admin, role, unit kerja, isolasi lintas unit, dan sesi yang dicabut setelah perubahan otorisasi.
 7. Verifikasi file baru tersimpan private dan hanya dapat diambil melalui `/api/files/...` dengan audit serta header `no-store`.
 8. Migrasikan blob publik legacy sesuai Bagian 7.
-9. Aktifkan connector SRIKANDI setelah uji sandbox dan rekonsiliasi lulus.
+9. Deploy worker SRIKANDI persisten dan aktifkan connector hanya setelah uji sandbox serta rekonsiliasi lulus.
 10. Buka pilot terbatas; pantau error, audit, queue integrasi, AV, fixity, storage, dan database.
 
 ## 7. Migrasi blob publik legacy
@@ -92,15 +98,17 @@ Langkah eksekusi:
 - [ ] Hitung SHA-256 dari sumber dan tujuan; hentikan batch bila tidak sama.
 - [ ] Jalankan AV/DLP sebelum object tujuan dinyatakan tersedia.
 - [ ] Perbarui locator dan `storage_access` dalam transaksi atau batch idempotent; simpan checkpoint dan audit actor.
-- [ ] Uji akses pemilik unit, penolakan lintas unit, kelas keamanan, view/download audit, dan expiry otorisasi.
+- [ ] Uji akses pemilik unit, penolakan lintas unit, kelas keamanan, view/download/manage, larangan mutasi melalui grant tayang/unduh, audit, dan expiry otorisasi.
 - [ ] Pantau referensi ke URL publik selama masa observasi.
 - [ ] Hapus atau nonaktifkan object publik hanya setelah rekonsiliasi 100%, persetujuan pemilik data, bukti backup, dan masa observasi selesai.
 - [ ] Nonaktifkan endpoint kompatibilitas yang dapat mengarahkan langsung ke object publik setelah tidak ada referensi legacy.
 
 ## 8. Kontrol bitstream dan alih media
 
-- [ ] Terapkan quarantine bucket/prefix; file berstatus `not_scanned`, gagal, atau mencurigakan tidak boleh disajikan.
-- [ ] Integrasikan AV/content disarm dan DLP; simpan engine/version/signature, waktu, hasil, dan correlation ID tanpa menyimpan isi rahasia di log.
+- [x] Gateway aplikasi menolak file `not_scanned`, sedang dipindai, retry, gagal, terinfeksi, public legacy, tanpa hash, atau hash mismatch.
+- [x] Adaptor ClamAV INSTREAM dan worker PostgreSQL idempotent tersedia di kode, termasuk retry/backoff, stale-claim recovery, dan verifikasi fixity sebelum status `clean`.
+- [ ] Deploy clamd dan worker sebagai proses persisten pada jaringan privat; jangan mengandalkan `setInterval` dalam fungsi Vercel/serverless. Uji EICAR, timeout, scanner mati, objek hilang, hash mismatch, dan restart worker.
+- [ ] Integrasikan content disarm dan DLP; simpan engine/version/signature, waktu, hasil, dan correlation ID tanpa menyimpan isi rahasia di log.
 - [ ] Terapkan private object access, encryption-at-rest dengan KMS/HSM, least privilege, versioning, object lock/WORM, lifecycle, dan pemisahan admin.
 - [ ] Uji QC 300 DPI kertas, 400 DPI kartografis, 600 DPI foto, 24-bit; kalibrasi alat dan lakukan sampling visual.
 - [ ] Tetapkan format preservasi, misalnya PDF/A/TIFF sesuai kebijakan yang disahkan; jangan hanya mengganti ekstensi.
@@ -110,7 +118,8 @@ Langkah eksekusi:
 ## 9. Akses, kerahasiaan, dan audit
 
 - [ ] Petakan role ke jabatan/mandat; lakukan joiner-mover-leaver review dan recertification akses berkala.
-- [ ] Implementasikan clearance, need-to-know, tujuan akses, approver, masa berlaku, dan pencabutan otomatis.
+- [x] Workflow aplikasi menyediakan permohonan per-rekod, tujuan akses, approver terpisah, mode tayang/unduh/kelola, masa berlaku maksimal 30 hari, pencabutan, dan audit penggunaan. Grant tayang/unduh tidak memberi hak mutasi.
+- [ ] Hubungkan workflow tersebut dengan register clearance personal, jabatan/penugasan resmi, matriks pejabat approver, SLA, notifikasi, recertification, dan pencabutan otomatis saat mutasi pegawai.
 - [ ] Tambahkan watermark pengguna/waktu/tujuan dan kontrol print/export untuk Terbatas/Rahasia/Sangat Rahasia.
 - [ ] Pastikan respons tidak membedakan “tidak ada” dari “tidak berwenang” pada object sensitif.
 - [ ] Kirim audit ke penyimpanan append-only/WORM dan SIEM; alert untuk akses massal, lintas unit, gagal login, perubahan role, legal hold, export, dan penghapusan.
@@ -132,6 +141,8 @@ Langkah eksekusi:
 - [ ] Integrasikan BSrE/PSrE sebelum mengaktifkan penandatanganan elektronik.
 - [ ] Verifikasi sertifikat, rantai kepercayaan, OCSP/CRL, waktu tanda tangan, identitas penanda tangan, integritas dokumen, dan long-term validation.
 - [ ] Gunakan sandbox SRIKANDI; uji idempotency, retry, dead-letter, timeout, perubahan skema, dan rekonsiliasi dua arah.
+- [x] Fondasi outbox durable, snapshot versi kontrak, audit append-only, idempotency/hash conflict, lease recovery, retry/backoff/dead-letter, bounded response streaming, validasi ACK + remote ID, dan worker persisten tersedia serta disabled-by-default.
+- [ ] Deploy worker SRIKANDI pada runtime persisten; endpoint HTTP pemrosesan antrean hanya fallback diagnostik satu item.
 - [ ] Simpan mapping ID SIMSA–SRIKANDI serta bukti sinkronisasi; hindari duplikasi nomor registrasi resmi.
 - [ ] Definisikan operasi saat SRIKANDI tidak tersedia dan batas waktu rekonsiliasi setelah pulih.
 
@@ -160,7 +171,7 @@ Langkah eksekusi:
 
 ## 14. Strategi rollback
 
-Migrasi `0010`, `0011`, dan `0012` bersifat aditif, tetapi rollback dengan `DROP COLUMN` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, atau pelaku workflow. Karena itu:
+Migrasi `0010` sampai `0014` bersifat aditif, tetapi rollback dengan `DROP COLUMN`/`DROP TABLE` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, keputusan akses, audit integrasi, atau pelaku workflow. Karena itu:
 
 1. **Sebelum cutover dan belum ada write baru:** batalkan deploy aplikasi; bila migrasi gagal, pulihkan database ke branch/snapshot pra-migrasi dan verifikasi checksum/count.
 2. **Sesudah cutover tetapi belum ada data bermakna:** arahkan trafik ke maintenance, pulihkan snapshot ke environment baru, validasi, lalu switch connection secara terkontrol.

@@ -38,6 +38,9 @@ const mocks = vi.hoisted(() => ({
     },
     blobUpload: vi.fn(),
     audit: vi.fn(),
+    recordAccess: {
+        check: vi.fn(),
+    },
 }));
 
 vi.mock('../../middlewares/auth.middleware', () => ({
@@ -83,7 +86,7 @@ vi.mock('../../services/file-attachment.service', () => ({
 }));
 
 vi.mock('../../services/record-access.service', () => ({
-    recordAccessService: { check: vi.fn() },
+    recordAccessService: mocks.recordAccess,
     allowedSecurityClassifications: () => ['biasa', 'terbatas'],
     isAllowedForClassification: (_user: any, value?: string | null) =>
         !['rahasia', 'sangat_rahasia'].includes((value || 'biasa').toLowerCase()),
@@ -125,6 +128,15 @@ describe('surat and attachment route security policy', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.audit.mockResolvedValue(undefined);
+        mocks.recordAccess.check.mockResolvedValue({
+            exists: true,
+            allowed: true,
+            mutable: true,
+            unitKerjaId: 'sesditjen',
+            classification: 'terbatas',
+            grantId: '550e8400-e29b-41d4-a716-446655440099',
+            grantAccessMode: 'manage',
+        });
     });
 
     it('validates surat keluar against DB fields and forces the authenticated unit', async () => {
@@ -199,6 +211,44 @@ describe('surat and attachment route security policy', () => {
             'sesditjen',
         );
         expect(mocks.suratKeluar.update).not.toHaveBeenCalled();
+    });
+
+    it('conceals a controlled record from mutation without manage access', async () => {
+        const record = {
+            id: '550e8400-e29b-41d4-a716-446655440010',
+            unitKerjaId: 'sesditjen',
+            isArchived: false,
+            perihal: 'Sebelum',
+        };
+        mocks.suratKeluar.findById.mockResolvedValue(record);
+        mocks.recordAccess.check.mockResolvedValue({
+            exists: true,
+            allowed: true,
+            mutable: false,
+            unitKerjaId: 'sesditjen',
+            grantAccessMode: 'view',
+        });
+
+        await request(app)
+            .put('/api/surat-keluar/550e8400-e29b-41d4-a716-446655440010')
+            .send({ perihal: 'Sesudah' })
+            .expect(404);
+        expect(mocks.suratKeluar.update).not.toHaveBeenCalled();
+
+        mocks.recordAccess.check.mockResolvedValue({
+            exists: true,
+            allowed: true,
+            mutable: true,
+            unitKerjaId: 'sesditjen',
+            grantAccessMode: 'manage',
+        });
+        mocks.suratKeluar.update.mockResolvedValue({ ...record, perihal: 'Sesudah' });
+
+        await request(app)
+            .put('/api/surat-keluar/550e8400-e29b-41d4-a716-446655440010')
+            .send({ perihal: 'Sesudah' })
+            .expect(200);
+        expect(mocks.suratKeluar.update).toHaveBeenCalledTimes(1);
     });
 
     it('does not update or delete an outgoing evidentiary source after archiving', async () => {

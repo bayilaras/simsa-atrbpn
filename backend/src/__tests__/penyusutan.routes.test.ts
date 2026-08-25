@@ -133,8 +133,9 @@ describe('penyusutan batch unit scoping', () => {
         await request(app).get('/penyusutan/batch-1').expect(200);
         await request(app).get('/penyusutan/batch-1/print/usul-musnah').expect(200);
 
-        expect(mocks.service.findById).toHaveBeenCalledWith('batch-1', null, null);
-        expect(mocks.print.generateDaftarUsulMusnah).toHaveBeenCalledWith('batch-1', null, null);
+        const classifications = ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'];
+        expect(mocks.service.findById).toHaveBeenCalledWith('batch-1', null, classifications);
+        expect(mocks.print.generateDaftarUsulMusnah).toHaveBeenCalledWith('batch-1', null, classifications);
     });
 
     it.each([

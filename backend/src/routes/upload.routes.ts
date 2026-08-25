@@ -132,7 +132,7 @@ router.post(
             }
 
             const access = await recordAccessService.check(req.user, entityType, suratId);
-            if (!access.exists || !access.allowed) {
+            if (!access.exists || !access.mutable) {
                 return res.status(404).json({ error: 'Record not found' });
             }
 

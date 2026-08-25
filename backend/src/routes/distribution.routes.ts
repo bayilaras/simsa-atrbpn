@@ -190,7 +190,7 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
         }
 
         const sourceAccess = await recordAccessService.check(req.user, 'surat_masuk', suratMasukId);
-        if (!sourceAccess.exists || !sourceAccess.allowed || sourceAccess.unitKerjaId !== sourceUnitId) {
+        if (!sourceAccess.exists || !sourceAccess.mutable || sourceAccess.unitKerjaId !== sourceUnitId) {
             return res.status(404).json({ error: 'Data not found' });
         }
 

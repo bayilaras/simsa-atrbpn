@@ -47,14 +47,36 @@ async function streamAuthorizedFile(
         auditEntityId: string;
         parentType?: RecordEntityType;
         parentId?: string;
+        grantId?: string | null;
+        accessPurpose?: string | null;
+        grantAccessMode?: 'view' | 'download' | 'manage' | null;
+        grantExpiresAt?: Date | null;
+        classification?: string | null;
     },
 ) {
+    const download = req.query.download === '1';
+    if (download && details.grantId && details.grantAccessMode !== 'download') {
+        return res.status(403).json({
+            error: 'Download not approved',
+            message: 'Persetujuan hanya mengizinkan penayangan, bukan pengunduhan.',
+        });
+    }
+
+    if (details.grantId) {
+        const grantStillActive = await recordAccessService.markGrantUsed(details.grantId);
+        if (!grantStillActive) {
+            return res.status(403).json({
+                error: 'Access grant expired',
+                message: 'Persetujuan akses telah berakhir atau dicabut.',
+            });
+        }
+    }
+
     const stored = await blobStorageService.downloadFile(details.locator);
     if (!stored) {
         return res.status(404).json({ error: 'File not found' });
     }
 
-    const download = req.query.download === '1';
     const disposition = download ? 'attachment' : 'inline';
     const fileName = safeFileName(details.fileName, stored.fileName);
 
@@ -70,9 +92,20 @@ async function streamAuthorizedFile(
         action: download ? 'download' : 'view',
         entityType: details.auditEntityType,
         entityId: details.auditEntityId,
-        changes: details.parentType && details.parentId
-            ? { parentType: details.parentType, parentId: details.parentId }
-            : undefined,
+        changes: {
+            ...(details.parentType && details.parentId
+                ? { parentType: details.parentType, parentId: details.parentId }
+                : {}),
+            ...(details.grantId
+                ? {
+                    grantId: details.grantId,
+                    approvedPurpose: details.accessPurpose,
+                    accessMode: details.grantAccessMode,
+                    grantExpiresAt: details.grantExpiresAt,
+                    classification: details.classification,
+                }
+                : {}),
+        },
         ipAddress: req.ip,
     });
 
@@ -123,6 +156,11 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 auditEntityId: attachment.id,
                 parentType,
                 parentId: attachment.entityId,
+                grantId: access.grantId,
+                accessPurpose: access.accessPurpose,
+                grantAccessMode: access.grantAccessMode,
+                grantExpiresAt: access.grantExpiresAt,
+                classification: access.classification,
             });
         }
 
@@ -172,6 +210,11 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             fileName: record?.fileName || 'dokumen',
             auditEntityType: entityType as 'surat_masuk' | 'surat_keluar',
             auditEntityId: entityId,
+            grantId: access.grantId,
+            accessPurpose: access.accessPurpose,
+            grantAccessMode: access.grantAccessMode,
+            grantExpiresAt: access.grantExpiresAt,
+            classification: access.classification,
         });
     } catch (error) {
         log.error({ err: error }, 'Authorized file retrieval failed');

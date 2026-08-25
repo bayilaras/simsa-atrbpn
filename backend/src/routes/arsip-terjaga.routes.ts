@@ -157,7 +157,7 @@ router.post('/',
     async (req: AuthRequest, res, next) => {
         try {
             const access = await recordAccessService.check(req.user, 'arsip', req.body.arsipId);
-            if (!access.exists || !access.allowed || !access.unitKerjaId) {
+            if (!access.exists || !access.mutable || !access.unitKerjaId) {
                 return res.status(404).json({ error: 'Arsip not found' });
             }
 
