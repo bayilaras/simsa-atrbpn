@@ -80,6 +80,68 @@ function isAllowedArchiveClass(
     return classes.includes((classification || 'biasa').trim().toLowerCase());
 }
 
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
+function assertArchiveIdList(arsipIds: string[]) {
+    if (arsipIds.length === 0) {
+        throw new ValidationError('Minimal satu arsip harus dipilih.');
+    }
+    if (new Set(arsipIds).size !== arsipIds.length) {
+        throw new ValidationError('Daftar arsip mengandung ID duplikat.');
+    }
+}
+
+/**
+ * A disposal decision may only use the immutable rule assignment captured when
+ * the archive was registered (or subsequently re-verified). Denormalized labels
+ * alone are deliberately insufficient: IDs and hashes make the exact rule
+ * versions behind the decision traceable.
+ */
+function getRuleProvenanceBlockReason(row: any): string | null {
+    const status = String(row.ruleProvenanceStatus || '').trim().toLowerCase();
+
+    if (status === 'legacy_unverified') {
+        return 'status legacy_unverified: arsip lama belum diverifikasi terhadap master klasifikasi dan JRA aktif; lakukan verifikasi aturan terlebih dahulu';
+    }
+    if (status === 'pending_jra') {
+        return 'status pending_jra: penetapan JRA belum selesai; pilih butir JRA aktif dan simpan snapshot aturan terverifikasi';
+    }
+    if (status !== 'verified') {
+        return 'status provenance aturan harus verified';
+    }
+
+    const missing: string[] = [];
+    if (!Number.isInteger(row.klasifikasiArsipId) || row.klasifikasiArsipId <= 0) {
+        missing.push('klasifikasiArsipId');
+    }
+    if (!String(row.klasifikasiRuleSetId || '').trim()) missing.push('klasifikasiRuleSetId');
+    if (!Number.isInteger(row.jraItemId) || row.jraItemId <= 0) missing.push('jraItemId');
+    if (!String(row.jraRuleSetId || '').trim()) missing.push('jraRuleSetId');
+    if (!String(row.currentRuleSnapshotId || '').trim()) missing.push('currentRuleSnapshotId');
+    if (!SHA256_PATTERN.test(String(row.klasifikasiSnapshotHash || ''))) {
+        missing.push('klasifikasiSnapshotHash');
+    }
+    if (!SHA256_PATTERN.test(String(row.retentionDecisionHash || ''))) {
+        missing.push('retentionDecisionHash');
+    }
+
+    if (missing.length > 0) {
+        return `snapshot aturan terverifikasi tidak lengkap atau tidak valid (${missing.join(', ')})`;
+    }
+    return null;
+}
+
+function assertVerifiedRuleProvenance(rows: any[], context: string) {
+    const blocked = rows
+        .map((row: any) => ({ row, reason: getRuleProvenanceBlockReason(row) }))
+        .filter((item: any) => item.reason);
+    if (blocked.length > 0) {
+        throw new ValidationError(
+            `${context}: ${blocked.map((item: any) => `${item.row.id} (${item.reason})`).join(', ')}`
+        );
+    }
+}
+
 class PenyusutanService {
     /**
      * List all penyusutan batches with pagination
@@ -209,6 +271,14 @@ class PenyusutanService {
             jraKode: arsip.jraKode,
             jraVersion: arsip.jraVersion,
             jraReference: arsip.jraReference,
+            klasifikasiArsipId: arsip.klasifikasiArsipId,
+            klasifikasiRuleSetId: arsip.klasifikasiRuleSetId,
+            klasifikasiSnapshotHash: arsip.klasifikasiSnapshotHash,
+            jraItemId: arsip.jraItemId,
+            jraRuleSetId: arsip.jraRuleSetId,
+            retentionDecisionHash: arsip.retentionDecisionHash,
+            currentRuleSnapshotId: arsip.currentRuleSnapshotId,
+            ruleProvenanceStatus: arsip.ruleProvenanceStatus,
             legalHold: arsip.legalHold,
             klasifikasiKeamanan: arsip.klasifikasiKeamanan,
         })
@@ -257,6 +327,11 @@ class PenyusutanService {
             );
         }
 
+        assertVerifiedRuleProvenance(
+            rows,
+            'Arsip tidak dapat dimasukkan ke batch penyusutan karena provenance aturan belum terverifikasi',
+        );
+
         if (jenisPenyusutan === 'pemusnahan' || jenisPenyusutan === 'penyerahan') {
             const tanpaProvenanceJra = rows.filter((r: any) =>
                 !String(r.jraKode || '').trim()
@@ -295,6 +370,14 @@ class PenyusutanService {
             jraKode: arsip.jraKode,
             jraVersion: arsip.jraVersion,
             jraReference: arsip.jraReference,
+            klasifikasiArsipId: arsip.klasifikasiArsipId,
+            klasifikasiRuleSetId: arsip.klasifikasiRuleSetId,
+            klasifikasiSnapshotHash: arsip.klasifikasiSnapshotHash,
+            jraItemId: arsip.jraItemId,
+            jraRuleSetId: arsip.jraRuleSetId,
+            retentionDecisionHash: arsip.retentionDecisionHash,
+            currentRuleSnapshotId: arsip.currentRuleSnapshotId,
+            ruleProvenanceStatus: arsip.ruleProvenanceStatus,
             legalHold: arsip.legalHold,
             klasifikasiKeamanan: arsip.klasifikasiKeamanan,
         })
@@ -302,6 +385,10 @@ class PenyusutanService {
             .innerJoin(arsip, eq(penyusutanItems.arsipId, arsip.id))
             .where(eq(penyusutanItems.penyusutanId, batchId))
             .for('update');
+
+        if (rows.length === 0) {
+            throw new ValidationError('Workflow penyusutan tidak dapat diproses tanpa arsip.');
+        }
 
         if (rows.some((row: any) =>
             !isAllowedArchiveClass(row.klasifikasiKeamanan, securityClassifications)
@@ -315,6 +402,11 @@ class PenyusutanService {
                 `Workflow penyusutan dihentikan: arsip tanpa pemicu retensi atau dalam legal hold: ${blocked.map((r: any) => r.id).join(', ')}`
             );
         }
+
+        assertVerifiedRuleProvenance(
+            rows,
+            'Workflow penyusutan dihentikan karena provenance aturan belum terverifikasi',
+        );
 
         if (jenisPenyusutan === 'pemusnahan' || jenisPenyusutan === 'penyerahan') {
             const tanpaProvenanceJra = rows.filter((r: any) =>
@@ -344,6 +436,7 @@ class PenyusutanService {
      */
     async create(data: CreatePenyusutanData) {
         const { arsipIds, securityClassifications, ...batchData } = data;
+        assertArchiveIdList(arsipIds);
 
         // Generate nomor BA
         const now = new Date();
@@ -556,6 +649,7 @@ class PenyusutanService {
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         securityClassifications?: string[] | null,
     ) {
+        assertArchiveIdList(arsipIds);
         return await db.transaction(async (tx: any) => {
             const batch = await tx.select().from(penyusutanArsip).where(and(
                 scopedRecordByIdWhere(
@@ -626,6 +720,7 @@ class PenyusutanService {
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         securityClassifications?: string[] | null,
     ) {
+        assertArchiveIdList(arsipIds);
         return await db.transaction(async (tx: any) => {
             const batch = await tx.select().from(penyusutanArsip).where(and(
                 scopedRecordByIdWhere(
@@ -740,12 +835,21 @@ class PenyusutanService {
                 eq(arsip.disposalStatus, 'active'),
                 eq(arsip.legalHold, false),
                 isNotNull(arsip.retentionTriggerDate),
+                eq(arsip.ruleProvenanceStatus, 'verified'),
+                isNotNull(arsip.klasifikasiArsipId),
+                isNotNull(arsip.klasifikasiRuleSetId),
+                isNotNull(arsip.klasifikasiSnapshotHash),
+                isNotNull(arsip.jraItemId),
+                isNotNull(arsip.jraRuleSetId),
+                isNotNull(arsip.retentionDecisionHash),
+                isNotNull(arsip.currentRuleSnapshotId),
                 archiveSecurityCondition(securityClassifications),
             ));
 
         // Filter based on lifecycle status and hasilAkhir
         const candidates = allArchives.filter(arch => {
             if (arch.legalHold || !arch.retentionTriggerDate) return false;
+            if (getRuleProvenanceBlockReason(arch)) return false;
             const status = arsipService.getArchiveStatus(
                 arch.retentionTriggerDate, arch.retensiAktif, arch.retensiInaktif
             );

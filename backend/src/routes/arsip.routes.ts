@@ -4,14 +4,13 @@ import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { validateBody, validateQuery, validateIdParam } from '../middlewares/validate.middleware';
 import {
-    createArsipSchema,
     updateArsipSchema,
-    queryArsipSchema
+    queryArsipSchema,
+    reconcileArchiveRulesSchema,
 } from '../validators/schemas';
 import auditLogService from '../services/audit-log.service';
 import { fullTextSearchService } from '../services/fulltext-search.service';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
-import { canAccessUnit, Role } from '../config/permissions';
 import {
     allowedSecurityClassifications,
     isAllowedForClassification,
@@ -21,14 +20,6 @@ import {
 const router = Router();
 
 router.use(authMiddleware);
-
-function userCanAccessUnit(req: AuthRequest, unitKerjaId: string): boolean {
-    return canAccessUnit(
-        (req.user?.role || 'user') as Role,
-        req.user?.unitKerjaId || null,
-        unitKerjaId,
-    );
-}
 
 // GET /api/arsip - List with pagination
 router.get('/', validateQuery(queryArsipSchema), async (req: AuthRequest, res, next) => {
@@ -255,34 +246,15 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
 // POST /api/arsip
 router.post('/',
     canWriteMiddleware(),
-    validateBody(createArsipSchema),
-    async (req: AuthRequest, res, next) => {
-        try {
-            if (!userCanAccessUnit(req, req.body.unitKerjaId)) {
-                return res.status(403).json({ error: 'Anda tidak berwenang membuat arsip untuk unit kerja tersebut' });
-            }
-            if (!isAllowedForClassification(req.user, req.body.klasifikasiKeamanan)) {
-                return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
-            }
-            const result = await arsipService.create({
-                ...req.body,
-                createdBy: req.user?.id,
-            });
-
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: 'create',
-                entityType: 'arsip',
-                entityId: result.id,
-                changes: { after: { nomorBerkas: result.nomorBerkas, jenisArsip: result.jenisArsip } },
-                ipAddress: req.ip,
-            });
-
-            res.status(201).json({ success: true, data: result });
-        } catch (error) {
-            next(error);
-        }
+    async (_req: AuthRequest, res) => {
+        // The former endpoint accepted a DTO that did not match the archive
+        // table and could create records without authoritative rule evidence.
+        // Registration is now performed atomically from surat masuk/keluar;
+        // OCR imports remain non-actionable until explicitly reconciled.
+        return res.status(410).json({
+            error: 'Direct archive registration is disabled',
+            message: 'Gunakan archive-full pada surat masuk/keluar, lalu pilih klasifikasi dan JRA aktif. Arsip hasil impor harus direkonsiliasi sebelum penyusutan.',
+        });
     }
 );
 
@@ -341,5 +313,78 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
         message: 'Gunakan workflow Penyusutan Arsip sesuai JRA dan legal hold.',
     });
 });
+
+// GET /api/arsip/:id/rule-history - Append-only classification/JRA evidence
+router.get('/:id/rule-history', validateIdParam(), async (req: AuthRequest, res, next) => {
+    try {
+        const { id } = req.params;
+        const access = await recordAccessService.check(req.user, 'arsip', id as string);
+        if (!access.exists || !access.allowed) {
+            return res.status(404).json({ error: 'Arsip not found' });
+        }
+        const history = await arsipService.getRuleHistory(id as string);
+        res.json({ success: true, data: history });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/arsip/:id/reconcile-rules - Correct by appending a new evidence revision
+router.post(
+    '/:id/reconcile-rules',
+    validateIdParam(),
+    canWriteMiddleware(),
+    validateBody(reconcileArchiveRulesSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            const { id } = req.params;
+            const existing = await arsipService.findById(id as string);
+            const access = await recordAccessService.check(req.user, 'arsip', id as string);
+            if (!existing || !access.exists || !access.mutable) {
+                return res.status(404).json({ error: 'Arsip not found' });
+            }
+
+            const result = await arsipService.reconcileRules(
+                id as string,
+                existing.unitKerjaId,
+                {
+                    klasifikasiItemId: req.body.klasifikasiItemId,
+                    jraItemId: req.body.jraItemId,
+                },
+                req.body.reason,
+                req.user?.id,
+            );
+
+            await auditLogService.logAction({
+                userId: req.user?.id,
+                userEmail: req.user?.email,
+                action: 'update',
+                entityType: 'arsip_rule_assignment' as any,
+                entityId: id as string,
+                changes: {
+                    before: {
+                        ruleProvenanceStatus: existing.ruleProvenanceStatus,
+                        klasifikasiArsipId: existing.klasifikasiArsipId,
+                        jraItemId: existing.jraItemId,
+                        currentRuleSnapshotId: existing.currentRuleSnapshotId,
+                    },
+                    after: {
+                        ruleProvenanceStatus: result.archive.ruleProvenanceStatus,
+                        klasifikasiArsipId: result.archive.klasifikasiArsipId,
+                        jraItemId: result.archive.jraItemId,
+                        currentRuleSnapshotId: result.snapshot.id,
+                        revision: result.snapshot.revision,
+                    },
+                    reason: req.body.reason,
+                },
+                ipAddress: req.ip,
+            });
+
+            res.json({ success: true, data: result.archive, snapshot: result.snapshot });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
 
 export default router;

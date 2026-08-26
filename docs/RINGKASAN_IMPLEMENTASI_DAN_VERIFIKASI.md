@@ -14,6 +14,9 @@ Lihat [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md) untuk batas 
 - Upload baru memakai private blob, SHA-256, metadata fixity, karantina, dan gateway file terautentikasi. File tidak dilepas sebelum status AV eksplisit `clean`.
 - Arsip elektronik memiliki registrasi, versi, kebijakan QC 300/400/600 DPI dan 24-bit, immutability setelah verifikasi, serta riwayat preservasi.
 - Retensi memakai pemicu peristiwa, bukti dan versi/rujukan JRA; legal hold dan separation of duties menahan penyusutan yang tidak sah.
+- Klasifikasi dan JRA kini berupa edisi berversi: versi aktif immutable, perubahan disiapkan sebagai draft, divalidasi, lalu diaktifkan dengan riwayat supersesi. Dataset awal memuat 842 baris klasifikasi (620 selectable) dan 391 aturan JRA selectable dari dokumen sumber pengguna.
+- Registrasi arsip mengambil butir aturan aktif secara kanonis di server dan menyimpan snapshot/hash keputusan. Arsip legacy diblokir dari penyusutan sampai rekonsiliasi menambahkan revisi bukti tanpa menghapus riwayat lama.
+- Rumusan JRA bersyarat atau kontekstual tidak dipaksakan menjadi Musnah/Permanen; aplikasi mengarahkannya ke `Dinilai Kembali`. Mapping klasifikasi–JRA tetap saran tematik, bukan keputusan hukum otomatis.
 - Tunjuk silang tidak lagi dihapus permanen: pembatalan menyimpan rekod asal, pelaku, waktu, alasan, dan audit; tuple hubungan aktif yang identik juga ditolak.
 - Tunjuk silang kini mengunci endpoint secara deterministik, memeriksa ulang status immutable/legal hold/unit, membatasi pembatalan kepada pencipta atau super admin, memvalidasi input/pagination, dan menghindari pemeriksaan akses N+1.
 - Workflow need-to-know per-rekod menyimpan tujuan, klasifikasi, mode tayang/unduh/kelola, masa berlaku, approver berbeda, keputusan, pencabutan, dan penggunaan terakhir. Grant tayang/unduh tidak dapat mengubah rekod; mutasi rekod terkendali memerlukan grant kelola. Kelas Terbatas/Rahasia/Sangat Rahasia gagal-tertutup tanpa grant aktif yang tepat.
@@ -34,18 +37,23 @@ Jalankan berurutan setelah backup dan preflight pada salinan data produksi:
 3. `0012_traceable_cross_reference_cancellation.sql`
 4. `0013_srikandi_durable_outbox.sql`
 5. `0014_purpose_bound_record_access.sql`
+6. `0015_better_auth_account_issuer.sql`
+7. `0016_versioned_regulatory_rules.sql`
 
-Migrasi `0011` berhenti bila versi arsip elektronik legacy ambigu. Migrasi `0012` berhenti bila hubungan tunjuk silang aktif duplikat. Keduanya sengaja meminta rekonsiliasi manusia, bukan melakukan koreksi provenans otomatis. Migrasi `0013` dan `0014` menambahkan bukti integrasi dan akses tanpa mengaktifkan outbound SRIKANDI atau memberikan grant otomatis.
+Migrasi `0011` berhenti bila versi arsip elektronik legacy ambigu. Migrasi `0012` berhenti bila hubungan tunjuk silang aktif duplikat. Keduanya sengaja meminta rekonsiliasi manusia, bukan melakukan koreksi provenans otomatis. Migrasi `0013` dan `0014` menambahkan bukti integrasi dan akses tanpa mengaktifkan outbound SRIKANDI atau memberikan grant otomatis. Setelah `0016`, jalankan `npm run seed:all` dalam maintenance window untuk memverifikasi dan mengaktifkan dataset klasifikasi/JRA awal.
+
+SQL `0004` dan `0005` juga memuat repair idempotent untuk tiga tabel yang dahulu hanya tercatat dalam snapshot Drizzle. Rantai migrasi kini diuji dari database kosong serta dari kondisi partial-resume ketika `0004` lama sudah tercatat tetapi tabelnya belum terbentuk.
 
 ## Bukti verifikasi
 
-- Backend: 59 berkas test, 757 test lulus.
-- Frontend: 4 berkas test, 22 test lulus.
+- Backend: 67 berkas test, 813 test lulus.
+- Frontend: 6 berkas test, 28 test lulus.
 - TypeScript backend: lulus.
 - Build produksi backend: lulus.
 - Build produksi frontend/PWA: lulus.
 - Build produksi Docusaurus: lulus tanpa broken-link warning.
 - Pemeriksaan konfigurasi Drizzle: lulus.
+- Migration smoke test PostgreSQL: fresh `0000` sampai `0016` dan partial-resume dari `0005` lulus.
 - `npm ci --dry-run`: lulus untuk backend, frontend, dan situs dokumentasi.
 - ESLint terarah pada modul frontend baru/diubah secara substantif: lulus. Lint penuh masih memiliki temuan lama pada beberapa halaman legacy dan tetap dicatat non-blocking di CI.
 - Secret scan working tree tidak menemukan kredensial test lama; secret yang pernah masuk riwayat Git tetap wajib dicabut atau dirotasi.

@@ -2,7 +2,24 @@ import { z } from 'zod';
 
 // Common schemas
 export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format');
+export const dateSchema = z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
+    .refine((value) => {
+        const parsed = new Date(`${value}T00:00:00.000Z`);
+        return !Number.isNaN(parsed.getTime())
+            && parsed.toISOString().slice(0, 10) === value;
+    }, 'Tanggal tidak valid');
+
+function jakartaToday(): string {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
 export const timestampSchema = z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/));
 
 export type SuratBlobFolder = 'surat-masuk' | 'surat-keluar';
@@ -154,6 +171,73 @@ const retentionMetadataFields = {
     jraReference: z.string().max(2000).optional(),
 };
 
+const archiveItemRegistrationSchema = z.object({
+    nomor: z.string().trim().min(1).max(100),
+    uraian: z.string().trim().min(1).max(2000),
+    perkembangan: z.enum(['Asli', 'Salinan', 'Tembusan']),
+    tanggal: dateSchema,
+    jumlah: z.coerce.number().int().min(1).max(10000),
+    mediaType: z.string().trim().max(50).optional(),
+    lokasiFc: z.string().trim().max(50).optional(),
+    lokasiLaci: z.string().trim().max(50).optional(),
+    lokasiFolder: z.string().trim().max(50).optional(),
+}).strict();
+
+/**
+ * Strict registration command used by both incoming and outgoing letters.
+ * Authoritative retention text is accepted only for compatibility with the
+ * current UI and is ignored by the service; the canonical value is always
+ * loaded server-side from klasifikasiItemId/jraItemId (or their active codes).
+ */
+export const archiveRegistrationSchema = z.object({
+    nomorBerkas: z.string().trim().min(1, 'Nomor berkas wajib diisi').max(100),
+    kodeKlasifikasi: z.string().trim().max(50).optional(),
+    klasifikasiItemId: z.coerce.number().int().positive().optional(),
+    klasifikasiArsip: z.string().trim().max(2000).optional(),
+    uraianBerkas: z.string().trim().min(1, 'Uraian berkas wajib diisi').max(2000),
+    unitPengolah: z.string().trim().min(1, 'Unit pengolah wajib diisi').max(255),
+    kurunWaktu: z.string().trim().min(1, 'Kurun waktu wajib diisi').max(100),
+    jraKode: z.string().trim().max(50).optional(),
+    jraItemId: z.coerce.number().int().positive().optional(),
+    klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']),
+    personInCharge: z.string().trim().max(255).optional(),
+    keterangan: z.string().trim().max(4000).optional(),
+    retentionTriggerType: retentionTriggerTypeSchema.optional(),
+    retentionTriggerLabel: z.string().trim().max(255).optional(),
+    retentionTriggerDate: dateSchema.optional(),
+    retentionTriggerEvidence: z.string().trim().max(4000).optional(),
+    tanggalArsip: dateSchema,
+    nomorItem: z.string().trim().min(1).max(100),
+    uraianItem: z.string().trim().min(1).max(2000),
+    tingkatPerkembangan: z.enum(['Asli', 'Salinan', 'Tembusan']),
+    jumlah: z.coerce.number().int().min(1).max(10000),
+    lokasiFc: z.string().trim().max(50).optional(),
+    lokasiLaci: z.string().trim().max(50).optional(),
+    lokasiFolder: z.string().trim().max(50).optional(),
+    items: z.array(archiveItemRegistrationSchema).min(1).max(100),
+    // Deprecated client display/cache fields. Never trusted by the server.
+    jraUraian: z.string().max(2000).optional(),
+    retensiAktif: z.string().max(150).optional(),
+    retensiInaktif: z.string().max(150).optional(),
+    hasilAkhir: z.string().max(255).optional(),
+    jraVersion: z.string().max(100).optional(),
+    jraReference: z.string().max(2000).optional(),
+}).strict().superRefine((data, ctx) => {
+    if (!data.klasifikasiItemId && !data.kodeKlasifikasi) {
+        ctx.addIssue({ code: 'custom', path: ['klasifikasiItemId'], message: 'Pilih klasifikasi arsip' });
+    }
+    if (!data.jraItemId && !data.jraKode) {
+        ctx.addIssue({ code: 'custom', path: ['jraItemId'], message: 'Pilih Jadwal Retensi Arsip' });
+    }
+    validateRetentionTrigger(data, ctx);
+});
+
+export const reconcileArchiveRulesSchema = z.object({
+    klasifikasiItemId: z.coerce.number().int().positive(),
+    jraItemId: z.coerce.number().int().positive(),
+    reason: z.string().trim().min(10, 'Alasan rekonsiliasi minimal 10 karakter').max(2000),
+}).strict();
+
 function validateRetentionTrigger(
     data: Record<string, unknown>,
     ctx: z.RefinementCtx,
@@ -162,6 +246,15 @@ function validateRetentionTrigger(
     // are recorded. Existing integrations may omit all trigger fields; those rows are
     // accepted for compatibility but remain safely outside every disposal candidate list.
     if (!data.retentionTriggerDate) return;
+
+    if (typeof data.retentionTriggerDate === 'string'
+        && data.retentionTriggerDate > jakartaToday()) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['retentionTriggerDate'],
+            message: 'Tanggal pemicu tidak boleh di masa depan',
+        });
+    }
 
     const requiredFields = [
         ['retentionTriggerType', 'Jenis pemicu retensi wajib diisi'],

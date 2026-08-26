@@ -51,6 +51,7 @@
 * [📝 Audit Log](administrasi/audit-log.md)
 * [👥 User Management](administrasi/user-management.md)
 * [📂 Master Data](administrasi/master-data.md)
+* [Versi Aturan Klasifikasi dan JRA](administrasi/versi-aturan.md)
 * [⚙️ Settings](administrasi/settings.md)
 
 ## Tata Kelola Internal

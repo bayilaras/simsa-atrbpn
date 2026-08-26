@@ -1,18 +1,22 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, Clock, Loader2, FileText, FolderOpen, AlertCircle, CheckCircle2, Archive, Trash, Info } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, Clock, FileText, FolderOpen, CheckCircle2, Archive, Trash, GitBranch, LockKeyhole } from 'lucide-react'
 import { api } from '@/services/api'
+import regulatoryRuleSetService from '@/services/regulatory-rule-set.service'
+import { useAuth } from '@/context/AuthContext'
 import { Skeleton } from "@/components/ui/skeleton"
 
 // Tree Node Component for JRA
-function TreeNode({ node, level = 0, onEdit, onDelete }) {
+function TreeNode({ node, level = 0, onEdit, onDelete, editable }) {
     const [isOpen, setIsOpen] = useState(level < 1)
     const hasChildren = node.children && node.children.length > 0
 
@@ -73,25 +77,28 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
                     )}
                 </div>
 
-                <div className="flex gap-1 shrink-0 ml-2">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400" onClick={() => onEdit(node)}>
-                        <Edit2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                </div>
+                {editable && (
+                    <div className="flex gap-1 shrink-0 ml-2">
+                        <Button variant="ghost" size="icon" aria-label={`Edit ${node.kode}`} className="h-7 w-7 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400" onClick={() => onEdit(node)}>
+                            <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" aria-label={`Nonaktifkan ${node.kode}`} className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {hasChildren && isOpen && (
                 <div>
                     {node.children.map((child) => (
                         <TreeNode
-                            key={child.kode}
+                            key={child.id || child.sourceRecordKey || child.kode}
                             node={child}
                             level={level + 1}
                             onEdit={onEdit}
                             onDelete={onDelete}
+                            editable={editable}
                         />
                     ))}
                 </div>
@@ -100,11 +107,32 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
     )
 }
 
+function filterJraTree(nodes, query) {
+    if (!query) return nodes
+    const lowerQuery = query.toLowerCase()
+
+    return nodes.reduce((acc, node) => {
+        const matches = node.kode.toLowerCase().includes(lowerQuery) ||
+            node.uraian.toLowerCase().includes(lowerQuery)
+        const filteredChildren = node.children ? filterJraTree(node.children, query) : []
+
+        if (matches || filteredChildren.length > 0) {
+            acc.push({ ...node, children: filteredChildren })
+        }
+        return acc
+    }, [])
+}
+
 export default function JadwalRetensi() {
+    const { user } = useAuth()
+    const [searchParams] = useSearchParams()
+    const ruleSetId = searchParams.get('ruleSetId') || ''
+    const requestedDraftMode = searchParams.get('mode') === 'draft'
     const [activeTab, setActiveTab] = useState('fasilitatif')
     const [searchQuery, setSearchQuery] = useState('')
     const [treeData, setTreeData] = useState([])
     const [loading, setLoading] = useState(true)
+    const [ruleSet, setRuleSet] = useState(null)
     const [dialogOpen, setDialogOpen] = useState(false)
     const [editMode, setEditMode] = useState(false)
     const [currentItem, setCurrentItem] = useState(null)
@@ -119,10 +147,10 @@ export default function JadwalRetensi() {
     })
 
     // Fetch tree data
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true)
         try {
-            const response = await api.get(`/api/jra`, { format: 'tree', tipe: activeTab })
+            const response = await api.get(`/api/jra`, { format: 'tree', tipe: activeTab, ruleSetId })
             if (response.success) {
                 setTreeData(response.data)
             }
@@ -131,48 +159,46 @@ export default function JadwalRetensi() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [activeTab, ruleSetId])
 
     useEffect(() => {
         fetchData()
-    }, [activeTab])
+    }, [fetchData])
 
-    // Filter tree based on search
-    const filterTree = (nodes, query) => {
-        if (!query) return nodes
-        const lowerQuery = query.toLowerCase()
-
-        return nodes.reduce((acc, node) => {
-            const matches = node.kode.toLowerCase().includes(lowerQuery) ||
-                node.uraian.toLowerCase().includes(lowerQuery)
-
-            const filteredChildren = node.children ? filterTree(node.children, query) : []
-
-            if (matches || filteredChildren.length > 0) {
-                acc.push({
-                    ...node,
-                    children: filteredChildren
-                })
+    useEffect(() => {
+        let cancelled = false
+        const loadRuleSet = async () => {
+            try {
+                const response = ruleSetId
+                    ? await regulatoryRuleSetService.getById(ruleSetId)
+                    : await regulatoryRuleSetService.getActive('jra')
+                if (!cancelled) setRuleSet(response.data || null)
+            } catch (error) {
+                console.error('Gagal memuat versi JRA:', error)
+                if (!cancelled) setRuleSet(null)
             }
+        }
+        loadRuleSet()
+        return () => { cancelled = true }
+    }, [ruleSetId])
 
-            return acc
-        }, [])
-    }
+    const editable = Boolean(user?.role === 'super_admin' && ruleSetId && requestedDraftMode && ruleSet?.status === 'draft')
 
     const filteredData = useMemo(() => {
-        return filterTree(treeData, searchQuery)
+        return filterJraTree(treeData, searchQuery)
     }, [treeData, searchQuery])
 
     // Handle save
     const handleSave = async () => {
         try {
             if (editMode && currentItem) {
-                const response = await api.put(`/api/jra/${currentItem.kode}`, {
+                const response = await api.put(`/api/jra/items/${currentItem.id}`, {
                     uraian: formData.uraian,
                     retensiAktif: formData.retensiAktif,
                     retensiInaktif: formData.retensiInaktif,
                     keterangan: formData.keterangan,
                     kategori: formData.kategori,
+                    ruleSetId,
                 })
                 if (response.success) {
                     // alert('JRA berhasil diperbarui')
@@ -181,6 +207,7 @@ export default function JadwalRetensi() {
             } else {
                 const response = await api.post('/api/jra', {
                     ...formData,
+                    ruleSetId,
                     tipe: activeTab,
                     level: formData.parentKode ? 1 : 0,
                 })
@@ -216,7 +243,7 @@ export default function JadwalRetensi() {
         if (!confirm(`Hapus JRA "${node.kode} - ${node.uraian}"?`)) return
 
         try {
-            const response = await api.delete(`/api/jra/${node.kode}`)
+            const response = await api.delete(`/api/jra/items/${node.id}?ruleSetId=${encodeURIComponent(ruleSetId)}`)
             if (response.success) {
                 // alert('JRA berhasil dihapus')
                 fetchData()
@@ -258,14 +285,38 @@ export default function JadwalRetensi() {
                         Jadwal Retensi Arsip (JRA)
                     </h1>
                     <p className="text-muted-foreground">
-                        Master data jadwal retensi sesuai Permen ATR/BPN No. 8 Tahun 2020
+                        Master data jadwal retensi sesuai {ruleSet?.regulationNumber || 'versi aturan yang aktif'}
                     </p>
                 </div>
-                <Button onClick={handleAddNew} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Tambah JRA
-                </Button>
+                {editable && (
+                    <Button onClick={handleAddNew} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Tambah JRA
+                    </Button>
+                )}
             </div>
+
+            <Alert>
+                {editable ? <GitBranch className="h-4 w-4" /> : <LockKeyhole className="h-4 w-4" />}
+                <AlertTitle>
+                    {editable ? `Mengedit draft ${ruleSet?.version || ''}` : `Versi ${ruleSet?.version || 'aktif'} hanya-baca`}
+                </AlertTitle>
+                <AlertDescription className="gap-2 sm:flex sm:items-center sm:justify-between">
+                    <div className="space-y-1">
+                        <span className="block">{editable
+                            ? 'Perubahan hanya memengaruhi draft ini. Jalankan validasi sebelum mengaktifkannya.'
+                            : 'Versi yang telah diterbitkan tidak dapat diubah. Buat draft revisi melalui halaman Versi Aturan.'}</span>
+                        {ruleSet?.metadata?.identifierSemantics && (
+                            <span className="block text-xs text-muted-foreground">
+                                Catatan identitas: {ruleSet.metadata.identifierSemantics}.
+                            </span>
+                        )}
+                    </div>
+                    <Button variant="outline" size="sm" asChild>
+                        <Link to="/master/regulatory-rules?instrument=jra">Kelola versi aturan</Link>
+                    </Button>
+                </AlertDescription>
+            </Alert>
 
             {/* Legend / Info Cards */}
             <div className="grid gap-4 lg:grid-cols-4">
@@ -363,10 +414,11 @@ export default function JadwalRetensi() {
                         <div className="divide-y divide-border/50">
                             {filteredData.map((node) => (
                                 <TreeNode
-                                    key={node.kode}
+                                    key={node.id || node.sourceRecordKey || node.kode}
                                     node={node}
                                     onEdit={handleEdit}
                                     onDelete={handleDelete}
+                                    editable={editable}
                                 />
                             ))}
                         </div>

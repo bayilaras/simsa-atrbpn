@@ -9,6 +9,14 @@ const validJraProvenance = {
     jraKode: 'JRA-PT-001',
     jraVersion: 'Permen ATR/BPN 2/2026',
     jraReference: 'Lampiran JRA Pengadaan Tanah',
+    klasifikasiArsipId: 101,
+    klasifikasiRuleSetId: 'klasifikasi-ruleset-2018',
+    klasifikasiSnapshotHash: 'a'.repeat(64),
+    jraItemId: 202,
+    jraRuleSetId: 'jra-ruleset-2020',
+    retentionDecisionHash: 'b'.repeat(64),
+    currentRuleSnapshotId: 'snapshot-1',
+    ruleProvenanceStatus: 'verified',
 };
 
 const mockChain: any = new Proxy({}, {
@@ -174,14 +182,22 @@ describe('PenyusutanService', () => {
             })).rejects.toThrow(/penyusutan lain/);
         });
 
-        it('should handle create with empty arsipIds', async () => {
-            enqueue([{ id: 'p-new', status: 'draft' }]);
-            const res = await penyusutanService.create({
+        it('should reject creating an empty batch', async () => {
+            await expect(penyusutanService.create({
                 unitKerjaId: 'u1',
                 jenisPenyusutan: 'pemindahan',
                 arsipIds: [],
-            });
-            expect(res.id).toBe('p-new');
+            })).rejects.toThrow(/minimal satu arsip/i);
+            expect(resultQueue).toHaveLength(0);
+        });
+
+        it('should reject duplicate archive IDs before creating a batch', async () => {
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1',
+                jenisPenyusutan: 'pemindahan',
+                arsipIds: ['a1', 'a1'],
+            })).rejects.toThrow(/ID duplikat/i);
+            expect(resultQueue).toHaveLength(0);
         });
 
         it('should reject an archive without a retention trigger', async () => {
@@ -206,12 +222,48 @@ describe('PenyusutanService', () => {
             enqueue([{
                 id: 'a1', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null,
                 retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
-                hasilAkhir: 'Musnah', legalHold: false,
-                jraKode: 'JRA-PT-001', jraVersion: null, jraReference: 'Lampiran JRA',
+                hasilAkhir: 'Musnah', legalHold: false, ...validJraProvenance,
+                jraVersion: null,
             }]);
             await expect(penyusutanService.create({
                 unitKerjaId: 'u1', jenisPenyusutan: 'pemusnahan', arsipIds: ['a1'],
             })).rejects.toThrow(/provenance JRA lengkap/);
+        });
+
+        it('should clearly reject legacy archives that have not been rule-verified', async () => {
+            enqueue([{
+                id: 'a-legacy', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null,
+                retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
+                hasilAkhir: 'Musnah', legalHold: false,
+                ruleProvenanceStatus: 'legacy_unverified',
+            }]);
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1', jenisPenyusutan: 'pemusnahan', arsipIds: ['a-legacy'],
+            })).rejects.toThrow(/legacy_unverified.*verifikasi aturan terlebih dahulu/i);
+        });
+
+        it('should clearly reject archives whose JRA assignment is pending', async () => {
+            enqueue([{
+                id: 'a-pending', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null,
+                retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
+                hasilAkhir: 'Musnah', legalHold: false,
+                ruleProvenanceStatus: 'pending_jra',
+            }]);
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1', jenisPenyusutan: 'pemusnahan', arsipIds: ['a-pending'],
+            })).rejects.toThrow(/pending_jra.*pilih butir JRA aktif/i);
+        });
+
+        it('should reject verified status when rule IDs or hashes are missing', async () => {
+            enqueue([{
+                id: 'a-incomplete', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null,
+                retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
+                hasilAkhir: 'Musnah', legalHold: false, ...validJraProvenance,
+                retentionDecisionHash: null,
+            }]);
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1', jenisPenyusutan: 'pemusnahan', arsipIds: ['a-incomplete'],
+            })).rejects.toThrow(/snapshot aturan terverifikasi tidak lengkap.*retentionDecisionHash/i);
         });
 
         it('should reject destruction before retention has ended', async () => {
@@ -234,7 +286,11 @@ describe('PenyusutanService', () => {
     describe('updateStatus', () => {
         it('should advance status from draft to proposed', async () => {
             enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1' }]); // find batch
-            enqueue([]); // retention/hold re-check
+            enqueue([{
+                id: 'a1', retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun',
+                retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false,
+                ...validJraProvenance,
+            }]); // retention/hold/provenance re-check
             enqueue([{ id: 'p1', status: 'proposed' }]); // update
             const res = await penyusutanService.updateStatus('p1', {
                 user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
@@ -290,11 +346,26 @@ describe('PenyusutanService', () => {
             enqueue([{
                 id: 'a1', retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun',
                 retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false,
-                jraKode: 'JRA-PT-001', jraVersion: '', jraReference: 'Lampiran JRA',
+                ...validJraProvenance, jraVersion: '',
             }]);
             await expect(penyusutanService.updateStatus('p1', {
                 user: { id: 'reviewer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
             }, 'u1')).rejects.toThrow(/provenance JRA tidak lengkap/);
+        });
+
+        it('should stop an approval transition when a legacy item remains in the batch', async () => {
+            enqueue([{
+                id: 'p1', status: 'reviewed', jenisPenyusutan: 'pemusnahan',
+                unitKerjaId: 'u1', createdBy: 'creator-1', proposedBy: 'proposer-1', reviewedBy: 'reviewer-1',
+            }]);
+            enqueue([{
+                id: 'a-legacy', retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun',
+                retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false,
+                ruleProvenanceStatus: 'legacy_unverified',
+            }]);
+            await expect(penyusutanService.updateStatus('p1', {
+                user: { id: 'approver-1', role: 'super_admin', unitKerjaId: '' },
+            }, null)).rejects.toThrow(/workflow penyusutan.*legacy_unverified/i);
         });
 
         it('should keep the executor separate from every prior workflow actor', async () => {
@@ -309,11 +380,24 @@ describe('PenyusutanService', () => {
 
         it('should reject a conditional transition when the status changed concurrently', async () => {
             enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemindahan', unitKerjaId: 'u1' }]);
-            enqueue([]); // locked retention re-check
+            enqueue([{
+                id: 'a1', retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun',
+                retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false,
+                ...validJraProvenance,
+            }]); // locked retention re-check
             enqueue([]); // conditional UPDATE did not match the old status
             await expect(penyusutanService.updateStatus('p1', {
                 user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
             }, 'u1')).rejects.toThrow(/status changed concurrently/);
+        });
+
+        it('should reject advancing an empty batch', async () => {
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemindahan', unitKerjaId: 'u1' }]);
+            enqueue([]);
+
+            await expect(penyusutanService.updateStatus('p1', {
+                user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
+            }, 'u1')).rejects.toThrow(/tanpa arsip/i);
         });
     });
 
@@ -359,12 +443,30 @@ describe('PenyusutanService', () => {
                 {
                     id: 'missing-jra-provenance', disposalStatus: 'active', legalHold: false,
                     retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
-                    hasilAkhir: 'Musnah', jraKode: 'JRA-PT-001', jraVersion: '', jraReference: 'Lampiran JRA',
+                    hasilAkhir: 'Musnah', ...validJraProvenance, jraVersion: '',
+                },
+                {
+                    id: 'legacy-unverified', disposalStatus: 'active', legalHold: false,
+                    retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
+                    hasilAkhir: 'Musnah', ...validJraProvenance,
+                    ruleProvenanceStatus: 'legacy_unverified',
+                },
+                {
+                    id: 'invalid-hash', disposalStatus: 'active', legalHold: false,
+                    retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
+                    hasilAkhir: 'Musnah', ...validJraProvenance,
+                    klasifikasiSnapshotHash: 'not-a-sha256',
                 },
             ]);
 
             const result = await penyusutanService.getCandidates('u1', 'pemusnahan');
             expect(result.map(item => item.id)).toEqual(['eligible']);
+        });
+
+        it('should reject duplicate archive IDs before touching a draft batch', async () => {
+            await expect(penyusutanService.addItems('p1', ['a1', 'a1'], 'u1'))
+                .rejects.toThrow(/ID duplikat/i);
+            expect(resultQueue).toHaveLength(0);
         });
     });
 

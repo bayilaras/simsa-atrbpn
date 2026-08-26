@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { permissionMiddleware } from '../middlewares/role.middleware';
-import { klasifikasiService, jraService } from '../services/klasifikasi.service';
+import { klasifikasiService } from '../services/klasifikasi.service';
 import { createLogger } from '../utils/logger';
+import { randomUUID } from 'node:crypto';
 
 const log = createLogger('KlasifikasiRoutes');
 
@@ -41,16 +42,25 @@ router.use(authMiddleware);
  */
 router.get('/', async (req: AuthRequest, res: Response) => {
     try {
-        const { tipe, search, format } = req.query;
+        const { tipe, search, format, ruleSetId, scope } = req.query;
+        const organizationalScope = (scope === 'kanwil' || scope === 'kantah')
+            ? scope
+            : 'kementerian';
 
         if (format === 'tree') {
-            const tree = await klasifikasiService.getTree(tipe as string);
+            const tree = await klasifikasiService.getTree(
+                tipe as string,
+                ruleSetId as string,
+                organizationalScope,
+            );
             return res.json({ success: true, data: tree });
         }
 
         const data = await klasifikasiService.getAll({
             tipe: tipe as string,
             search: search as string,
+            ruleSetId: ruleSetId as string,
+            organizationalScope,
         });
 
         res.json({ success: true, data });
@@ -74,7 +84,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
  */
 router.get('/stats', async (req: AuthRequest, res: Response) => {
     try {
-        const stats = await klasifikasiService.getStats();
+        const stats = await klasifikasiService.getStats(req.query.ruleSetId as string);
         res.json({ success: true, data: stats });
     } catch (error) {
         log.error({ err: error }, 'Error fetching stats:');
@@ -105,14 +115,18 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
 router.get('/:kode', async (req: AuthRequest, res: Response) => {
     try {
         const kode = req.params.kode as string;
-        const item = await klasifikasiService.getByKode(kode);
+        const ruleSetId = req.query.ruleSetId as string;
+        const scope = req.query.scope === 'kanwil' || req.query.scope === 'kantah'
+            ? req.query.scope
+            : 'kementerian';
+        const item = await klasifikasiService.getByKode(kode, ruleSetId, scope);
 
         if (!item) {
             return res.status(404).json({ error: 'Klasifikasi not found' });
         }
 
         // Also get children
-        const children = await klasifikasiService.getChildren(kode);
+        const children = await klasifikasiService.getChildren(kode, ruleSetId, scope);
 
         res.json({ success: true, data: { ...item, children } });
     } catch (error) {
@@ -159,22 +173,23 @@ router.get('/:kode', async (req: AuthRequest, res: Response) => {
  *       201:
  *         description: Created successfully
  */
-router.post('/', permissionMiddleware('klasifikasi', 'create'), async (req: AuthRequest, res: Response) => {
+router.post('/', permissionMiddleware('klasifikasi', 'create'), async (req: AuthRequest, res: Response, next) => {
     try {
-        const { kode, jenis, keterangan, kategori, parentKode, tipe, level } = req.body;
+        const {
+            ruleSetId, kode, sourceCode, sourceRecordKey, organizationalScope,
+            jenis, keterangan, kategori, parentKode, tipe, level, isSelectable, sourcePage,
+        } = req.body;
 
-        if (!kode || !jenis || !tipe) {
-            return res.status(400).json({ error: 'kode, jenis, and tipe are required' });
-        }
-
-        // Check if kode already exists
-        const existing = await klasifikasiService.getByKode(kode);
-        if (existing) {
-            return res.status(400).json({ error: 'Kode already exists' });
+        if (!ruleSetId || !kode || !jenis || !tipe) {
+            return res.status(400).json({ error: 'ruleSetId, kode, jenis, and tipe are required' });
         }
 
         const created = await klasifikasiService.create({
+            ruleSetId,
             kode,
+            sourceCode: sourceCode || kode,
+            sourceRecordKey: sourceRecordKey || `manual:${randomUUID()}`,
+            organizationalScope: organizationalScope || 'kementerian',
             jenis,
             keterangan: keterangan || null,
             kategori: kategori || null,
@@ -182,12 +197,50 @@ router.post('/', permissionMiddleware('klasifikasi', 'create'), async (req: Auth
             tipe,
             level: level ?? 0,
             isActive: true,
+            isSelectable: isSelectable ?? true,
+            sourcePage: sourcePage ?? null,
         });
 
         res.status(201).json({ success: true, data: created });
     } catch (error) {
         log.error({ err: error }, 'Error creating klasifikasi:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
+    }
+});
+
+router.put('/items/:id', permissionMiddleware('klasifikasi', 'update'), async (req: AuthRequest, res: Response, next) => {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0 || !req.body.ruleSetId) {
+            return res.status(400).json({ error: 'ID item dan ruleSetId draft wajib diisi' });
+        }
+        const allowed = (({
+            ruleSetId, jenis, keterangan, kategori, parentKode, tipe, level,
+            isActive, isSelectable, sourceCode, sourceRecordKey, organizationalScope, sourcePage,
+        }) => ({
+            ruleSetId, jenis, keterangan, kategori, parentKode, tipe, level,
+            isActive, isSelectable, sourceCode, sourceRecordKey, organizationalScope, sourcePage,
+        }))(req.body);
+        const updated = await klasifikasiService.updateById(id, allowed);
+        if (!updated) return res.status(404).json({ error: 'Butir klasifikasi tidak ditemukan pada draft' });
+        res.json({ success: true, data: updated });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.delete('/items/:id', permissionMiddleware('klasifikasi', 'delete'), async (req: AuthRequest, res: Response, next) => {
+    try {
+        const id = Number(req.params.id);
+        const ruleSetId = req.query.ruleSetId as string;
+        if (!Number.isInteger(id) || id <= 0 || !ruleSetId) {
+            return res.status(400).json({ error: 'ID item dan ruleSetId draft wajib diisi' });
+        }
+        const deleted = await klasifikasiService.deleteById(id, ruleSetId);
+        if (!deleted) return res.status(404).json({ error: 'Butir klasifikasi tidak ditemukan pada draft' });
+        res.json({ success: true, message: 'Butir klasifikasi dinonaktifkan', data: deleted });
+    } catch (error) {
+        next(error);
     }
 });
 
@@ -222,27 +275,11 @@ router.post('/', permissionMiddleware('klasifikasi', 'create'), async (req: Auth
  *       200:
  *         description: Updated successfully
  */
-router.put('/:kode', permissionMiddleware('klasifikasi', 'update'), async (req: AuthRequest, res: Response) => {
-    try {
-        const kode = req.params.kode as string;
-        const { jenis, keterangan, kategori, isActive } = req.body;
-
-        const updated = await klasifikasiService.update(kode, {
-            jenis,
-            keterangan,
-            kategori,
-            isActive,
-        });
-
-        if (!updated) {
-            return res.status(404).json({ error: 'Klasifikasi not found' });
-        }
-
-        res.json({ success: true, data: updated });
-    } catch (error) {
-        log.error({ err: error }, 'Error updating klasifikasi:');
-        res.status(500).json({ error: 'Internal server error' });
-    }
+router.put('/:kode', permissionMiddleware('klasifikasi', 'update'), (_req: AuthRequest, res: Response) => {
+    res.status(410).json({
+        error: 'Perubahan klasifikasi berdasarkan kode sudah dihentikan',
+        message: 'Gunakan endpoint /api/klasifikasi/items/:id dengan ruleSetId draft agar kode yang sama pada lingkup berbeda tidak ikut berubah.',
+    });
 });
 
 /**
@@ -263,20 +300,11 @@ router.put('/:kode', permissionMiddleware('klasifikasi', 'update'), async (req: 
  *       200:
  *         description: Deleted successfully
  */
-router.delete('/:kode', permissionMiddleware('klasifikasi', 'delete'), async (req: AuthRequest, res: Response) => {
-    try {
-        const kode = req.params.kode as string;
-        const deleted = await klasifikasiService.delete(kode);
-
-        if (!deleted) {
-            return res.status(404).json({ error: 'Klasifikasi not found' });
-        }
-
-        res.json({ success: true, message: 'Klasifikasi deleted', data: deleted });
-    } catch (error) {
-        log.error({ err: error }, 'Error deleting klasifikasi:');
-        res.status(500).json({ error: 'Internal server error' });
-    }
+router.delete('/:kode', permissionMiddleware('klasifikasi', 'delete'), (_req: AuthRequest, res: Response) => {
+    res.status(410).json({
+        error: 'Penghapusan klasifikasi berdasarkan kode sudah dihentikan',
+        message: 'Gunakan endpoint /api/klasifikasi/items/:id dengan ruleSetId draft.',
+    });
 });
 
 export default router;

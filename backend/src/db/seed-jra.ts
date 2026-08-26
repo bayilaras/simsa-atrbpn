@@ -1,318 +1,199 @@
+import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../config/database.js';
-import { jadwalRetensiArsip } from './schema/index.js';
+import {
+  JRA_RULE_SET_2020_ID,
+  jadwalRetensiArsip,
+  regulatoryRuleSets,
+} from './schema/index.js';
+import jraSeedJson from './data/jra-atr-bpn-8-2020.json';
+import {
+  deterministicRegulatoryContentHash,
+  regulatoryRuleSetService,
+  validateRegulatoryRuleItems,
+} from '../services/regulatory-rule-set.service.js';
 
-// Data Jadwal Retensi Arsip berdasarkan Permen ATR/BPN No. 8 Tahun 2020
-// Generated from PDF extraction
+type JraSeedRecord = {
+  kode: string;
+  uraian: string;
+  retensiAktif: string | null;
+  retensiInaktif: string | null;
+  keterangan: string | null;
+  kategori: string;
+  parentKode: string | null;
+  tipe: string;
+  level: number;
+  isActive: boolean;
+  isSelectable: boolean;
+  activeMonths: number | null;
+  inactiveMonths: number | null;
+  calculationMode: string;
+  dispositionCode: string;
+  triggerGuidance: string | null;
+  sourcePage: number;
+};
 
-const JRA_DATA: Array<{
-  kode: string; uraian: string; retensiAktif: string;
-  retensiInaktif: string; keterangan: string; kategori: string;
-  parentKode: string | null; tipe: string; level: number; isActive: boolean;
-}> = [
-    { kode: 'F.I', uraian: 'Keuangan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.I.A', uraian: 'Rencana Anggaran Pendapatan dan Belanja Negara (RAPBN) dan APBN', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.I', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.I.A.1', uraian: 'Daftar Isian Pelaksanaan Anggaran (DIPA), Petunjuk Operasional Kegiatan (POK) dan revisinya', retensiAktif: '1 tahun setelah tahun anggaran berakhir', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.A.2', uraian: 'Dokumen Rencana Kerja Anggaran Kementerian/Lembaga (RKA-K/L)', retensiAktif: '1 tahun setelah tahun anggaran berakhir', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.A.3', uraian: 'Dokumen Usulan dan Penetapan Target Penerimaan Negara', retensiAktif: '1 tahun setelah tahun anggaran berakhir', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.B', uraian: 'Pelaksanaan Anggaran', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.I', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.I.B.1', uraian: 'Surat Perintah Membayar (SPM) dan Surat Perintah Pencairan Dana (SP2D)', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.B.2', uraian: 'Dokumen Pembayaran Keuangan', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.B.3', uraian: 'Dokumen Tata Usaha Anggaran (BKU, BKP, Rekening Koran Bank)', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.B.4', uraian: 'Daftar Gaji/Tunjangan/Lembur/Honorarium', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.B.5', uraian: 'Kartu Gaji', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.C', uraian: 'Bantuan/Pinjaman Luar Negeri', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.I', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.I.C.1', uraian: 'Dokumen Pinjaman dan Hibah Luar Negeri', retensiAktif: '2 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.I.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.C.2', uraian: 'Realisasi Pencairan Dana Pinjaman/Hibah Luar Negeri', retensiAktif: '2 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.C.3', uraian: 'Report/Laporan (Progress, Monthly, Quarterly, Final Report)', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.D', uraian: 'Pengelola APBN/Dana Pinjaman/Hibah Luar Negeri (PHLN)', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.I', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.I.D.1', uraian: 'Keputusan Pengguna Anggaran tentang Penetapan Kuasa Pengguna Anggaran, Pejabat Pembuat Komitmen, dan lainnya', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.D.2', uraian: 'Sistem Akuntansi Instansi', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.E', uraian: 'Pertanggungjawaban Keuangan Negara', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.I', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.I.E.1', uraian: 'Laporan Hasil Pemeriksaan atas Laporan Keuangan oleh BPK RI', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.E.2', uraian: 'Hasil pengawasan dan pemeriksaan internal', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.E.3', uraian: 'Laporan Aparat Pemeriksa Fungsional (LHP, Memorandum, Tindak Lanjut)', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.I.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.E.4', uraian: 'Dokumen Penyelesaian Kerugian Negara (Tuntutan Perbendaharaan, Tuntutan Ganti Rugi)', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.I.E.5', uraian: 'Pengelolaan Barang Milik Negara (BMN)', retensiAktif: '1 tahun setelah pelaksanaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.I.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II', uraian: 'Kepegawaian', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.II.A', uraian: 'Formasi Pegawai', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.A.1', uraian: 'Usulan dari Unit Kerja (Analisis Jabatan, Analisis Beban Kerja)', retensiAktif: '2 tahun setelah tahun anggaran berakhir', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.A.2', uraian: 'Usulan Permintaan Formasi kepada Kemenpan RB dan Kepala BKN', retensiAktif: '2 tahun setelah tahun anggaran berakhir', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.A.3', uraian: 'Persetujuan Kemenpan RB', retensiAktif: '2 tahun setelah tahun anggaran berakhir', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.A.4', uraian: 'Penetapan Formasi PNS', retensiAktif: '2 tahun setelah tahun anggaran berakhir', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.A.5', uraian: 'Penetapan Formasi Khusus', retensiAktif: '2 tahun setelah realisasi', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.II.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.B', uraian: 'Pengadaan Pegawai', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.B.1', uraian: 'Proses Penerimaan Pegawai (Pengumuman, Seleksi, Ujian, Wawancara)', retensiAktif: '2 tahun setelah pengangkatan PNS', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.B.2', uraian: 'Penetapan Pengumuman Kelulusan', retensiAktif: '2 tahun setelah pengangkatan PNS', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.B.3', uraian: 'Berkas lamaran yang tidak diterima', retensiAktif: '1 tahun setelah tahun anggaran berakhir', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.B.4', uraian: 'Penetapan NIP dan Petikan Surat Keputusan Pengangkatan CPNS/CASN', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', keterangan: 'Masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.C', uraian: 'Pembinaan Karir Pegawai', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.C.1', uraian: 'Diklat/Kursus/Ujian Dinas/Izin Belajar Pegawai (Surat Perintah/Tugas/SK/Izin, Laporan Kegiatan)', retensiAktif: '1 tahun setelah SK ditetapkan', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.C.2', uraian: 'Surat Tanda Tamat Pendidikan dan Pelatihan (STTPL)/Sertifikat', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', keterangan: 'Masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.C.3', uraian: 'Penilaian Kinerja Pegawai/Penilaian Prestasi Kerja PNS/Sasaran Kinerja Pegawai', retensiAktif: '3 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.C.4', uraian: 'Daftar Usul Penetapan Angka Kredit (DUPAK)', retensiAktif: '1 tahun setelah PAK ditetapkan', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.C.5', uraian: 'Disiplin Pegawai (Daftar Hadir, Rekapitulasi Daftar Hadir)', retensiAktif: '1 tahun anggaran berjalan', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.C.6', uraian: 'Berkas Hukuman Disiplin', retensiAktif: '1 tahun anggaran berjalan', retensiInaktif: '2 tahun', keterangan: 'Musnah, kecuali BAP dan SK masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.D', uraian: 'Penyelesaian Pengelolaan Keberatan Pegawai', retensiAktif: '1 tahun setelah memperoleh keputusan tetap', retensiInaktif: '5 tahun', keterangan: 'Musnah, kecuali SK Penetapan masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.E', uraian: 'Mutasi Pegawai', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.E.1', uraian: 'Pengangkatan, mutasi dan pemberhentian pegawai (termasuk PNS, pejabat struktural, fungsional, pindah antar instansi)', retensiAktif: '1 tahun setelah SK ditetapkan', retensiInaktif: '2 tahun', keterangan: 'Musnah, kecuali Nota Persetujuan dan SK masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.E.2', uraian: 'Nota Persetujuan/Pertimbangan Kepala BKN', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', keterangan: 'Masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.E.3', uraian: 'Mutasi Keluarga', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', keterangan: 'Masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.E.4', uraian: 'Usul Kenaikan Pangkat/Golongan/Jabatan beserta berkas pendukung', retensiAktif: '1 tahun setelah SK ditetapkan', retensiInaktif: '2 tahun', keterangan: 'Musnah, kecuali SK masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.F', uraian: 'Administrasi Pegawai', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.F.1', uraian: 'Surat Perintah Dinas/Surat Tugas', retensiAktif: '1 tahun setelah pelaksanaan', retensiInaktif: '2 tahun', keterangan: 'Musnah, kecuali Surat masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II.F', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.F.2', uraian: 'Cuti Besar', retensiAktif: '1 tahun setelah SK ditetapkan', retensiInaktif: '1 tahun', keterangan: 'Masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II.F', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.F.3', uraian: 'Cuti Sakit, Cuti Bersalin, Cuti Tahunan', retensiAktif: '1 tahun setelah pelaksanaan', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.F', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.F.4', uraian: 'Berkas Kepegawaian dan Daftar Urut Kepangkatan (DUK)', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II.F', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.II.G', uraian: 'Kesejahteraan Pegawai', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.H', uraian: 'Pemberhentian Pegawai Tanpa Hak Pensiun', retensiAktif: '1 tahun setelah SK ditetapkan', retensiInaktif: '2 tahun', keterangan: 'Masuk berkas perseorangan', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.I', uraian: 'Perselisihan/Sengketa Kepegawaian', retensiAktif: '1 tahun setelah keputusan hukum tetap', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.J', uraian: 'Usul Pemberhentian dan Penetapan Pensiun Pegawai/Janda/Dudanya dan PNS yang tewas', retensiAktif: '1 tahun setelah SK ditetapkan', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.K', uraian: 'Berkas Perseorangan Pegawai Negeri Sipil (PNS)', retensiAktif: '1 tahun setelah berhenti/pensiun', retensiInaktif: '1 tahun', keterangan: 'Musnah, kecuali pejabat eselon I Permanen', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.II.L', uraian: 'Berkas Perseorangan Menteri ATR/Kepala BPN, Pejabat Eselon I, dan pejabat lain yang ditentukan oleh instansi', retensiAktif: 'Permanen', retensiInaktif: '2 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.II', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.III', uraian: 'Perencanaan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.III.A', uraian: 'Pokok-pokok Kebijakan dan Strategi Pembangunan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.III', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.III.A.1', uraian: 'RPJP', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.III.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.A.2', uraian: 'RPJM', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.III.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.A.3', uraian: 'Rencana Strategis (RENSTRA) Kementerian ATR/BPN', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.III.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.B', uraian: 'Program Kerja Tahunan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.III', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.III.B.1', uraian: 'Usulan program satuan kerja', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.B.2', uraian: 'Program kerja tahunan unit kerja', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.B.3', uraian: 'Program kerja tahunan Kementerian Agraria dan Tata Ruang/BPN', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.III.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.C', uraian: 'Perjanjian Kinerja', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.III', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.III.C.1', uraian: 'Perjanjian Kinerja Menteri Agraria dan Tata Ruang/Kepala BPN', retensiAktif: '3 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.III.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.C.2', uraian: 'Perjanjian Kinerja Pimpinan setingkat Eselon I', retensiAktif: '3 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.III.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.C.3', uraian: 'Perjanjian Kinerja Pimpinan unit kerja/satuan kerja', retensiAktif: '3 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.D', uraian: 'Laporan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.III', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.III.D.1', uraian: 'Laporan Insidental', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.D.2', uraian: 'Laporan bulanan unit kerja', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.D.3', uraian: 'Laporan triwulanan unit kerja', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.D.4', uraian: 'Laporan semesteran unit kerja', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.D.5', uraian: 'Laporan tahunan unit kerja', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.D.6', uraian: 'Laporan tahunan Kementerian Agraria dan Tata Ruang/BPN', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.III.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.D.7', uraian: 'Laporan Kinerja (LKj) Kementerian Agraria dan Tata Ruang/BPN', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.III.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.D.8', uraian: 'Laporan Kinerja (LKj) Satuan Kerja', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.D', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.E', uraian: 'Monitoring dan Evaluasi Program', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.III', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.III.E.1', uraian: 'Monitoring dan Evaluasi program unit kerja/satuan kerja', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.III.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.III.E.2', uraian: 'Monitoring dan Evaluasi program Kementerian ATR/BPN', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.III.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.IV', uraian: 'Hukum', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.IV.A', uraian: 'Peraturan Menteri ATR/Kepala BPN', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.B', uraian: 'Keputusan/Ketetapan Menteri ATR/Kepala BPN (termasuk Naskah Akademik, rancangan, dan risalah pembuatan)', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '5 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.C', uraian: 'Keputusan/Ketetapan Pejabat Eselon I dan lainnya (termasuk Naskah Akademik, rancangan, dan risalah pembuatan)', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '5 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.D', uraian: 'Instruksi/Surat Edaran Menteri', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '2 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.E', uraian: 'Standar/Pedoman/Prosedur Kerja/Petunjuk Pelaksanaan/Petunjuk Teknis (nasional/regional/instansional)', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.F', uraian: 'Nota Kesepahaman/MoU/Kontrak/Perjanjian Kerja Sama Dalam Negeri dan Luar Negeri', retensiAktif: '2 tahun setelah perjanjian berakhir', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.G', uraian: 'Dokumentasi Hukum (UU, PP, Keppres, Peraturan-peraturan lainnya yang dijadikan Referensi)', retensiAktif: 'Sampai tidak berlaku', retensiInaktif: '1 tahun', keterangan: 'Simpan di Perpustakaan', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.H', uraian: 'Sosialisasi/Penyuluhan/Pembinaan Hukum', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.I', uraian: 'Bantuan/Konsultasi Hukum/Advokasi', retensiAktif: '1 tahun setelah keputusan berkekuatan hukum tetap', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.J', uraian: 'Kasus atau Sengketa Hukum', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.J.1', uraian: 'Pidana', retensiAktif: '1 tahun setelah keputusan berkekuatan hukum tetap', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IV.J', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.IV.J.2', uraian: 'Perdata', retensiAktif: '1 tahun setelah keputusan berkekuatan hukum tetap', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IV.J', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.IV.J.3', uraian: 'Tata Usaha Negara', retensiAktif: '1 tahun setelah keputusan berkekuatan hukum tetap', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IV.J', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.IV.J.4', uraian: 'Arbitrase atau Mediasi', retensiAktif: '1 tahun setelah keputusan berkekuatan hukum tetap', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IV.J', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.IV.K', uraian: 'Perizinan (sejak permohonan sampai dengan diterbitkannya surat izin)', retensiAktif: '1 tahun setelah izin diperbarui', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IV.L', uraian: 'Hak atas Kekayaan Intelektual (HaKI) meliputi Hak Cipta, Hak Paten', retensiAktif: '1 tahun setelah HaKI terbit', retensiInaktif: '2 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.IV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.V', uraian: 'Organisasi dan Tata Laksana', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.V.A', uraian: 'Struktur Organisasi', retensiAktif: '2 tahun setelah diperbarui', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.V', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.V.B', uraian: 'Uraian Jabatan dan Tata Kerja', retensiAktif: '2 tahun setelah diperbarui', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.V', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.V.C', uraian: 'Evaluasi Kelembagaan', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.V', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.V.D', uraian: 'Standar Kompetensi Jabatan', retensiAktif: '2 tahun setelah diperbarui', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.V', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VI', uraian: 'Kearsipan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.VI.A', uraian: 'Administrasi Persuratan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.VI', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VI.A.1', uraian: 'Buku Agenda', retensiAktif: 'Selama dipergunakan', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VI.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VI.A.2', uraian: 'Lembar pengantar/buku ekspedisi', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VI.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VI.A.3', uraian: 'Formulir/catatan permintaan dan layanan pengadaan dokumen/arsip', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VI.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VI.B', uraian: 'Penyimpanan dan Pemeliharaan Arsip', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.VI', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VI.B.1', uraian: 'Daftar Arsip', retensiAktif: 'Selama dipergunakan', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VI.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VI.B.2', uraian: 'Pemeliharaan arsip dan ruang penyimpanan', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VI.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VI.B.3', uraian: 'Daftar pencarian arsip', retensiAktif: 'Selama dipergunakan', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VI.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VI.C', uraian: 'Layanan Arsip', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VI', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VI.D', uraian: 'Jadwal Retensi Arsip (JRA)', retensiAktif: '1 tahun setelah penetapan', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.VI', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VI.E', uraian: 'Penyusutan Arsip', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.VI', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VI.E.1', uraian: 'Pemindahan arsip inaktif (Berita Acara dan Daftar Arsip yang dipindahkan)', retensiAktif: 'Selama berlaku', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VI.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VI.E.2', uraian: 'Pemusnahan arsip yang tidak bernilai guna (Berita Acara, Daftar Arsip, Rekomendasi, SK)', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.VI.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VI.E.3', uraian: 'Penyerahan arsip statis', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.VI.E', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VI.G', uraian: 'Pembinaan Kearsipan', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VI', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VII', uraian: 'Ketatausahaan dan Kerumahtanggaan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.VII.A', uraian: 'Telekomunikasi', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VII.B', uraian: 'Administrasi Penggunaan Fasilitas Kantor', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VII.C', uraian: 'Risalah/Notulen Rapat', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.VII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VII.C.1', uraian: 'Rapat Pimpinan', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.VII.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VII.C.2', uraian: 'Rapat Staf', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VII.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VII.D', uraian: 'Administrasi Penyediaan Konsumsi dan Akomodasi', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VII.E', uraian: 'Pengurusan Kendaraan Dinas', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VII.F', uraian: 'Pemeliharaan Gedung dan Taman', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VII.G', uraian: 'Pengelolaan Jaringan Listrik, Air, Telepon, dan Komputer', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VII.H', uraian: 'Ketertiban dan Keamanan', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VII.I', uraian: 'Administrasi Pengelolaan Parkir', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VIII', uraian: 'Hubungan Masyarakat', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.VIII.A', uraian: 'Keprotokolan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.VIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VIII.A.1', uraian: 'Penyelenggaraan acara kedinasan (upacara, pelantikan, peresmian, dan jamuan termasuk peringatan hari besar)', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah, kecuali pelantikan pejabat Permanen', kategori: 'Fasilitatif', parentKode: 'F.VIII.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VIII.A.2', uraian: 'Buku tamu', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VIII.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VIII.A.3', uraian: 'Agenda kegiatan Menteri ATR/Kepala BPN', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.VIII.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VIII.A.4', uraian: 'Kunjungan dinas Menteri ATR/Kepala BPN', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.VIII.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VIII.B', uraian: 'Dokumentasi atau Liputan Kegiatan Dinas Pimpinan, Acara Kedinasan dan Peristiwa dalam berbagai media', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.VIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VIII.B.1', uraian: 'Dokumentasi Menteri ATR/Kepala BPN (Kertas/Foto/Video/Rekaman/Multimedia)', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.VIII.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VIII.B.2', uraian: 'Dokumentasi Pejabat lain/pegawai (Kertas/Foto/Video/Rekaman/Multimedia)', retensiAktif: '1 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VIII.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VIII.C', uraian: 'Pengumpulan, Pengolahan dan Penyajian Informasi kelembagaan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.VIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VIII.C.1', uraian: 'Kliping koran', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Disimpan di perpustakaan', kategori: 'Fasilitatif', parentKode: 'F.VIII.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VIII.C.2', uraian: 'Brosur/leaflet/poster/plakat', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah, kecuali Master Permanen', kategori: 'Fasilitatif', parentKode: 'F.VIII.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.VIII.D', uraian: 'Hubungan Antar Lembaga', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.VIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VIII.E', uraian: 'Dokumen Rapat Dengar Pendapat DPR/DPD RI', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.VIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.VIII.F', uraian: 'Penerbitan Majalah, Buletin dan Jurnal', retensiAktif: '1 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah, kecuali master Permanen', kategori: 'Fasilitatif', parentKode: 'F.VIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IX', uraian: 'Kepustakaan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.IX.A', uraian: 'Penyimpanan Deposit Bahan Pustaka', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IX', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IX.B', uraian: 'Pengadaan dan Pengolahan Bahan Pustaka', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.IX', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.IX.B.1', uraian: 'Buku induk koleksi', retensiAktif: 'Sampai tidak dipergunakan', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.IX.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.IX.B.2', uraian: 'Daftar buku terseleksi', retensiAktif: '1 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IX.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.IX.C', uraian: 'Layanan Bahan Pustaka', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.IX', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.X', uraian: 'Informatika/Sistem Informasi (SIM)/TIK', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.X.A', uraian: 'Rencana Strategis/Master Plan Pembangunan Sistem Informasi (SIM)', retensiAktif: 'Selama berlaku', retensiInaktif: '5 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.X', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.X.B', uraian: 'Dokumentasi Arsitektur dan Implementasi (Desain Pembangunan dan Pengembangan Sistem)', retensiAktif: '1 tahun', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.X', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.X.C', uraian: 'Perekaman dan Pemutakhiran Data', retensiAktif: '2 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.X', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.X.D', uraian: 'Migrasi Sistem Aplikasi dan Data', retensiAktif: '1 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.X', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.X.E', uraian: 'Dokumen Hosting', retensiAktif: '1 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.X', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.X.F', uraian: 'Layanan Back-up Data Digital', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.X', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.X.G', uraian: 'Database', retensiAktif: 'Sampai diperbarui', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.X', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XI', uraian: 'Pengawasan dan Pemeriksaan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.XI.A', uraian: 'Rencana Pengawasan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.XI', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XI.A.1', uraian: 'Kebijakan Umum dan SOP Pengawasan', retensiAktif: '2 tahun setelah diperbarui', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XI.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.XI.A.2', uraian: 'Rencana Strategis Pengawasan', retensiAktif: '5 tahun', retensiInaktif: '5 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.XI.A', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.XI.B', uraian: 'Pelaksanaan Pengawasan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.XI', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XI.B.1', uraian: 'Laporan Hasil Audit (LHA)/Laporan Hasil Evaluasi (LHE)/Laporan Akuntan (LA)/Laporan Auditor Independen (LAI) yang memerlukan tindak lanjut', retensiAktif: '2 tahun setelah TL selesai', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.XI.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.XI.B.2', uraian: 'Laporan Hasil Audit Investigasi (LHAI) unsur Tindak Pidana Korupsi (TPK) yang memerlukan tindak lanjut', retensiAktif: '2 tahun setelah TL selesai dan inkracht', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.XI.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.XI.B.3', uraian: 'Laporan Hasil Audit (LHA)/Laporan Hasil Evaluasi (LHE)/Laporan Akuntan (LA)/Laporan Auditor Independen (LAI) tanpa tindak lanjut', retensiAktif: '2 tahun setelah penerbitan', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XI.B', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.XI.C', uraian: 'Pelaksanaan Pemeriksaan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: 'F.XI', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XI.C.1', uraian: 'Laporan Hasil Pemeriksaan (LHP)/Laporan Hasil Pemeriksaan Operasional (LHPO) yang memerlukan tindak lanjut', retensiAktif: '2 tahun setelah TL selesai', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XI.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.XI.C.2', uraian: 'Laporan Hasil Pemeriksaan (LHP)/Laporan Hasil Pemeriksaan Operasional (LHPO) tanpa tindak lanjut', retensiAktif: '2 tahun setelah penerbitan', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XI.C', tipe: 'fasilitatif', level: 2, isActive: true },
-    { kode: 'F.XII', uraian: 'Perlengkapan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.XII.A', uraian: 'Rencana Kebutuhan Barang', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XII.B', uraian: 'Berkas Penawaran', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XII.C', uraian: 'Pengadaan Barang', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XII.D', uraian: 'Pengadaan Jasa', retensiAktif: '2 tahun setelah kontrak selesai', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XII.E', uraian: 'Penyimpanan barang dan distribusi', retensiAktif: '1 tahun setelah pemeriksaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII', uraian: 'Pendidikan dan Pelatihan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.XIII.A', uraian: 'Kurikulum Diklat', retensiAktif: 'Setelah menjadi pedoman', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.B', uraian: 'Modul Diklat', retensiAktif: 'Selama berlaku', retensiInaktif: '5 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.C', uraian: 'Panduan Fasilitator', retensiAktif: 'Selama berlaku', retensiInaktif: '5 tahun', keterangan: 'Permanen', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.D', uraian: 'Saran atau Rekomendasi Penyelenggaraan Diklat', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.E', uraian: 'Notulen Sosialisasi/Rapat Koordinasi Kebijakan Diklat', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.F', uraian: 'Rencana Tahunan Diklat', retensiAktif: '2 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.G', uraian: 'Rencana Penyelenggaraan Diklat', retensiAktif: '2 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.H', uraian: 'Penyelenggaraan Diklat', retensiAktif: '1 tahun setelah pelaksanaan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.I', uraian: 'Akreditasi Lembaga Diklat', retensiAktif: 'Selama berlaku', retensiInaktif: '2 tahun', keterangan: 'Musnah, kecuali SK Penetapan Permanen', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.J', uraian: 'Sertifikasi Sumber Daya Manusia (SDM)', retensiAktif: 'Selama berlaku', retensiInaktif: '2 tahun', keterangan: 'Musnah, kecuali SK Penetapan Permanen', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.K', uraian: 'Sistem Informasi Diklat', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.L', uraian: 'Registrasi Sertifikat/STTPL Peserta Diklat', retensiAktif: '1 tahun setelah pelaksanaan', retensiInaktif: '4 tahun', keterangan: 'Musnah, kecuali Buku Induk Registrasi Permanen', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.M', uraian: 'Pengelolaan Data dan Informasi Diklat', retensiAktif: '1 tahun setelah update data', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.N', uraian: 'Laporan Penyelenggaraan Diklat', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIII.O', uraian: 'Evaluasi Diklat (Penyelenggaraan dan Sistem Diklat)', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIII', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV', uraian: 'Penelitian dan Pengembangan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Fasilitatif', parentKode: null, tipe: 'fasilitatif', level: 0, isActive: true },
-    { kode: 'F.XIV.A', uraian: 'Penelitian dan Pengembangan (Rencana kerja, TOR/proposal, Pembentukan tim kerja, sampai dengan hasil)', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah, kecuali laporan akhir skala nasional Permanen', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.B', uraian: 'Hasil Penelitian dan Pengembangan', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah, kecuali skala nasional Permanen', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.C', uraian: 'Sosialisasi dan Diseminasi Hasil Penelitian dan Pengembangan', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.D', uraian: 'Jurnal Pertanahan dan Jurnal Iptek Pertanahan', retensiAktif: '2 tahun setelah terbit', retensiInaktif: '3 tahun', keterangan: 'Musnah, kecuali master Permanen', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.E', uraian: 'Daftar Inventarisasi Masalah (DIM)', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.F', uraian: 'Kumpulan Paper Kebijakan', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah, kecuali terkait kebijakan nasional Permanen', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.G', uraian: 'Buletin Penelitian dan Pengembangan', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.H', uraian: 'Naskah Akademis', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.I', uraian: 'Himpunan Hasil Penelitian dan Pengembangan', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.J', uraian: 'Panduan Penyelenggaraan Seminar/FGD', retensiAktif: '1 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'F.XIV.K', uraian: 'Kegiatan Seminar/FGD', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Fasilitatif', parentKode: 'F.XIV', tipe: 'fasilitatif', level: 1, isActive: true },
-    { kode: 'S.I', uraian: 'Kebijakan', retensiAktif: '1 tahun setelah tidak berlaku', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: null, tipe: 'substantif', level: 0, isActive: true },
-    { kode: 'S.II', uraian: 'Tata Ruang', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: null, tipe: 'substantif', level: 0, isActive: true },
-    { kode: 'S.II.A', uraian: 'Perencanaan dan Kemitraan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.II', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.II.A.1', uraian: 'Perencanaan Umum dan Monitoring Evaluasi Bidang Tata Ruang', retensiAktif: '2 tahun setelah tidak dipergunakan', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.II.A', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.II.A.2', uraian: 'Data, Informasi dan Kemitraan', retensiAktif: '2 tahun setelah diperbarui', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.II.A', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.II.B', uraian: 'Perencanaan dan Pemanfaatan Ruang', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.II', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.II.B.1', uraian: 'Perencanaan Tata Ruang', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.II.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.II.B.2', uraian: 'Pemanfaatan Ruang', retensiAktif: '1 tahun setelah tidak berlaku', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.II.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.II.B.3', uraian: 'Penataan Kawasan', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.II.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.II.B.4', uraian: 'Pembinaan Perencanaan Tata Ruang dan Pemanfaatan Ruang Daerah di Wilayah I, II, III, IV', retensiAktif: '1 tahun setelah tidak dipergunakan', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.II.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.II.B.5', uraian: 'Pembinaan Perencanaan Tata Ruang dan Pemanfaatan Kota dan Perkotaan di Wilayah I, II, III, IV', retensiAktif: '5 tahun setelah tidak dipergunakan', retensiInaktif: '2 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.II.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.III', uraian: 'Infrastruktur Keagrariaan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: null, tipe: 'substantif', level: 0, isActive: true },
-    { kode: 'S.III.A', uraian: 'Survei Keagrariaan', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.III', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.III.B', uraian: 'Pengukuran Keagrariaan', retensiAktif: 'Selama dipergunakan', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.III', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.III.C', uraian: 'Pemetaan Infrastruktur Keagrariaan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.III', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.III.C.1', uraian: 'Peta Indikatif Batas Kawasan', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.III.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.III.C.2', uraian: 'Peta Dasar Pertanahan', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.III.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.III.C.3', uraian: 'Peta Tematik', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.III.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.III.C.4', uraian: 'Peta Dasar Teknis (Distribusi TDT)', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.III.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.III.C.5', uraian: 'Peta Koridor Batas Kawasan/Batas Wilayah', retensiAktif: '1 tahun', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.III.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.III.C.6', uraian: 'Layanan Informasi/Data (TDT/Batas Kawasan, Data Epemeris GPS/CORS)', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.III.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV', uraian: 'Hubungan Hukum Keagrariaan', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: null, tipe: 'substantif', level: 0, isActive: true },
-    { kode: 'S.IV.A', uraian: 'Pengaturan dan Penetapan Hak Atas Tanah dan Ruang', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.IV', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.IV.A.1', uraian: 'Surat Keputusan Pemberian Hak Milik/HGU/HGB/Hak Pakai/Hak Atas Ruang (HAR)/Hak Komunal (HK)', retensiAktif: '2 tahun setelah SK diterbitkan', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.IV.A', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.A.2', uraian: 'Inventarisasi data hak atas tanah', retensiAktif: '2 tahun setelah diperbarui', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.IV.A', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.B', uraian: 'Pendaftaran Hak Atas Tanah', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.IV', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.IV.B.1', uraian: 'Warkah Penerbitan Hak Atas Tanah', retensiAktif: 'Selama dipergunakan', retensiInaktif: '5 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.IV.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.B.2', uraian: 'Izin Peralihan Hak', retensiAktif: '1 tahun setelah surat izin terbit', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.IV.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.B.3', uraian: 'Warkah Pencatatan dan Informasi Pertanahan', retensiAktif: 'Selama dipergunakan', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.IV.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.B.4', uraian: 'Warkah dan Buku Tanah Hak Tanggungan', retensiAktif: 'Sampai Roya', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.IV.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.B.5', uraian: 'Warkah Pemeliharaan Data Pendaftaran Tanah', retensiAktif: 'Selama dipergunakan', retensiInaktif: '1 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.IV.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.C', uraian: 'Pembinaan Pejabat Pembuat Akta Tanah (PPAT)', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.IV', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.IV.C.1', uraian: 'Permohonan Pengangkatan PPAT', retensiAktif: '1 tahun setelah SK ditetapkan', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.IV.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.C.2', uraian: 'Laporan Bulanan PPAT', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.IV.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.C.3', uraian: 'Database PPAT', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.IV.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.D', uraian: 'Pemberdayaan Hak Atas Tanah Masyarakat', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.IV', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.IV.D.1', uraian: 'Data penerima manfaat untuk kegiatan pasca legalisasi aset', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.IV.D', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.IV.D.2', uraian: 'Laporan program pemberdayaan masyarakat', retensiAktif: '2 tahun', retensiInaktif: '1 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.IV.D', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.V', uraian: 'Penataan Agraria', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: null, tipe: 'substantif', level: 0, isActive: true },
-    { kode: 'S.V.A', uraian: 'Penatagunaan Tanah', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.V', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.V.A.1', uraian: 'Neraca Penatagunaan Tanah', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.V.A', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.V.A.2', uraian: 'Pertimbangan Teknis Pertanahan (Izin Lokasi)', retensiAktif: 'Sampai SK ditetapkan', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.V.A', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.V.B', uraian: 'Penataan, Penguasaan dan Pemanfaatan Wilayah Pesisir, Pulau-Pulau Kecil, Perbatasan dan Wilayah Tertentu (WP3WT)', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.V', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.V.B.1', uraian: 'Inventarisasi dan identifikasi WP3WT', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.V.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.V.B.2', uraian: 'Penataan kawasan WP3WT', retensiAktif: '1 tahun setelah diperbarui', retensiInaktif: '4 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.V.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.V.C', uraian: 'Pelaksanaan Konsolidasi Tanah', retensiAktif: '2 tahun setelah SK diterbitkan', retensiInaktif: '3 tahun', keterangan: 'Musnah, kecuali sertipikat dan buku tanah Permanen', kategori: 'Substantif', parentKode: 'S.V', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.V.D', uraian: 'Landreform', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.V', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.V.D.1', uraian: 'Surat Keputusan Penegasan Tanah yang dikuasai langsung oleh Negara sebagai objek landreform', retensiAktif: 'Selama dipergunakan', retensiInaktif: '2 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.V.D', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.V.D.2', uraian: 'Data spasial dan tekstual kegiatan Inventarisasi Penguasaan, Pemilikan, Penggunaan dan Pemanfaatan Tanah (IP4T)', retensiAktif: 'Selama dipergunakan', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.V.D', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VI', uraian: 'Pengadaan Tanah', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: null, tipe: 'substantif', level: 0, isActive: true },
-    { kode: 'S.VI.A', uraian: 'Pengadaan Tanah', retensiAktif: '2 tahun setelah serah terima lokasi', retensiInaktif: '3 tahun', keterangan: 'Musnah, kecuali hasil musyawarah penetapan ganti rugi Permanen', kategori: 'Substantif', parentKode: 'S.VI', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VI.B', uraian: 'Penilaian Tanah', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.VI', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VI.B.1', uraian: 'Laporan Nilai Properti Tanah', retensiAktif: '2 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VI.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VI.B.2', uraian: 'Lisensi Penilai Pertanahan (Perorangan dan Perbadan)', retensiAktif: '2 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VI.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VI.B.3', uraian: 'Peta Zona Nilai Ekonomi Kawasan', retensiAktif: '1 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah, kecuali master Permanen', kategori: 'Substantif', parentKode: 'S.VI.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VI.B.4', uraian: 'Peta Zona Nilai Tanah', retensiAktif: '1 tahun', retensiInaktif: '2 tahun', keterangan: 'Musnah, kecuali master Permanen', kategori: 'Substantif', parentKode: 'S.VI.B', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VI.C', uraian: 'Pengaturan Penetapan Hak Atas Tanah Instansi Pemerintah/BUMN/BUMD', retensiAktif: '1 tahun setelah SK ditetapkan', retensiInaktif: '4 tahun', keterangan: 'Musnah, kecuali SK Permanen', kategori: 'Substantif', parentKode: 'S.VI', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VI.D', uraian: 'Pembinaan dan Pengendalian Pemanfaatan Tanah', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VI', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VII', uraian: 'Pengendalian Pemanfaatan Ruang dan Penguasaan Tanah', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: null, tipe: 'substantif', level: 0, isActive: true },
-    { kode: 'S.VII.A', uraian: 'Pengendalian Pemanfaatan Ruang', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VII', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VII.B', uraian: 'Penertiban dan Pemanfaatan Ruang', retensiAktif: '2 tahun setelah diperbarui', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VII', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VII.C', uraian: 'Penertiban dan Pendayagunaan Tanah Terlantar', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: 'S.VII', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VII.C.1', uraian: 'Identifikasi dan Verifikasi Potensi Tanah Terlantar', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VII.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VII.C.2', uraian: 'Surat Keputusan Penetapan Tanah Terlantar', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.VII.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VII.C.3', uraian: 'Surat Keputusan Penetapan Peruntukan Tanah Cadangan Umum Negara (TCUN)', retensiAktif: '3 tahun setelah SK diterbitkan', retensiInaktif: '5 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.VII.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VII.C.4', uraian: 'Pembangunan Struktur Data Tanah Terlantar', retensiAktif: '2 tahun setelah diperbarui', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VII.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VII.C.5', uraian: 'Pemutakhiran Data Tanah Terlantar', retensiAktif: '2 tahun setelah diperbarui', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VII.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VII.C.6', uraian: 'Penertiban dan Penetapan Tanah Terlantar', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VII.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VII.C.7', uraian: 'Pendayagunaan Tanah Terlantar', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VII.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VII.C.8', uraian: 'SK Penetapan Badan Hukum Penerima Tanah Cadangan Umum Negara', retensiAktif: '3 tahun setelah SK diterbitkan', retensiInaktif: '5 tahun', keterangan: 'Permanen', kategori: 'Substantif', parentKode: 'S.VII.C', tipe: 'substantif', level: 2, isActive: true },
-    { kode: 'S.VIII', uraian: 'Penanganan Masalah Agraria, Pemanfaatan Ruang dan Tanah', retensiAktif: '-', retensiInaktif: '-', keterangan: '-', kategori: 'Substantif', parentKode: null, tipe: 'substantif', level: 0, isActive: true },
-    { kode: 'S.VIII.A', uraian: 'Penyelesaian Sengketa dan Konflik Tanah dan Ruang', retensiAktif: 'Selama dipergunakan', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VIII', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VIII.B', uraian: 'Penanganan Perkara Tanah dan Ruang', retensiAktif: 'Selama dipergunakan', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VIII', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VIII.C', uraian: 'Penanganan, Pencegahan dan Pembatalan Sengketa', retensiAktif: 'Selama dipergunakan', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VIII', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VIII.D', uraian: 'Pembatalan Hak Atas Tanah', retensiAktif: 'Selama dipergunakan', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VIII', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VIII.E', uraian: 'Pemanfaatan Ruang dan Tanah', retensiAktif: '5 tahun', retensiInaktif: '5 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VIII', tipe: 'substantif', level: 1, isActive: true },
-    { kode: 'S.VIII.F', uraian: 'Laporan Kasus Pertanahan', retensiAktif: 'Selama dipergunakan', retensiInaktif: '3 tahun', keterangan: 'Musnah', kategori: 'Substantif', parentKode: 'S.VIII', tipe: 'substantif', level: 1, isActive: true },
-  ];
+type JraSeedAsset = {
+  schemaVersion: number;
+  instrumentType: string;
+  regulationVersion: string;
+  identifierSemantics: string;
+  source: { documentName: string; sha256: string; totalPdfPages: number };
+  expectedCounts: {
+    rules: number;
+    hierarchyNodes: number;
+    records: number;
+    selectable: number;
+    byDisposition: Record<string, number>;
+    byCalculationMode: Record<string, number>;
+  };
+  records: JraSeedRecord[];
+  contentSha256: string;
+};
 
-export async function seedJadwalRetensiArsip() {
-  console.log('Seeding jadwal retensi arsip...');
-  await db.delete(jadwalRetensiArsip);
-  const batchSize = 50;
-  for (let i = 0; i < JRA_DATA.length; i += batchSize) {
-    const batch = JRA_DATA.slice(i, i + batchSize);
-    await db.insert(jadwalRetensiArsip).values(batch);
-    console.log(`  Inserted ${Math.min(i + batchSize, JRA_DATA.length)}/${JRA_DATA.length} records`);
-  }
-  console.log(`Seeding JRA complete! Total: ${JRA_DATA.length} records`);
+const jraSeed = jraSeedJson as unknown as JraSeedAsset;
+
+function recordsSha256(records: JraSeedRecord[]): string {
+  return createHash('sha256').update(JSON.stringify(records), 'utf8').digest('hex');
 }
 
-// ESM-compatible entry point
-const isMain = import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`;
+function groupedLeafCount(field: 'dispositionCode' | 'calculationMode') {
+  const leaves = jraSeed.records.filter((record) => record.isSelectable);
+  return Object.fromEntries(
+    Object.keys(field === 'dispositionCode'
+      ? jraSeed.expectedCounts.byDisposition
+      : jraSeed.expectedCounts.byCalculationMode)
+      .map((value) => [value, leaves.filter((record) => record[field] === value).length]),
+  );
+}
+
+function assertCompleteSeedAsset() {
+  const selectableCount = jraSeed.records.filter((record) => record.isSelectable).length;
+  const hierarchyCount = jraSeed.records.length - selectableCount;
+  if (
+    jraSeed.instrumentType !== 'jra'
+    || jraSeed.regulationVersion !== 'ATR-BPN-8-2020'
+    || jraSeed.records.length !== jraSeed.expectedCounts.records
+    || selectableCount !== jraSeed.expectedCounts.rules
+    || selectableCount !== jraSeed.expectedCounts.selectable
+    || hierarchyCount !== jraSeed.expectedCounts.hierarchyNodes
+    || JSON.stringify(groupedLeafCount('dispositionCode')) !== JSON.stringify(jraSeed.expectedCounts.byDisposition)
+    || JSON.stringify(groupedLeafCount('calculationMode')) !== JSON.stringify(jraSeed.expectedCounts.byCalculationMode)
+  ) {
+    throw new Error('Asset JRA 2020 tidak lengkap atau jumlah aturan/hasil akhir tidak sesuai manifest.');
+  }
+  if (recordsSha256(jraSeed.records) !== jraSeed.contentSha256) {
+    throw new Error('Integritas asset seed JRA 2020 gagal diverifikasi.');
+  }
+}
+
+export async function seedJadwalRetensiArsip() {
+  console.log('Seeding JRA lengkap Permen ATR/BPN 8/2020...');
+  assertCompleteSeedAsset();
+
+  const prepared = await db.transaction(async (tx: any) => {
+    const [ruleSet] = await tx
+      .select({
+        id: regulatoryRuleSets.id,
+        status: regulatoryRuleSets.status,
+        sourceDocumentSha256: regulatoryRuleSets.sourceDocumentSha256,
+        metadata: regulatoryRuleSets.metadata,
+      })
+      .from(regulatoryRuleSets)
+      .where(eq(regulatoryRuleSets.id, JRA_RULE_SET_2020_ID))
+      .limit(1)
+      .for('update');
+
+    if (!ruleSet) {
+      throw new Error('Rule set JRA 2020 belum tersedia. Jalankan migrasi database terlebih dahulu.');
+    }
+    if (String(ruleSet.sourceDocumentSha256 || '').toLowerCase() !== jraSeed.source.sha256) {
+      throw new Error('SHA-256 dokumen sumber rule set tidak cocok dengan asset JRA 2020.');
+    }
+    if (ruleSet.status !== 'draft') {
+      return { skipped: true as const, reason: `rule_set_${ruleSet.status}` };
+    }
+
+    const [otherActive] = await tx
+      .select({ id: regulatoryRuleSets.id })
+      .from(regulatoryRuleSets)
+      .where(and(
+        eq(regulatoryRuleSets.instrumentType, 'jra'),
+        eq(regulatoryRuleSets.status, 'active'),
+      ))
+      .limit(1)
+      .for('share');
+    if (otherActive) return { skipped: true as const, reason: 'newer_version_active' };
+
+    const items = jraSeed.records.map((record) => {
+      const normalized = {
+        ...record,
+        ruleSetId: JRA_RULE_SET_2020_ID,
+      };
+      return {
+        ...normalized,
+        contentHash: deterministicRegulatoryContentHash('jra', [normalized]),
+      };
+    });
+
+    await tx
+      .delete(jadwalRetensiArsip)
+      .where(eq(jadwalRetensiArsip.ruleSetId, JRA_RULE_SET_2020_ID));
+    const batchSize = 100;
+    for (let offset = 0; offset < items.length; offset += batchSize) {
+      await tx.insert(jadwalRetensiArsip).values(items.slice(offset, offset + batchSize));
+      console.log(`  Inserted ${Math.min(offset + batchSize, items.length)}/${items.length} records`);
+    }
+
+    const currentMetadata = ruleSet.metadata && typeof ruleSet.metadata === 'object'
+      && !Array.isArray(ruleSet.metadata) ? ruleSet.metadata : {};
+    await tx.update(regulatoryRuleSets).set({
+      metadata: {
+        ...currentMetadata,
+        seedAssetSchemaVersion: jraSeed.schemaVersion,
+        seedAssetContentSha256: jraSeed.contentSha256,
+        expectedItemCount: jraSeed.expectedCounts.records,
+        expectedSelectableCount: jraSeed.expectedCounts.selectable,
+        legalRetentionRuleCount: jraSeed.expectedCounts.rules,
+        expectedHierarchyNodeCount: jraSeed.expectedCounts.hierarchyNodes,
+        identifierSemantics: jraSeed.identifierSemantics,
+        dispositionCounts: jraSeed.expectedCounts.byDisposition,
+        calculationModeCounts: jraSeed.expectedCounts.byCalculationMode,
+      },
+      updatedAt: new Date(),
+    }).where(and(
+      eq(regulatoryRuleSets.id, JRA_RULE_SET_2020_ID),
+      eq(regulatoryRuleSets.status, 'draft'),
+    ));
+
+    return { skipped: false as const, items };
+  });
+
+  if (prepared.skipped) {
+    console.log(`  Jadwal tidak diubah (${prepared.reason}); edisi terbit tetap immutable.`);
+    return { status: 'skipped' as const, reason: prepared.reason };
+  }
+
+  const expectedValidation = validateRegulatoryRuleItems('jra', prepared.items);
+  const validation = await regulatoryRuleSetService.validateDraft(JRA_RULE_SET_2020_ID);
+  if (!expectedValidation.valid
+    || !validation.valid
+    || validation.contentHash !== expectedValidation.contentHash
+    || validation.stats.total !== jraSeed.expectedCounts.records
+    || validation.stats.selectable !== jraSeed.expectedCounts.selectable) {
+    console.warn('  Draft tersimpan tetapi tidak diaktifkan karena validasi data persisten gagal.', validation.errors);
+    return { status: 'draft' as const, validation };
+  }
+
+  await regulatoryRuleSetService.activate(JRA_RULE_SET_2020_ID);
+  console.log(`JRA 2020 diaktifkan: ${jraSeed.expectedCounts.rules} aturan retensi legal dan ${jraSeed.expectedCounts.hierarchyNodes} simpul navigasi.`);
+  return { status: 'activated' as const, validation };
+}
+
+const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   seedJadwalRetensiArsip()
     .then(() => process.exit(0))
-    .catch((e) => { console.error(e); process.exit(1); });
+    .catch((error) => { console.error(error); process.exit(1); });
 }

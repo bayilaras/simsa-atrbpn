@@ -8,6 +8,36 @@ const log = createLogger('JraRoutes');
 
 const router = Router();
 
+function retentionMonths(value: unknown): number | null {
+    if (typeof value !== 'string') return null;
+    const years = value.trim().match(/^(\d+)\s*tahun\b/i);
+    if (years) return Number(years[1]) * 12;
+    const months = value.trim().match(/^(\d+)\s*bulan\b/i);
+    return months ? Number(months[1]) : null;
+}
+
+function normalizedJraFields(data: Record<string, any>) {
+    const activeMonths = retentionMonths(data.retensiAktif);
+    const inactiveMonths = retentionMonths(data.retensiInaktif);
+    const outcome = String(data.keterangan || '').trim().toLowerCase();
+    return {
+        activeMonths,
+        inactiveMonths,
+        calculationMode: activeMonths !== null && inactiveMonths !== null ? 'duration' : 'manual',
+        dispositionCode: outcome === 'musnah'
+            ? 'musnah'
+            : outcome === 'permanen'
+                ? 'permanen'
+                : outcome.startsWith('dinilai kembali')
+                    ? 'dinilai_kembali'
+                    : 'manual_review',
+        triggerGuidance: activeMonths === null && data.retensiAktif
+            ? String(data.retensiAktif).trim()
+            : null,
+        contentHash: null,
+    };
+}
+
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
@@ -41,16 +71,17 @@ router.use(authMiddleware);
  */
 router.get('/', async (req: AuthRequest, res: Response) => {
     try {
-        const { tipe, search, format } = req.query;
+        const { tipe, search, format, ruleSetId } = req.query;
 
         if (format === 'tree') {
-            const tree = await jraService.getTree(tipe as string);
+            const tree = await jraService.getTree(tipe as string, ruleSetId as string);
             return res.json({ success: true, data: tree });
         }
 
         const data = await jraService.getAll({
             tipe: tipe as string,
             search: search as string,
+            ruleSetId: ruleSetId as string,
         });
 
         res.json({ success: true, data });
@@ -83,7 +114,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 router.get('/:kode', async (req: AuthRequest, res: Response) => {
     try {
         const kode = req.params.kode as string;
-        const item = await jraService.getByKode(kode);
+        const item = await jraService.getByKode(kode, req.query.ruleSetId as string);
 
         if (!item) {
             return res.status(404).json({ error: 'JRA not found' });
@@ -136,21 +167,24 @@ router.get('/:kode', async (req: AuthRequest, res: Response) => {
  *       201:
  *         description: Created successfully
  */
-router.post('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response) => {
+router.post('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response, next) => {
     try {
-        const { kode, uraian, retensiAktif, retensiInaktif, keterangan, kategori, parentKode, tipe, level } = req.body;
+        const {
+            ruleSetId, kode, uraian, retensiAktif, retensiInaktif, keterangan,
+            kategori, parentKode, tipe, level, isSelectable, sourcePage,
+        } = req.body;
 
-        if (!kode || !uraian || !tipe) {
-            return res.status(400).json({ error: 'kode, uraian, and tipe are required' });
+        if (!ruleSetId || !kode || !uraian || !tipe) {
+            return res.status(400).json({ error: 'ruleSetId, kode, uraian, and tipe are required' });
         }
 
-        // Check if kode already exists
-        const existing = await jraService.getByKode(kode);
+        const existing = await jraService.getByKode(kode, ruleSetId);
         if (existing) {
             return res.status(400).json({ error: 'Kode already exists' });
         }
 
         const created = await jraService.create({
+            ruleSetId,
             kode,
             uraian,
             retensiAktif: retensiAktif || null,
@@ -161,12 +195,52 @@ router.post('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: 
             tipe,
             level: level ?? 0,
             isActive: true,
+            isSelectable: isSelectable ?? true,
+            sourcePage: sourcePage ?? null,
+            ...normalizedJraFields(req.body),
         });
 
         res.status(201).json({ success: true, data: created });
     } catch (error) {
         log.error({ err: error }, 'Error creating JRA:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
+    }
+});
+
+router.put('/items/:id', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response, next) => {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0 || !req.body.ruleSetId) {
+            return res.status(400).json({ error: 'ID item dan ruleSetId draft wajib diisi' });
+        }
+        const {
+            ruleSetId, uraian, retensiAktif, retensiInaktif, keterangan, kategori,
+            parentKode, tipe, level, isActive, isSelectable, sourcePage,
+        } = req.body;
+        const updated = await jraService.updateById(id, {
+            ruleSetId, uraian, retensiAktif, retensiInaktif, keterangan, kategori,
+            parentKode, tipe, level, isActive, isSelectable, sourcePage,
+            ...normalizedJraFields(req.body),
+        });
+        if (!updated) return res.status(404).json({ error: 'Butir JRA tidak ditemukan pada draft' });
+        res.json({ success: true, data: updated });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.delete('/items/:id', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response, next) => {
+    try {
+        const id = Number(req.params.id);
+        const ruleSetId = req.query.ruleSetId as string;
+        if (!Number.isInteger(id) || id <= 0 || !ruleSetId) {
+            return res.status(400).json({ error: 'ID item dan ruleSetId draft wajib diisi' });
+        }
+        const deleted = await jraService.deleteById(id, ruleSetId);
+        if (!deleted) return res.status(404).json({ error: 'Butir JRA tidak ditemukan pada draft' });
+        res.json({ success: true, message: 'Butir JRA dinonaktifkan', data: deleted });
+    } catch (error) {
+        next(error);
     }
 });
 
@@ -203,29 +277,11 @@ router.post('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: 
  *       200:
  *         description: Updated successfully
  */
-router.put('/:kode', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response) => {
-    try {
-        const kode = req.params.kode as string;
-        const { uraian, retensiAktif, retensiInaktif, keterangan, kategori, isActive } = req.body;
-
-        const updated = await jraService.update(kode, {
-            uraian,
-            retensiAktif,
-            retensiInaktif,
-            keterangan,
-            kategori,
-            isActive,
-        });
-
-        if (!updated) {
-            return res.status(404).json({ error: 'JRA not found' });
-        }
-
-        res.json({ success: true, data: updated });
-    } catch (error) {
-        log.error({ err: error }, 'Error updating JRA:');
-        res.status(500).json({ error: 'Internal server error' });
-    }
+router.put('/:kode', roleMiddleware(['super_admin']), (_req: AuthRequest, res: Response) => {
+    res.status(410).json({
+        error: 'Perubahan JRA berdasarkan kode sudah dihentikan',
+        message: 'Gunakan endpoint /api/jra/items/:id dengan ruleSetId draft agar versi aturan terbit tetap utuh.',
+    });
 });
 
 /**
@@ -246,20 +302,11 @@ router.put('/:kode', roleMiddleware(['super_admin']), async (req: AuthRequest, r
  *       200:
  *         description: Deleted successfully
  */
-router.delete('/:kode', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response) => {
-    try {
-        const kode = req.params.kode as string;
-        const deleted = await jraService.delete(kode);
-
-        if (!deleted) {
-            return res.status(404).json({ error: 'JRA not found' });
-        }
-
-        res.json({ success: true, message: 'JRA deleted', data: deleted });
-    } catch (error) {
-        log.error({ err: error }, 'Error deleting JRA:');
-        res.status(500).json({ error: 'Internal server error' });
-    }
+router.delete('/:kode', roleMiddleware(['super_admin']), (_req: AuthRequest, res: Response) => {
+    res.status(410).json({
+        error: 'Penghapusan JRA berdasarkan kode sudah dihentikan',
+        message: 'Gunakan endpoint /api/jra/items/:id dengan ruleSetId draft.',
+    });
 });
 
 export default router;

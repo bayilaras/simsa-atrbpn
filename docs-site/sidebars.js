@@ -73,6 +73,7 @@ const sidebars = {
         'administrasi/integrasi-srikandi',
         'administrasi/user-management',
         'administrasi/master-data',
+        'administrasi/versi-aturan',
         'administrasi/settings',
       ],
     },

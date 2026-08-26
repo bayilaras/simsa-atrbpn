@@ -27,6 +27,7 @@ const UserManagement = lazy(() => import('@/pages/UserManagement'))
 const AuditLog = lazy(() => import('@/pages/AuditLog'))
 const KlasifikasiArsip = lazy(() => import('@/pages/KlasifikasiArsip'))
 const JadwalRetensi = lazy(() => import('@/pages/JadwalRetensi'))
+const RegulatoryRuleSets = lazy(() => import('@/pages/RegulatoryRuleSets'))
 const StorageLocations = lazy(() => import('@/pages/StorageLocations'))
 const ArchiveLending = lazy(() => import('@/pages/ArchiveLending'))
 const Dosir = lazy(() => import('@/pages/Dosir'))
@@ -196,6 +197,7 @@ const router = createBrowserRouter([
       { path: "/users", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><UserManagement /></RoleGuard> },
       { path: "/master/klasifikasi", element: <RoleGuard allowedRoles={ADMIN_ROLES}><KlasifikasiArsip /></RoleGuard> },
       { path: "/master/jra", element: <RoleGuard allowedRoles={ADMIN_ROLES}><JadwalRetensi /></RoleGuard> },
+      { path: "/master/regulatory-rules", element: <RoleGuard allowedRoles={ADMIN_ROLES}><RegulatoryRuleSets /></RoleGuard> },
       { path: "/storage-locations", element: <RoleGuard allowedRoles={ADMIN_ROLES}><StorageLocations /></RoleGuard> },
       { path: "/archive-lending", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArchiveLending /></RoleGuard> },
       { path: "/dosir", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><Dosir /></RoleGuard> },

@@ -28,21 +28,16 @@ Panduan mengelola jadwal retensi arsip di SIMSA.
 
 ---
 
-## Menambah JRA Baru (Admin)
+## Mengubah JRA (Super Admin)
 
-1. Klik tombol **"+ Tambah JRA"**.
-2. Isi kode klasifikasi, uraian, masa aktif, masa inaktif, dan keterangan.
-3. Klik **"Simpan"**.
+JRA aktif bersifat hanya-baca. Perubahan selalu dibuat sebagai versi draft agar keputusan arsip lama tidak ikut berubah.
 
-> ⚠️ **Hanya Admin** yang bisa menambah, mengedit, atau menghapus JRA.
+1. Buka **Master Data > Versi Aturan**.
+2. Buat draft JRA dari versi aktif.
+3. Catat dasar hukum, tanggal berlaku, dokumen sumber, dan SHA-256.
+4. Edit atau impor isi draft, validasi, lalu aktifkan setelah review.
 
----
-
-## Mengedit & Menghapus JRA (Admin)
-
-1. Klik **ikon edit** pada baris JRA untuk mengedit.
-2. Klik **ikon hapus** untuk menghapus.
-3. Konfirmasi perubahan.
+Pemetaan klasifikasi ke JRA pada dialog arsip hanya saran. Arsiparis tetap wajib menilai butir JRA yang tepat. Arsip lama yang belum memiliki provenance aturan terverifikasi harus direkonsiliasi sebelum dapat masuk penyusutan. Lihat [Versi Aturan Klasifikasi dan JRA](../administrasi/versi-aturan.md).
 
 ---
 

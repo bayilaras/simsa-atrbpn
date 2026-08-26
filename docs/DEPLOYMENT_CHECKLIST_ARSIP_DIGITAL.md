@@ -50,7 +50,7 @@ SIMSA merupakan aplikasi internal/substantif Ditjen PTPP, bukan pengganti SRIKAN
 - [ ] Catat waktu cut-off dan batasi write selama langkah yang memerlukan konsistensi.
 - [ ] Verifikasi bahwa backup mencakup database **dan bitstream**; backup database saja tidak cukup.
 
-## 5. Migrasi database 0010 sampai 0014
+## 5. Migrasi database 0010 sampai 0016
 
 Migrasi yang harus berurutan:
 
@@ -59,6 +59,8 @@ Migrasi yang harus berurutan:
 3. `backend/src/db/migrations/0012_traceable_cross_reference_cancellation.sql`
 4. `backend/src/db/migrations/0013_srikandi_durable_outbox.sql`
 5. `backend/src/db/migrations/0014_purpose_bound_record_access.sql`
+6. `backend/src/db/migrations/0015_better_auth_account_issuer.sql`
+7. `backend/src/db/migrations/0016_versioned_regulatory_rules.sql`
 
 `0010` menambahkan pemicu retensi berbasis peristiwa, bukti/versi/rujukan JRA, legal hold, constraint, dan indeks kandidat. Migrasi ini sengaja **tidak** mengisi pemicu dari `tanggal_arsip`; rekod legacy tetap tidak layak menjadi kandidat penyusutan sampai arsiparis memasukkan bukti peristiwa yang sah.
 
@@ -70,14 +72,21 @@ Migrasi yang harus berurutan:
 
 `0014` menambahkan permohonan akses per-rekod dengan tujuan, klasifikasi, mode tayang/unduh/kelola, keputusan, kedaluwarsa, dan pencabutan. Unique index mencegah permohonan atau grant aktif ganda untuk pengguna dan rekod yang sama.
 
+`0015` memperbaiki identitas issuer akun Better Auth agar login sosial Google yang telah ditautkan tetap dapat ditemukan setelah perubahan konfigurasi auth.
+
+`0016` menambahkan edisi klasifikasi/JRA yang berversi, item aturan terikat edisi, snapshot keputusan arsip append-only, provenance aturan, serta perlindungan database terhadap perubahan item versi terbit. Migrasi sengaja menandai arsip lama `legacy_unverified`; jangan mengubahnya menjadi `verified` secara massal tanpa rekonsiliasi arsiparis.
+
 Langkah eksekusi:
 
-- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan kelima file SQL dan pastikan tidak ada migration ID ganda.
-- [ ] Uji kelima migrasi pada salinan production yang telah dianonimkan; catat durasi, lock, ukuran indeks, dan error.
+- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan ketujuh file SQL dan pastikan tidak ada migration ID ganda.
+- [ ] Uji seluruh migrasi pada salinan production yang telah dianonimkan; catat durasi, lock, ukuran indeks, dan error.
 - [ ] Jalankan preflight duplikasi `(arsip_id, versi_dokumen)`. Migrasi `0011` sengaja berhenti bila data legacy ambigu; rekonsiliasi provenans bersama arsiparis dan jangan melakukan auto-renumber.
 - [ ] Jalankan preflight hubungan tunjuk silang aktif duplikat. Migrasi `0012` juga sengaja berhenti sampai duplikasi direkonsiliasi dan keputusannya dicatat.
 - [ ] Jalankan dari direktori `backend` dengan `npm run db:migrate`; jangan memakai `db:push` untuk produksi terkontrol.
+- [ ] Masih dalam maintenance window, jalankan `npm run seed:all`. Seed memverifikasi SHA-256/manifest, mengganti hanya dua draft awal dengan dataset resmi, mengaktifkannya, lalu menambahkan mapping rekomendasi secara idempotent. Hentikan rollout bila seed gagal.
 - [ ] Verifikasi kolom, foreign key, check constraint, unique/partial index, dan entri jurnal migrasi.
+- [ ] Verifikasi tepat satu versi `active` untuk `klasifikasi` dan satu untuk `jra`; klasifikasi berisi 842 baris/620 selectable dan JRA berisi 545 baris/391 selectable.
+- [ ] Verifikasi arsip legacy berstatus `legacy_unverified`, memiliki snapshot migrasi, dan tidak muncul pada kandidat penyusutan sampai direkonsiliasi.
 - [ ] Pastikan rekod legacy memiliki `retention_trigger_date IS NULL` dan tidak muncul sebagai kandidat penyusutan.
 - [ ] Pastikan objek dengan URL publik ditandai `storage_access='public'`, bukan dianggap private.
 - [ ] Jalankan smoke test create/read/update, upload/download, QC/fixity, legal hold, kandidat retensi, dan seluruh transisi penyusutan.
@@ -86,14 +95,16 @@ Langkah eksekusi:
 
 1. Aktifkan maintenance window atau kontrol write yang disetujui.
 2. Ambil backup dan bukti restore.
-3. Jalankan migrasi `0010`, `0011`, `0012`, `0013`, lalu `0014`.
-4. Deploy backend baru dan lakukan health check internal.
-5. Deploy frontend baru; invalidasi asset cache, tetapi jangan cache respons `/api/*`.
-6. Verifikasi provisioning super admin, role, unit kerja, isolasi lintas unit, dan sesi yang dicabut setelah perubahan otorisasi.
-7. Verifikasi file baru tersimpan private dan hanya dapat diambil melalui `/api/files/...` dengan audit serta header `no-store`.
-8. Migrasikan blob publik legacy sesuai Bagian 7.
-9. **Kondisional — SRIKANDI:** deploy worker persisten dan aktifkan connector hanya setelah uji sandbox serta rekonsiliasi lulus; jika tidak diwajibkan, pertahankan outbound nonaktif.
-10. Buka pilot terbatas; pantau error, audit, AV, fixity, storage, dan database, serta queue integrasi bila diaktifkan.
+3. Jalankan migrasi sampai `0016` dengan `npm run db:migrate`.
+4. Jalankan `npm run seed:all`, lalu verifikasi jumlah, hash sumber, status versi aktif, dan snapshot legacy.
+5. Deploy backend baru dan lakukan health check internal.
+6. Deploy frontend baru; invalidasi asset cache, tetapi jangan cache respons `/api/*`.
+7. Smoke test login Google/email, pemilih klasifikasi/JRA aktif, registrasi arsip, rekonsiliasi arsip legacy, legal hold, dan penolakan penyusutan tanpa provenance.
+8. Verifikasi provisioning super admin, role, unit kerja, isolasi lintas unit, dan sesi yang dicabut setelah perubahan otorisasi.
+9. Verifikasi file baru tersimpan private dan hanya dapat diambil melalui `/api/files/...` dengan audit serta header `no-store`.
+10. Migrasikan blob publik legacy sesuai Bagian 7.
+11. **Kondisional — SRIKANDI:** deploy worker persisten dan aktifkan connector hanya setelah uji sandbox serta rekonsiliasi lulus; jika tidak diwajibkan, pertahankan outbound nonaktif.
+12. Buka pilot terbatas; pantau error, audit, AV, fixity, storage, dan database, serta queue integrasi bila diaktifkan.
 
 ## 7. Migrasi blob publik legacy
 
@@ -172,6 +183,9 @@ Lewati aktivasi pada bagian ini bila fitur tidak diwajibkan. Kontrol gagal-tertu
 - [ ] Hasil digitasi di bawah DPI/24-bit gagal QC dan tidak dapat diverifikasi.
 - [ ] Perubahan bitstream menghasilkan hash mismatch dan alert.
 - [ ] Arsip tanpa bukti pemicu atau dengan legal hold tidak menjadi kandidat penyusutan.
+- [ ] Arsip `legacy_unverified` tidak menjadi kandidat penyusutan; rekonsiliasi menambah revisi snapshot dan tidak menimpa bukti lama.
+- [ ] Versi aturan aktif tidak dapat diedit; aktivasi draft menutup versi sebelumnya dan registrasi baru memakai tepat versi aktif terbaru.
+- [ ] Kode klasifikasi cetak yang sama tetap dibedakan berdasarkan ID/identitas baris sumber.
 - [ ] Pelaku yang sama tidak dapat melewati separation-of-duties.
 - [ ] Logout, session expiry, dan perubahan role membersihkan data lokal serta mencabut sesi.
 - [ ] **Kondisional — SRIKANDI:** layanan menerima tepat satu transaksi untuk retry yang sama dan rekonsiliasi menunjukkan nol selisih yang tidak dijelaskan.
@@ -179,7 +193,7 @@ Lewati aktivasi pada bagian ini bila fitur tidak diwajibkan. Kontrol gagal-tertu
 
 ## 14. Strategi rollback
 
-Migrasi `0010` sampai `0014` bersifat aditif, tetapi rollback dengan `DROP COLUMN`/`DROP TABLE` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, keputusan akses, audit integrasi, atau pelaku workflow. Karena itu:
+Migrasi `0010` sampai `0016` bersifat aditif, tetapi rollback dengan `DROP COLUMN`/`DROP TABLE` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, keputusan akses, audit integrasi, versi aturan, snapshot keputusan, atau pelaku workflow. Karena itu:
 
 1. **Sebelum cutover dan belum ada write baru:** batalkan deploy aplikasi; bila migrasi gagal, pulihkan database ke branch/snapshot pra-migrasi dan verifikasi checksum/count.
 2. **Sesudah cutover tetapi belum ada data bermakna:** arahkan trafik ke maintenance, pulihkan snapshot ke environment baru, validasi, lalu switch connection secara terkontrol.

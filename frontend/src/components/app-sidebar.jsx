@@ -24,6 +24,7 @@ import {
     ExternalLink,
     FileKey2,
     CloudCog,
+    GitBranch,
 } from 'lucide-react'
 
 import {
@@ -228,6 +229,7 @@ const menuGroups = [
                 icon: FolderTree,
                 allowedRoles: ADMIN_ROLES,
                 subItems: [
+                    { title: 'Versi Aturan', url: '/master/regulatory-rules', icon: GitBranch },
                     { title: 'Klasifikasi Arsip', url: '/master/klasifikasi' },
                     { title: 'Template Surat', url: '/settings' },
                 ],

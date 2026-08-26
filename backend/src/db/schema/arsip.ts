@@ -1,7 +1,9 @@
-import { pgTable, uuid, varchar, text, date, integer, timestamp, boolean, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, date, integer, timestamp, boolean, check, foreignKey } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { unitKerja } from './unit-kerja';
 import { storageLocations } from './storage-locations';
+import { klasifikasiArsip, jadwalRetensiArsip } from './master-data';
+import { regulatoryRuleSets } from './regulatory-rule-sets';
 import { relations, sql } from 'drizzle-orm';
 
 export const arsip = pgTable('arsip', {
@@ -14,6 +16,13 @@ export const arsip = pgTable('arsip', {
     // Identifikasi Berkas
     nomorBerkas: varchar('nomor_berkas', { length: 100 }),
     kodeKlasifikasi: varchar('kode_klasifikasi', { length: 50 }),
+    klasifikasiArsipId: integer('klasifikasi_arsip_id')
+        .references(() => klasifikasiArsip.id, { onDelete: 'restrict' }),
+    klasifikasiRuleSetId: uuid('klasifikasi_rule_set_id')
+        .references(() => regulatoryRuleSets.id, { onDelete: 'restrict' }),
+    klasifikasiVersion: varchar('klasifikasi_version', { length: 100 }),
+    klasifikasiReference: text('klasifikasi_reference'),
+    klasifikasiSnapshotHash: varchar('klasifikasi_snapshot_hash', { length: 64 }),
     uraianBerkas: text('uraian_berkas'),
     // Identifikasi Item Arsip
     nomorItem: varchar('nomor_item', { length: 100 }),
@@ -36,6 +45,10 @@ export const arsip = pgTable('arsip', {
     keterangan: text('keterangan'),
     // Jadwal Retensi Arsip
     jraKode: varchar('jra_kode', { length: 50 }),
+    jraItemId: integer('jra_item_id')
+        .references(() => jadwalRetensiArsip.id, { onDelete: 'restrict' }),
+    jraRuleSetId: uuid('jra_rule_set_id')
+        .references(() => regulatoryRuleSets.id, { onDelete: 'restrict' }),
     jraUraian: text('jra_uraian'),
     retensiAktif: varchar('retensi_aktif', { length: 50 }),
     retensiInaktif: varchar('retensi_inaktif', { length: 50 }),
@@ -49,6 +62,10 @@ export const arsip = pgTable('arsip', {
     retentionTriggerEvidence: text('retention_trigger_evidence'),
     jraVersion: varchar('jra_version', { length: 100 }),
     jraReference: text('jra_reference'),
+    retentionDecisionHash: varchar('retention_decision_hash', { length: 64 }),
+    currentRuleSnapshotId: uuid('current_rule_snapshot_id'),
+    ruleProvenanceStatus: varchar('rule_provenance_status', { length: 30 })
+        .default('legacy_unverified').notNull(),
     // Original Surat Info (denormalized for performance)
     nomorSuratOriginal: varchar('nomor_surat_original', { length: 255 }),
     tanggalSuratOriginal: date('tanggal_surat_original'),
@@ -91,6 +108,36 @@ export const arsip = pgTable('arsip', {
         'arsip_legal_hold_reason_check',
         sql`${table.legalHold} = false or (coalesce(length(trim(${table.legalHoldReason})), 0) >= 10 and ${table.legalHoldPlacedAt} is not null)`,
     ),
+    check(
+        'arsip_rule_provenance_status_check',
+        sql`${table.ruleProvenanceStatus} in ('verified', 'pending_jra', 'legacy_unverified')`,
+    ),
+    check(
+        'arsip_klasifikasi_snapshot_hash_check',
+        sql`${table.klasifikasiSnapshotHash} is null or ${table.klasifikasiSnapshotHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+        'arsip_retention_decision_hash_check',
+        sql`${table.retentionDecisionHash} is null or ${table.retentionDecisionHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+        'arsip_klasifikasi_rule_pair_check',
+        sql`(${table.klasifikasiArsipId} is null) = (${table.klasifikasiRuleSetId} is null)`,
+    ),
+    check(
+        'arsip_jra_rule_pair_check',
+        sql`(${table.jraItemId} is null) = (${table.jraRuleSetId} is null)`,
+    ),
+    foreignKey({
+        name: 'arsip_klasifikasi_item_rule_set_fk',
+        columns: [table.klasifikasiArsipId, table.klasifikasiRuleSetId],
+        foreignColumns: [klasifikasiArsip.id, klasifikasiArsip.ruleSetId],
+    }).onDelete('restrict'),
+    foreignKey({
+        name: 'arsip_jra_item_rule_set_fk',
+        columns: [table.jraItemId, table.jraRuleSetId],
+        foreignColumns: [jadwalRetensiArsip.id, jadwalRetensiArsip.ruleSetId],
+    }).onDelete('restrict'),
 ]);
 
 export const arsipRelations = relations(arsip, ({ one, many }) => ({

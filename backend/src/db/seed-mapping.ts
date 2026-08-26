@@ -1,5 +1,10 @@
 import { db } from '../config/database.js';
-import { klasifikasiJraMapping } from './schema/index.js';
+import { pathToFileURL } from 'node:url';
+import {
+    JRA_RULE_SET_2020_ID,
+    KLASIFIKASI_RULE_SET_2018_ID,
+    klasifikasiJraMapping,
+} from './schema/index.js';
 
 // Data pemetaan tematik antara Klasifikasi Arsip (Permen ATR/BPN 10/2018)
 // dan Jadwal Retensi Arsip (Permen ATR/BPN 8/2020)
@@ -62,19 +67,29 @@ const MAPPING_DATA = [
 
 export async function seedKlasifikasiJraMapping() {
     console.log('Seeding klasifikasi-JRA mapping...');
-    await db.delete(klasifikasiJraMapping);
 
     const batchSize = 50;
     for (let i = 0; i < MAPPING_DATA.length; i += batchSize) {
-        const batch = MAPPING_DATA.slice(i, i + batchSize);
-        await db.insert(klasifikasiJraMapping).values(batch);
-        console.log(`  Inserted ${Math.min(i + batchSize, MAPPING_DATA.length)}/${MAPPING_DATA.length} records`);
+        const batch = MAPPING_DATA.slice(i, i + batchSize).map((mapping) => ({
+            ...mapping,
+            klasifikasiRuleSetId: KLASIFIKASI_RULE_SET_2018_ID,
+            jraRuleSetId: JRA_RULE_SET_2020_ID,
+        }));
+        // Mappings are bound to an exact pair of legal editions. Existing
+        // rows are retained verbatim so reruns cannot rewrite historical
+        // recommendations; newly missing rows are added idempotently.
+        await db
+            .insert(klasifikasiJraMapping)
+            .values(batch)
+            .onConflictDoNothing();
+        console.log(`  Processed ${Math.min(i + batchSize, MAPPING_DATA.length)}/${MAPPING_DATA.length} records`);
     }
-    console.log(`Seeding mapping complete! Total: ${MAPPING_DATA.length} records`);
+    console.log(`Seeding mapping complete! Versioned definitions: ${MAPPING_DATA.length}`);
 }
 
-// Allow running directly
-if (require.main === module) {
+// ESM-compatible entry point
+const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
     seedKlasifikasiJraMapping()
         .then(() => process.exit(0))
         .catch((error) => {

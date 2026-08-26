@@ -61,6 +61,7 @@ import clientUploadRoutes from './routes/client-upload.routes';
 import fileAccessRoutes from './routes/file-access.routes';
 import srikandiRoutes from './routes/srikandi.routes';
 import recordAccessGrantRoutes from './routes/record-access-grant.routes';
+import regulatoryRuleSetRoutes from './routes/regulatory-rule-set.routes';
 
 // Vercel imports app.ts directly and never executes index.ts. Validate the
 // production environment during module cold-start as well, while unit tests
@@ -297,6 +298,7 @@ app.use('/api/users', userManagementRoutes);
 app.use('/api/audit-log', auditLogRoutes);
 app.use('/api/klasifikasi', klasifikasiRoutes);
 app.use('/api/jra', jraRoutes);
+app.use('/api/regulatory-rule-sets', regulatoryRuleSetRoutes);
 app.use('/api/arsip-picker', arsipPickerRoutes);
 app.use('/api/storage-locations', storageLocationRoutes);
 app.use('/api/archive-lending', archiveLendingRoutes);

@@ -199,15 +199,20 @@ export class SuratKeluarService {
     }
 
     async update(id: string, data: Partial<SuratKeluar>, unitScope: RecordUnitScope) {
-        const [result] = await db
-            .update(suratKeluar)
-            .set({ ...data, updatedAt: new Date() })
-            .where(scopedRecordByIdWhere(
+        const conditions = [
+            scopedRecordByIdWhere(
                 suratKeluar.id,
                 id,
                 suratKeluar.unitKerjaId,
                 unitScope,
-            ))
+            ),
+            or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!,
+            or(eq(suratKeluar.isArchived, false), isNull(suratKeluar.isArchived))!,
+        ];
+        const [result] = await db
+            .update(suratKeluar)
+            .set({ ...data, updatedAt: new Date() })
+            .where(and(...conditions))
             .returning();
 
         return result;
@@ -215,6 +220,16 @@ export class SuratKeluarService {
 
     async delete(id: string, deletedByUserId: string | undefined, unitScope: RecordUnitScope) {
         // Soft delete - mark as deleted instead of permanently removing
+        const conditions = [
+            scopedRecordByIdWhere(
+                suratKeluar.id,
+                id,
+                suratKeluar.unitKerjaId,
+                unitScope,
+            ),
+            or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!,
+            or(eq(suratKeluar.isArchived, false), isNull(suratKeluar.isArchived))!,
+        ];
         const [result] = await db
             .update(suratKeluar)
             .set({
@@ -223,12 +238,7 @@ export class SuratKeluarService {
                 deletedBy: deletedByUserId || null,
                 updatedAt: new Date(),
             })
-            .where(scopedRecordByIdWhere(
-                suratKeluar.id,
-                id,
-                suratKeluar.unitKerjaId,
-                unitScope,
-            ))
+            .where(and(...conditions))
             .returning();
 
         return result;

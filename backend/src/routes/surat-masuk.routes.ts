@@ -8,7 +8,8 @@ import { validateBody, validateQuery, validateIdParam } from '../middlewares/val
 import {
     createSuratMasukSchema,
     updateSuratMasukSchema,
-    querySuratMasukSchema
+    querySuratMasukSchema,
+    archiveRegistrationSchema,
 } from '../validators/schemas';
 import auditLogService from '../services/audit-log.service';
 import { createLogger } from '../utils/logger';
@@ -470,16 +471,27 @@ router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, 
         if (!access.exists || !access.mutable) {
             return res.status(404).json({ error: 'Surat masuk not found' });
         }
-        if (!isAllowedForClassification(req.user, req.body.klasifikasiKeamanan)) {
+        const parsed = archiveRegistrationSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation failed',
+                details: parsed.error.issues.map(issue => ({
+                    field: issue.path.join('.'),
+                    message: issue.message,
+                })),
+            });
+        }
+        if (!isAllowedForClassification(req.user, parsed.data.klasifikasiKeamanan)) {
             return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
         }
 
         const { arsipService } = await import('../services/arsip.service');
 
         const result = await arsipService.archiveFromSuratMasuk(id, {
-            ...req.body,
+            ...parsed.data,
             createdBy: req.user?.id,
-        });
+        }, access.unitKerjaId || existing.unitKerjaId);
 
         // Log audit
         await auditLogService.logAction({
@@ -503,41 +515,13 @@ router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, 
 
 // POST /api/surat-masuk/:id/archive - Simple archive (just sets flag)
 router.post('/:id/archive', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
-    try {
-        const id = req.params.id as string;
-        const existing = await suratMasukService.findById(id, resolveRecordUnitScope(req));
-        if (!existing) {
-            return res.status(404).json({ error: 'Surat masuk not found' });
-        }
-        const access = await recordAccessService.check(req.user, 'surat_masuk', id);
-        if (!access.exists || !access.mutable) {
-            return res.status(404).json({ error: 'Surat masuk not found' });
-        }
-        const result = await suratMasukService.archive(id, resolveRecordUnitScope(req));
-
-        if (!result) {
-            return res.status(404).json({ error: 'Surat masuk not found' });
-        }
-
-        // Log audit
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'archive',
-            entityType: 'surat_masuk',
-            entityId: id,
-            changes: { after: { isArchived: true } },
-            ipAddress: req.ip,
-        });
-
-        res.json({
-            success: true,
-            data: sanitizeSuratRecord(result, 'surat_masuk'),
-            message: 'Surat masuk archived successfully',
-        });
-    } catch (error) {
-        next(error);
-    }
+    void req;
+    void next;
+    return res.status(410).json({
+        success: false,
+        error: 'Jalur arsip sederhana telah dinonaktifkan',
+        message: 'Gunakan archive-full agar metadata, JRA, klasifikasi, dan snapshot peraturan tercatat secara atomik.',
+    });
 });
 
 // GET /api/surat-masuk/:id/balasan - Get surat keluar yang merupakan balasan

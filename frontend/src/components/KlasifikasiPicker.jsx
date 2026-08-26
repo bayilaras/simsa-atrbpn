@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -23,13 +23,23 @@ import {
 } from 'lucide-react'
 import { cn } from "@/lib/utils"
 
+function ruleItemIdentity(item) {
+    return item?.id ?? item?.sourceRecordKey ?? item?.kode
+}
+
+function isSameRuleItem(left, right) {
+    if (!left || !right) return false
+    return ruleItemIdentity(left) === ruleItemIdentity(right)
+}
+
 // Simple flat list item component
 function KlasifikasiItem({ item, isSelected, onSelect }) {
     return (
         <div
-            onClick={() => onSelect(item)}
+            onClick={() => item.isSelectable !== false && onSelect(item)}
             className={cn(
-                "flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-all",
+                "flex items-start gap-3 p-2.5 rounded-lg transition-all",
+                item.isSelectable === false ? "cursor-not-allowed opacity-55" : "cursor-pointer",
                 "border border-transparent hover:border-primary/20 hover:bg-primary/5",
                 isSelected ? "bg-primary/10 border-primary/30 shadow-sm" : "bg-card border-border/40",
             )}
@@ -118,9 +128,10 @@ function JRAGroupHeader({ item }) {
 function JRAItem({ item, isSelected, onSelect }) {
     return (
         <div
-            onClick={() => onSelect(item)}
+            onClick={() => item.isSelectable !== false && onSelect(item)}
             className={cn(
-                "flex items-start gap-1.5 p-1.5 rounded-md cursor-pointer transition-all text-xs mb-0.5",
+                "flex items-start gap-1.5 p-1.5 rounded-md transition-all text-xs mb-0.5",
+                item.isSelectable === false ? "cursor-not-allowed opacity-55" : "cursor-pointer",
                 "border border-transparent hover:border-amber-500/30 hover:bg-amber-50 dark:hover:bg-amber-500/15",
                 isSelected ? "bg-amber-50 dark:bg-amber-500/15 border-amber-500/40 shadow-sm" : "bg-card border-border/30",
             )}
@@ -184,19 +195,12 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     const [jraTab, setJraTab] = useState('suggested') // New: 'suggested' | 'all'
     const [jraSearchQuery, setJraSearchQuery] = useState('') // New: Search for JRA
 
-    // Fetch all klasifikasi data when dialog opens
-    useEffect(() => {
-        if (open && allData.length === 0) {
-            fetchData()
-        }
-    }, [open])
-
     // Reset search when tab changes
     useEffect(() => {
         setSearchQuery('')
     }, [activeTab])
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true)
         setError(null)
         try {
@@ -215,7 +219,16 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         } finally {
             setLoading(false)
         }
-    }
+    }, [API_BASE])
+
+    // Refresh the active rule edition every time the picker opens so a newly
+    // published version cannot leave stale choices in a long-lived browser tab.
+    useEffect(() => {
+        if (open) {
+            fetchData()
+            setAllJRA([])
+        }
+    }, [fetchData, open])
 
     // Fetch suggested JRA via the thematic mapping API
     const fetchSuggestedJRA = async (kode) => {
@@ -248,9 +261,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     }
 
     // New: Fetch all JRA items
-    const fetchAllJRA = async () => {
-        if (allJRA.length > 0) return // Return if already loaded
-
+    const fetchAllJRA = useCallback(async () => {
         setLoadingJRA(true)
         try {
             const response = await fetch(`${API_BASE}/api/jra`, {
@@ -265,14 +276,14 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         } finally {
             setLoadingJRA(false)
         }
-    }
+    }, [API_BASE])
 
     // Effect to handle JRA tab switching
     useEffect(() => {
-        if (jraTab === 'all') {
+        if (open && jraTab === 'all') {
             fetchAllJRA()
         }
-    }, [jraTab])
+    }, [fetchAllJRA, open, jraTab])
 
     // Filter data based on tab and search
     const filteredData = useMemo(() => {
@@ -520,9 +531,9 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                 <div className="space-y-1.5 pb-2">
                                     {filteredData.map((item) => (
                                         <KlasifikasiItem
-                                            key={item.kode}
+                                            key={ruleItemIdentity(item)}
                                             item={item}
-                                            isSelected={selectedItem?.kode === item.kode}
+                                            isSelected={isSameRuleItem(selectedItem, item)}
                                             onSelect={handleSelect}
                                         />
                                     ))}
@@ -626,14 +637,14 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                             </div>
                                         ) : (
                                             <div className="space-y-1">
-                                                {jraDisplayItems.map((entry, idx) => (
+                                                {jraDisplayItems.map((entry) => (
                                                     entry.type === 'header' ? (
-                                                        <JRAGroupHeader key={entry.item.kode} item={entry.item} />
+                                                        <JRAGroupHeader key={ruleItemIdentity(entry.item)} item={entry.item} />
                                                     ) : (
                                                         <JRAItem
-                                                            key={entry.item.kode}
+                                                            key={ruleItemIdentity(entry.item)}
                                                             item={entry.item}
-                                                            isSelected={selectedJRA?.kode === entry.item.kode}
+                                                            isSelected={isSameRuleItem(selectedJRA, entry.item)}
                                                             onSelect={setSelectedJRA}
                                                         />
                                                     )
@@ -649,9 +660,9 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                             ) : (
                                                 filteredAllJRA.map((item) => (
                                                     <JRAItem
-                                                        key={item.kode}
+                                                        key={ruleItemIdentity(item)}
                                                         item={item}
-                                                        isSelected={selectedJRA?.kode === item.kode}
+                                                        isSelected={isSameRuleItem(selectedJRA, item)}
                                                         onSelect={setSelectedJRA}
                                                     />
                                                 ))

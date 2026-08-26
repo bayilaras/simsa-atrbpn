@@ -31,6 +31,26 @@ export const arsipService = {
         return response.data;
     },
 
+    // Get the append-only evidence trail for classification/JRA assignments.
+    async getRuleHistory(id) {
+        const response = await api.get(`/api/arsip/${id}/rule-history`);
+        return response.data || [];
+    },
+
+    // Correct a legacy/pending rule assignment by appending a verified revision.
+    // The backend resolves both IDs against the currently active rule sets.
+    async reconcileRules(id, { klasifikasiItemId, jraItemId, reason }) {
+        const response = await api.post(`/api/arsip/${id}/reconcile-rules`, {
+            klasifikasiItemId,
+            jraItemId,
+            reason,
+        });
+        return {
+            archive: response.data,
+            snapshot: response.snapshot,
+        };
+    },
+
     // Get expiring archives
     async getExpiring({ unitKerjaId, daysAhead = 30 } = {}) {
         const response = await api.get('/api/arsip/expiring', { unitKerjaId, daysAhead });

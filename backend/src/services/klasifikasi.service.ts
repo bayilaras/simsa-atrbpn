@@ -1,8 +1,15 @@
 import { db } from '../config/database';
-import { klasifikasiArsip, jadwalRetensiArsip, NewKlasifikasiArsip, NewJadwalRetensiArsip, klasifikasiJraMapping } from '../db/schema';
-import { eq, and, like, isNull, or } from 'drizzle-orm';
+import {
+    klasifikasiArsip,
+    jadwalRetensiArsip,
+    NewKlasifikasiArsip,
+    NewJadwalRetensiArsip,
+    klasifikasiJraMapping,
+    regulatoryRuleSets,
+} from '../db/schema';
+import { eq, and, like, or } from 'drizzle-orm';
+import { ConflictError, NotFoundError } from '../utils/errors';
 
-// Tree node interface for hierarchical response
 interface KlasifikasiTreeNode {
     id: number;
     kode: string;
@@ -13,327 +20,316 @@ interface KlasifikasiTreeNode {
     tipe: string;
     level: number;
     isActive: boolean;
+    isSelectable: boolean;
+    ruleSet?: any;
     children?: KlasifikasiTreeNode[];
 }
 
-// Build tree structure from flat data
 function buildTree(items: KlasifikasiTreeNode[], parentKode: string | null = null): KlasifikasiTreeNode[] {
     return items
         .filter(item => item.parentKode === parentKode)
-        .map(item => ({
-            ...item,
-            children: buildTree(items, item.kode)
-        }));
+        .map(item => ({ ...item, children: buildTree(items, item.kode) }));
+}
+
+async function resolveRuleSet(instrumentType: 'klasifikasi' | 'jra', ruleSetId?: string) {
+    const conditions = [eq(regulatoryRuleSets.instrumentType, instrumentType)];
+    if (ruleSetId) conditions.push(eq(regulatoryRuleSets.id, ruleSetId));
+    else conditions.push(eq(regulatoryRuleSets.status, 'active'));
+    const [ruleSet] = await db.select().from(regulatoryRuleSets).where(and(...conditions)).limit(1);
+    if (!ruleSet) throw new NotFoundError(`Versi ${instrumentType}`);
+    return ruleSet;
+}
+
+async function assertDraft(ruleSetId: string | undefined, instrumentType: 'klasifikasi' | 'jra') {
+    const ruleSet = await resolveRuleSet(instrumentType, ruleSetId);
+    if (ruleSet.status !== 'draft') {
+        throw new ConflictError('Versi yang sudah dipublikasikan bersifat immutable. Buat atau kloning versi draft terlebih dahulu.');
+    }
+    return ruleSet;
+}
+
+function withRuleSet<T extends Record<string, any>>(rows: T[], ruleSet: any) {
+    return rows.map(row => ({
+        ...row,
+        version: ruleSet.version,
+        reference: ruleSet.legalBasis,
+        ruleSet,
+    }));
 }
 
 class KlasifikasiService {
-    // Get all klasifikasi with optional filters
-    async getAll(filters: { tipe?: string; search?: string; activeOnly?: boolean } = {}) {
-        const conditions = [];
-
-        if (filters.tipe) {
-            conditions.push(eq(klasifikasiArsip.tipe, filters.tipe));
-        }
-
-        if (filters.activeOnly !== false) {
-            conditions.push(eq(klasifikasiArsip.isActive, true));
-        }
-
+    async getAll(filters: {
+        tipe?: string;
+        search?: string;
+        activeOnly?: boolean;
+        ruleSetId?: string;
+        organizationalScope?: 'kementerian' | 'kanwil' | 'kantah';
+    } = {}) {
+        const ruleSet = await resolveRuleSet('klasifikasi', filters.ruleSetId);
+        const conditions = [
+            eq(klasifikasiArsip.ruleSetId, ruleSet.id),
+            eq(klasifikasiArsip.organizationalScope, filters.organizationalScope || 'kementerian'),
+        ];
+        if (filters.tipe) conditions.push(eq(klasifikasiArsip.tipe, filters.tipe));
+        if (filters.activeOnly !== false) conditions.push(eq(klasifikasiArsip.isActive, true));
         if (filters.search) {
-            conditions.push(
-                or(
-                    like(klasifikasiArsip.kode, `%${filters.search}%`),
-                    like(klasifikasiArsip.jenis, `%${filters.search}%`)
-                )
-            );
+            conditions.push(or(
+                like(klasifikasiArsip.kode, `%${filters.search}%`),
+                like(klasifikasiArsip.jenis, `%${filters.search}%`),
+            )!);
         }
-
-        const data = await db
-            .select()
-            .from(klasifikasiArsip)
-            .where(conditions.length > 0 ? and(...conditions) : undefined)
-            .orderBy(klasifikasiArsip.kode);
-
-        return data;
+        const rows = await db.select().from(klasifikasiArsip)
+            .where(and(...conditions)).orderBy(klasifikasiArsip.kode);
+        return withRuleSet(rows, ruleSet);
     }
 
-    // Get as tree structure
-    async getTree(tipe?: string) {
-        const conditions = [eq(klasifikasiArsip.isActive, true)];
-        if (tipe) {
-            conditions.push(eq(klasifikasiArsip.tipe, tipe));
+    async getTree(
+        tipe?: string,
+        ruleSetId?: string,
+        organizationalScope: 'kementerian' | 'kanwil' | 'kantah' = 'kementerian',
+    ) {
+        const flatData = await this.getAll({ tipe, ruleSetId, organizationalScope, activeOnly: true });
+        return buildTree(flatData as KlasifikasiTreeNode[], null);
+    }
+
+    async getByKode(
+        kode: string,
+        ruleSetId?: string,
+        organizationalScope: 'kementerian' | 'kanwil' | 'kantah' = 'kementerian',
+    ) {
+        const ruleSet = await resolveRuleSet('klasifikasi', ruleSetId);
+        const matches = await db.select().from(klasifikasiArsip).where(and(
+            eq(klasifikasiArsip.ruleSetId, ruleSet.id),
+            eq(klasifikasiArsip.organizationalScope, organizationalScope),
+            eq(klasifikasiArsip.kode, kode),
+        )).limit(2);
+        if (matches.length > 1) {
+            throw new ConflictError('Kode klasifikasi tidak unik pada lingkup ini. Gunakan ID/source record butir resmi.');
         }
-
-        const flatData = await db
-            .select()
-            .from(klasifikasiArsip)
-            .where(and(...conditions))
-            .orderBy(klasifikasiArsip.kode);
-
-        // Build tree from root items (parentKode === null)
-        const tree = buildTree(flatData as KlasifikasiTreeNode[], null);
-        return tree;
+        const [item] = matches;
+        return item ? withRuleSet([item], ruleSet)[0] : null;
     }
 
-    // Get by kode
-    async getByKode(kode: string) {
-        const [item] = await db
-            .select()
-            .from(klasifikasiArsip)
-            .where(eq(klasifikasiArsip.kode, kode))
-            .limit(1);
-
-        return item || null;
+    async getChildren(
+        parentKode: string,
+        ruleSetId?: string,
+        organizationalScope: 'kementerian' | 'kanwil' | 'kantah' = 'kementerian',
+    ) {
+        const ruleSet = await resolveRuleSet('klasifikasi', ruleSetId);
+        const rows = await db.select().from(klasifikasiArsip).where(and(
+            eq(klasifikasiArsip.ruleSetId, ruleSet.id),
+            eq(klasifikasiArsip.organizationalScope, organizationalScope),
+            eq(klasifikasiArsip.parentKode, parentKode),
+            eq(klasifikasiArsip.isActive, true),
+        )).orderBy(klasifikasiArsip.kode);
+        return withRuleSet(rows, ruleSet);
     }
 
-    // Get children by parent kode
-    async getChildren(parentKode: string) {
-        const children = await db
-            .select()
-            .from(klasifikasiArsip)
-            .where(and(
-                eq(klasifikasiArsip.parentKode, parentKode),
-                eq(klasifikasiArsip.isActive, true)
-            ))
-            .orderBy(klasifikasiArsip.kode);
-
-        return children;
-    }
-
-    // Create new klasifikasi
     async create(data: NewKlasifikasiArsip) {
-        const [created] = await db
-            .insert(klasifikasiArsip)
-            .values(data)
-            .returning();
-
-        return created;
+        const ruleSet = await assertDraft(data.ruleSetId, 'klasifikasi');
+        const [created] = await db.insert(klasifikasiArsip)
+            .values({ ...data, ruleSetId: ruleSet.id }).returning();
+        return withRuleSet([created], ruleSet)[0];
     }
 
-    // Update klasifikasi
+    async updateById(id: number, data: Partial<NewKlasifikasiArsip>) {
+        const ruleSet = await assertDraft(data.ruleSetId, 'klasifikasi');
+        const [updated] = await db.update(klasifikasiArsip)
+            .set({ ...data, ruleSetId: ruleSet.id, contentHash: null, updatedAt: new Date() })
+            .where(and(eq(klasifikasiArsip.id, id), eq(klasifikasiArsip.ruleSetId, ruleSet.id)))
+            .returning();
+        return updated ? withRuleSet([updated], ruleSet)[0] : null;
+    }
+
     async update(kode: string, data: Partial<NewKlasifikasiArsip>) {
-        const [updated] = await db
-            .update(klasifikasiArsip)
-            .set(data)
-            .where(eq(klasifikasiArsip.kode, kode))
+        const ruleSet = await assertDraft(data.ruleSetId, 'klasifikasi');
+        const [updated] = await db.update(klasifikasiArsip)
+            .set({ ...data, ruleSetId: ruleSet.id, updatedAt: new Date() })
+            .where(and(eq(klasifikasiArsip.ruleSetId, ruleSet.id), eq(klasifikasiArsip.kode, kode)))
             .returning();
-
-        return updated || null;
+        return updated ? withRuleSet([updated], ruleSet)[0] : null;
     }
 
-    // Soft delete (set isActive = false)
-    async delete(kode: string) {
-        const [deleted] = await db
-            .update(klasifikasiArsip)
-            .set({ isActive: false })
-            .where(eq(klasifikasiArsip.kode, kode))
+    async delete(kode: string, ruleSetId?: string) {
+        const ruleSet = await assertDraft(ruleSetId, 'klasifikasi');
+        const [deleted] = await db.update(klasifikasiArsip)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(and(eq(klasifikasiArsip.ruleSetId, ruleSet.id), eq(klasifikasiArsip.kode, kode)))
             .returning();
-
-        return deleted || null;
+        return deleted ? withRuleSet([deleted], ruleSet)[0] : null;
     }
 
-    // Get statistics
-    async getStats() {
-        const all = await db.select().from(klasifikasiArsip).where(eq(klasifikasiArsip.isActive, true));
+    async deleteById(id: number, ruleSetId?: string) {
+        const ruleSet = await assertDraft(ruleSetId, 'klasifikasi');
+        const [deleted] = await db.update(klasifikasiArsip)
+            .set({ isActive: false, isSelectable: false, contentHash: null, updatedAt: new Date() })
+            .where(and(eq(klasifikasiArsip.id, id), eq(klasifikasiArsip.ruleSetId, ruleSet.id)))
+            .returning();
+        return deleted ? withRuleSet([deleted], ruleSet)[0] : null;
+    }
 
+    async getStats(ruleSetId?: string) {
+        const all = await this.getAll({ ruleSetId, activeOnly: true });
         const fasilitatif = all.filter(i => i.tipe === 'fasilitatif');
         const substantif = all.filter(i => i.tipe === 'substantif');
-
         return {
             total: all.length,
             fasilitatif: fasilitatif.length,
             substantif: substantif.length,
             rootFasilitatif: fasilitatif.filter(i => i.level === 0).length,
             rootSubstantif: substantif.filter(i => i.level === 0).length,
+            ruleSet: all[0]?.ruleSet || await resolveRuleSet('klasifikasi', ruleSetId),
         };
     }
 }
 
-// JRA Service (similar structure)
 class JRAService {
-    async getAll(filters: { tipe?: string; search?: string; activeOnly?: boolean } = {}) {
-        const conditions = [];
-
-        if (filters.tipe) {
-            conditions.push(eq(jadwalRetensiArsip.tipe, filters.tipe));
-        }
-
-        if (filters.activeOnly !== false) {
-            conditions.push(eq(jadwalRetensiArsip.isActive, true));
-        }
-
+    async getAll(filters: { tipe?: string; search?: string; activeOnly?: boolean; ruleSetId?: string } = {}) {
+        const ruleSet = await resolveRuleSet('jra', filters.ruleSetId);
+        const conditions = [eq(jadwalRetensiArsip.ruleSetId, ruleSet.id)];
+        if (filters.tipe) conditions.push(eq(jadwalRetensiArsip.tipe, filters.tipe));
+        if (filters.activeOnly !== false) conditions.push(eq(jadwalRetensiArsip.isActive, true));
         if (filters.search) {
-            conditions.push(
-                or(
-                    like(jadwalRetensiArsip.kode, `%${filters.search}%`),
-                    like(jadwalRetensiArsip.uraian, `%${filters.search}%`)
-                )
-            );
+            conditions.push(or(
+                like(jadwalRetensiArsip.kode, `%${filters.search}%`),
+                like(jadwalRetensiArsip.uraian, `%${filters.search}%`),
+            )!);
         }
-
-        const data = await db
-            .select()
-            .from(jadwalRetensiArsip)
-            .where(conditions.length > 0 ? and(...conditions) : undefined)
-            .orderBy(jadwalRetensiArsip.kode);
-
-        return data;
+        const rows = await db.select().from(jadwalRetensiArsip)
+            .where(and(...conditions)).orderBy(jadwalRetensiArsip.kode);
+        return withRuleSet(rows, ruleSet);
     }
 
-    async getTree(tipe?: string) {
-        const conditions = [eq(jadwalRetensiArsip.isActive, true)];
-        if (tipe) {
-            conditions.push(eq(jadwalRetensiArsip.tipe, tipe));
-        }
-
-        const flatData = await db
-            .select()
-            .from(jadwalRetensiArsip)
-            .where(and(...conditions))
-            .orderBy(jadwalRetensiArsip.kode);
-
-        // Build tree from root items
-        const buildJRATree = (items: any[], parentKode: string | null = null): any[] => {
-            return items
-                .filter(item => item.parentKode === parentKode)
-                .map(item => ({
-                    ...item,
-                    children: buildJRATree(items, item.kode)
-                }));
-        };
-
+    async getTree(tipe?: string, ruleSetId?: string) {
+        const flatData = await this.getAll({ tipe, ruleSetId, activeOnly: true });
+        const buildJRATree = (items: any[], parentKode: string | null = null): any[] => items
+            .filter(item => item.parentKode === parentKode)
+            .map(item => ({ ...item, children: buildJRATree(items, item.kode) }));
         return buildJRATree(flatData, null);
     }
 
-    async getByKode(kode: string) {
-        const [item] = await db
-            .select()
-            .from(jadwalRetensiArsip)
-            .where(eq(jadwalRetensiArsip.kode, kode))
-            .limit(1);
-
-        return item || null;
+    async getByKode(kode: string, ruleSetId?: string) {
+        const ruleSet = await resolveRuleSet('jra', ruleSetId);
+        const [item] = await db.select().from(jadwalRetensiArsip).where(and(
+            eq(jadwalRetensiArsip.ruleSetId, ruleSet.id),
+            eq(jadwalRetensiArsip.kode, kode),
+        )).limit(1);
+        return item ? withRuleSet([item], ruleSet)[0] : null;
     }
 
     async create(data: NewJadwalRetensiArsip) {
-        const [created] = await db
-            .insert(jadwalRetensiArsip)
-            .values(data)
-            .returning();
+        const ruleSet = await assertDraft(data.ruleSetId, 'jra');
+        const [created] = await db.insert(jadwalRetensiArsip)
+            .values({ ...data, ruleSetId: ruleSet.id }).returning();
+        return withRuleSet([created], ruleSet)[0];
+    }
 
-        return created;
+    async updateById(id: number, data: Partial<NewJadwalRetensiArsip>) {
+        const ruleSet = await assertDraft(data.ruleSetId, 'jra');
+        const [updated] = await db.update(jadwalRetensiArsip)
+            .set({ ...data, ruleSetId: ruleSet.id, contentHash: null, updatedAt: new Date() })
+            .where(and(eq(jadwalRetensiArsip.id, id), eq(jadwalRetensiArsip.ruleSetId, ruleSet.id)))
+            .returning();
+        return updated ? withRuleSet([updated], ruleSet)[0] : null;
     }
 
     async update(kode: string, data: Partial<NewJadwalRetensiArsip>) {
-        const [updated] = await db
-            .update(jadwalRetensiArsip)
-            .set(data)
-            .where(eq(jadwalRetensiArsip.kode, kode))
+        const ruleSet = await assertDraft(data.ruleSetId, 'jra');
+        const [updated] = await db.update(jadwalRetensiArsip)
+            .set({ ...data, ruleSetId: ruleSet.id, updatedAt: new Date() })
+            .where(and(eq(jadwalRetensiArsip.ruleSetId, ruleSet.id), eq(jadwalRetensiArsip.kode, kode)))
             .returning();
-
-        return updated || null;
+        return updated ? withRuleSet([updated], ruleSet)[0] : null;
     }
 
-    async delete(kode: string) {
-        const [deleted] = await db
-            .update(jadwalRetensiArsip)
-            .set({ isActive: false })
-            .where(eq(jadwalRetensiArsip.kode, kode))
+    async delete(kode: string, ruleSetId?: string) {
+        const ruleSet = await assertDraft(ruleSetId, 'jra');
+        const [deleted] = await db.update(jadwalRetensiArsip)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(and(eq(jadwalRetensiArsip.ruleSetId, ruleSet.id), eq(jadwalRetensiArsip.kode, kode)))
             .returning();
+        return deleted ? withRuleSet([deleted], ruleSet)[0] : null;
+    }
 
-        return deleted || null;
+    async deleteById(id: number, ruleSetId?: string) {
+        const ruleSet = await assertDraft(ruleSetId, 'jra');
+        const [deleted] = await db.update(jadwalRetensiArsip)
+            .set({ isActive: false, isSelectable: false, contentHash: null, updatedAt: new Date() })
+            .where(and(eq(jadwalRetensiArsip.id, id), eq(jadwalRetensiArsip.ruleSetId, ruleSet.id)))
+            .returning();
+        return deleted ? withRuleSet([deleted], ruleSet)[0] : null;
     }
 }
 
 export const klasifikasiService = new KlasifikasiService();
 export const jraService = new JRAService();
 
-// Mapping Service - pemetaan tematik Klasifikasi ↔ JRA
 class MappingService {
-    // Get all thematic mappings
+    private async activeRuleSets() {
+        const [classification, retention] = await Promise.all([
+            resolveRuleSet('klasifikasi'),
+            resolveRuleSet('jra'),
+        ]);
+        return { classification, retention };
+    }
+
     async getAllMappings() {
-        const data = await db
-            .select()
-            .from(klasifikasiJraMapping)
-            .where(eq(klasifikasiJraMapping.isActive, true))
-            .orderBy(klasifikasiJraMapping.tema);
-
-        return data;
+        const { classification, retention } = await this.activeRuleSets();
+        return db.select().from(klasifikasiJraMapping).where(and(
+            eq(klasifikasiJraMapping.klasifikasiRuleSetId, classification.id),
+            eq(klasifikasiJraMapping.jraRuleSetId, retention.id),
+            eq(klasifikasiJraMapping.isActive, true),
+        )).orderBy(klasifikasiJraMapping.tema);
     }
 
-    // Get suggested JRA items based on klasifikasi kode
-    // e.g., 'KU.01.02' → prefix 'KU' → maps to JRA prefix 'F.I' → returns all JRA items starting with 'F.I'
     async getSuggestedJRA(klasifikasiKode: string) {
-        // Extract the root prefix from the klasifikasi kode
-        // Handle special case: 'TU.02' maps to 'F.VI' (kearsipan) while 'TU' maps to 'F.VII'
+        const { classification, retention } = await this.activeRuleSets();
         const prefix = this.extractPrefix(klasifikasiKode);
-
-        // Find mapping(s) for this prefix
-        const mappings = await db
-            .select()
-            .from(klasifikasiJraMapping)
-            .where(and(
-                eq(klasifikasiJraMapping.klasifikasiPrefix, prefix),
-                eq(klasifikasiJraMapping.isActive, true)
-            ));
-
-        if (mappings.length === 0) {
-            // Try with only the root (first segment) if specific prefix didn't match
-            const rootPrefix = klasifikasiKode.split('.')[0];
-            if (rootPrefix !== prefix) {
-                const rootMappings = await db
-                    .select()
-                    .from(klasifikasiJraMapping)
-                    .where(and(
-                        eq(klasifikasiJraMapping.klasifikasiPrefix, rootPrefix),
-                        eq(klasifikasiJraMapping.isActive, true)
-                    ));
-                if (rootMappings.length > 0) {
-                    return this.fetchJRAByPrefixes(rootMappings);
-                }
-            }
-            return { mappings: [], suggestedJRA: [] };
-        }
-
-        return this.fetchJRAByPrefixes(mappings);
+        const lookup = async (candidate: string) => db.select().from(klasifikasiJraMapping).where(and(
+            eq(klasifikasiJraMapping.klasifikasiRuleSetId, classification.id),
+            eq(klasifikasiJraMapping.jraRuleSetId, retention.id),
+            eq(klasifikasiJraMapping.klasifikasiPrefix, candidate),
+            eq(klasifikasiJraMapping.isActive, true),
+        ));
+        let mappings = await lookup(prefix);
+        const rootPrefix = klasifikasiKode.split('.')[0];
+        if (mappings.length === 0 && rootPrefix !== prefix) mappings = await lookup(rootPrefix);
+        if (mappings.length === 0) return { mappings: [], suggestedJRA: [] };
+        return this.fetchJRAByPrefixes(mappings, retention);
     }
 
-    // Get JRA suggestions for a given mapping
-    private async fetchJRAByPrefixes(mappings: any[]) {
+    private async fetchJRAByPrefixes(mappings: any[], ruleSet: any) {
         const allJRA: any[] = [];
         for (const mapping of mappings) {
-            const jraItems = await db
-                .select()
-                .from(jadwalRetensiArsip)
-                .where(and(
-                    like(jadwalRetensiArsip.kode, `${mapping.jraPrefix}%`),
-                    eq(jadwalRetensiArsip.isActive, true)
-                ))
-                .orderBy(jadwalRetensiArsip.kode);
-            allJRA.push(...jraItems);
+            const rows = await db.select().from(jadwalRetensiArsip).where(and(
+                eq(jadwalRetensiArsip.ruleSetId, ruleSet.id),
+                // Prefixes represent complete code segments. Without the dot
+                // boundary, the S.VI recommendation also returned S.VII,
+                // which could lead an archivist to select an unrelated JRA.
+                or(
+                    eq(jadwalRetensiArsip.kode, mapping.jraPrefix),
+                    like(jadwalRetensiArsip.kode, `${mapping.jraPrefix}.%`),
+                ),
+                eq(jadwalRetensiArsip.isActive, true),
+            )).orderBy(jadwalRetensiArsip.kode);
+            allJRA.push(...withRuleSet(rows, ruleSet));
         }
-
-        // Deduplicate in case multiple mappings point to the same JRA prefix
-        const uniqueJRA = allJRA.filter((item, index, arr) =>
-            arr.findIndex(i => i.kode === item.kode) === index
+        const uniqueJRA = allJRA.filter((item, index, values) =>
+            values.findIndex(candidate => candidate.id === item.id) === index,
         );
-
         return {
-            mappings: mappings.map(m => ({
-                tema: m.tema,
-                klasifikasiPrefix: m.klasifikasiPrefix,
-                jraPrefix: m.jraPrefix,
-                keterangan: m.keterangan,
+            mappings: mappings.map(mapping => ({
+                tema: mapping.tema,
+                klasifikasiPrefix: mapping.klasifikasiPrefix,
+                jraPrefix: mapping.jraPrefix,
+                keterangan: mapping.keterangan,
             })),
             suggestedJRA: uniqueJRA,
         };
     }
 
-    // Extract the best matching prefix from a klasifikasi kode
     private extractPrefix(kode: string): string {
-        // Special case: 'TU.02' is specifically kearsipan, different from general 'TU'
         if (kode.startsWith('TU.02')) return 'TU.02';
-        // Return root prefix (first segment before any dot)
         return kode.split('.')[0];
     }
 }

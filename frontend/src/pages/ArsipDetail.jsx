@@ -3,7 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
     Archive, ArrowLeft, ExternalLink, Calendar, MapPin,
     Clock, Shield, User, FileText, Hash, Layers, Info, Tag,
-    Printer, ChevronRight, Eye, BookOpen, FolderOpen, Trash2
+    Printer, ChevronRight, Eye, BookOpen, FolderOpen, Trash2,
+    CheckCircle2, AlertTriangle, History, RefreshCw, Loader2
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,16 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
+import {
+    Dialog, DialogContent, DialogDescription, DialogFooter,
+    DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { KlasifikasiPicker } from '@/components/KlasifikasiPicker'
 import { arsipService } from '@/services/arsip.service'
+import { useAuth } from '@/context/AuthContext'
+import { useToast } from '@/hooks/use-toast'
 import { format, formatDistanceToNow, differenceInDays } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 
@@ -58,10 +68,10 @@ function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'seconda
     )
 }
 
-function QuickStatBox({ icon: Icon, label, value, color = 'white' }) {
+function QuickStatBox({ icon: Icon, label, value }) {
     return (
         <div className="bg-card/10 backdrop-blur-sm rounded-xl p-3 hover:bg-card/15 transition-colors">
-            <Icon className="h-4 w-4 text-white/50 mb-1" />
+            {Icon && <Icon className="h-4 w-4 text-white/50 mb-1" />}
             <p className="text-xs text-white/50">{label}</p>
             <p className="text-sm font-semibold text-white">{value || '—'}</p>
         </div>
@@ -79,10 +89,12 @@ function StatusIndicator({ label, active, activeLabel, inactiveLabel, activeColo
                 ? `bg-${activeColor}-100`
                 : 'bg-muted'
                 }`}>
-                <Icon className={`h-4 w-4 ${isActive
-                    ? `text-${activeColor}-600`
-                    : 'text-muted-foreground'
-                    }`} />
+                {Icon && (
+                    <Icon className={`h-4 w-4 ${isActive
+                        ? `text-${activeColor}-600`
+                        : 'text-muted-foreground'
+                        }`} />
+                )}
             </div>
             <div>
                 <p className={`font-medium text-sm ${isActive
@@ -104,7 +116,7 @@ function TimelineEvent({ icon: Icon, label, date, color = 'emerald', isLast = fa
                 <div className="absolute left-[11px] top-6 bottom-0 w-0.5 bg-muted" />
             )}
             <div className={`relative z-10 p-1.5 rounded-full bg-${color}-100 ring-4 ring-white shrink-0`}>
-                <Icon className={`h-3 w-3 text-${color}-600`} />
+                {Icon && <Icon className={`h-3 w-3 text-${color}-600`} />}
             </div>
             <div className="min-w-0 pt-0.5">
                 <p className="text-sm font-medium text-foreground">{label}</p>
@@ -113,6 +125,114 @@ function TimelineEvent({ icon: Icon, label, date, color = 'emerald', isLast = fa
                     <p className="text-xs text-muted-foreground/70">{formatRelative(date)}</p>
                 )}
             </div>
+        </div>
+    )
+}
+
+const RULE_STATUS = {
+    verified: {
+        label: 'Terverifikasi',
+        description: 'Klasifikasi dan JRA tercatat dari master aturan aktif.',
+        icon: CheckCircle2,
+        className: 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+    },
+    pending_jra: {
+        label: 'Menunggu JRA',
+        description: 'Klasifikasi sudah ada, tetapi keputusan JRA belum lengkap.',
+        icon: Clock,
+        className: 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    },
+    legacy_unverified: {
+        label: 'Legacy — perlu rekonsiliasi',
+        description: 'Data dibuat sebelum master aturan berversi dan perlu diverifikasi arsiparis.',
+        icon: AlertTriangle,
+        className: 'border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
+    },
+}
+
+function RuleProvenanceBadge({ status, className = '' }) {
+    const meta = RULE_STATUS[status] || {
+        label: 'Belum diverifikasi',
+        icon: AlertTriangle,
+        className: RULE_STATUS.legacy_unverified.className,
+    }
+    const Icon = meta.icon
+
+    return (
+        <Badge variant="outline" className={`${meta.className} ${className}`}>
+            <Icon className="mr-1 h-3.5 w-3.5" />
+            {meta.label}
+        </Badge>
+    )
+}
+
+function RuleHistoryEntry({ entry, current }) {
+    const evidence = entry.snapshot || {}
+    const classification = evidence.classification || {}
+    const retention = evidence.retention || {}
+    const classificationCode = classification.code || evidence.kodeKlasifikasi || '—'
+    const retentionCode = retention.code || evidence.jraKode || '—'
+    const classificationVersion = classification.version || evidence.klasifikasiVersion
+    const retentionVersion = retention.version || evidence.jraVersion
+    const classificationReference = classification.legalBasis || evidence.klasifikasiReference
+    const retentionReference = retention.legalBasis || evidence.jraReference
+    const activeText = retention.activeText || evidence.retensiAktif
+    const inactiveText = retention.inactiveText || evidence.retensiInaktif
+    const dispositionText = retention.dispositionText || evidence.hasilAkhir
+
+    return (
+        <div className={`rounded-xl border p-4 ${current ? 'border-emerald-300 bg-emerald-50/40 dark:border-emerald-700 dark:bg-emerald-500/10' : 'border-border'}`}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">Revisi {entry.revision}</Badge>
+                    <RuleProvenanceBadge status={entry.status} />
+                    {current && <Badge className="bg-emerald-600 text-white">Saat ini</Badge>}
+                </div>
+                <div className="text-right text-xs text-muted-foreground">
+                    <p>{formatDate(entry.createdAt)}</p>
+                    <p>{formatRelative(entry.createdAt)}</p>
+                </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border bg-card p-3">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Klasifikasi</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="font-mono">{classificationCode}</Badge>
+                        {classificationVersion && <span className="text-xs text-muted-foreground">Versi {classificationVersion}</span>}
+                    </div>
+                    {(classification.title || classification.description) && (
+                        <p className="mt-2 text-sm">{classification.title || classification.description}</p>
+                    )}
+                    {classificationReference && <p className="mt-1 text-xs text-muted-foreground">{classificationReference}</p>}
+                </div>
+                <div className="rounded-lg border bg-card p-3">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">JRA</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="font-mono">{retentionCode}</Badge>
+                        {retentionVersion && <span className="text-xs text-muted-foreground">Versi {retentionVersion}</span>}
+                    </div>
+                    {retention.title && <p className="mt-2 text-sm">{retention.title}</p>}
+                    {retentionReference && <p className="mt-1 text-xs text-muted-foreground">{retentionReference}</p>}
+                    {(activeText || inactiveText || dispositionText) && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            {[activeText && `Aktif: ${activeText}`, inactiveText && `Inaktif: ${inactiveText}`, dispositionText && `Hasil: ${dispositionText}`]
+                                .filter(Boolean).join(' · ')}
+                        </p>
+                    )}
+                </div>
+            </div>
+
+            {entry.reason && (
+                <div className="mt-3 rounded-lg bg-muted/60 p-3 text-sm">
+                    <span className="font-medium">Alasan: </span>{entry.reason}
+                </div>
+            )}
+            {entry.snapshotSha256 && (
+                <p className="mt-2 break-all font-mono text-[10px] text-muted-foreground" title={entry.snapshotSha256}>
+                    SHA-256: {entry.snapshotSha256}
+                </p>
+            )}
         </div>
     )
 }
@@ -153,24 +273,107 @@ function ArsipDetailSkeleton() {
 export default function ArsipDetail() {
     const { id } = useParams()
     const navigate = useNavigate()
+    const { canWrite } = useAuth()
+    const { toast } = useToast()
     const [arsip, setArsip] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [ruleHistory, setRuleHistory] = useState([])
+    const [historyLoading, setHistoryLoading] = useState(true)
+    const [historyError, setHistoryError] = useState(null)
+    const [reconcileOpen, setReconcileOpen] = useState(false)
+    const [reconcileSaving, setReconcileSaving] = useState(false)
+    const [reconcileError, setReconcileError] = useState(null)
+    const [reconcileReason, setReconcileReason] = useState('')
+    const [ruleSelection, setRuleSelection] = useState({
+        kode: '',
+        classification: null,
+        retention: null,
+    })
 
     useEffect(() => {
         async function fetchData() {
             try {
                 setLoading(true)
-                const res = await arsipService.getById(id)
-                setArsip(res.data || res)
+                setHistoryLoading(true)
+                setError(null)
+                setHistoryError(null)
+                const [archiveResult, historyResult] = await Promise.allSettled([
+                    arsipService.getById(id),
+                    arsipService.getRuleHistory(id),
+                ])
+
+                if (archiveResult.status === 'rejected') throw archiveResult.reason
+                setArsip(archiveResult.value?.data || archiveResult.value)
+
+                if (historyResult.status === 'fulfilled') {
+                    setRuleHistory(historyResult.value || [])
+                } else {
+                    setRuleHistory([])
+                    setHistoryError(historyResult.reason?.message || 'Gagal memuat riwayat aturan')
+                }
             } catch (err) {
                 setError(err.message || 'Gagal memuat data arsip')
             } finally {
                 setLoading(false)
+                setHistoryLoading(false)
             }
         }
         if (id) fetchData()
     }, [id])
+
+    const openReconciliation = () => {
+        setRuleSelection({ kode: '', classification: null, retention: null })
+        setReconcileReason('')
+        setReconcileError(null)
+        setReconcileOpen(true)
+    }
+
+    const handleRuleSelection = (kode, classification, retention) => {
+        setRuleSelection({ kode, classification, retention })
+        setReconcileError(null)
+    }
+
+    const submitReconciliation = async () => {
+        const reason = reconcileReason.trim()
+        if (!ruleSelection.classification?.id || !ruleSelection.retention?.id) {
+            setReconcileError('Pilih butir klasifikasi dan JRA aktif.')
+            return
+        }
+        if (reason.length < 10) {
+            setReconcileError('Alasan rekonsiliasi minimal 10 karakter.')
+            return
+        }
+
+        try {
+            setReconcileSaving(true)
+            setReconcileError(null)
+            const result = await arsipService.reconcileRules(id, {
+                klasifikasiItemId: ruleSelection.classification.id,
+                jraItemId: ruleSelection.retention.id,
+                reason,
+            })
+
+            setArsip(current => ({ ...current, ...result.archive, items: current?.items || [] }))
+            try {
+                const refreshedHistory = await arsipService.getRuleHistory(id)
+                setRuleHistory(refreshedHistory || [])
+                setHistoryError(null)
+            } catch (historyRefreshError) {
+                if (result.snapshot) setRuleHistory(current => [result.snapshot, ...current])
+                setHistoryError(historyRefreshError.message || 'Riwayat berhasil diperbarui tetapi gagal dimuat ulang')
+            }
+            setReconcileOpen(false)
+            toast({
+                title: 'Rekonsiliasi berhasil',
+                description: 'Klasifikasi dan JRA aktif telah dicatat sebagai revisi baru.',
+            })
+        } catch (err) {
+            setReconcileError(err.message || 'Gagal merekonsiliasi aturan arsip')
+        } finally {
+            setReconcileSaving(false)
+        }
+    }
 
     // ─── Loading State ─────────────────
     if (loading) return <ArsipDetailSkeleton />
@@ -205,6 +408,12 @@ export default function ArsipDetail() {
     const suratUrl = arsip.sourceSuratId ? `/surat/${suratType}/${arsip.sourceSuratId}` : null
     const itemCount = arsip.items?.length || (arsip.nomorItem ? 1 : 0)
     const jenisLabel = arsip.jenisArsip === 'masuk' ? 'Surat Masuk' : 'Surat Keluar'
+    const isEditor = canWrite()
+    const reconciliationBlocked = Boolean(
+        arsip.legalHold || arsip.disposalStatus !== 'active' || arsip.disposalBatchId
+    )
+    const provenanceStatus = arsip.ruleProvenanceStatus || 'legacy_unverified'
+    const provenanceMeta = RULE_STATUS[provenanceStatus] || RULE_STATUS.legacy_unverified
 
     const statusColor = (() => {
         if (arsip.disposalStatus === 'active') return 'default'
@@ -297,6 +506,10 @@ export default function ArsipDetail() {
                                         <Shield className="mr-1 h-3 w-3" /> {arsip.klasifikasiKeamanan}
                                     </Badge>
                                 )}
+                                <RuleProvenanceBadge
+                                    status={provenanceStatus}
+                                    className="border-white/30 bg-card/15 text-white"
+                                />
                             </div>
                         </div>
                     </div>
@@ -327,6 +540,12 @@ export default function ArsipDetail() {
                             </TabsTrigger>
                             <TabsTrigger value="retensi" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
                                 <Clock className="h-4 w-4" /> Retensi & Lokasi
+                            </TabsTrigger>
+                            <TabsTrigger value="aturan" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
+                                <History className="h-4 w-4" /> Jejak Aturan
+                                {ruleHistory.length > 0 && (
+                                    <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">{ruleHistory.length}</Badge>
+                                )}
                             </TabsTrigger>
                             <TabsTrigger value="keamanan" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
                                 <Shield className="h-4 w-4" /> Keamanan
@@ -534,6 +753,84 @@ export default function ArsipDetail() {
                             </Card>
                         </TabsContent>
 
+                        {/* ── Tab: Jejak Aturan ──────────── */}
+                        <TabsContent value="aturan" className="mt-4">
+                            <Card>
+                                <CardHeader className="pb-3">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <CardTitle className="flex items-center gap-2 text-base">
+                                                <div className="rounded-lg bg-emerald-100 p-1.5 dark:bg-emerald-500/15">
+                                                    <History className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                                </div>
+                                                Jejak Klasifikasi & JRA
+                                            </CardTitle>
+                                            <p className="mt-2 max-w-2xl text-xs text-muted-foreground">
+                                                Setiap perubahan disimpan sebagai revisi baru. Bukti lama tidak ditimpa sehingga asal keputusan retensi tetap dapat diaudit.
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-2">
+                                            <RuleProvenanceBadge status={provenanceStatus} />
+                                            {isEditor && (
+                                                <Button
+                                                    size="sm"
+                                                    className="gap-2"
+                                                    disabled={reconciliationBlocked}
+                                                    onClick={openReconciliation}
+                                                >
+                                                    <RefreshCw className="h-4 w-4" /> Rekonsiliasi Aturan
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className={`mb-4 rounded-lg border p-3 text-sm ${provenanceStatus === 'verified'
+                                        ? 'border-emerald-200 bg-emerald-50/60 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300'
+                                        : 'border-amber-200 bg-amber-50/60 text-amber-800 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-300'
+                                    }`}>
+                                        {provenanceMeta.description}
+                                        {isEditor && reconciliationBlocked && (
+                                            <p className="mt-1 font-medium">
+                                                Rekonsiliasi dikunci karena arsip berada dalam legal hold atau workflow penyusutan.
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {historyLoading ? (
+                                        <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                                            <Loader2 className="h-4 w-4 animate-spin" /> Memuat riwayat aturan...
+                                        </div>
+                                    ) : historyError && ruleHistory.length === 0 ? (
+                                        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">
+                                            {historyError}
+                                        </div>
+                                    ) : ruleHistory.length === 0 ? (
+                                        <div className="rounded-lg border border-dashed p-8 text-center">
+                                            <History className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
+                                            <p className="text-sm font-medium">Belum ada bukti aturan</p>
+                                            <p className="mt-1 text-xs text-muted-foreground">Lakukan rekonsiliasi untuk membuat revisi terverifikasi pertama.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {historyError && (
+                                                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+                                                    {historyError}
+                                                </div>
+                                            )}
+                                            {ruleHistory.map(entry => (
+                                                <RuleHistoryEntry
+                                                    key={entry.id || entry.revision}
+                                                    entry={entry}
+                                                    current={entry.id === arsip.currentRuleSnapshotId}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+
                         {/* ── Tab: Keamanan ──────────────── */}
                         <TabsContent value="keamanan" className="mt-4">
                             <Card>
@@ -614,6 +911,30 @@ export default function ArsipDetail() {
                                 activeColor="blue"
                                 icon={Eye}
                             />
+                        </CardContent>
+                    </Card>
+
+                    {/* Rule provenance */}
+                    <Card className="shadow-sm">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                                <History className="h-4 w-4 text-emerald-600" /> Bukti Aturan
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3 pt-0">
+                            <RuleProvenanceBadge status={provenanceStatus} />
+                            <p className="text-xs leading-relaxed text-muted-foreground">{provenanceMeta.description}</p>
+                            {isEditor && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full justify-start gap-2"
+                                    disabled={reconciliationBlocked}
+                                    onClick={openReconciliation}
+                                >
+                                    <RefreshCw className="h-4 w-4" /> Rekonsiliasi Klasifikasi/JRA
+                                </Button>
+                            )}
                         </CardContent>
                     </Card>
 
@@ -719,6 +1040,114 @@ export default function ArsipDetail() {
                     </Card>
                 </div>
             </div>
+
+            <Dialog open={reconcileOpen} onOpenChange={open => !reconcileSaving && setReconcileOpen(open)}>
+                <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <RefreshCw className="h-5 w-5 text-emerald-600" />
+                            Rekonsiliasi Klasifikasi & JRA
+                        </DialogTitle>
+                        <DialogDescription>
+                            Pilih butir dari master aturan aktif. Sistem akan membuat revisi bukti baru; riwayat sebelumnya tetap tersimpan.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-5 py-2">
+                        <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+                            <p className="font-medium">Penetapan saat ini</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Klasifikasi <span className="font-mono font-medium text-foreground">{arsip.kodeKlasifikasi || '—'}</span>
+                                {' · '}JRA <span className="font-mono font-medium text-foreground">{arsip.jraKode || '—'}</span>
+                            </p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Klasifikasi dan JRA aktif</Label>
+                            <KlasifikasiPicker
+                                value={ruleSelection.kode}
+                                onChange={handleRuleSelection}
+                                label="Pilih klasifikasi dan JRA aktif"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Pilihan hanya dapat disimpan jika klasifikasi dan butir JRA sama-sama dipilih.
+                            </p>
+                        </div>
+
+                        {ruleSelection.classification && (
+                            <div className="grid grid-cols-1 gap-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 sm:grid-cols-2 dark:border-emerald-800 dark:bg-emerald-500/10">
+                                <div>
+                                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Klasifikasi baru</p>
+                                    <p className="mt-1 text-sm font-medium">
+                                        <span className="mr-1 font-mono">{ruleSelection.classification.kode}</span>
+                                        {ruleSelection.classification.jenis}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">JRA baru</p>
+                                    {ruleSelection.retention ? (
+                                        <>
+                                            <p className="mt-1 text-sm font-medium">
+                                                <span className="mr-1 font-mono">{ruleSelection.retention.kode}</span>
+                                                {ruleSelection.retention.uraian}
+                                            </p>
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                Aktif {ruleSelection.retention.retensiAktif || '—'} · Inaktif {ruleSelection.retention.retensiInaktif || '—'} · {ruleSelection.retention.keterangan || '—'}
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">Belum dipilih</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                                <Label htmlFor="reconcile-reason">Alasan rekonsiliasi</Label>
+                                <span className={`text-xs ${reconcileReason.trim().length >= 10 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                                    {reconcileReason.trim().length}/10 minimum
+                                </span>
+                            </div>
+                            <Textarea
+                                id="reconcile-reason"
+                                value={reconcileReason}
+                                onChange={event => {
+                                    setReconcileReason(event.target.value)
+                                    setReconcileError(null)
+                                }}
+                                maxLength={2000}
+                                rows={4}
+                                placeholder="Contoh: Verifikasi ulang arsip lama menggunakan master klasifikasi dan JRA yang aktif."
+                                disabled={reconcileSaving}
+                            />
+                        </div>
+
+                        {reconcileError && (
+                            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">
+                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                                <span>{reconcileError}</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button variant="outline" onClick={() => setReconcileOpen(false)} disabled={reconcileSaving}>
+                            Batal
+                        </Button>
+                        <Button
+                            onClick={submitReconciliation}
+                            disabled={reconcileSaving || !ruleSelection.classification?.id || !ruleSelection.retention?.id || reconcileReason.trim().length < 10}
+                        >
+                            {reconcileSaving ? (
+                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Menyimpan...</>
+                            ) : (
+                                <><CheckCircle2 className="mr-2 h-4 w-4" /> Simpan Revisi</>
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

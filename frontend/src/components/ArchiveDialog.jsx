@@ -73,6 +73,7 @@ const RETENTION_TRIGGER_OPTIONS = [
 const buildFormData = ({ nomorSurat, klasifikasiKode, perihal }) => ({
     nomorBerkas: nomorSurat || '',
     kodeKlasifikasi: klasifikasiKode || '',
+    klasifikasiItemId: '',
     klasifikasiArsip: '',
     uraianBerkas: perihal || '',
     unitPengolah: '',
@@ -80,6 +81,7 @@ const buildFormData = ({ nomorSurat, klasifikasiKode, perihal }) => ({
     kurunWaktuSampai: '',
     // JRA
     jraKode: '',
+    jraItemId: '',
     jraUraian: '',
     retensiAktif: '',
     retensiInaktif: '',
@@ -310,18 +312,21 @@ export function ArchiveDialog({
                                             value={formData.kodeKlasifikasi}
                                             onChange={(kode, klasifikasi, jra) => {
                                                 handleChange('kodeKlasifikasi', kode)
+                                                handleChange('klasifikasiItemId', klasifikasi?.id || '')
                                                 handleChange('klasifikasiArsip', klasifikasi?.jenis || '')
                                                 // Auto-fill JRA fields
                                                 if (jra) {
                                                     handleChange('jraKode', jra.kode || '')
+                                                    handleChange('jraItemId', jra.id || '')
                                                     handleChange('jraUraian', jra.uraian || '')
                                                     handleChange('retensiAktif', jra.retensiAktif || '')
                                                     handleChange('retensiInaktif', jra.retensiInaktif || '')
                                                     handleChange('hasilAkhir', jra.keterangan || '')
-                                                    handleChange('jraVersion', jra.version || '')
-                                                    handleChange('jraReference', jra.referensi || jra.reference || jra.kode || '')
+                                                    handleChange('jraVersion', jra.ruleSet?.version || jra.version || '')
+                                                    handleChange('jraReference', jra.ruleSet?.legalBasis || jra.referensi || jra.reference || '')
                                                 } else {
                                                     handleChange('jraKode', '')
+                                                    handleChange('jraItemId', '')
                                                     handleChange('jraUraian', '')
                                                     handleChange('retensiAktif', '')
                                                     handleChange('retensiInaktif', '')
@@ -482,7 +487,7 @@ export function ArchiveDialog({
                                         <FormField label="Versi JRA" hint="Tahun/versi jadwal retensi yang digunakan">
                                             <Input
                                                 value={formData.jraVersion}
-                                                onChange={(e) => handleChange('jraVersion', e.target.value)}
+                                                readOnly
                                                 placeholder="Contoh: JRA 2026 / Revisi 1"
                                                 className="bg-card border-border h-10"
                                             />
@@ -490,7 +495,7 @@ export function ArchiveDialog({
                                         <FormField label="Referensi JRA" hint="Nomor peraturan/keputusan atau referensi baris JRA">
                                             <Input
                                                 value={formData.jraReference}
-                                                onChange={(e) => handleChange('jraReference', e.target.value)}
+                                                readOnly
                                                 placeholder="Nomor dan referensi JRA"
                                                 className="bg-card border-border h-10"
                                             />

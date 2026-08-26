@@ -1,20 +1,22 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, FolderTree, Loader2, Book, Building2, Folder, FileText } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, FolderTree, Book, Building2, Folder, GitBranch, LockKeyhole } from 'lucide-react'
 import { api } from '@/services/api'
+import regulatoryRuleSetService from '@/services/regulatory-rule-set.service'
+import { useAuth } from '@/context/AuthContext'
 import { Skeleton } from "@/components/ui/skeleton"
 
 // Tree Node Component
-function TreeNode({ node, level = 0, onEdit, onDelete }) {
+function TreeNode({ node, level = 0, onEdit, onDelete, editable }) {
     const [isOpen, setIsOpen] = useState(level < 1) // Auto-expand first level
     const hasChildren = node.children && node.children.length > 0
 
@@ -56,25 +58,28 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
                     </span>
                 )}
 
-                <div className="flex gap-1 shrink-0 ml-2">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400" onClick={() => onEdit(node)}>
-                        <Edit2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                </div>
+                {editable && (
+                    <div className="flex gap-1 shrink-0 ml-2">
+                        <Button variant="ghost" size="icon" aria-label={`Edit ${node.kode}`} className="h-7 w-7 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400" onClick={() => onEdit(node)}>
+                            <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" aria-label={`Nonaktifkan ${node.kode}`} className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {hasChildren && isOpen && (
                 <div>
                     {node.children.map((child) => (
                         <TreeNode
-                            key={child.kode}
+                            key={child.id || child.sourceRecordKey || child.kode}
                             node={child}
                             level={level + 1}
                             onEdit={onEdit}
                             onDelete={onDelete}
+                            editable={editable}
                         />
                     ))}
                 </div>
@@ -83,13 +88,36 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
     )
 }
 
+function filterKlasifikasiTree(nodes, query) {
+    if (!query) return nodes
+    const lowerQuery = query.toLowerCase()
+
+    return nodes.reduce((acc, node) => {
+        const matches = node.kode.toLowerCase().includes(lowerQuery) ||
+            node.jenis.toLowerCase().includes(lowerQuery)
+        const filteredChildren = node.children
+            ? filterKlasifikasiTree(node.children, query)
+            : []
+
+        if (matches || filteredChildren.length > 0) {
+            acc.push({ ...node, children: filteredChildren })
+        }
+        return acc
+    }, [])
+}
+
 // Main Page Component
 export default function KlasifikasiArsip() {
+    const { user } = useAuth()
+    const [searchParams] = useSearchParams()
+    const ruleSetId = searchParams.get('ruleSetId') || ''
+    const requestedDraftMode = searchParams.get('mode') === 'draft'
     const [activeTab, setActiveTab] = useState('fasilitatif')
     const [searchQuery, setSearchQuery] = useState('')
     const [treeData, setTreeData] = useState([])
     const [loading, setLoading] = useState(true)
     const [stats, setStats] = useState(null)
+    const [ruleSet, setRuleSet] = useState(null)
     const [dialogOpen, setDialogOpen] = useState(false)
     const [editMode, setEditMode] = useState(false)
     const [currentItem, setCurrentItem] = useState(null)
@@ -102,10 +130,10 @@ export default function KlasifikasiArsip() {
     })
 
     // Fetch tree data
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true)
         try {
-            const response = await api.get(`/api/klasifikasi`, { format: 'tree', tipe: activeTab })
+            const response = await api.get(`/api/klasifikasi`, { format: 'tree', tipe: activeTab, ruleSetId })
             if (response.success) {
                 setTreeData(response.data)
             }
@@ -114,52 +142,49 @@ export default function KlasifikasiArsip() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [activeTab, ruleSetId])
 
     // Fetch stats
-    const fetchStats = async () => {
+    const fetchStats = useCallback(async () => {
         try {
-            const response = await api.get('/api/klasifikasi/stats')
+            const response = await api.get('/api/klasifikasi/stats', { ruleSetId })
             if (response.success) {
                 setStats(response.data)
             }
         } catch (error) {
             console.error('Error fetching stats:', error)
         }
-    }
+    }, [ruleSetId])
 
     useEffect(() => {
         fetchData()
-    }, [activeTab])
+    }, [fetchData])
 
     useEffect(() => {
         fetchStats()
-    }, [])
+    }, [fetchStats])
 
-    // Filter tree based on search
-    const filterTree = (nodes, query) => {
-        if (!query) return nodes
-        const lowerQuery = query.toLowerCase()
-
-        return nodes.reduce((acc, node) => {
-            const matches = node.kode.toLowerCase().includes(lowerQuery) ||
-                node.jenis.toLowerCase().includes(lowerQuery)
-
-            const filteredChildren = node.children ? filterTree(node.children, query) : []
-
-            if (matches || filteredChildren.length > 0) {
-                acc.push({
-                    ...node,
-                    children: filteredChildren
-                })
+    useEffect(() => {
+        let cancelled = false
+        const loadRuleSet = async () => {
+            try {
+                const response = ruleSetId
+                    ? await regulatoryRuleSetService.getById(ruleSetId)
+                    : await regulatoryRuleSetService.getActive('klasifikasi')
+                if (!cancelled) setRuleSet(response.data || null)
+            } catch (error) {
+                console.error('Gagal memuat versi klasifikasi:', error)
+                if (!cancelled) setRuleSet(null)
             }
+        }
+        loadRuleSet()
+        return () => { cancelled = true }
+    }, [ruleSetId])
 
-            return acc
-        }, [])
-    }
+    const editable = Boolean(user?.role === 'super_admin' && ruleSetId && requestedDraftMode && ruleSet?.status === 'draft')
 
     const filteredData = useMemo(() => {
-        return filterTree(treeData, searchQuery)
+        return filterKlasifikasiTree(treeData, searchQuery)
     }, [treeData, searchQuery])
 
     // Handle create/edit
@@ -167,10 +192,11 @@ export default function KlasifikasiArsip() {
         try {
             if (editMode && currentItem) {
                 // Update
-                const response = await api.put(`/api/klasifikasi/${currentItem.kode}`, {
+                const response = await api.put(`/api/klasifikasi/items/${currentItem.id}`, {
                     jenis: formData.jenis,
                     keterangan: formData.keterangan,
                     kategori: formData.kategori,
+                    ruleSetId,
                 })
                 if (response.success) {
                     // alert('Klasifikasi berhasil diperbarui')
@@ -180,6 +206,7 @@ export default function KlasifikasiArsip() {
                 // Create
                 const response = await api.post('/api/klasifikasi', {
                     ...formData,
+                    ruleSetId,
                     tipe: activeTab,
                     level: formData.parentKode ? 1 : 0,
                 })
@@ -214,7 +241,7 @@ export default function KlasifikasiArsip() {
         if (!confirm(`Hapus klasifikasi "${node.kode} - ${node.jenis}"?`)) return
 
         try {
-            const response = await api.delete(`/api/klasifikasi/${node.kode}`)
+            const response = await api.delete(`/api/klasifikasi/items/${node.id}?ruleSetId=${encodeURIComponent(ruleSetId)}`)
             if (response.success) {
                 // alert('Klasifikasi berhasil dihapus')
                 fetchData()
@@ -255,14 +282,31 @@ export default function KlasifikasiArsip() {
                         Klasifikasi Arsip
                     </h1>
                     <p className="text-muted-foreground">
-                        Master data klasifikasi arsip sesuai Permen ATR/BPN No. 10 Tahun 2018
+                        Master data klasifikasi arsip sesuai {ruleSet?.regulationNumber || 'versi aturan yang aktif'}
                     </p>
                 </div>
-                <Button onClick={handleAddNew} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Tambah Klasifikasi
-                </Button>
+                {editable && (
+                    <Button onClick={handleAddNew} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Tambah Klasifikasi
+                    </Button>
+                )}
             </div>
+
+            <Alert>
+                {editable ? <GitBranch className="h-4 w-4" /> : <LockKeyhole className="h-4 w-4" />}
+                <AlertTitle>
+                    {editable ? `Mengedit draft ${ruleSet?.version || ''}` : `Versi ${ruleSet?.version || 'aktif'} hanya-baca`}
+                </AlertTitle>
+                <AlertDescription className="gap-2 sm:flex sm:items-center sm:justify-between">
+                    <span>{editable
+                        ? 'Perubahan hanya memengaruhi draft ini. Jalankan validasi sebelum mengaktifkannya.'
+                        : 'Versi yang telah diterbitkan tidak dapat diubah. Buat draft revisi melalui halaman Versi Aturan.'}</span>
+                    <Button variant="outline" size="sm" asChild>
+                        <Link to="/master/regulatory-rules?instrument=klasifikasi">Kelola versi aturan</Link>
+                    </Button>
+                </AlertDescription>
+            </Alert>
 
             {/* Stats Cards */}
             {stats && (
@@ -354,10 +398,11 @@ export default function KlasifikasiArsip() {
                         <div className="divide-y divide-border/50">
                             {filteredData.map((node) => (
                                 <TreeNode
-                                    key={node.kode}
+                                    key={node.id || node.sourceRecordKey || node.kode}
                                     node={node}
                                     onEdit={handleEdit}
                                     onDelete={handleDelete}
+                                    editable={editable}
                                 />
                             ))}
                         </div>

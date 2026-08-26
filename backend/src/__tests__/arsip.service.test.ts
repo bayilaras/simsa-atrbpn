@@ -30,16 +30,65 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 
+const canonicalAssignment = {
+    snapshot: { schemaVersion: 1 },
+    snapshotSha256: 'a'.repeat(64),
+    cache: {
+        kodeKlasifikasi: 'PT.01.01',
+        klasifikasiArsipId: 10,
+        klasifikasiRuleSetId: '10102018-1010-4010-8010-000000000010',
+        klasifikasiVersion: 'ATR-BPN-10-2018',
+        klasifikasiReference: 'Permen ATR/BPN Nomor 10 Tahun 2018',
+        klasifikasiSnapshotHash: 'b'.repeat(64),
+        jraKode: 'S.VI.A.0001',
+        jraItemId: 20,
+        jraRuleSetId: '08002020-0800-4080-8080-000000000008',
+        jraUraian: 'Pengadaan tanah',
+        retensiAktif: '2 tahun',
+        retensiInaktif: '3 tahun',
+        masaSimpanAktif: '2 tahun',
+        masaSimpanInaktif: '3 tahun',
+        hasilAkhir: 'Musnah',
+        jraVersion: 'ATR-BPN-8-2020',
+        jraReference: 'Permen ATR/BPN Nomor 8 Tahun 2020',
+        retentionDecisionHash: 'c'.repeat(64),
+        ruleProvenanceStatus: 'verified',
+    },
+    normalizedRetention: {
+        activeMonths: 24,
+        inactiveMonths: 36,
+        calculationMode: 'duration',
+        dispositionCode: 'musnah',
+    },
+};
+
+vi.mock('../services/archive-rule-assignment.service', () => ({
+    archiveRuleAssignmentService: {
+        resolveActive: vi.fn().mockResolvedValue(canonicalAssignment),
+        calculateExpiry: vi.fn((triggerDate: string | undefined, normalized: any) => {
+            if (!triggerDate || normalized.calculationMode !== 'duration') return null;
+            const date = new Date(`${triggerDate}T00:00:00.000Z`);
+            date.setUTCMonth(date.getUTCMonth() + normalized.activeMonths + normalized.inactiveMonths);
+            return date.toISOString().slice(0, 10);
+        }),
+        attachInitialSnapshot: vi.fn(async (_tx: any, id: string) => ({ id })),
+        appendRevision: vi.fn(),
+    },
+}));
+
 const { ArsipService } = await import('../services/arsip.service');
+const { archiveRuleAssignmentService } = await import('../services/archive-rule-assignment.service');
 
 describe('ArsipService', () => {
     let svc: InstanceType<typeof ArsipService>;
 
     beforeEach(() => {
+        vi.clearAllMocks();
         svc = new ArsipService();
         resultQueue.length = 0;
         capturedValues.length = 0;
         capturedSets.length = 0;
+        vi.mocked(archiveRuleAssignmentService.resolveActive).mockResolvedValue(canonicalAssignment as any);
     });
 
     // ── findAll ──
@@ -97,6 +146,117 @@ describe('ArsipService', () => {
         });
     });
 
+    describe('rule reconciliation', () => {
+        it('reconciles a legacy archive through a new canonical snapshot revision', async () => {
+            const legacyArchive = {
+                id: 'archive-1',
+                unitKerjaId: 'u1',
+                disposalStatus: 'active',
+                disposalBatchId: null,
+                legalHold: false,
+                ruleProvenanceStatus: 'legacy_unverified',
+                klasifikasiArsipId: null,
+                klasifikasiRuleSetId: null,
+                jraItemId: null,
+                jraRuleSetId: null,
+                retentionTriggerDate: '2020-01-31',
+            };
+            const appended = {
+                archive: {
+                    ...legacyArchive,
+                    ...canonicalAssignment.cache,
+                    currentRuleSnapshotId: 'snapshot-2',
+                },
+                snapshot: { id: 'snapshot-2', revision: 2 },
+            };
+            enqueue([legacyArchive]);
+            vi.mocked(archiveRuleAssignmentService.appendRevision)
+                .mockResolvedValue(appended as any);
+
+            const result = await svc.reconcileRules(
+                'archive-1',
+                'u1',
+                { klasifikasiItemId: 10, jraItemId: 20 },
+                'Verifikasi ulang terhadap peraturan aktif',
+                'user-1',
+            );
+
+            expect(result).toEqual(appended);
+            expect(archiveRuleAssignmentService.resolveActive).toHaveBeenCalledWith(
+                mockDb,
+                { klasifikasiItemId: 10, jraItemId: 20 },
+            );
+            expect(archiveRuleAssignmentService.appendRevision).toHaveBeenCalledWith(
+                mockDb,
+                'archive-1',
+                canonicalAssignment,
+                'Verifikasi ulang terhadap peraturan aktif',
+                '2020-01-31',
+                'user-1',
+            );
+        });
+
+        it('rejects an unchanged verified assignment without appending duplicate evidence', async () => {
+            enqueue([{
+                id: 'archive-1',
+                unitKerjaId: 'u1',
+                disposalStatus: 'active',
+                disposalBatchId: null,
+                legalHold: false,
+                ruleProvenanceStatus: 'verified',
+                klasifikasiArsipId: canonicalAssignment.cache.klasifikasiArsipId,
+                klasifikasiRuleSetId: canonicalAssignment.cache.klasifikasiRuleSetId,
+                jraItemId: canonicalAssignment.cache.jraItemId,
+                jraRuleSetId: canonicalAssignment.cache.jraRuleSetId,
+                retentionTriggerDate: '2020-01-31',
+            }]);
+
+            await expect(svc.reconcileRules(
+                'archive-1',
+                'u1',
+                { klasifikasiItemId: 10, jraItemId: 20 },
+                'Tidak ada perubahan butir peraturan',
+                'user-1',
+            )).rejects.toThrow(/sudah menggunakan butir/i);
+
+            expect(archiveRuleAssignmentService.appendRevision).not.toHaveBeenCalled();
+        });
+
+        it('fails before database access when the reconciliation reason is not meaningful', async () => {
+            await expect(svc.reconcileRules(
+                'archive-1',
+                'u1',
+                { klasifikasiItemId: 10, jraItemId: 20 },
+                'singkat',
+                'user-1',
+            )).rejects.toThrow(/minimal 10 karakter/i);
+
+            expect(resultQueue).toHaveLength(0);
+            expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
+        });
+
+        it('does not reconcile records already under legal hold or disposition workflow', async () => {
+            enqueue([{
+                id: 'archive-1',
+                unitKerjaId: 'u1',
+                disposalStatus: 'active',
+                disposalBatchId: null,
+                legalHold: true,
+            }]);
+
+            await expect(svc.reconcileRules(
+                'archive-1',
+                'u1',
+                { klasifikasiItemId: 10, jraItemId: 20 },
+                'Koreksi berdasarkan pemeriksaan petugas',
+                'user-1',
+            )).rejects.toThrow(/legal hold|workflow penyusutan/i);
+
+            expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
+            expect(archiveRuleAssignmentService.appendRevision).not.toHaveBeenCalled();
+        });
+    });
+
     // ── update ──
     describe('update', () => {
         it('should update and return arsip', async () => {
@@ -138,7 +298,7 @@ describe('ArsipService', () => {
             }]);
 
             await expect(svc.update('1', { jraVersion: 'JRA-2026-v2' } as any))
-                .rejects.toThrow(/legal hold|workflow penyusutan/i);
+                .rejects.toThrow(/rekonsiliasi aturan/i);
         });
 
         it('should block retention and JRA decisions after entering a disposal batch', async () => {
@@ -150,7 +310,7 @@ describe('ArsipService', () => {
             }]);
 
             await expect(svc.update('1', { hasilAkhir: 'Permanen' } as any))
-                .rejects.toThrow(/workflow penyusutan/i);
+                .rejects.toThrow(/rekonsiliasi aturan/i);
         });
 
         it('should block retention and JRA decisions in a non-active disposal state', async () => {
@@ -182,7 +342,16 @@ describe('ArsipService', () => {
                 .rejects.toThrow(/workflow khusus/i);
         });
 
-        it('should derive expiry when an active archive retention decision changes', async () => {
+        it('should reject forged canonical rule hashes through the generic update path', async () => {
+            await expect(svc.update('1', {
+                klasifikasiSnapshotHash: 'attacker-controlled-hash',
+                retentionDecisionHash: 'attacker-controlled-decision',
+            } as any)).rejects.toThrow(/rekonsiliasi aturan/i);
+
+            expect(resultQueue).toHaveLength(0);
+        });
+
+        it('should derive expiry when a documented trigger changes, without changing canonical JRA', async () => {
             enqueue(
                 [{
                     id: '1',
@@ -196,14 +365,19 @@ describe('ArsipService', () => {
                     retensiAktif: '2 tahun',
                     retensiInaktif: '3 tahun',
                 }],
-                [{ id: '1', retensiAktif: '4 tahun', tanggalKadaluarsa: '2027-01-15' }],
+                [{ id: '1', retentionTriggerDate: '2021-01-15', tanggalKadaluarsa: '2026-01-15' }],
             );
 
-            await svc.update('1', { retensiAktif: '4 tahun' } as any);
+            await svc.update('1', {
+                retentionTriggerType: 'berkas_ditutup',
+                retentionTriggerLabel: 'Berkas perkara ditutup ulang',
+                retentionTriggerDate: '2021-01-15',
+                retentionTriggerEvidence: 'Berita acara koreksi nomor 2/2021',
+            } as any);
 
             expect(capturedSets[0]).toMatchObject({
-                retensiAktif: '4 tahun',
-                tanggalKadaluarsa: '2027-01-15',
+                retentionTriggerDate: '2021-01-15',
+                tanggalKadaluarsa: '2026-01-15',
             });
         });
 
@@ -325,6 +499,55 @@ describe('ArsipService', () => {
     });
 
     describe('archiveFromSuratMasuk retention trigger', () => {
+        it('rechecks deleted/archived state after locking the incoming source', async () => {
+            enqueue([{
+                id: 'sm-1',
+                unitKerjaId: 'u1',
+                isDeleted: true,
+                isArchived: false,
+            }]);
+
+            await expect(svc.archiveFromSuratMasuk(
+                'sm-1',
+                {} as any,
+                'u1',
+            )).rejects.toThrow(/surat masuk/i);
+
+            expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
+
+            enqueue([{
+                id: 'sm-2',
+                unitKerjaId: 'u1',
+                isDeleted: false,
+                isArchived: true,
+            }]);
+
+            await expect(svc.archiveFromSuratMasuk(
+                'sm-2',
+                {} as any,
+                'u1',
+            )).rejects.toThrow(/sudah diarsipkan/i);
+
+            expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
+        });
+
+        it('fails closed if the source unit changes after route authorization', async () => {
+            enqueue([{
+                id: 'sm-1',
+                unitKerjaId: 'unit-b',
+                isDeleted: false,
+                isArchived: false,
+            }]);
+
+            await expect(svc.archiveFromSuratMasuk(
+                'sm-1',
+                {} as any,
+                'unit-a',
+            )).rejects.toThrow(/surat masuk/i);
+
+            expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
+        });
+
         it('should not infer retention expiry from the letter/archive date', async () => {
             enqueue([
                 { id: 'sm-1', unitKerjaId: 'u1', tahun: 2020, tanggalSurat: '2020-01-15', nomorSurat: '1/2020', perihal: 'Test' },
@@ -366,6 +589,25 @@ describe('ArsipService', () => {
         });
     });
 
+    describe('archiveFromSuratKeluar transaction authorization', () => {
+        it('rechecks source mutability and authorized unit after acquiring the row lock', async () => {
+            enqueue([{
+                id: 'sk-1',
+                unitKerjaId: 'unit-b',
+                isDeleted: false,
+                isArchived: false,
+            }]);
+
+            await expect(svc.archiveFromSuratKeluar(
+                'sk-1',
+                {} as any,
+                'unit-a',
+            )).rejects.toThrow(/surat keluar/i);
+
+            expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
+        });
+    });
+
     describe('getDisposalCandidates', () => {
         it('should exclude legal holds and archives without an explicit trigger', async () => {
             enqueue([
@@ -395,8 +637,8 @@ describe('ArsipService', () => {
         it('reports held and missing-trigger records without treating them as actionable', async () => {
             enqueue([
                 { id: 'held', legalHold: true, retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
-                { id: 'missing-trigger', legalHold: false, retentionTriggerDate: null, retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
-                { id: 'expired', legalHold: false, retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
+                { id: 'missing-trigger', legalHold: false, ruleProvenanceStatus: 'verified', retentionTriggerDate: null, retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
+                { id: 'expired', legalHold: false, ruleProvenanceStatus: 'verified', retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
             ]);
 
             const result = await svc.getLifecycleNotifications('u1');

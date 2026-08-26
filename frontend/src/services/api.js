@@ -121,8 +121,12 @@ class ApiClient {
                 throw new Error(serverMsg || 'Terjadi kesalahan pada server. Silakan coba lagi nanti.');
             }
 
-            // Other errors
-            throw new Error(errorBody.message || errorBody.error || `HTTP ${response.status}`);
+            // Other errors. Preserve structured validation details so forms can
+            // show actionable item-level feedback returned by the API.
+            const apiError = new Error(errorBody.message || errorBody.error || `HTTP ${response.status}`);
+            apiError.status = response.status;
+            apiError.details = errorBody.details;
+            throw apiError;
         }
 
         return response.json();

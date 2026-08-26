@@ -245,6 +245,23 @@ describe('retention and legal hold schemas', () => {
             retensiInaktif: '3 tahun',
         }).success).toBe(false);
     });
+
+    it('rejects impossible calendar dates instead of relying on database coercion', () => {
+        expect(calculateRetentionDatesSchema.safeParse({
+            retentionTriggerDate: '2026-02-31',
+            retensiAktif: '2 tahun',
+            retensiInaktif: '3 tahun',
+        }).success).toBe(false);
+    });
+
+    it('rejects a future retention trigger on generic archive updates', () => {
+        expect(updateArsipSchema.safeParse({
+            retentionTriggerType: 'serah_terima',
+            retentionTriggerLabel: 'BAST final',
+            retentionTriggerDate: '9999-01-01',
+            retentionTriggerEvidence: 'BAST yang belum terjadi',
+        }).success).toBe(false);
+    });
 });
 
 // ==================== Storage Location Schemas ====================

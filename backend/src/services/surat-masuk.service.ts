@@ -182,6 +182,7 @@ export class SuratMasukService {
                 unitScope,
             ),
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Never mutate soft-deleted records (NULL-safe)
+            or(eq(suratMasuk.isArchived, false), isNull(suratMasuk.isArchived))!,
         ];
 
         const [result] = await db
@@ -203,6 +204,7 @@ export class SuratMasukService {
                 unitScope,
             ),
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Keep deletedAt/deletedBy of an already deleted record intact
+            or(eq(suratMasuk.isArchived, false), isNull(suratMasuk.isArchived))!,
         ];
 
         const [result] = await db

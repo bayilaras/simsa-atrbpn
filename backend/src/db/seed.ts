@@ -27,10 +27,16 @@ async function seed() {
     ]).onConflictDoNothing();
 
     // Seed Klasifikasi Arsip (Permen ATR/BPN No. 10 Tahun 2018)
-    await seedKlasifikasiArsip();
+    const classificationResult = await seedKlasifikasiArsip();
+    if (classificationResult.status === 'draft') {
+        throw new Error('Seed klasifikasi berhenti: draft gagal validasi dan tidak diaktifkan.');
+    }
 
     // Seed Jadwal Retensi Arsip (Permen ATR/BPN No. 8 Tahun 2020)
-    await seedJadwalRetensiArsip();
+    const retentionResult = await seedJadwalRetensiArsip();
+    if (retentionResult.status === 'draft') {
+        throw new Error('Seed JRA berhenti: draft gagal validasi dan tidak diaktifkan.');
+    }
 
     // Seed Klasifikasi-JRA Mapping (pemetaan tematik)
     await seedKlasifikasiJraMapping();
