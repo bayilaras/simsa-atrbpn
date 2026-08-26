@@ -48,6 +48,7 @@ async function seedTestUser() {
 
         await db.insert(accounts).values({
             userId: userId,
+            issuer: 'local:credential',
             accountId: userId,
             providerId: 'credential',
             password: hashedPassword,

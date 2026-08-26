@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, boolean, uniqueIndex } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { unitKerja } from './unit-kerja';
 
@@ -32,6 +32,7 @@ export const sessions = pgTable('sessions', {
 export const accounts = pgTable('accounts', {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull().references(() => users.id),
+    issuer: text('issuer').notNull(),
     accountId: text('account_id').notNull(),
     providerId: text('provider_id').notNull(),
     accessToken: text('access_token'),
@@ -43,7 +44,9 @@ export const accounts = pgTable('accounts', {
     password: text('password'), // Add password to accounts
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => [
+    uniqueIndex('accounts_issuer_account_id_unique').on(table.issuer, table.accountId),
+]);
 
 export const verifications = pgTable('verifications', {
     id: uuid('id').primaryKey().defaultRandom(),

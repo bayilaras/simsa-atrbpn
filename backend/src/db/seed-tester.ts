@@ -45,7 +45,8 @@ async function seedTester() {
             console.log('🆕 Creating account for existing user...');
             await db.insert(accounts).values({
                 userId: existingUser.id,
-                accountId: email,
+                issuer: 'local:credential',
+                accountId: existingUser.id,
                 providerId: 'credential',
                 password: hashedPassword,
             });
@@ -70,7 +71,8 @@ async function seedTester() {
         // Create account
         await db.insert(accounts).values({
             userId: userId,
-            accountId: email,
+            issuer: 'local:credential',
+            accountId: userId,
             providerId: 'credential',
             password: hashedPassword,
         });

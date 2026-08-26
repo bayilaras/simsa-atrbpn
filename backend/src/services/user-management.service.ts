@@ -96,6 +96,7 @@ export const userManagementService = {
             if (passwordHash) {
                 await tx.insert(accounts).values({
                     userId: newUser.id,
+                    issuer: 'local:credential',
                     accountId: newUser.id,
                     providerId: 'credential',
                     password: passwordHash,
