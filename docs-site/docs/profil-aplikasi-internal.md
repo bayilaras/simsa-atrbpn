@@ -34,7 +34,7 @@ Kontrol berikut tetap berlaku pada profil inti:
 | Kapabilitas | Status internal | Aturan aktivasi |
 |---|---|---|
 | SRIKANDI | Opsional/deferred; outbound nonaktif secara default | Aktifkan hanya bila diwajibkan kebijakan internal dan kontrak API, sandbox, pemetaan, worker, rekonsiliasi, serta persetujuan resmi tersedia |
-| BSrE/PSrE | Opsional bila tanda tangan/segel resmi tidak digunakan | Wajib sebelum fitur tanda tangan/segel resmi diaktifkan; endpoint tetap gagal-tertutup tanpa adaptor resmi |
+| Tanda tangan elektronik BSrE/PSrE | Di luar ruang lingkup produk | Tidak diaktifkan; endpoint legacy tetap gagal-tertutup dan artefak simulasi selalu tidak sah |
 | Object lock/WORM | Deferred/kondisional | Terapkan bila kelas data, retensi, arsitektur storage, atau keputusan risiko mensyaratkannya; jangan mengklaim WORM tanpa bukti |
 | SIEM/SOC eksternal | Deferred/kondisional | Terapkan bila kebijakan atau risiko mensyaratkannya; audit/log lokal, retensi, alert dasar, dan respons insiden tetap berjalan |
 
@@ -56,6 +56,6 @@ Menu dan rute SRIKANDI tidak tampil pada frontend, lalu lintas keluar tetap nona
 
 ## Batas klaim
 
-Pernyataan yang tepat adalah “aplikasi internal/beta”, “pedoman digunakan sebagai rujukan desain”, atau “fondasi integrasi tersedia tetapi belum diaktifkan”. Jangan menyatakan “tersertifikasi”, “sepenuhnya patuh”, “resmi tersinkron SRIKANDI”, “ditandatangani BSrE”, “WORM aktif”, atau “terpantau SIEM” tanpa bukti dan persetujuan yang berlaku.
+Pernyataan yang tepat adalah “aplikasi internal/beta”, “pedoman digunakan sebagai rujukan desain”, atau “fondasi integrasi tersedia tetapi belum diaktifkan”. Jangan menyatakan “tersertifikasi”, “sepenuhnya patuh”, “resmi tersinkron SRIKANDI”, “ditandatangani elektronik oleh SIMSA”, “WORM aktif”, atau “terpantau SIEM” tanpa bukti dan persetujuan yang berlaku.
 
 Lihat [Fondasi Integrasi SRIKANDI](/administrasi/integrasi-srikandi) untuk batas teknis connector yang tetap nonaktif secara default.

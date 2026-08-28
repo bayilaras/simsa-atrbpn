@@ -8,6 +8,7 @@ import {
     ValidationError,
 } from '../utils/errors';
 import type { RequestRecordAccessInput } from '../validators/record-access-grant.schemas';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import {
     normalizeSecurityClassification,
     recordAccessService,
@@ -40,15 +41,36 @@ async function withUniqueConflict<T>(operation: () => Promise<T>, message: strin
     }
 }
 
-async function expireStaleGrants(executor: any = db): Promise<void> {
+async function expireStaleGrants(
+    executor: any,
+    auditContext?: CriticalAuditContext,
+): Promise<void> {
     const now = new Date();
-    await executor
+    const expired = await executor
         .update(recordAccessGrants)
         .set({ status: 'expired', updatedAt: now })
         .where(and(
             eq(recordAccessGrants.status, 'approved'),
             lte(recordAccessGrants.expiresAt, now),
-        ));
+        ))
+        .returning();
+
+    if (expired.length > 0 && !auditContext) {
+        throw new Error('Audit context is required to persist expired access grants.');
+    }
+    for (const grant of expired) {
+        await auditLogService.logActionOrThrow({
+            ...auditContext,
+            action: 'status_change',
+            entityType: 'record_access_grant',
+            entityId: grant.id,
+            changes: {
+                before: { status: 'approved' },
+                after: { status: 'expired', expiredAt: now },
+                reason: 'Masa berlaku akses berakhir otomatis.',
+            },
+        }, executor);
+    }
 }
 
 export function validateGrantExpiry(value: string | Date, now = new Date()): Date {
@@ -67,7 +89,11 @@ export function validateGrantExpiry(value: string | Date, now = new Date()): Dat
 }
 
 export const recordAccessGrantService = {
-    async request(user: RecordUser, input: RequestRecordAccessInput) {
+    async request(
+        user: RecordUser,
+        input: RequestRecordAccessInput,
+        auditContext?: CriticalAuditContext,
+    ) {
         if (!user.id) throw new ForbiddenError();
 
         const target = await recordAccessService.inspect(
@@ -85,7 +111,7 @@ export const recordAccessGrantService = {
         }
 
         return withUniqueConflict(() => db.transaction(async (tx) => {
-            await expireStaleGrants(tx);
+            await expireStaleGrants(tx, auditContext);
 
             const [existing] = await tx
                 .select({ id: recordAccessGrants.id, status: recordAccessGrants.status })
@@ -120,20 +146,41 @@ export const recordAccessGrantService = {
                 })
                 .returning();
             if (!created) throw new ConflictError('Permohonan akses gagal dibuat.');
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'request_access',
+                    entityType: 'record_access_grant',
+                    entityId: created.id,
+                    changes: {
+                        entityType: created.entityType,
+                        entityId: created.entityId,
+                        unitKerjaId: created.unitKerjaId,
+                        requiredClassification: created.requiredClassification,
+                        purpose: created.purpose,
+                        accessMode: created.accessMode,
+                    },
+                }, tx);
+            }
             return created;
         }), 'Permohonan aktif untuk rekod ini sudah ada. Muat ulang data.');
     },
 
-    async listMine(userId: string, filters: { status?: string; page: number; limit: number }) {
-        await expireStaleGrants();
+    async listMine(
+        userId: string,
+        filters: { status?: string; page: number; limit: number },
+        auditContext: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        await expireStaleGrants(tx, auditContext);
         const conditions = [eq(recordAccessGrants.targetUserId, userId)];
         if (filters.status) conditions.push(eq(recordAccessGrants.status, filters.status));
         const where = and(...conditions);
-        const [{ count }] = await db
+        const [{ count }] = await tx
             .select({ count: sql<number>`count(*)::int` })
             .from(recordAccessGrants)
             .where(where);
-        const data = await db
+        const data = await tx
             .select()
             .from(recordAccessGrants)
             .where(where)
@@ -149,18 +196,23 @@ export const recordAccessGrantService = {
                 totalPages: Math.ceil(count / filters.limit),
             },
         };
+        });
     },
 
-    async listForReview(filters: { status?: string; page: number; limit: number }) {
-        await expireStaleGrants();
+    async listForReview(
+        filters: { status?: string; page: number; limit: number },
+        auditContext: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        await expireStaleGrants(tx, auditContext);
         const where = filters.status
             ? eq(recordAccessGrants.status, filters.status)
             : eq(recordAccessGrants.status, 'pending');
-        const [{ count }] = await db
+        const [{ count }] = await tx
             .select({ count: sql<number>`count(*)::int` })
             .from(recordAccessGrants)
             .where(where);
-        const data = await db
+        const data = await tx
             .select({
                 id: recordAccessGrants.id,
                 requesterId: recordAccessGrants.requesterId,
@@ -195,13 +247,20 @@ export const recordAccessGrantService = {
                 totalPages: Math.ceil(count / filters.limit),
             },
         };
+        });
     },
 
-    async approve(id: string, approverId: string, reason: string, expiry: string | Date) {
+    async approve(
+        id: string,
+        approverId: string,
+        reason: string,
+        expiry: string | Date,
+        auditContext?: CriticalAuditContext,
+    ) {
         const now = new Date();
         const expiresAt = validateGrantExpiry(expiry, now);
         return withUniqueConflict(() => db.transaction(async (tx) => {
-            await expireStaleGrants(tx);
+            await expireStaleGrants(tx, auditContext);
             const [request] = await tx
                 .select()
                 .from(recordAccessGrants)
@@ -264,13 +323,40 @@ export const recordAccessGrantService = {
                 ))
                 .returning();
             if (!updated) throw new ConflictError('Status permohonan berubah. Muat ulang data.');
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'approve_access',
+                    entityType: 'record_access_grant',
+                    entityId: updated.id,
+                    changes: {
+                        before: { status: request.status },
+                        after: {
+                            status: updated.status,
+                            targetUserId: updated.targetUserId,
+                            entityType: updated.entityType,
+                            entityId: updated.entityId,
+                            purpose: updated.purpose,
+                            accessMode: updated.accessMode,
+                            expiresAt: updated.expiresAt,
+                            reason: updated.decisionReason,
+                        },
+                    },
+                }, tx);
+            }
             return updated;
         }), 'Akses aktif untuk rekod ini sudah ada. Muat ulang data.');
     },
 
-    async deny(id: string, approverId: string, reason: string) {
+    async deny(
+        id: string,
+        approverId: string,
+        reason: string,
+        auditContext?: CriticalAuditContext,
+    ) {
         const now = new Date();
-        const [updated] = await db
+        return db.transaction(async (tx) => {
+        const [updated] = await tx
             .update(recordAccessGrants)
             .set({
                 status: 'denied',
@@ -286,12 +372,37 @@ export const recordAccessGrantService = {
             ))
             .returning();
         if (!updated) throw new ConflictError('Permohonan tidak dapat ditolak atau sudah diproses.');
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'deny_access',
+                entityType: 'record_access_grant',
+                entityId: updated.id,
+                changes: {
+                    before: { status: 'pending' },
+                    after: {
+                        status: updated.status,
+                        targetUserId: updated.targetUserId,
+                        entityType: updated.entityType,
+                        entityId: updated.entityId,
+                        reason: updated.decisionReason,
+                    },
+                },
+            }, tx);
+        }
         return updated;
+        });
     },
 
-    async revoke(id: string, actorId: string, reason: string) {
+    async revoke(
+        id: string,
+        actorId: string,
+        reason: string,
+        auditContext?: CriticalAuditContext,
+    ) {
         const now = new Date();
-        const [updated] = await db
+        return db.transaction(async (tx) => {
+        const [updated] = await tx
             .update(recordAccessGrants)
             .set({
                 status: 'revoked',
@@ -306,7 +417,26 @@ export const recordAccessGrantService = {
             ))
             .returning();
         if (!updated) throw new ConflictError('Akses tidak aktif atau sudah dicabut.');
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'revoke_access',
+                entityType: 'record_access_grant',
+                entityId: updated.id,
+                changes: {
+                    before: { status: 'approved' },
+                    after: {
+                        status: updated.status,
+                        targetUserId: updated.targetUserId,
+                        entityType: updated.entityType,
+                        entityId: updated.entityId,
+                        reason: updated.revocationReason,
+                    },
+                },
+            }, tx);
+        }
         return updated;
+        });
     },
 };
 

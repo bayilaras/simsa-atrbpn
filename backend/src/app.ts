@@ -1,6 +1,5 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import path from 'path';
 import * as helmetModule from 'helmet';
 const helmet = (helmetModule as any).default || helmetModule;
 import compression from 'compression';
@@ -63,6 +62,7 @@ import srikandiRoutes from './routes/srikandi.routes';
 import recordAccessGrantRoutes from './routes/record-access-grant.routes';
 import regulatoryRuleSetRoutes from './routes/regulatory-rule-set.routes';
 import retentionGovernanceRoutes from './routes/retention-governance.routes';
+import { getReadiness } from './services/readiness.service.js';
 
 // Vercel imports app.ts directly and never executes index.ts. Validate the
 // production environment during module cold-start as well, while unit tests
@@ -92,6 +92,7 @@ app.use(cors({
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-CSRF-Token'],
+    exposedHeaders: ['Retry-After'],
     credentials: true,
 }));
 
@@ -148,23 +149,29 @@ app.use(cookieParser());
 // CSRF cookie setter — set token cookie on all /api responses (must be before route handlers)
 app.use('/api', csrfCookieSetter);
 
-// Health check (no body parsing needed) — for uptime monitoring & load balancers
-app.get('/health', (req: Request, res: Response) => {
-    res.json({
-        status: 'ok',
+// Liveness deliberately answers only whether this process can serve HTTP. It
+// must not be coupled to a dependency outage or the orchestrator would restart
+// a healthy API in a loop. Readiness below performs live dependency probes.
+app.get('/health', (_req: Request, res: Response) => {
+    res.status(200).json({
+        status: 'alive',
         timestamp: new Date().toISOString(),
         application: publicAppMetadata,
     });
 });
-app.get('/api/health', (req: Request, res: Response) => {
-    res.json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
+
+async function readinessHandler(_req: Request, res: Response) {
+    const readiness = await getReadiness();
+    res.status(readiness.status === 'not_ready' ? 503 : 200).json({
+        ...readiness,
+        application: publicAppMetadata,
         version: process.env.npm_package_version || '1.0.0',
         uptime: Math.floor(process.uptime()),
-        application: publicAppMetadata,
     });
-});
+}
+
+app.get('/ready', readinessHandler);
+app.get('/api/health', readinessHandler);
 
 // Apply rate limiting to auth endpoints BEFORE Better Auth handler
 // This protects against brute force login attempts
@@ -193,10 +200,9 @@ const authHandler = toNodeHandler(auth);
 const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunction) => {
     // Ensure CORS headers are set for auth responses since toNodeHandler may bypass Express cors()
     const origin = req.headers.origin;
-    const allowedOrigin = env.FRONTEND_URL.replace(/\/$/, '');
-    if (!origin || origin === allowedOrigin || origin === allowedOrigin + '/' ||
-        (env.NODE_ENV !== 'production' && origin?.match(/^http:\/\/localhost:\d+$/))) {
-        res.setHeader('Access-Control-Allow-Origin', origin || allowedOrigin);
+    const defaultOrigin = env.FRONTEND_URL.replace(/\/$/, '');
+    if (!origin || isTrustedOrigin(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin || defaultOrigin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
     try {
@@ -270,16 +276,6 @@ app.get('/api/blob-test', authMiddleware as any, roleMiddleware(['super_admin'])
     }
 });
 
-// Legacy generated files do not yet carry a unit/classification dimension, so
-// ordinary authenticated users must not be able to enumerate them by path.
-const uploadsPath = path.join(process.cwd(), 'uploads');
-app.use(
-    '/uploads',
-    authMiddleware as any,
-    roleMiddleware(['super_admin']) as any,
-    express.static(uploadsPath, { dotfiles: 'deny', index: false, fallthrough: false }),
-);
-
 // Apply general rate limiting to all API routes
 app.use('/api', generalLimiter);
 
@@ -321,7 +317,7 @@ app.use('/api/layanan-arsip', layananArsipRoutes);
 app.use('/api/supervision', supervisionRoutes);
 app.use('/api/mapping', mappingRoutes);
 app.use('/api/security', securityRoutes); // Security utilities (password check, etc.)
-app.use('/api/import', googleDriveImportRoutes); // Google Drive import
+app.use('/api/import', googleDriveImportRoutes); // Public Google Sheets metadata import
 app.use('/api/client-upload', clientUploadRoutes); // Client-side Vercel Blob uploads (bypasses 4.5MB limit)
 app.use('/api/files', fileAccessRoutes); // Authenticated, unit-scoped private file streaming
 app.use('/api/integrations/srikandi', srikandiRoutes);
@@ -341,7 +337,8 @@ app.use((req: Request, res: Response) => {
 });
 
 // Global error handler — handles custom AppError instances and unexpected errors
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+export function globalErrorHandler(err: Error, req: Request, res: Response, next: NextFunction) {
+    void next;
     // Custom application errors carry their own status code
     if (err instanceof AppError) {
         res.status(err.statusCode).json({
@@ -360,6 +357,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
         error: 'Internal Server Error',
         message: env.NODE_ENV === 'development' ? err.message : 'Terjadi kesalahan pada server.',
     });
-});
+}
+
+app.use(globalErrorHandler);
 
 export default app;

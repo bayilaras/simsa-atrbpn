@@ -4,7 +4,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const resultQueue: any[] = [];
 const capturedValues: any[] = [];
 const capturedSets: any[] = [];
+let transactionCommits = 0;
+let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
+
+const auditMocks = vi.hoisted(() => ({
+    logActionOrThrow: vi.fn(),
+}));
 
 const mockChain: any = new Proxy({}, {
     get(_target, prop) {
@@ -25,10 +31,20 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
-    transaction: async (fn: any) => fn(mockDb),
+    transaction: async (fn: any) => {
+        try {
+            const result = await fn(mockDb);
+            transactionCommits += 1;
+            return result;
+        } catch (error) {
+            transactionRollbacks += 1;
+            throw error;
+        }
+    },
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
 
 const canonicalAssignment = {
     snapshot: { schemaVersion: 1 },
@@ -161,6 +177,10 @@ describe('ArsipService', () => {
         resultQueue.length = 0;
         capturedValues.length = 0;
         capturedSets.length = 0;
+        transactionCommits = 0;
+        transactionRollbacks = 0;
+        auditMocks.logActionOrThrow.mockReset();
+        auditMocks.logActionOrThrow.mockResolvedValue(undefined);
         vi.mocked(archiveRuleAssignmentService.resolveActive).mockResolvedValue(canonicalAssignment as any);
     });
 
@@ -349,6 +369,26 @@ describe('ArsipService', () => {
             );
             const res = await svc.update('1', { keterangan: 'updated' } as any);
             expect(res.keterangan).toBe('updated');
+        });
+
+        it('rolls back an archive update when the critical audit insert fails', async () => {
+            enqueue(
+                [{ id: '1', disposalStatus: 'active', disposalBatchId: null, legalHold: false }],
+                [{ id: '1', keterangan: 'updated' }],
+            );
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(svc.update('1', { keterangan: 'updated' } as any, {
+                userId: 'user-1',
+                userEmail: 'operator@example.test',
+            })).rejects.toThrow('audit unavailable');
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
+                expect.objectContaining({ action: 'update', entityType: 'arsip', entityId: '1' }),
+                mockDb,
+            );
         });
 
         it('should allow non-retention metadata while an archive is held or in a batch', async () => {
@@ -623,6 +663,28 @@ describe('ArsipService', () => {
             expect(capturedValues[0].tanggalKadaluarsa).toBeNull();
         });
 
+        it('rejects a classification that conflicts with incoming source metadata', async () => {
+            enqueue([{
+                id: 'sm-classified',
+                unitKerjaId: 'u1',
+                tahun: 2026,
+                nomorSurat: 'SM-1/2026',
+                tanggalSurat: '2026-01-10',
+                perihal: 'Keuangan',
+                klasifikasiKode: 'KU.01',
+                isDeleted: false,
+                isArchived: false,
+            }]);
+            enqueue([]); // duplicate check
+
+            await expect(svc.archiveFromSuratMasuk('sm-classified', {
+                klasifikasiItemId: 10,
+                jraItemId: 20,
+            })).rejects.toThrow(/tidak cocok.*surat masuk sumber/i);
+
+            expect(capturedValues).toHaveLength(0);
+        });
+
         it('should reject a trigger embedded in the registration command', async () => {
             await expect(svc.archiveFromSuratMasuk('sm-1', {
                 retensiAktif: '2 tahun',
@@ -661,6 +723,44 @@ describe('ArsipService', () => {
                 'unit-a',
             )).rejects.toThrow(/surat keluar/i);
 
+            expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
+        });
+
+        it('accepts only a classification recorded on the outgoing source', async () => {
+            enqueue([{
+                id: 'sk-classified',
+                unitKerjaId: 'u1',
+                tahun: 2026,
+                nomorSurat: 'SK-1/2026',
+                tanggalSurat: '2026-02-10',
+                perihal: 'Keuangan',
+                klasifikasiFasilitatifKode: 'KU.01',
+                klasifikasiSubstantifKode: 'TR.01',
+                approvalStatus: 'approved',
+                isDeleted: false,
+                isArchived: false,
+            }]);
+            enqueue([]); // duplicate check
+
+            await expect(svc.archiveFromSuratKeluar('sk-classified', {
+                klasifikasiItemId: 10,
+                jraItemId: 20,
+            })).rejects.toThrow(/tidak cocok.*surat keluar sumber/i);
+
+            expect(capturedValues).toHaveLength(0);
+        });
+
+        it('rejects an outgoing letter that has not received final approval', async () => {
+            enqueue([{
+                id: 'sk-draft',
+                unitKerjaId: 'u1',
+                approvalStatus: 'draft',
+                isDeleted: false,
+                isArchived: false,
+            }]);
+
+            await expect(svc.archiveFromSuratKeluar('sk-draft', {} as any, 'u1'))
+                .rejects.toThrow(/persetujuan final/i);
             expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
         });
     });
@@ -719,6 +819,27 @@ describe('ArsipService', () => {
             expect(result.after.legalHoldReason).toBe('Pemeriksaan masih berjalan');
         });
 
+        it('rolls back legal hold placement when critical audit storage fails', async () => {
+            enqueue([{ id: 'a1', unitKerjaId: 'u1', legalHold: false }]);
+            enqueue([{ id: 'a1', unitKerjaId: 'u1', legalHold: true, legalHoldReason: 'Pemeriksaan masih berjalan' }]);
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(svc.placeLegalHold(
+                'a1',
+                'u1',
+                'Pemeriksaan masih berjalan',
+                'user-1',
+                { userId: 'user-1' },
+            )).rejects.toThrow('audit unavailable');
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
+                expect.objectContaining({ action: 'hold', entityType: 'arsip', entityId: 'a1' }),
+                mockDb,
+            );
+        });
+
         it('should fail if disposal finishes before the conditional hold update', async () => {
             enqueue([{ id: 'a1', unitKerjaId: 'u1', legalHold: false, disposalStatus: 'approved' }]);
             enqueue([]); // disposal became executed while the hold update waited for its row lock
@@ -744,6 +865,12 @@ describe('ArsipService', () => {
             const stats = { total: 200, arsipMasuk: 120, arsipKeluar: 80 };
             enqueue([stats]);
             expect(await svc.getStats('u1')).toEqual(stats);
+        });
+
+        it('should support an explicit all-unit aggregate for super-admin routes', async () => {
+            const stats = { total: 300, arsipMasuk: 175, arsipKeluar: 125 };
+            enqueue([stats]);
+            expect(await svc.getStats(null, 2026)).toEqual(stats);
         });
     });
 });

@@ -2,25 +2,35 @@ import api from './api';
 
 const API_BASE = '/api/reports';
 
+function requireUnitKerjaId(unitKerjaId) {
+    const unit = typeof unitKerjaId === 'string' ? unitKerjaId.trim() : '';
+    if (!unit) throw new Error('unitKerjaId wajib dipilih untuk memuat laporan');
+    return unit;
+}
+
+function scopedParams(params = {}) {
+    return { ...params, unitKerjaId: requireUnitKerjaId(params.unitKerjaId) };
+}
+
 export const reportService = {
     // Surat Masuk Report
-    getSuratMasukReport: (params) => api.get(`${API_BASE}/surat-masuk`, params),
+    getSuratMasukReport: (params) => api.get(`${API_BASE}/surat-masuk`, scopedParams(params)),
 
     // Surat Keluar Report
-    getSuratKeluarReport: (params) => api.get(`${API_BASE}/surat-keluar`, params),
+    getSuratKeluarReport: (params) => api.get(`${API_BASE}/surat-keluar`, scopedParams(params)),
 
     // Arsip Report
-    getArsipReport: (params) => api.get(`${API_BASE}/arsip`, params),
+    getArsipReport: (params) => api.get(`${API_BASE}/arsip`, scopedParams(params)),
 
     // Lending Report
-    getLendingReport: (params) => api.get(`${API_BASE}/lending`, params),
+    getLendingReport: (params) => api.get(`${API_BASE}/lending`, scopedParams(params)),
 
     // Summary Report
-    getSummaryReport: (unitKerjaId, year) => api.get(`${API_BASE}/summary`, { unitKerjaId, year }),
+    getSummaryReport: (unitKerjaId, year) => api.get(`${API_BASE}/summary`, { unitKerjaId: requireUnitKerjaId(unitKerjaId), year }),
 
     // Export Reports
     exportReport: async (type, format, params) => {
-        const queryParams = new URLSearchParams(params).toString();
+        const queryParams = new URLSearchParams(scopedParams(params)).toString();
         const url = `${api.baseUrl}${API_BASE}/export/${type}/${format}?${queryParams}`;
 
         const response = await fetch(url, { credentials: 'include' });

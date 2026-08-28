@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-SIMSA is a **full-stack web application** that digitises the end-to-end management of official correspondence (surat) and archives (arsip) for the **Ministry of Agrarian Affairs and Spatial Planning / National Land Agency** (Kementerian ATR/BPN). It covers the complete archival lifecycle — from incoming/outgoing letter registration, classification, retention scheduling, physical storage tracking, and disposition, all the way through to archive lending, electronic preservation, and regulatory form generation (33 Formulir per Permen ATR/BPN).
+SIMSA is a **full-stack web application** that coordinates official correspondence (surat) and archive (arsip) workflows for the **Ministry of Agrarian Affairs and Spatial Planning / National Land Agency** (Kementerian ATR/BPN). It connects incoming/outgoing letter registration, classification, retention scheduling, physical storage tracking, lending, preservation records, appraisal, and disposition. Physical execution and external institutional hand-off still require approved operational procedures and evidence outside the application.
 
 ---
 
@@ -19,9 +19,9 @@ SIMSA is a **full-stack web application** that digitises the end-to-end manageme
 |---|---|
 | **Frontend** | React 19, Vite 7, Tailwind CSS 4, Radix UI, shadcn/ui, Recharts, Chart.js |
 | **Backend** | Node.js, Express 5, TypeScript, Zod validation |
-| **Database** | PostgreSQL via Drizzle ORM (26 schema tables, migrations) |
+| **Database** | PostgreSQL via Drizzle ORM (versioned migrations) |
 | **Auth** | Better Auth (email/password + Google OAuth), session-based |
-| **File Storage** | Local `uploads/` directory (authenticated access) |
+| **File Storage** | Private Vercel Blob behind authenticated/authorized streaming routes; local `uploads/` is legacy compatibility only |
 | **PDF/QR** | PDFKit, QRCode, Tesseract.js (OCR) |
 | **Email** | Nodemailer |
 | **API Docs** | Swagger (swagger-jsdoc + swagger-ui-express) |
@@ -37,8 +37,9 @@ SIMSA is a **full-stack web application** that digitises the end-to-end manageme
 | `super_admin` | Full access — user management, settings, master data, audit log |
 | `admin_dirjen` | Administrative access — most features except system settings |
 | `admin_sesditjen` | Administrative access — scoped to Sesditjen unit |
-| `auditor` | Read-only access to audit logs and reports |
-| `user` | Standard — can manage letters, view archives, request loans |
+| `auditor` | Read-oriented access to audit, governance, and reports within the permitted scope |
+| `staff` | Operational access — manage permitted correspondence and submit archive-service requests within the assigned unit |
+| `user` | Provisioning placeholder with no record access until an administrator assigns an approved role and unit |
 
 **Access enforcement**: `ProtectedRoute` (auth gate) + `RoleGuard` (role check) wrappers on React Router. Backend enforces via session middleware.
 
@@ -151,9 +152,9 @@ SIMSA is a **full-stack web application** that digitises the end-to-end manageme
 - OCR capability (Tesseract.js) for scanned documents
 
 #### 4.5.2 Autentikasi Arsip (Archive Authentication) — `/autentikasi`
-- Create authentication records for archive copies
-- Verify against original documents
-- Official authentication certificate generation
+- Create controlled authentication records for verified electronic archives
+- Reference the verified source record and its integrity metadata
+- Generate an archive-authentication record/PDF without claiming an electronic signature
 
 #### 4.5.3 Tunjuk Silang (Cross-Reference Index) — `/tunjuk-silang`
 - Cross-reference entries linking related archives
@@ -165,9 +166,9 @@ SIMSA is a **full-stack web application** that digitises the end-to-end manageme
 ### 4.6 Administrasi
 
 #### 4.6.1 Formulir (Official Forms) — `/formulir`
-- **33 regulatory forms** (Formulir 1–33) per Permen ATR/BPN
-- Browse all available form templates
-- Print-ready viewer (`/formulir/cetak/:id`) with dedicated print layout
+- **33 blank regulatory reference templates** (Formulir 1–33) per Permen ATR/BPN
+- Browse and print reference layouts from `/formulir/cetak/:id`
+- Data-bound operational forms and PDFs are generated from their owning modules (lending, disposition, vital/protected archives, and reports); the reference gallery is not presented as live record output
 - Form types include:
   - Kartu kendali surat masuk/keluar
   - Lembar disposisi
@@ -201,8 +202,8 @@ SIMSA is a **full-stack web application** that digitises the end-to-end manageme
 - **Profile tab**: User profile editing
 - **Unit Kerja tab**: Organisational unit management
 - **Templates tab**: Letter templates configuration
-- **Preferences tab**: UI / system preferences (theme, etc.)
-- Super admin only
+- **Preferences tab**: Per-account theme, in-app notification, and email opt-in
+- Every authenticated user can manage profile/preferences; organisational and template administration remains role-restricted
 
 ---
 
@@ -211,20 +212,21 @@ SIMSA is a **full-stack web application** that digitises the end-to-end manageme
 | Feature | Description |
 |---|---|
 | **Global Search** | Full-text search across surat and arsip (dedicated search service + route) |
-| **Bulk Upload** | Batch import of letters/archives from spreadsheet files |
-| **Print Templates** | Official print layouts for all forms, berita acara, etc. (PDFKit backend) |
+| **Bulk Upload** | Durable batch ingest of PDF archives with OCR, private bitstream storage, status tracking, and explicit confirmation |
+| **Print Templates** | Operational PDF reports for implemented workflows; the Formulir menu is a labelled blank-reference gallery, not generated transaction output |
 | **Export** | Excel (ExcelJS) and PDF export across reports and data tables |
 | **QR Codes** | QR code generation for archive tracking |
 | **OCR** | Optical Character Recognition on uploaded scanned documents (Tesseract.js) |
-| **Notifications** | In-app notification system with read tracking; email notifications (Nodemailer) |
+| **Notifications** | Workflow-aware in-app notifications with read tracking; optional SMTP delivery with explicit delivery status |
 | **Approval Workflow** | Multi-stage approval engine for archive disposition |
-| **Digital Signatures** | Signature service infrastructure for official document signing |
-| **Google Drive** | Integration service for cloud storage |
+| **Electronic Signatures** | Deliberately out of product scope; legacy simulation data remains invalid and signing stays disabled |
+| **Google Sheets Import** | Authenticated, validated import of letter metadata from a deliberately public Google Sheet URL; it is not canonical file storage |
+| **Private Object Storage** | Vercel Blob-backed private bitstream storage behind an authenticated file gateway |
 | **Error Boundaries** | React Error Boundary components for graceful degradation |
 | **Offline Indicator** | Visual indicator when user loses connectivity |
 | **Loading Skeletons** | Shimmer loading states across all data-heavy pages |
 | **Idle Warning** | Auto-logout warning banner at 25 min idle, logout at 30 min |
-| **Theme** | Dark/light mode via theme provider |
+| **Theme** | Account-backed light/dark/system preference with local fallback |
 | **Breadcrumbs** | Contextual navigation breadcrumbs across all pages |
 | **Responsive Layout** | Collapsible sidebar, mobile-friendly grid layouts |
 
@@ -256,13 +258,13 @@ erDiagram
     arsip }o--|| storage_locations : stored_at
     
     penyusutan ||--o{ approvals : requires
-    approvals ||--o{ signatures : signed_with
+    users ||--o{ approvals : reviews
     
     users ||--o{ audit_log : generates
     users ||--o{ notification_reads : tracks
 ```
 
-**26 schema tables**: `users`, `sessions`, `accounts`, `verifications`, `unit_kerja`, `surat_masuk`, `surat_keluar`, `arsip`, `file_attachments`, `audit_log`, `master_data`, `storage_locations`, `archive_lending`, `dosir`, `surat_distribution`, `penyusutan`, `arsip_vital`, `arsip_terjaga`, `arsip_elektronik`, `tunjuk_silang`, `klasifikasi_jra_mapping`, `autentikasi`, `layanan_arsip`, `notification_reads`, `preservasi_track`, `approvals`, `signatures`
+The versioned schema covers identity/session data, unit-scoped correspondence, archive records and immutable rule snapshots, file attachments and ingest queues, dossiers, lending, storage, preservation, appraisal/disposition, protected/vital archives, cross-references, archive services, notifications/preferences, audit, approvals, and optional SRIKANDI outbox records.
 
 ---
 
@@ -296,10 +298,10 @@ erDiagram
 | `/api/export` | Data export (Excel/PDF) |
 | `/api/notifications` | Notifications |
 | `/api/settings` | System settings |
-| `/api/user-management` | User CRUD |
+| `/api/users` | User CRUD |
 | `/api/audit-log` | Audit trail |
 | `/api/approvals` | Approval workflow |
-| `/api/uploads` | File upload |
+| `/api/upload` | Controlled attachment upload |
 | `/api/dashboard` | Dashboard stats |
 | `/api/mapping` | Classification-JRA mapping |
 | `/api/supervision` | Supervision/pengawasan |
@@ -320,7 +322,7 @@ erDiagram
 - ✅ File type validation (magic bytes)
 - ✅ SQL injection protection (Drizzle ORM parameterised queries)
 - ✅ XSS protection via Helmet + React
-- ✅ Authenticated file access (uploads directory)
+- ✅ Private object storage behind authenticated, authorised, audited streaming routes
 - ✅ Idle session auto-logout
 - ✅ Response compression
 
@@ -334,7 +336,7 @@ erDiagram
 
 ## 9. Regulatory Compliance
 
-The application is designed to comply with the following Ministerial Regulations:
+The following regulations are design and governance references. This specification does not claim certification or complete legal compliance:
 
 | Regulation | Coverage |
 |---|---|
@@ -342,7 +344,7 @@ The application is designed to comply with the following Ministerial Regulations
 | **Permen No. 10 Tahun 2018** | Previous archival guidelines referenced for backward compatibility |
 | **Permen No. 8 Tahun 2020** | Supplementary archival procedures |
 
-The 33 formulir (Formulir 1–33) are implemented as dedicated React components and correspond to the official forms mandated by the regulations.
+The 33 Formulir React components are blank reference layouts. Operational evidence must be generated from the relevant data-bound module or completed and validated through the approved procedure; rendering a blank template is not evidence that a workflow was executed.
 
 ---
 
@@ -361,13 +363,18 @@ The 33 formulir (Formulir 1–33) are implemented as dedicated React components 
 │  │  Better Auth handler            │    │
 │  │  API routes (/api/*)            │    │
 │  │  Swagger docs (/api-docs)       │    │
-│  │  Protected uploads (/uploads)   │    │
+│  │  Authenticated file gateway     │    │
 │  └─────────────────────────────────┘    │
 └──────────────┬──────────────────────────┘
                │
 ┌──────────────▼──────────────────────────┐
 │          PostgreSQL Database            │
 │       (Drizzle ORM migrations)          │
+└─────────────────────────────────────────┘
+               │
+┌──────────────▼──────────────────────────┐
+│ Private Blob + persistent AV/SRIKANDI  │
+│ workers (SRIKANDI optional/disabled)   │
 └─────────────────────────────────────────┘
 ```
 

@@ -14,6 +14,21 @@ function getCookie(name) {
 const STATE_CHANGING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 const SAFE_METHODS = ['GET', 'HEAD'];
 
+function createApiError(message, response, body = {}) {
+    const error = new Error(message);
+    error.status = response.status;
+    error.details = body.details;
+    error.data = body;
+    // A number of existing consumers were originally written against Axios.
+    // Keep its error shape available while exposing the simpler Error fields.
+    error.response = {
+        status: response.status,
+        data: body,
+        headers: response.headers,
+    };
+    return error;
+}
+
 class ApiClient {
     constructor(baseUrl) {
         this.baseUrl = baseUrl;
@@ -45,6 +60,7 @@ class ApiClient {
     async request(endpoint, options = {}, retryCount = 0) {
         const url = `${this.baseUrl}${endpoint}`;
         const method = (options.method || 'GET').toUpperCase();
+        const responseType = options.responseType || 'json';
 
         // For state-changing requests, ensure we have a CSRF token first
         if (STATE_CHANGING_METHODS.includes(method)) {
@@ -63,6 +79,8 @@ class ApiClient {
                 ...options.headers,
             },
         };
+        // responseType is an ApiClient option, not part of the Fetch API.
+        delete config.responseType;
 
         if (options.body && typeof options.body === 'object') {
             config.body = JSON.stringify(options.body);
@@ -101,62 +119,75 @@ class ApiClient {
                 // subsequent user. This also covers server-side session expiry.
                 await clearOfflineStorage();
                 window.location.href = '/login';
-                throw new Error('Sesi telah berakhir. Silakan login kembali.');
+                throw createApiError('Sesi telah berakhir. Silakan login kembali.', response, errorBody);
             }
 
             // 429 Too Many Requests — rate limited
             if (response.status === 429) {
                 const retryAfter = response.headers.get('Retry-After');
                 const waitMsg = retryAfter ? ` Coba lagi setelah ${retryAfter} detik.` : ' Coba lagi nanti.';
-                throw new Error(`Terlalu banyak permintaan.${waitMsg}`);
+                throw createApiError(`Terlalu banyak permintaan.${waitMsg}`, response, errorBody);
             }
 
             // 403 Forbidden
             if (response.status === 403) {
-                throw new Error(errorBody.message || 'Anda tidak memiliki izin untuk mengakses sumber ini.');
+                throw createApiError(
+                    errorBody.message || errorBody.error || 'Anda tidak memiliki izin untuk mengakses sumber ini.',
+                    response,
+                    errorBody,
+                );
             }
 
             // 500+ Server Error
             if (response.status >= 500) {
                 const serverMsg = errorBody.message || errorBody.error || '';
-                throw new Error(serverMsg || 'Terjadi kesalahan pada server. Silakan coba lagi nanti.');
+                throw createApiError(
+                    serverMsg || 'Terjadi kesalahan pada server. Silakan coba lagi nanti.',
+                    response,
+                    errorBody,
+                );
             }
 
             // Other errors. Preserve structured validation details so forms can
             // show actionable item-level feedback returned by the API.
-            const apiError = new Error(errorBody.message || errorBody.error || `HTTP ${response.status}`);
-            apiError.status = response.status;
-            apiError.details = errorBody.details;
-            throw apiError;
+            throw createApiError(
+                errorBody.message || errorBody.error || `HTTP ${response.status}`,
+                response,
+                errorBody,
+            );
         }
 
+        if (responseType === 'blob') return response.blob();
+        if (responseType === 'arrayBuffer') return response.arrayBuffer();
+        if (responseType === 'text') return response.text();
+        if (response.status === 204) return null;
         return response.json();
     }
 
-    get(endpoint, params = {}) {
+    get(endpoint, params = {}, options = {}) {
         // Filter out undefined, null, and empty string values to prevent sending them as string literals
         const filteredParams = Object.fromEntries(
             Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
         );
         const query = new URLSearchParams(filteredParams).toString();
         const url = query ? `${endpoint}?${query}` : endpoint;
-        return this.request(url, { method: 'GET' });
+        return this.request(url, { ...options, method: 'GET' });
     }
 
-    post(endpoint, body) {
-        return this.request(endpoint, { method: 'POST', body });
+    post(endpoint, body, options = {}) {
+        return this.request(endpoint, { ...options, method: 'POST', body });
     }
 
-    put(endpoint, body) {
-        return this.request(endpoint, { method: 'PUT', body });
+    put(endpoint, body, options = {}) {
+        return this.request(endpoint, { ...options, method: 'PUT', body });
     }
 
-    patch(endpoint, body) {
-        return this.request(endpoint, { method: 'PATCH', body });
+    patch(endpoint, body, options = {}) {
+        return this.request(endpoint, { ...options, method: 'PATCH', body });
     }
 
-    delete(endpoint, body) {
-        return this.request(endpoint, { method: 'DELETE', body });
+    delete(endpoint, body, options = {}) {
+        return this.request(endpoint, { ...options, method: 'DELETE', body });
     }
 }
 

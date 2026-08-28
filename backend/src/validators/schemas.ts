@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE } from '../utils/permanent-transfer-policy';
+import {
+    MAX_NOTIFICATION_ID_LENGTH,
+    MAX_NOTIFICATION_READ_IDS,
+    NOTIFICATION_ID_PATTERN,
+} from '../utils/notification-id.js';
 
 // Common schemas
 export const uuidSchema = z.string().uuid('Invalid UUID format');
@@ -10,6 +15,11 @@ export const dateSchema = z.string()
         return !Number.isNaN(parsed.getTime())
             && parsed.toISOString().slice(0, 10) === value;
     }, 'Tanggal tidak valid');
+
+const optionalNomorSuratSchema = z.preprocess(
+    value => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().trim().min(1, 'Nomor surat is required').max(255).optional(),
+);
 
 export const timestampSchema = z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/));
 
@@ -61,6 +71,13 @@ export const paginationSchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });
 
+export const nextSuratNumberQuerySchema = z.object({
+    unitKerjaId: z.string().trim().min(1).max(50).optional(),
+    tahun: z.coerce.number().int().min(2000).max(2100).optional(),
+    tanggalSurat: dateSchema.optional(),
+    naskahDinas: z.string().trim().max(100).optional(),
+}).strict();
+
 // Surat Masuk schemas
 // Fields must match database schema in db/schema/surat-masuk.ts
 export const createSuratMasukSchema = z.object({
@@ -69,7 +86,7 @@ export const createSuratMasukSchema = z.object({
     tahun: z.coerce.number().int().min(2000).max(2100).optional(), // Defaults to current year
     jenisSurat: z.string().max(100).optional(),
     sifatSurat: z.string().max(50).optional(), // Biasa, Segera, Sangat Segera
-    nomorSurat: z.string().min(1, 'Nomor surat is required').max(255),
+    nomorSurat: optionalNomorSuratSchema,
     tanggalSurat: dateSchema,
     perihal: z.string().min(1, 'Perihal is required').max(2000),
     dari: z.string().min(1, 'Pengirim is required').max(255), // Field name is 'dari' in DB
@@ -107,11 +124,16 @@ export const querySuratMasukSchema = paginationSchema.extend({
 
 // Surat Keluar schemas
 // Fields must match database schema in db/schema/surat-keluar.ts.
-export const createSuratKeluarSchema = z.object({
+const suratKeluarBaseSchema = z.object({
     unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
     tahun: z.coerce.number().int().min(2000).max(2100).optional(),
     naskahDinas: z.string().max(100).optional(),
-    nomorSurat: z.string().min(1, 'Nomor surat is required').max(255),
+    // Keep this optional for older API clients. The service infers manual mode
+    // when a number is supplied and automatic mode when it is omitted. New
+    // clients send the mode explicitly so a displayed preview cannot be saved
+    // accidentally as a manual number.
+    numberingMode: z.enum(['auto', 'manual']).optional(),
+    nomorSurat: optionalNomorSuratSchema,
     tanggalSurat: dateSchema,
     perihal: z.string().min(1, 'Perihal is required').max(2000),
     kepada: z.string().min(1, 'Penerima is required').max(2000),
@@ -125,7 +147,28 @@ export const createSuratKeluarSchema = z.object({
     fileOriginalName: z.string().max(255).optional(),
 });
 
-export const updateSuratKeluarSchema = createSuratKeluarSchema.partial().omit({ unitKerjaId: true });
+export const createSuratKeluarSchema = suratKeluarBaseSchema.superRefine((value, ctx) => {
+    const effectiveNumberingMode = value.numberingMode
+        ?? (value.nomorSurat ? 'manual' : 'auto');
+    if (effectiveNumberingMode === 'auto' && value.nomorSurat) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['nomorSurat'],
+            message: 'Nomor preview tidak boleh dikirim pada mode penomoran otomatis',
+        });
+    }
+    if (effectiveNumberingMode === 'manual' && !value.nomorSurat) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['nomorSurat'],
+            message: 'Nomor surat wajib diisi pada mode manual',
+        });
+    }
+});
+
+export const updateSuratKeluarSchema = suratKeluarBaseSchema
+    .omit({ unitKerjaId: true, numberingMode: true })
+    .partial();
 
 export const querySuratKeluarSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -385,6 +428,20 @@ export const queryAutentikasiSchema = paginationSchema.extend({
 export type CreateAutentikasi = z.infer<typeof createAutentikasiSchema>;
 export type QueryAutentikasi = z.infer<typeof queryAutentikasiSchema>;
 
+const maxBulkUploadYear = new Date().getUTCFullYear() + 1;
+export const confirmBulkUploadSchema = z.object({
+    items: z.array(z.object({
+        itemId: uuidSchema,
+        nomorBerkas: z.string().trim().min(1).max(100).optional(),
+        uraianBerkas: z.string().trim().min(1).max(5000).optional(),
+        kodeKlasifikasi: z.string().trim().min(1).max(50).optional(),
+        tahun: z.number().int().min(1900).max(maxBulkUploadYear),
+        jenisArsip: z.enum(['masuk', 'keluar']),
+    }).strict()).min(1).max(50),
+}).strict();
+
+export type ConfirmBulkUpload = z.infer<typeof confirmBulkUploadSchema>;
+
 // ==================== Dosir schemas ====================
 
 export const createDosirSchema = z.object({
@@ -556,8 +613,20 @@ export type UpdateLayananStatus = z.infer<typeof updateLayananStatusSchema>;
 
 // ==================== Notification schemas ====================
 
+export const notificationIdSchema = z.string()
+    .min(1)
+    .max(MAX_NOTIFICATION_ID_LENGTH)
+    .regex(NOTIFICATION_ID_PATTERN, 'Format ID notifikasi tidak valid');
+
+export const notificationUnitScopeQuerySchema = z.object({
+    unitKerjaId: z.string().trim().min(1).max(50).optional(),
+}).strict();
+
 export const markAllReadSchema = z.object({
-    notificationIds: z.array(z.string()).min(1, 'Minimal satu notifikasi harus dipilih'),
-});
+    notificationIds: z.array(notificationIdSchema)
+        .min(1, 'Minimal satu notifikasi harus dipilih')
+        .max(MAX_NOTIFICATION_READ_IDS, `Maksimal ${MAX_NOTIFICATION_READ_IDS} notifikasi per permintaan`)
+        .refine(ids => new Set(ids).size === ids.length, 'ID notifikasi tidak boleh duplikat'),
+}).strict();
 
 export type MarkAllRead = z.infer<typeof markAllReadSchema>;

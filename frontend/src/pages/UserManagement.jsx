@@ -40,6 +40,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/context/AuthContext';
 import userManagementService from '@/services/user-management.service';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { getRoleMandatedUnitKerjaId, resolveManagedUserUnitKerjaId } from '@/lib/unit-kerja-scope';
 
 const ROLE_COLORS = {
     'super_admin': 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300 border-red-200',
@@ -56,6 +57,14 @@ const ROLE_LABELS = {
     'staff': 'Staf',
     'user': 'Pengguna',
 };
+
+function applyRoleMandate(draft, role) {
+    return {
+        ...draft,
+        role,
+        unitKerjaId: resolveManagedUserUnitKerjaId(role, draft.unitKerjaId),
+    };
+}
 
 export default function UserManagement() {
     const { user: currentUser, hasRole } = useAuth();
@@ -91,29 +100,13 @@ export default function UserManagement() {
     // Check admin access
     const isAdmin = hasRole(['super_admin']);
 
-    // Load initial data
-    useEffect(() => {
-        if (isAdmin) {
-            loadDropdownData();
-            loadUsers();
-        }
-    }, [isAdmin]);
-
-    // Reload when filters change
-    useEffect(() => {
-        if (isAdmin) {
-            const timer = setTimeout(() => loadUsers(), 300);
-            return () => clearTimeout(timer);
-        }
-    }, [search, roleFilter, unitKerjaFilter, pagination.page]);
-
     // Applying a filter must restart from the first page
     const applyFilter = (setter) => (value) => {
         setter(value);
         setPagination(prev => ({ ...prev, page: 1 }));
     };
 
-    const loadDropdownData = async () => {
+    const loadDropdownData = useCallback(async () => {
         try {
             const [rolesRes, unitKerjaRes] = await Promise.all([
                 userManagementService.getRoles(),
@@ -124,7 +117,7 @@ export default function UserManagement() {
         } catch (err) {
             console.error('Failed to load dropdown data:', err);
         }
-    };
+    }, []);
 
     const loadUsers = useCallback(async () => {
         try {
@@ -154,11 +147,26 @@ export default function UserManagement() {
         }
     }, [search, roleFilter, unitKerjaFilter, pagination.page, pagination.limit]);
 
+    // Load role and unit options once access is available.
+    useEffect(() => {
+        if (isAdmin) {
+            loadDropdownData();
+        }
+    }, [isAdmin, loadDropdownData]);
+
+    // Reload users after filters or pagination change.
+    useEffect(() => {
+        if (isAdmin) {
+            const timer = setTimeout(() => loadUsers(), 300);
+            return () => clearTimeout(timer);
+        }
+    }, [isAdmin, loadUsers]);
+
     const handleEdit = (user) => {
         setEditingUser(user);
         setEditData({
             role: user.role,
-            unitKerjaId: user.unitKerjaId || '',
+            unitKerjaId: resolveManagedUserUnitKerjaId(user.role, user.unitKerjaId),
             isActive: user.isActive,
             jabatan: user.jabatan || '',
             nip: user.nip || '',
@@ -270,6 +278,11 @@ export default function UserManagement() {
         const index = name.charCodeAt(0) % colors.length;
         return colors[index];
     };
+
+    const editMandatedUnitKerjaId = getRoleMandatedUnitKerjaId(editData.role);
+    const addMandatedUnitKerjaId = getRoleMandatedUnitKerjaId(addData.role);
+    const editUnitLocked = editData.role === 'super_admin' || Boolean(editMandatedUnitKerjaId);
+    const addUnitLocked = addData.role === 'super_admin' || Boolean(addMandatedUnitKerjaId);
 
     // Password strength calculator
     const passwordStrength = useMemo(() => {
@@ -576,7 +589,11 @@ export default function UserManagement() {
                     <div className="py-6 space-y-6">
                         <div className="space-y-2">
                             <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Peran Pengguna</label>
-                            <Select value={editData.role} onValueChange={(v) => setEditData(d => ({ ...d, role: v }))}>
+                            <Select
+                                value={editData.role}
+                                onValueChange={(v) => setEditData(d => applyRoleMandate(d, v))}
+                                disabled={editingUser?.id === currentUser?.id}
+                            >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
@@ -589,13 +606,19 @@ export default function UserManagement() {
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                                Peran menentukan hak akses pengguna dalam sistem.
+                                {editingUser?.id === currentUser?.id
+                                    ? 'Peran akun sendiri tidak dapat diubah.'
+                                    : 'Peran menentukan hak akses pengguna dalam sistem.'}
                             </p>
                         </div>
 
                         <div className="space-y-2">
                             <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Unit Kerja</label>
-                            <Select value={editData.unitKerjaId || 'none'} onValueChange={(v) => setEditData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}>
+                            <Select
+                                value={editData.unitKerjaId || 'none'}
+                                onValueChange={(v) => setEditData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}
+                                disabled={editUnitLocked}
+                            >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
@@ -609,13 +632,21 @@ export default function UserManagement() {
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                                Unit kerja membatasi data yang dapat dilihat dan dikelola.
+                                {editData.role === 'super_admin'
+                                    ? 'Super admin bekerja lintas unit dan tidak memiliki unit kerja tersimpan.'
+                                    : editMandatedUnitKerjaId
+                                    ? `Unit ${editMandatedUnitKerjaId} ditetapkan otomatis oleh mandat peran.`
+                                    : 'Unit kerja membatasi data yang dapat dilihat dan dikelola.'}
                             </p>
                         </div>
 
                         <div className="space-y-2">
                             <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Status Akun</label>
-                            <Select value={String(editData.isActive)} onValueChange={(v) => setEditData(d => ({ ...d, isActive: v === 'true' }))}>
+                            <Select
+                                value={String(editData.isActive)}
+                                onValueChange={(v) => setEditData(d => ({ ...d, isActive: v === 'true' }))}
+                                disabled={editingUser?.id === currentUser?.id}
+                            >
                                 <SelectTrigger className={editData.isActive ? "border-green-200 bg-green-50 dark:bg-green-500/15 text-green-900 dark:text-green-300" : "border-red-200 bg-red-50 dark:bg-red-500/15 text-red-900 dark:text-red-300"}>
                                     <SelectValue />
                                 </SelectTrigger>
@@ -634,6 +665,11 @@ export default function UserManagement() {
                                     </SelectItem>
                                 </SelectContent>
                             </Select>
+                            {editingUser?.id === currentUser?.id && (
+                                <p className="text-xs text-muted-foreground">
+                                    Akun yang sedang digunakan tidak dapat dinonaktifkan.
+                                </p>
+                            )}
                         </div>
 
                         <div className="space-y-2">
@@ -719,7 +755,7 @@ export default function UserManagement() {
 
                         <div className="space-y-2">
                             <Label>Peran</Label>
-                            <Select value={addData.role} onValueChange={(v) => setAddData(d => ({ ...d, role: v }))}>
+                            <Select value={addData.role} onValueChange={(v) => setAddData(d => applyRoleMandate(d, v))}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
@@ -735,7 +771,11 @@ export default function UserManagement() {
 
                         <div className="space-y-2">
                             <Label>Unit Kerja</Label>
-                            <Select value={addData.unitKerjaId || 'none'} onValueChange={(v) => setAddData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}>
+                            <Select
+                                value={addData.unitKerjaId || 'none'}
+                                onValueChange={(v) => setAddData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}
+                                disabled={addUnitLocked}
+                            >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
@@ -748,6 +788,15 @@ export default function UserManagement() {
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {addData.role === 'super_admin' ? (
+                                <p className="text-xs text-muted-foreground">
+                                    Super admin bekerja lintas unit dan tidak memiliki unit kerja tersimpan.
+                                </p>
+                            ) : addMandatedUnitKerjaId && (
+                                <p className="text-xs text-muted-foreground">
+                                    Unit {addMandatedUnitKerjaId} ditetapkan otomatis oleh mandat peran.
+                                </p>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

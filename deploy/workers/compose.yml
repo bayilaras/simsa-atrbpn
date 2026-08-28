@@ -1,0 +1,82 @@
+name: simsa-persistent-workers
+
+services:
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    expose:
+      - "3310"
+    volumes:
+      - clamav-signatures:/var/lib/clamav
+    networks:
+      - scanner
+
+  malware-worker:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    command: ["npm", "run", "start:malware-worker"]
+    environment:
+      NODE_ENV: production
+      APP_PROFILE: internal
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      BLOB_READ_WRITE_TOKEN: ${BLOB_READ_WRITE_TOKEN:?BLOB_READ_WRITE_TOKEN is required}
+      MALWARE_SCANNER_MODE: clamav
+      MALWARE_SCAN_WORKER_ENABLED: ${MALWARE_SCAN_WORKER_ENABLED:-true}
+      MALWARE_SCAN_WORKER_RUNTIME: ${MALWARE_SCAN_WORKER_RUNTIME:-external}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      CLAMAV_TRUSTED_NETWORK: ${CLAMAV_TRUSTED_NETWORK:-true}
+    depends_on:
+      clamav:
+        condition: service_healthy
+    networks:
+      - scanner
+      - outbound
+
+  srikandi-worker:
+    profiles: ["srikandi"]
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    command: ["npm", "run", "start:srikandi-worker"]
+    environment:
+      NODE_ENV: production
+      APP_PROFILE: integrated
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      SRIKANDI_ENABLED: ${SRIKANDI_ENABLED:-false}
+      SRIKANDI_BASE_URL: ${SRIKANDI_BASE_URL:-}
+      SRIKANDI_SYNC_PATH: ${SRIKANDI_SYNC_PATH:-}
+      SRIKANDI_API_TOKEN: ${SRIKANDI_API_TOKEN:-}
+      SRIKANDI_CONTRACT_VERSION: ${SRIKANDI_CONTRACT_VERSION:-}
+      SRIKANDI_ACK_FIELD: ${SRIKANDI_ACK_FIELD:-}
+      SRIKANDI_ACK_VALUE: ${SRIKANDI_ACK_VALUE:-}
+      SRIKANDI_REMOTE_ID_FIELD: ${SRIKANDI_REMOTE_ID_FIELD:-}
+    networks:
+      - outbound
+
+  blob-reconciler:
+    profiles: ["maintenance"]
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.worker
+    restart: "no"
+    command: ["npm", "run", "start:blob-reconciler"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      BLOB_READ_WRITE_TOKEN: ${BLOB_READ_WRITE_TOKEN:?BLOB_READ_WRITE_TOKEN is required}
+      CLIENT_BLOB_UPLOAD_TTL_HOURS: ${CLIENT_BLOB_UPLOAD_TTL_HOURS:-24}
+      CLIENT_BLOB_RECONCILE_BATCH_SIZE: ${CLIENT_BLOB_RECONCILE_BATCH_SIZE:-100}
+    networks:
+      - outbound
+
+volumes:
+  clamav-signatures:
+
+networks:
+  scanner:
+    internal: true
+  outbound:

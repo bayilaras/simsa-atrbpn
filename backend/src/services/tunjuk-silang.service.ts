@@ -9,6 +9,7 @@ import {
 } from '../db/schema/index.js';
 import { eq, or, and, desc, count, isNull } from 'drizzle-orm';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 const VALID_ENTITY_TYPES = ['arsip', 'surat_masuk', 'surat_keluar', 'dosir'] as const;
 const VALID_RELASI_TYPES = ['balasan', 'tindak_lanjut', 'lampiran', 'referensi', 'revisi', 'duplikat', 'berkaitan'] as const;
@@ -128,7 +129,7 @@ class TunjukSilangService {
     /**
      * Create a cross-reference between two entities
      */
-    async create(data: NewTunjukSilang) {
+    async create(data: NewTunjukSilang, auditContext?: CriticalAuditContext) {
         if (!VALID_ENTITY_TYPES.includes(data.sourceType as typeof VALID_ENTITY_TYPES[number])) {
             throw new ValidationError(`Invalid sourceType: ${data.sourceType}`);
         }
@@ -166,6 +167,15 @@ class TunjukSilangService {
 
                 const [created] = await tx.insert(tunjukSilang).values(data).returning();
                 if (!created) throw new ConflictError('Tunjuk silang gagal dibuat.');
+                if (auditContext) {
+                    await auditLogService.logActionOrThrow({
+                        ...auditContext,
+                        action: 'create',
+                        entityType: 'tunjuk_silang',
+                        entityId: created.id,
+                        changes: { after: created },
+                    }, tx);
+                }
                 return created;
             });
         } catch (error) {
@@ -248,6 +258,7 @@ class TunjukSilangService {
         cancelledBy: string,
         cancellationReason: string,
         ownerId: string | null = cancelledBy,
+        auditContext?: CriticalAuditContext,
     ) {
         requireUuid(id, 'id');
         requireUuid(cancelledBy, 'cancelledBy');
@@ -319,6 +330,23 @@ class TunjukSilangService {
                     ownerId === null ? undefined : eq(tunjukSilang.createdBy, ownerId),
                 ))
                 .returning();
+            if (cancelled && auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'cancel',
+                    entityType: 'tunjuk_silang',
+                    entityId: id,
+                    changes: {
+                        before: reference,
+                        after: {
+                            cancelledAt: cancelled.cancelledAt,
+                            cancelledBy: cancelled.cancelledBy,
+                            cancellationReason: cancelled.cancellationReason,
+                        },
+                        fields: ['cancelledAt', 'cancelledBy', 'cancellationReason'],
+                    },
+                }, tx);
+            }
             return cancelled || null;
         });
     }

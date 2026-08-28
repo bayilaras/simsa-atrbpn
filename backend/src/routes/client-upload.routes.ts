@@ -1,12 +1,16 @@
-import { Router, Request, Response } from 'express';
+import { NextFunction, Router, Response } from 'express';
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
 import { uploadLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { createLogger } from '../utils/logger.js';
-import { canWriteMiddleware } from '../middlewares/role.middleware.js';
+import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware.js';
 import regulatoryRuleSetService, {
     REGULATORY_SOURCE_MAX_BYTES,
 } from '../services/regulatory-rule-set.service.js';
+import {
+    clientBlobUploadService,
+    type ClientBlobPurpose,
+} from '../services/client-blob-upload.service.js';
 
 const log = createLogger('ClientUploadRoutes');
 
@@ -31,12 +35,67 @@ function regulatoryClientPayload(value: string | null): { ruleSetId: string } | 
     return null;
 }
 
-// Rate-limit upload token generation
-router.use(uploadLimiter);
+function completedTokenPayload(value: string | null | undefined): {
+    purpose: ClientBlobPurpose;
+    userId: string;
+    ruleSetId?: string;
+} {
+    try {
+        const parsed = JSON.parse(value || 'null');
+        if (
+            parsed
+            && typeof parsed === 'object'
+            && ['surat_masuk', 'surat_keluar', 'regulatory_source'].includes(parsed.purpose)
+            && typeof parsed.userId === 'string'
+        ) {
+            return {
+                purpose: parsed.purpose,
+                userId: parsed.userId,
+                ruleSetId: typeof parsed.ruleSetId === 'string' ? parsed.ruleSetId : undefined,
+            };
+        }
+    } catch {
+        // The signed callback is still rejected when its application payload
+        // is malformed; never create an unowned cleanup lease.
+    }
+    throw new Error('Upload completion payload is invalid');
+}
 
-// All routes require authentication
-router.use(authMiddleware as any);
-router.use(canWriteMiddleware());
+const writeGuard = canWriteMiddleware();
+
+function authorizeTokenGeneration(
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+) {
+    if ((req.body as HandleUploadBody)?.type === 'blob.upload-completed') {
+        // handleUpload verifies the Blob callback signature. Vercel cannot
+        // carry an end-user session cookie when it posts this completion.
+        return next();
+    }
+    void authMiddleware(req, res, (error?: unknown) => {
+        if (error) return next(error);
+        return writeGuard(req, res, next);
+    });
+}
+
+function limitTokenGeneration(req: AuthRequest, res: Response, next: NextFunction) {
+    if ((req.body as HandleUploadBody)?.type === 'blob.upload-completed') return next();
+    return uploadLimiter(req, res, next);
+}
+
+// A scheduler can call this authenticated endpoint. Deletion is limited to
+// expired callback-proven leases atomically reserved by the reconciler.
+router.post(
+    '/reconcile',
+    authMiddleware as any,
+    roleMiddleware(['super_admin']),
+    async (req: AuthRequest, res: Response) => {
+        const requestedLimit = Number(req.body?.limit || 50);
+        const result = await clientBlobUploadService.cleanupExpired(requestedLimit);
+        res.json({ success: true, data: result });
+    },
+);
 
 /**
  * POST /api/client-upload
@@ -45,7 +104,7 @@ router.use(canWriteMiddleware());
  * to get a secure token, then uploads the file directly to Blob storage,
  * bypassing the 4.5MB serverless function body limit.
  */
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', authorizeTokenGeneration, limitTokenGeneration, async (req: AuthRequest, res: Response) => {
     try {
         const body = req.body as HandleUploadBody;
         if (
@@ -102,7 +161,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
                         allowOverwrite: false,
                         validUntil: Date.now() + 10 * 60 * 1000,
                         tokenPayload: JSON.stringify({
-                            purpose: 'regulatory-source',
+                            purpose: 'regulatory_source',
                             ruleSetId,
                             userId: req.user.id,
                             userEmail: req.user.email,
@@ -140,21 +199,37 @@ router.post('/', async (req: AuthRequest, res: Response) => {
                     addRandomSuffix: true,
                     validUntil: Date.now() + 10 * 60 * 1000,
                     tokenPayload: JSON.stringify({
+                        purpose: pathname.startsWith('surat-masuk/')
+                            ? 'surat_masuk'
+                            : 'surat_keluar',
                         userId: req.user?.id,
                         userEmail: req.user?.email,
                     }),
                 };
             },
-            // Completion is finalized by the authenticated business endpoint
-            // (for regulatory PDFs: /verify-blob). No unauthenticated webhook
-            // mutates database state or turns an upload into accepted evidence.
+            onUploadCompleted: async ({ blob, tokenPayload }) => {
+                const payload = completedTokenPayload(tokenPayload);
+                if (payload.purpose === 'regulatory_source') {
+                    const match = blob.pathname.match(REGULATORY_SOURCE_PATH);
+                    if (!match || payload.ruleSetId?.toLowerCase() !== match[1].toLowerCase()) {
+                        throw new Error('Regulatory upload completion is not bound to its rule set');
+                    }
+                }
+                await clientBlobUploadService.recordCompletedUpload({
+                    blobUrl: blob.url,
+                    pathname: blob.pathname,
+                    purpose: payload.purpose,
+                    uploadedBy: payload.userId,
+                });
+            },
         });
 
         res.json(jsonResponse);
     } catch (error: any) {
         log.error({ err: error }, 'Client upload handler error');
         res.status(400).json({
-            error: error.message || 'Upload failed',
+            error: 'Upload request rejected',
+            code: 'CLIENT_UPLOAD_REJECTED',
         });
     }
 });

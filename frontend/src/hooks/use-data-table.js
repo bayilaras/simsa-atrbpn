@@ -11,6 +11,8 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
 
     // Check mode
     const isServerSide = typeof dataInput === 'function'
+    const dataInputRef = useRef(dataInput)
+    dataInputRef.current = dataInput
 
     // Client-side sorting
     const sortedData = useMemo(() => {
@@ -33,15 +35,21 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
     // When the filter dependencies change the result set changes too, so the
     // current page may no longer exist — restart from the first page before fetching
     const prevDependenciesRef = useRef(null);
+    const dependencyVersionRef = useRef(0);
     const prevDependencies = prevDependenciesRef.current;
-    prevDependenciesRef.current = dependencies;
-
-    if (
+    const dependenciesChanged = Boolean(
         prevDependencies &&
-        currentPage !== 1 &&
         (prevDependencies.length !== dependencies.length ||
             dependencies.some((dep, index) => !Object.is(dep, prevDependencies[index])))
-    ) {
+    );
+
+    if (dependenciesChanged) {
+        dependencyVersionRef.current += 1;
+    }
+    const dependencyVersion = dependencyVersionRef.current;
+    prevDependenciesRef.current = dependencies;
+
+    if (dependenciesChanged && currentPage !== 1) {
         setCurrentPage(1);
     }
 
@@ -53,7 +61,7 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const result = await dataInput(currentPage, pageSize);
+                const result = await dataInputRef.current(currentPage, pageSize);
                 if (isMounted) {
                     setServerData(result.data || []);
                     setServerTotal(result.total || 0);
@@ -68,7 +76,7 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
         fetchData();
 
         return () => { isMounted = false; };
-    }, [isServerSide, currentPage, pageSize, ...dependencies]);
+    }, [isServerSide, currentPage, pageSize, dependencyVersion]);
 
     const totalItems = isServerSide ? serverTotal : (sortedData.length || 0);
     const totalPages = Math.ceil(totalItems / pageSize) || 1;

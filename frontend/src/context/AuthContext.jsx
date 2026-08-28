@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { authService } from '../services/auth.service';
 import { clearOfflineStorage } from '../lib/offline-storage';
+import { normalizeAuthenticatedUserUnitScope } from '../lib/unit-kerja-scope';
 
 const AuthContext = createContext(null);
 
@@ -75,7 +76,7 @@ export function AuthProvider({ children }) {
             const session = await authService.getSession();
 
             if (session?.user) {
-                setUser(session.user);
+                setUser(normalizeAuthenticatedUserUnitScope(session.user));
             } else {
                 await clearOfflineStorage();
                 setUser(null);

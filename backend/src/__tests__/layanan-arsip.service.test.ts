@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
+const auditMocks = vi.hoisted(() => ({ logActionOrThrow: vi.fn() }));
 function enqueue(...results: any[]) { resultQueue.push(...results); }
 
 const mockChain: any = new Proxy({}, {
@@ -31,11 +32,19 @@ const mockDb = {
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/audit-log.service.js', () => ({
+    default: auditMocks,
+    auditLogService: auditMocks,
+}));
 
 const { layananArsipService } = await import('../services/layanan-arsip.service');
 
 describe('LayananArsipService', () => {
-    beforeEach(() => { resultQueue.length = 0; });
+    beforeEach(() => {
+        resultQueue.length = 0;
+        auditMocks.logActionOrThrow.mockReset();
+        auditMocks.logActionOrThrow.mockResolvedValue(undefined);
+    });
 
     describe('create', () => {
         it('should create new layanan arsip request', async () => {
@@ -54,6 +63,18 @@ describe('LayananArsipService', () => {
                 arsipId: 'foreign-arsip', jenisLayanan: 'penggandaan',
                 diajukanOleh: 'user-1', keperluan: 'Test',
             } as any, 'unit-1')).rejects.toThrow(/Arsip tidak ditemukan/);
+        });
+
+        it('aborts creation when transactional audit persistence fails', async () => {
+            enqueue([{ id: 'arsip-1' }], [{
+                id: 'la-1', arsipId: 'arsip-1', jenisLayanan: 'peminjaman', status: 'diajukan',
+            }]);
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(layananArsipService.create({
+                arsipId: 'arsip-1', jenisLayanan: 'peminjaman', diajukanOleh: 'user-1',
+            } as any, 'unit-1', null, { userId: 'user-1' }))
+                .rejects.toThrow('audit unavailable');
         });
     });
 
@@ -130,6 +151,16 @@ describe('LayananArsipService', () => {
                 'la-1', 'menunggu', undefined, undefined, 'unit-1', 'diajukan',
             );
             expect(result.status).toBe('menunggu');
+        });
+
+        it('aborts the status transition when transactional audit persistence fails', async () => {
+            enqueue([{ id: 'la-1', status: 'diproses' }]);
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(layananArsipService.updateStatus(
+                'la-1', 'diproses', 'admin-1', undefined, 'unit-1', 'diajukan', null,
+                { userId: 'admin-1' },
+            )).rejects.toThrow('audit unavailable');
         });
     });
 

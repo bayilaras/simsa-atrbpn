@@ -16,6 +16,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Link } from 'react-router-dom'
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 const STATUS_CONFIG = {
     draft: { label: 'Draft', color: 'bg-muted text-foreground border-border', icon: FileText },
@@ -42,7 +44,8 @@ const NEXT_ACTION_LABEL = {
 export default function PenyusutanArsip() {
     const { user } = useAuth()
     const { toast } = useToast()
-    const unitKerjaId = user?.unitKerjaId || ''
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
 
     const [activeTab, setActiveTab] = useState('pemindahan')
     const [batches, setBatches] = useState([])
@@ -63,7 +66,7 @@ export default function PenyusutanArsip() {
                 unitKerjaId,
                 jenisPenyusutan: activeTab,
             })
-            setBatches(result.data || [])
+            setBatches(result || [])
         } catch (err) {
             console.error('Error loading batches:', err)
         } finally {
@@ -80,7 +83,7 @@ export default function PenyusutanArsip() {
         }
         try {
             const result = await penyusutanService.getCandidates(unitKerjaId, activeTab)
-            setCandidates(result.data || [])
+            setCandidates(result || [])
         } catch (err) {
             console.error('Error loading candidates:', err)
             setCandidates([])
@@ -88,25 +91,35 @@ export default function PenyusutanArsip() {
     }, [unitKerjaId, activeTab])
 
     useEffect(() => {
+        if (!unitKerjaId) {
+            setBatches([])
+            setCandidates([])
+            setSelectedBatch(null)
+            setShowCreate(false)
+            setSelectedCandidates([])
+            return
+        }
         loadBatches()
         loadCandidates()
         setSelectedBatch(null)
         setShowCreate(false)
         setSelectedCandidates([])
-    }, [activeTab, loadBatches, loadCandidates])
+    }, [activeTab, loadBatches, loadCandidates, unitKerjaId])
 
     // Load batch detail
     const loadBatchDetail = async (id) => {
+        if (!unitKerjaId) return
         try {
-            const result = await penyusutanService.findById(id)
-            setSelectedBatch(result.data)
+            const result = await penyusutanService.findById(id, unitKerjaId)
+            setSelectedBatch(result)
         } catch (err) {
-            toast({ title: 'Error', description: err.response?.data?.error || 'Gagal memuat detail batch', variant: 'destructive' })
+            toast({ title: 'Error', description: err.message || 'Gagal memuat detail batch', variant: 'destructive' })
         }
     }
 
     // Create batch
     const handleCreate = async () => {
+        if (!unitKerjaId) return
         if (creating) return
         if (activeTab === 'penyerahan') return
         if (selectedCandidates.length === 0) {
@@ -128,7 +141,7 @@ export default function PenyusutanArsip() {
             loadBatches()
             loadCandidates()
         } catch (err) {
-            toast({ title: 'Error', description: err.response?.data?.error || 'Gagal membuat usulan', variant: 'destructive' })
+            toast({ title: 'Error', description: err.message || 'Gagal membuat usulan', variant: 'destructive' })
         } finally {
             setCreating(false)
         }
@@ -136,37 +149,40 @@ export default function PenyusutanArsip() {
 
     // Advance status
     const handleAdvanceStatus = async (id) => {
+        if (!unitKerjaId) return
         try {
-            await penyusutanService.updateStatus(id)
+            await penyusutanService.updateStatus(id, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Status berhasil dimajukan' })
             loadBatches()
             if (selectedBatch?.id === id) loadBatchDetail(id)
         } catch (err) {
-            toast({ title: 'Error', description: err.response?.data?.error || 'Gagal mengubah status', variant: 'destructive' })
+            toast({ title: 'Error', description: err.message || 'Gagal mengubah status', variant: 'destructive' })
         }
     }
 
     // Delete batch
     const handleDelete = async (id) => {
+        if (!unitKerjaId) return
         if (!confirm('Yakin hapus usulan ini?')) return
         try {
-            await penyusutanService.deleteBatch(id)
+            await penyusutanService.deleteBatch(id, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Usulan berhasil dihapus' })
             setSelectedBatch(null)
             loadBatches()
             loadCandidates()
         } catch (err) {
-            toast({ title: 'Error', description: err.response?.data?.error || 'Gagal menghapus', variant: 'destructive' })
+            toast({ title: 'Error', description: err.message || 'Gagal menghapus', variant: 'destructive' })
         }
     }
 
     // Print
     const handlePrint = (type, batchId) => {
+        if (!unitKerjaId) return
         let url = ''
         if (type === 'daftar-arsip-aktif' || type === 'daftar-arsip-inaktif') {
             url = penyusutanService.getPrintUrl(type, { unitKerjaId })
         } else {
-            url = penyusutanService.getBatchPrintUrl(batchId, type)
+            url = penyusutanService.getBatchPrintUrl(batchId, type, unitKerjaId)
         }
         if (url) window.open(url, '_blank')
     }
@@ -187,6 +203,23 @@ export default function PenyusutanArsip() {
 
     const JenisConf = JENIS_CONFIG[activeTab]
     const legacyTransferReadOnly = activeTab === 'penyerahan'
+
+    if (!unitKerjaId) {
+        return (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                        <div className="p-2 bg-rose-100 dark:bg-rose-500/15 rounded-lg">
+                            <History className="h-6 w-6 text-rose-600 dark:text-rose-400" />
+                        </div>
+                        Penyusutan Arsip
+                    </h1>
+                    <p className="text-muted-foreground">Kelola daur hidup arsip: Pemindahan, Pemusnahan, dan Penyerahan</p>
+                </div>
+                <RequiredUnitKerjaScope scope={unitScope} disabled={unitScope.loading} />
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -212,6 +245,8 @@ export default function PenyusutanArsip() {
                     </Button>
                 </div>
             </div>
+
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || creating} />
 
             {/* Navigation Tabs */}
             <Card className="border-border/60 shadow-sm">

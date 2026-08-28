@@ -1,11 +1,27 @@
 import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
 import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, inArray } from 'drizzle-orm';
-import { DatabaseError } from '../utils/errors';
+import { ConflictError, DatabaseError } from '../utils/errors';
 import {
     scopedRecordByIdWhere,
     type RecordUnitScope,
 } from '../utils/record-unit-scope.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
+import { srikandiBusinessProducer } from './srikandi-producer.service.js';
+import {
+    clientBlobUploadService,
+    normalizeBlobLocator,
+    type ClaimClientBlobUpload,
+} from './client-blob-upload.service.js';
+import fileAttachmentService, {
+    type RegisterSuratAttachmentData,
+} from './file-attachment.service.js';
+import { settingsService } from './settings.service.js';
+import {
+    resolveSuratCalendar,
+    type SuratNumberContext,
+    type SuratNumberPreview,
+} from '../utils/surat-numbering.js';
 
 export interface SuratMasukFilters {
     unitKerjaId?: string | null;
@@ -135,13 +151,41 @@ export class SuratMasukService {
         return result || null;
     }
 
-    async create(data: NewSuratMasuk) {
-        // Use transaction with row locking to prevent duplicate noUrut
-        const tahun = data.tahun || new Date().getFullYear();
+    async create(
+        data: NewSuratMasuk,
+        auditContext?: CriticalAuditContext,
+        clientBlobClaim?: ClaimClientBlobUpload,
+        attachment?: RegisterSuratAttachmentData,
+    ) {
+        const calendar = resolveSuratCalendar({
+            tahun: data.tahun,
+            tanggalSurat: data.tanggalSurat,
+        });
+        const tahun = calendar.tahun;
+        if (
+            attachment
+            && (
+                !data.filePath
+                || normalizeBlobLocator(data.filePath) !== normalizeBlobLocator(attachment.locator)
+            )
+        ) {
+            throw new DatabaseError('Registrasi lampiran tidak sesuai dengan bitstream surat masuk.');
+        }
+        if (clientBlobClaim && !attachment) {
+            throw new ConflictError('Lease unggahan Blob harus disertai registrasi lampiran.');
+        }
+        const preparedAttachment = attachment
+            ? await fileAttachmentService.prepareExisting(attachment, {
+                clientBlobClaim,
+                expectedPurpose: 'surat_masuk',
+            })
+            : undefined;
 
         try {
             const result = await db.transaction(async (tx: any) => {
-                // Lock rows for this unit+year to prevent concurrent inserts getting same noUrut
+                // The unit template row is the numbering mutex. Unlike locking
+                // the last surat row, this also serializes an empty sequence.
+                const templates = await settingsService.lockSuratTemplates(tx, data.unitKerjaId);
                 const [lastSurat] = await tx
                     .select({ noUrut: suratMasuk.noUrut })
                     .from(suratMasuk)
@@ -154,11 +198,67 @@ export class SuratMasukService {
                     .for('update');
 
                 const noUrut = (lastSurat?.noUrut || 0) + 1;
+                const generatedNomorSurat = settingsService.generateSuratNumber(
+                    templates.masukFormat,
+                    {
+                        noUrut,
+                        tahun,
+                        bulan: calendar.bulan,
+                        unitKerja: data.unitKerjaId,
+                    },
+                );
+                // Incoming letters usually carry an external identifier. Keep
+                // an explicit number; the configured template is the durable
+                // fallback for numberless registrations/imports.
+                const nomorSurat = data.nomorSurat?.trim() || generatedNomorSurat;
 
                 const [inserted] = await tx
                     .insert(suratMasuk)
-                    .values({ ...data, noUrut, tahun })
+                    .values({ ...data, nomorSurat, noUrut, tahun })
                     .returning();
+
+                if (clientBlobClaim) {
+                    await clientBlobUploadService.claimWithExecutor(
+                        tx,
+                        clientBlobClaim,
+                        'surat_masuk',
+                        inserted.id,
+                    );
+                }
+
+                if (preparedAttachment) {
+                    await fileAttachmentService.insertPrepared({
+                        ...preparedAttachment,
+                        entityId: inserted.id,
+                        entityType: 'surat_masuk',
+                    }, tx);
+                }
+
+                if (auditContext) {
+                    await auditLogService.logActionOrThrow({
+                        ...auditContext,
+                        action: 'create',
+                        entityType: 'surat_masuk',
+                        entityId: inserted.id,
+                        changes: {
+                            after: {
+                                nomorSurat: inserted.nomorSurat,
+                                perihal: inserted.perihal,
+                                unitKerjaId: inserted.unitKerjaId,
+                            },
+                        },
+                    }, tx);
+                }
+
+                await srikandiBusinessProducer.suratMasukCreated(tx, {
+                    id: inserted.id,
+                    unitKerjaId: inserted.unitKerjaId,
+                    nomorSurat: inserted.nomorSurat,
+                    tanggalSurat: inserted.tanggalSurat,
+                    perihal: inserted.perihal,
+                    counterpart: inserted.dari,
+                    createdAt: inserted.createdAt,
+                }, auditContext?.userId || data.createdBy || undefined);
 
                 return inserted;
             });
@@ -173,7 +273,14 @@ export class SuratMasukService {
         }
     }
 
-    async update(id: string, data: Partial<SuratMasuk>, unitScope: RecordUnitScope) {
+    async update(
+        id: string,
+        data: Partial<SuratMasuk>,
+        unitScope: RecordUnitScope,
+        clientBlobClaim?: ClaimClientBlobUpload,
+        auditContext?: CriticalAuditContext,
+        attachment?: RegisterSuratAttachmentData,
+    ) {
         const conditions = [
             scopedRecordByIdWhere(
                 suratMasuk.id,
@@ -184,17 +291,80 @@ export class SuratMasukService {
             or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Never mutate soft-deleted records (NULL-safe)
             or(eq(suratMasuk.isArchived, false), isNull(suratMasuk.isArchived))!,
         ];
+        if (
+            attachment
+            && (
+                !data.filePath
+                || normalizeBlobLocator(data.filePath) !== normalizeBlobLocator(attachment.locator)
+            )
+        ) {
+            throw new DatabaseError('Registrasi lampiran tidak sesuai dengan bitstream surat masuk.');
+        }
+        if (clientBlobClaim && !attachment) {
+            throw new ConflictError('Lease unggahan Blob harus disertai registrasi lampiran.');
+        }
+        const preparedAttachment = attachment
+            ? await fileAttachmentService.prepareExisting(attachment, {
+                clientBlobClaim,
+                expectedPurpose: 'surat_masuk',
+            })
+            : undefined;
 
-        const [result] = await db
-            .update(suratMasuk)
-            .set({ ...data, updatedAt: new Date() })
-            .where(and(...conditions))
-            .returning();
+        return db.transaction(async (tx) => {
+            const [result] = await tx
+                .update(suratMasuk)
+                .set({ ...data, updatedAt: new Date() })
+                .where(and(...conditions))
+                .returning();
 
-        return result;
+            if (result && clientBlobClaim) {
+                await clientBlobUploadService.claimWithExecutor(
+                    tx,
+                    clientBlobClaim,
+                    'surat_masuk',
+                    result.id,
+                );
+            }
+            if (result && preparedAttachment) {
+                await fileAttachmentService.insertPrepared({
+                    ...preparedAttachment,
+                    entityId: result.id,
+                    entityType: 'surat_masuk',
+                }, tx);
+            }
+            if (result && auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'update',
+                    entityType: 'surat_masuk',
+                    entityId: id,
+                    changes: {
+                        after: {
+                            nomorSurat: result.nomorSurat,
+                            tanggalSurat: result.tanggalSurat,
+                            perihal: result.perihal,
+                            dari: result.dari,
+                            sifatSurat: result.sifatSurat,
+                            status: result.status,
+                            disposisi: result.disposisi,
+                            unitKerjaId: result.unitKerjaId,
+                            fileOriginalName: result.fileOriginalName,
+                            hasFile: Boolean(result.filePath),
+                        },
+                        fields: Object.keys(data),
+                    },
+                }, tx);
+            }
+            return result;
+        });
     }
 
-    async delete(id: string, deletedByUserId: string | undefined, unitScope: RecordUnitScope) {
+    async delete(
+        id: string,
+        deletedByUserId: string | undefined,
+        unitScope: RecordUnitScope,
+        auditContext?: CriticalAuditContext,
+    ) {
         // Soft delete - mark as deleted instead of permanently removing
         const conditions = [
             scopedRecordByIdWhere(
@@ -207,18 +377,32 @@ export class SuratMasukService {
             or(eq(suratMasuk.isArchived, false), isNull(suratMasuk.isArchived))!,
         ];
 
-        const [result] = await db
-            .update(suratMasuk)
-            .set({
-                isDeleted: true,
-                deletedAt: new Date(),
-                deletedBy: deletedByUserId || null,
-                updatedAt: new Date(),
-            })
-            .where(and(...conditions))
-            .returning();
+        return db.transaction(async (tx) => {
+            const [result] = await tx
+                .update(suratMasuk)
+                .set({
+                    isDeleted: true,
+                    deletedAt: new Date(),
+                    deletedBy: deletedByUserId || null,
+                    updatedAt: new Date(),
+                })
+                .where(and(...conditions))
+                .returning();
 
-        return result;
+            if (result && auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'delete',
+                    entityType: 'surat_masuk',
+                    entityId: id,
+                    changes: {
+                        before: { isDeleted: false, nomorSurat: result.nomorSurat, perihal: result.perihal },
+                        after: { isDeleted: true, deletedBy: deletedByUserId || null },
+                    },
+                }, tx);
+            }
+            return result;
+        });
     }
 
     async hardDelete(id: string) {
@@ -250,20 +434,38 @@ export class SuratMasukService {
         return this.update(id, { isArchived: true }, unitScope);
     }
 
-    async getNextNumber(unitKerjaId: string, tahun?: number) {
-        const year = tahun || new Date().getFullYear();
+    async getNextNumber(
+        unitKerjaId: string,
+        context: SuratNumberContext | number = {},
+    ): Promise<SuratNumberPreview> {
+        const normalized = typeof context === 'number' ? { tahun: context } : context;
+        const calendar = resolveSuratCalendar(normalized);
 
         const [lastSurat] = await db
             .select({ noUrut: suratMasuk.noUrut })
             .from(suratMasuk)
             .where(and(
                 eq(suratMasuk.unitKerjaId, unitKerjaId),
-                eq(suratMasuk.tahun, year)
+                eq(suratMasuk.tahun, calendar.tahun)
             ))
             .orderBy(desc(suratMasuk.noUrut))
             .limit(1);
 
-        return (lastSurat?.noUrut || 0) + 1;
+        const nextNumber = (lastSurat?.noUrut || 0) + 1;
+        const templates = await settingsService.getSuratTemplates(unitKerjaId);
+        return {
+            nextNumber,
+            nomorSurat: settingsService.generateSuratNumber(templates.masukFormat, {
+                noUrut: nextNumber,
+                tahun: calendar.tahun,
+                bulan: calendar.bulan,
+                unitKerja: unitKerjaId,
+            }),
+            template: templates.masukFormat,
+            tahun: calendar.tahun,
+            bulan: calendar.bulan,
+            preview: true,
+        };
     }
 
     async getStats(

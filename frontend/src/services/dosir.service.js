@@ -7,15 +7,15 @@ const dosirService = {
      * Get all dosir with filters
      */
     async getAll(params = {}) {
-        const response = await api.get(BASE_URL, { params });
+        const response = await api.get(BASE_URL, params);
         return response.data;
     },
 
     /**
      * Get dosir statistics
      */
-    async getStats() {
-        const response = await api.get(`${BASE_URL}/stats`);
+    async getStats(unitKerjaId) {
+        const response = await api.get(`${BASE_URL}/stats`, { unitKerjaId });
         return response.data;
     },
 

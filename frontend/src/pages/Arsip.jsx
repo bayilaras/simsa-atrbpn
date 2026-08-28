@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { Archive, RefreshCw, Search, Eye, Edit, Clock, Upload, ChevronUp, Trash2, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X } from 'lucide-react'
+import { Archive, RefreshCw, Search, Eye, Clock, Upload, ChevronUp, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,18 +35,7 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
-    DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import {
     Tabs,
     TabsContent,
@@ -53,7 +43,6 @@ import {
     TabsTrigger,
 } from "@/components/ui/tabs"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { useToast } from '@/hooks/use-toast'
 import { useDataTable } from '@/hooks/use-data-table'
 import {
     Pagination,
@@ -64,17 +53,17 @@ import { arsipService } from '@/services/arsip.service'
 import settingsService from '@/services/settings.service'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
 
+const VALID_TABS = ['keluar', 'masuk', 'retensi']
+
 export default function Arsip() {
     const { tab } = useParams()
     const navigate = useNavigate()
     const { user, canWrite } = useAuth()
     const isAdmin = canWrite()
     const isSuperAdmin = user?.role === 'super_admin'
-    const { toast } = useToast()
 
     // Valid tabs
-    const validTabs = ['keluar', 'masuk', 'retensi']
-    const activeTab = validTabs.includes(tab) ? tab : 'keluar'
+    const activeTab = VALID_TABS.includes(tab) ? tab : 'keluar'
 
     const [searchTerm, setSearchTerm] = useState('')
     const [arsipStats, setArsipStats] = useState({ total: 0, arsipMasuk: 0, arsipKeluar: 0 })
@@ -82,7 +71,7 @@ export default function Arsip() {
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([])
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined))
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined))
 
     // Load unit kerja list for super admin
     useEffect(() => {
@@ -96,7 +85,7 @@ export default function Arsip() {
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
-        : (user?.unitKerjaId || undefined)
+        : (resolveEffectiveUnitKerjaId(user) || undefined)
 
     // Fetch arsip stats
     useEffect(() => {
@@ -116,13 +105,9 @@ export default function Arsip() {
     // Filter state
     const [tahunFilter, setTahunFilter] = useState('all')
 
-    // Delete dialog state
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-    const [selectedArsip, setSelectedArsip] = useState(null)
-
     // Redirect if tab is invalid
     useEffect(() => {
-        if (!validTabs.includes(tab)) {
+        if (!VALID_TABS.includes(tab)) {
             navigate('/arsip/keluar', { replace: true })
         }
     }, [tab, navigate])
@@ -175,42 +160,6 @@ export default function Arsip() {
     // Action handlers
     const handleViewDetail = (row) => navigate(`/arsip/detail/${row.id}`)
 
-    const handleEdit = () => {
-        toast({
-            title: 'Fitur dalam pengembangan',
-            description: 'Halaman edit arsip akan segera tersedia',
-        })
-    }
-
-    const handleOpenDeleteDialog = (row) => {
-        setSelectedArsip(row)
-        setDeleteDialogOpen(true)
-    }
-
-    const handleDelete = async () => {
-        if (!selectedArsip) return
-        try {
-            await arsipService.delete(selectedArsip.id)
-            toast({
-                title: 'Berhasil Dihapus',
-                description: `Arsip ${selectedArsip.nomorBerkas || ''} telah dihapus`,
-            })
-            setDeleteDialogOpen(false)
-            setSelectedArsip(null)
-            setPage(1) // Refresh data
-
-            // Refresh stats
-            const stats = await arsipService.getStats({ unitKerjaId: resolvedUnitKerjaId })
-            if (stats) setArsipStats(stats)
-        } catch (error) {
-            toast({
-                title: 'Error',
-                description: error.message || 'Gagal menghapus arsip',
-                variant: 'destructive',
-            })
-        }
-    }
-
     const hasActiveFilters = tahunFilter !== 'all' || searchTerm
 
     const clearAllFilters = () => {
@@ -261,6 +210,8 @@ export default function Arsip() {
                         type="arsip"
                         filters={{
                             jenisArsip: activeTab === 'masuk' ? 'masuk' : activeTab === 'keluar' ? 'keluar' : undefined,
+                            unitKerjaId: resolvedUnitKerjaId,
+                            tahun: tahunFilter !== 'all' ? tahunFilter : undefined,
                         }}
                     />
 
@@ -342,8 +293,8 @@ export default function Arsip() {
                             </CardHeader>
                             <CardContent className="text-sm space-y-4 pt-4">
                                 <p className="text-muted-foreground leading-relaxed">
-                                    Jadwal Retensi Arsip (JRA) mengacu pada <strong>Permen ATR/BPN No. 8 Tahun 2020</strong>.
-                                    Sistem akan otomatis menghitung masa retensi aktif dan inaktif berdasarkan klasifikasi arsip.
+                                    Jadwal Retensi Arsip (JRA) memakai <strong>master aturan aktif yang sudah diverifikasi</strong>.
+                                    Sistem menghitung masa retensi hanya setelah klasifikasi, aturan JRA, dan pemicu retensinya tercatat secara kanonis.
                                 </p>
                                 <div className="space-y-3 pt-2">
                                     <div className="flex items-start gap-3">
@@ -537,17 +488,6 @@ export default function Arsip() {
                                                                         <DropdownMenuItem onClick={() => handleViewDetail(row)}>
                                                                             <Eye className="h-4 w-4 mr-2" /> Detail Arsip
                                                                         </DropdownMenuItem>
-                                                                        {isAdmin && (
-                                                                            <>
-                                                                                <DropdownMenuItem onClick={handleEdit}>
-                                                                                    <Edit className="h-4 w-4 mr-2" /> Edit Info
-                                                                                </DropdownMenuItem>
-                                                                                <DropdownMenuSeparator />
-                                                                                <DropdownMenuItem onClick={() => handleOpenDeleteDialog(row)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                                                                                    <Trash2 className="h-4 w-4 mr-2" /> Hapus Data
-                                                                                </DropdownMenuItem>
-                                                                            </>
-                                                                        )}
                                                                     </DropdownMenuContent>
                                                                 </DropdownMenu>
                                                             </TableCell>
@@ -586,25 +526,6 @@ export default function Arsip() {
                     </TabsContent>
                 )}
             </Tabs>
-
-            {/* Delete Confirmation Dialog */}
-            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Hapus Arsip?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            Apakah Anda yakin ingin menghapus arsip <strong>{selectedArsip?.nomorBerkas || selectedArsip?.perihalOriginal}</strong>?
-                            Tindakan ini tidak dapat dibatalkan. Data surat terkait tidak akan terhapus, hanya status arsipnya.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Batal</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                            Hapus
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
         </div>
     )
 }

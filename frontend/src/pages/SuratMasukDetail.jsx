@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -8,6 +8,7 @@ import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { DistributeDialog } from '@/components/DistributeDialog'
 import suratMasukService from '@/services/surat-masuk.service'
 import { useAuth } from '@/context/AuthContext'
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 
 // Extracted Components
 import { DetailHeader } from '@/components/surat-masuk/DetailHeader'
@@ -27,11 +28,7 @@ export default function SuratMasukDetail() {
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
 
-    useEffect(() => {
-        fetchSurat()
-    }, [id])
-
-    const fetchSurat = async () => {
+    const fetchSurat = useCallback(async () => {
         setLoading(true)
         try {
             const data = await suratMasukService.getById(id)
@@ -46,7 +43,11 @@ export default function SuratMasukDetail() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [id, toast])
+
+    useEffect(() => {
+        void fetchSurat()
+    }, [fetchSurat])
 
     const handleArchive = async (metadata) => {
         try {
@@ -173,7 +174,7 @@ export default function SuratMasukDetail() {
                     nomorSurat: surat.nomorSurat,
                     perihal: surat.perihal,
                 }}
-                sourceUnitId={user?.unitKerjaId || ''}
+                sourceUnitId={surat.unitKerjaId || resolveEffectiveUnitKerjaId(user)}
                 onSuccess={() => {
                     setDistributeDialogOpen(false)
                     toast({

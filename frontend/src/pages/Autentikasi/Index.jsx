@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FileCheck, Plus, Search, FileText, Download, Loader2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { FileCheck, Plus, Search, Download, Loader2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -17,12 +17,9 @@ import {
     Pagination,
     PaginationContent,
     PaginationItem,
-    PaginationNext,
-    PaginationPrevious,
 } from "@/components/ui/pagination";
 import { autentikasiService } from '@/services/autentikasi.service';
 import { useToast } from "@/hooks/use-toast";
-import { formatDate } from '@/lib/utils'; // Assuming this utility exists, if not use standard Date
 import { Badge } from '@/components/ui/badge';
 
 export default function AutentikasiIndex() {
@@ -36,14 +33,13 @@ export default function AutentikasiIndex() {
         currentData,
         totalPages,
         currentPage,
-        goToPage,
         nextPage,
         prevPage,
         canNext,
         canPrev,
     } = useDataTable(data, { pageSize: 10 });
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
             const result = await autentikasiService.getAll({
@@ -51,7 +47,7 @@ export default function AutentikasiIndex() {
                 page: 1, // backend pagination support could be added to hook later, for now fetching all or let hook handle client side
                 limit: 100 // Fetch reasonably large amount or implement server-side pagination with hook
             });
-            setData(result.data || []);
+            setData(result || []);
         } catch (error) {
             console.error(error);
             toast({
@@ -62,18 +58,24 @@ export default function AutentikasiIndex() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [searchTerm, toast]);
 
     useEffect(() => {
         fetchData();
-    }, [searchTerm]);
+    }, [fetchData]);
 
-    const handleDownload = async (id, nomor) => {
+    const handleDownload = async (id) => {
         try {
-            const url = await autentikasiService.getPdfUrl(id);
-            // Open in new tab
-            window.open(url, '_blank');
-        } catch (error) {
+            const pdf = await autentikasiService.getPdf(id);
+            const url = URL.createObjectURL(pdf);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `berita-acara-autentikasi-${id}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch {
             toast({
                 title: "Error",
                 description: "Gagal mengunduh dokumen",
@@ -159,12 +161,12 @@ export default function AutentikasiIndex() {
                                                         {item.jumlahArsip} Arsip
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell data-label="Petugas">{item.petugas?.nama || '-'}</TableCell>
+                                                <TableCell data-label="Petugas">{item.petugas?.name || item.petugas?.nama || '-'}</TableCell>
                                                 <TableCell data-label="Aksi">
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => handleDownload(item.id, item.nomorBeritaAcara)}
+                                                        onClick={() => handleDownload(item.id)}
                                                     >
                                                         <Download className="h-4 w-4 mr-2" />
                                                         Unduh BA

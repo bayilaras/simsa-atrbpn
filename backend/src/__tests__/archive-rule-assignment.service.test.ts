@@ -100,6 +100,16 @@ const retention = {
     },
 };
 
+const validMapping = {
+    id: 31,
+    klasifikasiRuleSetId: 'classification-set',
+    jraRuleSetId: 'retention-set',
+    klasifikasiPrefix: 'PT',
+    jraPrefix: 'S.VI',
+    tema: 'Pengadaan Tanah',
+    isActive: true,
+};
+
 describe('ArchiveRuleAssignmentService', () => {
     let service: ArchiveRuleAssignmentService;
 
@@ -108,7 +118,11 @@ describe('ArchiveRuleAssignmentService', () => {
     });
 
     it('resolves only active, selectable Ministry classification and active selectable JRA', async () => {
-        const { executor, calls } = createExecutor([classification], [retention]);
+        const { executor, calls } = createExecutor(
+            [classification],
+            [retention],
+            [validMapping],
+        );
 
         const result = await service.resolveActive(executor, {
             klasifikasiItemId: 10,
@@ -116,7 +130,7 @@ describe('ArchiveRuleAssignmentService', () => {
         });
 
         const whereCalls = calls.filter(call => call.method === 'where');
-        expect(whereCalls).toHaveLength(2);
+        expect(whereCalls).toHaveLength(3);
 
         const dialect = new PgDialect();
         const classificationQuery = dialect.sqlToQuery(whereCalls[0].args[0]);
@@ -143,6 +157,11 @@ describe('ArchiveRuleAssignmentService', () => {
         });
         expect(result.snapshot.classification.sourceRecordKey)
             .toBe('atr10-2018:kementerian:0100');
+        expect(result.snapshot.mapping).toMatchObject({
+            id: 31,
+            klasifikasiPrefix: 'PT',
+            jraPrefix: 'S.VI',
+        });
         expect(result.snapshotSha256).toMatch(/^[a-f0-9]{64}$/);
         expect(result.cache.klasifikasiSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
         expect(result.cache.retentionDecisionHash).toMatch(/^[a-f0-9]{64}$/);
@@ -168,6 +187,64 @@ describe('ArchiveRuleAssignmentService', () => {
         expect(calls.find(call => call.method === 'limit')?.args[0]).toBe(2);
     });
 
+    it('rejects a classification and JRA pair outside the versioned thematic mapping', async () => {
+        const unrelatedRetention = {
+            ...retention,
+            item: { ...retention.item, kode: 'F.I.01.0001' },
+        };
+        const { executor } = createExecutor(
+            [classification],
+            [unrelatedRetention],
+            [validMapping],
+        );
+
+        await expect(service.resolveActive(executor, {
+            klasifikasiItemId: 10,
+            jraItemId: 20,
+        })).rejects.toThrow(/tidak sesuai.*prefix: S\.VI/i);
+    });
+
+    it('uses the most-specific classification mapping instead of a broader root mapping', async () => {
+        const tuClassification = {
+            ...classification,
+            item: { ...classification.item, kode: 'TU.02.01' },
+        };
+        const broadRetention = {
+            ...retention,
+            item: { ...retention.item, kode: 'F.VII.01.0001' },
+        };
+        const mappings = [
+            { ...validMapping, id: 1, klasifikasiPrefix: 'TU', jraPrefix: 'F.VII' },
+            { ...validMapping, id: 2, klasifikasiPrefix: 'TU.02', jraPrefix: 'F.VI' },
+        ];
+
+        await expect(service.resolveActive(
+            createExecutor([tuClassification], [broadRetention], mappings).executor,
+            { klasifikasiItemId: 10, jraItemId: 20 },
+        )).rejects.toThrow(/prefix: F\.VI/i);
+    });
+
+    it('rejects conflicting item IDs and display codes in the same command', async () => {
+        await expect(service.resolveActive(
+            createExecutor([classification]).executor,
+            {
+                klasifikasiItemId: 10,
+                kodeKlasifikasi: 'PT.99',
+                jraItemId: 20,
+            },
+        )).rejects.toThrow(/ID butir klasifikasi.*tidak cocok/i);
+
+        await expect(service.resolveActive(
+            createExecutor([classification], [retention]).executor,
+            {
+                klasifikasiItemId: 10,
+                kodeKlasifikasi: 'PT.01.01',
+                jraItemId: 20,
+                jraKode: 'S.VI.A.9999',
+            },
+        )).rejects.toThrow(/ID butir JRA.*tidak cocok/i);
+    });
+
     it('maps a conditional or compound disposition to manual appraisal', async () => {
         const conditionalRetention = {
             ...retention,
@@ -177,7 +254,11 @@ describe('ArchiveRuleAssignmentService', () => {
                 keterangan: 'Permanen, kecuali duplikat dapat dimusnahkan',
             },
         };
-        const { executor } = createExecutor([classification], [conditionalRetention]);
+        const { executor } = createExecutor(
+            [classification],
+            [conditionalRetention],
+            [validMapping],
+        );
 
         const result = await service.resolveActive(executor, {
             klasifikasiItemId: 10,
@@ -202,7 +283,7 @@ describe('ArchiveRuleAssignmentService', () => {
             },
         };
         const assignment = await service.resolveActive(
-            createExecutor([classification], [manualRetention]).executor,
+            createExecutor([classification], [manualRetention], [validMapping]).executor,
             { klasifikasiItemId: 10, jraItemId: 20 },
         );
 
@@ -260,7 +341,7 @@ describe('ArchiveRuleAssignmentService', () => {
             },
         };
         const assignment = await service.resolveActive(
-            createExecutor([classification], [appraisalRetention]).executor,
+            createExecutor([classification], [appraisalRetention], [validMapping]).executor,
             { klasifikasiItemId: 10, jraItemId: 20 },
         );
 
@@ -305,7 +386,7 @@ describe('ArchiveRuleAssignmentService', () => {
 
     it('accepts only the current, latest, independently verified trigger event', async () => {
         const assignment = await service.resolveActive(
-            createExecutor([classification], [retention]).executor,
+            createExecutor([classification], [retention], [validMapping]).executor,
             { klasifikasiItemId: 10, jraItemId: 20 },
         );
         const evidence = {
@@ -361,7 +442,7 @@ describe('ArchiveRuleAssignmentService', () => {
             },
         };
         const assignment = await service.resolveActive(
-            createExecutor([classification], [appraisalRetention]).executor,
+            createExecutor([classification], [appraisalRetention], [validMapping]).executor,
             { klasifikasiItemId: 10, jraItemId: 20 },
         );
         const submissionSnapshot = {
@@ -438,7 +519,7 @@ describe('ArchiveRuleAssignmentService', () => {
 
     it('creates revision one and only updates the archive pointer/cache status', async () => {
         const assignment = await service.resolveActive(
-            createExecutor([classification], [retention]).executor,
+            createExecutor([classification], [retention], [validMapping]).executor,
             { klasifikasiItemId: 10, jraItemId: 20 },
         );
         const snapshotRecord = { id: 'snapshot-1', revision: 1 };
@@ -474,7 +555,7 @@ describe('ArchiveRuleAssignmentService', () => {
 
     it('appends the next evidence revision and refreshes cache from canonical rules', async () => {
         const assignment = await service.resolveActive(
-            createExecutor([classification], [retention]).executor,
+            createExecutor([classification], [retention], [validMapping]).executor,
             { klasifikasiItemId: 10, jraItemId: 20 },
         );
         const previous = { id: 'snapshot-3', revision: 3 };

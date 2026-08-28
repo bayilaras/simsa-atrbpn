@@ -107,11 +107,11 @@ describe('canAccessUnit', () => {
         expect(canAccessUnit('admin_dirjen', 'ditjen', 'bagian_keuangan')).toBe(false);
     });
 
-    it('admin_sesditjen should access sesditjen and sub-bagian units', () => {
+    it('admin_sesditjen should access only its fixed sesditjen mandate', () => {
         expect(canAccessUnit('admin_sesditjen', 'sesditjen', 'sesditjen')).toBe(true);
-        expect(canAccessUnit('admin_sesditjen', 'sesditjen', 'bagian_keuangan')).toBe(true);
-        expect(canAccessUnit('admin_sesditjen', 'sesditjen', 'bagian_kepegawaian')).toBe(true);
-        expect(canAccessUnit('admin_sesditjen', 'sesditjen', 'bagian_umum')).toBe(true);
+        expect(canAccessUnit('admin_sesditjen', 'sesditjen', 'bagian_keuangan')).toBe(false);
+        expect(canAccessUnit('admin_sesditjen', 'sesditjen', 'bagian_kepegawaian')).toBe(false);
+        expect(canAccessUnit('admin_sesditjen', 'sesditjen', 'bagian_umum')).toBe(false);
         expect(canAccessUnit('admin_sesditjen', 'sesditjen', 'ditjen')).toBe(false);
     });
 

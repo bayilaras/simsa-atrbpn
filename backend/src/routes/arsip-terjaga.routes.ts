@@ -12,8 +12,17 @@ import {
     allowedSecurityClassifications,
     recordAccessService,
 } from '../services/record-access.service.js';
+import type { CriticalAuditContext } from '../services/audit-log.service.js';
 
 const router = Router();
+
+function criticalAuditContext(req: AuthRequest): CriticalAuditContext {
+    return {
+        userId: req.user?.id,
+        userEmail: req.user?.email,
+        ipAddress: req.ip,
+    };
+}
 
 // Authentication must run before every authorization check, including print.
 router.use(authMiddleware);
@@ -167,7 +176,7 @@ router.post('/',
                 // client-selected value.
                 unitKerjaId: access.unitKerjaId,
                 createdBy: req.user?.id,
-            });
+            }, criticalAuditContext(req));
 
             res.status(201).json({ success: true, data: result });
         } catch (error) {
@@ -194,7 +203,12 @@ router.put('/:id',
                 return res.status(404).json({ error: 'Arsip terjaga not found' });
             }
 
-            const result = await arsipTerjagaService.update(id as string, req.body, unitScope);
+            const result = await arsipTerjagaService.update(
+                id as string,
+                req.body,
+                unitScope,
+                criticalAuditContext(req),
+            );
             if (!result) {
                 return res.status(404).json({ error: 'Arsip terjaga not found' });
             }
@@ -233,6 +247,7 @@ router.put('/:id/report',
                 nomorLaporan,
                 tanggalPelaporan,
                 unitScope,
+                criticalAuditContext(req),
             );
             if (!result) {
                 return res.status(404).json({ error: 'Arsip terjaga not found' });
@@ -260,7 +275,11 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
             return res.status(404).json({ error: 'Arsip terjaga not found' });
         }
 
-        const deleted = await arsipTerjagaService.delete(id as string, unitScope);
+        const deleted = await arsipTerjagaService.delete(
+            id as string,
+            unitScope,
+            criticalAuditContext(req),
+        );
         if (!deleted) {
             return res.status(404).json({ error: 'Arsip terjaga not found' });
         }

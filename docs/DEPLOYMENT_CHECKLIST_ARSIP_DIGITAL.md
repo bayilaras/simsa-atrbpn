@@ -13,7 +13,7 @@ Gunakan empat keputusan rilis:
 - **GO Integrasi Kondisional**: selain baseline internal, seluruh dependensi dan bukti uji untuk integrasi atau kelas data yang dipilih telah diterima; atau
 - **NO-GO**: ada migrasi gagal, blob publik tidak terkendali, AV belum memblokir file berbahaya, restore gagal, akses lintas unit, audit hilang, atau tanda tangan mock aktif.
 
-SIMSA merupakan aplikasi internal/substantif Ditjen PTPP, bukan pengganti SRIKANDI dan bukan produk yang telah disertifikasi. Konektor SRIKANDI, BSrE/PSrE, WORM, dan SIEM bersifat opsional/deferred kecuali kebijakan internal mewajibkannya.
+SIMSA merupakan aplikasi internal/substantif Ditjen PTPP, bukan pengganti SRIKANDI dan bukan produk yang telah disertifikasi. Tanda tangan elektronik BSrE/PSrE berada di luar ruang lingkup produk. Konektor SRIKANDI, WORM, dan SIEM bersifat opsional/deferred kecuali kebijakan internal mewajibkannya.
 
 ## 2. Persiapan tata kelola
 
@@ -36,6 +36,7 @@ SIMSA merupakan aplikasi internal/substantif Ditjen PTPP, bukan pengganti SRIKAN
 - [ ] Tinjau empat advisory moderat `esbuild` pada rantai tooling `drizzle-kit`/`tsx`; jangan mengekspos development server, isolasi runner build, dan pantau perbaikan upstream. Jangan memakai `npm audit fix --force` yang menurunkan `drizzle-kit` secara breaking tanpa pengujian migrasi penuh.
 - [ ] Gunakan custom same-site domain, misalnya frontend dan API berada di subdomain dari domain institusi yang sama.
 - [ ] Set `NODE_ENV=production`, `BETTER_AUTH_URL`, `FRONTEND_URL`, `ADDITIONAL_TRUSTED_ORIGINS`, `COOKIE_DOMAIN`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, OAuth, dan `BLOB_READ_WRITE_TOKEN` melalui secret manager; jangan commit nilainya dan jangan pernah mengekspos token Blob sebagai variabel `VITE_*`.
+- [ ] Set `OCR_TESSDATA_PATH` ke sumber/direktori terkontrol yang memuat `ind.traineddata.gz` dan `eng.traineddata.gz`. Pastikan runtime dapat membacanya tanpa bergantung pada unduhan internet; bila perlu, set `OCR_CACHE_PATH` ke direktori cache writable dengan kapasitas dan lifecycle yang dipantau.
 - [ ] Hubungkan private Vercel Blob store ke backend production. Uji token unggah PDF regulasi yang terikat `ruleSetId`, batas 50 MiB, random suffix, larangan overwrite/public locator, serta server refetch sebelum bukti sumber diterima.
 - [ ] Untuk profil inti, tetapkan backend `APP_PROFILE=internal` dan `SRIKANDI_ENABLED=false`, lalu build frontend dengan `VITE_APP_PROFILE=internal` dan `VITE_FEATURE_SRIKANDI=false`.
 - [ ] Pastikan OAuth redirect URI, cookie `Secure`/`HttpOnly`/`SameSite`, CORS allow-list, CSRF, HSTS, CSP, rate limit, dan idle/session expiry diuji dari browser sasaran.
@@ -51,7 +52,7 @@ SIMSA merupakan aplikasi internal/substantif Ditjen PTPP, bukan pengganti SRIKAN
 - [ ] Catat waktu cut-off dan batasi write selama langkah yang memerlukan konsistensi.
 - [ ] Verifikasi bahwa backup mencakup database **dan bitstream**; backup database saja tidak cukup.
 
-## 5. Migrasi database 0010 sampai 0020
+## 5. Migrasi database 0010 sampai 0027
 
 Migrasi yang harus berurutan:
 
@@ -66,6 +67,13 @@ Migrasi yang harus berurutan:
 9. `backend/src/db/migrations/0018_regulatory_maker_checker.sql`
 10. `backend/src/db/migrations/0019_authoritative_retention_decisions.sql`
 11. `backend/src/db/migrations/0020_permanent_transfer_lifecycle.sql`
+12. `backend/src/db/migrations/0021_archive_source_domain_integrity.sql`
+13. `backend/src/db/migrations/0022_operational_integrations.sql`
+14. `backend/src/db/migrations/0023_client_blob_upload_leases.sql`
+15. `backend/src/db/migrations/0024_durable_bulk_and_autentikasi_blob.sql`
+16. `backend/src/db/migrations/0025_worker_readiness_heartbeats.sql`
+17. `backend/src/db/migrations/0026_global_ocr_capacity.sql`
+18. `backend/src/db/migrations/0027_canonical_user_unit_mandates.sql`
 
 `0010` menambahkan pemicu retensi berbasis peristiwa, bukti/versi/rujukan JRA, legal hold, constraint, dan indeks kandidat. Migrasi ini sengaja **tidak** mengisi pemicu dari `tanggal_arsip`; rekod legacy tetap tidak layak menjadi kandidat penyusutan sampai arsiparis memasukkan bukti peristiwa yang sah.
 
@@ -81,13 +89,19 @@ Migrasi yang harus berurutan:
 
 `0016` menambahkan edisi klasifikasi/JRA yang berversi, item aturan terikat edisi, snapshot keputusan arsip append-only, provenance aturan, serta perlindungan database terhadap perubahan item versi terbit. Migrasi sengaja menandai arsip lama `legacy_unverified`; jangan mengubahnya menjadi `verified` secara massal tanpa rekonsiliasi arsiparis.
 
+`0017` dan `0019` melengkapi appraisal/keputusan retensi yang berwenang, separation of duties, bukti, dan status hasil yang menjadi dasar workflow penyusutan.
+
 `0018` menambahkan workflow maker-checker, bukti PDF private Blob terverifikasi server, manifest kelengkapan/cakupan halaman, diff dan analisis dampak, serta rantai audit append-only untuk perubahan master klasifikasi/JRA. Locator private hanya disimpan internal dan wajib ada untuk edisi baru sebelum aktivasi.
 
 `0020` menambahkan lifecycle penyerahan arsip permanen, reservasi satu proses aktif per arsip, pembatalan/riwayat manifest append-only, serta pengikatan bukti serah pada lampiran terverifikasi.
 
+`0021` mengunci integritas domain relasi surat–arsip, menyelaraskan flag `is_archived`, menolak sumber ganda/salah jenis, dan membuat linkage sumber immutable. `0022` mempersistensikan preferensi, template nomor, dan status baca notifikasi dengan constraint yang direkonsiliasi secara fail-loud.
+
+`0023` mencatat lease unggahan Blob langsung agar objek yang sudah diklaim transaksi tidak dihapus rekonsiliator dan objek kedaluwarsa yang belum diklaim dapat dibersihkan aman. `0024` membuat batch/item bulk upload durable serta memindahkan PDF autentikasi ke private Blob. `0025` menyimpan heartbeat per-instance untuk readiness worker antivirus dan SRIKANDI. `0026` menambahkan semaphore OCR global berbasis lease PostgreSQL; kapasitas, durasi lease, dan jeda retry tersimpan secara otoritatif di `ocr_capacity_control`, bukan pada konfigurasi masing-masing instance. `0027` merekonsiliasi unit kerja pengguna legacy dan menegakkan mandat kanonis di database: superadmin lintas unit disimpan tanpa unit, sedangkan administrator Ditjen/Sesditjen selalu terikat ke unit mandatnya.
+
 Langkah eksekusi:
 
-- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan kesebelas file SQL dan pastikan tidak ada migration ID ganda.
+- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan kedelapan belas file SQL `0010`–`0027` dan pastikan tidak ada migration ID ganda.
 - [ ] Uji seluruh migrasi pada salinan production yang telah dianonimkan; catat durasi, lock, ukuran indeks, dan error.
 - [ ] Jalankan preflight duplikasi `(arsip_id, versi_dokumen)`. Migrasi `0011` sengaja berhenti bila data legacy ambigu; rekonsiliasi provenans bersama arsiparis dan jangan melakukan auto-renumber.
 - [ ] Jalankan preflight hubungan tunjuk silang aktif duplikat. Migrasi `0012` juga sengaja berhenti sampai duplikasi direkonsiliasi dan keputusannya dicatat.
@@ -95,6 +109,7 @@ Langkah eksekusi:
 - [ ] Masih dalam maintenance window, jalankan `npm run seed:all`. Seed memverifikasi SHA-256/manifest, mengganti hanya dua draft awal dengan dataset resmi, mengaktifkannya, lalu menambahkan mapping rekomendasi secara idempotent. Hentikan rollout bila seed gagal.
 - [ ] Verifikasi kolom, foreign key, check constraint, unique/partial index, dan entri jurnal migrasi.
 - [ ] Verifikasi tepat satu versi `active` untuk `klasifikasi` dan satu untuk `jra`; klasifikasi berisi 842 baris/620 selectable dan JRA berisi 545 baris/391 selectable.
+- [ ] Verifikasi `super_admin.unit_kerja_id IS NULL`, `admin_dirjen.unit_kerja_id='ditjen'`, dan `admin_sesditjen.unit_kerja_id='sesditjen'` setelah rekonsiliasi 0027.
 - [ ] Verifikasi arsip legacy berstatus `legacy_unverified`, memiliki snapshot migrasi, dan tidak muncul pada kandidat penyusutan sampai direkonsiliasi.
 - [ ] Pastikan rekod legacy memiliki `retention_trigger_date IS NULL` dan tidak muncul sebagai kandidat penyusutan.
 - [ ] Pastikan objek dengan URL publik ditandai `storage_access='public'`, bukan dianggap private.
@@ -104,11 +119,11 @@ Langkah eksekusi:
 
 1. Aktifkan maintenance window atau kontrol write yang disetujui.
 2. Ambil backup dan bukti restore.
-3. Jalankan migrasi sampai `0020` dengan `npm run db:migrate`.
+3. Jalankan migrasi sampai `0027` dengan `npm run db:migrate`.
 4. Jalankan `npm run seed:all`, lalu verifikasi jumlah, hash sumber, status versi aktif, dan snapshot legacy.
-5. Deploy backend baru dan lakukan health check internal.
+5. Deploy backend baru; pastikan `/health` menjawab liveness dan `/ready` atau `/api/health` lulus probe database/private Blob serta heartbeat worker yang diwajibkan.
 6. Deploy frontend baru; invalidasi asset cache, tetapi jangan cache respons `/api/*`.
-7. Smoke test login Google/email, pemilih klasifikasi/JRA aktif, registrasi arsip, rekonsiliasi arsip legacy, legal hold, dan penolakan penyusutan tanpa provenance.
+7. Smoke test login Google/email, pemilih klasifikasi/JRA aktif, registrasi arsip, rekonsiliasi arsip legacy, legal hold, penolakan penyusutan tanpa provenance, persetujuan internal surat keluar, serta OCR PDF bertingkat teks dan PDF hasil pindai.
 8. Verifikasi provisioning super admin, role, unit kerja, isolasi lintas unit, dan sesi yang dicabut setelah perubahan otorisasi.
 9. Verifikasi file baru tersimpan private dan hanya dapat diambil melalui `/api/files/...` dengan audit serta header `no-store`.
 10. Unggah PDF sumber regulasi berukuran di atas 4 MiB melalui direct private Blob, selesaikan verifikasi server, dan pastikan respons daftar/detail aturan tidak memuat locator Blob.
@@ -132,7 +147,10 @@ Langkah eksekusi:
 
 - [x] Gateway aplikasi menolak file `not_scanned`, sedang dipindai, retry, gagal, terinfeksi, public legacy, tanpa hash, atau hash mismatch.
 - [x] Adaptor ClamAV INSTREAM dan worker PostgreSQL idempotent tersedia di kode, termasuk retry/backoff, stale-claim recovery, dan verifikasi fixity sebelum status `clean`.
+- [x] Unggah massal menyimpan batch/item secara durable; ekstraksi memakai text layer bila tersedia dan OCR citra nyata untuk PDF hasil pindai, dengan batas fail-closed pada ukuran, halaman, piksel, waktu, serta hasil teks.
+- [x] Setiap item OCR mengambil lease kapasitas global dari PostgreSQL sebelum diproses, memperpanjangnya berkala berdasarkan pasangan item/token selama unduh dan Tesseract, lalu melepasnya dengan token di blok `finally`; database tidak dikunci selama Tesseract berjalan. Commit hasil juga dipagari oleh claim item (`status` + `processing_started_at`) agar worker lama tidak dapat menimpa hasil claim baru. Kapasitas penuh mengembalikan `503` dan `Retry-After` tanpa menandai item gagal, sedangkan lease proses yang mati dapat diambil kembali setelah kedaluwarsa.
 - [ ] Deploy clamd dan worker sebagai proses persisten pada jaringan privat; jangan mengandalkan `setInterval` dalam fungsi Vercel/serverless. Uji EICAR, timeout, scanner mati, objek hilang, hash mismatch, dan restart worker.
+- [ ] Uji model OCR `ind+eng` dari `OCR_TESSDATA_PATH` pada image/artifact produksi, termasuk PDF scan maksimal 10 halaman, dokumen tanpa teks bermakna, timeout unduh Blob 30 detik, restart proses, konsumsi CPU/memori, cleanup cache, saturasi lintas replica, penghormatan `Retry-After`, renewal/reklamasi lease, serta penolakan hasil worker stale. Handler Vercel menetapkan `maxDuration=300` detik: 30 detik text-layer + 180 detik scan OCR + 30 detik unduh Blob + 60 detik margin cold-start/database/cleanup; pastikan plan/runtime deployment mendukung nilai tersebut. Kalibrasi `ocr_capacity_control.max_concurrency` hanya melalui perubahan operasional database yang diaudit dan uji beban; jangan membuat override berbeda pada tiap instance. Metadata hasil OCR wajib ditinjau manusia sebelum dikonfirmasi.
 - [ ] Terapkan private object access, encryption-at-rest yang didukung platform, least privilege, lifecycle, backup, dan pemisahan admin.
 - [ ] **Kondisional — hardening storage:** integrasikan content disarm/DLP, KMS/HSM khusus, versioning, dan object lock/WORM bila kelas data, kebijakan, atau keputusan risiko mensyaratkannya; simpan bukti konfigurasi dan uji.
 - [ ] Uji QC 300 DPI kertas, 400 DPI kartografis, 600 DPI foto, 24-bit; kalibrasi alat dan lakukan sampling visual.
@@ -144,13 +162,15 @@ Langkah eksekusi:
 
 - [ ] Petakan role ke jabatan/mandat; lakukan joiner-mover-leaver review dan recertification akses berkala.
 - [x] Workflow aplikasi menyediakan permohonan per-rekod, tujuan akses, approver terpisah, mode tayang/unduh/kelola, masa berlaku maksimal 30 hari, pencabutan, dan audit penggunaan. Grant tayang/unduh tidak memberi hak mutasi.
+- [x] Workflow persetujuan internal surat keluar mencatat pengaju, penyetuju aktif, keputusan, catatan, dan riwayat; self-approval ditolak, surat pending/disetujui terkunci dari edit/hapus, dan pengarsipan hanya tersedia setelah persetujuan final. Workflow ini bukan tanda tangan elektronik BSrE/PSrE.
+- [ ] Uji matriks pembuat–penyetuju pada setiap unit: pengajuan draft/ditolak, antrean penyetuju yang ditunjuk, persetujuan/penolakan, pengajuan ulang, larangan self-approval, penolakan akses lintas unit, serta larangan edit/hapus/arsip pada status yang tidak sesuai.
 - [ ] Hubungkan workflow tersebut dengan register clearance personal, jabatan/penugasan resmi, matriks pejabat approver, SLA, notifikasi, recertification, dan pencabutan otomatis saat mutasi pegawai.
 - [ ] Tambahkan watermark pengguna/waktu/tujuan dan kontrol print/export untuk Terbatas/Rahasia/Sangat Rahasia.
 - [ ] Pastikan respons tidak membedakan “tidak ada” dari “tidak berwenang” pada object sensitif.
 - [ ] Lindungi audit dari perubahan tidak berwenang; batasi admin, tetapkan retensi, backup, sinkronisasi waktu, dan alert dasar untuk akses massal, lintas unit, gagal login, perubahan role, legal hold, export, dan penghapusan.
 - [ ] **Kondisional — WORM/SIEM:** kirim audit ke penyimpanan WORM dan/atau SIEM/SOC bila diwajibkan kebijakan atau hasil asesmen risiko.
 - [ ] Tetapkan retensi audit; uji korelasi actor, session, IP/device, record, action, waktu, alasan, hasil, dan request ID.
-- [ ] Ganti pola audit best-effort untuk aksi kritis dengan outbox/transaksi atau mekanisme fail-closed yang disepakati.
+- [ ] Verifikasi mutasi kritis memakai audit transaksional/fail-closed dan pastikan tidak ada jalur kritis baru yang kembali memakai audit best-effort.
 
 ## 10. Retensi, legal hold, dan penyusutan
 
@@ -161,13 +181,11 @@ Langkah eksekusi:
 - [ ] Untuk pemusnahan, buat daftar, persetujuan, berita acara, saksi, hash/identifier, dan bukti bahwa seluruh salinan, cache, replika, serta backup yang jatuh tempo telah ditangani sesuai kebijakan.
 - [ ] Untuk penyerahan permanen, uji paket metadata/bitstream, checksum manifest, media/kanal, tanda terima, dan rekonsiliasi dengan ANRI.
 
-## 11. Integrasi kondisional: tanda tangan elektronik dan SRIKANDI
+## 11. Integrasi kondisional SRIKANDI
 
-Lewati aktivasi pada bagian ini bila fitur tidak diwajibkan. Kontrol gagal-tertutup dan feature flag nonaktif tetap harus dipertahankan.
+Lewati aktivasi pada bagian ini bila SRIKANDI tidak diwajibkan. Kontrol gagal-tertutup dan feature flag nonaktif tetap harus dipertahankan.
 
-- [x] Endpoint aplikasi tidak lagi membuat `MOCK-SIG`; penandatanganan gagal-tertutup sampai layanan tersertifikasi tersedia, dan artefak simulasi legacy selalu dianggap tidak sah.
-- [ ] **Kondisional — tanda tangan resmi:** integrasikan BSrE/PSrE sebelum mengaktifkan penandatanganan elektronik.
-- [ ] **Kondisional — tanda tangan resmi:** verifikasi sertifikat, rantai kepercayaan, OCSP/CRL, waktu tanda tangan, identitas penanda tangan, integritas dokumen, dan long-term validation.
+- [x] Tanda tangan elektronik berada di luar ruang lingkup; endpoint legacy tidak membuat `MOCK-SIG`, tetap gagal-tertutup, dan artefak simulasi selalu dianggap tidak sah.
 - [ ] **Kondisional — SRIKANDI:** gunakan sandbox; uji idempotency, retry, dead-letter, timeout, perubahan skema, dan rekonsiliasi sesuai kontrak resmi.
 - [x] Fondasi outbox durable, snapshot versi kontrak, audit append-only, idempotency/hash conflict, lease recovery, retry/backoff/dead-letter, bounded response streaming, validasi ACK + remote ID, dan worker persisten tersedia serta disabled-by-default.
 - [ ] **Kondisional — SRIKANDI:** deploy worker pada runtime persisten; endpoint HTTP pemrosesan antrean hanya fallback diagnostik satu item.
@@ -204,7 +222,7 @@ Lewati aktivasi pada bagian ini bila fitur tidak diwajibkan. Kontrol gagal-tertu
 
 ## 14. Strategi rollback
 
-Migrasi `0010` sampai `0020` pada umumnya bersifat aditif, tetapi rollback dengan `DROP COLUMN`/`DROP TABLE` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, keputusan akses, audit integrasi, versi aturan, appraisal/penyusutan, penyerahan permanen, snapshot keputusan, atau pelaku workflow. Karena itu:
+Migrasi `0010` sampai `0027` pada umumnya bersifat aditif, tetapi rollback dengan `DROP COLUMN`/`DROP TABLE` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, keputusan akses, audit integrasi, versi aturan, appraisal/penyusutan, penyerahan permanen, lease Blob/OCR, batch ingest, heartbeat, snapshot keputusan, pelaku workflow, atau constraint mandat unit. Karena itu:
 
 1. **Sebelum cutover dan belum ada write baru:** batalkan deploy aplikasi; bila migrasi gagal, pulihkan database ke branch/snapshot pra-migrasi dan verifikasi checksum/count.
 2. **Sesudah cutover tetapi belum ada data bermakna:** arahkan trafik ke maintenance, pulihkan snapshot ke environment baru, validasi, lalu switch connection secara terkontrol.
@@ -223,7 +241,6 @@ Kriteria rollback wajib: akses lintas unit, object menjadi publik, migrasi/hash 
 - [ ] DPO atau fungsi pelindungan data
 - [ ] DBA dan storage owner; KMS owner bila digunakan
 - [ ] **Kondisional:** pengelola SRIKANDI bila connector diaktifkan
-- [ ] **Kondisional:** BSrE/PSrE bila tanda tangan/segel resmi diaktifkan
 - [ ] **Kondisional:** ANRI/asistensi yang relevan bila diwajibkan scope atau kebijakan
 
 Tanpa bukti dan persetujuan untuk scope yang dipilih, label yang tepat adalah **“aplikasi internal dengan kontrol yang telah diuji terbatas”**, bukan “tersertifikasi” atau “sepenuhnya patuh”.

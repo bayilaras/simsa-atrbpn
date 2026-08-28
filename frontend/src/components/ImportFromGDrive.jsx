@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/services/api';
+import { buildGoogleSheetsImportPayload } from '@/lib/google-sheets-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 /**
@@ -13,14 +14,12 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
  * - Content-Type headers
  * - Error handling (401 redirect, rate limiting, etc.)
  * 
- * unitKerjaId is resolved automatically from the authenticated user's session
- * on the backend, respecting user roles (super_admin, admin_dirjen, admin_sesditjen, user).
- * 
  * Props:
  * - type: 'surat-masuk' | 'surat-keluar'
+ * - unitKerjaId: concrete destination unit (required)
  * - onImportComplete: () => void (callback to refresh data)
  */
-const ImportFromGDrive = ({ type, onImportComplete }) => {
+const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [step, setStep] = useState('input'); // input, sheets, preview, importing, result
     const [spreadsheetUrl, setSpreadsheetUrl] = useState('');
@@ -45,6 +44,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
     };
 
     const handleOpen = () => {
+        if (!unitKerjaId) return;
         reset();
         setIsOpen(true);
     };
@@ -119,10 +119,10 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
         setError('');
 
         try {
-            const result = await api.post(`/api/import/google-drive/${type}`, {
-                spreadsheetUrl,
-                sheetName: selectedSheet,
-            });
+            const result = await api.post(
+                `/api/import/google-drive/${type}`,
+                buildGoogleSheetsImportPayload(spreadsheetUrl, selectedSheet, unitKerjaId),
+            );
 
             setImportResult(result);
             setStep('result');
@@ -141,10 +141,11 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
             <button
                 type="button"
                 onClick={handleOpen}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80"
+                disabled={!unitKerjaId}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
             >
                 <Upload aria-hidden="true" className="w-4 h-4" />
-                Impor dari Google Drive
+                Impor dari Google Sheets
             </button>
             <Dialog open={isOpen} onOpenChange={(open) => !open && step !== 'importing' && handleClose()}>
                 <DialogContent

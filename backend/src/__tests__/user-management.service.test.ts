@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
+let transactionCommits = 0;
+let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
+const auditMocks = vi.hoisted(() => ({ logActionOrThrow: vi.fn() }));
 
 const mockChain: any = new Proxy({}, {
     get(_target, prop) {
@@ -15,24 +18,55 @@ const mockChain: any = new Proxy({}, {
 });
 
 const mockDb = {
-    select: (..._a: any[]) => mockChain,
+    select: vi.fn((..._a: any[]) => mockChain),
     insert: vi.fn((..._a: any[]) => mockChain),
-    update: (..._a: any[]) => mockChain,
+    update: vi.fn((..._a: any[]) => mockChain),
     delete: vi.fn((..._a: any[]) => mockChain),
-    transaction: vi.fn(async (callback: any) => callback(mockDb)),
+    execute: vi.fn().mockResolvedValue([]),
+    transaction: vi.fn(async (callback: any) => {
+        try {
+            const result = await callback(mockDb);
+            transactionCommits += 1;
+            return result;
+        } catch (error) {
+            transactionRollbacks += 1;
+            throw error;
+        }
+    }),
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
 vi.mock('better-auth/crypto', () => ({
     hashPassword: vi.fn().mockResolvedValue('secure-password-hash'),
 }));
 
-const { userManagementService, VALID_ROLES, ADMIN_ROLES } = await import('../services/user-management.service');
+const {
+    userManagementService,
+    VALID_ROLES,
+    ADMIN_ROLES,
+    normalizeUserUnitAssignment,
+} = await import('../services/user-management.service');
+
+const activeSuperAdmin = {
+    id: 'super-admin-2',
+    email: 'super-admin-2@example.go.id',
+    role: 'super_admin',
+    unitKerjaId: null,
+    isActive: true,
+};
+const actorContext = {
+    userId: activeSuperAdmin.id,
+    userEmail: activeSuperAdmin.email,
+};
 
 describe('userManagementService', () => {
     beforeEach(() => {
         resultQueue.length = 0;
         vi.clearAllMocks();
+        transactionCommits = 0;
+        transactionRollbacks = 0;
+        auditMocks.logActionOrThrow.mockResolvedValue(undefined);
     });
 
     // ── Pure functions (no DB) ──
@@ -95,10 +129,45 @@ describe('userManagementService', () => {
         });
     });
 
+    describe('normalizeUserUnitAssignment', () => {
+        it('canonicalizes omitted fixed-unit assignments for administrator roles', () => {
+            expect(normalizeUserUnitAssignment('admin_dirjen', null, false)).toBe('ditjen');
+            expect(normalizeUserUnitAssignment('admin_sesditjen', 'stale-unit', false)).toBe('sesditjen');
+        });
+
+        it('rejects explicit null or mismatched fixed-unit assignments', () => {
+            expect(() => normalizeUserUnitAssignment('admin_dirjen', null, true))
+                .toThrow(/Invalid unitKerjaId/);
+            expect(() => normalizeUserUnitAssignment('admin_dirjen', 'sesditjen', true))
+                .toThrow(/Invalid unitKerjaId/);
+            expect(() => normalizeUserUnitAssignment('admin_sesditjen', null, true))
+                .toThrow(/Invalid unitKerjaId/);
+            expect(() => normalizeUserUnitAssignment('admin_sesditjen', 'ditjen', true))
+                .toThrow(/Invalid unitKerjaId/);
+        });
+
+        it('canonicalizes every super-admin assignment to cross-unit null', () => {
+            expect(normalizeUserUnitAssignment('super_admin', null, false)).toBeNull();
+            expect(normalizeUserUnitAssignment('super_admin', 'ditjen', true)).toBeNull();
+        });
+    });
+
     // ── DB operations (with mock) ──
     describe('createUser', () => {
+        it('rejects an explicit null unit for a fixed-unit administrator before opening a transaction', async () => {
+            await expect(userManagementService.createUser({
+                email: 'admin-dirjen@example.go.id',
+                name: 'Admin Dirjen',
+                role: 'admin_dirjen',
+                unitKerjaId: null,
+            }, actorContext)).rejects.toThrow(/Invalid unitKerjaId/);
+
+            expect(mockDb.transaction).not.toHaveBeenCalled();
+        });
+
         it('provisions a credential account without using the public sign-up endpoint', async () => {
             enqueue(
+                [activeSuperAdmin],
                 [],
                 [{ id: 'u-new' }],
                 [],
@@ -111,11 +180,33 @@ describe('userManagementService', () => {
                 role: 'staff',
                 unitKerjaId: null,
                 password: 'Strong-Password-2026!',
-            });
+            }, actorContext);
 
             expect(result).toEqual({ id: 'u-new', email: 'new@example.go.id', role: 'staff' });
             expect(mockDb.transaction).toHaveBeenCalledOnce();
             expect(mockDb.insert).toHaveBeenCalledTimes(2);
+        });
+
+        it('rolls back user provisioning when critical audit storage fails', async () => {
+            enqueue([activeSuperAdmin], [], [{
+                id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'staff',
+                unitKerjaId: null, isActive: true,
+            }]);
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(userManagementService.createUser({
+                email: 'new@example.go.id',
+                name: 'New User',
+                role: 'staff',
+                unitKerjaId: null,
+            }, actorContext)).rejects.toThrow('audit unavailable');
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
+                expect.objectContaining({ action: 'create', entityType: 'user', entityId: 'u-new' }),
+                mockDb,
+            );
         });
     });
 
@@ -171,36 +262,144 @@ describe('userManagementService', () => {
     describe('updateUser', () => {
         it('should reject invalid role', async () => {
             await expect(
-                userManagementService.updateUser('u1', { role: 'invalid' as any })
+                userManagementService.updateUser('u1', { role: 'invalid' as any }, actorContext)
             ).rejects.toThrow('Invalid role: invalid');
+        });
+
+        it('rejects an in-flight mutation when the actor is no longer an active super admin', async () => {
+            enqueue([{
+                ...activeSuperAdmin,
+                role: 'staff',
+            }]);
+
+            await expect(userManagementService.updateUser(
+                'u1',
+                { role: 'admin_dirjen' },
+                actorContext,
+            )).rejects.toThrow(/bukan super admin aktif/);
+
+            expect(mockDb.execute).toHaveBeenCalledOnce();
+            expect(mockDb.execute.mock.invocationCallOrder[0])
+                .toBeLessThan(mockDb.select.mock.invocationCallOrder[0]);
+            expect(mockDb.update).not.toHaveBeenCalled();
+        });
+
+        it('fails closed when a service mutation has no audit actor', async () => {
+            await expect((userManagementService.updateUser as any)(
+                'u1',
+                { isActive: false },
+                undefined,
+            )).rejects.toThrow(/Konteks administrator wajib/);
+
+            expect(mockDb.update).not.toHaveBeenCalled();
         });
 
         it('should revoke existing sessions after a role change', async () => {
             enqueue(
-                [{ id: 'u1', role: 'staff' }],
-                [{ id: 'u1', role: 'staff' }],
+                [activeSuperAdmin],
+                [{ id: 'u1', role: 'user', unitKerjaId: 'u1', isActive: true }],
                 [],
+                [{ id: 'u1', role: 'staff', unitKerjaId: 'u1', isActive: true }],
+                [],
+                [{ id: 'u1', role: 'staff' }],
             );
 
-            const result = await userManagementService.updateUser('u1', { role: 'staff' });
+            const result = await userManagementService.updateUser('u1', { role: 'staff' }, actorContext);
 
             expect(result).toEqual({ id: 'u1', role: 'staff' });
             expect(mockDb.delete).toHaveBeenCalledTimes(1);
+            expect(mockDb.execute).toHaveBeenCalledOnce();
+        });
+
+        it('rejects a role change while the user is the current approver of a pending letter', async () => {
+            enqueue(
+                [activeSuperAdmin],
+                [{
+                    id: 'approver-1', role: 'admin_dirjen', unitKerjaId: 'ditjen', isActive: true,
+                }],
+                [{ id: 'surat-1', nomorSurat: 'SK/17/2026' }],
+            );
+
+            await expect(userManagementService.updateUser(
+                'approver-1',
+                { role: 'staff' },
+                actorContext,
+            )).rejects.toThrow(/masih menjadi penyetuju aktif.*SK\/17\/2026/);
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(mockDb.update).not.toHaveBeenCalled();
+        });
+
+        it('rejects self-deactivation inside the service transaction', async () => {
+            enqueue([{
+                id: 'super-admin-1', role: 'super_admin', unitKerjaId: null, isActive: true,
+            }]);
+
+            await expect(userManagementService.updateUser(
+                'super-admin-1',
+                { isActive: false },
+                { userId: 'super-admin-1' },
+            )).rejects.toThrow(/tidak dapat menonaktifkan akun sendiri/);
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(mockDb.update).not.toHaveBeenCalled();
+        });
+
+        it('keeps at least one active super admin', async () => {
+            enqueue(
+                [activeSuperAdmin],
+                [{
+                    id: 'super-admin-1', role: 'super_admin', unitKerjaId: null, isActive: true,
+                }],
+                [{ count: 1 }],
+            );
+
+            await expect(userManagementService.updateUser(
+                'super-admin-1',
+                { role: 'staff' },
+                actorContext,
+            )).rejects.toThrow(/Minimal satu super admin aktif/);
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(mockDb.update).not.toHaveBeenCalled();
         });
     });
 
     describe('deactivateUser', () => {
         it('should call updateUser with isActive false', async () => {
-            // When deactivating, updateUser will:
-            // 1. select unitKerja (not needed since no unitKerjaId)
-            // 2. update + returning
-            // 3. getUserById for the return
+            // Deactivation checks for active approval assignments before update.
             enqueue(
-                [{ id: 'u1' }],              // update().returning()
-                [{ id: 'u1', isActive: false }], // getUserById
+                [activeSuperAdmin],
+                [{ id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: true }],
+                [],
+                [{ id: 'u1', isActive: false }],
+                [],
+                [{ id: 'u1', isActive: false }],
             );
-            const result = await userManagementService.deactivateUser('u1');
+            const result = await userManagementService.deactivateUser('u1', actorContext);
             expect(result).toEqual({ id: 'u1', isActive: false });
+        });
+
+        it('rejects deactivation while the user owns a pending approval step', async () => {
+            enqueue(
+                [activeSuperAdmin],
+                [{
+                    id: 'approver-1', role: 'admin_sesditjen', unitKerjaId: 'sesditjen', isActive: true,
+                }],
+                [{ id: 'surat-2', nomorSurat: null }],
+            );
+
+            await expect(userManagementService.deactivateUser(
+                'approver-1',
+                actorContext,
+            )).rejects.toThrow(/masih menjadi penyetuju aktif/);
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(mockDb.update).not.toHaveBeenCalled();
         });
     });
 });

@@ -5,6 +5,7 @@ import {
     scopedRecordByIdWhere,
     type RecordUnitScope,
 } from '../utils/record-unit-scope.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 interface ArsipVitalFilters {
     unitKerjaId?: string;
@@ -177,42 +178,122 @@ class ArsipVitalService {
     }
 
     // Designate an archive as vital
-    async create(data: NewArsipVital) {
-        const [result] = await db.insert(arsipVital).values({
-            ...data,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        }).returning();
-        return result;
+    async create(data: NewArsipVital, auditContext: CriticalAuditContext) {
+        return await db.transaction(async (tx: any) => {
+            const [result] = await tx.insert(arsipVital).values({
+                ...data,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            }).returning();
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'create',
+                entityType: 'arsip',
+                entityId: result.arsipId,
+                changes: {
+                    after: result,
+                    designation: 'vital',
+                    designationId: result.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Update arsip vital
-    async update(id: string, data: Partial<ArsipVital>, unitScope: RecordUnitScope) {
-        const [result] = await db
-            .update(arsipVital)
-            .set({ ...data, updatedAt: new Date() })
-            .where(scopedRecordByIdWhere(
+    async update(
+        id: string,
+        data: Partial<ArsipVital>,
+        unitScope: RecordUnitScope,
+        auditContext: CriticalAuditContext,
+    ) {
+        return await db.transaction(async (tx: any) => {
+            const targetWhere = scopedRecordByIdWhere(
                 arsipVital.id,
                 id,
                 arsipVital.unitKerjaId,
                 unitScope,
-            ))
-            .returning();
-        return result;
+            );
+            const [existing] = await tx
+                .select()
+                .from(arsipVital)
+                .where(targetWhere)
+                .limit(1)
+                .for('update');
+
+            if (!existing) return null;
+
+            const [result] = await tx
+                .update(arsipVital)
+                .set({ ...data, updatedAt: new Date() })
+                .where(targetWhere)
+                .returning();
+
+            if (!result) return null;
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'arsip',
+                entityId: result.arsipId,
+                changes: {
+                    before: existing,
+                    after: result,
+                    fields: Object.keys(data),
+                    designation: 'vital',
+                    designationId: result.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Remove vital designation
-    async delete(id: string, unitScope: RecordUnitScope) {
-        const [result] = await db
-            .delete(arsipVital)
-            .where(scopedRecordByIdWhere(
+    async delete(
+        id: string,
+        unitScope: RecordUnitScope,
+        auditContext: CriticalAuditContext,
+    ) {
+        return await db.transaction(async (tx: any) => {
+            const targetWhere = scopedRecordByIdWhere(
                 arsipVital.id,
                 id,
                 arsipVital.unitKerjaId,
                 unitScope,
-            ))
-            .returning();
-        return result;
+            );
+            const [existing] = await tx
+                .select()
+                .from(arsipVital)
+                .where(targetWhere)
+                .limit(1)
+                .for('update');
+
+            if (!existing) return null;
+
+            const [result] = await tx
+                .delete(arsipVital)
+                .where(targetWhere)
+                .returning();
+
+            if (!result) return null;
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'delete',
+                entityType: 'arsip',
+                entityId: existing.arsipId,
+                changes: {
+                    before: existing,
+                    designation: 'vital',
+                    designationId: existing.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Get statistics for dashboard

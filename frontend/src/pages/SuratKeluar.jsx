@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import { Link, useNavigate } from 'react-router-dom';
 import { Send, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, MailOpen, FolderArchive, RefreshCw, Trash2, FileText, AlertCircle, Inbox, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,12 +60,19 @@ import {
 import { TableSkeleton } from '@/components/skeletons';
 import suratKeluarService from '@/services/surat-keluar.service';
 import settingsService from '@/services/settings.service';
+import approvalService from '@/services/approval.service';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 
 // Generate year options
 const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
+const approvalStatusDisplay = {
+    draft: { label: 'Draft', className: 'text-muted-foreground' },
+    pending: { label: 'Menunggu Persetujuan', className: 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+    approved: { label: 'Disetujui', className: 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+    rejected: { label: 'Perlu Perbaikan', className: 'border-red-300 bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300' },
+};
 
 export default function SuratKeluar() {
     const navigate = useNavigate();
@@ -78,10 +86,11 @@ export default function SuratKeluar() {
     const [loading, setLoading] = useState(true);
     const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
     const [stats, setStats] = useState({ total: 0, diarsipkan: 0 });
+    const [pendingApprovals, setPendingApprovals] = useState([]);
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([]);
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined));
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined));
 
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
@@ -109,7 +118,7 @@ export default function SuratKeluar() {
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
-        : (user?.unitKerjaId || undefined);
+        : (resolveEffectiveUnitKerjaId(user) || undefined);
 
     // Guards against out-of-order responses overwriting newer results
     const fetchSeqRef = useRef(0);
@@ -165,10 +174,27 @@ export default function SuratKeluar() {
         }
     }, [resolvedUnitKerjaId]);
 
+    const fetchPendingApprovals = useCallback(async () => {
+        if (!isAdmin) {
+            setPendingApprovals([]);
+            return;
+        }
+        try {
+            setPendingApprovals(await approvalService.getPending());
+        } catch (error) {
+            console.error('Error fetching pending approvals:', error);
+            setPendingApprovals([]);
+        }
+    }, [isAdmin]);
+
     useEffect(() => {
         fetchData();
         fetchStats();
     }, [fetchData, fetchStats]);
+
+    useEffect(() => {
+        fetchPendingApprovals();
+    }, [fetchPendingApprovals]);
 
     // Debounced search
     useEffect(() => {
@@ -298,9 +324,10 @@ export default function SuratKeluar() {
                         Refresh
                     </Button>
 
-                    {isAdmin && (
+                    {isAdmin && resolvedUnitKerjaId && (
                         <ImportFromGDrive
                             type="surat-keluar"
+                            unitKerjaId={resolvedUnitKerjaId}
                             onImportComplete={fetchData}
                         />
                     )}
@@ -308,6 +335,7 @@ export default function SuratKeluar() {
                     <ExportButton
                         type="surat-keluar"
                         filters={{
+                            unitKerjaId: resolvedUnitKerjaId,
                             tahun: tahun !== 'all' ? tahun : undefined,
                             naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
                             tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
@@ -326,6 +354,26 @@ export default function SuratKeluar() {
                 </div>
             </div>
 
+            {pendingApprovals.length > 0 && (
+                <Card className="border-amber-300 bg-amber-50/70 dark:bg-amber-500/10">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <AlertCircle className="h-5 w-5 text-amber-600" />
+                            {pendingApprovals.length} surat menunggu keputusan Anda
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-wrap gap-2">
+                        {pendingApprovals.slice(0, 5).map(item => (
+                            <Button key={item.requestId} asChild size="sm" variant="outline">
+                                <Link to={`/surat/keluar/${item.suratId}`}>
+                                    {item.nomorSurat || 'Draft'} — {item.perihal || 'Tanpa perihal'}
+                                </Link>
+                            </Button>
+                        ))}
+                    </CardContent>
+                </Card>
+            )}
+
             {/* Quick Stats */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card className="shadow-sm border-l-4 border-l-emerald-500 card-hover">
@@ -342,7 +390,7 @@ export default function SuratKeluar() {
                 <Card className="shadow-sm border-l-4 border-l-orange-500 card-hover">
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
-                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Draft / Belum Final</p>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Belum Diarsipkan</p>
                             <p className="text-2xl font-bold text-orange-600">{stats.total - stats.diarsipkan}</p>
                         </div>
                         <div className="p-2.5 bg-orange-100 dark:bg-orange-500/15 rounded-full text-orange-600">
@@ -508,9 +556,6 @@ export default function SuratKeluar() {
                                                 <TableCell data-label="Tanggal" className="text-sm">
                                                     <div className="flex flex-col">
                                                         <span className="font-medium">{formatDate(row.tanggalSurat)}</span>
-                                                        {row.tanggalKirim && (
-                                                            <span className="text-xs text-muted-foreground">{formatDate(row.tanggalKirim)} (Kirim)</span>
-                                                        )}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell data-label="Nomor Surat">
@@ -547,7 +592,12 @@ export default function SuratKeluar() {
                                                                 Arsip
                                                             </Badge>
                                                         ) : (
-                                                            <Badge variant="outline" className="text-muted-foreground">Aktif</Badge>
+                                                            <Badge
+                                                                variant="outline"
+                                                                className={approvalStatusDisplay[row.approvalStatus]?.className || 'text-muted-foreground'}
+                                                            >
+                                                                {approvalStatusDisplay[row.approvalStatus]?.label || 'Draft'}
+                                                            </Badge>
                                                         )}
                                                     </div>
                                                 </TableCell>
@@ -564,18 +614,24 @@ export default function SuratKeluar() {
                                                             </DropdownMenuItem>
                                                             {isAdmin && (
                                                                 <>
-                                                                    <DropdownMenuItem onClick={() => handleEdit(row)}>
-                                                                        <Edit className="h-4 w-4 mr-2" /> Edit Surat
-                                                                    </DropdownMenuItem>
-                                                                    <DropdownMenuSeparator />
-                                                                    {!row.isArchived && (
+                                                                    {['draft', 'rejected'].includes(row.approvalStatus || 'draft') && (
+                                                                        <DropdownMenuItem onClick={() => handleEdit(row)}>
+                                                                            <Edit className="h-4 w-4 mr-2" /> Edit Surat
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                    {row.approvalStatus === 'approved' && !row.isArchived && (
                                                                         <DropdownMenuItem onClick={() => handleOpenArchiveDialog(row)}>
                                                                             <Archive className="h-4 w-4 mr-2" /> Arsipkan
                                                                         </DropdownMenuItem>
                                                                     )}
-                                                                    <DropdownMenuItem onClick={() => handleOpenDeleteDialog(row)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                                                                        <Trash2 className="h-4 w-4 mr-2" /> Hapus Surat
-                                                                    </DropdownMenuItem>
+                                                                    {['draft', 'rejected'].includes(row.approvalStatus || 'draft') && (
+                                                                        <>
+                                                                            <DropdownMenuSeparator />
+                                                                            <DropdownMenuItem onClick={() => handleOpenDeleteDialog(row)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                                                                                <Trash2 className="h-4 w-4 mr-2" /> Hapus Surat
+                                                                            </DropdownMenuItem>
+                                                                        </>
+                                                                    )}
                                                                 </>
                                                             )}
                                                         </DropdownMenuContent>

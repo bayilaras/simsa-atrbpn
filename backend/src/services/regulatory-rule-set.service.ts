@@ -29,6 +29,10 @@ import {
     type RegulatoryEventInput,
 } from './regulatory-audit.service';
 import { blobStorageService } from './blob-storage.service';
+import {
+    clientBlobUploadService,
+    type ClaimClientBlobUpload,
+} from './client-blob-upload.service.js';
 
 type RuleItem = Record<string, any>;
 type JsonObject = Record<string, unknown>;
@@ -1348,6 +1352,7 @@ export class RegulatoryRuleSetService {
         actorId?: string,
         auditContext: Omit<GovernanceAuditContext, 'actorId'> = {},
         action = 'server_verify_private_blob',
+        clientBlobClaim?: ClaimClientBlobUpload,
     ) {
         return db.transaction(async (tx: any) => {
             const [ruleSet] = await tx.select().from(regulatoryRuleSets)
@@ -1389,6 +1394,15 @@ export class RegulatoryRuleSetService {
                 eq(regulatoryRuleSets.status, 'draft'),
             )).returning();
             if (!updated) throw new ConflictError('Status draft berubah saat dokumen diverifikasi.');
+
+            if (clientBlobClaim) {
+                await clientBlobUploadService.claimWithExecutor(
+                    tx,
+                    clientBlobClaim,
+                    'regulatory_rule_set',
+                    id,
+                );
+            }
 
             const after = {
                 name: source.originalName,
@@ -1464,12 +1478,19 @@ export class RegulatoryRuleSetService {
         actorId?: string,
         auditContext: Omit<GovernanceAuditContext, 'actorId'> = {},
     ) {
+        if (!actorId) {
+            throw new ValidationError('Aktor wajib tercatat untuk mengklaim unggahan Blob langsung.');
+        }
         await this.assertSourceDocumentUploadAllowed(id);
         const verified = await retrieveAndInspectSourceBlob(id, input.blobUrl);
         return this.persistVerifiedSourceDocument(id, {
             originalName: safeRegulatorySourceFileName(input.originalFileName),
             ...verified,
-        }, actorId, auditContext, 'server_retrieve_verify_private_blob');
+        }, actorId, auditContext, 'server_retrieve_verify_private_blob', {
+            blobUrl: input.blobUrl,
+            purpose: 'regulatory_source',
+            uploadedBy: actorId,
+        });
     }
 
     async verifyCompletenessManifest(

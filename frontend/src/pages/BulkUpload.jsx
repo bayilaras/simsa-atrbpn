@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useOCRUpload } from '@/hooks/useOCRUpload';
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import {
     Card,
     CardContent,
@@ -47,12 +49,14 @@ export default function BulkUpload() {
     const [dragActive, setDragActive] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [editedData, setEditedData] = useState({});
+    const unitScope = useRequiredUnitKerjaScope(user);
 
     const {
         files,
         batch,
         isUploading,
         isProcessing,
+        isResuming,
         error,
         progress,
         addFiles,
@@ -60,7 +64,7 @@ export default function BulkUpload() {
         clearFiles,
         upload,
         confirmBatch,
-    } = useOCRUpload(user?.unitKerjaId);
+    } = useOCRUpload(unitScope.unitKerjaId);
 
     // Drag handlers
     const handleDrag = useCallback((e) => {
@@ -100,13 +104,16 @@ export default function BulkUpload() {
             .filter((item) => item.status === 'completed')
             .map((item) => {
                 const edited = editedData[item.id] || {};
+                const nomorBerkas = (edited.nomorBerkas || item.metadata?.nomorSurat || '').trim();
+                const uraianBerkas = (edited.uraianBerkas || item.metadata?.perihal || '').trim();
+                const kodeKlasifikasi = (edited.kodeKlasifikasi || '').trim();
                 return {
                     itemId: item.id,
-                    nomorBerkas: edited.nomorBerkas || item.metadata?.nomorSurat || '',
-                    uraianBerkas: edited.uraianBerkas || item.metadata?.perihal || '',
-                    kodeKlasifikasi: edited.kodeKlasifikasi || '',
                     tahun: edited.tahun || new Date().getFullYear(),
                     jenisArsip: edited.jenisArsip || 'masuk',
+                    ...(nomorBerkas && { nomorBerkas }),
+                    ...(uraianBerkas && { uraianBerkas }),
+                    ...(kodeKlasifikasi && { kodeKlasifikasi }),
                 };
             });
 
@@ -173,6 +180,11 @@ export default function BulkUpload() {
                 </div>
             </div>
 
+            <RequiredUnitKerjaScope
+                scope={unitScope}
+                disabled={isUploading || isProcessing || isResuming || Boolean(batch)}
+            />
+
             {error && (
                 <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2">
                     <AlertCircle className="h-4 w-4" />
@@ -182,7 +194,7 @@ export default function BulkUpload() {
 
             <AnimatePresence mode="wait">
                 {/* Upload Phase */}
-                {!batch && !isProcessing && (
+                {!batch && !isProcessing && !isResuming && (
                     <Motion.div
                         key="upload"
                         initial={{ opacity: 0, y: 20 }}
@@ -226,7 +238,7 @@ export default function BulkUpload() {
                                         Seret dan lepas berkas PDF di sini
                                     </h3>
                                     <p className="text-muted-foreground dark:text-muted-foreground mb-6 max-w-sm">
-                                        atau klik untuk memilih berkas dari komputer Anda (maksimal 50 berkas)
+                                        atau klik untuk memilih berkas (maks. 50 berkas, 50 MB/berkas, 100 MB total)
                                     </p>
                                     <span aria-hidden="true" className="inline-flex min-h-11 items-center rounded-md border border-blue-200 bg-background px-4 text-sm font-medium text-foreground">
                                         Pilih berkas
@@ -237,7 +249,14 @@ export default function BulkUpload() {
                                     <div className="mt-8 space-y-4">
                                         <div className="flex flex-wrap items-center justify-between gap-3">
                                             <h4 className="font-medium text-foreground dark:text-gray-300">File Terpilih ({files.length})</h4>
-                                            <Button type="button" variant="ghost" size="sm" onClick={clearFiles} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={clearFiles}
+                                                disabled={isUploading}
+                                                className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            >
                                                 Hapus semua
                                             </Button>
                                         </div>
@@ -270,7 +289,7 @@ export default function BulkUpload() {
                                         <div className="flex justify-end pt-4 border-t mt-6">
                                             <Button
                                                 onClick={handleUpload}
-                                                disabled={isUploading}
+                                                disabled={isUploading || !unitScope.unitKerjaId}
                                                 className="bg-primary hover:bg-primary text-white min-w-[150px]"
                                                 size="lg"
                                             >
@@ -290,7 +309,7 @@ export default function BulkUpload() {
                 )}
 
                 {/* Processing Phase */}
-                {(isProcessing || isUploading) && (
+                {(isProcessing || isUploading || isResuming) && (
                     <Motion.div
                         key="processing"
                         initial={{ opacity: 0, scale: 0.95 }}
@@ -308,13 +327,17 @@ export default function BulkUpload() {
                                 </div>
                                 <div>
                                     <h3 className="text-xl font-bold text-foreground dark:text-gray-100 mb-2">
-                                        {isUploading ? 'Mengupload File...' : 'Memproses OCR Metadata...'}
+                                        {isResuming
+                                            ? 'Memulihkan Batch Tersimpan...'
+                                            : isUploading
+                                                ? 'Mengupload File...'
+                                                : 'Memproses OCR Metadata...'}
                                     </h3>
                                     <p className="text-muted-foreground dark:text-muted-foreground">
                                         Sistem sedang membaca isi dokumen Anda secara otomatis.
                                     </p>
                                 </div>
-                                <div className="space-y-2">
+                                {!isResuming && <div className="space-y-2">
                                     <div className="flex justify-between text-sm text-muted-foreground dark:text-muted-foreground px-1">
                                         <span>Progress</span>
                                         <span>{progress?.percentage || 0}%</span>
@@ -323,14 +346,14 @@ export default function BulkUpload() {
                                     <p className="text-xs text-muted-foreground text-right">
                                         {progress?.processed || 0} dari {progress?.total || files.length} file selesai
                                     </p>
-                                </div>
+                                </div>}
                             </CardContent>
                         </Card>
                     </Motion.div>
                 )}
 
                 {/* Results Phase */}
-                {batch && !isProcessing && !isUploading && (
+                {batch && !isProcessing && !isUploading && !isResuming && (
                     <Motion.div
                         key="results"
                         initial={{ opacity: 0, y: 20 }}
@@ -484,7 +507,7 @@ export default function BulkUpload() {
                             <CardFooter className="flex flex-col-reverse gap-3 rounded-b-lg border-t bg-muted/50 p-4 dark:bg-foreground/50 sm:flex-row sm:justify-between sm:p-6">
                                 <Button variant="ghost" onClick={clearFiles} className="w-full text-muted-foreground hover:text-red-500 sm:w-auto">
                                     <Trash2 className="h-4 w-4 mr-2" />
-                                    Batal & Hapus
+                                    Batalkan & Bersihkan Batch
                                 </Button>
                                 <Button
                                     onClick={handleConfirm}

@@ -3,6 +3,7 @@ import { storageLocations, NewStorageLocation, StorageLocation, arsip, archiveLe
 import { eq, and, sql, isNull, ilike, or } from 'drizzle-orm';
 import QRCode from 'qrcode';
 import type { RecordUnitScope } from '../utils/record-unit-scope.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 export interface StorageLocationFilters {
     unitKerjaId: RecordUnitScope;
@@ -119,7 +120,11 @@ export class StorageLocationService {
         return rootNodes;
     }
 
-    async create(data: NewStorageLocation, unitKerjaId: string) {
+    async create(
+        data: NewStorageLocation,
+        unitKerjaId: string,
+        auditContext?: CriticalAuditContext,
+    ) {
         return await db.transaction(async (tx: any) => {
             let parent: StorageLocation | null = null;
             if (data.parentId) {
@@ -162,11 +167,26 @@ export class StorageLocationService {
                 })
                 .returning();
 
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'create',
+                    entityType: 'storage_location',
+                    entityId: result.id,
+                    changes: { after: result },
+                }, tx);
+            }
+
             return result;
         });
     }
 
-    async update(id: string, data: Partial<StorageLocation>, unitKerjaId: string) {
+    async update(
+        id: string,
+        data: Partial<StorageLocation>,
+        unitKerjaId: string,
+        auditContext?: CriticalAuditContext,
+    ) {
         return await db.transaction(async (tx: any) => {
             const [existing] = await tx
                 .select()
@@ -215,11 +235,21 @@ export class StorageLocationService {
                 .where(this.scopedWhere(unitKerjaId, eq(storageLocations.id, id)))
                 .returning();
 
+            if (result && auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'update',
+                    entityType: 'storage_location',
+                    entityId: id,
+                    changes: { before: existing, after: result, fields: Object.keys(data) },
+                }, tx);
+            }
+
             return result || null;
         });
     }
 
-    async delete(id: string, unitKerjaId: string) {
+    async delete(id: string, unitKerjaId: string, auditContext?: CriticalAuditContext) {
         return await db.transaction(async (tx: any) => {
             const [existing] = await tx
                 .select()
@@ -267,6 +297,16 @@ export class StorageLocationService {
                 .delete(storageLocations)
                 .where(this.scopedWhere(unitKerjaId, eq(storageLocations.id, id)))
                 .returning();
+
+            if (result && auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'delete',
+                    entityType: 'storage_location',
+                    entityId: id,
+                    changes: { before: existing },
+                }, tx);
+            }
 
             return result || null;
         });
@@ -334,7 +374,7 @@ export class StorageLocationService {
         return result.count;
     }
 
-    async updateArsipCounts(unitKerjaId: string) {
+    async updateArsipCounts(unitKerjaId: string, auditContext: CriticalAuditContext) {
         // Update current_count for all box-level locations
         const boxes = await db
             .select()
@@ -346,7 +386,7 @@ export class StorageLocationService {
 
         for (const box of boxes) {
             const count = await this.getArsipCount(box.id, unitKerjaId);
-            await this.update(box.id, { currentCount: count }, unitKerjaId);
+            await this.update(box.id, { currentCount: count }, unitKerjaId, auditContext);
         }
     }
 

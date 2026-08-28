@@ -5,6 +5,7 @@ import {
     scopedRecordByIdWhere,
     type RecordUnitScope,
 } from '../utils/record-unit-scope.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 interface ArsipTerjagaFilters {
     unitKerjaId?: string;
@@ -178,42 +179,122 @@ class ArsipTerjagaService {
     }
 
     // Designate an archive as terjaga
-    async create(data: NewArsipTerjaga) {
-        const [result] = await db.insert(arsipTerjaga).values({
-            ...data,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        }).returning();
-        return result;
+    async create(data: NewArsipTerjaga, auditContext: CriticalAuditContext) {
+        return await db.transaction(async (tx: any) => {
+            const [result] = await tx.insert(arsipTerjaga).values({
+                ...data,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            }).returning();
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'create',
+                entityType: 'arsip',
+                entityId: result.arsipId,
+                changes: {
+                    after: result,
+                    designation: 'terjaga',
+                    designationId: result.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Update arsip terjaga
-    async update(id: string, data: Partial<ArsipTerjaga>, unitScope: RecordUnitScope) {
-        const [result] = await db
-            .update(arsipTerjaga)
-            .set({ ...data, updatedAt: new Date() })
-            .where(scopedRecordByIdWhere(
+    async update(
+        id: string,
+        data: Partial<ArsipTerjaga>,
+        unitScope: RecordUnitScope,
+        auditContext: CriticalAuditContext,
+    ) {
+        return await db.transaction(async (tx: any) => {
+            const targetWhere = scopedRecordByIdWhere(
                 arsipTerjaga.id,
                 id,
                 arsipTerjaga.unitKerjaId,
                 unitScope,
-            ))
-            .returning();
-        return result;
+            );
+            const [existing] = await tx
+                .select()
+                .from(arsipTerjaga)
+                .where(targetWhere)
+                .limit(1)
+                .for('update');
+
+            if (!existing) return null;
+
+            const [result] = await tx
+                .update(arsipTerjaga)
+                .set({ ...data, updatedAt: new Date() })
+                .where(targetWhere)
+                .returning();
+
+            if (!result) return null;
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'arsip',
+                entityId: result.arsipId,
+                changes: {
+                    before: existing,
+                    after: result,
+                    fields: Object.keys(data),
+                    designation: 'terjaga',
+                    designationId: result.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Remove terjaga designation
-    async delete(id: string, unitScope: RecordUnitScope) {
-        const [result] = await db
-            .delete(arsipTerjaga)
-            .where(scopedRecordByIdWhere(
+    async delete(
+        id: string,
+        unitScope: RecordUnitScope,
+        auditContext: CriticalAuditContext,
+    ) {
+        return await db.transaction(async (tx: any) => {
+            const targetWhere = scopedRecordByIdWhere(
                 arsipTerjaga.id,
                 id,
                 arsipTerjaga.unitKerjaId,
                 unitScope,
-            ))
-            .returning();
-        return result;
+            );
+            const [existing] = await tx
+                .select()
+                .from(arsipTerjaga)
+                .where(targetWhere)
+                .limit(1)
+                .for('update');
+
+            if (!existing) return null;
+
+            const [result] = await tx
+                .delete(arsipTerjaga)
+                .where(targetWhere)
+                .returning();
+
+            if (!result) return null;
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'delete',
+                entityType: 'arsip',
+                entityId: existing.arsipId,
+                changes: {
+                    before: existing,
+                    designation: 'terjaga',
+                    designationId: existing.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Mark as reported to ANRI
@@ -222,24 +303,59 @@ class ArsipTerjagaService {
         nomorLaporan: string,
         tanggalPelaporan: string,
         unitScope: RecordUnitScope,
+        auditContext: CriticalAuditContext,
     ) {
-        const [result] = await db
-            .update(arsipTerjaga)
-            .set({
-                statusPelaporan: 'dilaporkan',
-                nomorLaporanANRI: nomorLaporan,
-                tanggalPelaporan: tanggalPelaporan,
-                statusKepatuhan: 'patuh',
-                updatedAt: new Date(),
-            })
-            .where(scopedRecordByIdWhere(
+        return await db.transaction(async (tx: any) => {
+            const targetWhere = scopedRecordByIdWhere(
                 arsipTerjaga.id,
                 id,
                 arsipTerjaga.unitKerjaId,
                 unitScope,
-            ))
-            .returning();
-        return result;
+            );
+            const [existing] = await tx
+                .select()
+                .from(arsipTerjaga)
+                .where(targetWhere)
+                .limit(1)
+                .for('update');
+
+            if (!existing) return null;
+
+            const [result] = await tx
+                .update(arsipTerjaga)
+                .set({
+                    statusPelaporan: 'dilaporkan',
+                    nomorLaporanANRI: nomorLaporan,
+                    tanggalPelaporan: tanggalPelaporan,
+                    statusKepatuhan: 'patuh',
+                    updatedAt: new Date(),
+                })
+                .where(targetWhere)
+                .returning();
+
+            if (!result) return null;
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'status_change',
+                entityType: 'arsip',
+                entityId: result.arsipId,
+                changes: {
+                    before: existing,
+                    after: result,
+                    fields: [
+                        'statusPelaporan',
+                        'nomorLaporanANRI',
+                        'tanggalPelaporan',
+                        'statusKepatuhan',
+                    ],
+                    designation: 'terjaga',
+                    designationId: result.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Get statistics for dashboard

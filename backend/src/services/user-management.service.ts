@@ -1,7 +1,11 @@
 import { db } from '../config/database';
-import { users, unitKerja, sessions, accounts } from '../db/schema';
+import { users, unitKerja, sessions, accounts, suratKeluar } from '../db/schema';
 import { eq, ilike, or, and, desc, sql } from 'drizzle-orm';
 import { hashPassword } from 'better-auth/crypto';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
+import { ROLE_MANDATED_UNIT_KERJA } from '../utils/resolve-unit-kerja.js';
+import { ConflictError, ForbiddenError, ValidationError } from '../utils/errors.js';
+import { lockAuthorizationMandatesExclusive } from '../utils/authorization-mandate-lock.js';
 
 export interface UserFilters {
     search?: string;
@@ -37,53 +41,123 @@ export type Role = typeof VALID_ROLES[number];
 // Admin roles that can access user management
 export const ADMIN_ROLES: Role[] = ['super_admin'];
 
+export function normalizeUserUnitAssignment(
+    role: Role,
+    unitKerjaId: string | null | undefined,
+    explicitUnit: boolean,
+): string | null {
+    // A super administrator is deliberately cross-unit. Persisting a nominal
+    // unit would disagree with the runtime resolver and mislead administrators.
+    if (role === 'super_admin') return null;
+
+    const mandatedUnit = ROLE_MANDATED_UNIT_KERJA[role];
+    if (!mandatedUnit) return unitKerjaId?.trim() || null;
+
+    const normalized = unitKerjaId?.trim() || null;
+    if (explicitUnit && normalized !== mandatedUnit) {
+        throw new Error(`Invalid unitKerjaId for ${role}: expected ${mandatedUnit}`);
+    }
+
+    return mandatedUnit;
+}
+
+type UserManagementTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function requireActiveSuperAdminActor(
+    tx: UserManagementTransaction,
+    auditContext: CriticalAuditContext | undefined,
+) {
+    if (!auditContext?.userId) {
+        throw new ForbiddenError('Konteks administrator wajib untuk perubahan pengguna.');
+    }
+
+    // Reload after the exclusive mandate gate is held. A request which passed
+    // middleware before its actor was demoted/deactivated must not retain stale
+    // super-admin authority inside this transaction.
+    const [actor] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, auditContext.userId))
+        .limit(1)
+        .for('update');
+
+    if (!actor || actor.isActive !== true || actor.role !== 'super_admin') {
+        throw new ForbiddenError('Aktor bukan super admin aktif. Muat ulang sesi Anda.');
+    }
+
+    return actor;
+}
+
+function selectUserById(executor: Pick<typeof db, 'select'>, userId: string) {
+    return executor
+        .select({
+            id: users.id,
+            email: users.email,
+            name: users.name,
+            image: users.image,
+            role: users.role,
+            unitKerjaId: users.unitKerjaId,
+            unitKerjaName: unitKerja.name,
+            jabatan: users.jabatan,
+            nip: users.nip,
+            isActive: users.isActive,
+            emailVerified: users.emailVerified,
+            createdAt: users.createdAt,
+            updatedAt: users.updatedAt,
+        })
+        .from(users)
+        .leftJoin(unitKerja, eq(users.unitKerjaId, unitKerja.id))
+        .where(eq(users.id, userId))
+        .limit(1);
+}
+
 export const userManagementService = {
     /**
      * Create a new user (by Super Admin)
      */
-    async createUser(data: CreateUserData) {
+    async createUser(data: CreateUserData, auditContext: CriticalAuditContext) {
         const normalizedEmail = data.email.trim().toLowerCase();
         // Validate role
         if (!VALID_ROLES.includes(data.role as Role)) {
             throw new Error(`Invalid role: ${data.role}`);
         }
-
-        // Check if email already exists
-        const [existingUser] = await db
-            .select({ id: users.id })
-            .from(users)
-            .where(ilike(users.email, normalizedEmail))
-            .limit(1);
-
-        if (existingUser) {
-            throw new Error('Email sudah terdaftar');
-        }
-
-        // Validate unit kerja if provided
-        if (data.unitKerjaId) {
-            const [unit] = await db
-                .select({ id: unitKerja.id })
-                .from(unitKerja)
-                .where(eq(unitKerja.id, data.unitKerjaId))
-                .limit(1);
-
-            if (!unit) {
-                throw new Error(`Invalid unitKerjaId: ${data.unitKerjaId}`);
-            }
-        }
+        const normalizedUnitKerjaId = normalizeUserUnitAssignment(
+            data.role as Role,
+            data.unitKerjaId,
+            Object.prototype.hasOwnProperty.call(data, 'unitKerjaId'),
+        );
 
         // Public Better Auth sign-up is disabled in production. Provision the
         // user and optional credential account atomically through the same
         // supported password hasher, without temporarily exposing sign-up.
         const passwordHash = data.password ? await hashPassword(data.password) : null;
-        const userId = await db.transaction(async (tx) => {
+        return db.transaction(async (tx) => {
+            await lockAuthorizationMandatesExclusive(tx);
+            await requireActiveSuperAdminActor(tx, auditContext);
+
+            const [existingUser] = await tx
+                .select({ id: users.id })
+                .from(users)
+                .where(ilike(users.email, normalizedEmail))
+                .limit(1);
+            if (existingUser) throw new Error('Email sudah terdaftar');
+
+            if (normalizedUnitKerjaId) {
+                const [unit] = await tx
+                    .select({ id: unitKerja.id })
+                    .from(unitKerja)
+                    .where(eq(unitKerja.id, normalizedUnitKerjaId))
+                    .limit(1);
+                if (!unit) throw new Error(`Invalid unitKerjaId: ${normalizedUnitKerjaId}`);
+            }
+
             const [newUser] = await tx
                 .insert(users)
                 .values({
                     email: normalizedEmail,
                     name: data.name,
                     role: data.role,
-                    unitKerjaId: data.unitKerjaId || null,
+                    unitKerjaId: normalizedUnitKerjaId,
                     jabatan: data.jabatan || null,
                     nip: data.nip || null,
                     isActive: true,
@@ -103,10 +177,25 @@ export const userManagementService = {
                 });
             }
 
-            return newUser.id;
-        });
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'create',
+                entityType: 'user',
+                entityId: newUser.id,
+                changes: {
+                    after: {
+                        email: newUser.email,
+                        name: newUser.name,
+                        role: newUser.role,
+                        unitKerjaId: newUser.unitKerjaId,
+                        isActive: newUser.isActive,
+                    },
+                },
+            }, tx);
 
-        return this.getUserById(userId);
+            const [profile] = await selectUserById(tx, newUser.id);
+            return profile || newUser;
+        });
     },
 
     /**
@@ -186,26 +275,7 @@ export const userManagementService = {
      * Get single user by ID
      */
     async getUserById(userId: string) {
-        const [user] = await db
-            .select({
-                id: users.id,
-                email: users.email,
-                name: users.name,
-                image: users.image,
-                role: users.role,
-                unitKerjaId: users.unitKerjaId,
-                unitKerjaName: unitKerja.name,
-                jabatan: users.jabatan,
-                nip: users.nip,
-                isActive: users.isActive,
-                emailVerified: users.emailVerified,
-                createdAt: users.createdAt,
-                updatedAt: users.updatedAt,
-            })
-            .from(users)
-            .leftJoin(unitKerja, eq(users.unitKerjaId, unitKerja.id))
-            .where(eq(users.id, userId))
-            .limit(1);
+        const [user] = await selectUserById(db, userId);
 
         return user || null;
     },
@@ -213,23 +283,14 @@ export const userManagementService = {
     /**
      * Update user (role, unitKerja, isActive)
      */
-    async updateUser(userId: string, data: UpdateUserData) {
+    async updateUser(
+        userId: string,
+        data: UpdateUserData,
+        auditContext: CriticalAuditContext,
+    ) {
         // Validate role if provided
         if (data.role && !VALID_ROLES.includes(data.role as Role)) {
             throw new Error(`Invalid role: ${data.role}`);
-        }
-
-        // Validate unit kerja if provided
-        if (data.unitKerjaId) {
-            const [unit] = await db
-                .select({ id: unitKerja.id })
-                .from(unitKerja)
-                .where(eq(unitKerja.id, data.unitKerjaId))
-                .limit(1);
-
-            if (!unit) {
-                throw new Error(`Invalid unitKerjaId: ${data.unitKerjaId}`);
-            }
         }
 
         const updateData: any = {
@@ -237,12 +298,109 @@ export const userManagementService = {
         };
 
         if (data.role !== undefined) updateData.role = data.role;
-        if (data.unitKerjaId !== undefined) updateData.unitKerjaId = data.unitKerjaId;
         if (data.isActive !== undefined) updateData.isActive = data.isActive;
         if (data.jabatan !== undefined) updateData.jabatan = data.jabatan;
         if (data.nip !== undefined) updateData.nip = data.nip;
 
-        const [updatedUser] = await db
+        return db.transaction(async (tx) => {
+        // Serialize every privileged user mutation with approval's shared gate,
+        // then re-authorize the actor before locking the target. This gives role
+        // revocation a transactionally observable boundary for in-flight calls.
+        await lockAuthorizationMandatesExclusive(tx);
+        const actor = await requireActiveSuperAdminActor(tx, auditContext);
+
+        const existingUser = actor.id === userId
+            ? actor
+            : (await tx
+                .select()
+                .from(users)
+                .where(eq(users.id, userId))
+                .limit(1)
+                .for('update'))[0];
+        if (!existingUser) return null;
+
+        if (auditContext?.userId === userId) {
+            if (data.isActive === false && existingUser.isActive) {
+                throw new ValidationError('Anda tidak dapat menonaktifkan akun sendiri.');
+            }
+            if (data.role !== undefined && data.role !== existingUser.role) {
+                throw new ValidationError('Anda tidak dapat mengubah peran akun sendiri.');
+            }
+        }
+
+        const removesActiveSuperAdmin = existingUser.role === 'super_admin'
+            && existingUser.isActive
+            && (
+                (data.role !== undefined && data.role !== 'super_admin')
+                || data.isActive === false
+            );
+
+        if (removesActiveSuperAdmin) {
+            const [{ count }] = await tx
+                .select({ count: sql<number>`count(*)` })
+                .from(users)
+                .where(and(eq(users.role, 'super_admin'), eq(users.isActive, true)));
+
+            if (Number(count) <= 1) {
+                throw new ConflictError('Minimal satu super admin aktif harus tetap tersedia.');
+            }
+        }
+
+        const nextRole = (data.role ?? existingUser.role) as Role;
+        const nextUnitKerjaId = normalizeUserUnitAssignment(
+            nextRole,
+            data.unitKerjaId !== undefined ? data.unitKerjaId : existingUser.unitKerjaId,
+            data.unitKerjaId !== undefined,
+        );
+
+        const roleChanged = data.role !== undefined && data.role !== existingUser.role;
+        const unitChanged = nextUnitKerjaId !== existingUser.unitKerjaId;
+        const activeStateChanged = data.isActive !== undefined
+            && data.isActive !== existingUser.isActive;
+        const changesApprovalMandate = roleChanged
+            || unitChanged
+            || (data.isActive === false && existingUser.isActive);
+
+        if (changesApprovalMandate) {
+            const [pendingApproval] = await tx
+                .select({
+                    id: suratKeluar.id,
+                    nomorSurat: suratKeluar.nomorSurat,
+                })
+                .from(suratKeluar)
+                .where(and(
+                    eq(suratKeluar.currentApproverId, userId),
+                    eq(suratKeluar.approvalStatus, 'pending'),
+                    eq(suratKeluar.isDeleted, false),
+                ))
+                .limit(1)
+                .for('update');
+
+            if (pendingApproval) {
+                const reference = pendingApproval.nomorSurat
+                    ? ` (${pendingApproval.nomorSurat})`
+                    : '';
+                throw new ConflictError(
+                    `Pengguna masih menjadi penyetuju aktif untuk surat pending${reference}. `
+                    + 'Selesaikan atau teruskan persetujuan terlebih dahulu.',
+                );
+            }
+        }
+
+        if (data.unitKerjaId !== undefined || nextUnitKerjaId !== existingUser.unitKerjaId) {
+            updateData.unitKerjaId = nextUnitKerjaId;
+        }
+
+        if (nextUnitKerjaId && nextUnitKerjaId !== existingUser.unitKerjaId) {
+            const [unit] = await tx
+                .select({ id: unitKerja.id })
+                .from(unitKerja)
+                .where(eq(unitKerja.id, nextUnitKerjaId))
+                .limit(1);
+            if (!unit) throw new Error(`Invalid unitKerjaId: ${nextUnitKerjaId}`);
+        }
+
+        const [updatedUser] = await tx
             .update(users)
             .set(updateData)
             .where(eq(users.id, userId))
@@ -252,28 +410,44 @@ export const userManagementService = {
             return null;
         }
 
-        // Resolve the response before revoking sessions so callers still receive
-        // the updated profile even when the current administrator is editing
-        // their own account. Any authorization-relevant change must take effect
-        // immediately for already-issued sessions.
-        const result = await this.getUserById(userId);
-
-        if (
-            data.role !== undefined ||
-            data.unitKerjaId !== undefined ||
-            data.isActive !== undefined
-        ) {
-            await db.delete(sessions).where(eq(sessions.userId, userId));
+        if (roleChanged || unitChanged || activeStateChanged) {
+            await tx.delete(sessions).where(eq(sessions.userId, userId));
         }
 
-        return result;
+        await auditLogService.logActionOrThrow({
+            ...auditContext,
+            action: 'update',
+            entityType: 'user',
+            entityId: userId,
+            changes: {
+                before: {
+                    role: existingUser.role,
+                    unitKerjaId: existingUser.unitKerjaId,
+                    isActive: existingUser.isActive,
+                    jabatan: existingUser.jabatan,
+                    nip: existingUser.nip,
+                },
+                after: {
+                    role: updatedUser.role,
+                    unitKerjaId: updatedUser.unitKerjaId,
+                    isActive: updatedUser.isActive,
+                    jabatan: updatedUser.jabatan,
+                    nip: updatedUser.nip,
+                },
+                fields: Object.keys(data),
+            },
+        }, tx);
+
+        const [profile] = await selectUserById(tx, userId);
+        return profile || updatedUser;
+        });
     },
 
     /**
      * Deactivate user (soft delete)
      */
-    async deactivateUser(userId: string) {
-        return this.updateUser(userId, { isActive: false });
+    async deactivateUser(userId: string, auditContext: CriticalAuditContext) {
+        return this.updateUser(userId, { isActive: false }, auditContext);
     },
 
     /**

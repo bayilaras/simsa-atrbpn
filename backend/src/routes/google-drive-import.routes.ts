@@ -4,6 +4,7 @@ import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { createLogger } from '../utils/logger';
 import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 import { canAccessUnit, type Role } from '../config/permissions.js';
+import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const log = createLogger('GoogleDriveImportRoutes');
 
@@ -16,7 +17,12 @@ function resolveImportUnit(req: AuthRequest, res: Response): string | null {
     const requestedUnit = typeof req.body?.unitKerjaId === 'string'
         ? req.body.unitKerjaId.trim()
         : '';
-    const unitKerjaId = requestedUnit || req.user?.unitKerjaId || '';
+    const role = (req.user?.role || 'user') as Role;
+    const unitKerjaId = resolveEffectiveUnitKerjaId(
+        role,
+        req.user?.unitKerjaId,
+        requestedUnit,
+    );
 
     if (!unitKerjaId) {
         res.status(400).json({ error: 'unitKerjaId is required' });
@@ -24,7 +30,7 @@ function resolveImportUnit(req: AuthRequest, res: Response): string | null {
     }
 
     if (!canAccessUnit(
-        (req.user?.role || 'user') as Role,
+        role,
         req.user?.unitKerjaId || null,
         unitKerjaId,
     )) {
@@ -124,20 +130,21 @@ router.post('/google-drive/surat-masuk', canWriteMiddleware(), async (req: AuthR
             return;
         }
 
-        // Get user ID from session
-        const userId = req.user!.id;
-
         const result = await googleDriveImportService.importSuratMasuk(
             spreadsheetId,
             sheetName || 'Sheet1',
             unitKerjaId,
-            userId
+            {
+                userId: req.user!.id,
+                userEmail: req.user?.email,
+                ipAddress: req.ip,
+            },
         );
 
         res.json(result);
     } catch (error: any) {
         log.error({ err: error }, 'Error importing surat masuk:');
-        res.status(500).json({ error: 'Failed to import', message: error.message });
+        res.status(500).json({ error: 'Gagal mengimpor data', code: 'IMPORT_FAILED' });
     }
 });
 
@@ -165,19 +172,21 @@ router.post('/google-drive/surat-keluar', canWriteMiddleware(), async (req: Auth
             return;
         }
 
-        const userId = req.user!.id;
-
         const result = await googleDriveImportService.importSuratKeluar(
             spreadsheetId,
             sheetName || 'Sheet1',
             unitKerjaId,
-            userId
+            {
+                userId: req.user!.id,
+                userEmail: req.user?.email,
+                ipAddress: req.ip,
+            },
         );
 
         res.json(result);
     } catch (error: any) {
         log.error({ err: error }, 'Error importing surat keluar:');
-        res.status(500).json({ error: 'Failed to import', message: error.message });
+        res.status(500).json({ error: 'Gagal mengimpor data', code: 'IMPORT_FAILED' });
     }
 });
 

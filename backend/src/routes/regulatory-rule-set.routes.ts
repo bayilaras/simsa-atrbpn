@@ -164,24 +164,6 @@ router.post(
                 auditContext(req, req.body.changeSummary),
             );
 
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: 'create',
-                entityType: 'regulatory_rule_set' as any,
-                entityId: result.ruleSet.id,
-                changes: {
-                    after: {
-                        instrumentType: result.ruleSet.instrumentType,
-                        version: result.ruleSet.version,
-                        status: result.ruleSet.status,
-                        clonedFromId: result.clonedFrom.id,
-                        itemCount: result.itemCount,
-                    },
-                },
-                ipAddress: ipAddress(req),
-            });
-
             res.status(201).json({ success: true, data: result });
         } catch (error) {
             next(error);
@@ -215,21 +197,6 @@ router.post(
                 req.user?.id,
                 auditContext(req, 'Mengganti isi draft melalui manifest terstruktur.'),
             );
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: 'update',
-                entityType: 'regulatory_rule_set' as any,
-                entityId: req.params.id as string,
-                changes: {
-                    after: {
-                        importedItems: result.imported,
-                        contentHash: result.validation.contentHash,
-                        warnings: result.validation.warnings.length,
-                    },
-                },
-                ipAddress: ipAddress(req),
-            });
             res.json({ success: true, data: result });
         } catch (error) {
             if (error instanceof RegulatoryRuleSetValidationError) {
@@ -455,26 +422,6 @@ router.post(
                 req.user?.id,
                 auditContext(req, 'Mengaktifkan edisi aturan yang telah disetujui.'),
             );
-
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: 'status_change',
-                entityType: 'regulatory_rule_set' as any,
-                entityId: result.ruleSet.id,
-                changes: {
-                    before: {
-                        status: 'approved',
-                        supersedesId: result.ruleSet.supersedesId || null,
-                    },
-                    after: {
-                        status: 'active',
-                        contentHash: result.ruleSet.contentHash,
-                        effectiveFrom: result.ruleSet.effectiveFrom,
-                    },
-                },
-                ipAddress: ipAddress(req),
-            });
 
             res.json({ success: true, data: result });
         } catch (error) {

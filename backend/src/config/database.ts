@@ -20,6 +20,9 @@ const pool = new Pool({
     connectionString: env.DATABASE_URL,
     max: isServerless ? 3 : 10,
     idleTimeoutMillis: isServerless ? 10000 : 30000,
+    // A dependency probe or request must not wait forever while establishing
+    // a dead WebSocket/database connection.
+    connectionTimeoutMillis: 5_000,
 });
 
 // Create drizzle client

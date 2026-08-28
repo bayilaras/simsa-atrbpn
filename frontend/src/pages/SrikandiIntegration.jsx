@@ -23,6 +23,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/AuthContext';
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import { useToast } from '@/hooks/use-toast';
 import srikandiService from '@/services/srikandi.service';
 
@@ -47,7 +48,7 @@ export default function SrikandiIntegration() {
     const [loading, setLoading] = useState(true);
     const [workingId, setWorkingId] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all');
-    const [unitKerjaId, setUnitKerjaId] = useState(user?.unitKerjaId || '');
+    const [unitKerjaId, setUnitKerjaId] = useState(resolveEffectiveUnitKerjaId(user));
     const [retryItem, setRetryItem] = useState(null);
     const [retryReason, setRetryReason] = useState('');
 
@@ -155,6 +156,9 @@ export default function SrikandiIntegration() {
                         ['Siap dikirim', configuration?.ready],
                         ['Endpoint', configuration?.endpointConfigured],
                         ['Kontrak respons', configuration?.contractConfigured],
+                        ['Producer aktif', configuration?.producerEnabled],
+                        ['Producer siap', configuration?.producerReady],
+                        ['Kontrak producer', configuration?.producerContractConfigured],
                     ].map(([label, value]) => (
                         <div key={label} className="rounded-lg border p-3">
                             <div className="text-sm text-muted-foreground">{label}</div>

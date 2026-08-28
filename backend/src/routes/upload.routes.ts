@@ -148,6 +148,10 @@ router.post(
                 buffer: req.file.buffer,
                 folderId,
                 uploadedById: req.user?.id,
+            }, {
+                userId: req.user?.id,
+                userEmail: req.user?.email,
+                ipAddress: req.ip,
             });
 
             res.status(201).json({
@@ -158,7 +162,7 @@ router.post(
             });
         } catch (error: any) {
             log.error({ err: error }, 'Upload error:');
-            res.status(500).json({ error: error.message || 'Upload failed' });
+            res.status(500).json({ error: 'Gagal menyimpan lampiran', code: 'ATTACHMENT_UPLOAD_FAILED' });
         }
     }
 );

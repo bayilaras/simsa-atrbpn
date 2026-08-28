@@ -18,6 +18,8 @@ import { KATEGORI_CONFIG, KEKRITISAN_CONFIG, STATUS_PROTEKSI_CONFIG } from './co
 import ArsipVitalTable from './ArsipVitalTable'
 import ArsipVitalForm from './ArsipVitalForm'
 import ArsipVitalDetail from './ArsipVitalDetail'
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -46,7 +48,8 @@ const makeInitialForm = () => {
 export default function ArsipVital() {
     const { user } = useAuth()
     const { toast } = useToast()
-    const unitKerjaId = user?.unitKerjaId
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
 
     // State
     const [activeTab, setActiveTab] = useState('daftar')
@@ -102,7 +105,7 @@ export default function ArsipVital() {
         } finally {
             if (seq === loadSeq.current) setLoading(false)
         }
-    }, [unitKerjaId, page, debouncedSearch, filterKategori, filterStatus])
+    }, [unitKerjaId, page, debouncedSearch, filterKategori, filterStatus, toast])
 
     const loadStats = useCallback(async () => {
         if (!unitKerjaId) return
@@ -177,15 +180,20 @@ export default function ArsipVital() {
 
     const handlePrint = async () => {
         try {
-            const blob = await arsipVitalService.printDaftar()
-            const url = window.URL.createObjectURL(new Blob([blob]))
+            if (!unitKerjaId) {
+                toast({ title: 'Unit kerja wajib dipilih', variant: 'destructive' })
+                return
+            }
+            const blob = await arsipVitalService.printDaftar(unitKerjaId)
+            const url = window.URL.createObjectURL(blob)
             const link = document.createElement('a')
             link.href = url
             link.setAttribute('download', `daftar-arsip-vital-${unitKerjaId}.pdf`)
             document.body.appendChild(link)
             link.click()
             link.parentNode.removeChild(link)
-        } catch (err) {
+            window.URL.revokeObjectURL(url)
+        } catch {
             toast({ title: 'Error', description: 'Gagal mencetak daftar arsip vital', variant: 'destructive' })
         }
     }
@@ -198,6 +206,7 @@ export default function ArsipVital() {
 
     return (
         <div className="space-y-6">
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading} />
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -212,10 +221,10 @@ export default function ArsipVital() {
                     </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={handlePrint} className="gap-2">
+                    <Button variant="outline" onClick={handlePrint} disabled={!unitKerjaId} className="gap-2">
                         <Printer className="h-4 w-4" /> Cetak Daftar
                     </Button>
-                    <Button onClick={() => { resetForm(); setShowCreateDialog(true) }} className="gap-2 bg-red-600 hover:bg-red-700">
+                    <Button disabled={!unitKerjaId} onClick={() => { resetForm(); setShowCreateDialog(true) }} className="gap-2 bg-red-600 hover:bg-red-700">
                         <Plus className="h-4 w-4" /> Tetapkan Arsip Vital
                     </Button>
                 </div>

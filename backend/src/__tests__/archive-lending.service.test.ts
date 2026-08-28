@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
+let transactionCommits = 0;
+let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
+const auditMocks = vi.hoisted(() => ({ logActionOrThrow: vi.fn() }));
 
 const mockChain: any = new Proxy({}, {
     get(_target, prop) {
@@ -19,15 +22,31 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
-    transaction: async (fn: any) => fn(mockDb),
+    transaction: async (fn: any) => {
+        try {
+            const result = await fn(mockDb);
+            transactionCommits += 1;
+            return result;
+        } catch (error) {
+            transactionRollbacks += 1;
+            throw error;
+        }
+    },
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
 
 const { archiveLendingService } = await import('../services/archive-lending.service');
 
 describe('ArchiveLendingService', () => {
-    beforeEach(() => { resultQueue.length = 0; });
+    beforeEach(() => {
+        resultQueue.length = 0;
+        transactionCommits = 0;
+        transactionRollbacks = 0;
+        auditMocks.logActionOrThrow.mockReset();
+        auditMocks.logActionOrThrow.mockResolvedValue(undefined);
+    });
 
     describe('findAll', () => {
         it('should return paginated records', async () => {
@@ -68,6 +87,27 @@ describe('ArchiveLendingService', () => {
                 borrowerId: 'u1', borrowerName: 'John', dueDate: '2026-03-01',
             }, 'u1');
             expect(result.status).toBe('borrowed');
+        });
+
+        it('rolls back borrowing when critical audit storage fails', async () => {
+            enqueue([{ id: 'a1', lendingStatus: 'available' }]);
+            enqueue([{
+                id: 'l-new', status: 'borrowed', lendingType: 'arsip', arsipId: 'a1',
+                borrowerName: 'John', dueDate: '2026-03-01',
+            }]);
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(archiveLendingService.borrow({
+                lendingType: 'arsip', arsipId: 'a1',
+                borrowerId: 'u1', borrowerName: 'John', dueDate: '2026-03-01',
+            }, 'u1', { userId: 'u1' })).rejects.toThrow('audit unavailable');
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
+                expect.objectContaining({ action: 'create', entityType: 'archive_lending' }),
+                mockDb,
+            );
         });
 
         it('should reject if arsip not found', async () => {

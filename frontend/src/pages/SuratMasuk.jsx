@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import { Link, useNavigate } from 'react-router-dom';
 import { MailOpen, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, Reply, FolderArchive, ArrowUpDown, Send, RefreshCw, Trash2, FileText, AlertCircle, Inbox, Calendar, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -83,7 +84,7 @@ export default function SuratMasuk() {
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([]);
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined));
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined));
 
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
@@ -115,7 +116,7 @@ export default function SuratMasuk() {
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
-        : (user?.unitKerjaId || undefined);
+        : (resolveEffectiveUnitKerjaId(user) || undefined);
 
     // Guards against out-of-order responses overwriting newer results
     const fetchSeqRef = useRef(0);
@@ -228,6 +229,7 @@ export default function SuratMasuk() {
             id: surat.id,
             nomorSurat: surat.nomorSurat,
             perihal: surat.perihal,
+            unitKerjaId: surat.unitKerjaId || resolvedUnitKerjaId,
         });
         setDistributeDialogOpen(true);
     };
@@ -311,9 +313,10 @@ export default function SuratMasuk() {
                         Refresh
                     </Button>
 
-                    {isAdmin && (
+                    {isAdmin && resolvedUnitKerjaId && (
                         <ImportFromGDrive
                             type="surat-masuk"
+                            unitKerjaId={resolvedUnitKerjaId}
                             onImportComplete={fetchData}
                         />
                     )}
@@ -321,6 +324,7 @@ export default function SuratMasuk() {
                     <ExportButton
                         type="surat-masuk"
                         filters={{
+                            unitKerjaId: resolvedUnitKerjaId,
                             tahun: tahun !== 'all' ? tahun : undefined,
                             jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                             status: status !== 'all' ? status : undefined,
@@ -727,7 +731,7 @@ export default function SuratMasuk() {
                 open={distributeDialogOpen}
                 onOpenChange={setDistributeDialogOpen}
                 suratData={selectedSurat}
-                sourceUnitId={user?.unitKerjaId || ''}
+                sourceUnitId={selectedSurat?.unitKerjaId || resolvedUnitKerjaId || ''}
                 onSuccess={() => {
                     setDistributeDialogOpen(false);
                     fetchData();

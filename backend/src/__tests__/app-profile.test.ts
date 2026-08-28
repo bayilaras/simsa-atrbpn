@@ -1,6 +1,7 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
-import app from '../app.js';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import app, { globalErrorHandler } from '../app.js';
 import {
     getPublicAppMetadata,
     loadAppProfile,
@@ -12,6 +13,11 @@ import {
     buildSrikandiConfig,
     srikandiConfig,
 } from '../config/srikandi.js';
+import {
+    GoneError,
+    PayloadTooLargeError,
+    ServiceUnavailableError,
+} from '../utils/errors.js';
 
 describe('backend application profile', () => {
     it('defaults to the lightweight internal profile', () => {
@@ -94,8 +100,8 @@ describe('backend application profile', () => {
         }
     });
 
-    it.each(['/health', '/api/health'])('returns sanitized metadata from %s', async (path) => {
-        const response = await request(app).get(path).expect(200);
+    it('returns sanitized metadata from the dependency-independent liveness endpoint', async () => {
+        const response = await request(app).get('/health').expect(200);
 
         expect(response.body.application).toEqual(
             getPublicAppMetadata(env.APP_PROFILE, srikandiConfig.enabled),
@@ -104,5 +110,56 @@ describe('backend application profile', () => {
             'externalIntegrations',
             'profile',
         ]);
+    });
+
+    it('lets Express authorize an alternate configured origin and expose Retry-After', async () => {
+        const previousAdditionalOrigins = env.ADDITIONAL_TRUSTED_ORIGINS;
+        const alternateOrigin = 'https://staging.simsa.example.go.id';
+        env.ADDITIONAL_TRUSTED_ORIGINS = alternateOrigin;
+        try {
+            const response = await request(app)
+                .get('/health')
+                .set('Origin', alternateOrigin)
+                .expect(200);
+
+            expect(response.headers['access-control-allow-origin']).toBe(alternateOrigin);
+            expect(response.headers['access-control-allow-credentials']).toBe('true');
+            expect(response.headers['access-control-expose-headers']).toBe('Retry-After');
+        } finally {
+            env.ADDITIONAL_TRUSTED_ORIGINS = previousAdditionalOrigins;
+        }
+    });
+
+    it('keeps Vercel routing free of a second static CORS authority', () => {
+        const vercelConfig = JSON.parse(readFileSync(
+            new URL('../../vercel.json', import.meta.url),
+            'utf8',
+        ));
+
+        expect(vercelConfig.headers).toBeUndefined();
+    });
+
+    it.each([
+        [new GoneError('gone'), 410],
+        [new PayloadTooLargeError('large'), 413],
+        [new ServiceUnavailableError('transient'), 503],
+    ])('preserves attachment preflight status %s in the global error handler', (error, statusCode) => {
+        const response = {
+            status: vi.fn().mockReturnThis(),
+            json: vi.fn(),
+        };
+
+        globalErrorHandler(
+            error,
+            { path: '/api/surat-masuk', method: 'POST' } as any,
+            response as any,
+            vi.fn(),
+        );
+
+        expect(response.status).toHaveBeenCalledWith(statusCode);
+        expect(response.json).toHaveBeenCalledWith(expect.objectContaining({
+            success: false,
+            message: error.message,
+        }));
     });
 });

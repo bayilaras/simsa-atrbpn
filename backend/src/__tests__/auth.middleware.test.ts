@@ -79,7 +79,7 @@ describe('authMiddleware', () => {
 
         // Assert
         expect(mockNext).toHaveBeenCalled();
-        expect(req.user).toEqual(mockUser);
+        expect(req.user).toEqual({ ...mockUser, unitKerjaId: 'ditjen' });
     });
 
     it('should return 401 when no session exists', async () => {
@@ -220,7 +220,7 @@ describe('optionalAuthMiddleware', () => {
 
         // Assert
         expect(mockNext).toHaveBeenCalled();
-        expect(req.user).toEqual(mockUser);
+        expect(req.user).toEqual({ ...mockUser, unitKerjaId: 'ditjen' });
     });
 
     it('should call next() without user when no session exists', async () => {

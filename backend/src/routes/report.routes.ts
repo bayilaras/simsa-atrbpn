@@ -178,8 +178,13 @@ router.get('/lending', async (req: AuthRequest, res: Response) => {
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { status, tanggalDari, tanggalSampai, page, limit } = req.query;
 
+        if (!unitKerjaId) {
+            res.status(400).json({ error: 'unitKerjaId is required' });
+            return;
+        }
+
         const filters: LendingReportFilters = {
-            unitKerjaId: unitKerjaId || undefined,
+            unitKerjaId,
             status: (status as 'borrowed' | 'returned' | 'overdue' | 'all') || 'all',
             tanggalDari: tanggalDari as string | undefined,
             tanggalSampai: tanggalSampai as string | undefined,

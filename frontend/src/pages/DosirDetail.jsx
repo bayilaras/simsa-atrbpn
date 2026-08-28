@@ -136,15 +136,15 @@ export default function DosirDetail() {
                 dosirService.getById(id),
                 dosirService.getTimeline(id),
             ])
-            setDosir(dosirRes.data)
-            setTimeline(timelineRes.data || [])
+            setDosir(dosirRes)
+            setTimeline(timelineRes || [])
             setEditForm({
-                judul: dosirRes.data?.judul || '',
-                deskripsi: dosirRes.data?.deskripsi || '',
-                status: dosirRes.data?.status || 'open',
-                kategori: dosirRes.data?.kategori || '',
-                tanggalMulai: dosirRes.data?.tanggalMulai ? dosirRes.data.tanggalMulai.split('T')[0] : '', // Format for date input
-                tanggalSelesai: dosirRes.data?.tanggalSelesai ? dosirRes.data.tanggalSelesai.split('T')[0] : '',
+                judul: dosirRes?.judul || '',
+                deskripsi: dosirRes?.deskripsi || '',
+                status: dosirRes?.status || 'open',
+                kategori: dosirRes?.kategori || '',
+                tanggalMulai: dosirRes?.tanggalMulai ? dosirRes.tanggalMulai.split('T')[0] : '', // Format for date input
+                tanggalSelesai: dosirRes?.tanggalSelesai ? dosirRes.tanggalSelesai.split('T')[0] : '',
             })
         } catch (error) {
             console.error('Error fetching dosir:', error)

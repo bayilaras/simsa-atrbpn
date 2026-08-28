@@ -130,15 +130,17 @@ describe('archive lending and storage unit boundaries', () => {
             .toHaveBeenCalledWith(locationId, expect.any(String), 'sesditjen');
     });
 
-    it('allows super_admin all-unit reads or an explicit read unit', async () => {
+    it('requires super_admin to select a concrete unit for lending and storage reads', async () => {
         state.user = { ...state.user, role: 'super_admin', unitKerjaId: null };
         state.lending.getStats.mockResolvedValue({ total: 0 });
         state.storage.getTree.mockResolvedValue([]);
 
-        expect((await request(app).get('/api/archive-lending/stats')).status).toBe(200);
+        expect((await request(app).get('/api/archive-lending/stats')).status).toBe(400);
+        expect((await request(app).get('/api/storage-locations/tree')).status).toBe(400);
+        expect((await request(app).get('/api/archive-lending/stats?unitKerjaId=ditjen')).status).toBe(200);
         expect((await request(app).get('/api/storage-locations/tree?unitKerjaId=ditjen')).status).toBe(200);
 
-        expect(state.lending.getStats).toHaveBeenCalledWith(null);
+        expect(state.lending.getStats).toHaveBeenCalledWith('ditjen');
         expect(state.storage.getTree).toHaveBeenCalledWith('ditjen');
     });
 
@@ -172,10 +174,15 @@ describe('archive lending and storage unit boundaries', () => {
 
         expect(lendingResponse.status).toBe(201);
         expect(storageResponse.status).toBe(201);
-        expect(state.lending.borrow).toHaveBeenCalledWith(expect.any(Object), 'sesditjen');
+        expect(state.lending.borrow).toHaveBeenCalledWith(
+            expect.any(Object),
+            'sesditjen',
+            expect.objectContaining({ userId: state.user.id, userEmail: state.user.email }),
+        );
         expect(state.storage.create).toHaveBeenCalledWith(
             expect.objectContaining({ unitKerjaId: 'sesditjen' }),
             'sesditjen',
+            expect.objectContaining({ userId: state.user.id, userEmail: state.user.email }),
         );
     });
 
@@ -200,6 +207,7 @@ describe('archive lending and storage unit boundaries', () => {
                 storageLocationId: undefined,
             }),
             'sesditjen',
+            expect.objectContaining({ userId: state.user.id, userEmail: state.user.email }),
         );
     });
 
@@ -258,10 +266,15 @@ describe('archive lending and storage unit boundaries', () => {
                 level: 'gedung',
             })).status).toBe(201);
 
-        expect(state.lending.borrow).toHaveBeenCalledWith(expect.any(Object), 'ditjen');
+        expect(state.lending.borrow).toHaveBeenCalledWith(
+            expect.any(Object),
+            'ditjen',
+            expect.objectContaining({ userId: state.user.id, userEmail: state.user.email }),
+        );
         expect(state.storage.create).toHaveBeenCalledWith(
             expect.objectContaining({ unitKerjaId: 'ditjen' }),
             'ditjen',
+            expect.objectContaining({ userId: state.user.id, userEmail: state.user.email }),
         );
     });
 
@@ -284,9 +297,19 @@ describe('archive lending and storage unit boundaries', () => {
         expect((await request(app)
             .delete(`/api/storage-locations/${locationId}?unitKerjaId=ditjen`)).status).toBe(200);
 
-        expect(state.lending.return).toHaveBeenCalledWith(lendingId, 'sesditjen', 'Baik');
-        expect(state.lending.extend).toHaveBeenCalledWith(lendingId, 'sesditjen', '2026-09-05');
-        expect(state.storage.update).toHaveBeenCalledWith(locationId, { name: 'Baru' }, 'sesditjen');
-        expect(state.storage.delete).toHaveBeenCalledWith(locationId, 'sesditjen');
+        const auditContext = expect.objectContaining({
+            userId: state.user.id,
+            userEmail: state.user.email,
+        });
+        expect(state.lending.return).toHaveBeenCalledWith(
+            lendingId, 'sesditjen', 'Baik', auditContext,
+        );
+        expect(state.lending.extend).toHaveBeenCalledWith(
+            lendingId, 'sesditjen', '2026-09-05', auditContext,
+        );
+        expect(state.storage.update).toHaveBeenCalledWith(
+            locationId, { name: 'Baru' }, 'sesditjen', auditContext,
+        );
+        expect(state.storage.delete).toHaveBeenCalledWith(locationId, 'sesditjen', auditContext);
     });
 });

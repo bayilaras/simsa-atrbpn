@@ -6,11 +6,11 @@ Panduan menggunakan halaman pengaturan SIMSA.
 
 ## Akses Settings
 
-> ⚠️ Menu **Settings** (⚙️) di sidebar **hanya muncul untuk Super Admin**. Pengguna lain dapat mengakses halaman profil melalui dropdown user di header.
+Menu **Pengaturan** (⚙️) muncul bagi semua akun yang sudah diprovisi. Anda juga dapat membukanya dari avatar di header. Tab yang tersedia menyesuaikan role.
 
-1. **Super Admin**: Klik ikon **⚙️ Settings** di bagian bawah sidebar.
-2. **Semua pengguna**: Klik avatar Anda di header → pilih **Profil Saya** atau **Pengaturan**.
-3. Halaman Settings terdiri dari beberapa tab sesuai role Anda.
+1. Buka **Pengaturan** dari sidebar atau avatar di header.
+2. Semua pengguna mendapat tab **Profil** dan **Preferensi**.
+3. Admin mendapat tab **Unit Kerja** dan **Template** sesuai cakupan unitnya; Super Admin dapat memilih lintas unit.
 
 ---
 
@@ -28,44 +28,37 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 
 ---
 
+## Tab Preferensi
+
+Tab ini tersedia untuk **semua pengguna**. Tema, bahasa, notifikasi dalam aplikasi, dan pilihan email notifikasi disimpan pada akun sehingga konsisten pada sesi berikutnya. Email notifikasi tetap nonaktif sampai pengguna mengaktifkannya dan SMTP telah dikonfigurasi operator.
+
+---
+
 ## Tab Unit Kerja
 
-> 🔒 Hanya tersedia untuk **Super Admin**.
+> 🔒 Tersedia untuk admin. Admin biasa hanya dapat mengubah unit dalam cakupannya; Super Admin dapat mengelola lintas unit.
 
 Tab ini menampilkan daftar unit kerja yang terdaftar di sistem.
 
-### Menambah Unit Kerja Baru
-
-1. Klik **"Tambah Unit Kerja"**.
-2. Masukkan **nama** dan **kode** unit kerja.
-3. Klik **"Simpan"**.
-
 ### Mengedit Unit Kerja
 
-1. Klik ikon **edit** pada baris unit kerja.
-2. Ubah nama atau kode.
-3. Klik **"Simpan"**.
-
-### Menghapus Unit Kerja
-
-1. Klik ikon **hapus** pada baris unit kerja.
-2. Konfirmasi penghapusan.
-
-> ⚠️ **Perhatian:** Menghapus unit kerja akan memengaruhi pengguna dan surat yang terkait.
+1. Pilih unit kerja dari daftar.
+2. Ubah nama, deskripsi, atau status penerimaan distribusi.
+3. Klik **"Simpan Perubahan"**.
 
 ---
 
 ## Tab Template Surat
 
-> 🔒 Hanya tersedia untuk **Super Admin**.
+> 🔒 Tersedia untuk admin sesuai cakupan unit kerja.
 
-Tab ini mengelola template surat yang digunakan dalam sistem.
+Tab ini mengelola format nomor otomatis surat masuk dan keluar. Nomor manual tetap dapat digunakan; bila nomor dikosongkan, server membentuk nomor secara atomik dari template unit dan tanggal surat.
 
 ### Mengelola Template
 
 1. Buka tab **Template**.
-2. Lihat daftar template yang tersedia.
-3. **Edit** atau **perbarui** template sesuai kebutuhan.
+2. Perbarui format dengan placeholder yang didukung, misalnya `{noUrut}`, `{tahun}`, `{bulan}`, dan `{naskahDinas}`.
+3. Simpan perubahan, lalu uji pembuatan surat tanpa nomor manual.
 
 ---
 

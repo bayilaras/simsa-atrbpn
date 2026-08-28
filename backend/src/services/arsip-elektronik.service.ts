@@ -1,8 +1,9 @@
 import { db } from '../config/database.js';
 import { arsipElektronik, ArsipElektronik, arsip, fileAttachments } from '../db/schema/index.js';
-import { eq, and, desc, sql, count, max } from 'drizzle-orm';
+import { eq, and, desc, sql, count, max, isNull } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { fileAttachmentService } from './file-attachment.service.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import {
     canDecideVerification,
     createElectronicRegistrationCode,
@@ -21,6 +22,7 @@ interface ArsipElektronikFilters {
     unitKerjaId?: string;
     page?: number;
     limit?: number;
+    eligibleForAutentikasi?: boolean;
     /** null means all classes (super_admin); [] fails closed. */
     securityClassifications?: string[] | null;
 }
@@ -63,6 +65,20 @@ class ArsipElektronikService {
         if (filters.formatFile) conditions.push(eq(arsipElektronik.formatFile, filters.formatFile));
         if (filters.statusVerifikasi) conditions.push(eq(arsipElektronik.statusVerifikasi, filters.statusVerifikasi));
         if (filters.mediaAsal) conditions.push(eq(arsipElektronik.mediaAsal, filters.mediaAsal));
+        if (filters.eligibleForAutentikasi) {
+            conditions.push(
+                eq(arsipElektronik.statusVerifikasi, 'verified'),
+                eq(arsipElektronik.immutable, true),
+                isNull(arsipElektronik.autentikasiId),
+                sql`EXISTS (
+                    SELECT 1 FROM file_attachments eligibility_attachment
+                    WHERE eligibility_attachment.id = ${arsipElektronik.fileAttachmentId}
+                      AND eligibility_attachment.storage_access = 'private'
+                      AND eligibility_attachment.integrity_status = 'verified'
+                      AND eligibility_attachment.malware_scan_status = 'clean'
+                )`,
+            );
+        }
         if (filters.unitKerjaId) {
             conditions.push(
                 sql`${arsipElektronik.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${filters.unitKerjaId})`
@@ -109,8 +125,13 @@ class ArsipElektronikService {
         return results[0] || null;
     }
 
-    async create(data: CreateArsipElektronikData, userId: string) {
-        const [source] = await db
+    async create(
+        data: CreateArsipElektronikData,
+        userId: string,
+        auditContext?: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        const [source] = await tx
             .select({
                 unitKerjaId: arsip.unitKerjaId,
                 attachmentId: fileAttachments.id,
@@ -124,7 +145,8 @@ class ArsipElektronikService {
             .from(arsip)
             .innerJoin(fileAttachments, eq(fileAttachments.id, data.fileAttachmentId))
             .where(eq(arsip.id, data.arsipId))
-            .limit(1);
+            .limit(1)
+            .for('update');
 
         if (
             !source ||
@@ -143,13 +165,13 @@ class ArsipElektronikService {
             resolutionDpi: data.resolusiDPI,
             colorDepth: data.colorDepth,
         });
-        const [versionResult] = await db
+        const [versionResult] = await tx
             .select({ value: max(arsipElektronik.versiDokumen) })
             .from(arsipElektronik)
             .where(eq(arsipElektronik.arsipId, data.arsipId));
         const version = Number(versionResult?.value || 0) + 1;
 
-        const [created] = await db.insert(arsipElektronik).values({
+        const [created] = await tx.insert(arsipElektronik).values({
             arsipId: data.arsipId,
             fileAttachmentId: data.fileAttachmentId,
             registrationCode: createElectronicRegistrationCode(
@@ -180,11 +202,37 @@ class ArsipElektronikService {
             immutable: false,
             updatedAt: new Date(),
         }).returning();
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'create',
+                entityType: 'arsip_elektronik',
+                entityId: created.id,
+                changes: {
+                    after: {
+                        arsipId: created.arsipId,
+                        fileAttachmentId: created.fileAttachmentId,
+                        registrationCode: created.registrationCode,
+                        statusVerifikasi: created.statusVerifikasi,
+                    },
+                },
+            }, tx);
+        }
         return created;
+        });
     }
 
-    async update(id: string, data: Partial<EditableArsipElektronikData>) {
-        const record = await this.findById(id);
+    async update(
+        id: string,
+        data: Partial<EditableArsipElektronikData>,
+        auditContext?: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        const [record] = await tx.select()
+            .from(arsipElektronik)
+            .where(eq(arsipElektronik.id, id))
+            .limit(1)
+            .for('update');
         if (!record) return null;
         if (record.immutable || record.statusVerifikasi === 'verified') {
             throw new Error('Metadata versi terverifikasi bersifat immutable; buat versi baru untuk perubahan');
@@ -214,7 +262,7 @@ class ArsipElektronikService {
             updatedAt: new Date(),
         };
 
-        const [updated] = await db.update(arsipElektronik)
+        const [updated] = await tx.update(arsipElektronik)
             .set(editable)
             .where(and(
                 eq(arsipElektronik.id, id),
@@ -225,11 +273,32 @@ class ArsipElektronikService {
         if (!updated) {
             throw new Error('Status rekod berubah; metadata terverifikasi tidak dapat ditimpa');
         }
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'arsip_elektronik',
+                entityId: id,
+                changes: { before: record, after: updated, fields: Object.keys(data) },
+            }, tx);
+        }
         return updated;
+        });
     }
 
-    async verify(id: string, userId: string, status: 'verified' | 'rejected', catatan?: string) {
-        const record = await this.findById(id);
+    async verify(
+        id: string,
+        userId: string,
+        status: 'verified' | 'rejected',
+        catatan?: string,
+        auditContext?: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        const [record] = await tx.select()
+            .from(arsipElektronik)
+            .where(eq(arsipElektronik.id, id))
+            .limit(1)
+            .for('update');
         if (!record) return null;
         if (!canDecideVerification(record.statusVerifikasi)) {
             throw new Error('Keputusan verifikasi versi ini sudah final; koreksi harus dibuat sebagai versi/pending baru');
@@ -238,6 +307,24 @@ class ArsipElektronikService {
         if (status === 'verified') {
             if (!record.fileAttachmentId) {
                 throw new Error('Rekod legacy tanpa bitstream terkendali tidak dapat diverifikasi');
+            }
+            const [attachment] = await tx.select()
+                .from(fileAttachments)
+                .where(and(
+                    eq(fileAttachments.id, record.fileAttachmentId),
+                    eq(fileAttachments.entityType, 'arsip'),
+                    eq(fileAttachments.entityId, record.arsipId),
+                ))
+                .limit(1)
+                .for('update');
+            if (!attachment) {
+                throw new Error('Lampiran terkendali tidak terhubung ke arsip induk');
+            }
+            if (attachment.storageAccess !== 'private') {
+                throw new Error('Lampiran harus tersimpan secara private sebelum diverifikasi');
+            }
+            if (attachment.malwareScanStatus !== 'clean') {
+                throw new Error('Lampiran belum dinyatakan bersih dari malware');
             }
             const quality = evaluateScanQuality({
                 sourceType: record.sourceType as ElectronicSourceType,
@@ -248,13 +335,19 @@ class ArsipElektronikService {
             if (!quality.passed) {
                 throw new Error(`Kendali mutu belum terpenuhi: ${quality.errors.join(' ')}`);
             }
-            const fixity = await fileAttachmentService.verifyIntegrity(record.fileAttachmentId);
+            if (record.qcStatus !== 'passed') {
+                throw new Error('Status kendali mutu belum lulus');
+            }
+            const fixity = await fileAttachmentService.verifyIntegrity(record.fileAttachmentId, tx);
             if (!fixity?.matches) {
                 throw new Error('Verifikasi gagal: hash bitstream tidak cocok dengan baseline ingest');
             }
+            if (fixity.attachment.integrityStatus !== 'verified') {
+                throw new Error('Status integritas lampiran belum terverifikasi');
+            }
         }
 
-        const result = await db.update(arsipElektronik)
+        const result = await tx.update(arsipElektronik)
             .set({
                 statusVerifikasi: status,
                 verifiedBy: userId,
@@ -273,16 +366,35 @@ class ArsipElektronikService {
         if (!result[0]) {
             throw new Error('Status verifikasi berubah; muat ulang rekod sebelum melanjutkan');
         }
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'status_change',
+                entityType: 'arsip_elektronik',
+                entityId: id,
+                changes: {
+                    before: { statusVerifikasi: record.statusVerifikasi },
+                    after: { statusVerifikasi: status, immutable: status === 'verified' },
+                    catatan: catatan || null,
+                },
+            }, tx);
+        }
         return result[0];
+        });
     }
 
-    async delete(id: string) {
-        const record = await this.findById(id);
+    async delete(id: string, auditContext?: CriticalAuditContext) {
+        return db.transaction(async (tx) => {
+        const [record] = await tx.select()
+            .from(arsipElektronik)
+            .where(eq(arsipElektronik.id, id))
+            .limit(1)
+            .for('update');
         if (!record) return false;
         if (record.immutable || record.statusVerifikasi === 'verified') {
             throw new Error('Versi terverifikasi tidak dapat dihapus; gunakan workflow penyusutan resmi');
         }
-        const [deleted] = await db
+        const [deleted] = await tx
             .delete(arsipElektronik)
             .where(and(
                 eq(arsipElektronik.id, id),
@@ -293,7 +405,17 @@ class ArsipElektronikService {
         if (!deleted) {
             throw new Error('Status rekod berubah; versi tidak dapat dihapus');
         }
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'delete',
+                entityType: 'arsip_elektronik',
+                entityId: id,
+                changes: { before: record },
+            }, tx);
+        }
         return true;
+        });
     }
 
     async findUnitKerjaId(id: string): Promise<string | null> {
@@ -394,17 +516,22 @@ class ArsipElektronikService {
         details?: string;
         performedBy: string;
         notes?: string;
-    }) {
+    }, auditContext?: CriticalAuditContext) {
         if (!isPreservationAction(data.action)) {
             throw new Error('Aksi preservasi tidak dikenali');
         }
-        const record = await this.findById(data.arsipElektronikId);
+        return db.transaction(async (tx) => {
+        const [record] = await tx.select()
+            .from(arsipElektronik)
+            .where(eq(arsipElektronik.id, data.arsipElektronikId))
+            .limit(1)
+            .for('update');
         if (!record) throw new Error('Arsip elektronik tidak ditemukan');
 
         let details = data.details;
         if (data.action === 'integrity_check') {
             if (!record.fileAttachmentId) throw new Error('Bitstream terkendali tidak tersedia');
-            const fixity = await fileAttachmentService.verifyIntegrity(record.fileAttachmentId);
+            const fixity = await fileAttachmentService.verifyIntegrity(record.fileAttachmentId, tx);
             if (!fixity) throw new Error('Pemeriksaan integritas tidak dapat dijalankan');
             details = JSON.stringify({
                 result: fixity.matches ? 'match' : 'mismatch',
@@ -417,12 +544,27 @@ class ArsipElektronikService {
         // It is not imported at top level yet.
         const { preservasiTrack } = await import('../db/schema/preservasi-track.js');
 
-        const result = await db.insert(preservasiTrack).values({
+        const result = await tx.insert(preservasiTrack).values({
             ...data,
             details,
             performedAt: new Date(),
         }).returning();
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: data.action === 'integrity_check' ? 'verify_integrity' : 'update',
+                entityType: 'arsip_elektronik',
+                entityId: data.arsipElektronikId,
+                changes: {
+                    preservationActionId: result[0]?.id,
+                    action: data.action,
+                    details,
+                    notes: data.notes,
+                },
+            }, tx);
+        }
         return result[0];
+        });
     }
 
     async getPreservationHistory(arsipElektronikId: string) {

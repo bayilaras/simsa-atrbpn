@@ -32,6 +32,12 @@ vi.mock('../../middlewares/rate-limiter.middleware', () => ({
 vi.mock('../../services/user-management.service', () => ({
     default: {
         listUsers: vi.fn().mockResolvedValue({ data: [], pagination: { total: 0 } }),
+        createUser: vi.fn().mockResolvedValue({ id: '22222222-2222-4222-8222-222222222222' }),
+        updateUser: vi.fn().mockResolvedValue({ id: '22222222-2222-4222-8222-222222222222' }),
+        deactivateUser: vi.fn().mockResolvedValue({
+            id: '22222222-2222-4222-8222-222222222222',
+            isActive: false,
+        }),
     },
 }));
 
@@ -47,6 +53,7 @@ import userManagementRouter from '../user-management.routes';
 import auditLogRouter from '../audit-log.routes';
 import userManagementService from '../../services/user-management.service';
 import auditLogService from '../../services/audit-log.service';
+import { ConflictError, ForbiddenError } from '../../utils/errors.js';
 
 const app = express();
 app.use(express.json());
@@ -91,6 +98,83 @@ describe('centralized authentication on privileged routes', () => {
 
         expect(response.status).toBe(200);
         expect(userManagementService.listUsers).toHaveBeenCalledOnce();
+    });
+
+    it('rejects self-deactivation through the generic update endpoint', async () => {
+        const response = await request(app)
+            .put(`/api/users/${securityState.user.id}`)
+            .send({ role: 'super_admin', isActive: false });
+
+        expect(response.status).toBe(400);
+        expect(response.body.error).toMatch(/tidak dapat menonaktifkan akun sendiri/);
+        expect(userManagementService.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects self-demotion but permits an unchanged self role', async () => {
+        const demotion = await request(app)
+            .put(`/api/users/${securityState.user.id}`)
+            .send({ role: 'staff' });
+
+        expect(demotion.status).toBe(400);
+        expect(userManagementService.updateUser).not.toHaveBeenCalled();
+
+        const profileOnly = await request(app)
+            .put(`/api/users/${securityState.user.id}`)
+            .send({ role: 'super_admin', jabatan: 'Administrator Sistem' });
+
+        expect(profileOnly.status).toBe(200);
+        expect(userManagementService.updateUser).toHaveBeenCalledOnce();
+    });
+
+    it('returns a conflict when a mandate change would orphan a pending approval', async () => {
+        vi.mocked(userManagementService.updateUser).mockRejectedValueOnce(
+            new ConflictError('Pengguna masih menjadi penyetuju aktif untuk surat pending.'),
+        );
+
+        const response = await request(app)
+            .put('/api/users/22222222-2222-4222-8222-222222222222')
+            .send({ role: 'staff' });
+
+        expect(response.status).toBe(409);
+        expect(response.body.error).toMatch(/masih menjadi penyetuju aktif/);
+    });
+
+    it('maps a transaction-time stale administrator rejection on create', async () => {
+        vi.mocked(userManagementService.createUser).mockRejectedValueOnce(
+            new ForbiddenError('Aktor bukan super admin aktif. Muat ulang sesi Anda.'),
+        );
+
+        const response = await request(app)
+            .post('/api/users')
+            .send({
+                email: 'new-admin@example.go.id',
+                name: 'New Admin',
+                role: 'super_admin',
+                unitKerjaId: null,
+            });
+
+        expect(response.status).toBe(403);
+        expect(response.body.error).toMatch(/bukan super admin aktif/);
+    });
+
+    it('rejects self-deactivation through the dedicated delete endpoint', async () => {
+        const response = await request(app)
+            .delete(`/api/users/${securityState.user.id}`);
+
+        expect(response.status).toBe(400);
+        expect(userManagementService.deactivateUser).not.toHaveBeenCalled();
+    });
+
+    it('returns a conflict when deactivation would remove the last active super admin', async () => {
+        vi.mocked(userManagementService.deactivateUser).mockRejectedValueOnce(
+            new ConflictError('Minimal satu super admin aktif harus tetap tersedia.'),
+        );
+
+        const response = await request(app)
+            .delete('/api/users/22222222-2222-4222-8222-222222222222');
+
+        expect(response.status).toBe(409);
+        expect(response.body.error).toMatch(/Minimal satu super admin aktif/);
     });
 
     it('does not let audit-log routes bypass a central account-state rejection', async () => {

@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
+let transactionCommits = 0;
+let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
+
+const auditMocks = vi.hoisted(() => ({ logActionOrThrow: vi.fn() }));
 
 const mockChain: any = new Proxy({}, {
     get(_target, prop) {
@@ -19,9 +23,20 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
+    transaction: async (fn: any) => {
+        try {
+            const result = await fn(mockDb);
+            transactionCommits += 1;
+            return result;
+        } catch (error) {
+            transactionRollbacks += 1;
+            throw error;
+        }
+    },
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
 
 const { DistributionService } = await import('../services/distribution.service');
 
@@ -31,6 +46,10 @@ describe('DistributionService', () => {
     beforeEach(() => {
         svc = new DistributionService();
         resultQueue.length = 0;
+        transactionCommits = 0;
+        transactionRollbacks = 0;
+        auditMocks.logActionOrThrow.mockReset();
+        auditMocks.logActionOrThrow.mockResolvedValue(undefined);
     });
 
     // ── distribute ──
@@ -46,6 +65,24 @@ describe('DistributionService', () => {
             });
             expect(res.id).toBe('dist-1');
             expect(res.status).toBe('sent');
+        });
+
+        it('rolls back distribution creation when its critical audit insert fails', async () => {
+            enqueue([{ id: 'sm-1' }], [], [{ id: 'dist-1', status: 'sent' }]);
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(svc.distribute({
+                suratMasukId: 'sm-1',
+                sourceUnitId: 'ditjen',
+                targetUnitId: 'unit-1',
+            }, { userId: 'user-1' })).rejects.toThrow('audit unavailable');
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
+                expect.objectContaining({ action: 'distribute', entityType: 'surat_distribution' }),
+                mockDb,
+            );
         });
 
         it('should throw when already distributed to same unit', async () => {

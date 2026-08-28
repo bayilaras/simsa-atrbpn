@@ -10,7 +10,6 @@ import {
 } from '../services/record-access.service.js';
 import { dosirService } from '../services/dosir.service.js';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
-import { auditLogService } from '../services/audit-log.service.js';
 
 const router = Router();
 
@@ -221,14 +220,9 @@ router.post('/', canWriteMiddleware(), async (req: AuthRequest, res: Response, n
             jenisRelasi,
             keterangan: keterangan || null,
             createdBy: userId,
-        });
-        await auditLogService.logAction({
+        }, {
             userId,
             userEmail: req.user?.email,
-            action: 'create',
-            entityType: 'tunjuk_silang',
-            entityId: result.id,
-            changes: { after: result },
             ipAddress: (req.ip || req.get('x-forwarded-for') || '') as string,
         });
         res.status(201).json(result);
@@ -273,25 +267,18 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res: Respon
             });
         }
 
-        const cancelled = await tunjukSilangService.cancel(id, req.user!.id, reason, ownerId);
-        if (!cancelled) return res.status(404).json({ error: 'Cross-reference not found' });
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'cancel',
-            entityType: 'tunjuk_silang',
-            entityId: id,
-            changes: {
-                before: reference,
-                after: {
-                    cancelledAt: cancelled.cancelledAt,
-                    cancelledBy: cancelled.cancelledBy,
-                    cancellationReason: cancelled.cancellationReason,
-                },
-                fields: ['cancelledAt', 'cancelledBy', 'cancellationReason'],
+        const cancelled = await tunjukSilangService.cancel(
+            id,
+            req.user!.id,
+            reason,
+            ownerId,
+            {
+                userId: req.user?.id,
+                userEmail: req.user?.email,
+                ipAddress: (req.ip || req.get('x-forwarded-for') || '') as string,
             },
-            ipAddress: (req.ip || req.get('x-forwarded-for') || '') as string,
-        });
+        );
+        if (!cancelled) return res.status(404).json({ error: 'Cross-reference not found' });
         return res.json({ success: true, data: cancelled });
     } catch (error) {
         next(error);

@@ -5,6 +5,7 @@ import {
     approvalRequests,
     approvalSteps,
     suratKeluar,
+    userPreferences,
     users,
 } from '../db/schema/index.js';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors.js';
@@ -13,13 +14,35 @@ import {
     type RecordUnitScope,
 } from '../utils/record-unit-scope.js';
 import { createLogger } from '../utils/logger.js';
+import { env } from '../config/env.js';
 import { emailService } from './email.service.js';
+import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock.js';
 
 const log = createLogger('ApprovalService');
 
 const ADMIN_ROLES = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
 const RESUBMITTABLE_REQUEST_STATES = ['rejected', 'cancelled'] as const;
 const SUBMITTABLE_SURAT_STATES = ['draft', 'rejected'] as const;
+
+export function buildApprovalReviewUrl(frontendUrl: string, suratId: string): string {
+    let configured: URL;
+    try {
+        configured = new URL(frontendUrl);
+    } catch {
+        throw new Error('FRONTEND_URL must be a valid absolute URL');
+    }
+    if (
+        !['http:', 'https:'].includes(configured.protocol)
+        || configured.username
+        || configured.password
+        || configured.search
+        || configured.hash
+        || (configured.pathname !== '/' && configured.pathname !== '')
+    ) {
+        throw new Error('FRONTEND_URL must be an HTTP(S) origin without credentials, path, query, or fragment');
+    }
+    return new URL(`/surat/keluar/${encodeURIComponent(suratId)}`, configured.origin).toString();
+}
 
 export interface ApprovalActor {
     id: string;
@@ -38,6 +61,10 @@ function assertSubmitterMandate(actor: ApprovalActor, unitKerjaId: string) {
         throw new ForbiddenError('Role Anda tidak memiliki kewenangan mengajukan persetujuan.');
     }
 
+    // A super administrator may operate across units, but the ordinary
+    // maker/checker rules below still prohibit self-approval.
+    if (actor.role === 'super_admin') return;
+
     if (!effectiveActorUnit(actor) || effectiveActorUnit(actor) !== unitKerjaId) {
         throw new ForbiddenError('Pengajuan hanya dapat dilakukan dalam unit kerja yang dimandatkan.');
     }
@@ -48,17 +75,26 @@ export function assertApproverMandate(actor: ApprovalActor, unitKerjaId: string)
         throw new ForbiddenError('Hanya pejabat administrator yang dapat menyetujui atau menandatangani surat.');
     }
 
+    if (actor.role === 'super_admin') return;
+
     if (!effectiveActorUnit(actor) || effectiveActorUnit(actor) !== unitKerjaId) {
         throw new ForbiddenError('Persetujuan hanya dapat dilakukan dalam unit kerja yang dimandatkan.');
     }
 }
 
-async function requireMandatedApprover(
-    tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-    approverId: string,
-    unitKerjaId: string,
+type ApprovalTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type LockedApprovalUser = ApprovalActor & { isActive: boolean };
+
+async function lockApprovalParticipants(
+    tx: ApprovalTransaction,
+    participantIds: string[],
 ) {
-    const [approver] = await tx
+    const ids = [...new Set(participantIds)].sort();
+    if (ids.length === 0) return [] as LockedApprovalUser[];
+
+    // A stable user-row order prevents reciprocal forwarding operations from
+    // taking actor/next-approver locks in opposite order.
+    return tx
         .select({
             id: users.id,
             role: users.role,
@@ -66,30 +102,152 @@ async function requireMandatedApprover(
             isActive: users.isActive,
         })
         .from(users)
-        .where(and(eq(users.id, approverId), eq(users.isActive, true)))
-        .limit(1);
+        .where(inArray(users.id, ids))
+        .orderBy(users.id)
+        .for('update');
+}
 
-    if (!approver || !ADMIN_ROLES.has(approver.role) || effectiveActorUnit(approver) !== unitKerjaId) {
+function requireFreshApprovalActor(
+    participants: LockedApprovalUser[],
+    actorId: string,
+): ApprovalActor {
+    const actor = participants.find(participant => participant.id === actorId);
+    if (!actor || actor.isActive !== true) {
+        throw new ForbiddenError('Akun tidak aktif atau mandat persetujuan telah dicabut.');
+    }
+
+    return actor;
+}
+
+function assertMandatedApprover(
+    approver: LockedApprovalUser | undefined,
+    unitKerjaId: string,
+) {
+    if (
+        !approver
+        || approver.isActive !== true
+        || !ADMIN_ROLES.has(approver.role)
+        || (approver.role !== 'super_admin' && effectiveActorUnit(approver) !== unitKerjaId)
+    ) {
         throw new ValidationError('Penyetuju harus administrator aktif pada unit kerja surat.');
     }
 
-    return approver;
+}
+
+function recordScopeForFreshActor(actor: ApprovalActor): RecordUnitScope {
+    return actor.role === 'super_admin' ? null : (effectiveActorUnit(actor) || '');
 }
 
 export class ApprovalService {
+    async listEligibleApprovers(
+        suratId: string,
+        actor: ApprovalActor,
+        unitScope: RecordUnitScope,
+    ) {
+        const [surat] = await db
+            .select({
+                id: suratKeluar.id,
+                unitKerjaId: suratKeluar.unitKerjaId,
+                createdBy: suratKeluar.createdBy,
+                approvalStatus: suratKeluar.approvalStatus,
+            })
+            .from(suratKeluar)
+            .where(and(
+                scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, unitScope),
+                eq(suratKeluar.isArchived, false),
+                eq(suratKeluar.isDeleted, false),
+                eq(suratKeluar.isSigned, false),
+            ))
+            .limit(1);
+
+        if (!surat) throw new NotFoundError('Surat keluar');
+        assertSubmitterMandate(actor, surat.unitKerjaId);
+        if (surat.createdBy !== actor.id) {
+            throw new ForbiddenError('Hanya pembuat surat yang dapat memilih penyetuju.');
+        }
+        if (!SUBMITTABLE_SURAT_STATES.includes(
+            surat.approvalStatus as typeof SUBMITTABLE_SURAT_STATES[number],
+        )) {
+            throw new ConflictError('Surat tidak berada pada status yang dapat diajukan.');
+        }
+
+        const eligibleRoles = ['super_admin'];
+        if (surat.unitKerjaId === 'ditjen') eligibleRoles.push('admin_dirjen');
+        if (surat.unitKerjaId === 'sesditjen') eligibleRoles.push('admin_sesditjen');
+
+        const candidates = await db
+            .select({
+                id: users.id,
+                name: users.name,
+                role: users.role,
+                unitKerjaId: users.unitKerjaId,
+            })
+            .from(users)
+            .where(and(
+                eq(users.isActive, true),
+                inArray(users.role, eligibleRoles),
+            ))
+            .orderBy(users.name);
+
+        return candidates.filter(candidate => candidate.id !== actor.id);
+    }
+
+    async getPending(actor: ApprovalActor) {
+        if (!ADMIN_ROLES.has(actor.role)) {
+            throw new ForbiddenError('Role Anda tidak memiliki kewenangan persetujuan.');
+        }
+
+        return db
+            .select({
+                requestId: approvalRequests.id,
+                suratId: suratKeluar.id,
+                nomorSurat: suratKeluar.nomorSurat,
+                perihal: suratKeluar.perihal,
+                unitKerjaId: suratKeluar.unitKerjaId,
+                requesterId: approvalRequests.requesterId,
+                stepOrder: approvalSteps.stepOrder,
+                submittedAt: approvalSteps.createdAt,
+            })
+            .from(approvalSteps)
+            .innerJoin(approvalRequests, eq(approvalSteps.requestId, approvalRequests.id))
+            .innerJoin(suratKeluar, eq(approvalRequests.entityId, suratKeluar.id))
+            .where(and(
+                eq(approvalRequests.entityType, 'surat_keluar'),
+                eq(approvalRequests.status, 'pending'),
+                eq(approvalSteps.status, 'pending'),
+                eq(approvalSteps.approverId, actor.id),
+                eq(suratKeluar.approvalStatus, 'pending'),
+                eq(suratKeluar.currentApproverId, actor.id),
+                eq(suratKeluar.isArchived, false),
+                eq(suratKeluar.isDeleted, false),
+                eq(suratKeluar.isSigned, false),
+            ))
+            .orderBy(desc(approvalSteps.createdAt));
+    }
+
     async submit(
         suratId: string,
         actor: ApprovalActor,
         nextApproverId: string,
-        unitScope: RecordUnitScope,
+        _unitScope: RecordUnitScope,
         notes?: string,
     ) {
+        if (nextApproverId === actor.id) {
+            throw new ValidationError('Pembuat surat tidak boleh menjadi penyetuju suratnya sendiri.');
+        }
+
         const outcome = await db.transaction(async (tx) => {
+            await lockAuthorizationMandatesShared(tx);
+            const participants = await lockApprovalParticipants(tx, [actor.id, nextApproverId]);
+            const freshActor = requireFreshApprovalActor(participants, actor.id);
+            const nextApprover = participants.find(participant => participant.id === nextApproverId);
+            const freshUnitScope = recordScopeForFreshActor(freshActor);
+
             const [surat] = await tx
                 .select()
                 .from(suratKeluar)
                 .where(and(
-                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, unitScope),
+                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, freshUnitScope),
                     eq(suratKeluar.isArchived, false),
                     eq(suratKeluar.isDeleted, false),
                     eq(suratKeluar.isSigned, false),
@@ -98,19 +256,16 @@ export class ApprovalService {
                 .for('update');
 
             if (!surat) throw new NotFoundError('Surat keluar');
-            assertSubmitterMandate(actor, surat.unitKerjaId);
+            assertSubmitterMandate(freshActor, surat.unitKerjaId);
 
-            if (surat.createdBy !== actor.id) {
+            if (surat.createdBy !== freshActor.id) {
                 throw new ForbiddenError('Hanya pembuat surat yang dapat mengajukan persetujuan.');
             }
             if (!SUBMITTABLE_SURAT_STATES.includes(surat.approvalStatus as typeof SUBMITTABLE_SURAT_STATES[number])) {
                 throw new ConflictError('Surat tidak berada pada status yang dapat diajukan.');
             }
 
-            await requireMandatedApprover(tx, nextApproverId, surat.unitKerjaId);
-            if (nextApproverId === actor.id) {
-                throw new ValidationError('Pembuat surat tidak boleh menjadi penyetuju suratnya sendiri.');
-            }
+            assertMandatedApprover(nextApprover, surat.unitKerjaId);
 
             let [request] = await tx
                 .select()
@@ -136,7 +291,7 @@ export class ApprovalService {
                     .update(approvalRequests)
                     .set({
                         status: 'pending',
-                        requesterId: actor.id,
+                        requesterId: freshActor.id,
                         currentStepOrder: stepOrder,
                         updatedAt: new Date(),
                     })
@@ -155,7 +310,7 @@ export class ApprovalService {
                     .values({
                         entityType: 'surat_keluar',
                         entityId: suratId,
-                        requesterId: actor.id,
+                        requesterId: freshActor.id,
                         status: 'pending',
                         currentStepOrder: stepOrder,
                     })
@@ -174,7 +329,7 @@ export class ApprovalService {
 
             await tx.insert(approvalHistory).values({
                 requestId: request.id,
-                userId: actor.id,
+                userId: freshActor.id,
                 action: 'SUBMIT',
                 notes: notes || 'Diserahkan ke penyetuju',
             });
@@ -187,7 +342,7 @@ export class ApprovalService {
                     updatedAt: new Date(),
                 })
                 .where(and(
-                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, unitScope),
+                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, freshUnitScope),
                     inArray(suratKeluar.approvalStatus, [...SUBMITTABLE_SURAT_STATES]),
                     eq(suratKeluar.isArchived, false),
                     eq(suratKeluar.isDeleted, false),
@@ -200,7 +355,10 @@ export class ApprovalService {
             return { request, notifyUserId: nextApproverId };
         });
 
-        void this.sendNotification(suratId, outcome.notifyUserId, actor.id)
+        // Await outside the database transaction so serverless runtimes cannot
+        // terminate a fire-and-forget SMTP promise. Delivery remains best
+        // effort: a bounded SMTP failure is logged after the workflow commit.
+        await this.sendNotification(suratId, outcome.notifyUserId, actor.id)
             .catch((err) => log.error({ err }, 'Failed to send submit notification'));
         return outcome.request;
     }
@@ -208,16 +366,31 @@ export class ApprovalService {
     async approve(
         suratId: string,
         actor: ApprovalActor,
-        unitScope: RecordUnitScope,
+        _unitScope: RecordUnitScope,
         notes?: string,
         nextApproverId?: string,
     ) {
+        if (nextApproverId === actor.id) {
+            throw new ValidationError('Penyetuju berikutnya harus berbeda dari penyetuju saat ini.');
+        }
+
         const outcome = await db.transaction(async (tx) => {
+            await lockAuthorizationMandatesShared(tx);
+            const participants = await lockApprovalParticipants(
+                tx,
+                nextApproverId ? [actor.id, nextApproverId] : [actor.id],
+            );
+            const freshActor = requireFreshApprovalActor(participants, actor.id);
+            const nextApprover = nextApproverId
+                ? participants.find(participant => participant.id === nextApproverId)
+                : undefined;
+            const freshUnitScope = recordScopeForFreshActor(freshActor);
+
             const [surat] = await tx
                 .select()
                 .from(suratKeluar)
                 .where(and(
-                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, unitScope),
+                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, freshUnitScope),
                     eq(suratKeluar.isArchived, false),
                     eq(suratKeluar.isDeleted, false),
                     eq(suratKeluar.isSigned, false),
@@ -226,8 +399,8 @@ export class ApprovalService {
                 .for('update');
 
             if (!surat) throw new NotFoundError('Surat keluar');
-            assertApproverMandate(actor, surat.unitKerjaId);
-            if (surat.approvalStatus !== 'pending' || surat.currentApproverId !== actor.id) {
+            assertApproverMandate(freshActor, surat.unitKerjaId);
+            if (surat.approvalStatus !== 'pending' || surat.currentApproverId !== freshActor.id) {
                 throw new ConflictError('Surat tidak sedang menunggu persetujuan pengguna ini.');
             }
 
@@ -244,7 +417,7 @@ export class ApprovalService {
                 .for('update');
 
             if (!request) throw new ConflictError('Alur persetujuan aktif tidak ditemukan.');
-            if (!request.requesterId || request.requesterId === actor.id) {
+            if (!request.requesterId || request.requesterId === freshActor.id) {
                 throw new ForbiddenError('Pembuat/pengaju surat tidak boleh menyetujui suratnya sendiri.');
             }
 
@@ -259,13 +432,13 @@ export class ApprovalService {
                 .limit(1)
                 .for('update');
 
-            if (!currentStep || currentStep.approverId !== actor.id) {
+            if (!currentStep || currentStep.approverId !== freshActor.id) {
                 throw new ForbiddenError('Anda bukan penyetuju aktif untuk langkah ini.');
             }
 
             if (nextApproverId) {
-                await requireMandatedApprover(tx, nextApproverId, surat.unitKerjaId);
-                if (nextApproverId === actor.id || nextApproverId === request.requesterId) {
+                assertMandatedApprover(nextApprover, surat.unitKerjaId);
+                if (nextApproverId === request.requesterId) {
                     throw new ValidationError('Penyetuju berikutnya harus berbeda dari pengaju dan penyetuju saat ini.');
                 }
             }
@@ -277,7 +450,7 @@ export class ApprovalService {
                 .where(and(
                     eq(approvalSteps.id, currentStep.id),
                     eq(approvalSteps.status, 'pending'),
-                    eq(approvalSteps.approverId, actor.id),
+                    eq(approvalSteps.approverId, freshActor.id),
                 ))
                 .returning({ id: approvalSteps.id });
 
@@ -325,9 +498,9 @@ export class ApprovalService {
                     ? { currentApproverId: nextApproverId, updatedAt: actionAt }
                     : { approvalStatus: 'approved', currentApproverId: null, updatedAt: actionAt })
                 .where(and(
-                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, unitScope),
+                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, freshUnitScope),
                     eq(suratKeluar.approvalStatus, 'pending'),
-                    eq(suratKeluar.currentApproverId, actor.id),
+                    eq(suratKeluar.currentApproverId, freshActor.id),
                     eq(suratKeluar.isArchived, false),
                     eq(suratKeluar.isDeleted, false),
                     eq(suratKeluar.isSigned, false),
@@ -339,7 +512,7 @@ export class ApprovalService {
             await tx.insert(approvalHistory).values({
                 requestId: request.id,
                 stepId: currentStep.id,
-                userId: actor.id,
+                userId: freshActor.id,
                 action: 'APPROVE',
                 notes,
             });
@@ -348,7 +521,7 @@ export class ApprovalService {
         });
 
         if (outcome.notifyUserId && outcome.requesterId) {
-            void this.sendNotification(suratId, outcome.notifyUserId, outcome.requesterId)
+            await this.sendNotification(suratId, outcome.notifyUserId, outcome.requesterId)
                 .catch((err) => log.error({ err }, 'Failed to send approval notification'));
         }
         return { success: true };
@@ -357,15 +530,20 @@ export class ApprovalService {
     async reject(
         suratId: string,
         actor: ApprovalActor,
-        unitScope: RecordUnitScope,
+        _unitScope: RecordUnitScope,
         notes: string,
     ) {
         return db.transaction(async (tx) => {
+            await lockAuthorizationMandatesShared(tx);
+            const participants = await lockApprovalParticipants(tx, [actor.id]);
+            const freshActor = requireFreshApprovalActor(participants, actor.id);
+            const freshUnitScope = recordScopeForFreshActor(freshActor);
+
             const [surat] = await tx
                 .select()
                 .from(suratKeluar)
                 .where(and(
-                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, unitScope),
+                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, freshUnitScope),
                     eq(suratKeluar.isArchived, false),
                     eq(suratKeluar.isDeleted, false),
                     eq(suratKeluar.isSigned, false),
@@ -374,8 +552,8 @@ export class ApprovalService {
                 .for('update');
 
             if (!surat) throw new NotFoundError('Surat keluar');
-            assertApproverMandate(actor, surat.unitKerjaId);
-            if (surat.approvalStatus !== 'pending' || surat.currentApproverId !== actor.id) {
+            assertApproverMandate(freshActor, surat.unitKerjaId);
+            if (surat.approvalStatus !== 'pending' || surat.currentApproverId !== freshActor.id) {
                 throw new ConflictError('Surat tidak sedang menunggu persetujuan pengguna ini.');
             }
 
@@ -392,7 +570,7 @@ export class ApprovalService {
                 .for('update');
 
             if (!request) throw new ConflictError('Alur persetujuan aktif tidak ditemukan.');
-            if (!request.requesterId || request.requesterId === actor.id) {
+            if (!request.requesterId || request.requesterId === freshActor.id) {
                 throw new ForbiddenError('Pembuat/pengaju surat tidak boleh menolak suratnya sendiri.');
             }
 
@@ -407,7 +585,7 @@ export class ApprovalService {
                 .limit(1)
                 .for('update');
 
-            if (!currentStep || currentStep.approverId !== actor.id) {
+            if (!currentStep || currentStep.approverId !== freshActor.id) {
                 throw new ForbiddenError('Anda bukan penyetuju aktif untuk langkah ini.');
             }
 
@@ -418,7 +596,7 @@ export class ApprovalService {
                 .where(and(
                     eq(approvalSteps.id, currentStep.id),
                     eq(approvalSteps.status, 'pending'),
-                    eq(approvalSteps.approverId, actor.id),
+                    eq(approvalSteps.approverId, freshActor.id),
                 ))
                 .returning({ id: approvalSteps.id });
             if (!updatedStep) throw new ConflictError('Langkah persetujuan telah diproses.');
@@ -438,9 +616,9 @@ export class ApprovalService {
                 .update(suratKeluar)
                 .set({ approvalStatus: 'rejected', currentApproverId: null, updatedAt: actionAt })
                 .where(and(
-                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, unitScope),
+                    scopedRecordByIdWhere(suratKeluar.id, suratId, suratKeluar.unitKerjaId, freshUnitScope),
                     eq(suratKeluar.approvalStatus, 'pending'),
-                    eq(suratKeluar.currentApproverId, actor.id),
+                    eq(suratKeluar.currentApproverId, freshActor.id),
                     eq(suratKeluar.isArchived, false),
                     eq(suratKeluar.isDeleted, false),
                     eq(suratKeluar.isSigned, false),
@@ -451,7 +629,7 @@ export class ApprovalService {
             await tx.insert(approvalHistory).values({
                 requestId: request.id,
                 stepId: currentStep.id,
-                userId: actor.id,
+                userId: freshActor.id,
                 action: 'REJECT',
                 notes,
             });
@@ -504,16 +682,30 @@ export class ApprovalService {
             const [surat] = await db.select().from(suratKeluar).where(eq(suratKeluar.id, suratId));
             const [targetUser] = await db.select().from(users).where(eq(users.id, targetUserId));
             const [requester] = await db.select().from(users).where(eq(users.id, requesterId));
+            const [preference] = await db
+                .select({ emailNotifications: userPreferences.emailNotifications })
+                .from(userPreferences)
+                .where(eq(userPreferences.userId, targetUserId))
+                .limit(1);
 
-            if (surat && targetUser && requester) {
-                await emailService.sendApprovalNotification(
+            // Email is explicit opt-in. A missing preference row uses the
+            // durable default (false) and must never be treated as consent.
+            if (surat && targetUser && requester && preference?.emailNotifications === true) {
+                const delivery = await emailService.sendApprovalNotification(
                     targetUser.email,
                     surat.nomorSurat || 'Draft',
                     requester.name || 'Unknown',
-                    process.env.APP_URL
-                        ? `${process.env.APP_URL}/surat/keluar/${suratId}`
-                        : `http://localhost:5173/surat/keluar/${suratId}`,
+                    buildApprovalReviewUrl(env.FRONTEND_URL, suratId),
                 );
+                if (!delivery.sent) {
+                    log.warn({
+                        suratId,
+                        targetUserId,
+                        deliveryStatus: delivery.status,
+                    }, 'Approval email was not delivered');
+                }
+            } else if (surat && targetUser && requester) {
+                log.info({ suratId, targetUserId }, 'Approval email skipped by user preference');
             }
         } catch (err) {
             log.error({ err }, 'Failed to send notification');

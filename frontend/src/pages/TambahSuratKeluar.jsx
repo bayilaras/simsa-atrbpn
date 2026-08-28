@@ -1,9 +1,12 @@
-import { createElement, useState, useRef, useEffect } from 'react';
+import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { suratKeluarService } from '@/services/surat-keluar.service';
 import { suratMasukService } from '@/services/surat-masuk.service';
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker';
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
+import { buildOutgoingNumberingPayload } from '@/lib/surat-numbering';
 import {
     Card,
     CardContent,
@@ -123,6 +126,13 @@ export default function TambahSuratKeluar() {
     const [selectedFile, setSelectedFile] = useState(null);
     const [existingFile, setExistingFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [recordUnitKerjaId, setRecordUnitKerjaId] = useState('');
+    const [numberPreview, setNumberPreview] = useState(null);
+    const [editLocked, setEditLocked] = useState(false);
+    const unitScope = useRequiredUnitKerjaScope(user, {
+        fixedUnitKerjaId: isEditMode ? recordUnitKerjaId : '',
+    });
+    const resolvedUnitKerjaId = isEditMode ? recordUnitKerjaId : unitScope.unitKerjaId;
 
     // State for surat masuk search
     const [suratMasukOptions, setSuratMasukOptions] = useState([]);
@@ -146,18 +156,6 @@ export default function TambahSuratKeluar() {
         balasanUntuk: null,
     });
 
-    // Load surat masuk yang belum dibalas
-    useEffect(() => {
-        loadSuratMasukOptions();
-    }, [user?.unitKerjaId]);
-
-    // Fetch existing data for edit mode
-    useEffect(() => {
-        if (isEditMode && id) {
-            fetchSuratData();
-        }
-    }, [id, isEditMode]);
-
     // Auto-fill from reply state (when clicking "Balas Surat" from detail surat masuk)
     useEffect(() => {
         const replyTo = location.state?.replyTo;
@@ -176,10 +174,15 @@ export default function TambahSuratKeluar() {
         }
     }, [location.state, isEditMode]);
 
-    const fetchSuratData = async () => {
+    const fetchSuratData = useCallback(async () => {
         setIsLoading(true);
         try {
             const data = await suratKeluarService.getById(id);
+            if (!['draft', 'rejected'].includes(data.approvalStatus || 'draft')) {
+                setEditLocked(true);
+                return;
+            }
+            setRecordUnitKerjaId(data.unitKerjaId || '');
             // Map fetched data to form fields
             setFormData({
                 naskahDinas: data.naskahDinas || '',
@@ -216,13 +219,24 @@ export default function TambahSuratKeluar() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [id]);
 
-    const loadSuratMasukOptions = async () => {
+    // Fetch existing data for edit mode.
+    useEffect(() => {
+        if (isEditMode && id) {
+            void fetchSuratData();
+        }
+    }, [fetchSuratData, id, isEditMode]);
+
+    const loadSuratMasukOptions = useCallback(async () => {
+        if (!resolvedUnitKerjaId) {
+            setSuratMasukOptions([]);
+            return;
+        }
         try {
             setLoadingSuratMasuk(true);
             const response = await suratMasukService.getBelumDibalas({
-                unitKerjaId: user?.unitKerjaId || '',
+                unitKerjaId: resolvedUnitKerjaId,
             });
             setSuratMasukOptions(response.data || []);
         } catch (err) {
@@ -230,7 +244,39 @@ export default function TambahSuratKeluar() {
         } finally {
             setLoadingSuratMasuk(false);
         }
-    };
+    }, [resolvedUnitKerjaId]);
+
+    // Load surat masuk yang belum dibalas only inside the concrete unit scope.
+    useEffect(() => {
+        void loadSuratMasukOptions();
+    }, [loadSuratMasukOptions]);
+
+    useEffect(() => {
+        if (
+            isEditMode
+            || !resolvedUnitKerjaId
+            || !formData.tanggalSurat
+            || !formData.naskahDinas
+        ) return;
+        let active = true;
+        suratKeluarService.getNextNumber({
+            unitKerjaId: resolvedUnitKerjaId,
+            tahun: Number(formData.tanggalSurat.slice(0, 4)),
+            tanggalSurat: formData.tanggalSurat,
+            naskahDinas: formData.naskahDinas,
+        }).then((preview) => {
+            if (!active) return;
+            setNumberPreview({
+                ...preview,
+                unitKerjaId: resolvedUnitKerjaId,
+                tanggalSurat: formData.tanggalSurat,
+                naskahDinas: formData.naskahDinas,
+            });
+        }).catch(() => {
+            // The create transaction remains authoritative if preview is unavailable.
+        });
+        return () => { active = false; };
+    }, [formData.naskahDinas, formData.tanggalSurat, isEditMode, resolvedUnitKerjaId]);
 
     // Handle input changes
     const handleChange = (field, value) => {
@@ -285,8 +331,8 @@ export default function TambahSuratKeluar() {
 
     // Validate form
     const validateForm = () => {
+        if (!resolvedUnitKerjaId) return 'Pilih unit kerja terlebih dahulu';
         if (!formData.naskahDinas) return 'Naskah Dinas wajib diisi';
-        if (!formData.nomorSurat) return 'Nomor Surat wajib diisi';
         if (!formData.tanggalSurat) return 'Tanggal Surat wajib diisi';
         if (!formData.perihal) return 'Perihal wajib diisi';
         // For edit mode, allow existing file or link
@@ -314,16 +360,6 @@ export default function TambahSuratKeluar() {
         setError(null);
 
         try {
-            // Resolve unitKerjaId berdasarkan role (konsisten dengan backend resolveUnitKerjaId)
-            // Admin roles have FIXED unit kerja assignments regardless of user record
-            const resolvedUnitKerjaId = (() => {
-                switch (user?.role) {
-                    case 'admin_sesditjen': return 'sesditjen';
-                    case 'admin_dirjen': return 'ditjen';
-                    default: return user?.unitKerjaId || '';
-                }
-            })();
-
             const dataToSubmit = {
                 ...formData,
                 unitKerjaId: resolvedUnitKerjaId,
@@ -336,6 +372,7 @@ export default function TambahSuratKeluar() {
                 // Create new surat
                 await suratKeluarService.create({
                     ...dataToSubmit,
+                    ...buildOutgoingNumberingPayload(formData.nomorSurat),
                     tahun: Number(formData.tanggalSurat?.slice(0, 4)) || new Date().getFullYear(),
                 }, selectedFile);
             }
@@ -375,6 +412,7 @@ export default function TambahSuratKeluar() {
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
                 {createElement(icon, { className: 'h-4 w-4 text-emerald-600', 'aria-hidden': true })}
             </div>
+
             <div className="flex-1">
                 <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-foreground">{title}</h3>
@@ -418,6 +456,22 @@ export default function TambahSuratKeluar() {
         );
     }
 
+    if (isEditMode && editLocked) {
+        return (
+            <div className="mx-auto max-w-xl space-y-4 py-12 text-center">
+                <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                        Surat yang sedang atau telah disetujui bersifat terkunci. Buka halaman detail untuk melihat alur persetujuan.
+                    </AlertDescription>
+                </Alert>
+                <Button asChild>
+                    <Link to={`/surat/keluar/${id}`}>Kembali ke Detail Surat</Link>
+                </Button>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-4xl mx-auto space-y-6 pb-24 relative">
             {/* Sticky Progress Bar */}
@@ -455,6 +509,11 @@ export default function TambahSuratKeluar() {
                     {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </Badge>
             </div>
+
+            <RequiredUnitKerjaScope
+                scope={unitScope}
+                disabled={isEditMode || isSubmitting}
+            />
 
             {/* Error/Success Alerts */}
             {error && (
@@ -616,16 +675,25 @@ export default function TambahSuratKeluar() {
                             <div className="space-y-2">
                                 <Label htmlFor="nomor-surat-keluar" className="text-sm font-medium flex items-center gap-2">
                                     <Hash className="h-4 w-4 text-muted-foreground" />
-                                    Nomor Surat <span className="text-destructive">*</span>
+                                    Nomor Surat
                                 </Label>
                                 <Input
                                     id="nomor-surat-keluar"
-                                    required
                                     value={formData.nomorSurat}
                                     onChange={(e) => handleChange('nomorSurat', e.target.value)}
-                                    placeholder="Contoh: S-123/PTEP/2026"
+                                    placeholder="Kosongkan untuk nomor otomatis"
                                     className="h-11 focus-visible:ring-emerald-500"
                                 />
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <Info className="h-3 w-3" />
+                                    Jika kosong, nomor dibuat dari template unit di dalam transaksi; nomor manual tetap dipertahankan.
+                                </p>
+                                {numberPreview?.unitKerjaId === resolvedUnitKerjaId
+                                    && numberPreview?.tanggalSurat === formData.tanggalSurat
+                                    && numberPreview?.naskahDinas === formData.naskahDinas
+                                    && numberPreview?.nomorSurat && (
+                                    <p className="text-xs text-emerald-700 dark:text-emerald-300">Preview dari template unit: <code>{numberPreview.nomorSurat}</code></p>
+                                )}
                             </div>
 
                             <div className="space-y-2">
@@ -899,7 +967,7 @@ export default function TambahSuratKeluar() {
                     <Button
                         type="submit"
                         size="lg"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || !resolvedUnitKerjaId || unitScope.loading}
                         className="min-w-[140px] bg-emerald-600 hover:bg-emerald-700 rounded-full px-8 shadow-lg shadow-emerald-600/20 hover:shadow-emerald-600/40 transition-all"
                     >
                         {isSubmitting ? (

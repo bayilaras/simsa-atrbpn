@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, Plus, FolderOpen, Loader2, Calendar, FileText, ArrowRight, Edit2, Trash2, Clock, CheckCircle2, Archive, MailPlus, MailMinus, Eye, Filter, MoreHorizontal, Folder, Building2 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import dosirService from '@/services/dosir.service'
 import settingsService from '@/services/settings.service'
 import { format, parseISO } from 'date-fns'
@@ -84,7 +85,7 @@ export default function Dosir() {
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([])
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined))
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined))
 
     // Load unit kerja list for super admin
     useEffect(() => {
@@ -98,7 +99,7 @@ export default function Dosir() {
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
-        : (user?.unitKerjaId || undefined)
+        : (resolveEffectiveUnitKerjaId(user) || undefined)
 
     const fetchData = useCallback(async () => {
         try {
@@ -110,10 +111,10 @@ export default function Dosir() {
                     kategori: kategoriFilter === 'all' ? '' : kategoriFilter,
                     unitKerjaId: resolvedUnitKerjaId,
                 }),
-                dosirService.getStats(),
+                dosirService.getStats(resolvedUnitKerjaId),
             ])
-            setDosirList(dosirRes.data || [])
-            setStats(statsRes.data || { total: 0, open: 0, closed: 0, archived: 0 })
+            setDosirList(dosirRes || [])
+            setStats(statsRes || { total: 0, open: 0, closed: 0, archived: 0 })
         } catch (error) {
             console.error('Error fetching dosir:', error)
         } finally {

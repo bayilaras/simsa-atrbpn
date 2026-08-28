@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja';
+import { resolveEffectiveUnitKerjaId, resolveUnitKerjaId } from '../utils/resolve-unit-kerja';
 import type { AuthRequest } from '../middlewares/auth.middleware';
 
 function createMockReq(overrides: {
@@ -22,6 +22,17 @@ function createMockReq(overrides: {
 }
 
 describe('resolveUnitKerjaId', () => {
+    it.each([
+        ['admin_dirjen', null, 'unit-client', 'ditjen'],
+        ['admin_sesditjen', 'stale-unit', 'unit-client', 'sesditjen'],
+        ['staff', 'unit-assigned', 'unit-client', 'unit-assigned'],
+        ['super_admin', null, 'unit-client', 'unit-client'],
+    ])('resolves the effective %s mandate independently of stored/requested drift', (
+        role, assigned, requested, expected,
+    ) => {
+        expect(resolveEffectiveUnitKerjaId(role as any, assigned, requested)).toBe(expected);
+    });
+
     describe('super_admin', () => {
         it('should return the requested unitKerjaId if provided via query', () => {
             const req = createMockReq({ role: 'super_admin', queryUnitKerjaId: 'ditjen' });

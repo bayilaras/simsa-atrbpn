@@ -15,7 +15,8 @@ Panduan lengkap cara mengelola surat keluar di SIMSA.
 
 Tabel daftar surat keluar mirip dengan surat masuk, dengan perbedaan:
 - Kolom **"Penerima"** menggantikan kolom "Pengirim"
-- Status dan aksi yang tersedia sama
+- Status persetujuan menampilkan **Draft**, **Menunggu Persetujuan**, **Disetujui**, atau **Ditolak**
+- Aksi edit, hapus, dan arsip mengikuti status persetujuan
 
 ---
 
@@ -29,19 +30,36 @@ Klik tombol **"+ Tambah Surat Keluar"** berwarna biru di pojok kanan atas.
 
 | Kolom | Keterangan | Wajib |
 |-------|-----------|:-----:|
-| **Nomor Surat** | Nomor surat sesuai penomoran internal | ✅ |
+| **Jenis Naskah Dinas** | Jenis naskah yang akan dikirim | ✅ |
+| **Nomor Surat** | Nomor manual; kosongkan untuk nomor otomatis dari template unit | ❌ |
 | **Tanggal Surat** | Tanggal surat dibuat | ✅ |
-| **Penerima** | Tujuan pengiriman surat | ✅ |
+| **Penerima** | Tujuan pengiriman surat | ❌ |
 | **Perihal** | Subjek / topik surat | ✅ |
-| **Klasifikasi** | Pilih kode klasifikasi dari dropdown | ✅ |
-| **Sifat Surat** | Biasa / Segera / Sangat Segera | ✅ |
+| **Klasifikasi** | Pilih kode klasifikasi dari aturan aktif | ❌ |
+| **Link Dokumen** | Tautan dokumen kerja bila diperlukan | ❌ |
 | **Lampiran** | Upload file surat keluar | ❌ |
 
 ### Langkah 3: Simpan
 
 1. Periksa kembali data.
 2. Klik tombol **"Simpan"**.
-3. Surat keluar baru akan muncul di daftar.
+3. Surat keluar baru akan muncul di daftar dengan status **Draft**.
+
+---
+
+## Persetujuan Internal Surat Keluar
+
+1. Buka detail surat berstatus **Draft** atau **Ditolak**.
+2. Klik **Ajukan Persetujuan** dan pilih administrator aktif lain yang tersedia pada unit surat.
+3. Tambahkan catatan bila diperlukan, lalu kirim.
+4. Penyetuju yang ditunjuk membuka surat dari antrean persetujuan dan memilih **Setujui** atau **Tolak**. Alasan wajib diisi saat menolak.
+5. Jika ditolak, pembuat memperbaiki surat lalu mengajukannya ulang. Jika disetujui final, tombol **Arsipkan** tersedia.
+
+Pembuat tidak boleh menjadi penyetuju suratnya sendiri. Surat **Menunggu Persetujuan** dan **Disetujui** terkunci dari edit/hapus, dan surat hanya dapat diarsipkan setelah disetujui final. Riwayat pengajuan, keputusan, catatan, dan pelaku dapat dilihat pada detail surat.
+
+:::info Batas fitur
+Alur ini adalah persetujuan proses internal. SIMSA tidak membuat tanda tangan elektronik dan tidak menggunakan BSrE/PSrE.
+:::
 
 ---
 
@@ -66,13 +84,14 @@ Untuk panduan lengkap, lihat bagian [Membalas Surat Masuk](surat-masuk.md#membal
 
 1. Klik **ikon mata** (👁️) atau klik baris surat.
 2. Lihat informasi lengkap surat beserta lampiran.
-3. Gunakan tombol aksi (Edit, Arsipkan, Hapus) sesuai kebutuhan.
+3. Lihat status serta riwayat persetujuan.
+4. Gunakan aksi yang tersedia sesuai role dan status: **Edit/Hapus** untuk Draft atau Ditolak, **Setujui/Tolak** untuk penyetuju aktif, dan **Arsipkan** setelah Disetujui.
 
 ---
 
-## Mengedit & Menghapus
+## Mengedit dan Menghapus
 
-Cara edit dan hapus surat keluar **sama persis** dengan surat masuk. Lihat panduan di [Surat Masuk](surat-masuk.md).
+Edit dan hapus hanya tersedia bagi admin berwenang ketika surat masih **Draft** atau **Ditolak** dan belum diarsipkan. Saat surat **Menunggu Persetujuan** atau **Disetujui**, perubahan ditolak untuk menjaga konsistensi keputusan. Jangan menghapus surat hanya untuk memperbaiki metadata; gunakan edit pada status yang diizinkan agar jejak proses tetap dapat ditelusuri.
 
 ---
 

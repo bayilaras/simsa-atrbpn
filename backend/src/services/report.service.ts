@@ -7,6 +7,7 @@ import {
     arsipRuleSnapshots,
     jraAppraisalCases,
     jraAppraisalDecisions,
+    penyusutanArsip,
     retentionTriggerEvents,
     retentionTriggerVerifications,
 } from '../db/schema';
@@ -350,9 +351,17 @@ class ReportService {
         futureDate.setDate(now.getDate() + daysAhead);
 
         if (type === 'destroyed') {
-            // A destruction report describes an executed action, not the JRA's
-            // intended outcome.  The workflow status is therefore authoritative.
+            // An executed status is shared by pemindahan, penyerahan permanen,
+            // alih media, and pemusnahan. A destruction report must be backed by
+            // the exact executed pemusnahan batch, not merely that shared cache.
             conditions.push(eq(arsip.disposalStatus, 'executed'));
+            conditions.push(sql`exists (
+                select 1
+                from ${penyusutanArsip}
+                where ${penyusutanArsip.id} = ${arsip.disposalBatchId}
+                  and ${penyusutanArsip.jenisPenyusutan} = 'pemusnahan'
+                  and ${penyusutanArsip.status} = 'executed'
+            )`);
         }
 
         if (mediaType && mediaType !== 'all') {

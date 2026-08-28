@@ -6,12 +6,12 @@ import { canAccessUnit, Role } from '../config/permissions';
 import { validateBody, validateIdParam } from '../middlewares/validate.middleware';
 import { legalHoldActionSchema } from '../validators/schemas';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
-import auditLogService from '../services/audit-log.service';
 import { createLogger } from '../utils/logger';
 import {
     allowedSecurityClassifications,
     recordAccessService,
 } from '../services/record-access.service.js';
+import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const log = createLogger('RetentionRoutes');
 
@@ -27,14 +27,18 @@ function resolveScopedUnit(
     const requestedUnit = source === 'body'
         ? req.body?.unitKerjaId
         : req.query.unitKerjaId;
-    const unitKerjaId = String(requestedUnit || req.user?.unitKerjaId || '');
+    const callerRole = (req.user?.role || 'user') as Role;
+    const unitKerjaId = resolveEffectiveUnitKerjaId(
+        callerRole,
+        req.user?.unitKerjaId,
+        typeof requestedUnit === 'string' ? requestedUnit : null,
+    );
 
     if (!unitKerjaId) {
         res.status(400).json({ error: 'unitKerjaId is required' });
         return null;
     }
 
-    const callerRole = (req.user?.role || 'user') as Role;
     if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
         res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
         return null;
@@ -247,26 +251,8 @@ router.put(
                 unitKerjaId,
                 req.body.reason,
                 req.user?.id,
+                { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
             );
-
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: 'status_change',
-                entityType: 'arsip',
-                entityId: String(req.params.id),
-                changes: {
-                    before: { legalHold: result.before.legalHold },
-                    after: {
-                        legalHold: true,
-                        reason: result.after.legalHoldReason,
-                        placedAt: result.after.legalHoldPlacedAt,
-                        unitKerjaId,
-                    },
-                    fields: ['legalHold', 'legalHoldReason', 'legalHoldPlacedAt', 'legalHoldPlacedBy'],
-                },
-                ipAddress: req.ip,
-            });
 
             res.json({ success: true, data: result.after });
         } catch (error) {
@@ -297,29 +283,8 @@ router.put(
                 unitKerjaId,
                 req.body.reason,
                 req.user?.id,
+                { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
             );
-
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: 'status_change',
-                entityType: 'arsip',
-                entityId: String(req.params.id),
-                changes: {
-                    before: {
-                        legalHold: result.before.legalHold,
-                        reason: result.before.legalHoldReason,
-                    },
-                    after: {
-                        legalHold: false,
-                        releaseReason: result.after.legalHoldReleaseReason,
-                        releasedAt: result.after.legalHoldReleasedAt,
-                        unitKerjaId,
-                    },
-                    fields: ['legalHold', 'legalHoldReleaseReason', 'legalHoldReleasedAt', 'legalHoldReleasedBy'],
-                },
-                ipAddress: req.ip,
-            });
 
             res.json({ success: true, data: result.after });
         } catch (error) {

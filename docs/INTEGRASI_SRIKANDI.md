@@ -6,7 +6,7 @@ Integrasi ini masih berupa fondasi teknis dan **tidak menyatakan SIMSA sudah ter
 
 Jika integrasi diwajibkan dan disetujui, alur produksi yang dimaksud adalah:
 
-1. layanan bisnis memasukkan pesan ke `srikandi_outbox` melalui `SrikandiService.enqueue()` dalam alur yang terkontrol;
+1. pembuatan surat masuk/keluar memasukkan pesan ke `srikandi_outbox` melalui producer bisnis dalam transaksi database yang sama dengan surat dan auditnya;
 2. outbox menyimpan versi kontrak, hash pesan, idempotency key, unit kerja, payload, status, dan audit append-only;
 3. worker persisten mengklaim pesan secara atomik, kemudian mengirimkannya melalui adaptor HTTP;
 4. kegagalan sementara dijadwalkan ulang dengan exponential backoff;
@@ -32,6 +32,10 @@ npm run dev:srikandi-worker
 
 Deploy worker pada runtime yang mendukung proses jangka panjang dan graceful shutdown. Beberapa instance boleh berjalan bersamaan karena claim dan lease dilakukan secara kondisional di database.
 
+Definisi deployment bersama worker antivirus tersedia di
+`deploy/workers/compose.yml`. Profil `srikandi` sengaja opsional dan tidak
+berjalan tanpa dipilih secara eksplisit.
+
 Endpoint admin `POST /api/integrations/srikandi/dispatch-due` hanya fallback diagnostik dan dibatasi satu item per request. Endpoint itu bukan pengganti worker produksi.
 
 ## Konfigurasi
@@ -44,6 +48,19 @@ Outbound HTTP baru aktif jika `SRIKANDI_ENABLED=true` dan seluruh konfigurasi be
 - `SRIKANDI_CONTRACT_VERSION`: versi kontrak resmi yang disnapshot saat enqueue;
 - `SRIKANDI_ACK_FIELD` dan `SRIKANDI_ACK_VALUE`: field/value pengakuan resmi;
 - `SRIKANDI_REMOTE_ID_FIELD`: field ID resmi hasil sinkronisasi.
+
+Producer surat dan pengiriman keluar memiliki sakelar terpisah agar rollout dapat
+diaudit. Enqueue baru aktif jika `SRIKANDI_PRODUCER_ENABLED=true` dan pemetaan
+berikut lengkap:
+
+- `SRIKANDI_PRODUCER_PAYLOAD_PROFILE=simsa-record-v1`;
+- `SRIKANDI_SURAT_MASUK_CREATED_EVENT`: nama event lowercase dari kontrak resmi;
+- `SRIKANDI_SURAT_KELUAR_CREATED_EVENT`: nama event lowercase dari kontrak resmi;
+- `SRIKANDI_CONTRACT_VERSION`: versi kontrak yang sama dengan worker.
+
+Aktifkan producer lebih dahulu hanya bila penumpukan outbox tanpa pengiriman
+sudah disetujui. Aktifkan `SRIKANDI_ENABLED` setelah sandbox dan rekonsiliasi
+lulus; masing-masing konfigurasi yang setengah lengkap membuat startup gagal.
 
 Kebijakan operasional opsional:
 
@@ -75,4 +92,4 @@ Syarat berikut memblokir **aktivasi connector SRIKANDI**, bukan penggunaan profi
 - rate limit, SLA, retry guidance, dan prosedur rekonsiliasi;
 - aturan data pribadi/rahasia dan larangan field yang boleh dikirim.
 
-Sampai syarat tersebut selesai, producer bisnis tidak boleh dihubungkan ke mutasi arsip/surat dan `SRIKANDI_ENABLED` harus tetap `false`. Kondisi nonaktif ini adalah konfigurasi aman yang sah untuk profil internal bila tidak ada mandat integrasi.
+Sampai syarat tersebut selesai, producer tetap menjadi operasi tanpa efek keluar karena `SRIKANDI_ENABLED=false`; tidak ada pesan yang dikirim ke pihak luar. Kondisi nonaktif ini adalah konfigurasi aman yang sah untuk profil internal bila tidak ada mandat integrasi.

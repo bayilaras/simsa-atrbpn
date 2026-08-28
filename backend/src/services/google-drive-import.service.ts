@@ -1,13 +1,16 @@
 import { db } from '../config/database';
-import { suratMasuk, NewSuratMasuk } from '../db/schema/surat-masuk';
-import { suratKeluar, NewSuratKeluar } from '../db/schema/surat-keluar';
+import { suratMasuk, type NewSuratMasuk } from '../db/schema/surat-masuk';
+import { suratKeluar, type NewSuratKeluar } from '../db/schema/surat-keluar';
 import { eq, and } from 'drizzle-orm';
 import { createLogger } from '../utils/logger';
+import { suratMasukService } from './surat-masuk.service.js';
+import { suratKeluarService } from './surat-keluar.service.js';
+import type { CriticalAuditContext } from './audit-log.service.js';
 
 const log = createLogger('GoogleDriveImportService');
 
 /**
- * Google Drive Import Service
+ * Public Google Sheets Import Service
  * Imports data from public Google Spreadsheets into SIMSA.
  * Uses the public CSV export URL (no API key required).
  */
@@ -257,7 +260,7 @@ export class GoogleDriveImportService {
         spreadsheetId: string,
         sheetName: string,
         unitKerjaId: string,
-        userId: string,
+        auditContext: CriticalAuditContext,
     ): Promise<ImportResult> {
         const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName);
         const allRows = this.parseCSV(csvText);
@@ -315,12 +318,15 @@ export class GoogleDriveImportService {
                 const noUrut = parseInt(this.getField(row, colMap, 'no') || String(i + 1)) || (i + 1);
                 const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
                 const parsedDate = this.parseDate(tanggalStr);
+                const dari = this.getField(row, colMap, 'dari');
                 const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
                 const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
 
                 // Smart duplicate check:
                 // - If nomor surat is valid: check by nomorSurat + tahun + unitKerjaId
-                // - If nomor surat is '-' or empty: check by noUrut + tahun + unitKerjaId
+                // - If the official number is absent: use a stable business
+                //   fingerprint. The source row number is not durable because
+                //   canonical creation allocates its own sequence.
                 let existing;
                 const hasValidNomor = nomorSurat && nomorSurat !== '-';
                 if (hasValidNomor) {
@@ -333,12 +339,20 @@ export class GoogleDriveImportService {
                         ))
                         .limit(1);
                 } else {
+                    if (!parsedDate || !perihal || !dari) {
+                        errors.push(
+                            `Row ${i + 1}: nomor surat kosong memerlukan tanggal, perihal, dan pengirim untuk identitas impor yang stabil`,
+                        );
+                        skippedRows++;
+                        continue;
+                    }
                     existing = await db.select({ id: suratMasuk.id })
                         .from(suratMasuk)
                         .where(and(
-                            eq(suratMasuk.noUrut, noUrut),
-                            eq(suratMasuk.tahun, effectiveTahun),
                             eq(suratMasuk.unitKerjaId, unitKerjaId),
+                            eq(suratMasuk.tanggalSurat, parsedDate),
+                            eq(suratMasuk.perihal, perihal),
+                            eq(suratMasuk.dari, dari),
                         ))
                         .limit(1);
                 }
@@ -360,14 +374,18 @@ export class GoogleDriveImportService {
                     nomorSurat: nomorSurat || '-',
                     tanggalSurat: parsedDate,
                     perihal: this.getField(row, colMap, 'perihal') || '',
-                    dari: this.getField(row, colMap, 'dari') || '',
+                    dari,
                     kepada: this.getField(row, colMap, 'kepada') || '',
                     status: 'belum_dibalas',
                     disposisi: disposisiArr.length > 0 ? disposisiArr : null,
-                    createdBy: userId,
+                    createdBy: auditContext.userId,
                 };
 
-                await db.insert(suratMasuk).values(newSurat);
+                // Canonical creation owns numbering, audit persistence, and the
+                // gated SRIKANDI outbox in one transaction. A failed audit or
+                // producer therefore rolls this row back instead of creating an
+                // unaudited import.
+                await suratMasukService.create(newSurat, auditContext);
                 importedRows++;
             } catch (error: any) {
                 errors.push(`Row ${i + 1}: ${error.message}`);
@@ -392,7 +410,7 @@ export class GoogleDriveImportService {
         spreadsheetId: string,
         sheetName: string,
         unitKerjaId: string,
-        userId: string,
+        auditContext: CriticalAuditContext,
     ): Promise<ImportResult> {
         const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName);
         const allRows = this.parseCSV(csvText);
@@ -449,6 +467,7 @@ export class GoogleDriveImportService {
                 const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
                 const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
                 const parsedDate = this.parseDate(tanggalStr);
+                const kepada = this.getField(row, colMap, 'kepada');
                 const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
                 const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
 
@@ -465,12 +484,20 @@ export class GoogleDriveImportService {
                         ))
                         .limit(1);
                 } else {
+                    if (!parsedDate || !perihal || !kepada) {
+                        errors.push(
+                            `Row ${i + 1}: nomor surat kosong memerlukan tanggal, perihal, dan tujuan untuk identitas impor yang stabil`,
+                        );
+                        skippedRows++;
+                        continue;
+                    }
                     existing = await db.select({ id: suratKeluar.id })
                         .from(suratKeluar)
                         .where(and(
-                            eq(suratKeluar.noUrut, noUrut),
-                            eq(suratKeluar.tahun, effectiveTahun),
                             eq(suratKeluar.unitKerjaId, unitKerjaId),
+                            eq(suratKeluar.tanggalSurat, parsedDate),
+                            eq(suratKeluar.perihal, perihal),
+                            eq(suratKeluar.kepada, kepada),
                         ))
                         .limit(1);
                 }
@@ -484,24 +511,25 @@ export class GoogleDriveImportService {
                 const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
                 const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
 
-                const newSurat: NewSuratKeluar = {
+                const newSurat: NewSuratKeluar & { numberingMode: 'manual' } = {
                     unitKerjaId,
                     noUrut: noUrut,
                     tahun: effectiveTahun,
                     naskahDinas: this.getField(row, colMap, 'naskahDinas') || 'Surat Dinas',
+                    numberingMode: 'manual',
                     nomorSurat: nomorSurat || '-',
                     tanggalSurat: parsedDate,
                     perihal: this.getField(row, colMap, 'perihal') || '',
-                    kepada: this.getField(row, colMap, 'kepada') || '',
+                    kepada,
                     linkDokumen: this.getField(row, colMap, 'linkDokumen') || null,
                     klasifikasiFasilitatif: klasifikasiJenis === 'fasilitatif' ? klasifikasiArsip : null,
                     klasifikasiFasilitatifKode: klasifikasiJenis === 'fasilitatif' ? klasifikasiKode : null,
                     klasifikasiSubstantif: klasifikasiJenis === 'substantif' ? klasifikasiArsip : null,
                     klasifikasiSubstantifKode: klasifikasiJenis === 'substantif' ? klasifikasiKode : null,
-                    createdBy: userId,
+                    createdBy: auditContext.userId,
                 };
 
-                await db.insert(suratKeluar).values(newSurat);
+                await suratKeluarService.create(newSurat, auditContext);
                 importedRows++;
             } catch (error: any) {
                 errors.push(`Row ${i + 1}: ${error.message}`);

@@ -130,7 +130,7 @@ export const ROLE_HIERARCHY: Record<Role, number> = {
 export const UNIT_KERJA_ACCESS: Record<Role, string[] | '*'> = {
     'super_admin': '*', // Access to all units
     'admin_dirjen': ['ditjen'], // Dirjen unit only
-    'admin_sesditjen': ['sesditjen', 'bagian_keuangan', 'bagian_kepegawaian', 'bagian_umum'], // Sesditjen + sub-bagian
+    'admin_sesditjen': ['sesditjen'], // Fixed Sesditjen mandate
     'staff': [], // Determined by user's unitKerjaId at runtime
     'auditor': [], // Assigned unit only; cross-unit audit needs an explicit mandate
     'user': [], // No access at all

@@ -1,5 +1,4 @@
 import api from './api';
-import { API_BASE_URL } from '../lib/api-url';
 
 export const autentikasiService = {
     getAll: async (params) => {
@@ -17,7 +16,5 @@ export const autentikasiService = {
         return response.data;
     },
 
-    getPdfUrl: (id) => {
-        return `${API_BASE_URL}/api/autentikasi/${id}/pdf`;
-    }
+    getPdf: (id) => api.get(`/api/autentikasi/${id}/pdf`, {}, { responseType: 'blob' }),
 };

@@ -24,9 +24,14 @@ export const suratKeluarService = {
     },
 
     // Get next number for new surat
-    async getNextNumber({ unitKerjaId, tahun } = {}) {
-        const response = await api.get('/api/surat-keluar/next-number', { unitKerjaId, tahun });
-        return response.data.nextNumber;
+    async getNextNumber({ unitKerjaId, tahun, tanggalSurat, naskahDinas } = {}) {
+        const response = await api.get('/api/surat-keluar/next-number', {
+            unitKerjaId,
+            tahun,
+            tanggalSurat,
+            naskahDinas,
+        });
+        return response.data;
     },
 
     // Get statistics

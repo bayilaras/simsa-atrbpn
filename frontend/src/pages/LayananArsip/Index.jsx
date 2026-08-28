@@ -38,40 +38,43 @@ import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { TableSkeleton } from '@/components/LoadingSkeletons';
+import { useAuth } from '@/context/AuthContext';
+import { layananUserInitial, layananUserName } from './layanan-display';
 
 export default function LayananArsipIndex() {
     const navigate = useNavigate();
     const { toast } = useToast();
+    const { user } = useAuth();
+    const canCreate = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff'].includes(user?.role);
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState([]);
     const [statusFilter, setStatusFilter] = useState('all');
-    const [myRequests, setMyRequests] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
+        let active = true;
+        const fetchData = async () => {
+            setLoading(true);
+            try {
+                const params = {};
+                if (statusFilter !== 'all') params.status = statusFilter;
+
+                const result = await layananArsipService.getAll(params);
+                if (active) setData(result || []);
+            } catch (error) {
+                console.error(error);
+                if (active) toast({
+                    title: "Error",
+                    description: error.message || "Gagal memuat data layanan",
+                    variant: "destructive"
+                });
+            } finally {
+                if (active) setLoading(false);
+            }
+        };
         fetchData();
-    }, [statusFilter, myRequests]);
-
-    const fetchData = async () => {
-        setLoading(true);
-        try {
-            const params = {};
-            if (statusFilter !== 'all') params.status = statusFilter;
-            if (myRequests) params.myRequests = 'true';
-
-            const result = await layananArsipService.getAll(params);
-            setData(result.data || []);
-        } catch (error) {
-            console.error(error);
-            toast({
-                title: "Error",
-                description: "Gagal memuat data layanan",
-                variant: "destructive"
-            });
-        } finally {
-            setLoading(false);
-        }
-    };
+        return () => { active = false; };
+    }, [statusFilter, toast]);
 
     const getStatusBadge = (status) => {
         switch (status) {
@@ -94,7 +97,7 @@ export default function LayananArsipIndex() {
         return (
             item.arsip?.nomorBerkas?.toLowerCase().includes(query) ||
             item.arsip?.uraianBerkas?.toLowerCase().includes(query) ||
-            item.pemohon?.nama?.toLowerCase().includes(query)
+            layananUserName(item.pemohon, '').toLowerCase().includes(query)
         );
     });
 
@@ -113,10 +116,12 @@ export default function LayananArsipIndex() {
                         Pengelolaan permohonan penggandaan dan legalisasi arsip
                     </p>
                 </div>
-                <Button onClick={() => navigate('/layanan-arsip/create')} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Buat Permohonan
-                </Button>
+                {canCreate && (
+                    <Button onClick={() => navigate('/layanan-arsip/create')} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Buat Permohonan
+                    </Button>
+                )}
             </div>
 
             {/* Stats Overview (Optional - can be added if backend supports it) */}
@@ -194,9 +199,9 @@ export default function LayananArsipIndex() {
                                         <TableCell data-label="Pemohon">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
-                                                    {item.pemohon?.nama?.charAt(0)}
+                                                    {layananUserInitial(item.pemohon)}
                                                 </div>
-                                                <span className="text-sm">{item.pemohon?.nama}</span>
+                                                <span className="text-sm">{layananUserName(item.pemohon)}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell data-label="Status">

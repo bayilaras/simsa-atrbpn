@@ -9,7 +9,8 @@ export const unitKerja = pgTable('unit_kerja', {
     parentId: varchar('parent_id', { length: 50 }), // References parent unit (e.g., 'ditjen' for direktorat)
     unitType: varchar('unit_type', { length: 30 }), // 'ditjen', 'sesditjen', 'direktorat', 'bagian'
     canReceiveDistribution: boolean('can_receive_distribution').default(true), // false for bagian_keuangan, bagian_kepegawaian
-    // Google Drive integration
+    // Legacy storage columns retained only for migration compatibility. The API
+    // neither exposes nor writes them; private Blob is the canonical store.
     driveFolderId: varchar('drive_folder_id', { length: 255 }),
     driveUploadFolderId: varchar('drive_upload_folder_id', { length: 255 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),

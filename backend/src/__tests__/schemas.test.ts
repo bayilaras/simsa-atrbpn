@@ -18,9 +18,52 @@ import {
     createLayananArsipSchema,
     updateLayananStatusSchema,
     markAllReadSchema,
+    createSuratKeluarSchema,
 } from '../validators/schemas';
 
 const validUUID = '550e8400-e29b-41d4-a716-446655440000';
+
+describe('createSuratKeluarSchema numbering contract', () => {
+    const base = {
+        unitKerjaId: 'ditjen',
+        tanggalSurat: '2026-08-28',
+        perihal: 'Undangan rapat',
+        kepada: 'Seluruh unit',
+    };
+
+    it('accepts explicit automatic numbering only when nomorSurat is omitted', () => {
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            numberingMode: 'auto',
+        }).success).toBe(true);
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            numberingMode: 'auto',
+            nomorSurat: '001/ND/08/2026',
+        }).success).toBe(false);
+    });
+
+    it('keeps legacy clients compatible by inferring manual mode from a supplied number', () => {
+        const result = createSuratKeluarSchema.safeParse({
+            ...base,
+            nomorSurat: '001/ND/08/2026',
+        });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.numberingMode).toBeUndefined();
+    });
+
+    it('requires an authoritative nomorSurat for manual numbering', () => {
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            numberingMode: 'manual',
+        }).success).toBe(false);
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            numberingMode: 'manual',
+            nomorSurat: '001/ND/08/2026',
+        }).success).toBe(true);
+    });
+});
 
 // ==================== Dosir Schemas ====================
 
@@ -464,7 +507,10 @@ describe('updateLayananStatusSchema', () => {
 describe('markAllReadSchema', () => {
     it('accepts valid notification IDs', () => {
         const result = markAllReadSchema.safeParse({
-            notificationIds: ['notif-1', 'notif-2'],
+            notificationIds: [
+                'surat-masuk:550e8400-e29b-41d4-a716-446655440001:pending:info',
+                'distribusi:550e8400-e29b-41d4-a716-446655440002:unread:urgent',
+            ],
         });
         expect(result.success).toBe(true);
     });

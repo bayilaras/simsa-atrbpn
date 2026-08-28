@@ -25,6 +25,7 @@ import {
     CloudCog,
     GitBranch,
     Scale,
+    Settings2,
 } from 'lucide-react'
 
 import {
@@ -139,13 +140,13 @@ const menuGroups = [
     },
     {
         label: 'Layanan & Fisik',
-        allowedRoles: ADMIN_ROLES,
+        allowedRoles: ALL_PROVISIONED_ROLES,
         items: [
             {
                 title: 'Layanan Arsip',
                 url: '/layanan-arsip',
                 icon: ClipboardList,
-                allowedRoles: ADMIN_ROLES,
+                allowedRoles: ALL_PROVISIONED_ROLES,
             },
             {
                 title: 'Peminjaman',
@@ -187,7 +188,7 @@ const menuGroups = [
                 title: 'Autentikasi',
                 url: '/autentikasi',
                 icon: ShieldAlert,
-                allowedRoles: ADMIN_ROLES,
+                allowedRoles: ['super_admin'],
             },
             {
                 title: 'Tunjuk Silang',
@@ -219,6 +220,12 @@ const menuGroups = [
                 allowedRoles: ALL_PROVISIONED_ROLES,
             },
             {
+                title: 'Pengaturan',
+                url: '/settings',
+                icon: Settings2,
+                allowedRoles: ALL_PROVISIONED_ROLES,
+            },
+            {
                 title: 'Integrasi SRIKANDI',
                 url: '/integrations/srikandi',
                 icon: CloudCog,
@@ -238,7 +245,6 @@ const menuGroups = [
                 subItems: [
                     { title: 'Versi Aturan', url: '/master/regulatory-rules', icon: GitBranch, allowedRoles: ADMIN_AND_AUDITOR },
                     { title: 'Klasifikasi Arsip', url: '/master/klasifikasi', allowedRoles: ADMIN_ROLES },
-                    { title: 'Pengaturan', url: '/settings', allowedRoles: ['super_admin'] },
                 ],
             },
         ]

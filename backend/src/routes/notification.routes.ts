@@ -1,8 +1,12 @@
-import { Router, Response } from 'express';
+import { NextFunction, Router, Response } from 'express';
 import { notificationService } from '../services/notification.service.js';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
-import { validateBody } from '../middlewares/validate.middleware.js';
-import { markAllReadSchema } from '../validators/schemas.js';
+import { validateBody, validateQuery } from '../middlewares/validate.middleware.js';
+import {
+    markAllReadSchema,
+    notificationIdSchema,
+    notificationUnitScopeQuerySchema,
+} from '../validators/schemas.js';
 import { createLogger } from '../utils/logger.js';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
@@ -10,6 +14,13 @@ import { allowedSecurityClassifications } from '../services/record-access.servic
 const log = createLogger('NotificationRoutes');
 
 const router = Router();
+
+function resolveValidatedNotificationUnit(req: AuthRequest, res: Response): string | null {
+    if (req.user?.role === 'super_admin') {
+        return res.locals.validatedQuery?.unitKerjaId || null;
+    }
+    return resolveUnitKerjaId(req) || req.user?.unitKerjaId || null;
+}
 
 // All routes require authentication
 router.use(authMiddleware);
@@ -58,6 +69,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             userId,
             limit ? parseInt(limit as string) : 10,
             allowedSecurityClassifications(req.user),
+            req.user?.role || 'user',
         );
 
         res.json(result);
@@ -102,6 +114,7 @@ router.get('/count', async (req: AuthRequest, res: Response) => {
             unitKerjaId,
             userId,
             allowedSecurityClassifications(req.user),
+            req.user?.role || 'user',
         );
         res.json(counts);
     } catch (error) {
@@ -196,7 +209,10 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: Notification marked as read
  */
-router.patch('/:id/read', async (req: AuthRequest, res: Response) => {
+router.patch(
+    '/:id/read',
+    validateQuery(notificationUnitScopeQuerySchema),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const { id } = req.params;
         const userId = req.user?.id;
@@ -206,13 +222,29 @@ router.patch('/:id/read', async (req: AuthRequest, res: Response) => {
             return;
         }
 
-        await notificationService.markAsRead(userId, id as string);
+        const parsedId = notificationIdSchema.safeParse(id);
+        if (!parsedId.success) {
+            res.status(400).json({ error: 'Format ID notifikasi tidak valid' });
+            return;
+        }
+        const unitKerjaId = resolveValidatedNotificationUnit(req, res);
+        if (!unitKerjaId) {
+            res.status(400).json({ error: 'unitKerjaId is required' });
+            return;
+        }
+
+        await notificationService.markCurrentAsRead({
+            unitKerjaId,
+            userId,
+            securityClassifications: allowedSecurityClassifications(req.user),
+            userRole: req.user?.role || 'user',
+        }, [parsedId.data]);
         res.json({ success: true, message: 'Notification marked as read' });
     } catch (error) {
-        log.error({ err: error }, 'Error marking notification as read:');
-        res.status(500).json({ error: 'Failed to mark notification as read' });
+        next(error);
     }
-});
+    },
+);
 
 /**
  * @swagger
@@ -235,7 +267,11 @@ router.patch('/:id/read', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: All notifications marked as read
  */
-router.patch('/read-all', validateBody(markAllReadSchema), async (req: AuthRequest, res: Response) => {
+router.patch(
+    '/read-all',
+    validateQuery(notificationUnitScopeQuerySchema),
+    validateBody(markAllReadSchema),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user?.id;
         const { notificationIds } = req.body;
@@ -245,17 +281,23 @@ router.patch('/read-all', validateBody(markAllReadSchema), async (req: AuthReque
             return;
         }
 
-        if (!Array.isArray(notificationIds)) {
-            res.status(400).json({ error: 'notificationIds must be an array' });
+        const unitKerjaId = resolveValidatedNotificationUnit(req, res);
+        if (!unitKerjaId) {
+            res.status(400).json({ error: 'unitKerjaId is required' });
             return;
         }
 
-        await notificationService.markAllAsRead(userId, notificationIds);
+        await notificationService.markCurrentAsRead({
+            unitKerjaId,
+            userId,
+            securityClassifications: allowedSecurityClassifications(req.user),
+            userRole: req.user?.role || 'user',
+        }, notificationIds);
         res.json({ success: true, message: 'All notifications marked as read' });
     } catch (error) {
-        log.error({ err: error }, 'Error marking all notifications as read:');
-        res.status(500).json({ error: 'Failed to mark notifications as read' });
+        next(error);
     }
-});
+    },
+);
 
 export const notificationRoutes = router;

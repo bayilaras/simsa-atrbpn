@@ -50,7 +50,7 @@ Sidebar adalah menu navigasi utama di sisi kiri layar SIMSA. Dari sini kamu bisa
 │     ├ Klasifikasi Arsip │
 │     └ Template Surat    │
 │                         │
-│  ⚙️ Settings          🔒│
+│  ⚙️ Pengaturan          │
 ├─────────────────────────┤
 │  SIMSA v1.0.0    BETA   │
 └─────────────────────────┘
@@ -85,7 +85,8 @@ Menu yang ditandai 🔒 **hanya tersedia** untuk pengguna dengan role tertentu:
 | Arsip Terjaga | Admin Dirjen, Admin Sesditjen, Super Admin |
 | User Management | Super Admin saja |
 | Master Data | Admin Dirjen, Admin Sesditjen, Super Admin |
-| Settings | Super Admin saja |
+| Pengaturan profil/preferensi | Semua akun yang sudah diprovisi |
+| Pengaturan unit/template | Admin Dirjen, Admin Sesditjen, Super Admin |
 
 > 💡 Jika kamu tidak melihat menu tertentu di sidebar, artinya role kamu tidak memiliki akses ke menu tersebut.
 

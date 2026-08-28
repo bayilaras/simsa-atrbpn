@@ -132,16 +132,48 @@ describe('record route unit scoping', () => {
         expect(mocks.arsipTerjaga.findById).toHaveBeenCalledWith('record-1', 'unit-a', ['biasa']);
     });
 
-    it('fails closed on dosir list/statistics and never falls back to a shared unit', async () => {
+    it('fails closed on dosir list/statistics when the unit mandate is missing', async () => {
         Object.assign(mocks.user, { role: 'auditor', unitKerjaId: null });
+
+        await request(app).get('/dosir').expect(403);
+        await request(app).get('/dosir/stats').expect(403);
+
+        expect(mocks.dosir.getAll).not.toHaveBeenCalled();
+        expect(mocks.dosir.getStats).not.toHaveBeenCalled();
+    });
+
+    it('honors a concrete dosir unit selected by super_admin', async () => {
+        Object.assign(mocks.user, { role: 'super_admin', unitKerjaId: null });
+
+        await request(app).get('/dosir?unitKerjaId=unit-b').expect(200);
+        await request(app).get('/dosir/stats?unitKerjaId=unit-b').expect(200);
+
+        expect(mocks.dosir.getAll).toHaveBeenCalledWith(expect.objectContaining({
+            unitKerjaId: 'unit-b',
+        }));
+        expect(mocks.dosir.getStats).toHaveBeenCalledWith('unit-b');
+    });
+
+    it('rejects a forged dosir unit from a scoped administrator', async () => {
+        Object.assign(mocks.user, { role: 'admin_dirjen', unitKerjaId: 'ditjen' });
+
+        await request(app).get('/dosir?unitKerjaId=unit-attacker').expect(403);
+        await request(app).get('/dosir/stats?unitKerjaId=unit-attacker').expect(403);
+
+        expect(mocks.dosir.getAll).not.toHaveBeenCalled();
+        expect(mocks.dosir.getStats).not.toHaveBeenCalled();
+    });
+
+    it('keeps all-unit dosir reads explicit for super_admin without a filter', async () => {
+        Object.assign(mocks.user, { role: 'super_admin', unitKerjaId: null });
 
         await request(app).get('/dosir').expect(200);
         await request(app).get('/dosir/stats').expect(200);
 
         expect(mocks.dosir.getAll).toHaveBeenCalledWith(expect.objectContaining({
-            unitKerjaId: '',
+            unitKerjaId: null,
         }));
-        expect(mocks.dosir.getStats).toHaveBeenCalledWith('');
+        expect(mocks.dosir.getStats).toHaveBeenCalledWith(null);
     });
 
     it('requires super_admin to choose a unit when creating a dosir', async () => {
@@ -191,14 +223,26 @@ describe('record route unit scoping', () => {
         await request(app).post('/arsip-vital').send(vitalPayload).expect(201);
         await request(app).post('/arsip-terjaga').send(terjagaPayload).expect(201);
 
-        expect(mocks.arsipVital.create).toHaveBeenCalledWith(expect.objectContaining({
-            arsipId: vitalPayload.arsipId,
-            unitKerjaId: 'unit-a',
-        }));
-        expect(mocks.arsipTerjaga.create).toHaveBeenCalledWith(expect.objectContaining({
-            arsipId: terjagaPayload.arsipId,
-            unitKerjaId: 'unit-a',
-        }));
+        expect(mocks.arsipVital.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                arsipId: vitalPayload.arsipId,
+                unitKerjaId: 'unit-a',
+            }),
+            expect.objectContaining({
+                userId: 'user-1',
+                userEmail: 'user@example.test',
+            }),
+        );
+        expect(mocks.arsipTerjaga.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                arsipId: terjagaPayload.arsipId,
+                unitKerjaId: 'unit-a',
+            }),
+            expect.objectContaining({
+                userId: 'user-1',
+                userEmail: 'user@example.test',
+            }),
+        );
     });
 
     it('does not reveal a parent archive outside the caller scope', async () => {

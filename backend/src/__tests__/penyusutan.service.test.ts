@@ -3,7 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
 const chainCalls: Array<{ method: string; args: any[] }> = [];
+let transactionCommits = 0;
+let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
+
+const auditMocks = vi.hoisted(() => ({
+    logActionOrThrow: vi.fn(),
+}));
 
 const validJraProvenance = {
     jraKode: 'JRA-PT-001',
@@ -38,10 +44,20 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
-    transaction: async (fn: any) => fn(mockDb),
+    transaction: async (fn: any) => {
+        try {
+            const result = await fn(mockDb);
+            transactionCommits += 1;
+            return result;
+        } catch (error) {
+            transactionRollbacks += 1;
+            throw error;
+        }
+    },
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
 vi.mock('../services/arsip.service', () => ({
     arsipService: {
         getDisposalCandidates: vi.fn().mockResolvedValue({ data: [], pagination: { total: 0 } }),
@@ -59,6 +75,10 @@ describe('PenyusutanService', () => {
     beforeEach(() => {
         resultQueue.length = 0;
         chainCalls.length = 0;
+        transactionCommits = 0;
+        transactionRollbacks = 0;
+        auditMocks.logActionOrThrow.mockReset();
+        auditMocks.logActionOrThrow.mockResolvedValue(undefined);
         vi.mocked(arsipService.getArchiveStatus).mockReturnValue('kadaluarsa');
         vi.mocked(arsipService.evaluateCanonicalRetention).mockImplementation((row: any) => {
             const calculationMode = row.calculationMode || 'duration';
@@ -351,7 +371,7 @@ describe('PenyusutanService', () => {
         });
 
         it('should advance status from draft to proposed', async () => {
-            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1' }]); // find batch
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'ditjen' }]); // find batch
             enqueue([{
                 id: 'a1', retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun',
                 retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false,
@@ -359,8 +379,8 @@ describe('PenyusutanService', () => {
             }]); // retention/hold/provenance re-check
             enqueue([{ id: 'p1', status: 'proposed' }]); // update
             const res = await penyusutanService.updateStatus('p1', {
-                user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
-            }, 'u1');
+                user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'stale-unit' },
+            }, 'ditjen');
             expect(res.status).toBe('proposed');
             expect(chainCalls.filter(call => call.method === 'for')).toHaveLength(2);
         });
@@ -388,16 +408,16 @@ describe('PenyusutanService', () => {
         });
 
         it('should enforce separation of duties between proposer and reviewer', async () => {
-            enqueue([{ id: 'p1', status: 'proposed', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1', createdBy: 'creator-1', proposedBy: 'same-user' }]);
+            enqueue([{ id: 'p1', status: 'proposed', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'ditjen', createdBy: 'creator-1', proposedBy: 'same-user' }]);
             await expect(penyusutanService.updateStatus('p1', {
-                user: { id: 'same-user', role: 'admin_dirjen', unitKerjaId: 'u1' },
-            }, 'u1')).rejects.toThrow(/Separation of duties/);
+                user: { id: 'same-user', role: 'admin_dirjen', unitKerjaId: 'stale-unit' },
+            }, 'ditjen')).rejects.toThrow(/Separation of duties/);
         });
 
         it('should reject every non-super-admin transition outside the actor unit', async () => {
             enqueue([{
                 id: 'p1', status: 'proposed', jenisPenyusutan: 'pemusnahan',
-                unitKerjaId: 'u1', createdBy: 'creator-1', proposedBy: 'proposer-1',
+                unitKerjaId: 'ditjen', createdBy: 'creator-1', proposedBy: 'proposer-1',
             }]);
             await expect(penyusutanService.updateStatus('p1', {
                 user: { id: 'reviewer-1', role: 'admin_dirjen', unitKerjaId: 'u2' },
@@ -407,7 +427,7 @@ describe('PenyusutanService', () => {
         it('should re-check JRA provenance while holding the workflow transaction', async () => {
             enqueue([{
                 id: 'p1', status: 'proposed', jenisPenyusutan: 'pemusnahan',
-                unitKerjaId: 'u1', createdBy: 'creator-1', proposedBy: 'proposer-1',
+                unitKerjaId: 'ditjen', createdBy: 'creator-1', proposedBy: 'proposer-1',
             }]);
             enqueue([{
                 id: 'a1', retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun',
@@ -415,8 +435,8 @@ describe('PenyusutanService', () => {
                 ...validJraProvenance, jraVersion: '',
             }]);
             await expect(penyusutanService.updateStatus('p1', {
-                user: { id: 'reviewer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
-            }, 'u1')).rejects.toThrow(/provenance JRA tidak lengkap/);
+                user: { id: 'reviewer-1', role: 'admin_dirjen', unitKerjaId: 'stale-unit' },
+            }, 'ditjen')).rejects.toThrow(/provenance JRA tidak lengkap/);
         });
 
         it('should stop an approval transition when a legacy item remains in the batch', async () => {
@@ -446,7 +466,7 @@ describe('PenyusutanService', () => {
         });
 
         it('should reject a conditional transition when the status changed concurrently', async () => {
-            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemindahan', unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemindahan', unitKerjaId: 'ditjen' }]);
             enqueue([{
                 id: 'a1', retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun',
                 retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false,
@@ -454,17 +474,17 @@ describe('PenyusutanService', () => {
             }]); // locked retention re-check
             enqueue([]); // conditional UPDATE did not match the old status
             await expect(penyusutanService.updateStatus('p1', {
-                user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
-            }, 'u1')).rejects.toThrow(/status changed concurrently/);
+                user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'stale-unit' },
+            }, 'ditjen')).rejects.toThrow(/status changed concurrently/);
         });
 
         it('should reject advancing an empty batch', async () => {
-            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemindahan', unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemindahan', unitKerjaId: 'ditjen' }]);
             enqueue([]);
 
             await expect(penyusutanService.updateStatus('p1', {
-                user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
-            }, 'u1')).rejects.toThrow(/tanpa arsip/i);
+                user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'stale-unit' },
+            }, 'ditjen')).rejects.toThrow(/tanpa arsip/i);
         });
     });
 
@@ -488,6 +508,28 @@ describe('PenyusutanService', () => {
             const res = await penyusutanService.addItems('p1', ['a-new'], 'u1');
             expect(res.added).toBe(1);
             expect(chainCalls.filter(call => call.method === 'for')).toHaveLength(2);
+        });
+
+        it('rolls back item addition when the critical audit insert fails', async () => {
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'a-new', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null, retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false, ...validJraProvenance }]);
+            enqueue([{ nomorUrut: 3 }], [], [], [{ count: 5 }], []);
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(penyusutanService.addItems(
+                'p1',
+                ['a-new'],
+                'u1',
+                undefined,
+                { userId: 'user-1' },
+            )).rejects.toThrow('audit unavailable');
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
+                expect.objectContaining({ action: 'update', entityType: 'penyusutan', entityId: 'p1' }),
+                mockDb,
+            );
         });
 
         it('should throw for non-draft batch', async () => {

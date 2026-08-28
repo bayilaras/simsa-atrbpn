@@ -130,7 +130,7 @@ export function ContentSkeleton({ lines = 5, className = '' }) {
                 <div
                     key={i}
                     className="h-4 bg-muted rounded animate-pulse"
-                    style={{ width: `${Math.random() * 30 + 70}%` }}
+                    style={{ width: `${73 + (i % 4) * 7}%` }}
                 />
             ))}
         </div>

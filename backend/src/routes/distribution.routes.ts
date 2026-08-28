@@ -1,10 +1,9 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { distributionService } from '../services/distribution.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { canAccessUnit, Role } from '../config/permissions';
-import auditLogService from '../services/audit-log.service';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createDistributionSchema, rejectDistributionSchema } from '../validators/schemas';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope';
@@ -24,11 +23,27 @@ async function canAccessDistributionRecord(req: AuthRequest, id: string) {
         : null;
 }
 
-// Helper to get IP as string
-const getIpAddress = (req: AuthRequest): string | undefined => {
-    const ip = req.ip;
-    return Array.isArray(ip) ? ip[0] : ip;
-};
+function resolveConcreteDistributionUnit(req: AuthRequest, res: Response): string | null {
+    const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || '';
+    if (!unitKerjaId) {
+        if (req.user?.role === 'super_admin') {
+            res.status(400).json({ error: 'unitKerjaId is required' });
+        } else {
+            // An unprovisioned scoped account must not learn whether a
+            // distribution exists in the caller-supplied unit.
+            res.status(404).json({ error: 'Distribution not found' });
+        }
+        return null;
+    }
+    return unitKerjaId;
+}
+
+async function canAccessDistributionInUnit(req: AuthRequest, id: string, unitKerjaId: string) {
+    const record = await distributionService.findById(id, unitKerjaId);
+    return record && isAllowedForClassification(req.user, record.surat.sifatSurat)
+        ? record
+        : null;
+}
 
 router.use(authMiddleware);
 
@@ -56,12 +71,10 @@ router.get('/units', async (req: AuthRequest, res, next) => {
 router.get('/inbox', async (req: AuthRequest, res, next) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit.
-        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
+        const unitKerjaId = resolveConcreteDistributionUnit(req, res);
         const { status, page, limit } = req.query;
 
-        if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
-        }
+        if (!unitKerjaId) return;
 
         const result = await distributionService.findInbox(unitKerjaId as string, {
             status: status as string,
@@ -82,12 +95,10 @@ router.get('/inbox', async (req: AuthRequest, res, next) => {
 router.get('/outbox', async (req: AuthRequest, res, next) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit.
-        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
+        const unitKerjaId = resolveConcreteDistributionUnit(req, res);
         const { status, page, limit } = req.query;
 
-        if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
-        }
+        if (!unitKerjaId) return;
 
         const result = await distributionService.findOutbox(unitKerjaId as string, {
             status: status as string,
@@ -108,11 +119,9 @@ router.get('/outbox', async (req: AuthRequest, res, next) => {
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit.
-        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
+        const unitKerjaId = resolveConcreteDistributionUnit(req, res);
 
-        if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
-        }
+        if (!unitKerjaId) return;
 
         const stats = await distributionService.getStats(unitKerjaId as string);
         res.json({ success: true, data: stats });
@@ -201,16 +210,10 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
             instruction,
             ccUnits,
             sentBy: req.user?.id,
-        });
-
-        await auditLogService.logAction({
+        }, {
             userId: req.user?.id,
             userEmail: req.user?.email,
-            action: 'distribute',
-            entityType: 'surat_distribution',
-            entityId: result.id,
-            changes: { after: { targetUnitId, instruction } },
-            ipAddress: getIpAddress(req),
+            ipAddress: req.ip,
         });
 
         res.status(201).json({ success: true, data: result });
@@ -233,24 +236,17 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
 router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        if (!(await canAccessDistributionRecord(req, id))) {
+        const unitKerjaId = resolveConcreteDistributionUnit(req, res);
+        if (!unitKerjaId) return;
+        if (!(await canAccessDistributionInUnit(req, id, unitKerjaId))) {
             return res.status(404).json({ error: 'Distribution not found' });
         }
         const result = await distributionService.receive(
             id,
             req.user?.id || '',
-            resolveRecordUnitScope(req),
+            unitKerjaId,
+            { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
         );
-
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'receive_distribution',
-            entityType: 'surat_distribution',
-            entityId: id,
-            changes: { after: { status: 'received' } },
-            ipAddress: getIpAddress(req),
-        });
 
         res.json({ success: true, data: result });
     } catch (error: any) {
@@ -271,20 +267,16 @@ router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, n
 router.put('/:id/process', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        if (!(await canAccessDistributionRecord(req, id))) {
+        const unitKerjaId = resolveConcreteDistributionUnit(req, res);
+        if (!unitKerjaId) return;
+        if (!(await canAccessDistributionInUnit(req, id, unitKerjaId))) {
             return res.status(404).json({ error: 'Distribution not found' });
         }
-        const result = await distributionService.process(id, resolveRecordUnitScope(req));
-
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'process_distribution',
-            entityType: 'surat_distribution',
-            entityId: id,
-            changes: { after: { status: 'processed' } },
-            ipAddress: getIpAddress(req),
-        });
+        const result = await distributionService.process(
+            id,
+            unitKerjaId,
+            { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
+        );
 
         res.json({ success: true, data: result });
     } catch (error: any) {
@@ -310,25 +302,18 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
         if (!reason) {
             return res.status(400).json({ error: 'Alasan penolakan wajib diisi' });
         }
-        if (!(await canAccessDistributionRecord(req, id))) {
+        const unitKerjaId = resolveConcreteDistributionUnit(req, res);
+        if (!unitKerjaId) return;
+        if (!(await canAccessDistributionInUnit(req, id, unitKerjaId))) {
             return res.status(404).json({ error: 'Distribution not found' });
         }
 
         const result = await distributionService.reject(
             id,
             reason,
-            resolveRecordUnitScope(req),
+            unitKerjaId,
+            { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
         );
-
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'reject_distribution',
-            entityType: 'surat_distribution',
-            entityId: id,
-            changes: { after: { status: 'rejected', reason } },
-            ipAddress: getIpAddress(req),
-        });
 
         res.json({ success: true, data: result });
     } catch (error: any) {

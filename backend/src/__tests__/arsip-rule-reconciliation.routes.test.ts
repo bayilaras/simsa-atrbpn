@@ -153,15 +153,12 @@ describe('arsip rule reconciliation routes', () => {
             { klasifikasiItemId: 10, jraItemId: 20 },
             'Verifikasi ulang butir peraturan aktif',
             mocks.user.id,
-        );
-        expect(mocks.audit.logAction).toHaveBeenCalledWith(expect.objectContaining({
-            action: 'update',
-            entityType: 'arsip_rule_assignment',
-            entityId: ARCHIVE_ID,
-            changes: expect.objectContaining({
-                after: expect.objectContaining({ revision: 1 }),
+            expect.objectContaining({
+                userId: mocks.user.id,
+                userEmail: mocks.user.email,
             }),
-        }));
+        );
+        expect(mocks.audit.logAction).not.toHaveBeenCalled();
         expect(success.body).toMatchObject({
             success: true,
             data: { ruleProvenanceStatus: 'verified' },

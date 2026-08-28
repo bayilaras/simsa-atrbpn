@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,6 +17,9 @@ import storageLocationService from '@/services/storage-location.service'
 import { format, isPast, parseISO } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
+import { useAuth } from '@/context/AuthContext'
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 const STATUS_CONFIG = {
     borrowed: { label: 'Dipinjam', variant: 'default', icon: ArrowLeftRight, className: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-200 border-blue-200' },
@@ -126,7 +129,10 @@ function LendingRow({ item, onReturn, onExtend }) {
 }
 
 export default function ArchiveLending() {
+    const { user } = useAuth()
     const { toast } = useToast()
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
     const [activeTab, setActiveTab] = useState('active')
     const [data, setData] = useState([])
     const [stats, setStats] = useState(null)
@@ -148,11 +154,12 @@ export default function ArchiveLending() {
     const targetSearchSeq = useRef(0)
 
     // Fetch data
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
+        if (!unitKerjaId) return
         setLoading(true)
         try {
             const status = activeTab === 'active' ? 'borrowed' : activeTab === 'overdue' ? 'overdue' : 'returned'
-            const response = await archiveLendingService.getAll({ status, limit: 50 })
+            const response = await archiveLendingService.getAll({ unitKerjaId, status, limit: 50 })
             if (response.success) {
                 setData(response.data)
             }
@@ -161,33 +168,39 @@ export default function ArchiveLending() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [activeTab, unitKerjaId])
 
-    const fetchStats = async () => {
+    const fetchStats = useCallback(async () => {
+        if (!unitKerjaId) return
         try {
-            const response = await archiveLendingService.getStats()
+            const response = await archiveLendingService.getStats(unitKerjaId)
             if (response.success) {
                 setStats(response.data)
             }
         } catch (error) {
             console.error('Error fetching stats:', error)
         }
-    }
+    }, [unitKerjaId])
 
     useEffect(() => {
-        fetchData()
-    }, [activeTab])
-
-    useEffect(() => {
-        fetchStats()
-    }, [])
+        if (unitKerjaId) {
+            fetchData()
+            fetchStats()
+        } else {
+            setData([])
+            setStats(null)
+            setSelectedItem(null)
+            setLoading(false)
+        }
+    }, [fetchData, fetchStats, unitKerjaId])
 
     // Return handler
     const handleReturn = async () => {
-        if (!selectedItem || pendingAction) return
+        const actionUnitKerjaId = selectedItem?.unitKerjaId || unitKerjaId
+        if (!selectedItem || !actionUnitKerjaId || pendingAction) return
         setPendingAction('return')
         try {
-            await archiveLendingService.return(selectedItem.id, returnNotes)
+            await archiveLendingService.return(selectedItem.id, actionUnitKerjaId, returnNotes)
             toast({ title: 'Berhasil', description: 'Arsip berhasil dikembalikan' })
             setReturnDialogOpen(false)
             setReturnNotes('')
@@ -202,14 +215,15 @@ export default function ArchiveLending() {
 
     // Extend handler
     const handleExtend = async () => {
-        if (!selectedItem || pendingAction) return
+        const actionUnitKerjaId = selectedItem?.unitKerjaId || unitKerjaId
+        if (!selectedItem || !actionUnitKerjaId || pendingAction) return
         if (!newDueDate) {
             toast({ title: 'Data belum lengkap', description: 'Tanggal jatuh tempo baru wajib diisi', variant: 'destructive' })
             return
         }
         setPendingAction('extend')
         try {
-            await archiveLendingService.extend(selectedItem.id, newDueDate)
+            await archiveLendingService.extend(selectedItem.id, actionUnitKerjaId, newDueDate)
             toast({ title: 'Berhasil', description: 'Tanggal jatuh tempo berhasil diperpanjang' })
             setExtendDialogOpen(false)
             setNewDueDate('')
@@ -230,7 +244,7 @@ export default function ArchiveLending() {
 
     // Borrow handler
     const handleBorrow = async () => {
-        if (pendingAction) return
+        if (!unitKerjaId || pendingAction) return
         const isArsip = borrowForm.lendingType === 'arsip'
         const targetId = isArsip ? borrowForm.arsipId : borrowForm.storageLocationId
 
@@ -253,6 +267,7 @@ export default function ArchiveLending() {
 
         // The backend rejects an empty string for the unused id, so only the relevant one is sent.
         const payload = {
+            unitKerjaId,
             lendingType: borrowForm.lendingType,
             borrowerName: borrowForm.borrowerName.trim(),
             departmentUnit: borrowForm.departmentUnit,
@@ -279,7 +294,7 @@ export default function ArchiveLending() {
     // Borrow target picker — the backend requires a UUID, so the id must come from a real record
     const searchTarget = async (query, lendingType) => {
         const seq = ++targetSearchSeq.current
-        if (query.trim().length < 3) {
+        if (!unitKerjaId || query.trim().length < 3) {
             setTargetResults([])
             setTargetLoading(false)
             return
@@ -287,8 +302,8 @@ export default function ArchiveLending() {
         setTargetLoading(true)
         try {
             const res = lendingType === 'arsip'
-                ? await arsipService.search({ q: query, limit: 5 })
-                : await storageLocationService.getAll({ search: query, limit: 5 })
+                ? await arsipService.search({ q: query, limit: 5, unitKerjaId })
+                : await storageLocationService.getAll({ search: query, limit: 5, unitKerjaId })
             if (seq !== targetSearchSeq.current) return
             setTargetResults(toList(res))
         } catch (error) {
@@ -350,6 +365,23 @@ export default function ArchiveLending() {
         )
     })
 
+    if (!unitKerjaId) {
+        return (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <ArrowLeftRight className="h-6 w-6 text-indigo-600" />
+                        </div>
+                        Peminjaman Arsip
+                    </h1>
+                    <p className="text-muted-foreground">Kelola sirkulasi peminjaman dan pengembalian arsip fisik</p>
+                </div>
+                <RequiredUnitKerjaScope scope={unitScope} disabled={unitScope.loading} />
+            </div>
+        )
+    }
+
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Header */}
@@ -370,6 +402,8 @@ export default function ArchiveLending() {
                     Catat Peminjaman
                 </Button>
             </div>
+
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || Boolean(pendingAction) || borrowDialogOpen || returnDialogOpen || extendDialogOpen} />
 
             {/* Stats */}
             {stats && (

@@ -22,6 +22,9 @@ import {
     type RecordUnitScope,
 } from '../utils/record-unit-scope';
 import { assertLegacyPermanentTransferMutationAllowed } from '../utils/permanent-transfer-policy';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
+import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import type { Role } from '../config/permissions.js';
 
 // Types
 interface PenyusutanFilters {
@@ -41,6 +44,7 @@ interface CreatePenyusutanData {
     arsipIds: string[];
     createdBy?: string;
     securityClassifications?: string[] | null;
+    auditContext?: CriticalAuditContext;
 }
 
 const RULE_SNAPSHOT_EVIDENCE_SELECT = {
@@ -512,7 +516,7 @@ class PenyusutanService {
      */
     async create(data: CreatePenyusutanData) {
         assertLegacyPermanentTransferMutationAllowed(data.jenisPenyusutan);
-        const { arsipIds, securityClassifications, ...batchData } = data;
+        const { arsipIds, securityClassifications, auditContext, ...batchData } = data;
         assertArchiveIdList(arsipIds);
 
         // Generate nomor BA
@@ -562,6 +566,24 @@ class PenyusutanService {
                     .where(inArray(arsip.id, arsipIds));
             }
 
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'create',
+                    entityType: 'penyusutan',
+                    entityId: batch.id,
+                    changes: {
+                        after: {
+                            unitKerjaId: batch.unitKerjaId,
+                            jenisPenyusutan: batch.jenisPenyusutan,
+                            status: batch.status,
+                            nomorBA: batch.nomorBA,
+                            totalBerkas: arsipIds.length,
+                        },
+                    },
+                }, tx);
+            }
+
             return batch;
         });
     }
@@ -571,7 +593,16 @@ class PenyusutanService {
      */
     async updateStatus(
         id: string,
-        metadata?: { catatan?: string; user?: { id: string; role: string; unitKerjaId: string } },
+        metadata?: {
+            catatan?: string;
+            user?: {
+                id: string;
+                email?: string;
+                role: string;
+                unitKerjaId: string;
+                ipAddress?: string;
+            };
+        },
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         securityClassifications?: string[] | null,
     ) {
@@ -595,6 +626,10 @@ class PenyusutanService {
             if (!nextStatus) throw new Error(`Cannot advance from status: ${currentStatus}`);
 
             const { id: actorId, role, unitKerjaId } = metadata.user!;
+            const effectiveActorUnitKerjaId = resolveEffectiveUnitKerjaId(
+                role as Role,
+                unitKerjaId,
+            );
 
             // Every non-super-admin transition is bound to both the resolved route
             // scope and the actor's assigned unit. Never trust the batch ID alone.
@@ -602,7 +637,7 @@ class PenyusutanService {
                 unitScope === null
                 || !unitScope
                 || batch[0].unitKerjaId !== unitScope
-                || batch[0].unitKerjaId !== unitKerjaId
+                || batch[0].unitKerjaId !== effectiveActorUnitKerjaId
             )) {
                 throw new Error('Unauthorized: You can only transition batches for your own unit');
             }
@@ -710,9 +745,23 @@ class PenyusutanService {
                 if (arsipIds.length > 0) {
                     await tx.update(arsip)
                         .set({ disposalStatus: 'approved', updatedAt: new Date() })
-                        .where(inArray(arsip.id, arsipIds));
+                    .where(inArray(arsip.id, arsipIds));
                 }
             }
+
+            await auditLogService.logActionOrThrow({
+                userId: actorId,
+                userEmail: metadata.user?.email,
+                ipAddress: metadata.user?.ipAddress,
+                action: 'status_change',
+                entityType: 'penyusutan',
+                entityId: id,
+                changes: {
+                    before: { status: currentStatus },
+                    after: { status: nextStatus },
+                    catatan: metadata.catatan || null,
+                },
+            }, tx);
 
             return updated;
         });
@@ -726,6 +775,7 @@ class PenyusutanService {
         arsipIds: string[],
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         securityClassifications?: string[] | null,
+        auditContext?: CriticalAuditContext,
     ) {
         assertArchiveIdList(arsipIds);
         return await db.transaction(async (tx: any) => {
@@ -786,6 +836,19 @@ class PenyusutanService {
                     unitScope,
                 ));
 
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'update',
+                    entityType: 'penyusutan',
+                    entityId: batchId,
+                    changes: {
+                        itemsAdded: arsipIds,
+                        after: { totalBerkas: Number(countResult[0]?.count || 0) },
+                    },
+                }, tx);
+            }
+
             return { added: arsipIds.length };
         });
     }
@@ -798,6 +861,7 @@ class PenyusutanService {
         arsipIds: string[],
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         securityClassifications?: string[] | null,
+        auditContext?: CriticalAuditContext,
     ) {
         assertArchiveIdList(arsipIds);
         return await db.transaction(async (tx: any) => {
@@ -842,6 +906,19 @@ class PenyusutanService {
                     unitScope,
                 ));
 
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'update',
+                    entityType: 'penyusutan',
+                    entityId: batchId,
+                    changes: {
+                        itemsRemoved: arsipIds,
+                        after: { totalBerkas: Number(countResult[0]?.count || 0) },
+                    },
+                }, tx);
+            }
+
             return { removed: arsipIds.length };
         });
     }
@@ -853,6 +930,7 @@ class PenyusutanService {
         id: string,
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         securityClassifications?: string[] | null,
+        auditContext?: CriticalAuditContext,
     ) {
         return await db.transaction(async (tx: any) => {
             const batch = await tx.select().from(penyusutanArsip).where(and(
@@ -895,6 +973,22 @@ class PenyusutanService {
                 ))
                 .returning({ id: penyusutanArsip.id });
             if (!deleted) throw new Error('Cannot delete: batch status changed concurrently');
+
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'delete',
+                    entityType: 'penyusutan',
+                    entityId: id,
+                    changes: {
+                        before: {
+                            status: batch[0].status,
+                            jenisPenyusutan: batch[0].jenisPenyusutan,
+                            arsipIds,
+                        },
+                    },
+                }, tx);
+            }
 
             return { deleted: true };
         });

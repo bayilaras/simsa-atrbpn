@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +12,8 @@ import { useAuth } from '@/context/AuthContext'
 import storageLocationService from '@/services/storage-location.service'
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from '@/hooks/use-toast'
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 // Level configuration
 const LEVEL_CONFIG = {
@@ -155,9 +157,8 @@ function QRCodeDialog({ open, onOpenChange, location, qrData }) {
 // Main Page Component
 export default function StorageLocations() {
     const { user } = useAuth()
-    // AuthContext exposes `user` (not `session`); read the unit from it directly.
-    // Leave it undefined until known so we don't read/write a bogus 'default' pool.
-    const unitKerjaId = user?.unitKerjaId
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
     const { toast } = useToast()
 
     const [treeData, setTreeData] = useState([])
@@ -180,7 +181,8 @@ export default function StorageLocations() {
     })
 
     // Fetch tree data
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
+        if (!unitKerjaId) return
         setLoading(true)
         try {
             const response = await storageLocationService.getTree(unitKerjaId)
@@ -192,14 +194,19 @@ export default function StorageLocations() {
         } finally {
             setLoading(false)
         }
-    }
-
-    useEffect(() => {
-        if (unitKerjaId) fetchData()
     }, [unitKerjaId])
 
+    useEffect(() => {
+        if (unitKerjaId) {
+            fetchData()
+        } else {
+            setTreeData([])
+            setLoading(false)
+        }
+    }, [fetchData, unitKerjaId])
+
     // Filter tree based on search
-    const filterTree = (nodes, query) => {
+    const filterTree = useCallback(function filterTree(nodes, query) {
         if (!query) return nodes
         const lowerQuery = query.toLowerCase()
 
@@ -213,9 +220,9 @@ export default function StorageLocations() {
             }
             return acc
         }, [])
-    }
+    }, [])
 
-    const filteredData = useMemo(() => filterTree(treeData, searchQuery), [treeData, searchQuery])
+    const filteredData = useMemo(() => filterTree(treeData, searchQuery), [filterTree, treeData, searchQuery])
 
     // Get next level for child
     const getNextLevel = (parentLevel) => {
@@ -226,6 +233,7 @@ export default function StorageLocations() {
 
     // Handle save
     const handleSave = async () => {
+        if (!unitKerjaId) return
         try {
             const data = {
                 ...formData,
@@ -237,7 +245,7 @@ export default function StorageLocations() {
             if (editMode && currentItem) {
                 // Do NOT send parentId on edit — the service does a wholesale update and
                 // a null parentId would detach the node and re-parent it to the root.
-                await storageLocationService.update(currentItem.id, data)
+                await storageLocationService.update(currentItem.id, data, unitKerjaId)
                 toast({ title: 'Lokasi berhasil diperbarui' })
             } else {
                 data.parentId = parentItem?.id || null
@@ -289,10 +297,11 @@ export default function StorageLocations() {
     }
 
     const handleDelete = async (node) => {
+        if (!unitKerjaId) return
         if (!confirm(`Hapus lokasi "${node.code} - ${node.name}"?`)) return
 
         try {
-            await storageLocationService.delete(node.id)
+            await storageLocationService.delete(node.id, unitKerjaId)
             // alert('Lokasi berhasil dihapus')
             fetchData()
         } catch (error) {
@@ -302,12 +311,13 @@ export default function StorageLocations() {
     }
 
     const handleGenerateQR = async (node) => {
+        if (!unitKerjaId) return
         setQrLocation(node)
         setQrData(null)
         setQrDialogOpen(true)
 
         try {
-            const response = await storageLocationService.generateQR(node.id)
+            const response = await storageLocationService.generateQR(node.id, unitKerjaId)
             if (response.success) {
                 setQrData(response.data)
             }
@@ -324,8 +334,26 @@ export default function StorageLocations() {
     }
 
     const handleAddNew = () => {
+        if (!unitKerjaId) return
         resetForm()
         setDialogOpen(true)
+    }
+
+    if (!unitKerjaId) {
+        return (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <MapPin className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        Lokasi Penyimpanan
+                    </h1>
+                    <p className="text-muted-foreground">Kelola hierarki lokasi penyimpanan arsip fisik</p>
+                </div>
+                <RequiredUnitKerjaScope scope={unitScope} disabled={unitScope.loading} />
+            </div>
+        )
     }
 
     return (
@@ -348,6 +376,8 @@ export default function StorageLocations() {
                     Tambah Lokasi
                 </Button>
             </div>
+
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || dialogOpen || qrDialogOpen} />
 
             {/* Stats Overview */}
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">

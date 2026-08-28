@@ -2,6 +2,7 @@ import { db } from '../config/database';
 import { archiveLending, arsip, storageLocations, users } from '../db/schema';
 import { eq, and, desc, sql, lt, inArray } from 'drizzle-orm';
 import type { RecordUnitScope } from '../utils/record-unit-scope.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 export interface LendingFilters {
     unitKerjaId: RecordUnitScope;
@@ -136,7 +137,7 @@ export class ArchiveLendingService {
         purpose?: string;
         approvedBy?: string;
         createdBy?: string;
-    }, unitKerjaId: string) {
+    }, unitKerjaId: string, auditContext?: CriticalAuditContext) {
         const borrowDate = new Date().toISOString().split('T')[0];
 
         // Validate type-specific IDs
@@ -236,11 +237,34 @@ export class ArchiveLendingService {
                     ));
             }
 
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'create',
+                    entityType: 'archive_lending',
+                    entityId: lending.id,
+                    changes: {
+                        after: {
+                            lendingType: lending.lendingType,
+                            borrowerName: lending.borrowerName,
+                            dueDate: lending.dueDate,
+                            arsipId: lending.arsipId,
+                            storageLocationId: lending.storageLocationId,
+                        },
+                    },
+                }, tx);
+            }
+
             return lending;
         });
     }
 
-    async return(lendingId: string, unitKerjaId: string, notes?: string) {
+    async return(
+        lendingId: string,
+        unitKerjaId: string,
+        notes?: string,
+        auditContext?: CriticalAuditContext,
+    ) {
         const returnDate = new Date().toISOString().split('T')[0];
 
         return await db.transaction(async (tx: any) => {
@@ -309,11 +333,29 @@ export class ArchiveLendingService {
                     ));
             }
 
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'update',
+                    entityType: 'archive_lending',
+                    entityId: lendingId,
+                    changes: {
+                        before: { status: lending.status, dueDate: lending.dueDate },
+                        after: { status: updated.status, returnDate: updated.returnDate },
+                    },
+                }, tx);
+            }
+
             return updated;
         });
     }
 
-    async extend(lendingId: string, unitKerjaId: string, newDueDate: string) {
+    async extend(
+        lendingId: string,
+        unitKerjaId: string,
+        newDueDate: string,
+        auditContext?: CriticalAuditContext,
+    ) {
         return await db.transaction(async (tx: any) => {
             const [lending] = await tx
                 .select()
@@ -345,6 +387,19 @@ export class ArchiveLendingService {
 
             if (!updated) {
                 throw new Error('Lending record changed before it could be extended');
+            }
+
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'update',
+                    entityType: 'archive_lending',
+                    entityId: lendingId,
+                    changes: {
+                        before: { status: lending.status, dueDate: lending.dueDate },
+                        after: { status: updated.status, dueDate: updated.dueDate },
+                    },
+                }, tx);
             }
 
             return updated;

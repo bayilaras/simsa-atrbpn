@@ -9,7 +9,7 @@ export interface LogActionData {
     userId?: string;
     userEmail?: string;
     action: 'create' | 'update' | 'delete' | 'cancel' | 'archive' | 'restore' | 'status_change' | 'distribute' | 'receive_distribution' | 'process_distribution' | 'reject_distribution' | 'view' | 'download' | 'verify_integrity' | 'hold' | 'release_hold' | 'request_access' | 'approve_access' | 'deny_access' | 'revoke_access';
-    entityType: 'surat_masuk' | 'surat_keluar' | 'arsip' | 'user' | 'storage_location' | 'archive_lending' | 'surat_distribution' | 'autentikasi' | 'layanan_arsip' | 'dosir' | 'penyusutan' | 'file_attachment' | 'arsip_elektronik' | 'tunjuk_silang' | 'record_access_grant';
+    entityType: 'surat_masuk' | 'surat_keluar' | 'arsip' | 'arsip_rule_assignment' | 'user' | 'unit_kerja' | 'surat_template' | 'user_preferences' | 'storage_location' | 'archive_lending' | 'surat_distribution' | 'autentikasi' | 'layanan_arsip' | 'dosir' | 'penyusutan' | 'file_attachment' | 'arsip_elektronik' | 'tunjuk_silang' | 'record_access_grant';
     entityId?: string;
     changes?: {
         before?: Record<string, any>;
@@ -32,6 +32,13 @@ export interface AuditLogFilters {
     limit?: number;
 }
 
+export type CriticalAuditContext = Pick<
+    LogActionData,
+    'userId' | 'userEmail' | 'ipAddress'
+>;
+
+type AuditInsertExecutor = Pick<typeof db, 'insert'>;
+
 export const auditLogService = {
     // Track consecutive audit failures for alerting
     _consecutiveFailures: 0 as number,
@@ -39,9 +46,12 @@ export const auditLogService = {
     /**
      * Log an action to audit trail
      */
-    async logAction(data: LogActionData): Promise<void> {
+    async logActionOrThrow(
+        data: LogActionData,
+        executor: AuditInsertExecutor = db,
+    ): Promise<void> {
         try {
-            await db.insert(auditLog).values({
+            await executor.insert(auditLog).values({
                 userId: data.userId || null,
                 userEmail: data.userEmail || null,
                 action: data.action,
@@ -60,7 +70,20 @@ export const auditLogService = {
                 log.error('[CRITICAL] Audit logging has failed 5+ times consecutively. Investigate immediately.');
                 // In production, this should trigger an alert/notification
             }
-            // Don't throw - audit logging should not break main operations
+            throw error;
+        }
+    },
+
+    /**
+     * Best-effort audit for non-critical reads and legacy operations. Critical
+     * state mutations must use logActionOrThrow inside their DB transaction.
+     */
+    async logAction(data: LogActionData): Promise<void> {
+        try {
+            await auditLogService.logActionOrThrow(data);
+        } catch {
+            // Deliberately retained for non-critical callers. The failure has
+            // already been counted and logged by logActionOrThrow.
         }
     },
 

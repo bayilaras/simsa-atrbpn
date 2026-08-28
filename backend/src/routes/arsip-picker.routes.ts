@@ -4,6 +4,7 @@ import { arsipService } from '../services/arsip.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { createLogger } from '../utils/logger';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const log = createLogger('ArsipPickerRoutes');
 
@@ -116,7 +117,7 @@ router.post('/calculate-dates', authMiddleware, async (_req: Request, res: Respo
  */
 router.get('/lifecycle', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = req.user?.unitKerjaId;
+        const unitKerjaId = resolveUnitKerjaId(req);
         if (!unitKerjaId) {
             res.status(400).json({ success: false, error: 'unitKerjaId is required' });
             return;

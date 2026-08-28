@@ -1,14 +1,39 @@
-import { Router } from 'express';
+import { NextFunction, Response, Router } from 'express';
+import multer from 'multer';
 import { autentikasiService } from '../services/autentikasi.service.js';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
-import { upload } from '../middlewares/upload.middleware.js';
 import { HashVerificationService } from '../services/hash-verification.service.js';
 import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware.js';
 import { validateBody, validateQuery, uuidParamValidator } from '../middlewares/validate.middleware.js';
 import { createAutentikasiSchema, queryAutentikasiSchema } from '../validators/schemas.js';
-import auditLogService from '../services/audit-log.service.js';
 
 const router = Router();
+const VERIFY_PDF_LIMIT_BYTES = 10 * 1024 * 1024;
+const PDF_MAGIC = Buffer.from('%PDF-');
+const verificationUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: VERIFY_PDF_LIMIT_BYTES, files: 1 },
+    fileFilter: (_req, file, callback) => {
+        if (file.mimetype !== 'application/pdf') {
+            callback(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname));
+            return;
+        }
+        callback(null, true);
+    },
+});
+
+function receiveVerificationPdf(req: AuthRequest, res: Response, next: NextFunction) {
+    verificationUpload.single('file')(req, res, (error: unknown) => {
+        if (error) {
+            const message = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE'
+                ? 'Ukuran PDF melebihi batas 10 MB'
+                : 'Hanya satu file PDF yang diperbolehkan';
+            res.status(400).json({ message });
+            return;
+        }
+        next();
+    });
+}
 
 router.use(authMiddleware);
 // Autentikasi currently has no mandatory unit dimension. Restrict the module
@@ -51,16 +76,10 @@ router.post('/',
         try {
             const result = await autentikasiService.create({
                 ...req.body,
-                userId: req.user?.id,
-            });
-
-            await auditLogService.logAction({
-                userId: req.user?.id,
+                userId: req.user!.id,
+            }, {
+                userId: req.user!.id,
                 userEmail: req.user?.email,
-                action: 'create',
-                entityType: 'autentikasi' as any, // Cast to any to avoid type error if interface not updated yet
-                entityId: result.id,
-                changes: { after: result },
                 ipAddress: req.ip,
             });
 
@@ -72,18 +91,29 @@ router.post('/',
 );
 
 // GET /api/autentikasi/:id/pdf
-// Redirects to the static file URL or streams it
 router.get('/:id/pdf', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const result = await autentikasiService.findById(id as string);
+        const result = await autentikasiService.getPdfStream(id as string, {
+            userId: req.user!.id,
+            userEmail: req.user?.email,
+            ipAddress: req.ip,
+        });
 
-        if (!result || !result.fileLampiran) {
+        if (!result) {
             return res.status(404).json({ error: 'PDF not found' });
         }
 
-        // Return the static URL for frontend to open
-        res.json({ success: true, url: result.fileLampiran });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`);
+        res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        result.stream.on('error', (error) => {
+            if (res.headersSent) res.destroy(error);
+            else next(error);
+        });
+        result.stream.pipe(res);
     } catch (error) {
         next(error);
     }
@@ -91,17 +121,19 @@ router.get('/:id/pdf', async (req: AuthRequest, res, next) => {
 
 router.post(
     '/verify',
-    authMiddleware,
-    upload.single('file'),
-    async (req, res) => {
+    receiveVerificationPdf,
+    async (req: AuthRequest, res) => {
         try {
             if (!req.file) {
                 return res.status(400).json({ message: 'File wajib diupload' });
             }
-            const result = await HashVerificationService.verifyUploadedFile(req.file.path);
+            if (!req.file.buffer.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
+                return res.status(400).json({ message: 'Signature PDF tidak valid' });
+            }
+            const result = await HashVerificationService.verifyUploadedBuffer(req.file.buffer);
             res.json(result);
-        } catch (error) {
-            res.status(500).json({ message: 'Gagal memverifikasi arsip', error });
+        } catch {
+            res.status(500).json({ message: 'Gagal memverifikasi arsip' });
         }
     }
 );

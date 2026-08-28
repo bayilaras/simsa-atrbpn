@@ -36,6 +36,8 @@ function waitForNextCycle(durationMs: number, signal: AbortSignal): Promise<void
 export class SrikandiWorker {
     private stopController: AbortController | null = null;
     private runningPromise: Promise<void> | null = null;
+    private lastCycleAt: Date | null = null;
+    private lastCycleHealthy = true;
 
     constructor(
         private readonly service: SrikandiDispatchServiceLike = srikandiService,
@@ -73,6 +75,13 @@ export class SrikandiWorker {
         await this.runningPromise;
     }
 
+    healthSnapshot() {
+        return {
+            cycleHealthy: this.lastCycleHealthy,
+            lastCycleAt: this.lastCycleAt?.toISOString() || null,
+        };
+    }
+
     private async runLoop(signal: AbortSignal): Promise<void> {
         log.info({
             batchSize: this.config.workerBatchSize,
@@ -83,6 +92,8 @@ export class SrikandiWorker {
             let processed = 0;
             try {
                 const results = await this.runOnce();
+                this.lastCycleHealthy = true;
+                this.lastCycleAt = new Date();
                 processed = results.length;
                 if (processed > 0) {
                     log.info({
@@ -97,6 +108,8 @@ export class SrikandiWorker {
                 // row is reported as synchronized unless its transactional
                 // official-ACK finalization has already succeeded.
                 log.error({ err: error }, 'SRIKANDI worker cycle failed');
+                this.lastCycleHealthy = false;
+                this.lastCycleAt = new Date();
             }
 
             const delay = processed >= this.config.workerBatchSize

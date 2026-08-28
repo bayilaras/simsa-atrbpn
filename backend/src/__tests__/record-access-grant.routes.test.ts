@@ -109,11 +109,9 @@ describe('record access grant routes', () => {
         expect(mocks.request).toHaveBeenCalledWith(
             expect.objectContaining({ id: mocks.user.id }),
             expect.not.objectContaining({ targetUserId: expect.anything() }),
+            expect.objectContaining({ userId: mocks.user.id }),
         );
-        expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
-            action: 'request_access',
-            entityId: grant.id,
-        }));
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 
     it('rejects malformed identifiers and short purposes before the service', async () => {
@@ -138,6 +136,7 @@ describe('record access grant routes', () => {
         expect(mocks.request).toHaveBeenCalledWith(
             expect.objectContaining({ id: mocks.user.id }),
             expect.objectContaining({ accessMode: 'manage' }),
+            expect.objectContaining({ userId: mocks.user.id }),
         );
     });
 
@@ -174,10 +173,8 @@ describe('record access grant routes', () => {
             mocks.user.id,
             'Sesuai surat tugas resmi',
             '2026-08-27T00:00:00.000Z',
+            expect.objectContaining({ userId: mocks.user.id }),
         );
-        expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
-            action: 'approve_access',
-            entityId: grant.id,
-        }));
+        expect(mocks.audit).not.toHaveBeenCalled();
     });
 });

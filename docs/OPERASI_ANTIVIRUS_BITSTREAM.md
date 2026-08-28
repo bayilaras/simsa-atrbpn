@@ -68,6 +68,18 @@ npm run build
 npm run start:malware-worker
 ```
 
+Repositori juga menyediakan definisi deployment siap-validasi di
+`deploy/workers/compose.yml`. Salin `deploy/workers/.env.example` menjadi `.env`,
+isi secret yang benar, lalu jalankan dari direktori tersebut:
+
+```sh
+docker compose --env-file .env -f compose.yml up -d --build clamav malware-worker
+```
+
+Definisi itu menempatkan port ClamAV hanya pada jaringan internal Compose,
+menunggu health check `clamd`, dan menjalankan worker dari commit backend yang
+sama dengan API.
+
 Cold-start produksi akan gagal bila Vercel dikonfigurasi `embedded`, scanner
 dinonaktifkan, worker dinonaktifkan, token Blob hilang, atau pengakuan jaringan
 tepercaya belum diberikan. Worker terpisah juga menolak dijalankan di Vercel.

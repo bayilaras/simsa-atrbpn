@@ -1,6 +1,7 @@
 import api from './api';
 
 const API_BASE = '/api/settings';
+export const PREFERENCES_CHANGED_EVENT = 'simsa-preferences-changed';
 
 export const settingsService = {
     // Profile
@@ -8,18 +9,25 @@ export const settingsService = {
     updateProfile: (data) => api.put(`${API_BASE}/profile`, data),
 
     // Unit Kerja
-    getAllUnitKerja: () => api.get(`${API_BASE}/unit-kerja`),
+    getAllUnitKerja: (params = {}) => api.get(`${API_BASE}/unit-kerja`, params),
     getUnitKerja: (id) => api.get(`${API_BASE}/unit-kerja/${id}`),
     updateUnitKerja: (id, data) => api.put(`${API_BASE}/unit-kerja/${id}`, data),
     createUnitKerja: (data) => api.post(`${API_BASE}/unit-kerja`, data),
 
     // Surat Templates
-    getSuratTemplates: () => api.get(`${API_BASE}/surat-templates`),
-    updateSuratTemplates: (data) => api.put(`${API_BASE}/surat-templates`, data),
+    getSuratTemplates: (unitKerjaId) => api.get(`${API_BASE}/surat-templates`, { unitKerjaId }),
+    updateSuratTemplates: (unitKerjaId, data) => api.put(`${API_BASE}/surat-templates`, {
+        ...data,
+        unitKerjaId,
+    }),
 
     // Preferences
     getPreferences: () => api.get(`${API_BASE}/preferences`),
-    updatePreferences: (data) => api.put(`${API_BASE}/preferences`, data),
+    updatePreferences: async (data) => {
+        const preferences = await api.put(`${API_BASE}/preferences`, data);
+        window.dispatchEvent(new CustomEvent(PREFERENCES_CHANGED_EVENT, { detail: preferences }));
+        return preferences;
+    },
 };
 
 export default settingsService;

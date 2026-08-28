@@ -187,6 +187,27 @@ export class SrikandiService {
      * different content is rejected instead of silently replacing evidence.
      */
     async enqueue(input: EnqueueSrikandiMessage): Promise<{ item: SrikandiOutbox; created: boolean }> {
+        // Reject malformed/unconfigured messages before opening a transaction;
+        // enqueueWithExecutor repeats this guard for transactional producers.
+        validateEnqueueInput(input);
+        const contractVersion = this.config.contractVersion.trim();
+        if (!contractVersion || contractVersion.length > 100 || /\r|\n/.test(contractVersion)) {
+            throw new SrikandiIntegrationUnavailableError(
+                'Versi kontrak resmi SRIKANDI wajib dikonfigurasi sebelum membuat outbox',
+            );
+        }
+        return this.database.transaction((tx) => this.enqueueWithExecutor(tx, input));
+    }
+
+    /**
+     * Enqueue using an existing business transaction. This is intentionally
+     * public only for internal producers so the business row, outbox evidence,
+     * and its append-only audit either commit together or all roll back.
+     */
+    async enqueueWithExecutor(
+        executor: any,
+        input: EnqueueSrikandiMessage,
+    ): Promise<{ item: SrikandiOutbox; created: boolean }> {
         validateEnqueueInput(input);
         const contractVersion = this.config.contractVersion.trim();
         if (!contractVersion || contractVersion.length > 100 || /\r|\n/.test(contractVersion)) {
@@ -197,8 +218,7 @@ export class SrikandiService {
         const messageHash = computeSrikandiMessageHash({ ...input, contractVersion });
         const now = new Date();
 
-        return this.database.transaction(async (tx) => {
-            const [created] = await tx
+        const [created] = await executor
                 .insert(srikandiOutbox)
                 .values({
                     unitKerjaId: input.unitKerjaId.trim(),
@@ -220,42 +240,41 @@ export class SrikandiService {
                 })
                 .returning();
 
-            if (created) {
-                // This append-only row is part of the same transaction. If audit
-                // insertion fails, no unaudited outbox record is committed.
-                await tx.insert(srikandiOutboxAudit).values({
-                    outboxId: created.id,
-                    unitKerjaId: created.unitKerjaId,
-                    event: 'enqueued',
-                    actorUserId: input.createdBy || null,
-                    details: {
-                        messageHash,
-                        contractVersion: created.contractVersion,
-                        eventType: created.eventType,
-                        sourceEntityType: created.sourceEntityType,
-                        sourceEntityId: created.sourceEntityId,
-                    },
-                });
-                return { item: created, created: true };
-            }
+        if (created) {
+            // This append-only row is part of the same transaction. If audit
+            // insertion fails, no unaudited outbox record is committed.
+            await executor.insert(srikandiOutboxAudit).values({
+                outboxId: created.id,
+                unitKerjaId: created.unitKerjaId,
+                event: 'enqueued',
+                actorUserId: input.createdBy || null,
+                details: {
+                    messageHash,
+                    contractVersion: created.contractVersion,
+                    eventType: created.eventType,
+                    sourceEntityType: created.sourceEntityType,
+                    sourceEntityId: created.sourceEntityId,
+                },
+            });
+            return { item: created, created: true };
+        }
 
-            const [existing] = await tx
-                .select()
-                .from(srikandiOutbox)
-                .where(and(
-                    eq(srikandiOutbox.unitKerjaId, input.unitKerjaId.trim()),
-                    eq(srikandiOutbox.idempotencyKey, input.idempotencyKey),
-                ))
-                .limit(1);
+        const [existing] = await executor
+            .select()
+            .from(srikandiOutbox)
+            .where(and(
+                eq(srikandiOutbox.unitKerjaId, input.unitKerjaId.trim()),
+                eq(srikandiOutbox.idempotencyKey, input.idempotencyKey),
+            ))
+            .limit(1);
 
-            if (!existing) {
-                throw new ConflictError('Idempotency key sedang diproses; coba lagi');
-            }
-            if (existing.messageHash !== messageHash) {
-                throw new ConflictError('Idempotency key telah digunakan untuk pesan SRIKANDI yang berbeda');
-            }
-            return { item: existing, created: false };
-        });
+        if (!existing) {
+            throw new ConflictError('Idempotency key sedang diproses; coba lagi');
+        }
+        if (existing.messageHash !== messageHash) {
+            throw new ConflictError('Idempotency key telah digunakan untuk pesan SRIKANDI yang berbeda');
+        }
+        return { item: existing, created: false };
     }
 
     async list(filters: SrikandiOutboxListFilters) {

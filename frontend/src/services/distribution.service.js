@@ -1,5 +1,14 @@
 import api from './api';
 
+function requireUnitKerjaId(unitKerjaId) {
+    if (!unitKerjaId) throw new Error('Pilih unit kerja terlebih dahulu');
+    return unitKerjaId;
+}
+
+function withUnit(endpoint, unitKerjaId) {
+    return `${endpoint}?unitKerjaId=${encodeURIComponent(requireUnitKerjaId(unitKerjaId))}`;
+}
+
 export const distributionService = {
     /**
      * Get units that can receive distributions
@@ -14,22 +23,25 @@ export const distributionService = {
      * Get inbox (incoming distributions)
      */
     async getInbox(unitKerjaId, filters = {}) {
+        requireUnitKerjaId(unitKerjaId);
         const response = await api.get('/api/distributions/inbox', { unitKerjaId, ...filters });
-        return response;
+        return response.data || [];
     },
 
     /**
      * Get outbox (sent distributions)
      */
     async getOutbox(unitKerjaId, filters = {}) {
+        requireUnitKerjaId(unitKerjaId);
         const response = await api.get('/api/distributions/outbox', { unitKerjaId, ...filters });
-        return response;
+        return response.data || [];
     },
 
     /**
      * Get distribution statistics
      */
     async getStats(unitKerjaId) {
+        requireUnitKerjaId(unitKerjaId);
         const response = await api.get('/api/distributions/stats', { unitKerjaId });
         return response.data;
     },
@@ -61,24 +73,24 @@ export const distributionService = {
     /**
      * Mark distribution as received
      */
-    async receive(id) {
-        const response = await api.put(`/api/distributions/${id}/receive`);
+    async receive(id, unitKerjaId) {
+        const response = await api.put(withUnit(`/api/distributions/${id}/receive`, unitKerjaId));
         return response.data;
     },
 
     /**
      * Mark distribution as processed
      */
-    async process(id) {
-        const response = await api.put(`/api/distributions/${id}/process`);
+    async process(id, unitKerjaId) {
+        const response = await api.put(withUnit(`/api/distributions/${id}/process`, unitKerjaId));
         return response.data;
     },
 
     /**
      * Reject distribution (return to sender)
      */
-    async reject(id, reason) {
-        const response = await api.put(`/api/distributions/${id}/reject`, { reason });
+    async reject(id, reason, unitKerjaId) {
+        const response = await api.put(withUnit(`/api/distributions/${id}/reject`, unitKerjaId), { reason });
         return response.data;
     },
 };

@@ -6,12 +6,14 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts src/app.ts src/workers/malware-scan.ts src/workers/srikandi.ts --format esm --no-dts --clean",
+    "build": "tsup src/index.ts src/app.ts src/workers/malware-scan.ts src/workers/srikandi.ts src/workers/blob-reconciliation.ts --format esm --no-dts --clean",
     "start": "node dist/index.js",
     "dev:malware-worker": "tsx src/workers/malware-scan.ts",
     "start:malware-worker": "node dist/workers/malware-scan.js",
     "dev:srikandi-worker": "tsx src/workers/srikandi.ts",
     "start:srikandi-worker": "node dist/workers/srikandi.js",
+    "dev:blob-reconciler": "tsx src/workers/blob-reconciliation.ts",
+    "start:blob-reconciler": "node dist/workers/blob-reconciliation.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -23,6 +25,7 @@
     "seed:all": "tsx src/db/seed.ts",
     "seed:tester": "tsx src/db/seed-tester.ts",
     "test": "vitest run",
+    "test:postgres-locks": "node -e \"if (!process.env.TEST_POSTGRES_URL) throw new Error('TEST_POSTGRES_URL is required')\" && vitest run --config vitest.postgres.config.ts",
     "test:watch": "vitest"
   },
   "keywords": [
@@ -61,6 +64,7 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.90",
     "@neondatabase/serverless": "^1.0.2",
     "@vercel/blob": "^2.3.0",
     "bcryptjs": "^3.0.3",
@@ -74,7 +78,6 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
-    "googleapis": "^171.4.0",
     "helmet": "^8.1.0",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.5",

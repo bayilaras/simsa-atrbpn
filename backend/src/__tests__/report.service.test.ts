@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
+const whereConditions: any[] = [];
 function enqueue(...results: any[]) { resultQueue.push(...results); }
 
 const mockChain: any = new Proxy({}, {
@@ -10,7 +12,10 @@ const mockChain: any = new Proxy({}, {
             const val = resultQueue.shift() ?? [];
             return (resolve: any) => resolve(val);
         }
-        return (..._args: any[]) => mockChain;
+        return (...args: any[]) => {
+            if (prop === 'where') whereConditions.push(args[0]);
+            return mockChain;
+        };
     },
 });
 
@@ -64,7 +69,10 @@ vi.mock('../services/archive-rule-assignment.service', () => ({
 const { reportService } = await import('../services/report.service');
 
 describe('ReportService', () => {
-    beforeEach(() => { resultQueue.length = 0; });
+    beforeEach(() => {
+        resultQueue.length = 0;
+        whereConditions.length = 0;
+    });
 
     // getSuratMasukReport internally calls getSuratMasukStats
     // getSuratMasukReport: countQuery + dataQuery
@@ -173,6 +181,40 @@ describe('ReportService', () => {
                 id: 'appraised-permanent',
                 hasilAkhir: 'Permanen',
             });
+        });
+    });
+
+    describe('getArsipReport destroyed', () => {
+        it('requires an executed pemusnahan batch, excluding other executed workflows', async () => {
+            enqueue([]); // report rows
+            enqueue([{ total: 0, masuk: 0, keluar: 0 }]); // stats aggregation
+            enqueue([]); // canonical-retention stats rows
+            enqueue([]); // classification breakdown
+            enqueue([]); // media breakdown
+
+            await reportService.getArsipReport({
+                unitKerjaId: 'ditjen',
+                type: 'destroyed',
+            });
+
+            const dialect = new PgDialect();
+            const rendered = whereConditions.map((condition) =>
+                dialect.sqlToQuery(condition),
+            );
+            const reportWhere = rendered.find(({ sql }) =>
+                sql.includes('penyusutan_arsip') && sql.includes('jenis_penyusutan'),
+            );
+
+            expect(reportWhere).toBeDefined();
+            expect(reportWhere?.sql).toContain('"arsip"."disposal_batch_id"');
+            expect(reportWhere?.sql).toContain('"penyusutan_arsip"."jenis_penyusutan"');
+            expect(reportWhere?.sql).toContain('"penyusutan_arsip"."status"');
+            expect(reportWhere?.params).toEqual(expect.arrayContaining([
+                'ditjen',
+                'executed',
+            ]));
+            expect(reportWhere?.sql).toContain("= 'pemusnahan'");
+            expect(reportWhere?.sql).toContain("= 'executed'");
         });
     });
 

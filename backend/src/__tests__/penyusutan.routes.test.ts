@@ -90,6 +90,11 @@ describe('penyusutan batch unit scoping', () => {
         mocks.service.addItems.mockResolvedValue({ added: 1 });
         mocks.service.removeItems.mockResolvedValue({ removed: 1 });
         mocks.service.deleteBatch.mockResolvedValue({ deleted: true });
+        mocks.service.findAll.mockResolvedValue({
+            data: [],
+            pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+        });
+        mocks.service.create.mockResolvedValue({ id: 'batch-new', status: 'draft' });
         for (const method of Object.keys(mocks.print)) {
             mocks.print[method as keyof typeof mocks.print].mockResolvedValue(Buffer.from('%PDF-1.4'));
         }
@@ -112,9 +117,19 @@ describe('penyusutan batch unit scoping', () => {
             'unit-a',
             ['biasa'],
         );
-        expect(mocks.service.addItems).toHaveBeenCalledWith('batch-1', ['arsip-1'], 'unit-a', ['biasa']);
-        expect(mocks.service.removeItems).toHaveBeenCalledWith('batch-1', ['arsip-1'], 'unit-a', ['biasa']);
-        expect(mocks.service.deleteBatch).toHaveBeenCalledWith('batch-1', 'unit-a', ['biasa']);
+        const auditContext = expect.objectContaining({
+            userId: 'user-1',
+            userEmail: 'user@example.test',
+        });
+        expect(mocks.service.addItems).toHaveBeenCalledWith(
+            'batch-1', ['arsip-1'], 'unit-a', ['biasa'], auditContext,
+        );
+        expect(mocks.service.removeItems).toHaveBeenCalledWith(
+            'batch-1', ['arsip-1'], 'unit-a', ['biasa'], auditContext,
+        );
+        expect(mocks.service.deleteBatch).toHaveBeenCalledWith(
+            'batch-1', 'unit-a', ['biasa'], auditContext,
+        );
     });
 
     it('fails closed before creating a legacy permanent-transfer batch', async () => {
@@ -143,15 +158,17 @@ describe('penyusutan batch unit scoping', () => {
         }
     });
 
-    it('uses the explicit all-unit scope only for super_admin', async () => {
+    it('requires and applies a concrete unit selected by super_admin', async () => {
         Object.assign(mocks.user, { role: 'super_admin', unitKerjaId: null });
 
-        await request(app).get('/penyusutan/batch-1').expect(200);
-        await request(app).get('/penyusutan/batch-1/print/usul-musnah').expect(200);
+        await request(app).get('/penyusutan/batch-1').expect(400);
+        await request(app).get('/penyusutan/batch-1/print/usul-musnah').expect(400);
+        await request(app).get('/penyusutan/batch-1?unitKerjaId=unit-b').expect(200);
+        await request(app).get('/penyusutan/batch-1/print/usul-musnah?unitKerjaId=unit-b').expect(200);
 
         const classifications = ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'];
-        expect(mocks.service.findById).toHaveBeenCalledWith('batch-1', null, classifications);
-        expect(mocks.print.generateDaftarUsulMusnah).toHaveBeenCalledWith('batch-1', null, classifications);
+        expect(mocks.service.findById).toHaveBeenCalledWith('batch-1', 'unit-b', classifications);
+        expect(mocks.print.generateDaftarUsulMusnah).toHaveBeenCalledWith('batch-1', 'unit-b', classifications);
     });
 
     it.each([
@@ -170,15 +187,38 @@ describe('penyusutan batch unit scoping', () => {
         );
     });
 
+    it.each([
+        ['admin_dirjen', null, 'ditjen'],
+        ['admin_sesditjen', 'stale-unit', 'sesditjen'],
+    ])('forces %s list/create operations to the fixed role mandate', async (
+        role, assignedUnit, expectedScope,
+    ) => {
+        Object.assign(mocks.user, { role, unitKerjaId: assignedUnit });
+
+        await request(app).get('/penyusutan?unitKerjaId=unit-client').expect(200);
+        await request(app)
+            .post('/penyusutan')
+            .send({
+                unitKerjaId: 'unit-client',
+                jenisPenyusutan: 'pemusnahan',
+                arsipIds: ['arsip-1'],
+            })
+            .expect(201);
+
+        expect(mocks.service.findAll).toHaveBeenCalledWith(expect.objectContaining({
+            unitKerjaId: expectedScope,
+        }));
+        expect(mocks.service.create).toHaveBeenCalledWith(expect.objectContaining({
+            unitKerjaId: expectedScope,
+        }));
+    });
+
     it('fails closed for a non-super user without an assigned unit', async () => {
         Object.assign(mocks.user, { role: 'auditor', unitKerjaId: null });
-        mocks.service.findById.mockResolvedValue(null);
-        mocks.print.generateDaftarUsulMusnah.mockRejectedValue(new Error('Batch not found'));
+        await request(app).get('/penyusutan/batch-1?unitKerjaId=unit-b').expect(400);
+        await request(app).get('/penyusutan/batch-1/print/usul-musnah?unitKerjaId=unit-b').expect(400);
 
-        await request(app).get('/penyusutan/batch-1?unitKerjaId=unit-b').expect(404);
-        await request(app).get('/penyusutan/batch-1/print/usul-musnah?unitKerjaId=unit-b').expect(404);
-
-        expect(mocks.service.findById).toHaveBeenCalledWith('batch-1', '', ['biasa']);
-        expect(mocks.print.generateDaftarUsulMusnah).toHaveBeenCalledWith('batch-1', '', ['biasa']);
+        expect(mocks.service.findById).not.toHaveBeenCalled();
+        expect(mocks.print.generateDaftarUsulMusnah).not.toHaveBeenCalled();
     });
 });

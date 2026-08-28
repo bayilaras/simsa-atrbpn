@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ThemeProviderContext } from '@/context/theme-context'
+
+const TEXT_SIZE_STORAGE_KEY = 'simsa-text-size'
 
 export function ThemeProvider({
     children,
@@ -10,9 +12,8 @@ export function ThemeProvider({
     const [theme, setTheme] = useState(
         () => localStorage.getItem(storageKey) || defaultTheme
     )
-    const textSizeStorageKey = "simsa-text-size"
     const [textSize, setTextSize] = useState(
-        () => localStorage.getItem(textSizeStorageKey) || "standard"
+        () => localStorage.getItem(TEXT_SIZE_STORAGE_KEY) || "standard"
     )
 
     useEffect(() => {
@@ -43,18 +44,22 @@ export function ThemeProvider({
         }
     }, [textSize])
 
-    const value = {
+    const updateTheme = useCallback((nextTheme) => {
+        localStorage.setItem(storageKey, nextTheme)
+        setTheme(nextTheme)
+    }, [storageKey])
+
+    const updateTextSize = useCallback((size) => {
+        localStorage.setItem(TEXT_SIZE_STORAGE_KEY, size)
+        setTextSize(size)
+    }, [])
+
+    const value = useMemo(() => ({
         theme,
-        setTheme: (theme) => {
-            localStorage.setItem(storageKey, theme)
-            setTheme(theme)
-        },
+        setTheme: updateTheme,
         textSize,
-        setTextSize: (size) => {
-            localStorage.setItem(textSizeStorageKey, size)
-            setTextSize(size)
-        },
-    }
+        setTextSize: updateTextSize,
+    }), [theme, textSize, updateTheme, updateTextSize])
 
     return (
         <ThemeProviderContext.Provider {...props} value={value}>

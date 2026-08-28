@@ -2,18 +2,11 @@ import { Router } from 'express';
 import { storageLocationService } from '../services/storage-location.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
-import auditLogService from '../services/audit-log.service';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createStorageLocationSchema, updateStorageLocationSchema } from '../validators/schemas';
-import { resolveRecordUnitScope, type RecordUnitScope } from '../utils/record-unit-scope.js';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
 
 const router = Router();
-
-// Helper to get IP as string
-const getIpAddress = (req: AuthRequest): string | undefined => {
-    const ip = req.ip;
-    return Array.isArray(ip) ? ip[0] : ip;
-};
 
 router.use(authMiddleware);
 
@@ -22,9 +15,9 @@ function requestedUnit(req: AuthRequest): string | undefined {
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-function readUnitScope(req: AuthRequest): RecordUnitScope {
+function readUnitScope(req: AuthRequest): string | null {
     const assignedScope = resolveRecordUnitScope(req);
-    return assignedScope === null ? requestedUnit(req) || null : assignedScope;
+    return assignedScope === null ? requestedUnit(req) || null : assignedScope || null;
 }
 
 function writeUnitScope(req: AuthRequest, createUnit?: unknown): string | null {
@@ -50,6 +43,9 @@ router.param('id', uuidParamValidator);
 router.get('/', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat lokasi.' });
+        }
         const { level, parentId, search, page, limit } = req.query as any;
 
         const result = await storageLocationService.findAll({
@@ -77,6 +73,9 @@ router.get('/', async (req: AuthRequest, res, next) => {
 router.get('/tree', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat lokasi.' });
+        }
 
         const tree = await storageLocationService.getTree(unitKerjaId);
         res.json({ success: true, data: tree });
@@ -95,7 +94,11 @@ router.get('/tree', async (req: AuthRequest, res, next) => {
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const result = await storageLocationService.findById(id as string, readUnitScope(req));
+        const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat lokasi.' });
+        }
+        const result = await storageLocationService.findById(id as string, unitKerjaId);
 
         if (!result) {
             return res.status(404).json({ error: 'Storage location not found' });
@@ -119,11 +122,15 @@ router.get('/:id/qr', async (req: AuthRequest, res, next) => {
         const { id } = req.params;
         const host = req.get('host') || 'localhost';
         const baseUrl = `${req.protocol}://${host}`;
+        const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk membuat QR lokasi.' });
+        }
 
         const result = await storageLocationService.generateQRCode(
             id as string,
             baseUrl,
-            readUnitScope(req),
+            unitKerjaId,
         );
         res.json({ success: true, data: result });
     } catch (error) {
@@ -148,16 +155,10 @@ router.post('/', canWriteMiddleware(), validateBody(createStorageLocationSchema)
         const result = await storageLocationService.create({
             ...req.body,
             unitKerjaId,
-        }, unitKerjaId);
-
-        await auditLogService.logAction({
+        }, unitKerjaId, {
             userId: req.user?.id,
             userEmail: req.user?.email,
-            action: 'create',
-            entityType: 'storage_location',
-            entityId: result.id,
-            changes: { after: { code: result.code, name: result.name, level: result.level } },
-            ipAddress: getIpAddress(req),
+            ipAddress: req.ip,
         });
 
         res.status(201).json({ success: true, data: result });
@@ -187,26 +188,13 @@ router.put('/:id', canWriteMiddleware(), validateBody(updateStorageLocationSchem
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk memperbarui lokasi.' });
         }
 
-        const existing = await storageLocationService.findById(id as string, unitKerjaId);
-        if (!existing) {
-            return res.status(404).json({ error: 'Storage location not found' });
-        }
-
-        const result = await storageLocationService.update(id as string, req.body, unitKerjaId);
+        const result = await storageLocationService.update(id as string, req.body, unitKerjaId, {
+            userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
+        });
 
         if (!result) {
             return res.status(404).json({ error: 'Storage location not found' });
         }
-
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'update',
-            entityType: 'storage_location',
-            entityId: id as string,
-            changes: { before: existing, after: result, fields: Object.keys(req.body) },
-            ipAddress: getIpAddress(req),
-        });
 
         res.json({ success: true, data: result });
     } catch (error: any) {
@@ -239,26 +227,13 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk menghapus lokasi.' });
         }
 
-        const existing = await storageLocationService.findById(id as string, unitKerjaId);
-        if (!existing) {
-            return res.status(404).json({ error: 'Storage location not found' });
-        }
-
-        const result = await storageLocationService.delete(id as string, unitKerjaId);
+        const result = await storageLocationService.delete(id as string, unitKerjaId, {
+            userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
+        });
 
         if (!result) {
             return res.status(404).json({ error: 'Storage location not found' });
         }
-
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'delete',
-            entityType: 'storage_location',
-            entityId: id as string,
-            changes: { before: { code: existing?.code, name: existing?.name } },
-            ipAddress: getIpAddress(req),
-        });
 
         res.json({ success: true, message: 'Storage location deleted successfully' });
     } catch (error: any) {

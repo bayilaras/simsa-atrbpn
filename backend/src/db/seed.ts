@@ -14,15 +14,11 @@ async function seed() {
             id: 'ditjen',
             name: 'Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan',
             description: 'Ditjen PTPP',
-            driveFolderId: '1AQThU5U82bb7PqLfNyLHU-bbXoWuqb-k',
-            driveUploadFolderId: '1s6h9YbNJE5Ig9jOXwEmt2udisOkKxRyA',
         },
         {
             id: 'sesditjen',
             name: 'Sekretariat Direktorat Jenderal',
             description: 'SesDitjen',
-            driveFolderId: '1Bm_yBCzd4Y0XUk-JxgX9GfMFkJ2uBSIN',
-            driveUploadFolderId: '1C3oAbKDfiGZcJPYyjMHQC3j8mMmpI0gK',
         },
     ]).onConflictDoNothing();
 

@@ -37,3 +37,8 @@ export * from './approvals.js';
 export * from './signatures.js';
 export * from './record-access-grants.js';
 export * from './retention-governance.js';
+export * from './settings.js';
+export * from './bulk-upload.js';
+export * from './client-blob-uploads.js';
+export * from './operational-heartbeats.js';
+export * from './ocr-capacity.js';

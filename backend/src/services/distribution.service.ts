@@ -2,6 +2,7 @@ import { db } from '../config/database';
 import { suratDistributions, NewSuratDistribution, SuratDistribution, suratMasuk, unitKerja, users } from '../db/schema';
 import { eq, and, desc, sql, or, notInArray, inArray } from 'drizzle-orm';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 export interface DistributionFilters {
     unitKerjaId?: string;
@@ -33,10 +34,11 @@ export class DistributionService {
         instruction?: string;
         ccUnits?: string[];
         sentBy?: string;
-    }) {
+    }, auditContext?: CriticalAuditContext) {
+        return db.transaction(async (tx) => {
         // The source unit supplied by the client must own the source letter. This
         // prevents an authorised unit from distributing another unit's letter by ID.
-        const [sourceSurat] = await db
+        const [sourceSurat] = await tx
             .select({ id: suratMasuk.id })
             .from(suratMasuk)
             .where(and(
@@ -49,7 +51,7 @@ export class DistributionService {
         }
 
         // Check if already distributed to this target
-        const [existing] = await db
+        const [existing] = await tx
             .select()
             .from(suratDistributions)
             .where(and(
@@ -62,7 +64,7 @@ export class DistributionService {
             throw new Error('Surat sudah didistribusikan ke unit ini');
         }
 
-        const [result] = await db
+        const [result] = await tx
             .insert(suratDistributions)
             .values({
                 suratMasukId: data.suratMasukId,
@@ -76,7 +78,26 @@ export class DistributionService {
             })
             .returning();
 
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'distribute',
+                entityType: 'surat_distribution',
+                entityId: result.id,
+                changes: {
+                    after: {
+                        suratMasukId: data.suratMasukId,
+                        sourceUnitId: data.sourceUnitId,
+                        targetUnitId: data.targetUnitId,
+                        instruction: data.instruction,
+                        status: 'sent',
+                    },
+                },
+            }, tx);
+        }
+
         return result;
+        });
     }
 
     /**
@@ -236,8 +257,10 @@ export class DistributionService {
         distributionId: string,
         receivedBy: string,
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        auditContext?: CriticalAuditContext,
     ) {
-        const [distribution] = await db
+        return db.transaction(async (tx) => {
+        const [distribution] = await tx
             .select()
             .from(suratDistributions)
             .where(this.targetRecordWhere(distributionId, unitScope))
@@ -250,7 +273,7 @@ export class DistributionService {
             throw new Error('Distribution sudah diterima atau diproses');
         }
 
-        const [result] = await db
+        const [result] = await tx
             .update(suratDistributions)
             .set({
                 status: 'received',
@@ -269,7 +292,18 @@ export class DistributionService {
             throw new Error('Distribution sudah diterima atau diproses');
         }
 
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'receive_distribution',
+                entityType: 'surat_distribution',
+                entityId: distributionId,
+                changes: { before: { status: distribution.status }, after: { status: 'received' } },
+            }, tx);
+        }
+
         return result;
+        });
     }
 
     /**
@@ -278,8 +312,10 @@ export class DistributionService {
     async process(
         distributionId: string,
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        auditContext?: CriticalAuditContext,
     ) {
-        const [distribution] = await db
+        return db.transaction(async (tx) => {
+        const [distribution] = await tx
             .select()
             .from(suratDistributions)
             .where(this.targetRecordWhere(distributionId, unitScope))
@@ -292,7 +328,7 @@ export class DistributionService {
             throw new Error('Distribution hanya dapat diproses setelah diterima');
         }
 
-        const [result] = await db
+        const [result] = await tx
             .update(suratDistributions)
             .set({
                 status: 'processed',
@@ -311,7 +347,18 @@ export class DistributionService {
             throw new Error('Distribution hanya dapat diproses setelah diterima');
         }
 
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'process_distribution',
+                entityType: 'surat_distribution',
+                entityId: distributionId,
+                changes: { before: { status: distribution.status }, after: { status: 'processed' } },
+            }, tx);
+        }
+
         return result;
+        });
     }
 
     /**
@@ -321,8 +368,10 @@ export class DistributionService {
         distributionId: string,
         reason: string,
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        auditContext?: CriticalAuditContext,
     ) {
-        const [distribution] = await db
+        return db.transaction(async (tx) => {
+        const [distribution] = await tx
             .select()
             .from(suratDistributions)
             .where(this.targetRecordWhere(distributionId, unitScope))
@@ -335,7 +384,7 @@ export class DistributionService {
             throw new Error('Distribution tidak bisa ditolak');
         }
 
-        const [result] = await db
+        const [result] = await tx
             .update(suratDistributions)
             .set({
                 status: 'rejected',
@@ -353,7 +402,21 @@ export class DistributionService {
             throw new Error('Distribution tidak bisa ditolak');
         }
 
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'reject_distribution',
+                entityType: 'surat_distribution',
+                entityId: distributionId,
+                changes: {
+                    before: { status: distribution.status },
+                    after: { status: 'rejected', reason },
+                },
+            }, tx);
+        }
+
         return result;
+        });
     }
 
     /**

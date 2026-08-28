@@ -24,6 +24,7 @@ import {
     type CanonicalRetentionEvaluation,
     type StructuredRetentionRule,
 } from './archive-rule-assignment.service';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 export interface ArsipFilters {
     unitKerjaId?: string;
@@ -160,6 +161,22 @@ function dispositionLabel(code: string | null | undefined): Arsip['hasilAkhir'] 
 }
 
 export class ArsipService {
+    private assertClassificationMatchesSource(
+        selectedCode: string,
+        sourceCodes: Array<string | null | undefined>,
+        sourceLabel: string,
+    ) {
+        const authoritativeCodes = sourceCodes
+            .map((code) => code?.trim())
+            .filter((code): code is string => Boolean(code));
+        if (authoritativeCodes.length > 0
+            && !authoritativeCodes.includes(selectedCode.trim())) {
+            throw new ValidationError(
+                `Klasifikasi arsip ${selectedCode} tidak cocok dengan klasifikasi yang tercatat pada ${sourceLabel}.`,
+            );
+        }
+    }
+
     private assertNoDirectRetentionTrigger(data: Record<string, any>) {
         if ([
             data.retentionTriggerType,
@@ -294,7 +311,7 @@ export class ArsipService {
         };
     }
 
-    async create(data: NewArsip) {
+    async create(data: NewArsip, auditContext: CriticalAuditContext) {
         // Direct registration is disabled at the route. Keep this lower-level
         // method fail-closed as well: legacy display text can never create an
         // actionable expiry without a verified canonical snapshot.
@@ -304,19 +321,38 @@ export class ArsipService {
                 'Klasifikasi dan hasil akhir JRA wajib ditetapkan melalui registrasi bersnapshot atau rekonsiliasi aturan.',
             );
         }
-        const [result] = await db
-            .insert(arsip)
-            .values({
-                ...data,
-                retentionTriggerType: null,
-                retentionTriggerLabel: null,
-                retentionTriggerDate: null,
-                retentionTriggerEvidence: null,
-                tanggalKadaluarsa: null,
-            })
-            .returning();
+        return db.transaction(async (tx) => {
+            const [result] = await tx
+                .insert(arsip)
+                .values({
+                    ...data,
+                    retentionTriggerType: null,
+                    retentionTriggerLabel: null,
+                    retentionTriggerDate: null,
+                    retentionTriggerEvidence: null,
+                    tanggalKadaluarsa: null,
+                })
+                .returning();
 
-        return result;
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'create',
+                entityType: 'arsip',
+                entityId: result.id,
+                changes: {
+                    after: {
+                        unitKerjaId: result.unitKerjaId,
+                        jenisArsip: result.jenisArsip,
+                        nomorBerkas: result.nomorBerkas,
+                        uraianBerkas: result.uraianBerkas,
+                        tahun: result.tahun,
+                        ruleProvenanceStatus: result.ruleProvenanceStatus,
+                    },
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     async getRuleHistory(id: string) {
@@ -338,6 +374,7 @@ export class ArsipService {
         },
         reason: string,
         userId?: string,
+        auditContext?: CriticalAuditContext,
     ) {
         if (reason.trim().length < 10) {
             throw new ValidationError('Alasan rekonsiliasi minimal 10 karakter.');
@@ -386,7 +423,7 @@ export class ArsipService {
                 throw new ConflictError('Arsip sudah menggunakan butir klasifikasi dan JRA aktif yang dipilih.');
             }
 
-            return archiveRuleAssignmentService.appendRevision(
+            const result = await archiveRuleAssignmentService.appendRevision(
                 tx,
                 id,
                 assignment,
@@ -394,10 +431,31 @@ export class ArsipService {
                 existing.retentionTriggerDate,
                 userId,
             );
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'update',
+                    entityType: 'arsip_rule_assignment',
+                    entityId: id,
+                    changes: {
+                        before: {
+                            ruleProvenanceStatus: existing.ruleProvenanceStatus,
+                            currentRuleSnapshotId: existing.currentRuleSnapshotId,
+                        },
+                        after: {
+                            ruleProvenanceStatus: result.archive.ruleProvenanceStatus,
+                            currentRuleSnapshotId: result.snapshot.id,
+                            revision: result.snapshot.revision,
+                        },
+                        reason,
+                    },
+                }, tx);
+            }
+            return result;
         });
     }
 
-    async update(id: string, data: Partial<Arsip>) {
+    async update(id: string, data: Partial<Arsip>, auditContext?: CriticalAuditContext) {
         const requestedFields = Object.keys(data);
         const changesRuleAssignment = requestedFields.some(field =>
             RULE_ASSIGNMENT_FIELDS.has(field),
@@ -445,6 +503,16 @@ export class ArsipService {
                 .where(eq(arsip.id, id))
                 .returning();
 
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'update',
+                    entityType: 'arsip',
+                    entityId: id,
+                    changes: { before: existing, after: result, fields: requestedFields },
+                }, tx);
+            }
+
             return result;
         });
     }
@@ -488,7 +556,7 @@ export class ArsipService {
         tanggalArsip?: string;
         jumlah?: number;
         createdBy?: string;
-    }, authorizedUnitKerjaId?: string) {
+    }, authorizedUnitKerjaId?: string, auditContext?: CriticalAuditContext) {
         const { suratMasuk } = await import('../db/schema');
         this.assertNoDirectRetentionTrigger(metadata);
 
@@ -536,6 +604,11 @@ export class ArsipService {
             // Client-provided retention text/version/outcome is display-only and is
             // intentionally ignored to prevent a forged disposal decision.
             const assignment = await archiveRuleAssignmentService.resolveActive(tx, metadata);
+            this.assertClassificationMatchesSource(
+                assignment.cache.kodeKlasifikasi,
+                [surat.klasifikasiKode],
+                'surat masuk sumber',
+            );
 
             // Create arsip entry
             const [arsipEntry] = await tx
@@ -596,12 +669,29 @@ export class ArsipService {
                 .set({ isArchived: true, updatedAt: new Date() })
                 .where(eq(suratMasuk.id, suratMasukId));
 
-            return await archiveRuleAssignmentService.attachInitialSnapshot(
+            const archived = await archiveRuleAssignmentService.attachInitialSnapshot(
                 tx,
                 arsipEntry.id,
                 assignment,
                 metadata.createdBy,
             );
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'archive',
+                    entityType: 'surat_masuk',
+                    entityId: suratMasukId,
+                    changes: { after: { arsipId: arsipEntry.id, isArchived: true } },
+                }, tx);
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'create',
+                    entityType: 'arsip',
+                    entityId: arsipEntry.id,
+                    changes: { after: { sourceSuratId: suratMasukId, jenisArsip: 'masuk' } },
+                }, tx);
+            }
+            return archived;
         });
     }
 
@@ -637,7 +727,7 @@ export class ArsipService {
         tanggalArsip?: string;
         jumlah?: number;
         createdBy?: string;
-    }, authorizedUnitKerjaId?: string) {
+    }, authorizedUnitKerjaId?: string, auditContext?: CriticalAuditContext) {
         const { suratKeluar } = await import('../db/schema');
         this.assertNoDirectRetentionTrigger(metadata);
 
@@ -663,6 +753,11 @@ export class ArsipService {
             if (surat.isArchived) {
                 throw new ConflictError('Surat keluar sudah diarsipkan');
             }
+            if (surat.approvalStatus !== 'approved') {
+                throw new ConflictError(
+                    'Surat keluar harus memperoleh persetujuan final sebelum dapat diregistrasikan sebagai arsip',
+                );
+            }
 
             // Check if already archived
             const [existing] = await tx
@@ -679,6 +774,11 @@ export class ArsipService {
             }
 
             const assignment = await archiveRuleAssignmentService.resolveActive(tx, metadata);
+            this.assertClassificationMatchesSource(
+                assignment.cache.kodeKlasifikasi,
+                [surat.klasifikasiFasilitatifKode, surat.klasifikasiSubstantifKode],
+                'surat keluar sumber',
+            );
 
             // Create arsip entry
             const [arsipEntry] = await tx
@@ -739,12 +839,29 @@ export class ArsipService {
                 .set({ isArchived: true, updatedAt: new Date() })
                 .where(eq(suratKeluar.id, suratKeluarId));
 
-            return await archiveRuleAssignmentService.attachInitialSnapshot(
+            const archived = await archiveRuleAssignmentService.attachInitialSnapshot(
                 tx,
                 arsipEntry.id,
                 assignment,
                 metadata.createdBy,
             );
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'archive',
+                    entityType: 'surat_keluar',
+                    entityId: suratKeluarId,
+                    changes: { after: { arsipId: arsipEntry.id, isArchived: true } },
+                }, tx);
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'create',
+                    entityType: 'arsip',
+                    entityId: arsipEntry.id,
+                    changes: { after: { sourceSuratId: suratKeluarId, jenisArsip: 'keluar' } },
+                }, tx);
+            }
+            return archived;
         });
     }
 
@@ -933,15 +1050,23 @@ export class ArsipService {
             .orderBy(desc(arsip.legalHoldPlacedAt), desc(arsip.updatedAt));
     }
 
-    async placeLegalHold(id: string, unitKerjaId: string, reason: string, userId?: string) {
+    async placeLegalHold(
+        id: string,
+        unitKerjaId: string,
+        reason: string,
+        userId?: string,
+        auditContext?: CriticalAuditContext,
+    ) {
         if (reason.trim().length < 10) {
             throw new ValidationError('Alasan legal hold minimal 10 karakter.');
         }
-        const [existing] = await db
+        return db.transaction(async (tx) => {
+        const [existing] = await tx
             .select()
             .from(arsip)
             .where(and(eq(arsip.id, id), eq(arsip.unitKerjaId, unitKerjaId)))
-            .limit(1);
+            .limit(1)
+            .for('update');
 
         if (!existing) throw new NotFoundError('Arsip');
         if (existing.legalHold) throw new ConflictError('Arsip sudah dalam status legal hold.');
@@ -949,7 +1074,7 @@ export class ArsipService {
             throw new ConflictError('Legal hold tidak dapat diterapkan setelah penyusutan selesai dieksekusi.');
         }
 
-        const [updated] = await db
+        const [updated] = await tx
             .update(arsip)
             .set({
                 legalHold: true,
@@ -973,23 +1098,50 @@ export class ArsipService {
             .returning();
 
         if (!updated) throw new ConflictError('Status legal hold berubah. Muat ulang data dan coba kembali.');
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'hold',
+                entityType: 'arsip',
+                entityId: id,
+                changes: {
+                    before: { legalHold: existing.legalHold },
+                    after: {
+                        legalHold: true,
+                        reason: updated.legalHoldReason,
+                        placedAt: updated.legalHoldPlacedAt,
+                        unitKerjaId,
+                    },
+                    fields: ['legalHold', 'legalHoldReason', 'legalHoldPlacedAt', 'legalHoldPlacedBy'],
+                },
+            }, tx);
+        }
         return { before: existing, after: updated };
+        });
     }
 
-    async releaseLegalHold(id: string, unitKerjaId: string, reason: string, userId?: string) {
+    async releaseLegalHold(
+        id: string,
+        unitKerjaId: string,
+        reason: string,
+        userId?: string,
+        auditContext?: CriticalAuditContext,
+    ) {
         if (reason.trim().length < 10) {
             throw new ValidationError('Alasan pelepasan legal hold minimal 10 karakter.');
         }
-        const [existing] = await db
+        return db.transaction(async (tx) => {
+        const [existing] = await tx
             .select()
             .from(arsip)
             .where(and(eq(arsip.id, id), eq(arsip.unitKerjaId, unitKerjaId)))
-            .limit(1);
+            .limit(1)
+            .for('update');
 
         if (!existing) throw new NotFoundError('Arsip');
         if (!existing.legalHold) throw new ConflictError('Arsip tidak sedang dalam status legal hold.');
 
-        const [updated] = await db
+        const [updated] = await tx
             .update(arsip)
             .set({
                 legalHold: false,
@@ -1006,16 +1158,38 @@ export class ArsipService {
             .returning();
 
         if (!updated) throw new ConflictError('Status legal hold berubah. Muat ulang data dan coba kembali.');
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'release_hold',
+                entityType: 'arsip',
+                entityId: id,
+                changes: {
+                    before: {
+                        legalHold: existing.legalHold,
+                        reason: existing.legalHoldReason,
+                    },
+                    after: {
+                        legalHold: false,
+                        releaseReason: updated.legalHoldReleaseReason,
+                        releasedAt: updated.legalHoldReleasedAt,
+                        unitKerjaId,
+                    },
+                    fields: ['legalHold', 'legalHoldReleaseReason', 'legalHoldReleasedAt', 'legalHoldReleasedBy'],
+                },
+            }, tx);
+        }
         return { before: existing, after: updated };
+        });
     }
 
     async getStats(
-        unitKerjaId: string,
+        unitKerjaId: string | null,
         tahun?: number,
         securityClassifications?: string[] | null,
     ) {
         const conditions = [
-            eq(arsip.unitKerjaId, unitKerjaId),
+            unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
             archiveSecurityCondition(securityClassifications),
         ];
         if (tahun) {

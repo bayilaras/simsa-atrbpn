@@ -4,7 +4,7 @@ Website ini adalah Kumpulan Panduan Penggunaan **Aplikasi SIMSA** (Sistem Inform
 
 Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar tanpa hambatan.
 
-> **Profil aplikasi:** SIMSA adalah aplikasi internal/beta, bukan produk yang dinyatakan tersertifikasi atau sepenuhnya patuh. Permen ATR/BPN Nomor 2 Tahun 2026 dan ketentuan ANRI menjadi rujukan desain. Integrasi SRIKANDI, BSrE/PSrE, WORM, dan SIEM bersifat kondisional serta tetap nonaktif/deferred sampai diwajibkan kebijakan internal dan siap secara resmi. Kontrol keamanan dasar tetap berlaku. Baca [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md).
+> **Profil aplikasi:** SIMSA adalah aplikasi internal/beta, bukan produk yang dinyatakan tersertifikasi atau sepenuhnya patuh. Permen ATR/BPN Nomor 2 Tahun 2026 dan ketentuan ANRI menjadi rujukan desain. Tanda tangan elektronik BSrE/PSrE berada di luar ruang lingkup produk. Integrasi SRIKANDI, WORM, dan SIEM bersifat kondisional serta tetap nonaktif/deferred sampai diwajibkan kebijakan internal dan siap secara resmi. Kontrol keamanan dasar tetap berlaku. Baca [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md).
 
 ---
 

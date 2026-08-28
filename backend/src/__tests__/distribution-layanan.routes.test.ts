@@ -45,6 +45,7 @@ vi.mock('../middlewares/role.middleware.js', () => ({
     roleMiddleware: (allowedRoles: string[]) => (req: any, res: any, next: any) => {
         const staffHierarchy = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff'];
         if (allowedRoles.includes('staff') && staffHierarchy.includes(req.user?.role)) return next();
+        if (allowedRoles.includes(req.user?.role)) return next();
         return res.status(403).json({ error: 'Forbidden' });
     },
 }));
@@ -131,19 +132,28 @@ describe('distribution route unit scoping', () => {
 
         expect(mocks.distribution.findById).toHaveBeenCalledWith('dist-1', 'unit-a');
         expect(mocks.distribution.getHistoryBySurat).toHaveBeenCalledWith('surat-1', 'unit-a');
-        expect(mocks.distribution.receive).toHaveBeenCalledWith('dist-1', 'user-1', 'unit-a');
-        expect(mocks.distribution.process).toHaveBeenCalledWith('dist-1', 'unit-a');
-        expect(mocks.distribution.reject).toHaveBeenCalledWith('dist-1', 'Bukan unit tujuan', 'unit-a');
+        expect(mocks.distribution.receive).toHaveBeenCalledWith(
+            'dist-1', 'user-1', 'unit-a', expect.objectContaining({ userId: 'user-1' }),
+        );
+        expect(mocks.distribution.process).toHaveBeenCalledWith(
+            'dist-1', 'unit-a', expect.objectContaining({ userId: 'user-1' }),
+        );
+        expect(mocks.distribution.reject).toHaveBeenCalledWith(
+            'dist-1', 'Bukan unit tujuan', 'unit-a', expect.objectContaining({ userId: 'user-1' }),
+        );
     });
 
-    it('uses all-unit record scope only for super_admin', async () => {
+    it('requires a concrete unit for super_admin writes and narrows every action to it', async () => {
         Object.assign(mocks.user, { role: 'super_admin', unitKerjaId: null });
 
         await request(app).get('/distributions/dist-1').expect(200);
-        await request(app).put('/distributions/dist-1/process').expect(200);
+        await request(app).put('/distributions/dist-1/process').expect(400);
+        await request(app).put('/distributions/dist-1/process?unitKerjaId=unit-b').expect(200);
 
-        expect(mocks.distribution.findById).toHaveBeenCalledWith('dist-1', null);
-        expect(mocks.distribution.process).toHaveBeenCalledWith('dist-1', null);
+        expect(mocks.distribution.findById).toHaveBeenCalledWith('dist-1', 'unit-b');
+        expect(mocks.distribution.process).toHaveBeenCalledWith(
+            'dist-1', 'unit-b', expect.objectContaining({ userId: 'user-1' }),
+        );
     });
 
     it('replaces the nested letter storage locator with an authenticated endpoint', async () => {
@@ -229,6 +239,7 @@ describe('layanan arsip route unit scoping', () => {
         expect(mocks.layanan.updateStatus).toHaveBeenCalledWith(
             'layanan-1', 'diproses', 'user-1', 'Verifikasi', 'ditjen', 'diajukan',
             ['biasa'],
+            expect.objectContaining({ userId: 'user-1', userEmail: 'user@example.test' }),
         );
     });
 
@@ -241,7 +252,20 @@ describe('layanan arsip route unit scoping', () => {
             expect.objectContaining({ arsipId: 'arsip-1', diajukanOleh: 'user-1', status: 'diajukan' }),
             'unit-a',
             ['biasa'],
+            expect.objectContaining({ userId: 'user-1', userEmail: 'user@example.test' }),
         );
+    });
+
+    it('allows staff to create/read their own request but forbids status mutation', async () => {
+        await request(app).post('/layanan-arsip').send({
+            arsipId: 'arsip-1', jenisLayanan: 'penggandaan', keperluan: 'Bukti',
+        }).expect(201);
+        await request(app).get('/layanan-arsip/layanan-1').expect(200);
+        await request(app)
+            .post('/layanan-arsip/layanan-1/status')
+            .send({ status: 'diproses' })
+            .expect(403);
+        expect(mocks.layanan.updateStatus).not.toHaveBeenCalled();
     });
 
     it('keeps auditors read-only when service requests are created', async () => {

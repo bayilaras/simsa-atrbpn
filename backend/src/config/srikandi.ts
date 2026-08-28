@@ -8,6 +8,11 @@ dotenv.config();
 export interface SrikandiConfig {
     enabled: boolean;
     ready: boolean;
+    producerEnabled: boolean;
+    producerReady: boolean;
+    producerPayloadProfile: string;
+    suratMasukCreatedEvent: string;
+    suratKeluarCreatedEvent: string;
     baseUrl: string;
     syncPath: string;
     apiToken: string;
@@ -29,6 +34,8 @@ export interface SrikandiConfig {
 
 const FIELD_PATH_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_.-]{2,99}$/;
+const SUPPORTED_PRODUCER_PROFILE = 'simsa-record-v1';
 
 function integerSetting(
     source: NodeJS.ProcessEnv,
@@ -84,9 +91,14 @@ export function buildSrikandiConfig(source: NodeJS.ProcessEnv = process.env): Sr
     const errors: string[] = [];
     const enabledRaw = source.SRIKANDI_ENABLED?.trim().toLowerCase() || 'false';
     const enabled = enabledRaw === 'true';
+    const producerEnabledRaw = source.SRIKANDI_PRODUCER_ENABLED?.trim().toLowerCase() || 'false';
+    const producerEnabled = producerEnabledRaw === 'true';
 
     if (!['true', 'false'].includes(enabledRaw)) {
         errors.push('SRIKANDI_ENABLED must be either true or false');
+    }
+    if (!['true', 'false'].includes(producerEnabledRaw)) {
+        errors.push('SRIKANDI_PRODUCER_ENABLED must be either true or false');
     }
 
     const baseUrl = source.SRIKANDI_BASE_URL?.trim() || '';
@@ -99,6 +111,9 @@ export function buildSrikandiConfig(source: NodeJS.ProcessEnv = process.env): Sr
     const acknowledgmentField = source.SRIKANDI_ACK_FIELD?.trim() || '';
     const acknowledgmentValue = source.SRIKANDI_ACK_VALUE?.trim() || '';
     const remoteIdField = source.SRIKANDI_REMOTE_ID_FIELD?.trim() || '';
+    const producerPayloadProfile = source.SRIKANDI_PRODUCER_PAYLOAD_PROFILE?.trim() || '';
+    const suratMasukCreatedEvent = source.SRIKANDI_SURAT_MASUK_CREATED_EVENT?.trim() || '';
+    const suratKeluarCreatedEvent = source.SRIKANDI_SURAT_KELUAR_CREATED_EVENT?.trim() || '';
 
     if (/\r|\n/.test(apiToken) || /\r|\n/.test(authPrefix)) {
         errors.push('SRIKANDI credentials and authentication prefix must not contain line breaks');
@@ -182,9 +197,43 @@ export function buildSrikandiConfig(source: NodeJS.ProcessEnv = process.env): Sr
         }
     }
 
+    if (producerEnabled) {
+        const required: Array<[string, string]> = [
+            ['SRIKANDI_CONTRACT_VERSION', contractVersion],
+            ['SRIKANDI_PRODUCER_PAYLOAD_PROFILE', producerPayloadProfile],
+            ['SRIKANDI_SURAT_MASUK_CREATED_EVENT', suratMasukCreatedEvent],
+            ['SRIKANDI_SURAT_KELUAR_CREATED_EVENT', suratKeluarCreatedEvent],
+        ];
+        const missing = required.filter(([, value]) => !value).map(([name]) => name);
+        if (missing.length > 0) {
+            errors.push(`Missing required SRIKANDI producer settings: ${missing.join(', ')}`);
+        }
+        if (producerPayloadProfile && producerPayloadProfile !== SUPPORTED_PRODUCER_PROFILE) {
+            errors.push(
+                `SRIKANDI_PRODUCER_PAYLOAD_PROFILE must be ${SUPPORTED_PRODUCER_PROFILE}`,
+            );
+        }
+        for (const [name, value] of [
+            ['SRIKANDI_SURAT_MASUK_CREATED_EVENT', suratMasukCreatedEvent],
+            ['SRIKANDI_SURAT_KELUAR_CREATED_EVENT', suratKeluarCreatedEvent],
+        ] as const) {
+            if (value && !EVENT_NAME_PATTERN.test(value)) {
+                errors.push(`${name} must be an explicit lowercase contract event name`);
+            }
+        }
+        if (contractVersion && (contractVersion.length > 100 || /\r|\n/.test(contractVersion))) {
+            errors.push('SRIKANDI_CONTRACT_VERSION must contain 1 to 100 safe characters');
+        }
+    }
+
     return {
         enabled,
         ready: enabled && errors.length === 0,
+        producerEnabled,
+        producerReady: producerEnabled && errors.length === 0,
+        producerPayloadProfile,
+        suratMasukCreatedEvent,
+        suratKeluarCreatedEvent,
         baseUrl,
         syncPath,
         apiToken,
@@ -208,11 +257,18 @@ export function buildSrikandiConfig(source: NodeJS.ProcessEnv = process.env): Sr
 export function assertValidSrikandiEnvironment(source: NodeJS.ProcessEnv = process.env): void {
     const config = buildSrikandiConfig(source);
     const enabledRaw = source.SRIKANDI_ENABLED?.trim().toLowerCase();
+    const producerEnabledRaw = source.SRIKANDI_PRODUCER_ENABLED?.trim().toLowerCase();
 
     // Disabled external delivery is never an internal-profile startup
     // dependency. Invalid enablement values and enabled-but-incomplete
     // configurations still fail closed.
-    if (enabledRaw !== undefined && enabledRaw !== 'false' && config.validationErrors.length > 0) {
+    if (
+        (
+            (enabledRaw !== undefined && enabledRaw !== 'false')
+            || (producerEnabledRaw !== undefined && producerEnabledRaw !== 'false')
+        )
+        && config.validationErrors.length > 0
+    ) {
         throw new Error(`Invalid SRIKANDI configuration: ${config.validationErrors.join('; ')}`);
     }
 }
@@ -223,6 +279,8 @@ export function getSrikandiConfigurationStatus(config: SrikandiConfig = srikandi
     return {
         enabled: config.enabled,
         ready: config.ready,
+        producerEnabled: config.producerEnabled,
+        producerReady: config.producerReady,
         endpointConfigured: Boolean(config.baseUrl && config.syncPath),
         credentialConfigured: Boolean(config.apiToken),
         contractConfigured: Boolean(
@@ -230,6 +288,12 @@ export function getSrikandiConfigurationStatus(config: SrikandiConfig = srikandi
             && config.acknowledgmentField
             && config.acknowledgmentValue
             && config.remoteIdField
+        ),
+        producerContractConfigured: Boolean(
+            config.producerPayloadProfile
+            && config.suratMasukCreatedEvent
+            && config.suratKeluarCreatedEvent
+            && config.contractVersion
         ),
         validationErrors: [...config.validationErrors],
     };

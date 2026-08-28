@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Bell, Building2, Users, ChevronDown, LogOut, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw, BookOpen, Check, Monitor, Type } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Bell, Building2, Users, ChevronDown, LogOut, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw, BookOpen, Check, Monitor, Type, ListChecks } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +26,9 @@ import { useGlobalSearchShortcut } from '@/hooks/use-global-search-shortcut'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import appConfig from '@/lib/app-config'
+import settingsService from '@/services/settings.service'
+import { notificationRoute } from '@/lib/notification-routing'
+import { useNotificationUnitScope } from '@/hooks/use-notification-unit-scope'
 
 // Role label mapping for display in Indonesian
 const ROLE_LABELS = {
@@ -37,15 +40,15 @@ const ROLE_LABELS = {
     user: 'Pengguna',
 }
 
-// Unit kerja options for super admin notification filter
-const UNIT_KERJA_OPTIONS = [
-    { id: 'ditjen', label: 'Ditjen PTPP' },
-    { id: 'sesditjen', label: 'Sesditjen' },
-    { id: 'dir_bppt', label: 'Dir. BPPT' },
-    { id: 'dir_ptep', label: 'Dir. PTEP' },
-    { id: 'dir_ktpp', label: 'Dir. KTPP' },
-    { id: 'dir_plp', label: 'Dir. PLP' },
-]
+const NOTIFICATION_CATEGORY_LABELS = {
+    'surat-masuk': 'Surat',
+    'arsip-retensi': 'Retensi',
+    distribusi: 'Distribusi',
+    'verifikasi-retensi': 'Verifikasi',
+    appraisal: 'Appraisal',
+    penyusutan: 'Penyusutan',
+    'penyerahan-permanen': 'Penyerahan',
+}
 
 export function AppHeader() {
     const { user: authUser, signOut } = useAuth()
@@ -56,11 +59,11 @@ export function AppHeader() {
     const { theme, setTheme, textSize, setTextSize } = useTheme()
 
     // Super admin can switch unit kerja for notifications
-    const isSuperAdmin = authUser?.role === 'super_admin'
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(authUser?.unitKerjaId || '')
-    const notifUnitKerjaId = isSuperAdmin ? selectedUnitKerja : authUser?.unitKerjaId
+    const notificationUnitScope = useNotificationUnitScope(authUser)
+    const isSuperAdmin = notificationUnitScope.isSuperAdmin
+    const notifUnitKerjaId = notificationUnitScope.unitKerjaId
 
-    const { counts, loading, hasUrgent, refresh, markAsRead, markAllAsRead, getByCategory, suratCount, arsipCount } = useNotifications({
+    const { counts, loading, hasUrgent, refresh, markAsRead, markAllAsRead, getByCategory, suratCount, arsipCount, workflowCount } = useNotifications({
         unitKerjaId: notifUnitKerjaId,
         limit: 20,
         refreshInterval: 60000, // Refresh every minute
@@ -68,14 +71,30 @@ export function AppHeader() {
 
     const filteredNotifications = getByCategory(activeTab)
 
+    useEffect(() => {
+        if (!authUser?.id) return
+        let active = true
+        settingsService.getPreferences()
+            .then(preferences => {
+                if (active && ['light', 'dark', 'system'].includes(preferences.theme)) {
+                    setTheme(preferences.theme)
+                }
+            })
+            .catch(() => { /* local theme remains the safe fallback */ })
+        return () => { active = false }
+    }, [authUser?.id, setTheme])
+
+    const handleThemeChange = (nextTheme) => {
+        setTheme(nextTheme)
+        settingsService.updatePreferences({ theme: nextTheme }).catch(() => {
+            // Theme remains usable locally when preference persistence is unavailable.
+        })
+    }
+
     const handleNotificationClick = (notif) => {
         markAsRead(notif.id)
 
-        if (notif.category === 'surat-masuk') {
-            navigate(`/surat/masuk/${notif.referenceId}`)
-        } else if (notif.category === 'arsip-retensi') {
-            navigate(`/arsip`)
-        }
+        navigate(notificationRoute(notif))
     }
 
     const handleMarkAllAsRead = () => {
@@ -155,17 +174,17 @@ export function AppHeader() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56">
                         <DropdownMenuLabel>Tema</DropdownMenuLabel>
-                        <DropdownMenuItem onSelect={() => setTheme('light')}>
+                        <DropdownMenuItem onSelect={() => handleThemeChange('light')}>
                             <Sun className="mr-2 h-4 w-4" />
                             Terang
                             {theme === 'light' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setTheme('dark')}>
+                        <DropdownMenuItem onSelect={() => handleThemeChange('dark')}>
                             <Moon className="mr-2 h-4 w-4" />
                             Gelap
                             {theme === 'dark' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setTheme('system')}>
+                        <DropdownMenuItem onSelect={() => handleThemeChange('system')}>
                             <Monitor className="mr-2 h-4 w-4" />
                             Ikuti perangkat
                             {theme === 'system' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
@@ -232,7 +251,9 @@ export function AppHeader() {
                                             </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                            {activeTab === 'all' ? 'Tandai semua sudah dibaca' : `Tandai semua ${activeTab === 'surat-masuk' ? 'surat' : 'arsip'} sudah dibaca`}
+                                            {activeTab === 'all'
+                                                ? 'Tandai semua sudah dibaca'
+                                                : `Tandai semua ${activeTab === 'surat-masuk' ? 'surat' : activeTab === 'workflow' ? 'alur kerja' : 'arsip'} sudah dibaca`}
                                         </TooltipContent>
                                     </Tooltip>
                                 </TooltipProvider>
@@ -246,11 +267,17 @@ export function AppHeader() {
                                     <Building2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                                     <select
                                         aria-label="Filter notifikasi berdasarkan unit kerja"
-                                        value={selectedUnitKerja}
-                                        onChange={(e) => setSelectedUnitKerja(e.target.value)}
+                                        value={notificationUnitScope.selectedUnitKerjaId}
+                                        onChange={(e) => notificationUnitScope.setSelectedUnitKerjaId(e.target.value)}
+                                        disabled={notificationUnitScope.loading || notificationUnitScope.unitKerjaList.length === 0}
                                         className="flex-1 text-xs font-medium rounded-md border border-input bg-background px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors cursor-pointer hover:bg-accent/50"
                                     >
-                                        {UNIT_KERJA_OPTIONS.map(unit => (
+                                        {notificationUnitScope.unitKerjaList.length === 0 && (
+                                            <option value="">
+                                                {notificationUnitScope.loading ? 'Memuat unit...' : 'Unit tidak tersedia'}
+                                            </option>
+                                        )}
+                                        {notificationUnitScope.unitKerjaList.map(unit => (
                                             <option key={unit.id} value={unit.id}>{unit.label}</option>
                                         ))}
                                     </select>
@@ -297,6 +324,23 @@ export function AppHeader() {
                                 </button>
                                 <button
                                     type="button"
+                                    aria-pressed={activeTab === 'workflow'}
+                                    className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${activeTab === 'workflow'
+                                        ? 'bg-background shadow-sm text-foreground'
+                                        : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
+                                        }`}
+                                    onClick={(e) => { e.preventDefault(); setActiveTab('workflow'); }}
+                                >
+                                    <ListChecks className="h-3 w-3" />
+                                    <span>Alur</span>
+                                    {workflowCount > 0 && (
+                                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-100 px-1 text-[10px] font-semibold text-violet-700 dark:bg-violet-900/50 dark:text-violet-300">
+                                            {workflowCount}
+                                        </span>
+                                    )}
+                                </button>
+                                <button
+                                    type="button"
                                     aria-pressed={activeTab === 'all'}
                                     className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${activeTab === 'all'
                                         ? 'bg-background shadow-sm text-foreground'
@@ -328,6 +372,8 @@ export function AppHeader() {
                                         <FileText className="h-6 w-6 opacity-50" />
                                     ) : activeTab === 'arsip-retensi' ? (
                                         <Archive className="h-6 w-6 opacity-50" />
+                                    ) : activeTab === 'workflow' ? (
+                                        <ListChecks className="h-6 w-6 opacity-50" />
                                     ) : (
                                         <CheckCircle2 className="h-6 w-6 opacity-50" />
                                     )}
@@ -335,11 +381,13 @@ export function AppHeader() {
                                 <p className="text-sm font-medium">
                                     {activeTab === 'surat-masuk' ? 'Semua surat sudah diproses!' :
                                         activeTab === 'arsip-retensi' ? 'Tidak ada arsip mendekati kadaluarsa' :
+                                            activeTab === 'workflow' ? 'Tidak ada tindakan alur kerja' :
                                             'Semua sudah dibaca!'}
                                 </p>
                                 <p className="text-xs mt-1">
                                     {activeTab === 'surat-masuk' ? 'Tidak ada surat masuk yang perlu ditindaklanjuti.' :
                                         activeTab === 'arsip-retensi' ? 'Jadwal retensi arsip aman untuk saat ini.' :
+                                            activeTab === 'workflow' ? 'Distribusi, verifikasi, appraisal, penyusutan, dan penyerahan tidak memerlukan tindakan.' :
                                             'Tidak ada notifikasi baru saat ini.'}
                                 </p>
                             </div>
@@ -382,7 +430,7 @@ export function AppHeader() {
                                                     ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400'
                                                     : 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400'
                                                     }`}>
-                                                    {notif.category === 'surat-masuk' ? 'Surat' : 'Retensi'}
+                                                    {NOTIFICATION_CATEGORY_LABELS[notif.category] || 'Sistem'}
                                                 </span>
                                             </div>
                                         </div>

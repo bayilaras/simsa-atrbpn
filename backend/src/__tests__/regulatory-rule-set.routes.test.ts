@@ -236,7 +236,7 @@ describe('regulatory rule-set routes', () => {
         expect(response.body.error).toMatch(/baseline lama belum dimigrasikan/i);
     });
 
-    it('clones and audits a draft as the authenticated super_admin', async () => {
+    it('passes governance audit context when cloning a draft as super_admin', async () => {
         const response = await request(app)
             .post('/regulatory-rule-sets/klasifikasi/clone-active')
             .send({
@@ -256,10 +256,7 @@ describe('regulatory rule-set routes', () => {
             state.user.id,
             expect.objectContaining({ actorEmail: state.user.email }),
         );
-        expect(state.audit).toHaveBeenCalledWith(expect.objectContaining({
-            action: 'create',
-            entityId: ruleSetId,
-        }));
+        expect(state.audit).not.toHaveBeenCalled();
     });
 
     it('validates route parameters and bodies before calling the service', async () => {
@@ -275,7 +272,7 @@ describe('regulatory rule-set routes', () => {
         expect(state.service.cloneActive).not.toHaveBeenCalled();
     });
 
-    it('activates a draft and audits its content hash', async () => {
+    it('delegates activation and its domain audit to the transactional service', async () => {
         await request(app)
             .post(`/regulatory-rule-sets/${ruleSetId}/activate`)
             .send({})
@@ -286,17 +283,10 @@ describe('regulatory rule-set routes', () => {
             state.user.id,
             expect.objectContaining({ actorEmail: state.user.email }),
         );
-        expect(state.audit).toHaveBeenCalledWith(expect.objectContaining({
-            action: 'status_change',
-            entityId: ruleSetId,
-            changes: expect.objectContaining({
-                before: expect.objectContaining({ status: 'approved' }),
-                after: expect.objectContaining({ contentHash: 'a'.repeat(64) }),
-            }),
-        }));
+        expect(state.audit).not.toHaveBeenCalled();
     });
 
-    it('atomically imports a valid typed manifest and audits the result', async () => {
+    it('delegates typed manifest import and domain audit atomically to the service', async () => {
         const item = {
             kode: 'PT.01',
             sourceRecordKey: 'new-regulation:1',
@@ -317,10 +307,7 @@ describe('regulatory rule-set routes', () => {
             state.user.id,
             expect.objectContaining({ actorEmail: state.user.email }),
         );
-        expect(state.audit).toHaveBeenCalledWith(expect.objectContaining({
-            action: 'update',
-            entityId: ruleSetId,
-        }));
+        expect(state.audit).not.toHaveBeenCalled();
     });
 
     it('exposes the maker-checker workflow and requires substantive notes', async () => {

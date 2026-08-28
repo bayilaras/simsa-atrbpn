@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -8,17 +8,25 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { settingsService } from '@/services/settings.service';
-import { User, Building2, FileText, Save, Loader2, Settings2 } from 'lucide-react';
+import { useTheme } from '@/context/theme-context';
+import { User, Building2, FileText, Save, Loader2, Settings2, Palette } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 
 export default function Settings() {
     const { user, canWrite } = useAuth();
     const { toast } = useToast();
+    const { setTheme } = useTheme();
     const isAdmin = canWrite();
+    const templateUnitScope = useRequiredUnitKerjaScope(user);
+    const templateUnitKerjaId = templateUnitScope.unitKerjaId;
 
     const [activeTab, setActiveTab] = useState('profile');
     const [loading, setLoading] = useState(false);
@@ -37,8 +45,6 @@ export default function Settings() {
     const [unitKerjaForm, setUnitKerjaForm] = useState({
         name: '',
         description: '',
-        driveFolderId: '',
-        driveUploadFolderId: '',
     });
 
     // Surat Templates state
@@ -47,10 +53,49 @@ export default function Settings() {
         keluarFormat: '{noUrut}/{naskahDinas}/{bulan}/{tahun}',
     });
 
+    const [preferences, setPreferences] = useState({
+        theme: 'light',
+        language: 'id',
+        notificationsEnabled: true,
+        emailNotifications: false,
+    });
+
+    const loadTabData = useCallback(async () => {
+        setLoading(true);
+        try {
+            switch (activeTab) {
+                case 'unit-kerja': {
+                    // The general unit directory is intentionally shared by
+                    // distribution and notification pickers. Settings asks the
+                    // API for the narrower set this admin may actually edit.
+                    const units = await settingsService.getAllUnitKerja({ editable: true });
+                    setUnitKerjaList(units);
+                    break;
+                }
+                case 'templates': {
+                    if (!templateUnitKerjaId) break;
+                    const tmpl = await settingsService.getSuratTemplates(templateUnitKerjaId);
+                    setTemplates(tmpl);
+                    break;
+                }
+                case 'preferences': {
+                    const prefs = await settingsService.getPreferences();
+                    setPreferences(prefs);
+                    setTheme(prefs.theme);
+                    break;
+                }
+            }
+        } catch (error) {
+            console.error('Error loading settings:', error);
+        } finally {
+            setLoading(false);
+        }
+    }, [activeTab, setTheme, templateUnitKerjaId]);
+
     // Load data based on tab
     useEffect(() => {
         loadTabData();
-    }, [activeTab]);
+    }, [loadTabData]);
 
     // Initialize with user data
     useEffect(() => {
@@ -62,26 +107,6 @@ export default function Settings() {
             });
         }
     }, [user]);
-
-    const loadTabData = async () => {
-        setLoading(true);
-        try {
-            switch (activeTab) {
-                case 'unit-kerja':
-                    const units = await settingsService.getAllUnitKerja();
-                    setUnitKerjaList(units);
-                    break;
-                case 'templates':
-                    const tmpl = await settingsService.getSuratTemplates();
-                    setTemplates(tmpl);
-                    break;
-            }
-        } catch (error) {
-            console.error('Error loading settings:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleSaveProfile = async () => {
         setSaving(true);
@@ -111,8 +136,6 @@ export default function Settings() {
         setUnitKerjaForm({
             name: unit.name || '',
             description: unit.description || '',
-            driveFolderId: unit.driveFolderId || '',
-            driveUploadFolderId: unit.driveUploadFolderId || '',
         });
     };
 
@@ -138,9 +161,17 @@ export default function Settings() {
     };
 
     const handleSaveTemplates = async () => {
+        if (!templateUnitKerjaId) {
+            toast({
+                title: 'Pilih unit kerja',
+                description: 'Template hanya dapat dimuat dan disimpan untuk satu unit kerja.',
+                variant: 'destructive',
+            });
+            return;
+        }
         setSaving(true);
         try {
-            await settingsService.updateSuratTemplates(templates);
+            await settingsService.updateSuratTemplates(templateUnitKerjaId, templates);
             toast({
                 title: 'Berhasil',
                 description: 'Template surat berhasil diperbarui',
@@ -149,6 +180,24 @@ export default function Settings() {
             toast({
                 title: 'Error',
                 description: error?.message || 'Gagal memperbarui template',
+                variant: 'destructive',
+            });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSavePreferences = async () => {
+        setSaving(true);
+        try {
+            const updated = await settingsService.updatePreferences(preferences);
+            setPreferences(updated);
+            setTheme(updated.theme);
+            toast({ title: 'Berhasil', description: 'Preferensi pengguna berhasil disimpan' });
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description: error?.message || 'Gagal menyimpan preferensi',
                 variant: 'destructive',
             });
         } finally {
@@ -165,17 +214,24 @@ export default function Settings() {
             <PageHeader
                 icon={Settings2}
                 title="Pengaturan"
-                description="Kelola profil, unit kerja, dan template surat"
+                description="Kelola profil, preferensi, unit kerja, dan template surat"
             />
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className={`bg-card/50 backdrop-blur-sm border border-border/60 p-1 h-auto rounded-xl shadow-sm grid w-full gap-1 ${isAdmin ? 'grid-cols-3' : 'grid-cols-1'}`}>
+                <TabsList className={`bg-card/50 backdrop-blur-sm border border-border/60 p-1 h-auto rounded-xl shadow-sm grid w-full gap-1 ${isAdmin ? 'grid-cols-4' : 'grid-cols-2'}`}>
                     <TabsTrigger
                         value="profile"
                         className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
                     >
                         <User className="h-4 w-4 mr-2" />
                         <span>Profil</span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                        value="preferences"
+                        className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
+                    >
+                        <Palette className="h-4 w-4 mr-2" />
+                        <span>Preferensi</span>
                     </TabsTrigger>
                     {isAdmin && (
                         <>
@@ -260,6 +316,85 @@ export default function Settings() {
                                     Simpan Profil
                                 </Button>
                             </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="preferences" className="mt-0">
+                    <Card className="border-border/60 shadow-sm">
+                        <CardHeader className="bg-muted/50 border-b border-border pb-4">
+                            <CardTitle className="text-xl text-foreground">Preferensi Pengguna</CardTitle>
+                            <CardDescription>
+                                Preferensi tersimpan pada akun dan digunakan kembali saat Anda masuk dari perangkat lain.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6 pt-6">
+                            {loading ? (
+                                <div className="space-y-4">
+                                    <Skeleton className="h-20 rounded-xl" />
+                                    <Skeleton className="h-20 rounded-xl" />
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid gap-6 md:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="preference-theme">Tema</Label>
+                                            <Select
+                                                value={preferences.theme}
+                                                onValueChange={(theme) => setPreferences(current => ({ ...current, theme }))}
+                                            >
+                                                <SelectTrigger id="preference-theme">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="light">Terang</SelectItem>
+                                                    <SelectItem value="dark">Gelap</SelectItem>
+                                                    <SelectItem value="system">Ikuti perangkat</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Bahasa antarmuka</Label>
+                                            <Input value="Bahasa Indonesia" disabled />
+                                            <p className="text-xs text-muted-foreground">Antarmuka regulasi saat ini tersedia dalam Bahasa Indonesia.</p>
+                                        </div>
+                                    </div>
+
+                                    <Separator />
+
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                                            <div>
+                                                <p className="font-medium">Notifikasi dalam aplikasi</p>
+                                                <p className="text-sm text-muted-foreground">Tampilkan dan perbarui antrean notifikasi pada header aplikasi.</p>
+                                            </div>
+                                            <Switch
+                                                checked={preferences.notificationsEnabled}
+                                                onCheckedChange={(checked) => setPreferences(current => ({ ...current, notificationsEnabled: checked }))}
+                                                aria-label="Aktifkan notifikasi dalam aplikasi"
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                                            <div>
+                                                <p className="font-medium">Notifikasi email</p>
+                                                <p className="text-sm text-muted-foreground">Izinkan email pemberitahuan ketika layanan email sistem tersedia.</p>
+                                            </div>
+                                            <Switch
+                                                checked={preferences.emailNotifications}
+                                                onCheckedChange={(checked) => setPreferences(current => ({ ...current, emailNotifications: checked }))}
+                                                aria-label="Aktifkan notifikasi email"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end">
+                                        <Button onClick={handleSavePreferences} disabled={saving}>
+                                            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                                            Simpan Preferensi
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
                         </CardContent>
                     </Card>
                 </TabsContent>
@@ -354,40 +489,6 @@ export default function Settings() {
                                                 />
                                             </div>
 
-                                            <div className="space-y-4 rounded-xl bg-muted/50 p-4 border border-border">
-                                                <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
-                                                    <div className="h-1.5 w-1.5 rounded-full bg-blue-500"></div>
-                                                    Konfigurasi Google Drive
-                                                </h4>
-                                                <div className="grid gap-4">
-                                                    <div className="space-y-2">
-                                                        <Label className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Folder ID (Arsip)</Label>
-                                                        <Input
-                                                            value={unitKerjaForm.driveFolderId}
-                                                            onChange={(e) =>
-                                                                setUnitKerjaForm({ ...unitKerjaForm, driveFolderId: e.target.value })
-                                                            }
-                                                            placeholder="ID folder untuk penyimpanan arsip"
-                                                            className="font-mono text-sm bg-card border-border"
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <Label className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Upload Folder ID</Label>
-                                                        <Input
-                                                            value={unitKerjaForm.driveUploadFolderId}
-                                                            onChange={(e) =>
-                                                                setUnitKerjaForm({
-                                                                    ...unitKerjaForm,
-                                                                    driveUploadFolderId: e.target.value,
-                                                                })
-                                                            }
-                                                            placeholder="ID folder untuk upload sementara"
-                                                            className="font-mono text-sm bg-card border-border"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-
                                             <div className="flex justify-end pt-2">
                                                 <Button
                                                     onClick={handleSaveUnitKerja}
@@ -426,6 +527,7 @@ export default function Settings() {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-8 pt-6">
+                                <RequiredUnitKerjaScope scope={templateUnitScope} disabled={saving} />
                                 {loading ? (
                                     <div className="space-y-6">
                                         <Skeleton className="h-24 rounded-xl" />
@@ -480,12 +582,17 @@ export default function Settings() {
                                                     </Badge>
                                                 ))}
                                             </div>
+                                            <div className="mt-3 space-y-1 text-xs text-blue-900/80 dark:text-blue-200/80">
+                                                <p><code>{'{noUrut}'}</code> (3 digit) dan <code>{'{tahun}'}</code> wajib ada.</p>
+                                                <p><code>{'{bulan}'}</code> memakai bulan tanggal surat; <code>{'{unitKerja}'}</code> memakai ID unit; <code>{'{naskahDinas}'}</code> memakai jenis naskah keluar.</p>
+                                                <p>Variabel opsional yang kosong dirapikan dari pemisah ganda. Nomor manual dipertahankan; template menjadi fallback bila nomor dikosongkan.</p>
+                                            </div>
                                         </div>
 
                                         <div className="flex justify-end pt-4">
                                             <Button
                                                 onClick={handleSaveTemplates}
-                                                disabled={saving}
+                                                disabled={saving || !templateUnitKerjaId}
                                                 className="bg-primary hover:bg-primary text-white shadow-sm hover:shadow transition-all"
                                             >
                                                 {saving ? (

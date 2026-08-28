@@ -23,13 +23,8 @@ export const arsipTerjagaService = {
         return api.get(`${BASE_URL}/due-reporting`, { unitKerjaId, daysAhead });
     },
 
-    async printDaftar() {
-        // api.get does not support responseType, use api.request instead
-        const response = await api.request('/api/arsip-terjaga/print/daftar', {
-            method: 'GET',
-            responseType: 'blob'
-        })
-        return response
+    async printDaftar(unitKerjaId) {
+        return api.get('/api/arsip-terjaga/print/daftar', { unitKerjaId }, { responseType: 'blob' })
     },
 
     // Generate ANRI report data

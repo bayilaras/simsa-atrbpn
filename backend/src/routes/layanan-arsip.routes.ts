@@ -2,8 +2,7 @@
 import { Router } from 'express';
 import { layananArsipService } from '../services/layanan-arsip.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
-import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware';
-import auditLogService from '../services/audit-log.service';
+import { canWriteMiddleware, roleMiddleware, type Role } from '../middlewares/role.middleware';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createLayananArsipSchema, updateLayananStatusSchema } from '../validators/schemas';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope';
@@ -13,6 +12,7 @@ const router = Router();
 
 // Roles allowed to see archive-service requests other than their own
 const LAYANAN_REVIEWER_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
+const LAYANAN_STATUS_MUTATOR_ROLES: Role[] = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
 
 // Allowed status transitions — a closed request (selesai/ditolak) cannot be reopened
 const LAYANAN_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -88,15 +88,9 @@ router.post('/', roleMiddleware(['staff']), validateBody(createLayananArsipSchem
             ...req.body,
             diajukanOleh: req.user.id,
             status: 'diajukan'
-        }, resolveRecordUnitScope(req), allowedSecurityClassifications(req.user));
-
-        await auditLogService.logAction({
+        }, resolveRecordUnitScope(req), allowedSecurityClassifications(req.user), {
             userId: req.user.id,
             userEmail: req.user.email,
-            action: 'create',
-            entityType: 'layanan_arsip',
-            entityId: result.id,
-            changes: { after: result },
             ipAddress: req.ip,
         });
 
@@ -108,7 +102,12 @@ router.post('/', roleMiddleware(['staff']), validateBody(createLayananArsipSchem
 
 // POST /api/layanan-arsip/:id/status
 // Update status (Approve/Reject/Complete)
-router.post('/:id/status', canWriteMiddleware(), validateBody(updateLayananStatusSchema), async (req: AuthRequest, res, next) => {
+router.post(
+    '/:id/status',
+    canWriteMiddleware(),
+    roleMiddleware(LAYANAN_STATUS_MUTATOR_ROLES),
+    validateBody(updateLayananStatusSchema),
+    async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
         const { status, notes } = req.body;
@@ -138,22 +137,18 @@ router.post('/:id/status', canWriteMiddleware(), validateBody(updateLayananStatu
             unitScope,
             existing.status,
             allowedSecurityClassifications(req.user),
+            {
+                userId: req.user?.id,
+                userEmail: req.user?.email,
+                ipAddress: req.ip,
+            },
         );
-
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'update',
-            entityType: 'layanan_arsip',
-            entityId: id as string,
-            changes: { status, notes },
-            ipAddress: req.ip,
-        });
 
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);
     }
-});
+    },
+);
 
 export default router;

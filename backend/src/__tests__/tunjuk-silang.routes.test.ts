@@ -184,14 +184,11 @@ describe('tunjuk silang route policy', () => {
             jenisRelasi: 'referensi',
         }).expect(201);
 
-        expect(mocks.service.create).toHaveBeenCalledWith(expect.objectContaining({
-            createdBy: mocks.user.id,
-        }));
-        expect(mocks.audit.logAction).toHaveBeenCalledWith(expect.objectContaining({
-            action: 'create',
-            entityType: 'tunjuk_silang',
-            entityId: REF_ID,
-        }));
+        expect(mocks.service.create).toHaveBeenCalledWith(
+            expect.objectContaining({ createdBy: mocks.user.id }),
+            expect.objectContaining({ userId: mocks.user.id }),
+        );
+        expect(mocks.audit.logAction).not.toHaveBeenCalled();
     });
 
     it('rejects malformed IDs, invalid pagination, and self-references before service calls', async () => {
@@ -246,12 +243,9 @@ describe('tunjuk silang route policy', () => {
             mocks.user.id,
             'Hubungan salah input',
             mocks.user.id,
+            expect.objectContaining({ userId: mocks.user.id }),
         );
-        expect(mocks.audit.logAction).toHaveBeenCalledWith(expect.objectContaining({
-            action: 'cancel',
-            entityType: 'tunjuk_silang',
-            entityId: REF_ID,
-        }));
+        expect(mocks.audit.logAction).not.toHaveBeenCalled();
     });
 
     it('blocks cancellation when an endpoint became immutable', async () => {
@@ -291,6 +285,7 @@ describe('tunjuk silang route policy', () => {
             mocks.user.id,
             'Hubungan salah input',
             null,
+            expect.objectContaining({ userId: mocks.user.id }),
         );
     });
 });

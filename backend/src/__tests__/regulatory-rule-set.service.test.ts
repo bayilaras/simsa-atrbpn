@@ -13,6 +13,9 @@ const blobStorageMocks = vi.hoisted(() => ({
     downloadFile: vi.fn(),
     deleteFile: vi.fn(),
 }));
+const clientBlobMocks = vi.hoisted(() => ({
+    claimWithExecutor: vi.fn(),
+}));
 
 function enqueue(...results: any[]) {
     resultQueue.push(...results);
@@ -44,6 +47,9 @@ const mockDb: any = {
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/blob-storage.service', () => ({
     blobStorageService: blobStorageMocks,
+}));
+vi.mock('../services/client-blob-upload.service.js', () => ({
+    clientBlobUploadService: clientBlobMocks,
 }));
 
 const {
@@ -256,6 +262,8 @@ describe('RegulatoryRuleSetService lifecycle', () => {
             size: 1000,
         }));
         blobStorageMocks.deleteFile.mockResolvedValue(true);
+        clientBlobMocks.claimWithExecutor.mockReset();
+        clientBlobMocks.claimWithExecutor.mockResolvedValue({ id: 'lease-1', status: 'claimed' });
         service = new RegulatoryRuleSetService();
     });
 

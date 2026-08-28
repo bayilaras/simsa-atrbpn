@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileCheck, ArrowLeft, Loader2, Save } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from "@/hooks/use-toast";
 import { autentikasiService } from '@/services/autentikasi.service';
-import { arsipService } from '@/services/arsip.service';
+import { arsipElektronikService } from '@/services/arsip-elektronik.service';
 import {
     Table,
     TableBody,
@@ -34,17 +34,16 @@ export default function AutentikasiCreate() {
         jabatanPenandaTangan: 'Kepala Kantor',
     });
 
-    useEffect(() => {
-        fetchEligibleArchives();
-    }, []);
-
-    const fetchEligibleArchives = async () => {
+    const fetchEligibleArchives = useCallback(async () => {
         setLoadingArchives(true);
         try {
-            // Ideally we filter by 'ready for auth' (has electronic file but no auth ID)
-            // For now fetching all and filtering client side if needed, or assume user selects relevant ones
-            // We'll set a high limit
-            const result = await arsipService.getAll({ limit: 100 });
+            // Autentikasi links arsip_elektronik rows, not their parent arsip IDs.
+            // The server mirrors the create-time CAS gates so the picker cannot
+            // offer records that are guaranteed to fail on submission.
+            const result = await arsipElektronikService.getAll({
+                limit: 100,
+                eligibleForAutentikasi: true,
+            });
             setArchives(result.data || []);
         } catch (error) {
             console.error(error);
@@ -56,7 +55,11 @@ export default function AutentikasiCreate() {
         } finally {
             setLoadingArchives(false);
         }
-    };
+    }, [toast]);
+
+    useEffect(() => {
+        fetchEligibleArchives();
+    }, [fetchEligibleArchives]);
 
     const handleSelectArchive = (id, checked) => {
         if (checked) {
@@ -204,10 +207,10 @@ export default function AutentikasiCreate() {
                                                     onCheckedChange={handleSelectAll}
                                                 />
                                             </TableHead>
-                                            <TableHead>Nomor Berkas</TableHead>
-                                            <TableHead>Uraian</TableHead>
-                                            <TableHead>Tahun</TableHead>
-                                            <TableHead>Jenis</TableHead>
+                                            <TableHead>Registrasi Elektronik</TableHead>
+                                            <TableHead>Arsip Induk</TableHead>
+                                            <TableHead>Format</TableHead>
+                                            <TableHead>Status Verifikasi</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -226,10 +229,14 @@ export default function AutentikasiCreate() {
                                                             onCheckedChange={(checked) => handleSelectArchive(archive.id, checked)}
                                                         />
                                                     </TableCell>
-                                                    <TableCell data-label="Nomor Berkas" className="font-medium">{archive.nomorBerkas}</TableCell>
-                                                    <TableCell data-label="Uraian" className="max-w-xs truncate">{archive.uraianBerkas}</TableCell>
-                                                    <TableCell data-label="Tahun">{archive.tahun}</TableCell>
-                                                    <TableCell data-label="Jenis">{archive.jenisArsip}</TableCell>
+                                                    <TableCell data-label="Registrasi Elektronik" className="font-medium">
+                                                        {archive.registrationCode || archive.id}
+                                                    </TableCell>
+                                                    <TableCell data-label="Arsip Induk" className="max-w-xs truncate font-mono text-xs">
+                                                        {archive.arsipId}
+                                                    </TableCell>
+                                                    <TableCell data-label="Format">{archive.formatFile || '-'}</TableCell>
+                                                    <TableCell data-label="Status Verifikasi">{archive.statusVerifikasi || '-'}</TableCell>
                                                 </TableRow>
                                             ))
                                         )}

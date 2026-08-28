@@ -43,15 +43,31 @@ function actorFrom(req: AuthRequest): ApprovalActor {
 // read-only-role guard therefore apply to every endpoint, including history.
 router.use(authMiddleware, canWriteMiddleware());
 
-router.get('/pending', async (_req: AuthRequest, res: Response, next: NextFunction) => {
+router.get('/pending', async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-        // No unscoped placeholder query: pending remains empty until a scoped
-        // implementation is introduced.
-        res.json({ success: true, data: [] });
+        const pending = await approvalService.getPending(actorFrom(req));
+        res.json({ success: true, data: pending });
     } catch (error) {
         next(error);
     }
 });
+
+router.get(
+    '/approvers/:suratId',
+    validateIdParam('suratId'),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+        try {
+            const approvers = await approvalService.listEligibleApprovers(
+                req.params.suratId as string,
+                actorFrom(req),
+                resolveRecordUnitScope(req),
+            );
+            res.json({ success: true, data: approvers });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
 
 router.post('/submit', validateBody(submitSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {

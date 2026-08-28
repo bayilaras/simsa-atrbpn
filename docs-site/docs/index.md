@@ -14,7 +14,7 @@ title: 👋 Selamat Datang
 Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar tanpa hambatan.
 
 :::important Profil aplikasi internal
-SIMSA adalah aplikasi internal/beta, bukan produk yang dinyatakan tersertifikasi atau sepenuhnya patuh. Pedoman ATR/BPN dan ANRI menjadi rujukan desain. SRIKANDI, BSrE/PSrE, WORM, dan SIEM bersifat kondisional serta tetap nonaktif/deferred sampai diwajibkan kebijakan internal dan siap secara resmi. [Baca profil aplikasi internal](/profil-aplikasi-internal).
+SIMSA adalah aplikasi internal/beta, bukan produk yang dinyatakan tersertifikasi atau sepenuhnya patuh. Pedoman ATR/BPN dan ANRI menjadi rujukan desain. Tanda tangan elektronik BSrE/PSrE berada di luar ruang lingkup produk. SRIKANDI, WORM, dan SIEM bersifat kondisional serta tetap nonaktif/deferred sampai diwajibkan kebijakan internal dan siap secara resmi. [Baca profil aplikasi internal](/profil-aplikasi-internal).
 :::
 
 ---

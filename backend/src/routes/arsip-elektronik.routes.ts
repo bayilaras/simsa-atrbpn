@@ -9,7 +9,6 @@ import {
     allowedSecurityClassifications,
     recordAccessService,
 } from '../services/record-access.service.js';
-import { auditLogService } from '../services/audit-log.service.js';
 
 const router = Router();
 
@@ -41,6 +40,17 @@ const electronicUpdateSchema = electronicInputSchema.omit({
     arsipId: true,
     fileAttachmentId: true,
 }).partial().strict();
+
+const electronicListQuerySchema = z.object({
+    formatFile: z.string().trim().max(20).optional(),
+    statusVerifikasi: z.enum(['pending', 'verified', 'rejected']).optional(),
+    mediaAsal: z.string().trim().max(30).optional(),
+    unitKerjaId: z.string().trim().min(1).max(50).optional(),
+    page: z.coerce.number().int().min(1).optional().default(1),
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+    eligibleForAutentikasi: z.enum(['true', 'false']).optional()
+        .transform(value => value === 'true'),
+}).strict();
 
 async function canReadArsip(req: AuthRequest, arsipId: string): Promise<boolean> {
     const access = await recordAccessService.check(req.user, 'arsip', arsipId);
@@ -76,13 +86,19 @@ function validationError(res: Response, error: z.ZodError) {
 // GET /api/arsip-elektronik — List all with filters
 router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+        const parsed = electronicListQuerySchema.safeParse(req.query);
+        if (!parsed.success) return validationError(res, parsed.error);
+        const query = parsed.data;
         const filters = {
-            formatFile: req.query.formatFile as string | undefined,
-            statusVerifikasi: req.query.statusVerifikasi as string | undefined,
-            mediaAsal: req.query.mediaAsal as string | undefined,
-            unitKerjaId: resolveUnitKerjaId(req) || undefined,
-            page: req.query.page ? Math.max(1, Number(req.query.page)) : 1,
-            limit: req.query.limit ? Math.min(100, Math.max(1, Number(req.query.limit))) : 20,
+            formatFile: query.formatFile,
+            statusVerifikasi: query.statusVerifikasi,
+            mediaAsal: query.mediaAsal,
+            unitKerjaId: req.user?.role === 'super_admin'
+                ? query.unitKerjaId
+                : resolveUnitKerjaId(req) || undefined,
+            page: query.page,
+            limit: query.limit,
+            eligibleForAutentikasi: query.eligibleForAutentikasi,
             securityClassifications: allowedSecurityClassifications(req.user),
         };
         const result = await arsipElektronikService.findAll(filters);
@@ -158,14 +174,9 @@ router.post('/', permissionMiddleware('arsip', 'create'), async (req: AuthReques
         if (!(await canMutateArsip(req, parsed.data.arsipId))) {
             return res.status(404).json({ error: 'Record not found' });
         }
-        const result = await arsipElektronikService.create(parsed.data, req.user!.id);
-        await auditLogService.logAction({
+        const result = await arsipElektronikService.create(parsed.data, req.user!.id, {
             userId: req.user?.id,
             userEmail: req.user?.email,
-            action: 'create',
-            entityType: 'arsip_elektronik',
-            entityId: result.id,
-            changes: { arsipId: result.arsipId, registrationCode: result.registrationCode },
             ipAddress: req.ip,
         });
         res.status(201).json(result);
@@ -184,11 +195,8 @@ router.put('/:id', permissionMiddleware('arsip', 'update'), async (req: AuthRequ
         }
         const parsed = electronicUpdateSchema.safeParse(req.body);
         if (!parsed.success) return validationError(res, parsed.error);
-        const result = await arsipElektronikService.update(id, parsed.data);
-        await auditLogService.logAction({
-            userId: req.user?.id, userEmail: req.user?.email, action: 'update',
-            entityType: 'arsip_elektronik', entityId: id,
-            changes: { fields: Object.keys(parsed.data) }, ipAddress: req.ip,
+        const result = await arsipElektronikService.update(id, parsed.data, {
+            userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
         });
         res.json(result);
     } catch (error: any) {
@@ -208,15 +216,12 @@ router.post('/:id/verify', permissionMiddleware('arsip', 'update'), async (req: 
             return res.status(400).json({ error: 'status must be "verified" or "rejected"' });
         }
         const userId = req.user?.id || 'system';
-        const result = await arsipElektronikService.verify(id, userId, status, catatan);
+        const result = await arsipElektronikService.verify(id, userId, status, catatan, {
+            userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
+        });
         if (!result) {
             return res.status(404).json({ error: 'Record not found' });
         }
-        await auditLogService.logAction({
-            userId: req.user?.id, userEmail: req.user?.email, action: 'status_change',
-            entityType: 'arsip_elektronik', entityId: id,
-            changes: { after: { statusVerifikasi: status } }, ipAddress: req.ip,
-        });
         res.json(result);
     } catch (error: any) {
         res.status(409).json({ error: error.message || 'Verification failed' });
@@ -243,6 +248,8 @@ router.post('/:id/preservasi', permissionMiddleware('arsip', 'update'), async (r
             details: typeof details === 'object' ? JSON.stringify(details) : details,
             performedBy: userId,
             notes
+        }, {
+            userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
         });
 
         res.status(201).json(result);
@@ -275,12 +282,10 @@ router.delete('/:id', permissionMiddleware('arsip', 'delete'), async (req: AuthR
         if (!(await getAuthorizedRecord(req, id, 'mutate'))) {
             return res.status(404).json({ error: 'Record not found' });
         }
-        const deleted = await arsipElektronikService.delete(id);
-        if (!deleted) return res.status(404).json({ error: 'Record not found' });
-        await auditLogService.logAction({
-            userId: req.user?.id, userEmail: req.user?.email, action: 'delete',
-            entityType: 'arsip_elektronik', entityId: id, ipAddress: req.ip,
+        const deleted = await arsipElektronikService.delete(id, {
+            userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
         });
+        if (!deleted) return res.status(404).json({ error: 'Record not found' });
         res.json({ success: true });
     } catch (error: any) {
         res.status(409).json({ error: error.message || 'Delete failed' });

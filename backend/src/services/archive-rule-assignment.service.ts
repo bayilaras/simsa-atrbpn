@@ -7,6 +7,7 @@ import {
     jraAppraisalCases,
     jraAppraisalDecisions,
     klasifikasiArsip,
+    klasifikasiJraMapping,
     regulatoryRuleSets,
     retentionTriggerEvents,
     retentionTriggerVerifications,
@@ -196,6 +197,14 @@ function snapshotObject(value: unknown): Record<string, any> | null {
         : null;
 }
 
+function codeMatchesSegmentPrefix(code: string, prefix: string): boolean {
+    const normalizedCode = code.trim();
+    const normalizedPrefix = prefix.trim();
+    return normalizedPrefix.length > 0
+        && (normalizedCode === normalizedPrefix
+            || normalizedCode.startsWith(`${normalizedPrefix}.`));
+}
+
 export class ArchiveRuleAssignmentService {
     async resolveActive(executor: Executor, input: RuleSelectionInput) {
         const classificationConditions = [
@@ -226,6 +235,12 @@ export class ArchiveRuleAssignmentService {
         if (!input.klasifikasiItemId && classificationMatches.length > 1) {
             throw new ConflictError('Kode klasifikasi memiliki lebih dari satu butir resmi. Pilih butir klasifikasi dari daftar agar identitas sumbernya tercatat.');
         }
+        if (input.klasifikasiItemId && input.kodeKlasifikasi?.trim()
+            && classification.item.kode !== input.kodeKlasifikasi.trim()) {
+            throw new ValidationError(
+                'ID butir klasifikasi tidak cocok dengan kode klasifikasi yang dikirim.',
+            );
+        }
 
         const retentionConditions = [
             eq(regulatoryRuleSets.instrumentType, 'jra'),
@@ -250,9 +265,63 @@ export class ArchiveRuleAssignmentService {
         if (!retention) {
             throw new ConflictError('JRA tidak ditemukan pada versi aktif atau bukan jadwal yang dapat dipilih. Muat ulang master data.');
         }
+        if (input.jraItemId && input.jraKode?.trim()
+            && retention.item.kode !== input.jraKode.trim()) {
+            throw new ValidationError('ID butir JRA tidak cocok dengan kode JRA yang dikirim.');
+        }
+
+        // The mapping endpoint is only a picker aid. Registration and rule
+        // reconciliation must independently enforce the exact, version-bound
+        // thematic pair on the server. A more-specific classification prefix
+        // (for example TU.02) overrides its broader root (TU).
+        const mappings = await executor
+            .select()
+            .from(klasifikasiJraMapping)
+            .where(and(
+                eq(klasifikasiJraMapping.klasifikasiRuleSetId, classification.ruleSet.id),
+                eq(klasifikasiJraMapping.jraRuleSetId, retention.ruleSet.id),
+                eq(klasifikasiJraMapping.isActive, true),
+            ));
+        const classificationMappings = mappings.filter((mapping: any) =>
+            codeMatchesSegmentPrefix(classification.item.kode, mapping.klasifikasiPrefix),
+        );
+        if (classificationMappings.length === 0) {
+            throw new ConflictError(
+                `Pemetaan Klasifikasi-JRA aktif untuk ${classification.item.kode} tidak ditemukan pada pasangan versi peraturan yang dipublikasikan.`,
+            );
+        }
+        const mostSpecificLength = Math.max(...classificationMappings.map((mapping: any) =>
+            mapping.klasifikasiPrefix.trim().length,
+        ));
+        const applicableMappings = classificationMappings.filter((mapping: any) =>
+            mapping.klasifikasiPrefix.trim().length === mostSpecificLength,
+        );
+        const selectedMapping = applicableMappings
+            .filter((mapping: any) =>
+                codeMatchesSegmentPrefix(retention.item.kode, mapping.jraPrefix),
+            )
+            .sort((left: any, right: any) =>
+                right.jraPrefix.trim().length - left.jraPrefix.trim().length,
+            )[0];
+        if (!selectedMapping) {
+            const allowedPrefixes = [...new Set(applicableMappings.map((mapping: any) =>
+                mapping.jraPrefix,
+            ))].join(', ');
+            throw new ValidationError(
+                `Butir JRA ${retention.item.kode} tidak sesuai dengan klasifikasi ${classification.item.kode}. Gunakan JRA pada prefix: ${allowedPrefixes}.`,
+            );
+        }
 
         const snapshot = {
             schemaVersion: 1,
+            mapping: {
+                id: selectedMapping.id,
+                klasifikasiRuleSetId: selectedMapping.klasifikasiRuleSetId,
+                jraRuleSetId: selectedMapping.jraRuleSetId,
+                klasifikasiPrefix: selectedMapping.klasifikasiPrefix,
+                jraPrefix: selectedMapping.jraPrefix,
+                tema: selectedMapping.tema,
+            },
             classification: {
                 itemId: classification.item.id,
                 ruleSetId: classification.ruleSet.id,

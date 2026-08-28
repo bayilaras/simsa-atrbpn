@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -40,6 +40,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import DashboardPengawasan from '@/components/dashboard/DashboardPengawasan'
 import { PageHeader } from '@/components/PageHeader';
 import appConfig from '@/lib/app-config';
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 
 ChartJS.register(
     CategoryScale,
@@ -110,37 +111,97 @@ export default function Dashboard() {
     const [unitKerjaList, setUnitKerjaList] = useState([]);
     const [selectedUnitKerja, setSelectedUnitKerja] = useState(undefined); // undefined = uninitialized
     const isInitializedRef = useRef(false);
+    const lastLocationKeyRef = useRef(location.key);
 
     const isSuperAdmin = user?.role === 'super_admin';
+    const effectiveUserUnitKerjaId = resolveEffectiveUnitKerjaId(user);
 
-    // Load unit kerja list for super admin
-    useEffect(() => {
-        if (user) {
-            if (isSuperAdmin) {
-                loadUnitKerjaList();
-            } else {
-                // Regular user: lock to their unit (use 'none' if no unitKerjaId)
-                setSelectedUnitKerja(user.unitKerjaId || 'none');
-            }
+    const loadUnitKerjaList = useCallback(async () => {
+        try {
+            const result = await settingsService.getAllUnitKerja();
+            const list = result.data || result || [];
+            setUnitKerjaList(list);
+            // Default to "Semua Unit Kerja"
+            setSelectedUnitKerja('all');
+        } catch (err) {
+            console.error('Failed to load unit kerja list:', err);
+            setSelectedUnitKerja('all');
         }
-    }, [user?.id]);
+    }, []);
 
-    // Load dashboard data when selectedUnitKerja is set
-    useEffect(() => {
-        if (user && selectedUnitKerja !== undefined) {
-            loadDashboardData();
-            isInitializedRef.current = true;
-        }
+    // Shared data fetching logic
+    const fetchDashboardData = useCallback(async () => {
+        const unitKerjaId = (selectedUnitKerja === 'all' || selectedUnitKerja === 'none') ? null : selectedUnitKerja;
+
+        const [statsResult, expiringResult, comparisonResult, recentResult, widgetResult] = await Promise.all([
+            dashboardService.getStats(unitKerjaId),
+            dashboardService.getExpiringArchives(unitKerjaId, 90),
+            dashboardService.getUnitKerjaComparison(unitKerjaId),
+            dashboardService.getRecentActivity(unitKerjaId, 8),
+            dashboardService.getWidgetData(unitKerjaId).catch(() => null),
+        ]);
+
+        setStats(statsResult);
+        setExpiring(expiringResult);
+        setUnitKerjaStats(comparisonResult || []);
+        setRecentActivity(recentResult || []);
+        setWidgetData(widgetResult);
     }, [selectedUnitKerja]);
 
-    // Re-fetch data when navigating back to dashboard (real-time updates)
+    // Full load with loading spinner (initial load or unit change)
+    const loadDashboardData = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            await fetchDashboardData();
+        } catch (err) {
+            console.error('Failed to load dashboard data:', err);
+            setError('Gagal memuat data dashboard');
+        } finally {
+            setLoading(false);
+        }
+    }, [fetchDashboardData]);
+
+    // Silent refresh without loading spinner (navigation back, focus, etc)
+    const refreshData = useCallback(async () => {
+        try {
+            await fetchDashboardData();
+        } catch (err) {
+            console.error('Failed to refresh dashboard data:', err);
+        }
+    }, [fetchDashboardData]);
+
+    // Load unit kerja list for super admin.
     useEffect(() => {
+        if (!user) return;
+
+        if (isSuperAdmin) {
+            loadUnitKerjaList();
+        } else {
+            // Regular user: lock to their unit (use 'none' if no unitKerjaId)
+            setSelectedUnitKerja(effectiveUserUnitKerjaId || 'none');
+        }
+    }, [user, isSuperAdmin, effectiveUserUnitKerjaId, loadUnitKerjaList]);
+
+    // Load dashboard data when selectedUnitKerja is set.
+    useEffect(() => {
+        if (user && selectedUnitKerja !== undefined) {
+            isInitializedRef.current = true;
+            loadDashboardData();
+        }
+    }, [user, selectedUnitKerja, loadDashboardData]);
+
+    // Re-fetch data only when a navigation creates a new location entry.
+    useEffect(() => {
+        if (lastLocationKeyRef.current === location.key) return;
+        lastLocationKeyRef.current = location.key;
+
         if (isInitializedRef.current && user && selectedUnitKerja !== undefined) {
             refreshData();
         }
-    }, [location.key]);
+    }, [location.key, user, selectedUnitKerja, refreshData]);
 
-    // Re-fetch data when window regains focus (e.g. user switches tabs back)
+    // Re-fetch data when window regains focus (e.g. user switches tabs back).
     useEffect(() => {
         const handleFocus = () => {
             if (isInitializedRef.current && user && selectedUnitKerja !== undefined) {
@@ -161,62 +222,7 @@ export default function Dashboard() {
             window.removeEventListener('focus', handleFocus);
             document.removeEventListener('visibilitychange', handleVisibility);
         };
-    }, [user, selectedUnitKerja]);
-
-    const loadUnitKerjaList = async () => {
-        try {
-            const result = await settingsService.getAllUnitKerja();
-            const list = result.data || result || [];
-            setUnitKerjaList(list);
-            // Default to "Semua Unit Kerja"
-            setSelectedUnitKerja('all');
-        } catch (err) {
-            console.error('Failed to load unit kerja list:', err);
-            setSelectedUnitKerja('all');
-        }
-    };
-
-    // Full load with loading spinner (initial load or unit change)
-    const loadDashboardData = async () => {
-        try {
-            setLoading(true);
-            setError(null);
-            await fetchDashboardData();
-        } catch (err) {
-            console.error('Failed to load dashboard data:', err);
-            setError('Gagal memuat data dashboard');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Silent refresh without loading spinner (navigation back, focus, etc)
-    const refreshData = async () => {
-        try {
-            await fetchDashboardData();
-        } catch (err) {
-            console.error('Failed to refresh dashboard data:', err);
-        }
-    };
-
-    // Shared data fetching logic
-    const fetchDashboardData = async () => {
-        const unitKerjaId = (selectedUnitKerja === 'all' || selectedUnitKerja === 'none') ? null : selectedUnitKerja;
-
-        const [statsResult, expiringResult, comparisonResult, recentResult, widgetResult] = await Promise.all([
-            dashboardService.getStats(unitKerjaId),
-            dashboardService.getExpiringArchives(unitKerjaId, 90),
-            dashboardService.getUnitKerjaComparison(unitKerjaId),
-            dashboardService.getRecentActivity(unitKerjaId, 8),
-            dashboardService.getWidgetData(unitKerjaId).catch(() => null),
-        ]);
-
-        setStats(statsResult);
-        setExpiring(expiringResult);
-        setUnitKerjaStats(comparisonResult || []);
-        setRecentActivity(recentResult || []);
-        setWidgetData(widgetResult);
-    };
+    }, [user, selectedUnitKerja, refreshData]);
 
     // Categorize expiring archives by urgency
     const expiringByUrgency = {
@@ -337,10 +343,10 @@ export default function Dashboard() {
                                 </SelectContent>
                             </Select>
                         )}
-                        {!isSuperAdmin && selectedUnitKerja !== 'all' && user?.unitKerjaId && (
+                        {!isSuperAdmin && selectedUnitKerja !== 'all' && effectiveUserUnitKerjaId && (
                             <Badge variant="muted" className="w-fit gap-1.5 self-start sm:self-end">
                                 <Building2 className="h-3 w-3" />
-                                <span className="uppercase">{user.unitKerjaId}</span>
+                                <span className="uppercase">{effectiveUserUnitKerjaId}</span>
                             </Badge>
                         )}
                     </div>

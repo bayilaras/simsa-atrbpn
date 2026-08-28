@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, date, integer, timestamp, boolean, check, foreignKey } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, date, integer, timestamp, boolean, check, foreignKey, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { unitKerja } from './unit-kerja';
 import { storageLocations } from './storage-locations';
@@ -100,6 +100,13 @@ export const arsip = pgTable('arsip', {
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
+    uniqueIndex('arsip_source_surat_kind_unique')
+        .on(table.jenisArsip, table.sourceSuratId)
+        .where(sql`${table.sourceSuratId} is not null`),
+    check(
+        'arsip_source_surat_kind_check',
+        sql`${table.sourceSuratId} is null or ${table.jenisArsip} in ('masuk', 'keluar')`,
+    ),
     check(
         'arsip_retention_trigger_type_check',
         sql`${table.retentionTriggerType} is null or ${table.retentionTriggerType} in ('kegiatan_selesai', 'berkas_ditutup', 'serah_terima', 'penetapan', 'lainnya')`,

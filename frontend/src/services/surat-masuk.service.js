@@ -45,8 +45,12 @@ export const suratMasukService = {
     },
 
     // Get next number
-    async getNextNumber({ unitKerjaId, tahun } = {}) {
-        const response = await api.get('/api/surat-masuk/next-number', { unitKerjaId, tahun });
+    async getNextNumber({ unitKerjaId, tahun, tanggalSurat } = {}) {
+        const response = await api.get('/api/surat-masuk/next-number', {
+            unitKerjaId,
+            tahun,
+            tanggalSurat,
+        });
         return response.data;
     },
 

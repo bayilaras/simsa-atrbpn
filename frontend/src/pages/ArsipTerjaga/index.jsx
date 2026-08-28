@@ -21,6 +21,8 @@ import { KATEGORI_CONFIG, STATUS_PELAPORAN_CONFIG, STATUS_KEPATUHAN_CONFIG } fro
 import ArsipTerjagaTable from './ArsipTerjagaTable'
 import ArsipTerjagaForm from './ArsipTerjagaForm'
 import ArsipTerjagaDetail from './ArsipTerjagaDetail'
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 const INITIAL_FORM = {
     arsipId: '',
@@ -36,7 +38,8 @@ const INITIAL_FORM = {
 export default function ArsipTerjaga() {
     const { user } = useAuth()
     const { toast } = useToast()
-    const unitKerjaId = user?.unitKerjaId
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
 
     // State
     const [activeTab, setActiveTab] = useState('daftar')
@@ -80,7 +83,7 @@ export default function ArsipTerjaga() {
             console.error(err)
             toast({ title: 'Gagal memuat data', description: err.message, variant: 'destructive' })
         } finally { setLoading(false) }
-    }, [unitKerjaId, page, search, filterKategori, filterPelaporan])
+    }, [unitKerjaId, page, search, filterKategori, filterPelaporan, toast])
 
     const loadStats = useCallback(async () => {
         if (!unitKerjaId) return
@@ -158,13 +161,18 @@ export default function ArsipTerjaga() {
 
     const handlePrint = async () => {
         try {
-            const blob = await arsipTerjagaService.printDaftar()
-            const url = window.URL.createObjectURL(new Blob([blob]))
+            if (!unitKerjaId) {
+                toast({ title: 'Unit kerja wajib dipilih', variant: 'destructive' })
+                return
+            }
+            const blob = await arsipTerjagaService.printDaftar(unitKerjaId)
+            const url = window.URL.createObjectURL(blob)
             const link = document.createElement('a')
             link.href = url
             link.setAttribute('download', `daftar-arsip-terjaga-${unitKerjaId}.pdf`)
             document.body.appendChild(link); link.click(); link.parentNode.removeChild(link)
-        } catch (err) { toast({ title: 'Error', description: 'Gagal mencetak daftar arsip terjaga', variant: 'destructive' }) }
+            window.URL.revokeObjectURL(url)
+        } catch { toast({ title: 'Error', description: 'Gagal mencetak daftar arsip terjaga', variant: 'destructive' }) }
     }
 
     const getStatValue = (arr, key) => {
@@ -175,6 +183,7 @@ export default function ArsipTerjaga() {
 
     return (
         <div className="space-y-6">
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading} />
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -187,10 +196,10 @@ export default function ArsipTerjaga() {
                     </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={handlePrint} className="gap-2">
+                    <Button variant="outline" onClick={handlePrint} disabled={!unitKerjaId} className="gap-2">
                         <Printer className="h-4 w-4" /> Cetak Daftar
                     </Button>
-                    <Button onClick={() => { resetForm(); setShowCreateDialog(true) }} className="gap-2 bg-purple-600 hover:bg-purple-700">
+                    <Button disabled={!unitKerjaId} onClick={() => { resetForm(); setShowCreateDialog(true) }} className="gap-2 bg-purple-600 hover:bg-purple-700">
                         <Plus className="h-4 w-4" /> Tetapkan Arsip Terjaga
                     </Button>
                 </div>

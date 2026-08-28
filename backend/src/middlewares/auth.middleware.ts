@@ -4,6 +4,8 @@ import { db } from '../config/database';
 import { users } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { createLogger } from '../utils/logger';
+import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import type { Role } from '../config/permissions.js';
 
 const log = createLogger('AuthMiddleware');
 const PROVISIONED_ROLES = new Set([
@@ -88,7 +90,13 @@ export async function authMiddleware(
             });
         }
 
-        req.user = authUser;
+        req.user = {
+            ...authUser,
+            unitKerjaId: resolveEffectiveUnitKerjaId(
+                authUser.role as Role,
+                authUser.unitKerjaId,
+            ),
+        };
         next();
     } catch (error) {
         log.error({ err: error }, 'Auth middleware error');
@@ -124,7 +132,13 @@ export async function optionalAuthMiddleware(
             if (user) {
                 const { isActive, ...authUser } = user;
                 if (isActive !== false) {
-                    req.user = authUser;
+                    req.user = {
+                        ...authUser,
+                        unitKerjaId: resolveEffectiveUnitKerjaId(
+                            authUser.role as Role,
+                            authUser.unitKerjaId,
+                        ),
+                    };
                 }
             }
         }

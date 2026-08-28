@@ -1,6 +1,7 @@
 import { put, del, get, head, list, copy } from '@vercel/blob';
 import { Readable } from 'stream';
 import { createLogger } from '../utils/logger';
+import { buildBlobStorageConfig } from '../config/blob-storage.js';
 
 const log = createLogger('BlobStorageService');
 
@@ -27,9 +28,28 @@ export interface StoredFile {
     size?: number;
 }
 
+export interface DownloadFileOptions {
+    abortSignal?: AbortSignal;
+    throwOnError?: boolean;
+}
+
 export class BlobStorageService {
+    private assertConfigured(): void {
+        // Data-plane reads/writes only require the private Blob token. The
+        // callback origin is a control-plane requirement checked at API
+        // startup, not by workers or storage operations.
+        const status = buildBlobStorageConfig(process.env, { requireCallbackUrl: false });
+        if (!status.ready) {
+            throw new Error(
+                status.validationErrors[0]
+                || 'Private Blob storage is not configured (BLOB_READ_WRITE_TOKEN missing)',
+            );
+        }
+    }
+
     // Upload file to Vercel Blob
     async uploadFile(options: UploadFileOptions): Promise<StoredFile> {
+        this.assertConfigured();
         const { fileName, mimeType, buffer, folder } = options;
 
         // Use folder prefix for organization
@@ -62,6 +82,7 @@ export class BlobStorageService {
     // performs this inside the backing store, avoiding a server round trip for
     // large regulatory PDFs while retaining a rule-set-bound locator.
     async copyFile(options: CopyFileOptions): Promise<StoredFile> {
+        this.assertConfigured();
         const pathname = `${options.folder}/${options.fileName}`;
         const blob = await copy(options.sourceUrl, pathname, {
             access: 'private',
@@ -83,6 +104,7 @@ export class BlobStorageService {
     // Get file metadata
     async getFile(blobUrl: string): Promise<StoredFile | null> {
         try {
+            this.assertConfigured();
             const metadata = await head(blobUrl);
             return {
                 id: metadata.url,
@@ -101,6 +123,7 @@ export class BlobStorageService {
     // Delete file from Vercel Blob
     async deleteFile(blobUrl: string): Promise<boolean> {
         try {
+            this.assertConfigured();
             await del(blobUrl);
             log.info({ blobUrl }, 'File deleted from Vercel Blob');
             return true;
@@ -111,8 +134,12 @@ export class BlobStorageService {
     }
 
     // Download file content as a readable stream
-    async downloadFile(blobUrl: string): Promise<{ stream: Readable; mimeType: string; fileName: string } | null> {
+    async downloadFile(
+        blobUrl: string,
+        options: DownloadFileOptions = {},
+    ): Promise<{ stream: Readable; mimeType: string; fileName: string } | null> {
         try {
+            this.assertConfigured();
             const parsedUrl = new URL(blobUrl);
             if (
                 parsedUrl.protocol !== 'https:' ||
@@ -126,9 +153,14 @@ export class BlobStorageService {
             const access = parsedUrl.hostname.includes('.private.blob.vercel-storage.com')
                 ? 'private'
                 : 'public';
-            const result = await get(blobUrl, { access, useCache: false });
-            if (!result || result.statusCode !== 200 || !result.stream) {
-                throw new Error('Blob was not found or returned no content');
+            const result = await get(blobUrl, {
+                access,
+                useCache: false,
+                ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
+            });
+            if (!result) return null;
+            if (result.statusCode !== 200 || !result.stream) {
+                throw new Error('Blob returned an unexpected response without content');
             }
 
             const contentType = result.blob.contentType || 'application/octet-stream';
@@ -142,15 +174,22 @@ export class BlobStorageService {
             };
         } catch (error) {
             log.error({ err: error, blobUrl }, 'Failed to download file from Blob');
+            if (error instanceof Error && error.name === 'BlobNotFoundError') return null;
+            if (options.throwOnError) throw error;
             return null;
         }
     }
 
     // List files
-    async listFiles(prefix?: string): Promise<StoredFile[]> {
+    async listFiles(
+        prefix?: string,
+        options: { abortSignal?: AbortSignal } = {},
+    ): Promise<StoredFile[]> {
+        this.assertConfigured();
         const result = await list({
             prefix: prefix || 'uploads/',
             limit: 100,
+            ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
         });
 
         return result.blobs.map((blob) => ({

@@ -165,7 +165,12 @@ Untuk admin:
 1. Buka **Surat > Surat Keluar** lalu klik **Tambah Surat Keluar**.
 2. Isi jenis naskah dinas, nomor, tanggal, tujuan, perihal, klasifikasi, serta dokumen final.
 3. Untuk membalas surat masuk, buka detail surat masuk dan pilih **Balas Surat** agar referensi asal tetap terhubung.
-4. Setelah proses selesai, arsipkan surat melalui halaman detail.
+4. Simpan surat sebagai draft, lalu buka halaman detail dan periksa seluruh metadata.
+5. Klik **Ajukan Persetujuan**, pilih administrator aktif lain sebagai penyetuju, isi catatan bila perlu, lalu kirim.
+6. Penyetuju yang ditunjuk membuka antrean atau detail surat dan memilih **Setujui** atau **Tolak**. Alasan wajib diisi saat menolak.
+7. Surat yang ditolak dapat diperbaiki dan diajukan ulang. Surat yang telah disetujui final dapat diarsipkan melalui halaman detail.
+
+Pembuat tidak dapat menyetujui suratnya sendiri. Selama status **Menunggu Persetujuan** atau **Disetujui**, surat terkunci dari edit dan hapus; surat belum dapat diarsipkan sebelum persetujuan final. Seluruh pengajuan, keputusan, catatan, dan pelaku tampil pada riwayat. Ini adalah persetujuan proses internal, bukan tanda tangan elektronik, serta tidak menggunakan BSrE/PSrE.
 
 ### Distribusi
 
@@ -174,6 +179,19 @@ Untuk admin:
 3. Periksa Inbox **Distribusi** untuk kiriman masuk dan riwayat kiriman keluar.
 
 Jangan menghapus surat hanya untuk memperbaiki kesalahan kecil. Gunakan fungsi edit/koreksi yang tersedia agar jejak aktivitas tetap dapat ditelusuri. Penghapusan hanya dilakukan oleh petugas berwenang setelah memastikan dampaknya.
+
+### Unggah massal dan OCR PDF
+
+Untuk menyiapkan beberapa draft arsip dari PDF sekaligus:
+
+1. Buka **Unggah Massal & OCR** dari Dashboard.
+2. Pilih satu unit kerja yang konkret. Super Admin juga wajib memilih unit tujuan sebelum unggah.
+3. Pilih atau seret PDF, maksimal 50 berkas, 50 MiB per berkas, dan 100 MiB per batch.
+4. Klik **Mulai unggah** dan tunggu sampai pemrosesan selesai. PDF yang memiliki text layer dibaca langsung; PDF hasil pindai dirender lalu dikenali dengan OCR Bahasa Indonesia dan Inggris.
+5. Tinjau dan koreksi nomor surat, tanggal, pengirim, perihal, serta metadata lain pada setiap hasil. Jangan menganggap hasil OCR sebagai salinan yang pasti benar.
+6. Konfirmasi hanya item yang sudah diperiksa. Batch yang belum selesai disimpan agar dapat dipulihkan, sedangkan item gagal harus diperiksa dari pesan kesalahannya.
+
+OCR PDF hasil pindai dibatasi maksimal 10 halaman dan dapat gagal bila citra terlalu besar, teks tidak cukup terbaca, model bahasa tidak tersedia, atau waktu proses habis. Kegagalan tersebut tidak membuat metadata pengganti secara otomatis.
 
 ## 7. Membuat dan mengelola arsip
 
@@ -318,7 +336,7 @@ Fitur ini mencatat sirkulasi secara langsung; pastikan kewenangan peminjaman tel
 - **Arsip Elektronik:** kelola media digital dan metadata teknis.
 - **Autentikasi:** catat proses autentikasi arsip.
 - **Tunjuk Silang:** hubungkan rekod yang berkaitan tanpa menggandakan arsip.
-- **Formulir:** buka/cetak formulir operasional yang tersedia.
+- **Formulir:** galeri ini berisi format referensi kosong. Untuk dokumen berbasis data, gunakan tombol cetak/unduh pada modul Peminjaman, Penyusutan, Arsip Vital/Terjaga, atau Laporan agar isi berasal dari rekod aplikasi.
 
 ## 12. Persetujuan akses rekod terkendali
 

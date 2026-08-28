@@ -1,17 +1,24 @@
-import { Router, Response } from 'express';
+import { NextFunction, Router, Response } from 'express';
 import multer from 'multer';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { canAccessUnit, type Role } from '../config/permissions';
-import { bulkUploadService } from '../services/bulk-upload.service';
+import {
+    BULK_UPLOAD_LIMITS,
+    BulkUploadError,
+    bulkUploadService,
+} from '../services/bulk-upload.service';
 import type { BulkUploadBatch, BulkUploadFile } from '../services/bulk-upload.service';
-import { uploadLimiter } from '../middlewares/rate-limiter.middleware';
+import { ocrLimiter, uploadLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope';
+import { uuidParamValidator } from '../middlewares/validate.middleware';
+import { confirmBulkUploadSchema } from '../validators/schemas';
 
 const log = createLogger('BulkUploadRoutes');
 
 const router = Router();
+router.param('batchId', uuidParamValidator);
 
 /**
  * Resolve the upload destination from the authenticated user's mandate. A
@@ -22,6 +29,49 @@ const router = Router();
 function resolveUploadUnit(req: AuthRequest, res: Response): string | undefined {
     const requestedUnit = typeof req.body?.unitKerjaId === 'string'
         ? req.body.unitKerjaId.trim()
+        : '';
+    const assignedScope = resolveRecordUnitScope(req);
+
+    if (assignedScope === null && !requestedUnit) {
+        res.status(400).json({
+            success: false,
+            error: 'unitKerjaId diperlukan untuk super_admin',
+        });
+        return undefined;
+    }
+
+    if (assignedScope !== null && !assignedScope) {
+        res.status(403).json({
+            success: false,
+            error: 'Mandat unit kerja tidak tersedia',
+        });
+        return undefined;
+    }
+
+    if (assignedScope !== null && requestedUnit && requestedUnit !== assignedScope) {
+        res.status(403).json({
+            success: false,
+            error: 'Unit kerja tidak berada dalam cakupan akses',
+        });
+        return undefined;
+    }
+
+    const targetUnit = assignedScope === null ? requestedUnit : assignedScope;
+    const role = req.user?.role as Role;
+    if (!targetUnit || !canAccessUnit(role, req.user?.unitKerjaId || null, targetUnit)) {
+        res.status(403).json({
+            success: false,
+            error: 'Unit kerja tidak berada dalam cakupan akses',
+        });
+        return undefined;
+    }
+
+    return targetUnit;
+}
+
+function resolveActiveBatchUnit(req: AuthRequest, res: Response): string | undefined {
+    const requestedUnit = typeof req.query?.unitKerjaId === 'string'
+        ? req.query.unitKerjaId.trim()
         : '';
     const assignedScope = resolveRecordUnitScope(req);
 
@@ -93,21 +143,84 @@ function canAccessBatch(req: AuthRequest, batch: BulkUploadBatch): boolean {
     return canAccessUnit(role, req.user.unitKerjaId || null, batch.unitKerjaId);
 }
 
-// Configure multer for multiple file uploads
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB per file
-        files: 50 // Max 50 files
+const requestAggregateBytes = new WeakMap<object, number>();
+const aggregateMemoryStorage: multer.StorageEngine = {
+    _handleFile(req, file, callback) {
+        const chunks: Buffer[] = [];
+        let fileBytes = 0;
+        let aggregateExceeded = false;
+        let settled = false;
+        const finish = (error?: Error | null, info?: Partial<Express.Multer.File>) => {
+            if (settled) return;
+            settled = true;
+            callback(error || null, info);
+        };
+
+        file.stream.on('data', (chunk: Buffer | Uint8Array) => {
+            const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            fileBytes += bytes.length;
+            const aggregateBytes = (requestAggregateBytes.get(req) || 0) + bytes.length;
+            requestAggregateBytes.set(req, aggregateBytes);
+            if (aggregateBytes > BULK_UPLOAD_LIMITS.maxBatchBytes) {
+                aggregateExceeded = true;
+                chunks.length = 0;
+                return;
+            }
+            if (!aggregateExceeded) chunks.push(bytes);
+        });
+        file.stream.once('error', (error) => finish(error));
+        file.stream.once('end', () => {
+            if (aggregateExceeded) {
+                finish(Object.assign(new Error('Bulk upload aggregate limit exceeded'), {
+                    code: 'LIMIT_BATCH_SIZE',
+                }));
+                return;
+            }
+            finish(null, { buffer: Buffer.concat(chunks, fileBytes), size: fileBytes });
+        });
     },
-    fileFilter: (req, file, cb) => {
+    _removeFile(_req, file, callback) {
+        delete (file as Partial<Express.Multer.File>).buffer;
+        callback(null);
+    },
+};
+
+// Retain at most 100 MB across the whole request, even when each individual
+// file is below its own 50 MB limit.
+const upload = multer({
+    storage: aggregateMemoryStorage,
+    limits: {
+        fileSize: BULK_UPLOAD_LIMITS.maxFileBytes,
+        files: BULK_UPLOAD_LIMITS.maxFiles,
+        parts: BULK_UPLOAD_LIMITS.maxFiles + 2,
+    },
+    fileFilter: (_req, file, callback) => {
         if (file.mimetype === 'application/pdf') {
-            cb(null, true);
+            callback(null, true);
         } else {
-            cb(new Error('Hanya file PDF yang diperbolehkan'));
+            callback(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname));
         }
-    }
+    },
 });
+
+function receiveBulkUpload(req: AuthRequest, res: Response, next: NextFunction) {
+    upload.array('files', BULK_UPLOAD_LIMITS.maxFiles)(req, res, (error: unknown) => {
+        if (!error) {
+            next();
+            return;
+        }
+        const errorCode = (error as { code?: string }).code;
+        const message = errorCode === 'LIMIT_BATCH_SIZE'
+            ? 'Ukuran total satu batch tidak boleh melebihi 100 MB'
+            : errorCode === 'LIMIT_FILE_SIZE'
+                ? 'Ukuran satu file tidak boleh melebihi 50 MB'
+                : errorCode === 'LIMIT_FILE_COUNT'
+                    ? 'Maksimum 50 file per batch'
+                    : 'Multipart unggahan tidak valid';
+        log.warn({ err: error, errorCode }, 'Rejected bulk upload multipart payload');
+        res.status(400).json({ success: false, error: message });
+    });
+}
 
 /**
  * @swagger
@@ -119,6 +232,7 @@ const upload = multer({
  *       - bearerAuth: []
  *     requestBody:
  *       required: true
+ *       description: Maksimum 50 PDF, 50 MB per file, dan 100 MB total per batch.
  *       content:
  *         multipart/form-data:
  *           schema:
@@ -129,12 +243,11 @@ const upload = multer({
  *             properties:
  *               files:
  *                 type: array
+ *                 maxItems: 50
  *                 items:
  *                   type: string
  *                   format: binary
  *               unitKerjaId:
- *                 type: string
- *               folderId:
  *                 type: string
  *     responses:
  *       200:
@@ -145,13 +258,13 @@ router.post(
     authMiddleware,
     canWriteMiddleware(),
     uploadLimiter,
-    upload.array('files', 50),
+    receiveBulkUpload,
     async (req: AuthRequest, res: Response) => {
+        let targetUnitKerjaId: string | undefined;
         try {
-            const { folderId } = req.body;
             const files = req.files as Express.Multer.File[];
-            const unitKerjaId = resolveUploadUnit(req, res);
-            if (!unitKerjaId) return;
+            targetUnitKerjaId = resolveUploadUnit(req, res);
+            if (!targetUnitKerjaId) return;
 
             if (!files || files.length === 0) {
                 return res.status(400).json({
@@ -178,13 +291,13 @@ router.post(
 
             // Create batch
             const userId = req.user!.id;
-            const batch = bulkUploadService.createBatch(uploadFiles, unitKerjaId, userId);
+            const batch = await bulkUploadService.createBatch(uploadFiles, targetUnitKerjaId, userId);
 
-            // Start processing in background
-            bulkUploadService.processBatch(batch.batchId, uploadFiles, folderId)
-                .catch(error => {
-                    log.error({ err: error }, 'Batch processing error:');
-                });
+            // OCR is advanced by authenticated status polling below. This avoids
+            // relying on background work after a serverless response has ended.
+            void bulkUploadService.cleanupOldBatches().catch(error => {
+                log.error({ err: error }, 'Expired bulk batch cleanup error:');
+            });
 
             res.json({
                 success: true,
@@ -192,18 +305,60 @@ router.post(
                     batchId: batch.batchId,
                     totalFiles: batch.totalFiles,
                     status: batch.status,
-                    message: 'Upload dimulai. Gunakan GET /api/bulk-upload/:batchId untuk memonitor status.'
+                    message: 'Upload tersimpan. Gunakan POST /api/bulk-upload/:batchId/process untuk memproses OCR dan GET untuk membaca status.'
                 }
             });
-        } catch (error: any) {
+        } catch (error) {
             log.error({ err: error }, 'Bulk upload error:');
-            res.status(500).json({
+            const trusted = error instanceof BulkUploadError;
+            let activeBatch: BulkUploadBatch | null = null;
+            if (
+                trusted
+                && error.statusCode === 409
+                && targetUnitKerjaId
+                && req.user?.id
+            ) {
+                try {
+                    activeBatch = await bulkUploadService.getLatestActiveBatch(
+                        req.user.id,
+                        targetUnitKerjaId,
+                    );
+                } catch (lookupError) {
+                    log.error({ err: lookupError }, 'Active batch conflict lookup failed:');
+                }
+            }
+            res.status(trusted ? error.statusCode : 500).json({
                 success: false,
-                error: error.message || 'Upload gagal'
+                error: trusted ? error.message : 'Upload gagal diproses',
+                ...(activeBatch ? { data: { activeBatch } } : {}),
             });
         }
     }
 );
+
+/**
+ * Return the caller's latest unfinished batch so a durable upload can be
+ * resumed after a page reload or process restart. This route must be declared
+ * before `/:batchId` so the literal `active` is never treated as a UUID.
+ */
+router.get('/active', authMiddleware, canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
+    try {
+        const unitKerjaId = resolveActiveBatchUnit(req, res);
+        if (!unitKerjaId) return;
+
+        const batch = await bulkUploadService.getLatestActiveBatch(
+            req.user!.id,
+            unitKerjaId,
+        );
+        res.json({ success: true, data: batch });
+    } catch (error) {
+        log.error({ err: error }, 'Get active batch error:');
+        res.status(500).json({
+            success: false,
+            error: 'Gagal memulihkan batch aktif',
+        });
+    }
+});
 
 /**
  * @swagger
@@ -227,7 +382,7 @@ router.get('/:batchId', authMiddleware, async (req: AuthRequest, res: Response) 
     try {
         const { batchId } = req.params;
 
-        const batch = bulkUploadService.getBatch(batchId as string);
+        const batch = await bulkUploadService.getBatch(batchId as string);
         if (!batch || !canAccessBatch(req, batch)) {
             return res.status(404).json({
                 success: false,
@@ -239,11 +394,63 @@ router.get('/:batchId', authMiddleware, async (req: AuthRequest, res: Response) 
             success: true,
             data: batch
         });
-    } catch (error: any) {
+    } catch (error) {
         log.error({ err: error }, 'Get batch error:');
         res.status(500).json({
             success: false,
-            error: error.message || 'Gagal mengambil status batch'
+            error: 'Gagal mengambil status batch',
+        });
+    }
+});
+
+// Explicit mutation endpoint: advances one OCR item per request. Global CSRF
+// protection applies to this POST, while GET status remains strictly read-only.
+router.post('/:batchId/process', authMiddleware, canWriteMiddleware(), ocrLimiter, async (req: AuthRequest, res: Response) => {
+    try {
+        const batch = await bulkUploadService.getBatch(req.params.batchId as string);
+        if (!batch || !canAccessBatch(req, batch)) {
+            return res.status(404).json({ success: false, error: 'Batch tidak ditemukan' });
+        }
+
+        const processed = await bulkUploadService.processBatch(batch.batchId, 1);
+        res.json({ success: true, data: processed });
+    } catch (error) {
+        log.error({ err: error }, 'Process batch error:');
+        if (error instanceof BulkUploadError && error.retryAfterSeconds) {
+            res.setHeader('Retry-After', String(error.retryAfterSeconds));
+        }
+        res.status(error instanceof BulkUploadError ? error.statusCode : 500).json({
+            success: false,
+            error: error instanceof BulkUploadError ? error.message : 'Gagal memproses batch',
+            ...(error instanceof BulkUploadError && error.retryAfterSeconds
+                ? { retryAfterSeconds: error.retryAfterSeconds }
+                : {}),
+        });
+    }
+});
+
+// Tombstone a caller-owned batch and immediately attempt safe object cleanup.
+// Referenced locators are retained, while failed deletions remain retryable by
+// the scheduled reconciler.
+router.delete('/:batchId', authMiddleware, canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
+    try {
+        const batch = await bulkUploadService.getBatch(req.params.batchId as string);
+        if (!batch || !canAccessBatch(req, batch)) {
+            return res.status(404).json({ success: false, error: 'Batch tidak ditemukan' });
+        }
+        const cleanup = await bulkUploadService.cancelBatch(batch.batchId);
+        res.json({
+            success: true,
+            data: cleanup,
+            message: cleanup.blobsFailed > 0
+                ? 'Batch ditutup; sebagian objek akan dicoba hapus kembali oleh rekonsiliasi terjadwal'
+                : 'Batch dibatalkan dan objek yang tidak direferensikan telah dibersihkan',
+        });
+    } catch (error) {
+        log.error({ err: error }, 'Cancel batch error:');
+        res.status(error instanceof BulkUploadError ? error.statusCode : 500).json({
+            success: false,
+            error: error instanceof BulkUploadError ? error.message : 'Gagal membatalkan batch',
         });
     }
 });
@@ -288,8 +495,6 @@ router.get('/:batchId', authMiddleware, async (req: AuthRequest, res: Response) 
  *                       type: integer
  *                     jenisArsip:
  *                       type: string
- *               folderId:
- *                 type: string
  *     responses:
  *       200:
  *         description: Batch confirmed and saved successfully
@@ -297,9 +502,7 @@ router.get('/:batchId', authMiddleware, async (req: AuthRequest, res: Response) 
 router.post('/:batchId/confirm', authMiddleware, canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
     try {
         const { batchId } = req.params;
-        const { items, folderId } = req.body;
-
-        const batch = bulkUploadService.getBatch(batchId as string);
+        const batch = await bulkUploadService.getBatch(batchId as string);
         if (!batch || !canAccessBatch(req, batch)) {
             return res.status(404).json({
                 success: false,
@@ -307,22 +510,26 @@ router.post('/:batchId/confirm', authMiddleware, canWriteMiddleware(), async (re
             });
         }
 
-        if (!items || !Array.isArray(items)) {
+        const parsed = confirmBulkUploadSchema.safeParse(req.body);
+        if (!parsed.success) {
             return res.status(400).json({
                 success: false,
-                error: 'Items array diperlukan'
+                error: 'Validation failed',
+                details: parsed.error.issues.map(issue => ({
+                    field: issue.path.join('.'),
+                    message: issue.message,
+                })),
             });
         }
 
-        // Note: In production, you'd need to store the file buffers temporarily
-        // or re-upload them. For now, we create arsip records without re-uploading files.
-        const filesMap = new Map<string, Buffer>();
-
         const result = await bulkUploadService.confirmBatch(
             batchId as string,
-            items,
-            filesMap,
-            folderId
+            parsed.data.items,
+            {
+                userId: req.user!.id,
+                userEmail: req.user?.email,
+                ipAddress: req.ip,
+            },
         );
 
         res.json({
@@ -330,11 +537,11 @@ router.post('/:batchId/confirm', authMiddleware, canWriteMiddleware(), async (re
             data: result,
             message: `${result.created} arsip berhasil disimpan, ${result.failed} gagal`
         });
-    } catch (error: any) {
+    } catch (error) {
         log.error({ err: error }, 'Confirm batch error:');
-        res.status(500).json({
+        res.status(error instanceof BulkUploadError ? error.statusCode : 500).json({
             success: false,
-            error: error.message || 'Gagal menyimpan arsip'
+            error: error instanceof BulkUploadError ? error.message : 'Gagal menyimpan arsip',
         });
     }
 });

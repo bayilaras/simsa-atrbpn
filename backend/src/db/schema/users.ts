@@ -1,5 +1,5 @@
-import { pgTable, uuid, varchar, text, timestamp, boolean, uniqueIndex } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, text, timestamp, boolean, uniqueIndex, check } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { unitKerja } from './unit-kerja';
 
 export const users = pgTable('users', {
@@ -15,7 +15,16 @@ export const users = pgTable('users', {
     emailVerified: boolean('email_verified').default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => [
+    check('users_role_unit_mandate_check', sql`
+        CASE ${table.role}
+            WHEN 'super_admin' THEN ${table.unitKerjaId} IS NULL
+            WHEN 'admin_dirjen' THEN ${table.unitKerjaId} IS NOT DISTINCT FROM 'ditjen'
+            WHEN 'admin_sesditjen' THEN ${table.unitKerjaId} IS NOT DISTINCT FROM 'sesditjen'
+            ELSE true
+        END
+    `),
+]);
 
 // Better Auth required tables
 export const sessions = pgTable('sessions', {

@@ -1,9 +1,11 @@
 // Vercel Serverless Function handler (ESM)
 // Imports from pre-built dist/app.js (ESM format)
 
-// Vercel function config — increase timeout for Google Drive file uploads
+// One OCR item may spend 30s extracting a text layer, 180s on scanned-page OCR,
+// and 30s acquiring/streaming its private Blob. Keep a 60s margin for database
+// claims, lease renewal, cleanup, and cold-start overhead.
 export const config = {
-    maxDuration: 60, // 60 seconds for file upload to Google Drive
+    maxDuration: 300,
 };
 
 let app;

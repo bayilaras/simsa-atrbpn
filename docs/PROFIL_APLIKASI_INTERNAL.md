@@ -51,7 +51,7 @@ Jika suatu dependensi keamanan belum tersedia, fitur yang bergantung padanya har
 | Kapabilitas | Status pada profil internal | Kapan menjadi wajib | Aturan aman |
 |---|---|---|---|
 | SRIKANDI | Opsional/deferred dan outbound nonaktif secara default | Jika kebijakan internal menetapkan registrasi atau pertukaran data melalui SRIKANDI | Gunakan kontrak API, sandbox, kredensial, pemetaan data, worker, rekonsiliasi, dan persetujuan resmi; jangan mengklaim sinkronisasi hanya dari HTTP 2xx |
-| BSrE/PSrE | Opsional selama tanda tangan/segel elektronik resmi tidak digunakan | Sebelum fitur tanda tangan/segel elektronik resmi diaktifkan | Endpoint harus tetap gagal-tertutup; tanda tangan simulasi tidak boleh dianggap sah |
+| Tanda tangan elektronik BSrE/PSrE | Di luar ruang lingkup produk berdasarkan keputusan pemilik aplikasi | Tidak diaktifkan pada SIMSA | Pertahankan endpoint legacy dalam keadaan nonaktif; artefak simulasi tidak sah dan tidak boleh dipakai sebagai bukti |
 | Object lock/WORM | Deferred atau kondisional sesuai kelas data, retensi, arsitektur storage, dan keputusan risiko | Jika kebijakan internal atau klasifikasi data mensyaratkan immutability infrastruktur | Baseline tetap memakai objek privat, backup, fixity, pembatasan admin, dan audit; gunakan versioning bila tersedia dan jangan mengklaim WORM tanpa bukti konfigurasi |
 | SIEM/SOC eksternal | Deferred atau kondisional sesuai skala, risiko, dan kebijakan operasi | Jika diwajibkan kebijakan keamanan atau hasil asesmen risiko | Audit/log lokal, kontrol akses log, alert dasar, retensi, sinkronisasi waktu, dan respons insiden tetap harus berjalan |
 
@@ -61,7 +61,7 @@ KMS/HSM, DLP, content disarm, watermark dinamis, dan akreditasi juga diterapkan 
 
 ### Profil inti internal
 
-Gunakan fungsi operasional inti dengan baseline keamanan di atas. Biarkan SRIKANDI, penandatanganan BSrE/PSrE, dan konektor eksternal lain nonaktif bila belum diwajibkan atau belum siap.
+Gunakan fungsi operasional inti dengan baseline keamanan di atas. Penandatanganan BSrE/PSrE bukan bagian dari produk. Biarkan SRIKANDI dan konektor eksternal lain nonaktif bila belum diwajibkan atau belum siap.
 
 Konfigurasi bawaan yang disarankan:
 
@@ -90,7 +90,7 @@ Gunakan pernyataan yang dapat dibuktikan, misalnya:
 - “kontrol tertentu telah tersedia pada kode dan masih memerlukan verifikasi operasional”; atau
 - “fondasi integrasi tersedia tetapi belum diaktifkan.”
 
-Jangan menggunakan klaim “tersertifikasi”, “sepenuhnya patuh”, “resmi terintegrasi dengan SRIKANDI”, “ditandatangani BSrE”, “WORM aktif”, atau “terpantau SIEM” tanpa bukti dan persetujuan yang berlaku.
+Jangan menggunakan klaim “tersertifikasi”, “sepenuhnya patuh”, “resmi terintegrasi dengan SRIKANDI”, “ditandatangani elektronik oleh SIMSA”, “WORM aktif”, atau “terpantau SIEM” tanpa bukti dan persetujuan yang berlaku.
 
 ## Acuan dokumen
 

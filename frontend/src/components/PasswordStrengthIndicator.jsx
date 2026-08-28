@@ -6,17 +6,7 @@ import { Check, X, AlertCircle } from 'lucide-react';
  * Provides real-time feedback on password strength
  */
 
-interface PasswordStrengthProps {
-    password: string;
-    onStrengthChange?: (strength: string, isValid: boolean) => void;
-}
-
-interface PasswordCheck {
-    label: string;
-    test: (password: string) => boolean;
-}
-
-const PASSWORD_CHECKS: PasswordCheck[] = [
+const PASSWORD_CHECKS = [
     {
         label: 'At least 12 characters',
         test: (p) => p.length >= 12
@@ -35,18 +25,16 @@ const PASSWORD_CHECKS: PasswordCheck[] = [
     },
     {
         label: 'Contains special character',
-        test: (p) => /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(p)
+        test: (p) => /[^A-Za-z0-9\s]/.test(p)
     }
 ];
 
-export function PasswordStrengthIndicator({ password, onStrengthChange }: PasswordStrengthProps) {
-    const [strength, setStrength] = useState < 'weak' | 'medium' | 'strong' | 'very-strong' > ('weak');
-    const [score, setScore] = useState(0);
+export function PasswordStrengthIndicator({ password, onStrengthChange }) {
+    const [strength, setStrength] = useState('weak');
 
     useEffect(() => {
         if (!password) {
             setStrength('weak');
-            setScore(0);
             onStrengthChange?.('weak', false);
             return;
         }
@@ -68,10 +56,8 @@ export function PasswordStrengthIndicator({ password, onStrengthChange }: Passwo
         if (/(.)\1{2,}/.test(password)) currentScore = Math.max(0, currentScore - 1);
         if (/(?:012|123|234|345|456|567|678|789|890)/.test(password)) currentScore = Math.max(0, currentScore - 1);
 
-        setScore(currentScore);
-
         // Determine strength
-        let newStrength: typeof strength;
+        let newStrength;
         if (currentScore <= 2) newStrength = 'weak';
         else if (currentScore <= 4) newStrength = 'medium';
         else if (currentScore <= 6) newStrength = 'strong';

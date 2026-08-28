@@ -13,6 +13,11 @@ Empat indikator ditampilkan tanpa membocorkan endpoint atau kredensial:
 - **Endpoint** — origin HTTPS dan path sudah dikonfigurasi.
 - **Kontrak respons** — versi kontrak, ACK, dan field ID resmi sudah ditetapkan.
 
+Status API juga membedakan kesiapan producer dan outbound. Producer surat hanya
+boleh diaktifkan dengan `SRIKANDI_PRODUCER_ENABLED=true`, profil
+`simsa-record-v1`, nama event surat masuk/keluar dari kontrak resmi, serta versi
+kontrak yang sama. Pengiriman jaringan tetap memerlukan `SRIKANDI_ENABLED=true`.
+
 ## Status outbox
 
 | Status | Arti |
@@ -42,8 +47,8 @@ Daftar ini memblokir aktivasi connector SRIKANDI, bukan penggunaan profil intern
 1. Dapatkan kontrak dan sandbox resmi.
 2. Verifikasi mTLS/autentikasi, rate limit, signature, idempotency server, SLA, dan perubahan skema.
 3. Tetapkan pemetaan metadata dan sumber kebenaran antara SIMSA dan SRIKANDI.
-4. Hubungkan producer domain ke outbox dalam transaksi yang sama dengan mutasi arsip.
+4. Verifikasi producer surat masuk/keluar menulis outbox dalam transaksi yang sama dengan mutasi dan auditnya.
 5. Jalankan uji timeout, retry, duplicate delivery, respons tidak valid, dead-letter, dan rekonsiliasi.
 6. Simpan berita acara serta persetujuan Unit Kearsipan/pengelola SRIKANDI.
 
-Selama producer belum dihubungkan dan sandbox belum diterima, outbox adalah **fondasi teknis**, bukan integrasi produksi. Status nonaktif adalah konfigurasi aman untuk profil internal.
+Selama sandbox dan kontrak resmi belum diterima, producer tidak memiliki efek keluar karena outbound tetap nonaktif. Outbox adalah **fondasi teknis**, bukan klaim integrasi produksi. Status nonaktif adalah konfigurasi aman untuk profil internal.

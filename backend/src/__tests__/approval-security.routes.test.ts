@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
         approve: vi.fn(),
         reject: vi.fn(),
         getHistory: vi.fn(),
+        getPending: vi.fn(),
+        listEligibleApprovers: vi.fn(),
     },
     signature: {
         sign: vi.fn(),
@@ -69,6 +71,8 @@ describe('approval route security', () => {
         mocks.approval.approve.mockResolvedValue({ success: true });
         mocks.approval.reject.mockResolvedValue({ success: true });
         mocks.approval.getHistory.mockResolvedValue([]);
+        mocks.approval.getPending.mockResolvedValue([]);
+        mocks.approval.listEligibleApprovers.mockResolvedValue([]);
         mocks.signature.sign.mockResolvedValue({});
     });
 
@@ -135,6 +139,29 @@ describe('approval route security', () => {
             expect.objectContaining({ role: 'admin_sesditjen', unitKerjaId: 'forged-unit' }),
             'sesditjen',
             'secret',
+        );
+    });
+
+    it('loads only the authenticated approver queue', async () => {
+        Object.assign(mocks.user, { role: 'admin_dirjen', unitKerjaId: 'forged-unit' });
+
+        await request(app).get('/approval/pending').expect(200);
+
+        expect(mocks.approval.getPending).toHaveBeenCalledWith(expect.objectContaining({
+            id: mocks.user.id,
+            role: 'admin_dirjen',
+        }));
+    });
+
+    it('resolves eligible approvers using the record scope', async () => {
+        Object.assign(mocks.user, { role: 'admin_sesditjen', unitKerjaId: 'forged-unit' });
+
+        await request(app).get(`/approval/approvers/${ids.surat}`).expect(200);
+
+        expect(mocks.approval.listEligibleApprovers).toHaveBeenCalledWith(
+            ids.surat,
+            expect.objectContaining({ id: mocks.user.id, role: 'admin_sesditjen' }),
+            'sesditjen',
         );
     });
 

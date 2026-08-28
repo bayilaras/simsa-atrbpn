@@ -1,10 +1,10 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import userManagementService from '../services/user-management.service';
 import { listUsersSchema, updateUserSchema, userIdParamSchema, createUserSchema } from '../validations/user-management.validation';
-import auditLogService from '../services/audit-log.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
+import { AppError } from '../utils/errors.js';
 
 const log = createLogger('UserManagementRoutes');
 
@@ -141,32 +141,22 @@ router.post('/', async (req: Request, res: Response) => {
             });
         }
 
-        const newUser = await userManagementService.createUser(bodyResult.data);
-
-        // Log audit
         const currentUser = (req as any).currentUser;
-        await auditLogService.logAction({
+        const newUser = await userManagementService.createUser(bodyResult.data, {
             userId: currentUser.id,
             userEmail: currentUser.email || '',
-            action: 'create',
-            entityType: 'user',
-            entityId: newUser?.id || '',
-            changes: {
-                after: {
-                    email: bodyResult.data.email,
-                    name: bodyResult.data.name,
-                    role: bodyResult.data.role,
-                }
-            },
             ipAddress: req.ip,
         });
 
         res.status(201).json({ success: true, data: newUser });
     } catch (error: any) {
-        log.error({ err: error }, 'Create user error:');
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ error: error.message });
+        }
         if (error.message?.includes('Email sudah terdaftar') || error.message?.includes('Invalid')) {
             return res.status(400).json({ error: error.message });
         }
+        log.error({ err: error }, 'Create user error:');
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -319,45 +309,41 @@ router.put('/:userId', async (req: Request, res: Response) => {
             });
         }
 
-        // Prevent self-demotion from super_admin
+        // Keep the current administrator capable of completing this request.
+        // The service repeats these checks transactionally as defense in depth.
         const currentUser = (req as any).currentUser;
-        if (paramResult.data.userId === currentUser.id && bodyResult.data.role !== 'super_admin') {
-            return res.status(400).json({
-                error: 'Cannot change your own role'
-            });
+        if (paramResult.data.userId === currentUser.id) {
+            if (bodyResult.data.isActive === false) {
+                return res.status(400).json({
+                    error: 'Anda tidak dapat menonaktifkan akun sendiri.'
+                });
+            }
+            if (bodyResult.data.role !== undefined && bodyResult.data.role !== currentUser.role) {
+                return res.status(400).json({
+                    error: 'Anda tidak dapat mengubah peran akun sendiri.'
+                });
+            }
         }
 
-        const existingUser = await userManagementService.getUserById(paramResult.data.userId);
         const updatedUser = await userManagementService.updateUser(
             paramResult.data.userId,
-            bodyResult.data
+            bodyResult.data,
+            { userId: currentUser.id, userEmail: currentUser.email, ipAddress: req.ip },
         );
 
         if (!updatedUser) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Log audit
-        await auditLogService.logAction({
-            userId: currentUser.id,
-            userEmail: currentUser.email,
-            action: 'update',
-            entityType: 'user',
-            entityId: paramResult.data.userId,
-            changes: {
-                before: { role: existingUser?.role, unitKerjaId: existingUser?.unitKerjaId, isActive: existingUser?.isActive },
-                after: { role: updatedUser.role, unitKerjaId: updatedUser.unitKerjaId, isActive: updatedUser.isActive },
-                fields: Object.keys(bodyResult.data)
-            },
-            ipAddress: req.ip,
-        });
-
         res.json({ success: true, data: updatedUser });
     } catch (error: any) {
-        log.error({ err: error }, 'Update user error:');
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ error: error.message });
+        }
         if (error.message?.includes('Invalid')) {
             return res.status(400).json({ error: error.message });
         }
+        log.error({ err: error }, 'Update user error:');
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -399,24 +385,19 @@ router.delete('/:userId', async (req: Request, res: Response) => {
             });
         }
 
-        const deactivatedUser = await userManagementService.deactivateUser(parseResult.data.userId);
+        const deactivatedUser = await userManagementService.deactivateUser(
+            parseResult.data.userId,
+            { userId: currentUser.id, userEmail: currentUser.email, ipAddress: req.ip },
+        );
         if (!deactivatedUser) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Log audit
-        await auditLogService.logAction({
-            userId: currentUser.id,
-            userEmail: currentUser.email,
-            action: 'update',
-            entityType: 'user',
-            entityId: parseResult.data.userId,
-            changes: { after: { isActive: false } },
-            ipAddress: req.ip,
-        });
-
         res.json({ success: true, data: deactivatedUser, message: 'User deactivated' });
     } catch (error) {
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ error: error.message });
+        }
         log.error({ err: error }, 'Deactivate user error:');
         res.status(500).json({ error: 'Internal server error' });
     }

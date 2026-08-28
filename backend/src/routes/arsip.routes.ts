@@ -8,7 +8,6 @@ import {
     queryArsipSchema,
     reconcileArchiveRulesSchema,
 } from '../validators/schemas';
-import auditLogService from '../services/audit-log.service';
 import { fullTextSearchService } from '../services/fulltext-search.service';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import {
@@ -73,15 +72,18 @@ router.get('/expiring', async (req: AuthRequest, res, next) => {
 // GET /api/arsip/stats
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
+        const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || null;
         const { tahun } = req.query;
 
-        if (!unitKerjaId) {
+        // A super administrator may intentionally request an aggregate across
+        // all units. Every scoped role must still resolve to one authoritative
+        // unit so a missing assignment can never widen access.
+        if (!unitKerjaId && req.user?.role !== 'super_admin') {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
 
         const stats = await arsipService.getStats(
-            unitKerjaId as string,
+            unitKerjaId,
             tahun ? Number(tahun) : undefined,
             allowedSecurityClassifications(req.user),
         );
@@ -279,21 +281,15 @@ router.put('/:id', validateIdParam(),
             ) {
                 return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
             }
-            const result = await arsipService.update(id as string, req.body);
+            const result = await arsipService.update(id as string, req.body, {
+                userId: req.user?.id,
+                userEmail: req.user?.email,
+                ipAddress: req.ip,
+            });
 
             if (!result) {
                 return res.status(404).json({ error: 'Arsip not found' });
             }
-
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: 'update',
-                entityType: 'arsip',
-                entityId: id as string,
-                changes: { before: existing ?? undefined, after: result, fields: Object.keys(req.body) },
-                ipAddress: req.ip,
-            });
 
             res.json({ success: true, data: result });
         } catch (error) {
@@ -353,32 +349,12 @@ router.post(
                 },
                 req.body.reason,
                 req.user?.id,
-            );
-
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: 'update',
-                entityType: 'arsip_rule_assignment' as any,
-                entityId: id as string,
-                changes: {
-                    before: {
-                        ruleProvenanceStatus: existing.ruleProvenanceStatus,
-                        klasifikasiArsipId: existing.klasifikasiArsipId,
-                        jraItemId: existing.jraItemId,
-                        currentRuleSnapshotId: existing.currentRuleSnapshotId,
-                    },
-                    after: {
-                        ruleProvenanceStatus: result.archive.ruleProvenanceStatus,
-                        klasifikasiArsipId: result.archive.klasifikasiArsipId,
-                        jraItemId: result.archive.jraItemId,
-                        currentRuleSnapshotId: result.snapshot.id,
-                        revision: result.snapshot.revision,
-                    },
-                    reason: req.body.reason,
+                {
+                    userId: req.user?.id,
+                    userEmail: req.user?.email,
+                    ipAddress: req.ip,
                 },
-                ipAddress: req.ip,
-            });
+            );
 
             res.json({ success: true, data: result.archive, snapshot: result.snapshot });
         } catch (error) {

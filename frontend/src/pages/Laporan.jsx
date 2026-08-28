@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { reportService } from '@/services/report.service';
 import { PageHeader } from '@/components/PageHeader';
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { FileSpreadsheet, FileText, Download, BarChart3, Mail, Send, Archive, BookOpen, TrendingUp, FileImage, Film, FileAudio, Loader2 } from 'lucide-react';
 import {
     BarChart,
@@ -29,7 +31,8 @@ import {
 export default function Laporan() {
     const { user } = useAuth();
     const { toast } = useToast();
-    const unitKerjaId = user?.unitKerjaId || '';
+    const unitScope = useRequiredUnitKerjaScope(user);
+    const unitKerjaId = unitScope.unitKerjaId;
 
     const [activeTab, setActiveTab] = useState('summary');
     const [loading, setLoading] = useState(false);
@@ -53,12 +56,8 @@ export default function Laporan() {
     // Years for dropdown
     const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
-    // Load data based on active tab
-    useEffect(() => {
-        loadData();
-    }, [activeTab, year, unitKerjaId, arsipType, mediaType, lendingStatus]);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
+        if (!unitKerjaId) return;
         setLoading(true);
         try {
             switch (activeTab) {
@@ -99,6 +98,7 @@ export default function Laporan() {
                 }
                 case 'peminjaman': {
                     const lending = await reportService.getLendingReport({
+                        unitKerjaId,
                         status: lendingStatus,
                         tanggalDari: tanggalDari || undefined,
                         tanggalSampai: tanggalSampai || undefined,
@@ -117,9 +117,10 @@ export default function Laporan() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [activeTab, arsipType, lendingStatus, mediaType, tanggalDari, tanggalSampai, toast, unitKerjaId, year]);
 
     const handleExport = async (type, format) => {
+        if (!unitKerjaId) return;
         setExporting(true);
         try {
             await reportService.exportReport(type, format, {
@@ -177,6 +178,33 @@ export default function Laporan() {
         );
     };
 
+    // Load data based on active tab and the concrete selected unit.
+    useEffect(() => {
+        if (unitKerjaId) {
+            loadData();
+        } else {
+            setSummaryData(null);
+            setSuratMasukData(null);
+            setSuratKeluarData(null);
+            setArsipData(null);
+            setLendingData(null);
+            setLoading(false);
+        }
+    }, [loadData, unitKerjaId]);
+
+    if (!unitKerjaId) {
+        return (
+            <div className="space-y-6">
+                <PageHeader
+                    icon={BarChart3}
+                    title="Laporan & Statistik"
+                    description="Analisis kinerja dan statistik pengelolaan surat dan arsip"
+                />
+                <RequiredUnitKerjaScope scope={unitScope} disabled={unitScope.loading} />
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             <PageHeader
@@ -184,6 +212,8 @@ export default function Laporan() {
                 title="Laporan & Statistik"
                 description="Analisis kinerja dan statistik pengelolaan surat dan arsip"
             />
+
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || exporting} />
 
             {/* Filters */}
             <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200">

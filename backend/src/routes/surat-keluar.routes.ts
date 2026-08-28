@@ -9,11 +9,12 @@ import {
     createSuratKeluarSchema,
     updateSuratKeluarSchema,
     querySuratKeluarSchema,
+    nextSuratNumberQuerySchema,
     archiveRegistrationSchema,
 } from '../validators/schemas';
-import auditLogService from '../services/audit-log.service';
 import { createLogger } from '../utils/logger';
 import { blobStorageService } from '../services/blob-storage.service';
+import { deleteRequestCreatedBlob } from '../utils/blob-upload-compensation.js';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
 import {
     sanitizeSuratKeluarWithLinks,
@@ -24,12 +25,11 @@ import {
     isAllowedForClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
-import { fileAttachmentService } from '../services/file-attachment.service.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
 const log = createLogger('SuratKeluarRoutes');
 
-// Configure multer with memory storage for Google Drive uploads
+// Keep uploads in memory until the private Blob ingest path accepts them.
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
@@ -101,20 +101,27 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
 // GET /api/surat-keluar/next-number - Get next number
 router.get('/next-number', async (req: AuthRequest, res, next) => {
     try {
-        const requestedUnit = typeof req.query.unitKerjaId === 'string' ? req.query.unitKerjaId : undefined;
+        const queryValidation = nextSuratNumberQuerySchema.safeParse(req.query);
+        if (!queryValidation.success) {
+            return res.status(400).json({ error: 'Parameter preview nomor surat tidak valid' });
+        }
+        const requestedUnit = queryValidation.data.unitKerjaId;
         const unitKerjaId = resolveListUnitKerjaId(req, requestedUnit);
-        const { tahun } = req.query;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
 
-        const nextNumber = await suratKeluarService.getNextNumber(
+        const preview = await suratKeluarService.getNextNumber(
             unitKerjaId as string,
-            tahun ? Number(tahun) : undefined
+            {
+                tahun: queryValidation.data.tahun,
+                tanggalSurat: queryValidation.data.tanggalSurat,
+                naskahDinas: queryValidation.data.naskahDinas,
+            },
         );
 
-        res.json({ success: true, data: { nextNumber } });
+        res.json({ success: true, data: preview });
     } catch (error) {
         next(error);
     }
@@ -166,6 +173,7 @@ router.post('/',
     upload.single('file'),
     fileValidationMiddleware,
     async (req: AuthRequest, res, next) => {
+        let requestCreatedBlobUrl: string | null = null;
         try {
             const file = req.file;
 
@@ -216,13 +224,25 @@ router.post('/',
                         buffer: file.buffer,
                         folder: 'surat-keluar',
                     });
+                    requestCreatedBlobUrl = blobFile.url;
                     filePath = `blob:${blobFile.url}`;
                     fileOriginalName = file.originalname;
                     log.info({ blobUrl: blobFile.url, fileName: file.originalname }, 'File uploaded to Vercel Blob');
                 } catch (uploadError: any) {
                     log.error({ err: uploadError }, 'Failed to upload file to Vercel Blob');
-                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file', message: uploadError?.message || 'Unknown error' });
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Gagal mengunggah file',
+                        code: 'BLOB_UPLOAD_FAILED',
+                    });
                 }
+            }
+
+            if (filePath && !fileOriginalName) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nama asli berkas wajib disertakan untuk registrasi bitstream.',
+                });
             }
 
             const result = await suratKeluarService.create({
@@ -231,36 +251,30 @@ router.post('/',
                 createdBy: req.user?.id,
                 filePath,
                 fileOriginalName,
-            });
-
-            if (filePath && fileOriginalName) {
-                try {
-                    await fileAttachmentService.registerExisting({
-                        entityId: result.id,
-                        entityType: 'surat_keluar',
-                        fileName: fileOriginalName,
-                        locator: filePath,
-                        mimeType: file?.mimetype,
-                        buffer: file?.buffer,
-                        uploadedById: req.user?.id,
-                    });
-                } catch (registrationError) {
-                    log.error({ err: registrationError, suratId: result.id }, 'Bitstream registration failed');
-                }
-            }
-
-            await auditLogService.logAction({
+            }, {
                 userId: req.user?.id,
                 userEmail: req.user?.email,
-                action: 'create',
-                entityType: 'surat_keluar',
-                entityId: result.id,
-                changes: { after: { nomorSurat: result.nomorSurat, perihal: result.perihal } },
                 ipAddress: req.ip,
-            });
+            }, bodyValidation.data.filePath && req.user ? {
+                blobUrl: bodyValidation.data.filePath,
+                purpose: 'surat_keluar',
+                uploadedBy: req.user.id,
+            } : undefined, filePath && fileOriginalName ? {
+                fileName: fileOriginalName,
+                locator: filePath,
+                mimeType: file?.mimetype,
+                buffer: file?.buffer,
+                uploadedById: req.user?.id,
+            } : undefined);
+
+            requestCreatedBlobUrl = null;
 
             res.status(201).json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error) {
+            await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
+                operation: 'surat_keluar_create',
+                userId: req.user?.id,
+            });
             next(error);
         }
     }
@@ -272,6 +286,7 @@ router.put('/:id', validateIdParam(),
     upload.single('file'),
     fileValidationMiddleware,
     async (req: AuthRequest, res, next) => {
+        let requestCreatedBlobUrl: string | null = null;
         try {
             const id = req.params.id as string;
             const file = req.file;
@@ -288,6 +303,11 @@ router.put('/:id', validateIdParam(),
             if (existing.isArchived) {
                 return res.status(409).json({
                     error: 'Surat yang telah diarsipkan bersifat immutable; buat versi/koreksi terkendali.',
+                });
+            }
+            if (!['draft', 'rejected'].includes(existing.approvalStatus)) {
+                return res.status(409).json({
+                    error: 'Surat yang sedang atau telah disetujui tidak dapat diedit. Tolak alur aktif atau buat surat koreksi baru.',
                 });
             }
 
@@ -341,53 +361,77 @@ router.put('/:id', validateIdParam(),
                         buffer: file.buffer,
                         folder: 'surat-keluar',
                     });
+                    requestCreatedBlobUrl = blobFile.url;
                     updateData.filePath = `blob:${blobFile.url}`;
                     updateData.fileOriginalName = file.originalname;
                     log.info({ blobUrl: blobFile.url, fileName: file.originalname }, 'File uploaded to Vercel Blob (update)');
                 } catch (uploadError: any) {
                     log.error({ err: uploadError }, 'Failed to upload file to Vercel Blob');
-                    return res.status(500).json({ success: false, error: 'Gagal mengunggah file', message: uploadError?.message || 'Unknown error' });
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Gagal mengunggah file',
+                        code: 'BLOB_UPLOAD_FAILED',
+                    });
                 }
             }
 
-            const result = await suratKeluarService.update(id, updateData, unitScope);
+            const isNewClientBlob = Boolean(
+                !file
+                && bodyValidation.data.filePath
+                && bodyValidation.data.filePath !== existing.filePath,
+            );
+            if (isNewClientBlob && !updateData.fileOriginalName) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nama asli berkas wajib disertakan untuk registrasi bitstream.',
+                });
+            }
+            const shouldRegisterAttachment = Boolean(
+                updateData.filePath
+                && updateData.fileOriginalName
+                && (file || updateData.filePath !== existing.filePath),
+            );
+            const result = await suratKeluarService.update(
+                id,
+                updateData,
+                unitScope,
+                isNewClientBlob && req.user ? {
+                    blobUrl: bodyValidation.data.filePath!,
+                    purpose: 'surat_keluar',
+                    uploadedBy: req.user.id,
+                } : undefined,
+                {
+                    userId: req.user?.id,
+                    userEmail: req.user?.email,
+                    ipAddress: req.ip,
+                },
+                shouldRegisterAttachment ? {
+                    fileName: updateData.fileOriginalName,
+                    locator: updateData.filePath,
+                    mimeType: file?.mimetype,
+                    buffer: file?.buffer,
+                    uploadedById: req.user?.id,
+                } : undefined,
+            );
 
             if (!result) {
+                await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
+                    operation: 'surat_keluar_update_not_found',
+                    entityId: id,
+                });
+                requestCreatedBlobUrl = null;
                 return res.status(404).json({ error: 'Surat keluar not found' });
             }
 
-            if (updateData.filePath && updateData.fileOriginalName) {
-                try {
-                    await fileAttachmentService.registerExisting({
-                        entityId: result.id,
-                        entityType: 'surat_keluar',
-                        fileName: updateData.fileOriginalName,
-                        locator: updateData.filePath,
-                        mimeType: file?.mimetype,
-                        buffer: file?.buffer,
-                        uploadedById: req.user?.id,
-                    });
-                } catch (registrationError) {
-                    log.error({ err: registrationError, suratId: result.id }, 'Bitstream registration failed');
-                }
-            }
-
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: 'update',
-                entityType: 'surat_keluar',
-                entityId: id,
-                changes: {
-                    before: sanitizeSuratRecord(existing, 'surat_keluar'),
-                    after: sanitizeSuratRecord(result, 'surat_keluar'),
-                    fields: Object.keys(updateData),
-                },
-                ipAddress: req.ip,
-            });
+            requestCreatedBlobUrl = null;
 
             res.json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error: any) {
+            await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
+                operation: 'surat_keluar_update',
+                entityId: req.params.id,
+                userId: req.user?.id,
+            });
             log.error({ err: error, message: error?.message, stack: error?.stack }, '[PUT /surat-keluar/:id] Error:');
             next(error);
         }
@@ -412,21 +456,20 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
                 error: 'Surat yang telah diarsipkan tidak dapat dihapus melalui CRUD.',
             });
         }
-        const result = await suratKeluarService.delete(id, req.user?.id, unitScope);
+        if (!['draft', 'rejected'].includes(existing.approvalStatus)) {
+            return res.status(409).json({
+                error: 'Surat yang sedang atau telah disetujui tidak dapat dihapus.',
+            });
+        }
+        const result = await suratKeluarService.delete(id, req.user?.id, unitScope, {
+            userId: req.user?.id,
+            userEmail: req.user?.email,
+            ipAddress: req.ip,
+        });
 
         if (!result) {
             return res.status(404).json({ error: 'Surat keluar not found' });
         }
-
-        await auditLogService.logAction({
-            userId: req.user?.id,
-            userEmail: req.user?.email,
-            action: 'delete',
-            entityType: 'surat_keluar',
-            entityId: id,
-            changes: { before: { nomorSurat: existing?.nomorSurat, perihal: existing?.perihal } },
-            ipAddress: req.ip,
-        });
 
         res.json({ success: true, message: 'Surat keluar deleted successfully' });
     } catch (error) {
@@ -442,6 +485,11 @@ router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, 
 
         if (!existing) {
             return res.status(404).json({ error: 'Surat keluar not found' });
+        }
+        if (existing.approvalStatus !== 'approved') {
+            return res.status(409).json({
+                error: 'Surat keluar harus memperoleh persetujuan final sebelum dapat diregistrasikan sebagai arsip.',
+            });
         }
         const access = await recordAccessService.check(req.user, 'surat_keluar', id);
         if (!access.exists || !access.mutable) {
@@ -467,15 +515,9 @@ router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, 
         const result = await arsipService.archiveFromSuratKeluar(id, {
             ...parsed.data,
             createdBy: req.user?.id,
-        }, access.unitKerjaId || existing.unitKerjaId);
-
-        await auditLogService.logAction({
+        }, access.unitKerjaId || existing.unitKerjaId, {
             userId: req.user?.id,
             userEmail: req.user?.email,
-            action: 'archive',
-            entityType: 'surat_keluar',
-            entityId: id,
-            changes: { after: { arsipId: result.id, isArchived: true } },
             ipAddress: req.ip,
         });
 

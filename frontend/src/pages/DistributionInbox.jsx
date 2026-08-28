@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { Inbox, Send, Check, X, Clock, ArrowRight, RefreshCw, Eye, CheckCircle, XCircle, Search, Filter, Mail, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -34,6 +34,8 @@ import distributionService from '@/services/distribution.service'
 import { format } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 const statusConfig = {
     sent: { label: 'Menunggu', variant: 'outline', icon: Clock, className: 'text-yellow-600 dark:text-yellow-400 border-yellow-200 bg-yellow-50 dark:bg-yellow-500/15' },
@@ -56,13 +58,17 @@ export default function DistributionInbox() {
     const [searchTerm, setSearchTerm] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
 
-    const unitKerjaId = user?.unitKerjaId
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
 
-    useEffect(() => {
-        loadData()
-    }, [])
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
+        if (!unitKerjaId) {
+            setInboxData([])
+            setOutboxData([])
+            setStats(null)
+            setLoading(false)
+            return
+        }
         setLoading(true)
         try {
             const [inboxRes, outboxRes, statsRes] = await Promise.all([
@@ -71,9 +77,9 @@ export default function DistributionInbox() {
                 distributionService.getStats(unitKerjaId),
             ])
 
-            if (inboxRes.success) setInboxData(inboxRes.data)
-            if (outboxRes.success) setOutboxData(outboxRes.data)
-            if (statsRes.success) setStats(statsRes.data)
+            setInboxData(inboxRes)
+            setOutboxData(outboxRes)
+            setStats(statsRes)
         } catch (error) {
             console.error('Error loading distribution data:', error)
             toast({
@@ -84,12 +90,16 @@ export default function DistributionInbox() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [toast, unitKerjaId])
+
+    useEffect(() => {
+        loadData()
+    }, [loadData])
 
     const handleReceive = async (distributionId) => {
         setActionLoading(true)
         try {
-            await distributionService.receive(distributionId)
+            await distributionService.receive(distributionId, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Surat berhasil diterima' })
             loadData()
         } catch (error) {
@@ -106,7 +116,7 @@ export default function DistributionInbox() {
     const handleProcess = async (distributionId) => {
         setActionLoading(true)
         try {
-            await distributionService.process(distributionId)
+            await distributionService.process(distributionId, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Surat ditandai selesai diproses' })
             loadData()
         } catch (error) {
@@ -132,7 +142,7 @@ export default function DistributionInbox() {
 
         setActionLoading(true)
         try {
-            await distributionService.reject(selectedDistribution.id, rejectReason)
+            await distributionService.reject(selectedDistribution.id, rejectReason, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Surat dikembalikan ke pengirim' })
             setRejectDialogOpen(false)
             setRejectReason('')
@@ -198,6 +208,8 @@ export default function DistributionInbox() {
                     Refresh Data
                 </Button>
             </div>
+
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || actionLoading} />
 
             {/* Stats Cards */}
             {stats && (

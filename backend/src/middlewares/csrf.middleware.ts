@@ -14,7 +14,7 @@ import crypto from 'crypto';
  * Skipped for:
  * - GET, HEAD, OPTIONS requests (safe methods)
  * - Better Auth routes (has own CSRF protection)
- * - Multipart/form-data with file uploads (token checked via cookie only)
+ * - Signed Vercel Blob completion callbacks on the exact client-upload endpoint
  */
 
 const CSRF_COOKIE_NAME = 'csrf-token';
@@ -67,10 +67,11 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
         return next();
     }
 
-    // Skip client-upload route — @vercel/blob/client's upload() makes its own POST
-    // request without the X-CSRF-Token header. This route is already protected by
-    // authMiddleware and rate limiting.
-    if (req.path.startsWith('/client-upload')) {
+    // Skip only the exact Blob SDK callback/token endpoint. Token generation is
+    // session-authenticated and completion callbacks are signature-verified by
+    // @vercel/blob. Administrative reconciliation below that path must retain
+    // normal CSRF protection.
+    if (req.path === '/client-upload' || req.path === '/client-upload/') {
         return next();
     }
 

@@ -43,6 +43,22 @@ describe('surat payload and private Blob policy', () => {
         }
     });
 
+    it('normalizes a blank number to omission so transactional templates can supply it', () => {
+        const keluar = createSuratKeluarSchema.safeParse({
+            ...baseSuratKeluar,
+            nomorSurat: '   ',
+        });
+        const masuk = createSuratMasukSchema.safeParse({
+            ...baseSuratMasuk,
+            nomorSurat: '',
+        });
+
+        expect(keluar.success).toBe(true);
+        expect(masuk.success).toBe(true);
+        if (keluar.success) expect(keluar.data.nomorSurat).toBeUndefined();
+        if (masuk.success) expect(masuk.data.nomorSurat).toBeUndefined();
+    });
+
     it('rejects the obsolete tujuan payload when kepada is missing', () => {
         const { kepada: _kepada, ...withoutKepada } = baseSuratKeluar;
         expect(createSuratKeluarSchema.safeParse({

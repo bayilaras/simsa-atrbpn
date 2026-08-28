@@ -15,6 +15,8 @@ import retentionService from '@/services/retention.service'
 import { format, parseISO } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 const STATUS_LABELS = {
     kadaluarsa: { label: 'Kadaluarsa', variant: 'destructive', icon: XCircle, className: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
@@ -33,7 +35,8 @@ const HASIL_AKHIR_OPTIONS = {
 export default function RetentionManagement() {
     const { user } = useAuth()
     const { toast } = useToast()
-    const unitKerjaId = user?.unitKerjaId || ''
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
 
     const [summary, setSummary] = useState(null)
     const [candidates, setCandidates] = useState({ data: [], summary: {}, pagination: {} })
@@ -57,6 +60,7 @@ export default function RetentionManagement() {
 
     // Fetch summary
     const fetchSummary = useCallback(async () => {
+        if (!unitKerjaId) return
         try {
             const res = await retentionService.getSummary(unitKerjaId)
             setSummary(res.data)
@@ -67,6 +71,7 @@ export default function RetentionManagement() {
 
     // Fetch candidates
     const fetchCandidates = useCallback(async () => {
+        if (!unitKerjaId) return
         try {
             setCandidatesLoading(true)
             const filters = { page, limit: 20 }
@@ -83,6 +88,7 @@ export default function RetentionManagement() {
     }, [unitKerjaId, statusFilter, hasilAkhirFilter, page])
 
     const fetchHolds = useCallback(async () => {
+        if (!unitKerjaId) return
         try {
             const res = await retentionService.getHolds(unitKerjaId)
             setHolds(res.data || [])
@@ -92,13 +98,21 @@ export default function RetentionManagement() {
     }, [unitKerjaId])
 
     useEffect(() => {
+        if (!unitKerjaId) {
+            setSummary(null)
+            setCandidates({ data: [], summary: {}, pagination: {} })
+            setHolds([])
+            setSelectedArchives([])
+            setLoading(false)
+            return
+        }
         const init = async () => {
             setLoading(true)
             await Promise.all([fetchSummary(), fetchCandidates(), fetchHolds()])
             setLoading(false)
         }
         init()
-    }, [fetchSummary, fetchCandidates, fetchHolds])
+    }, [fetchSummary, fetchCandidates, fetchHolds, unitKerjaId])
 
     const handleSelectArchive = (id, checked) => {
         if (checked) {
@@ -117,6 +131,7 @@ export default function RetentionManagement() {
     }
 
     const handleGenerateReport = async () => {
+        if (!unitKerjaId) return
         try {
             setGeneratingReport(true)
             const res = await retentionService.generateDisposalReport(
@@ -141,6 +156,7 @@ export default function RetentionManagement() {
     }
 
     const handleHoldAction = async () => {
+        if (!unitKerjaId) return
         if (!holdTarget || holdReason.trim().length < 10) {
             toast({
                 title: 'Alasan belum lengkap',
@@ -282,6 +298,23 @@ export default function RetentionManagement() {
         }
     }
 
+    if (!unitKerjaId) {
+        return (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                        <div className="p-2 bg-orange-100 dark:bg-orange-500/15 rounded-lg">
+                            <Scale className="h-6 w-6 text-orange-600" />
+                        </div>
+                        Manajemen Retensi Arsip (JRA)
+                    </h1>
+                    <p className="text-muted-foreground">Monitoring masa retensi dan pengelolaan penyusutan arsip</p>
+                </div>
+                <RequiredUnitKerjaScope scope={unitScope} disabled={unitScope.loading} />
+            </div>
+        )
+    }
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-300">
@@ -327,6 +360,8 @@ export default function RetentionManagement() {
                     </div>
                 )}
             </div>
+
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || candidatesLoading || holdSaving || generatingReport} />
 
             {/* Summary Cards */}
             <div className="grid gap-4 lg:grid-cols-4">

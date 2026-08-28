@@ -1,23 +1,14 @@
 import { useEffect, useCallback } from 'react';
 
+/* eslint-disable react-refresh/only-export-components -- this utility module intentionally exports hooks, constants, and its help component */
+
 /**
  * Keyboard Shortcuts Hook
  * Provides easy keyboard shortcut management for common actions
  */
 
-export interface KeyboardShortcut {
-    key: string;
-    ctrl?: boolean;
-    shift?: boolean;
-    alt?: boolean;
-    meta?: boolean; // Command key on Mac
-    action: () => void;
-    description?: string;
-    preventDefault?: boolean;
-}
-
-export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[], enabled = true) {
-    const handleKeyDown = useCallback((event: KeyboardEvent) => {
+export function useKeyboardShortcuts(shortcuts, enabled = true) {
+    const handleKeyDown = useCallback((event) => {
         if (!enabled) return;
 
         for (const shortcut of shortcuts) {
@@ -67,15 +58,12 @@ export const COMMON_SHORTCUTS = {
 /**
  * Keyboard Shortcuts Help Dialog Component
  */
-export function KeyboardShortcutsHelp({ shortcuts, onClose }: {
-    shortcuts: KeyboardShortcut[],
-    onClose: () => void
-}) {
+export function KeyboardShortcutsHelp({ shortcuts, onClose }) {
     useKeyboardShortcuts([
         { key: 'Escape', action: onClose }
     ]);
 
-    const formatShortcut = (shortcut: KeyboardShortcut) => {
+    const formatShortcut = (shortcut) => {
         const keys = [];
         if (shortcut.ctrl) keys.push('Ctrl');
         if (shortcut.shift) keys.push('Shift');

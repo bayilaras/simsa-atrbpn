@@ -3,31 +3,40 @@ import { settingsService } from '../services/settings.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { createLogger } from '../utils/logger';
 import { canAccessUnit, type Role } from '../config/permissions.js';
+import { z } from 'zod';
+import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const log = createLogger('SettingsRoutes');
 
 const router = Router();
 
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+const preferenceUpdateSchema = z.object({
+    theme: z.enum(['light', 'dark', 'system']).optional(),
+    language: z.enum(['id', 'en']).optional(),
+    notificationsEnabled: z.boolean().optional(),
+    emailNotifications: z.boolean().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, {
+    message: 'Sedikitnya satu preferensi harus diberikan',
+});
 
-// Drive folder identifiers are integration credentials — only admins may see them,
-// while every authenticated user still needs the unit list for filters/dropdowns.
+// Legacy Drive folder columns remain in the database only for migration history.
+// Private Vercel Blob is the sole canonical bitstream store, so these values are
+// never exposed or accepted by the API.
 const stripDriveConfig = (unit: any) => {
     const { driveFolderId, driveUploadFolderId, ...rest } = unit;
     return rest;
 };
 
-function canSeeDriveConfig(req: Request, unitKerjaId: string): boolean {
-    const user = (req as AuthRequest).user;
-    const role = (user?.role || 'user') as Role;
-    return ADMIN_ROLES.includes(role)
-        && canAccessUnit(role, user?.unitKerjaId || null, unitKerjaId);
-}
-
 function resolveTemplateUnit(req: Request, res: Response, requestedUnit: unknown): string | null {
     const user = (req as AuthRequest).user;
     const requested = typeof requestedUnit === 'string' ? requestedUnit.trim() : '';
-    const unitKerjaId = requested || user?.unitKerjaId || '';
+    const role = (user?.role || 'user') as Role;
+    const unitKerjaId = resolveEffectiveUnitKerjaId(
+        role,
+        user?.unitKerjaId,
+        requested,
+    );
 
     if (!unitKerjaId) {
         res.status(400).json({ error: 'unitKerjaId is required' });
@@ -35,7 +44,7 @@ function resolveTemplateUnit(req: Request, res: Response, requestedUnit: unknown
     }
 
     if (!canAccessUnit(
-        (user?.role || 'user') as Role,
+        role,
         user?.unitKerjaId || null,
         unitKerjaId,
     )) {
@@ -105,7 +114,10 @@ router.put('/profile', async (req: Request, res: Response) => {
             return;
         }
 
-        const updated = await settingsService.updateProfile(userId, { name, image });
+        const user = (req as AuthRequest).user;
+        const updated = await settingsService.updateProfile(userId, { name, image }, {
+            userId: user?.id, userEmail: user?.email, ipAddress: req.ip,
+        });
 
         if (!updated) {
             res.status(404).json({ error: 'Profile not found' });
@@ -131,7 +143,16 @@ router.put('/profile', async (req: Request, res: Response) => {
 router.get('/unit-kerja', async (req: Request, res: Response) => {
     try {
         const units = await settingsService.getAllUnitKerja();
-        res.json(units.map(unit => canSeeDriveConfig(req, unit.id) ? unit : stripDriveConfig(unit)));
+        const user = (req as AuthRequest).user;
+        const editableOnly = req.query.editable === 'true';
+        const visibleUnits = editableOnly
+            ? units.filter(unit => canAccessUnit(
+                (user?.role || 'user') as Role,
+                user?.unitKerjaId || null,
+                unit.id,
+            ))
+            : units;
+        res.json(visibleUnits.map(stripDriveConfig));
     } catch (error) {
         log.error({ err: error }, 'Error getting unit kerja:');
         res.status(500).json({ error: 'Failed to get unit kerja' });
@@ -155,7 +176,7 @@ router.get('/unit-kerja/:id', async (req: Request, res: Response) => {
             return;
         }
 
-        res.json(canSeeDriveConfig(req, unit.id) ? unit : stripDriveConfig(unit));
+        res.json(stripDriveConfig(unit));
     } catch (error) {
         log.error({ err: error }, 'Error getting unit kerja:');
         res.status(500).json({ error: 'Failed to get unit kerja' });
@@ -189,14 +210,14 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
             res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
             return;
         }
-        const { name, description, driveFolderId, driveUploadFolderId, canReceiveDistribution } = req.body;
+        const { name, description, canReceiveDistribution } = req.body;
 
         const updated = await settingsService.updateUnitKerja(id as string, {
             name,
             description,
-            driveFolderId,
-            driveUploadFolderId,
             canReceiveDistribution,
+        }, {
+            userId: user?.id, userEmail: user?.email, ipAddress: req.ip,
         });
 
         if (!updated) {
@@ -227,21 +248,22 @@ router.post('/unit-kerja', async (req: Request, res: Response) => {
             return;
         }
 
-        const { id, name, description, parentId, unitType, driveFolderId, driveUploadFolderId } = req.body;
+        const { id, name, description, parentId, unitType } = req.body;
 
         if (!id || !name) {
             res.status(400).json({ error: 'ID and name are required' });
             return;
         }
 
+        const user = (req as AuthRequest).user;
         const created = await settingsService.createUnitKerja({
             id,
             name,
             description,
             parentId,
             unitType,
-            driveFolderId,
-            driveUploadFolderId,
+        }, {
+            userId: user?.id, userEmail: user?.email, ipAddress: req.ip,
         });
 
         res.status(201).json(created);
@@ -295,12 +317,63 @@ router.put('/surat-templates', async (req: Request, res: Response) => {
         const updated = await settingsService.updateSuratTemplates(unitKerjaId, {
             masukFormat,
             keluarFormat,
+        }, {
+            userId: (req as AuthRequest).user?.id,
+            userEmail: (req as AuthRequest).user?.email,
+            ipAddress: req.ip,
         });
 
         res.json(updated);
     } catch (error) {
         log.error({ err: error }, 'Error updating surat templates:');
         res.status(500).json({ error: 'Failed to update templates' });
+    }
+});
+
+// ==================== USER PREFERENCES ====================
+
+router.get('/preferences', async (req: Request, res: Response) => {
+    try {
+        const userId = (req as AuthRequest).user?.id;
+        if (!userId) {
+            res.status(401).json({ error: 'Unauthorized' });
+            return;
+        }
+
+        res.json(await settingsService.getUserPreferences(userId));
+    } catch (error) {
+        log.error({ err: error }, 'Error getting user preferences:');
+        res.status(500).json({ error: 'Failed to get preferences' });
+    }
+});
+
+router.put('/preferences', async (req: Request, res: Response) => {
+    try {
+        const userId = (req as AuthRequest).user?.id;
+        if (!userId) {
+            res.status(401).json({ error: 'Unauthorized' });
+            return;
+        }
+
+        const parsed = preferenceUpdateSchema.safeParse(req.body);
+        if (!parsed.success) {
+            res.status(400).json({
+                error: 'Invalid preferences',
+                details: parsed.error.issues.map(issue => ({
+                    field: issue.path.join('.'),
+                    message: issue.message,
+                })),
+            });
+            return;
+        }
+
+        const user = (req as AuthRequest).user;
+        res.json(await settingsService.updateUserPreferences(userId, parsed.data, {
+            userId: user?.id, userEmail: user?.email, ipAddress: req.ip,
+        }));
+    } catch (error) {
+        log.error({ err: error }, 'Error updating user preferences:');
+        res.status(500).json({ error: 'Failed to update preferences' });
     }
 });
 

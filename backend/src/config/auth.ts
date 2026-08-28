@@ -111,6 +111,11 @@ export const auth = betterAuth({
                 // client to request `super_admin` for itself.
                 input: false,
             },
+            unitKerjaId: {
+                type: 'string',
+                required: false,
+                input: false,
+            },
         },
     },
     hooks: {

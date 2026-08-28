@@ -9,6 +9,7 @@ import {
     type RecordUnitScope,
 } from '../utils/record-unit-scope';
 import { NotFoundError } from '../utils/errors';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 interface LayananArsipFilters {
     page?: number;
@@ -70,6 +71,7 @@ export class LayananArsipService {
         data: NewLayananArsip,
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         securityClassifications?: string[] | null,
+        auditContext?: CriticalAuditContext,
     ) {
         return await db.transaction(async (tx) => {
             const archiveConditions = [scopedRecordByIdWhere(
@@ -90,6 +92,21 @@ export class LayananArsipService {
                 ...data,
                 updatedAt: new Date(),
             }).returning();
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'create',
+                    entityType: 'layanan_arsip',
+                    entityId: result.id,
+                    changes: {
+                        after: {
+                            arsipId: result.arsipId,
+                            jenisLayanan: result.jenisLayanan,
+                            status: result.status,
+                        },
+                    },
+                }, tx);
+            }
             return result;
         });
     }
@@ -176,6 +193,7 @@ export class LayananArsipService {
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         expectedStatus?: string,
         securityClassifications?: string[] | null,
+        auditContext?: CriticalAuditContext,
     ) {
         const updateData: any = {
             status,
@@ -193,13 +211,28 @@ export class LayananArsipService {
         if (archiveAccess) conditions.push(archiveAccess);
         if (expectedStatus) conditions.push(eq(layananArsip.status, expectedStatus));
 
-        const [result] = await db.update(layananArsip)
-            .set(updateData)
-            .where(and(...conditions))
-            .returning();
+        return db.transaction(async (tx) => {
+            const [result] = await tx.update(layananArsip)
+                .set(updateData)
+                .where(and(...conditions))
+                .returning();
 
-        if (!result) throw new NotFoundError('Layanan arsip');
-        return result;
+            if (!result) throw new NotFoundError('Layanan arsip');
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'status_change',
+                    entityType: 'layanan_arsip',
+                    entityId: id,
+                    changes: {
+                        before: { status: expectedStatus || null },
+                        after: { status },
+                        notes: notes || null,
+                    },
+                }, tx);
+            }
+            return result;
+        });
     }
 
     async delete(
