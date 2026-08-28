@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react'
-import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { createBrowserRouter, RouterProvider, Navigate, Outlet, Link, useLocation } from 'react-router-dom'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
 import { AppHeader } from '@/components/app-header'
@@ -53,6 +53,7 @@ const LayananArsipIndex = lazy(() => import('@/pages/LayananArsip/Index'))
 const LayananArsipCreate = lazy(() => import('@/pages/LayananArsip/Create'))
 const LayananArsipDetail = lazy(() => import('@/pages/LayananArsip/Detail'))
 const RecordAccessGrants = lazy(() => import('@/pages/RecordAccessGrants'))
+const UserGuide = lazy(() => import('@/pages/UserGuide'))
 const NotFound = lazy(() => import('@/pages/NotFound'))
 const SrikandiIntegration = appConfig.features.srikandi
   ? lazy(() => import('@/pages/SrikandiIntegration'))
@@ -61,19 +62,20 @@ const SrikandiIntegration = appConfig.features.srikandi
 // Suspense loading fallback
 function PageLoader() {
   return (
-    <div className="flex items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-300">
+    <div role="status" aria-live="polite" className="flex items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-300">
       <div className="flex flex-col items-center gap-4">
         <div className="relative">
           <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full animate-pulse"></div>
           <img
             src="/logo-simsa.png"
-            alt="Loading..."
+            alt=""
             className="h-16 w-16 relative z-10 animate-bounce"
             style={{ animationDuration: '2s' }}
           />
         </div>
         <div className="flex flex-col items-center gap-1">
           <h3 className="font-semibold text-lg text-primary tracking-tight">{appConfig.shortName}</h3>
+          <span className="sr-only">Memuat halaman…</span>
           <div className="flex items-center gap-1">
             <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.3s]"></div>
             <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.15s]"></div>
@@ -111,6 +113,16 @@ function RoleGuard({ allowedRoles, children }) {
   return children;
 }
 
+function RouteFocusManager() {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    document.getElementById('main-content')?.focus({ preventScroll: true })
+  }, [pathname])
+
+  return null
+}
+
 function SrikandiFeatureGuard({ children }) {
   const { features, loading } = useAppConfig()
 
@@ -130,6 +142,8 @@ const ALL_PROVISIONED_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen',
 function AppLayout() {
   return (
     <SidebarProvider>
+      <a className="skip-link" href="#main-content">Lewati ke konten utama</a>
+      <RouteFocusManager />
       <AppSidebar />
       {/* min-w-0: SidebarInset is w-full, which at the tablet breakpoint would sit
           beside the 16rem rail and push the page wider than the viewport. */}
@@ -137,7 +151,7 @@ function AppLayout() {
         <AppHeader />
         {/* min-w-0 lets wide children (tables, charts) scroll inside their own
             container instead of stretching the shell on small screens. */}
-        <main className="flex-1 min-w-0 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+        <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 px-4 py-5 outline-none sm:px-6 sm:py-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1600px] space-y-5 sm:space-y-6">
             <Breadcrumbs />
             <ErrorBoundary fallbackMessage="Terjadi kesalahan saat memuat halaman. Silakan coba lagi.">
@@ -155,10 +169,53 @@ function AppLayout() {
   )
 }
 
+function GuideLayout() {
+  const { isAuthenticated, loading } = useAuth()
+
+  if (!loading && isAuthenticated) return <AppLayout />
+
+  return (
+    <div className="min-h-svh bg-background">
+      <a className="skip-link" href="#main-content">Lewati ke konten utama</a>
+      <RouteFocusManager />
+      <header className="border-b bg-card print:hidden">
+        <div className="mx-auto flex min-h-16 w-full max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          <Link to="/login" className="flex min-h-11 min-w-0 items-center gap-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <img src="/logo-simsa.png" alt="" className="h-9 w-9 rounded-md bg-card p-1 ring-1 ring-border" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{appConfig.shortName}</p>
+              <p className="truncate text-xs text-muted-foreground">Ditjen PTPP</p>
+            </div>
+          </Link>
+          <Link
+            to="/login"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="sm:hidden">Login</span>
+            <span className="hidden sm:inline">Kembali ke login</span>
+          </Link>
+        </div>
+      </header>
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-5 outline-none sm:px-6 sm:py-6 lg:px-8">
+        <Suspense fallback={<PageLoader />}>
+          <Outlet />
+        </Suspense>
+      </main>
+    </div>
+  )
+}
+
 const router = createBrowserRouter([
   {
     path: "/login",
     element: <Login />,
+  },
+  {
+    path: "/panduan",
+    element: <GuideLayout />,
+    children: [
+      { index: true, element: <UserGuide /> },
+    ],
   },
   {
     element: (

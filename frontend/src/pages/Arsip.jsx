@@ -175,7 +175,7 @@ export default function Arsip() {
     // Action handlers
     const handleViewDetail = (row) => navigate(`/arsip/detail/${row.id}`)
 
-    const handleEdit = (row) => {
+    const handleEdit = () => {
         toast({
             title: 'Fitur dalam pengembangan',
             description: 'Halaman edit arsip akan segera tersedia',
@@ -254,7 +254,7 @@ export default function Arsip() {
                 <div className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" onClick={() => setPage(1)} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                        Refresh
+                        Perbarui
                     </Button>
 
                     <ExportButton
@@ -265,12 +265,12 @@ export default function Arsip() {
                     />
 
                     {isAdmin && (
-                        <Link to="/bulk-upload">
-                            <Button variant="default" size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                        <Button asChild variant="default" size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                            <Link to="/bulk-upload">
                                 <Upload className="mr-2 h-3.5 w-3.5" />
-                                Bulk Upload
-                            </Button>
-                        </Link>
+                                Unggah Massal
+                            </Link>
+                        </Button>
                     )}
                 </div>
             </div>
@@ -400,7 +400,7 @@ export default function Arsip() {
                                             <CollapsibleTrigger asChild>
                                                 <Button variant="outline" className={`gap-2 w-full md:w-auto ${isAdvancedOpen ? 'bg-muted' : ''}`}>
                                                     <Filter className="h-4 w-4" />
-                                                    <span className="hidden sm:inline">Filter</span>
+                                                    <span className="sr-only sm:not-sr-only">Filter</span>
                                                     {tahunFilter !== 'all' && (
                                                         <Badge variant="secondary" className="ml-0.5 h-5 w-5 p-0 justify-center bg-primary/10 text-primary">!</Badge>
                                                     )}
@@ -409,7 +409,7 @@ export default function Arsip() {
                                             </CollapsibleTrigger>
                                         </Collapsible>
                                         {hasActiveFilters && (
-                                            <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" title="Reset Filters">
+                                            <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" aria-label="Hapus semua filter" title="Hapus semua filter">
                                                 <X className="h-4 w-4" />
                                             </Button>
                                         )}
@@ -529,7 +529,7 @@ export default function Arsip() {
                                                             <TableCell className="text-right">
                                                                 <DropdownMenu>
                                                                     <DropdownMenuTrigger asChild>
-                                                                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted">
+                                                                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted" aria-label="Buka menu tindakan arsip">
                                                                             <MoreHorizontal className="h-4 w-4" />
                                                                         </Button>
                                                                     </DropdownMenuTrigger>
@@ -539,7 +539,7 @@ export default function Arsip() {
                                                                         </DropdownMenuItem>
                                                                         {isAdmin && (
                                                                             <>
-                                                                                <DropdownMenuItem onClick={() => handleEdit(row)}>
+                                                                                <DropdownMenuItem onClick={handleEdit}>
                                                                                     <Edit className="h-4 w-4 mr-2" /> Edit Info
                                                                                 </DropdownMenuItem>
                                                                                 <DropdownMenuSeparator />
@@ -567,13 +567,13 @@ export default function Arsip() {
                                             <Pagination>
                                                 <PaginationContent>
                                                     <PaginationItem>
-                                                        <Button variant="outline" size="sm" onClick={prevPage} disabled={!canPrev} className="h-8 w-8 p-0">
-                                                            <ChevronUp className="h-4 w-4 rotate-[-90deg]" />
+                                                        <Button variant="outline" size="sm" aria-label="Halaman sebelumnya" onClick={prevPage} disabled={!canPrev} className="h-10 w-10 p-0">
+                                                            <ChevronUp aria-hidden="true" className="h-4 w-4 rotate-[-90deg]" />
                                                         </Button>
                                                     </PaginationItem>
                                                     <PaginationItem>
-                                                        <Button variant="outline" size="sm" onClick={nextPage} disabled={!canNext} className="h-8 w-8 p-0">
-                                                            <ChevronUp className="h-4 w-4 rotate-90" />
+                                                        <Button variant="outline" size="sm" aria-label="Halaman berikutnya" onClick={nextPage} disabled={!canNext} className="h-10 w-10 p-0">
+                                                            <ChevronUp aria-hidden="true" className="h-4 w-4 rotate-90" />
                                                         </Button>
                                                     </PaginationItem>
                                                 </PaginationContent>

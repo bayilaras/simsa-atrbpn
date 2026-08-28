@@ -1,9 +1,5 @@
-import { createContext, useContext, useEffect, useState } from "react"
-
-const ThemeProviderContext = createContext({
-    theme: "system",
-    setTheme: () => null,
-})
+import { useEffect, useState } from "react"
+import { ThemeProviderContext } from '@/context/theme-context'
 
 export function ThemeProvider({
     children,
@@ -13,6 +9,10 @@ export function ThemeProvider({
 }) {
     const [theme, setTheme] = useState(
         () => localStorage.getItem(storageKey) || defaultTheme
+    )
+    const textSizeStorageKey = "simsa-text-size"
+    const [textSize, setTextSize] = useState(
+        () => localStorage.getItem(textSizeStorageKey) || "standard"
     )
 
     useEffect(() => {
@@ -33,11 +33,26 @@ export function ThemeProvider({
         root.classList.add(theme)
     }, [theme])
 
+    useEffect(() => {
+        const root = window.document.documentElement
+
+        if (textSize === "large") {
+            root.dataset.textSize = "large"
+        } else {
+            delete root.dataset.textSize
+        }
+    }, [textSize])
+
     const value = {
         theme,
         setTheme: (theme) => {
             localStorage.setItem(storageKey, theme)
             setTheme(theme)
+        },
+        textSize,
+        setTextSize: (size) => {
+            localStorage.setItem(textSizeStorageKey, size)
+            setTextSize(size)
         },
     }
 
@@ -46,13 +61,4 @@ export function ThemeProvider({
             {children}
         </ThemeProviderContext.Provider>
     )
-}
-
-export const useTheme = () => {
-    const context = useContext(ThemeProviderContext)
-
-    if (context === undefined)
-        throw new Error("useTheme must be used within a ThemeProvider")
-
-    return context
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bell, Building2, Users, ChevronDown, LogOut, User, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw, BookOpen, ExternalLink } from 'lucide-react'
+import { Bell, Building2, Users, ChevronDown, LogOut, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw, BookOpen, Check, Monitor, Type } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,8 +20,9 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useNotifications } from '@/hooks/useNotifications'
-import { useTheme } from '@/components/theme-provider'
-import { GlobalSearch, useGlobalSearchShortcut } from '@/components/GlobalSearch'
+import { useTheme } from '@/context/theme-context'
+import { GlobalSearch } from '@/components/GlobalSearch'
+import { useGlobalSearchShortcut } from '@/hooks/use-global-search-shortcut'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import appConfig from '@/lib/app-config'
@@ -31,6 +32,8 @@ const ROLE_LABELS = {
     super_admin: 'Super Admin',
     admin_dirjen: 'Admin Dirjen',
     admin_sesditjen: 'Admin Sesditjen',
+    staff: 'Staf',
+    auditor: 'Auditor',
     user: 'Pengguna',
 }
 
@@ -50,7 +53,7 @@ export function AppHeader() {
 
     const [searchOpen, setSearchOpen] = useState(false)
     const [activeTab, setActiveTab] = useState('all') // 'all', 'surat-masuk', 'arsip-retensi'
-    const { setTheme } = useTheme()
+    const { theme, setTheme, textSize, setTextSize } = useTheme()
 
     // Super admin can switch unit kerja for notifications
     const isSuperAdmin = authUser?.role === 'super_admin'
@@ -85,9 +88,9 @@ export function AppHeader() {
 
     // Get user display data from authenticated user
     const user = {
-        name: authUser?.name || 'Guest',
+        name: authUser?.name || 'Pengguna',
         email: authUser?.email || '',
-        role: ROLE_LABELS[authUser?.role] || authUser?.role || 'User',
+        role: ROLE_LABELS[authUser?.role] || authUser?.role || 'Pengguna',
         image: authUser?.image || null,
         initials: authUser?.name ? authUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'G',
     }
@@ -128,7 +131,7 @@ export function AppHeader() {
                     <Search className="h-4 w-4 shrink-0" />
                     <span className="truncate text-xs">Cari surat, arsip...</span>
                     <kbd className="ml-auto hidden shrink-0 select-none items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium xl:inline-flex">
-                        ⌘K
+                        Ctrl K
                     </kbd>
                 </Button>
                 <Button
@@ -141,24 +144,43 @@ export function AppHeader() {
                     <span className="sr-only">Cari surat, arsip</span>
                 </Button>
 
-                {/* Theme Toggle */}
+                {/* Theme and text-size preferences */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9">
+                        <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Atur tampilan">
                             <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                             <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                            <span className="sr-only">Toggle theme</span>
+                            <span className="sr-only">Atur tampilan</span>
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setTheme("light")}>
-                            Light
+                    <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuLabel>Tema</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={() => setTheme('light')}>
+                            <Sun className="mr-2 h-4 w-4" />
+                            Terang
+                            {theme === 'light' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setTheme("dark")}>
-                            Dark
+                        <DropdownMenuItem onSelect={() => setTheme('dark')}>
+                            <Moon className="mr-2 h-4 w-4" />
+                            Gelap
+                            {theme === 'dark' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setTheme("system")}>
-                            System
+                        <DropdownMenuItem onSelect={() => setTheme('system')}>
+                            <Monitor className="mr-2 h-4 w-4" />
+                            Ikuti perangkat
+                            {theme === 'system' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel>Ukuran teks</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={() => setTextSize('standard')}>
+                            <Type className="mr-2 h-4 w-4" />
+                            Standar
+                            {textSize === 'standard' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setTextSize('large')}>
+                            <Type className="mr-2 h-5 w-5" />
+                            Besar
+                            {textSize === 'large' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
@@ -166,14 +188,19 @@ export function AppHeader() {
                 {/* Notifications */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="relative h-9 w-9">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="relative h-9 w-9"
+                            aria-label={counts.total > 0 ? `Notifikasi, ${counts.total} belum dibaca` : 'Notifikasi'}
+                        >
                             {loading ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                                 <Bell className={`h-4 w-4 transition-colors ${hasUrgent ? 'text-destructive animate-pulse' : ''}`} />
                             )}
                             {counts.total > 0 && (
-                                <span className={`absolute top-0 right-0 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-bold text-white shadow-sm ring-2 ring-background ${hasUrgent ? 'bg-destructive' : 'bg-primary'}`}>
+                                <span className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white shadow-sm ring-2 ring-background ${hasUrgent ? 'bg-destructive' : 'bg-primary'}`}>
                                     {counts.total > 9 ? '9+' : counts.total}
                                 </span>
                             )}
@@ -199,6 +226,7 @@ export function AppHeader() {
                                                     e.preventDefault();
                                                     handleMarkAllAsRead();
                                                 }}
+                                                aria-label="Tandai semua notifikasi sebagai sudah dibaca"
                                             >
                                                 <CheckCircle2 className="h-4 w-4" />
                                             </Button>
@@ -217,6 +245,7 @@ export function AppHeader() {
                                 <div className="flex items-center gap-2">
                                     <Building2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                                     <select
+                                        aria-label="Filter notifikasi berdasarkan unit kerja"
                                         value={selectedUnitKerja}
                                         onChange={(e) => setSelectedUnitKerja(e.target.value)}
                                         className="flex-1 text-xs font-medium rounded-md border border-input bg-background px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors cursor-pointer hover:bg-accent/50"
@@ -233,7 +262,9 @@ export function AppHeader() {
                         <div className="px-4 pb-2">
                             <div className="flex rounded-lg bg-muted/50 p-1 gap-1">
                                 <button
-                                    className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${activeTab === 'surat-masuk'
+                                    type="button"
+                                    aria-pressed={activeTab === 'surat-masuk'}
+                                    className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${activeTab === 'surat-masuk'
                                         ? 'bg-background shadow-sm text-foreground'
                                         : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
                                         }`}
@@ -242,13 +273,15 @@ export function AppHeader() {
                                     <FileText className="h-3 w-3" />
                                     <span>Surat</span>
                                     {suratCount > 0 && (
-                                        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 text-[10px] font-semibold px-1">
+                                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-100 px-1 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
                                             {suratCount}
                                         </span>
                                     )}
                                 </button>
                                 <button
-                                    className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${activeTab === 'arsip-retensi'
+                                    type="button"
+                                    aria-pressed={activeTab === 'arsip-retensi'}
+                                    className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${activeTab === 'arsip-retensi'
                                         ? 'bg-background shadow-sm text-foreground'
                                         : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
                                         }`}
@@ -257,13 +290,15 @@ export function AppHeader() {
                                     <Archive className="h-3 w-3" />
                                     <span>Arsip</span>
                                     {arsipCount > 0 && (
-                                        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300 text-[10px] font-semibold px-1">
+                                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
                                             {arsipCount}
                                         </span>
                                     )}
                                 </button>
                                 <button
-                                    className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${activeTab === 'all'
+                                    type="button"
+                                    aria-pressed={activeTab === 'all'}
+                                    className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${activeTab === 'all'
                                         ? 'bg-background shadow-sm text-foreground'
                                         : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
                                         }`}
@@ -272,7 +307,7 @@ export function AppHeader() {
                                     <Bell className="h-3 w-3" />
                                     <span>Semua</span>
                                     {counts.total > 0 && (
-                                        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted text-muted-foreground text-[10px] font-semibold px-1">
+                                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold text-muted-foreground">
                                             {counts.total}
                                         </span>
                                     )}
@@ -360,7 +395,7 @@ export function AppHeader() {
                         <div className="p-2 bg-muted/20">
                             <DropdownMenuItem className="justify-center text-primary cursor-pointer font-medium text-xs rounded-md hover:bg-primary/5 hover:text-primary transition-colors h-8" onClick={refresh}>
                                 <RefreshCw className="mr-2 h-3 w-3" />
-                                Refresh Notifikasi
+                                Perbarui notifikasi
                             </DropdownMenuItem>
                         </div>
                     </DropdownMenuContent>
@@ -369,7 +404,7 @@ export function AppHeader() {
                 {/* User Menu */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-10 gap-2 px-2">
+                        <Button variant="ghost" className="h-10 gap-2 px-2" aria-label={`Buka menu akun ${user.name}`}>
                             <Avatar className="h-8 w-8">
                                 {user.image && (
                                     <AvatarImage src={user.image} alt={user.name} referrerPolicy="no-referrer" />
@@ -392,24 +427,15 @@ export function AppHeader() {
                             </div>
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild className="cursor-pointer rounded-md">
-                            <a href="/settings" className="flex items-center">
-                                <User className="mr-2 h-4 w-4 text-muted-foreground" />
-                                Profil Saya
-                            </a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild className="cursor-pointer rounded-md">
-                            <a href="/settings" className="flex items-center">
+                        {isSuperAdmin && (
+                            <DropdownMenuItem onSelect={() => navigate('/settings')} className="cursor-pointer rounded-md">
                                 <Settings className="mr-2 h-4 w-4 text-muted-foreground" />
                                 Pengaturan
-                            </a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild className="cursor-pointer rounded-md">
-                            <a href="https://panduan-simsa.vercel.app" target="_blank" rel="noopener noreferrer" className="flex items-center">
-                                <BookOpen className="mr-2 h-4 w-4 text-muted-foreground" />
-                                Panduan Pengguna
-                                <ExternalLink className="ml-auto h-3 w-3 opacity-50" />
-                            </a>
+                            </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onSelect={() => navigate('/panduan')} className="cursor-pointer rounded-md">
+                            <BookOpen className="mr-2 h-4 w-4 text-muted-foreground" />
+                            Panduan Pengguna
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={signOut} className="text-destructive focus:text-destructive cursor-pointer rounded-md bg-destructive/5 focus:bg-destructive/10">

@@ -28,6 +28,8 @@ export function SearchableSelect({
     searchPlaceholder = "Cari...",
     className,
     disabled = false,
+    id,
+    ariaLabel,
 }) {
     const [open, setOpen] = React.useState(false)
     const [search, setSearch] = React.useState("")
@@ -58,9 +60,12 @@ export function SearchableSelect({
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
                 <Button
+                    type="button"
+                    id={id}
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
+                    aria-label={ariaLabel || placeholder}
                     disabled={disabled}
                     className={cn(
                         "w-full justify-between h-11 font-normal",
@@ -74,13 +79,14 @@ export function SearchableSelect({
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+            <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] p-0" align="start">
                 <div className="flex flex-col">
                     {/* Search Input */}
                     <div className="flex items-center border-b px-3">
                         <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
                         <input
                             type="text"
+                            aria-label={searchPlaceholder}
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder={searchPlaceholder}
@@ -106,7 +112,7 @@ export function SearchableSelect({
                                         setSearch("")
                                     }}
                                     className={cn(
-                                        "relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+                                        "relative flex min-h-10 w-full cursor-default select-none items-center rounded-sm px-2 py-2 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
                                         opt.value === value && "bg-accent text-accent-foreground"
                                     )}
                                 >

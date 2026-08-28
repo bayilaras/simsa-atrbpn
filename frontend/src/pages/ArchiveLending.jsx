@@ -10,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Search, Plus, ArrowLeftRight, Loader2, AlertTriangle, Clock, CheckCircle2, Calendar, RotateCcw, Box, FileText, User, Building, X } from 'lucide-react'
-import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import archiveLendingService from '@/services/archive-lending.service'
 import arsipService from '@/services/arsip.service'
@@ -106,11 +105,11 @@ function LendingRow({ item, onReturn, onExtend }) {
                         <>
                             <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => onExtend(item)}>
                                 <Calendar className="h-3.5 w-3.5" />
-                                <span className="hidden sm:inline">Perpanjang</span>
+                                <span className="sr-only sm:not-sr-only">Perpanjang</span>
                             </Button>
                             <Button size="sm" className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700" onClick={() => onReturn(item)}>
                                 <RotateCcw className="h-3.5 w-3.5" />
-                                <span className="hidden sm:inline">Kembalikan</span>
+                                <span className="sr-only sm:not-sr-only">Kembalikan</span>
                             </Button>
                         </>
                     )}
@@ -127,7 +126,6 @@ function LendingRow({ item, onReturn, onExtend }) {
 }
 
 export default function ArchiveLending() {
-    const { session } = useAuth()
     const { toast } = useToast()
     const [activeTab, setActiveTab] = useState('active')
     const [data, setData] = useState([])
@@ -146,6 +144,7 @@ export default function ArchiveLending() {
     const [targetResults, setTargetResults] = useState([])
     const [targetLabel, setTargetLabel] = useState('')
     const [targetLoading, setTargetLoading] = useState(false)
+    const [pendingAction, setPendingAction] = useState(null)
     const targetSearchSeq = useRef(0)
 
     // Fetch data
@@ -185,7 +184,8 @@ export default function ArchiveLending() {
 
     // Return handler
     const handleReturn = async () => {
-        if (!selectedItem) return
+        if (!selectedItem || pendingAction) return
+        setPendingAction('return')
         try {
             await archiveLendingService.return(selectedItem.id, returnNotes)
             toast({ title: 'Berhasil', description: 'Arsip berhasil dikembalikan' })
@@ -195,16 +195,19 @@ export default function ArchiveLending() {
             fetchStats()
         } catch (error) {
             toast({ title: 'Gagal mengembalikan arsip', description: error.message, variant: 'destructive' })
+        } finally {
+            setPendingAction(null)
         }
     }
 
     // Extend handler
     const handleExtend = async () => {
-        if (!selectedItem) return
+        if (!selectedItem || pendingAction) return
         if (!newDueDate) {
             toast({ title: 'Data belum lengkap', description: 'Tanggal jatuh tempo baru wajib diisi', variant: 'destructive' })
             return
         }
+        setPendingAction('extend')
         try {
             await archiveLendingService.extend(selectedItem.id, newDueDate)
             toast({ title: 'Berhasil', description: 'Tanggal jatuh tempo berhasil diperpanjang' })
@@ -213,6 +216,8 @@ export default function ArchiveLending() {
             fetchData()
         } catch (error) {
             toast({ title: 'Gagal memperpanjang', description: error.message, variant: 'destructive' })
+        } finally {
+            setPendingAction(null)
         }
     }
 
@@ -225,6 +230,7 @@ export default function ArchiveLending() {
 
     // Borrow handler
     const handleBorrow = async () => {
+        if (pendingAction) return
         const isArsip = borrowForm.lendingType === 'arsip'
         const targetId = isArsip ? borrowForm.arsipId : borrowForm.storageLocationId
 
@@ -255,6 +261,7 @@ export default function ArchiveLending() {
             ...(isArsip ? { arsipId: targetId } : { storageLocationId: targetId }),
         }
 
+        setPendingAction('borrow')
         try {
             await archiveLendingService.borrow(payload)
             toast({ title: 'Berhasil', description: 'Peminjaman berhasil dicatat' })
@@ -264,6 +271,8 @@ export default function ArchiveLending() {
             fetchStats()
         } catch (error) {
             toast({ title: 'Gagal mencatat peminjaman', description: error.message, variant: 'destructive' })
+        } finally {
+            setPendingAction(null)
         }
     }
 
@@ -493,8 +502,8 @@ export default function ArchiveLending() {
             </Card>
 
             {/* Return Dialog */}
-            <Dialog open={returnDialogOpen} onOpenChange={setReturnDialogOpen}>
-                <DialogContent className="sm:max-w-[400px]">
+            <Dialog open={returnDialogOpen} onOpenChange={(open) => pendingAction !== 'return' && setReturnDialogOpen(open)}>
+                <DialogContent showCloseButton={pendingAction !== 'return'} aria-busy={pendingAction === 'return'} className="sm:max-w-[400px]">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <RotateCcw className="h-5 w-5 text-emerald-600" />
@@ -517,15 +526,18 @@ export default function ArchiveLending() {
                         </div>
                     </div>
                     <DialogFooter className="gap-2 sm:gap-0">
-                        <Button variant="outline" onClick={() => setReturnDialogOpen(false)}>Batal</Button>
-                        <Button onClick={handleReturn} className="bg-emerald-600 hover:bg-emerald-700">Konfirmasi Pengembalian</Button>
+                        <Button type="button" variant="outline" disabled={pendingAction === 'return'} onClick={() => setReturnDialogOpen(false)}>Batal</Button>
+                        <Button type="button" disabled={pendingAction === 'return'} onClick={handleReturn} className="bg-emerald-600 hover:bg-emerald-700">
+                            {pendingAction === 'return' && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
+                            {pendingAction === 'return' ? 'Menyimpan…' : 'Konfirmasi Pengembalian'}
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
             {/* Extend Dialog */}
-            <Dialog open={extendDialogOpen} onOpenChange={setExtendDialogOpen}>
-                <DialogContent className="sm:max-w-[400px]">
+            <Dialog open={extendDialogOpen} onOpenChange={(open) => pendingAction !== 'extend' && setExtendDialogOpen(open)}>
+                <DialogContent showCloseButton={pendingAction !== 'extend'} aria-busy={pendingAction === 'extend'} className="sm:max-w-[400px]">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <Calendar className="h-5 w-5 text-blue-600" />
@@ -553,15 +565,18 @@ export default function ArchiveLending() {
                         </div>
                     </div>
                     <DialogFooter className="gap-2 sm:gap-0">
-                        <Button variant="outline" onClick={() => setExtendDialogOpen(false)}>Batal</Button>
-                        <Button onClick={handleExtend} className="bg-primary hover:bg-primary">Perpanjang</Button>
+                        <Button type="button" variant="outline" disabled={pendingAction === 'extend'} onClick={() => setExtendDialogOpen(false)}>Batal</Button>
+                        <Button type="button" disabled={pendingAction === 'extend'} onClick={handleExtend} className="bg-primary hover:bg-primary">
+                            {pendingAction === 'extend' && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
+                            {pendingAction === 'extend' ? 'Menyimpan…' : 'Perpanjang'}
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
             {/* Borrow Dialog */}
-            <Dialog open={borrowDialogOpen} onOpenChange={setBorrowDialogOpen}>
-                <DialogContent className="sm:max-w-[550px]">
+            <Dialog open={borrowDialogOpen} onOpenChange={(open) => pendingAction !== 'borrow' && setBorrowDialogOpen(open)}>
+                <DialogContent showCloseButton={pendingAction !== 'borrow'} aria-busy={pendingAction === 'borrow'} className="sm:max-w-[550px]">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <Plus className="h-5 w-5 text-indigo-600" />
@@ -572,13 +587,13 @@ export default function ArchiveLending() {
                         </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label className="text-right">Tipe</Label>
+                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                            <Label htmlFor="lending-type" className="text-left sm:text-right">Tipe</Label>
                             <Select
                                 value={borrowForm.lendingType}
                                 onValueChange={handleLendingTypeChange}
                             >
-                                <SelectTrigger className="col-span-3">
+                                <SelectTrigger id="lending-type" className="w-full sm:col-span-3">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -596,14 +611,14 @@ export default function ArchiveLending() {
                             </Select>
                         </div>
 
-                        <div className="grid grid-cols-4 items-start gap-4">
-                            <Label className="text-right pt-2">{borrowForm.lendingType === 'arsip' ? 'Arsip' : 'Lokasi / Box'}</Label>
-                            <div className="col-span-3 space-y-2">
+                        <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-4 sm:gap-4">
+                            <Label className="text-left sm:pt-2 sm:text-right">{borrowForm.lendingType === 'arsip' ? 'Arsip' : 'Lokasi / Box'}</Label>
+                            <div className="space-y-2 sm:col-span-3">
                                 {targetLabel ? (
                                     <div className="flex items-center gap-2 text-sm bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-100 rounded-md px-3 py-2">
                                         {borrowForm.lendingType === 'arsip' ? <FileText className="h-4 w-4 shrink-0" /> : <Box className="h-4 w-4 shrink-0" />}
                                         <span className="truncate">{targetLabel}</span>
-                                        <Button variant="ghost" size="sm" className="h-auto p-0 ml-auto text-muted-foreground hover:text-destructive" onClick={clearTarget}>
+                                        <Button variant="ghost" size="sm" className="h-9 w-9 p-0 ml-auto text-muted-foreground hover:text-destructive" onClick={clearTarget} aria-label="Hapus arsip atau lokasi yang dipilih">
                                             <X className="h-4 w-4" />
                                         </Button>
                                     </div>
@@ -612,6 +627,8 @@ export default function ArchiveLending() {
                                         <div className="relative">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                             <Input
+                                                id="lending-target-search"
+                                                aria-label={borrowForm.lendingType === 'arsip' ? 'Cari arsip yang akan dipinjam' : 'Cari lokasi atau boks yang akan dipinjam'}
                                                 value={targetQuery}
                                                 onChange={(e) => handleTargetQueryChange(e.target.value)}
                                                 className="pl-9"
@@ -636,14 +653,15 @@ export default function ArchiveLending() {
                                                         ? (item.uraianBerkas || '-')
                                                         : `${item.name || '-'}${item.level ? ` · ${item.level}` : ''}`
                                                     return (
-                                                        <div
+                                                        <button
+                                                            type="button"
                                                             key={item.id}
-                                                            className="p-3 text-sm cursor-pointer border-b last:border-0 hover:bg-muted/50"
+                                                            className="w-full border-b p-3 text-left text-sm last:border-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                                             onClick={() => selectTarget(item, `${title} — ${subtitle}`)}
                                                         >
                                                             <div className="font-medium">{title}</div>
                                                             <div className="text-xs text-muted-foreground truncate">{subtitle}</div>
-                                                        </div>
+                                                        </button>
                                                     )
                                                 })}
                                             </div>
@@ -656,11 +674,12 @@ export default function ArchiveLending() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label className="text-right">Peminjam</Label>
-                            <div className="col-span-3 relative">
+                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                            <Label htmlFor="lending-borrower" className="text-left sm:text-right">Peminjam</Label>
+                            <div className="relative sm:col-span-3">
                                 <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
+                                    id="lending-borrower"
                                     value={borrowForm.borrowerName}
                                     onChange={(e) => setBorrowForm({ ...borrowForm, borrowerName: e.target.value })}
                                     className="pl-9"
@@ -669,11 +688,12 @@ export default function ArchiveLending() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label className="text-right">Unit Kerja</Label>
-                            <div className="col-span-3 relative">
+                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                            <Label htmlFor="lending-unit" className="text-left sm:text-right">Unit Kerja</Label>
+                            <div className="relative sm:col-span-3">
                                 <Building className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
+                                    id="lending-unit"
                                     value={borrowForm.departmentUnit}
                                     onChange={(e) => setBorrowForm({ ...borrowForm, departmentUnit: e.target.value })}
                                     className="pl-9"
@@ -682,30 +702,35 @@ export default function ArchiveLending() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label className="text-right">Jatuh Tempo</Label>
+                        <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                            <Label htmlFor="lending-due-date" className="text-left sm:text-right">Jatuh Tempo</Label>
                             <Input
+                                id="lending-due-date"
                                 type="date"
                                 value={borrowForm.dueDate}
                                 onChange={(e) => setBorrowForm({ ...borrowForm, dueDate: e.target.value })}
-                                className="col-span-3"
+                                className="w-full sm:col-span-3"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-start gap-4">
-                            <Label className="text-right pt-2">Tujuan</Label>
+                        <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-4 sm:gap-4">
+                            <Label htmlFor="lending-purpose" className="text-left sm:pt-2 sm:text-right">Tujuan</Label>
                             <Textarea
+                                id="lending-purpose"
                                 value={borrowForm.purpose}
                                 onChange={(e) => setBorrowForm({ ...borrowForm, purpose: e.target.value })}
-                                className="col-span-3"
+                                className="w-full sm:col-span-3"
                                 placeholder="Untuk keperluan apa arsip dipinjam?"
                                 rows={2}
                             />
                         </div>
                     </div>
                     <DialogFooter className="gap-2 sm:gap-0">
-                        <Button variant="outline" onClick={() => setBorrowDialogOpen(false)}>Batal</Button>
-                        <Button onClick={handleBorrow} className="bg-indigo-600 hover:bg-indigo-700">Simpan Peminjaman</Button>
+                        <Button type="button" variant="outline" disabled={pendingAction === 'borrow'} onClick={() => setBorrowDialogOpen(false)}>Batal</Button>
+                        <Button type="button" disabled={pendingAction === 'borrow'} onClick={handleBorrow} className="bg-indigo-600 hover:bg-indigo-700">
+                            {pendingAction === 'borrow' && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
+                            {pendingAction === 'borrow' ? 'Menyimpan…' : 'Simpan Peminjaman'}
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

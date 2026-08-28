@@ -62,11 +62,12 @@ export default function Laporan() {
         setLoading(true);
         try {
             switch (activeTab) {
-                case 'summary':
+                case 'summary': {
                     const summary = await reportService.getSummaryReport(unitKerjaId, year);
                     setSummaryData(summary);
                     break;
-                case 'surat-masuk':
+                }
+                case 'surat-masuk': {
                     const masuk = await reportService.getSuratMasukReport({
                         unitKerjaId,
                         year,
@@ -75,7 +76,8 @@ export default function Laporan() {
                     });
                     setSuratMasukData(masuk);
                     break;
-                case 'surat-keluar':
+                }
+                case 'surat-keluar': {
                     const keluar = await reportService.getSuratKeluarReport({
                         unitKerjaId,
                         year,
@@ -84,7 +86,8 @@ export default function Laporan() {
                     });
                     setSuratKeluarData(keluar);
                     break;
-                case 'arsip':
+                }
+                case 'arsip': {
                     const arsip = await reportService.getArsipReport({
                         unitKerjaId,
                         year,
@@ -93,7 +96,8 @@ export default function Laporan() {
                     });
                     setArsipData(arsip);
                     break;
-                case 'peminjaman':
+                }
+                case 'peminjaman': {
                     const lending = await reportService.getLendingReport({
                         status: lendingStatus,
                         tanggalDari: tanggalDari || undefined,
@@ -101,6 +105,7 @@ export default function Laporan() {
                     });
                     setLendingData(lending);
                     break;
+                }
             }
         } catch (error) {
             console.error('Error loading report:', error);
@@ -233,23 +238,23 @@ export default function Laporan() {
                 <TabsList className="bg-card/50 backdrop-blur-sm border border-border/60 p-1 h-auto rounded-xl shadow-sm grid w-full grid-cols-2 md:grid-cols-5 gap-1">
                     <TabsTrigger value="summary" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <BarChart3 className="h-4 w-4 mr-2" />
-                        <span className="hidden sm:inline">Ringkasan</span>
+                        <span className="sr-only sm:not-sr-only">Ringkasan</span>
                     </TabsTrigger>
                     <TabsTrigger value="surat-masuk" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <Mail className="h-4 w-4 mr-2" />
-                        <span className="hidden sm:inline">Surat Masuk</span>
+                        <span className="sr-only sm:not-sr-only">Surat Masuk</span>
                     </TabsTrigger>
                     <TabsTrigger value="surat-keluar" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <Send className="h-4 w-4 mr-2" />
-                        <span className="hidden sm:inline">Surat Keluar</span>
+                        <span className="sr-only sm:not-sr-only">Surat Keluar</span>
                     </TabsTrigger>
                     <TabsTrigger value="arsip" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <Archive className="h-4 w-4 mr-2" />
-                        <span className="hidden sm:inline">Arsip</span>
+                        <span className="sr-only sm:not-sr-only">Arsip</span>
                     </TabsTrigger>
                     <TabsTrigger value="peminjaman" className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200">
                         <BookOpen className="h-4 w-4 mr-2" />
-                        <span className="hidden sm:inline">Peminjaman</span>
+                        <span className="sr-only sm:not-sr-only">Peminjaman</span>
                     </TabsTrigger>
                 </TabsList>
 
@@ -342,7 +347,11 @@ export default function Laporan() {
                                     <CardDescription>Perbandingan intensitas surat masuk dan keluar per bulan</CardDescription>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="h-[300px] w-full mt-4">
+                                    <div
+                                        className="mt-4 h-[300px] w-full"
+                                        role="img"
+                                        aria-label={`Grafik perbandingan surat masuk dan surat keluar setiap bulan pada tahun ${year}`}
+                                    >
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart data={summaryData.monthlyTrend} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />

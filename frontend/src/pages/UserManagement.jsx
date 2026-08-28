@@ -53,8 +53,8 @@ const ROLE_LABELS = {
     'super_admin': 'Super Admin',
     'admin_dirjen': 'Admin Dirjen',
     'admin_sesditjen': 'Admin Sesditjen',
-    'staff': 'Staff',
-    'user': 'User',
+    'staff': 'Staf',
+    'user': 'Pengguna',
 };
 
 export default function UserManagement() {
@@ -313,15 +313,15 @@ export default function UserManagement() {
                         <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
                             <Users className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
-                        User Management
+                        Manajemen Pengguna
                     </h1>
                     <p className="text-muted-foreground">
-                        Kelola pengguna, penetapan role, dan akses unit kerja sistem
+                        Kelola pengguna, penetapan peran, dan akses unit kerja sistem
                     </p>
                 </div>
                 <Button className="shadow-sm bg-indigo-600 hover:bg-indigo-700" onClick={handleAddUser}>
                     <UserPlus className="mr-2 h-4 w-4" />
-                    Tambah User
+                    Tambah Pengguna
                 </Button>
             </div>
 
@@ -329,7 +329,7 @@ export default function UserManagement() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card className="shadow-sm border-l-4 border-l-blue-500">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                        <CardTitle className="text-sm font-medium">Total Pengguna</CardTitle>
                         <Users className="h-4 w-4 text-blue-500" />
                     </CardHeader>
                     <CardContent>
@@ -380,10 +380,10 @@ export default function UserManagement() {
                         <div className="flex items-center gap-2 w-full sm:w-auto">
                             <Select value={roleFilter} onValueChange={applyFilter(setRoleFilter)}>
                                 <SelectTrigger className="w-full sm:w-[180px] bg-background">
-                                    <SelectValue placeholder="Filter Role" />
+                                    <SelectValue placeholder="Filter peran" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">Semua Role</SelectItem>
+                                    <SelectItem value="all">Semua peran</SelectItem>
                                     {roles.map(role => (
                                         <SelectItem key={role.value} value={role.value}>
                                             {role.label}
@@ -426,8 +426,8 @@ export default function UserManagement() {
                         <Table responsive>
                             <TableHeader className="bg-muted/50">
                                 <TableRow className="hover:bg-transparent">
-                                    <TableHead className="w-[300px]">User</TableHead>
-                                    <TableHead>Role</TableHead>
+                                    <TableHead className="w-[300px]">Pengguna</TableHead>
+                                    <TableHead>Peran</TableHead>
                                     <TableHead>Unit Kerja</TableHead>
                                     <TableHead>Status</TableHead>
                                     <TableHead className="text-right">Aksi</TableHead>
@@ -441,12 +441,12 @@ export default function UserManagement() {
                                                 <Users className="h-8 w-8 opacity-20" />
                                             </div>
                                             <h3 className="text-lg font-medium mb-1">Tidak ditemukan</h3>
-                                            <p className="text-sm opacity-80">Tidak ada user yang cocok dengan kriteria pencarian</p>
+                                            <p className="text-sm opacity-80">Tidak ada pengguna yang cocok dengan kriteria pencarian</p>
                                         </TableCell>
                                     </TableRow>
                                 ) : users.map((user) => (
                                     <TableRow key={user.id} className="group hover:bg-muted/50 transition-colors">
-                                        <TableCell data-label="User">
+                                        <TableCell data-label="Pengguna">
                                             <div className="flex items-center gap-3">
                                                 <Avatar className="h-9 w-9 border border-border">
                                                     <AvatarImage src={user.image} />
@@ -462,7 +462,7 @@ export default function UserManagement() {
                                                 </div>
                                             </div>
                                         </TableCell>
-                                        <TableCell data-label="Role">
+                                        <TableCell data-label="Peran">
                                             <Badge variant="outline" className={`font-medium shadow-none ${ROLE_COLORS[user.role] || ''}`}>
                                                 {ROLE_LABELS[user.role] || user.role}
                                             </Badge>
@@ -489,16 +489,16 @@ export default function UserManagement() {
                                         <TableCell data-label="Aksi" className="text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                                    <Button type="button" variant="ghost" size="icon" aria-label={`Buka tindakan untuk ${user.name || user.email}`} className="h-10 w-10">
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-48">
-                                                    <DropdownMenuLabel>Aksi User</DropdownMenuLabel>
+                                                    <DropdownMenuLabel>Tindakan Pengguna</DropdownMenuLabel>
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem onClick={() => handleEdit(user)}>
                                                         <Edit2 className="h-4 w-4 mr-2" />
-                                                        Edit Role/Unit
+                                                        Ubah Peran/Unit
                                                     </DropdownMenuItem>
                                                     {user.id !== currentUser?.id && (
                                                         <DropdownMenuItem
@@ -566,19 +566,19 @@ export default function UserManagement() {
                             <div className="p-1.5 bg-primary/10 rounded-md">
                                 <Edit2 className="h-4 w-4 text-primary" />
                             </div>
-                            Edit User
+                            Ubah Pengguna
                         </SheetTitle>
                         <SheetDescription>
-                            Ubah role dan unit kerja untuk <span className="font-medium text-foreground">{editingUser?.name || editingUser?.email}</span>
+                            Ubah peran dan unit kerja untuk <span className="font-medium text-foreground">{editingUser?.name || editingUser?.email}</span>
                         </SheetDescription>
                     </SheetHeader>
 
                     <div className="py-6 space-y-6">
                         <div className="space-y-2">
-                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Role Pengguna</label>
+                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Peran Pengguna</label>
                             <Select value={editData.role} onValueChange={(v) => setEditData(d => ({ ...d, role: v }))}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Pilih Role" />
+                                    <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {roles.map(role => (
@@ -589,7 +589,7 @@ export default function UserManagement() {
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                                Role menentukan hak akses pengguna dalam sistem.
+                                Peran menentukan hak akses pengguna dalam sistem.
                             </p>
                         </div>
 
@@ -681,15 +681,15 @@ export default function UserManagement() {
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <UserPlus className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                            Tambah User Baru
+                            Tambah Pengguna Baru
                         </DialogTitle>
                         <DialogDescription>
-                            Buat akun user baru. User akan dapat login menggunakan email + password atau Google.
+                            Buat akun pengguna baru. Pengguna dapat masuk menggunakan email dan kata sandi atau akun Google.
                         </DialogDescription>
                     </DialogHeader>
 
                     {addError && (
-                        <div className="bg-red-50 dark:bg-red-500/15 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700 dark:text-red-300">
+                        <div role="alert" className="bg-red-50 dark:bg-red-500/15 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700 dark:text-red-300">
                             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                             {addError}
                         </div>
@@ -697,18 +697,20 @@ export default function UserManagement() {
 
                     <div className="space-y-4 py-2">
                         <div className="space-y-2">
-                            <Label>Email <span className="text-red-500">*</span></Label>
+                            <Label htmlFor="new-user-email">Email <span className="text-red-500">*</span></Label>
                             <Input
+                                id="new-user-email"
                                 type="email"
-                                placeholder="user@example.com"
+                                placeholder="nama@atrbpn.go.id"
                                 value={addData.email}
                                 onChange={(e) => setAddData(d => ({ ...d, email: e.target.value }))}
                             />
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Nama Lengkap <span className="text-red-500">*</span></Label>
+                            <Label htmlFor="new-user-name">Nama Lengkap <span className="text-red-500">*</span></Label>
                             <Input
+                                id="new-user-name"
                                 placeholder="Nama lengkap pengguna"
                                 value={addData.name}
                                 onChange={(e) => setAddData(d => ({ ...d, name: e.target.value }))}
@@ -716,10 +718,10 @@ export default function UserManagement() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Role</Label>
+                            <Label>Peran</Label>
                             <Select value={addData.role} onValueChange={(v) => setAddData(d => ({ ...d, role: v }))}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Pilih Role" />
+                                    <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {roles.map(role => (
@@ -748,7 +750,7 @@ export default function UserManagement() {
                             </Select>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
                                 <Label>Jabatan</Label>
                                 <Input
@@ -772,7 +774,7 @@ export default function UserManagement() {
                         <div className="space-y-2">
                             <Label className="flex items-center gap-1.5">
                                 <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-                                Password
+                                Kata sandi
                             </Label>
                             <div className="relative">
                                 <Input
@@ -789,7 +791,7 @@ export default function UserManagement() {
                                     size="icon"
                                     className="absolute right-0 top-0 h-full w-10 hover:bg-transparent text-muted-foreground"
                                     onClick={() => setShowPassword(v => !v)}
-                                    tabIndex={-1}
+                                    aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
                                 >
                                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                 </Button>
@@ -811,7 +813,7 @@ export default function UserManagement() {
                                 </div>
                             )}
                             <p className="text-xs text-muted-foreground">
-                                Opsional. Jika diisi, user dapat login via email + password. Jika tidak, user hanya bisa login via Google.
+                                Opsional. Jika diisi, pengguna dapat masuk dengan email dan kata sandi. Jika tidak, gunakan akun Google yang telah diprovisi.
                             </p>
                         </div>
                     </div>
@@ -822,7 +824,7 @@ export default function UserManagement() {
                         </Button>
                         <Button onClick={handleCreateUser} disabled={creating} className="bg-indigo-600 hover:bg-indigo-700">
                             {creating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                            Tambah User
+                            Tambah Pengguna
                         </Button>
                     </DialogFooter>
                 </DialogContent>

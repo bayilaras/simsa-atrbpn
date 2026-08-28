@@ -38,7 +38,7 @@ import {
     Trash2,
     FileType
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 
 export default function BulkUpload() {
     const { user } = useAuth();
@@ -60,7 +60,6 @@ export default function BulkUpload() {
         clearFiles,
         upload,
         confirmBatch,
-        setError,
     } = useOCRUpload(user?.unitKerjaId);
 
     // Drag handlers
@@ -151,7 +150,7 @@ export default function BulkUpload() {
     return (
         <div className="space-y-6">
             {/* Hero Header */}
-            <div className="rounded-xl overflow-hidden bg-gradient-to-r from-blue-600 to-indigo-700 p-8 text-white shadow-lg relative">
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-blue-600 to-indigo-700 p-5 text-white shadow-lg sm:p-8">
                 <div className="absolute top-0 right-0 p-4 opacity-10">
                     <CloudUpload className="h-64 w-64" />
                 </div>
@@ -160,15 +159,16 @@ export default function BulkUpload() {
                         <Button
                             variant="ghost"
                             size="icon"
+                            aria-label="Kembali ke daftar arsip"
                             onClick={() => navigate('/arsip')}
                             className="text-white/80 hover:text-white hover:bg-card/20 -ml-2"
                         >
                             <ChevronLeft className="h-5 w-5" />
                         </Button>
-                        <h1 className="text-3xl font-bold">Bulk Upload & OCR</h1>
+                        <h1 className="text-2xl font-bold sm:text-3xl">Unggah Massal &amp; OCR</h1>
                     </div>
                     <p className="text-blue-100 max-w-2xl text-lg">
-                        Upload banyak file PDF sekaligus, sistem akan otomatis mengekstrak informasi dan menyiapkan draft arsip untuk Anda.
+                        Unggah beberapa berkas PDF sekaligus. Sistem akan mengekstrak informasi dan menyiapkan draf arsip untuk Anda.
                     </p>
                 </div>
             </div>
@@ -183,17 +183,17 @@ export default function BulkUpload() {
             <AnimatePresence mode="wait">
                 {/* Upload Phase */}
                 {!batch && !isProcessing && (
-                    <motion.div
+                    <Motion.div
                         key="upload"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -20 }}
                     >
                         <Card className="border-2 border-dashed border-border dark:border-gray-800 shadow-sm hover:border-blue-400 dark:hover:border-blue-500 transition-colors bg-card/50 dark:bg-foreground/50 backdrop-blur-sm">
-                            <CardContent className="p-10">
+                            <CardContent className="p-4 sm:p-10">
                                 <div
                                     className={`
-                                        flex flex-col items-center justify-center p-12 text-center cursor-pointer rounded-2xl transition-all duration-300
+                                        flex flex-col items-center justify-center p-6 sm:p-12 text-center cursor-pointer rounded-2xl transition-all duration-300
                                         ${dragActive ? 'bg-blue-50/80 border-blue-500 dark:bg-blue-900/20' : 'bg-muted/50 dark:bg-foreground/50 hover:bg-muted/50 dark:hover:bg-foreground'}
                                     `}
                                     onDragEnter={handleDrag}
@@ -201,6 +201,15 @@ export default function BulkUpload() {
                                     onDragOver={handleDrag}
                                     onDrop={handleDrop}
                                     onClick={() => fileInputRef.current?.click()}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter' || event.key === ' ') {
+                                            event.preventDefault();
+                                            fileInputRef.current?.click();
+                                        }
+                                    }}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label="Pilih berkas PDF untuk diunggah"
                                 >
                                     <input
                                         ref={fileInputRef}
@@ -214,22 +223,22 @@ export default function BulkUpload() {
                                         <CloudUpload className="h-10 w-10" />
                                     </div>
                                     <h3 className="text-xl font-semibold mb-2 text-foreground dark:text-gray-100">
-                                        Drag & drop file PDF di sini
+                                        Seret dan lepas berkas PDF di sini
                                     </h3>
                                     <p className="text-muted-foreground dark:text-muted-foreground mb-6 max-w-sm">
-                                        atau klik untuk memilih file dari komputer Anda (Maksimal 50 file)
+                                        atau klik untuk memilih berkas dari komputer Anda (maksimal 50 berkas)
                                     </p>
-                                    <Button variant="outline" className="border-blue-200 hover:bg-blue-50 hover:text-blue-600 dark:hover:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-900/50">
-                                        Pilih File
-                                    </Button>
+                                    <span aria-hidden="true" className="inline-flex min-h-11 items-center rounded-md border border-blue-200 bg-background px-4 text-sm font-medium text-foreground">
+                                        Pilih berkas
+                                    </span>
                                 </div>
 
                                 {files.length > 0 && (
                                     <div className="mt-8 space-y-4">
                                         <div className="flex flex-wrap items-center justify-between gap-3">
                                             <h4 className="font-medium text-foreground dark:text-gray-300">File Terpilih ({files.length})</h4>
-                                            <Button variant="ghost" size="sm" onClick={clearFiles} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
-                                                Hapus Semua
+                                            <Button type="button" variant="ghost" size="sm" onClick={clearFiles} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                                Hapus semua
                                             </Button>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -243,8 +252,10 @@ export default function BulkUpload() {
                                                         <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
                                                     </div>
                                                     <Button
+                                                        type="button"
                                                         variant="ghost"
                                                         size="icon"
+                                                        aria-label={`Hapus berkas ${file.name}`}
                                                         className="h-8 w-8 text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -268,19 +279,19 @@ export default function BulkUpload() {
                                                 ) : (
                                                     <Upload className="h-5 w-5 mr-2" />
                                                 )}
-                                                Mulai Upload
+                                                Mulai unggah
                                             </Button>
                                         </div>
                                     </div>
                                 )}
                             </CardContent>
                         </Card>
-                    </motion.div>
+                    </Motion.div>
                 )}
 
                 {/* Processing Phase */}
                 {(isProcessing || isUploading) && (
-                    <motion.div
+                    <Motion.div
                         key="processing"
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -315,12 +326,12 @@ export default function BulkUpload() {
                                 </div>
                             </CardContent>
                         </Card>
-                    </motion.div>
+                    </Motion.div>
                 )}
 
                 {/* Results Phase */}
                 {batch && !isProcessing && !isUploading && (
-                    <motion.div
+                    <Motion.div
                         key="results"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -353,7 +364,7 @@ export default function BulkUpload() {
                             <CardContent>
                                 <div className="grid grid-cols-1 gap-4">
                                     {batch.items.map((item) => (
-                                        <motion.div
+                                        <Motion.div
                                             key={item.id}
                                             layout
                                             initial={{ opacity: 0 }}
@@ -466,19 +477,19 @@ export default function BulkUpload() {
                                                     </div>
                                                 </div>
                                             )}
-                                        </motion.div>
+                                        </Motion.div>
                                     ))}
                                 </div>
                             </CardContent>
-                            <CardFooter className="flex justify-between border-t bg-muted/50 dark:bg-foreground/50 p-6 rounded-b-lg">
-                                <Button variant="ghost" onClick={clearFiles} className="text-muted-foreground hover:text-red-500">
+                            <CardFooter className="flex flex-col-reverse gap-3 rounded-b-lg border-t bg-muted/50 p-4 dark:bg-foreground/50 sm:flex-row sm:justify-between sm:p-6">
+                                <Button variant="ghost" onClick={clearFiles} className="w-full text-muted-foreground hover:text-red-500 sm:w-auto">
                                     <Trash2 className="h-4 w-4 mr-2" />
                                     Batal & Hapus
                                 </Button>
                                 <Button
                                     onClick={handleConfirm}
                                     disabled={progress?.completed === 0}
-                                    className="bg-green-600 hover:bg-green-700 text-white min-w-[200px]"
+                                    className="w-full bg-green-600 text-white hover:bg-green-700 sm:w-auto sm:min-w-[200px]"
                                     size="lg"
                                 >
                                     <Save className="h-4 w-4 mr-2" />
@@ -486,7 +497,7 @@ export default function BulkUpload() {
                                 </Button>
                             </CardFooter>
                         </Card>
-                    </motion.div>
+                    </Motion.div>
                 )}
             </AnimatePresence>
         </div>

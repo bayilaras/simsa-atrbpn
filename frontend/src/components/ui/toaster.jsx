@@ -5,11 +5,14 @@ export function Toaster() {
     const { toasts, dismiss } = useToast()
 
     return (
-        <div className="fixed top-0 right-0 z-[100] flex flex-col gap-2 p-4 w-full max-w-sm pointer-events-none">
+        <div aria-label="Pemberitahuan aplikasi" className="fixed right-0 top-0 z-[100] flex w-full max-w-sm flex-col gap-2 p-4 pointer-events-none">
             {toasts.map(function ({ id, title, description, variant, ...props }) {
                 return (
                     <div
                         key={id}
+                        role={variant === 'destructive' ? 'alert' : 'status'}
+                        aria-live={variant === 'destructive' ? 'assertive' : 'polite'}
+                        aria-atomic="true"
                         className={`pointer-events-auto relative w-full overflow-hidden rounded-lg border p-4 shadow-lg transition-all
                             ${variant === 'destructive'
                                 ? 'bg-destructive text-destructive-foreground border-destructive/50'
@@ -37,8 +40,10 @@ export function Toaster() {
                             </div>
 
                             <button
+                                type="button"
                                 onClick={() => dismiss(id)}
-                                className={`shrink-0 rounded-md p-0.5 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 
+                                aria-label="Tutup pemberitahuan"
+                                className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100
                                     ${variant === 'destructive'
                                         ? 'text-destructive-foreground/50 hover:text-destructive-foreground focus:ring-destructive'
                                         : 'text-muted-foreground/50 hover:text-foreground focus:ring-ring'

@@ -173,15 +173,16 @@ export default function LayananArsipCreate() {
                                             />
                                             <div className="max-h-[300px] overflow-y-auto border rounded-md">
                                                 {loadingArsip ? (
-                                                    <div className="p-4 text-center">Loading...</div>
+                                                    <div role="status" className="p-4 text-center">Memuat arsip…</div>
                                                 ) : arsipList.length === 0 ? (
                                                     <div className="p-4 text-center text-muted-foreground">Tidak ditemukan</div>
                                                 ) : (
                                                     <div className="divide-y">
                                                         {arsipList.map(arsip => (
-                                                            <div
+                                                            <button
+                                                                type="button"
                                                                 key={arsip.id}
-                                                                className="p-3 hover:bg-muted cursor-pointer transition-colors"
+                                                                className="w-full p-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                                                 onClick={() => handleSelectArsip(arsip)}
                                                             >
                                                                 <div className="font-medium">{arsip.nomorBerkas}</div>
@@ -191,7 +192,7 @@ export default function LayananArsipCreate() {
                                                                     <span>•</span>
                                                                     <span>Unit: {arsip.unitKerja?.nama}</span>
                                                                 </div>
-                                                            </div>
+                                                            </button>
                                                         ))}
                                                     </div>
                                                 )}

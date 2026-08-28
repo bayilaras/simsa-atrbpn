@@ -4,6 +4,7 @@ import {
     Dialog,
     DialogContent,
     DialogClose,
+    DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -239,30 +240,36 @@ export function ArchiveDialog({
     }
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={(nextOpen) => !loading && onOpenChange(nextOpen)}>
             {/* Added: data-[state=open] styling directly here to ensure checks pass, but DialogContent handles animation via class */}
-            <DialogContent showCloseButton={false} className="!max-w-[95vw] !w-[95vw] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col bg-muted/50 border-0 rounded-xl shadow-2xl">
+            <DialogContent
+                showCloseButton={false}
+                onEscapeKeyDown={(event) => loading && event.preventDefault()}
+                onInteractOutside={(event) => loading && event.preventDefault()}
+                className="!max-w-[95vw] !w-[95vw] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col bg-muted/50 border-0 rounded-xl shadow-2xl"
+            >
 
                 {/* Header - Updated to Teal Gradient (ATR/BPN Style) */}
-                <div className="bg-gradient-to-r from-teal-700 to-teal-600 text-white px-6 py-4 flex items-center gap-4 shadow-md shrink-0">
-                    <div className="p-2.5 bg-card/15 rounded-xl border border-white/10 backdrop-blur-sm shadow-inner">
+                <div className="flex shrink-0 items-center gap-3 bg-gradient-to-r from-teal-700 to-teal-600 px-4 py-4 text-white shadow-md sm:gap-4 sm:px-6">
+                    <div className="shrink-0 rounded-xl border border-white/10 bg-card/15 p-2.5 shadow-inner backdrop-blur-sm">
                         <Archive className="h-6 w-6 text-white" />
                     </div>
-                    <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                            <h2 className="text-xl font-bold tracking-tight">Arsipkan Surat</h2>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <DialogTitle className="text-lg font-bold tracking-tight text-white sm:text-xl">Arsipkan Surat</DialogTitle>
                             <span className="bg-card/20 text-xs px-2 py-0.5 rounded-full font-medium border border-white/10">Input Data</span>
                         </div>
-                        <p className="text-teal-50 text-sm mt-0.5 opacity-90">Lengkapi data arsip dengan teliti untuk kemudahan pencarian.</p>
+                        <p className="mt-0.5 hidden truncate text-sm text-teal-50 opacity-90 sm:block">Lengkapi data arsip dengan teliti untuk kemudahan pencarian.</p>
                     </div>
-                    <DialogClose className="text-white/80 hover:text-white hover:bg-card/20 rounded-full p-2 transition-all">
+                    <DialogClose disabled={loading} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/80 transition-all hover:bg-card/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
                         <X className="h-5 w-5" />
+                        <span className="sr-only">Tutup formulir arsip</span>
                     </DialogClose>
                 </div>
 
                 {/* Scrollable Content */}
                 <div className="flex-1 overflow-y-auto bg-muted/50">
-                    <form id="archive-form" onSubmit={handleSubmit} className="p-6 md:p-8 space-y-8 max-w-[1600px] mx-auto">
+                    <form id="archive-form" onSubmit={handleSubmit} className="mx-auto max-w-[1600px] space-y-8 p-4 sm:p-6 md:p-8">
 
                         {/* ==================== SECTION 1: IDENTIFIKASI BERKAS ==================== */}
                         <section className="bg-card rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
@@ -743,12 +750,13 @@ export function ArchiveDialog({
                 </div>
 
                 {/* Footer */}
-                <div className="p-5 border-t border-border bg-card flex justify-end gap-3 shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.03)] z-10">
+                <div className="z-10 flex shrink-0 flex-col-reverse gap-3 border-t border-border bg-card p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.03)] sm:flex-row sm:justify-end sm:p-5">
                     <Button
                         type="button"
                         variant="secondary"
                         onClick={() => onOpenChange(false)}
-                        className="bg-card border border-border text-foreground hover:bg-muted/50 min-w-[100px] shadow-sm"
+                        disabled={loading}
+                        className="w-full border border-border bg-card text-foreground shadow-sm hover:bg-muted/50 sm:w-auto sm:min-w-[100px]"
                     >
                         <X className="h-4 w-4 mr-2" />
                         Batal
@@ -757,14 +765,14 @@ export function ArchiveDialog({
                         form="archive-form"
                         type="submit"
                         disabled={loading}
-                        className="bg-teal-600 hover:bg-teal-700 text-white min-w-[180px] shadow-md shadow-teal-600/20"
+                        className="w-full bg-teal-600 text-white shadow-md shadow-teal-600/20 hover:bg-teal-700 sm:w-auto sm:min-w-[180px]"
                     >
                         {loading ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : (
                             <Archive className="mr-2 h-4 w-4" />
                         )}
-                        Simpan Arsip
+                        {loading ? 'Menyimpan arsip…' : 'Simpan Arsip'}
                     </Button>
                 </div>
             </DialogContent>

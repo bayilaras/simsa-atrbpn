@@ -12,7 +12,7 @@ const routeNameMap = {
     'record-access-grants': 'Persetujuan Akses Rekod',
     'integrations': 'Integrasi',
     'srikandi': 'SRIKANDI',
-    'users': 'User Management',
+    'users': 'Manajemen Pengguna',
     'master': 'Master Data',
     'klasifikasi': 'Klasifikasi Arsip',
     'jra': 'Jadwal Retensi',
@@ -23,6 +23,7 @@ const routeNameMap = {
     'dosir': 'Pemberkasan Perkara',
     'retention': 'Manajemen Retensi',
     'bulk-upload': 'Bulk Upload',
+    'panduan': 'Panduan Pengguna',
     'settings': 'Pengaturan',
 };
 

@@ -316,12 +316,12 @@ export default function SuratKeluar() {
                     />
 
                     {isAdmin && (
-                        <Link to="/surat/keluar/tambah">
-                            <Button size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                        <Button asChild size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                            <Link to="/surat/keluar/tambah">
                                 <Plus className="mr-2 h-3.5 w-3.5" />
                                 Surat Baru
-                            </Button>
-                        </Link>
+                            </Link>
+                        </Button>
                     )}
                 </div>
             </div>
@@ -382,7 +382,7 @@ export default function SuratKeluar() {
                                 <CollapsibleTrigger asChild>
                                     <Button variant="outline" className={`gap-2 w-full md:w-auto ${isAdvancedOpen ? 'bg-muted' : ''}`}>
                                         <Filter className="h-4 w-4" />
-                                        <span className="hidden sm:inline">Filter</span>
+                                        <span className="sr-only sm:not-sr-only">Filter</span>
                                         {hasActiveFilters && (
                                             <Badge variant="secondary" className="ml-0.5 h-5 w-5 p-0 justify-center bg-primary/10 text-primary">
                                                 !
@@ -393,7 +393,7 @@ export default function SuratKeluar() {
                                 </CollapsibleTrigger>
                             </Collapsible>
                             {hasActiveFilters && (
-                                <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" title="Reset Filters">
+                                <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" aria-label="Hapus semua filter" title="Hapus semua filter">
                                     <X className="h-4 w-4" />
                                 </Button>
                             )}
@@ -554,7 +554,7 @@ export default function SuratKeluar() {
                                                 <TableCell className="text-right">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted">
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted" aria-label="Buka menu tindakan surat keluar">
                                                                 <MoreHorizontal className="h-4 w-4" />
                                                             </Button>
                                                         </DropdownMenuTrigger>
@@ -602,27 +602,29 @@ export default function SuratKeluar() {
                                             <Button
                                                 variant="outline"
                                                 size="sm"
+                                                aria-label="Halaman sebelumnya"
                                                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
                                                 disabled={pagination.page <= 1}
                                                 className="h-8 w-8 p-0 lg:w-auto lg:px-4 lg:gap-2"
                                             >
-                                                <span className="hidden lg:inline">Previous</span>
-                                                <span className="lg:hidden">{'<'}</span>
+                                                <span className="hidden lg:inline">Sebelumnya</span>
+                                                <span aria-hidden="true" className="lg:hidden">{'<'}</span>
                                             </Button>
                                         </PaginationItem>
                                         <div className="flex items-center gap-1 mx-2 text-sm font-medium">
-                                            Page {pagination.page} of {pagination.totalPages}
+                                            Halaman {pagination.page} dari {pagination.totalPages}
                                         </div>
                                         <PaginationItem>
                                             <Button
                                                 variant="outline"
                                                 size="sm"
+                                                aria-label="Halaman berikutnya"
                                                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
                                                 disabled={pagination.page >= pagination.totalPages}
                                                 className="h-8 w-8 p-0 lg:w-auto lg:px-4 lg:gap-2"
                                             >
-                                                <span className="hidden lg:inline">Next</span>
-                                                <span className="lg:hidden">{'>'}</span>
+                                                <span className="hidden lg:inline">Berikutnya</span>
+                                                <span aria-hidden="true" className="lg:hidden">{'>'}</span>
                                             </Button>
                                         </PaginationItem>
                                     </PaginationContent>

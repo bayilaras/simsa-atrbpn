@@ -69,10 +69,13 @@ function isSameRuleItem(left, right) {
 // Simple flat list item component
 function KlasifikasiItem({ item, isSelected, onSelect }) {
     return (
-        <div
-            onClick={() => item.isSelectable !== false && onSelect(item)}
+        <button
+            type="button"
+            disabled={item.isSelectable === false}
+            aria-pressed={isSelected}
+            onClick={() => onSelect(item)}
             className={cn(
-                "flex items-start gap-3 p-2.5 rounded-lg transition-all",
+                "flex w-full items-start gap-3 rounded-lg p-2.5 text-left transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 item.isSelectable === false ? "cursor-not-allowed opacity-55" : "cursor-pointer",
                 "border border-transparent hover:border-primary/20 hover:bg-primary/5",
                 isSelected ? "bg-primary/10 border-primary/30 shadow-sm" : "bg-card border-border/40",
@@ -146,7 +149,7 @@ function KlasifikasiItem({ item, isSelected, onSelect }) {
                     <Check className="w-3 h-3" />
                 </div>
             )}
-        </div>
+        </button>
     )
 }
 
@@ -156,7 +159,7 @@ function JRAGroupHeader({ item }) {
         <div className="mt-1.5 first:mt-0 mb-0.5">
             <div className="flex items-center gap-1.5 px-1.5 py-1 bg-amber-50/80 rounded border border-amber-200/50">
                 <Folder className="h-3 w-3 text-amber-700 dark:text-amber-300" />
-                <Badge variant="outline" className="font-mono text-[9px] h-3.5 px-1 border-amber-300 text-amber-800 dark:text-amber-300 bg-card/50">
+                <Badge variant="outline" className="h-5 border-amber-300 bg-card/50 px-1 font-mono text-[9px] text-amber-800 dark:text-amber-300">
                     {item.kode}
                 </Badge>
                 <span className="text-[10px] font-semibold text-amber-800 dark:text-amber-300 line-clamp-1">{item.uraian}</span>
@@ -168,10 +171,13 @@ function JRAGroupHeader({ item }) {
 // JRA suggestion item component (selectable, with retention info)
 function JRAItem({ item, isSelected, onSelect }) {
     return (
-        <div
-            onClick={() => item.isSelectable !== false && onSelect(item)}
+        <button
+            type="button"
+            disabled={item.isSelectable === false}
+            aria-pressed={isSelected}
+            onClick={() => onSelect(item)}
             className={cn(
-                "flex items-start gap-1.5 p-1.5 rounded-md transition-all text-xs mb-0.5",
+                "mb-1 flex w-full items-start gap-2 rounded-md p-2 text-left text-xs transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                 item.isSelectable === false ? "cursor-not-allowed opacity-55" : "cursor-pointer",
                 "border border-transparent hover:border-amber-500/30 hover:bg-amber-50 dark:hover:bg-amber-500/15",
                 isSelected ? "bg-amber-50 dark:bg-amber-500/15 border-amber-500/40 shadow-sm" : "bg-card border-border/30",
@@ -185,7 +191,7 @@ function JRAItem({ item, isSelected, onSelect }) {
             </div>
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-0.5">
-                    <Badge variant="outline" className="font-mono text-[9px] h-3.5 px-1 bg-card/50">
+                    <Badge variant="outline" className="h-5 bg-card/50 px-1 font-mono text-[9px]">
                         {item.kode}
                     </Badge>
                     <p className="text-[11px] font-medium leading-tight line-clamp-1 flex-1">{item.uraian}</p>
@@ -214,14 +220,14 @@ function JRAItem({ item, isSelected, onSelect }) {
                     <p className="mt-1 line-clamp-2 text-[9px] text-muted-foreground">Pemicu: {item.triggerGuidance}</p>
                 )}
             </div>
-        </div>
+        </button>
     )
 }
 
 /**
  * KlasifikasiPicker Component - Enhanced with JRA Mapping Suggestions
  */
-export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi Arsip" }) {
+export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi Arsip", id }) {
     const API_BASE = API_BASE_URL;
     const [open, setOpen] = useState(false)
     const [activeTab, setActiveTab] = useState('all')
@@ -436,15 +442,20 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     return (
         <>
             {/* Trigger Button */}
-            <Button
-                type="button"
-                variant="outline"
-                className={cn(
-                    "w-full justify-between text-left font-normal h-auto py-2 px-3 group",
-                    !value && "text-muted-foreground"
-                )}
-                onClick={() => setOpen(true)}
-            >
+            <div className="relative">
+                <Button
+                    id={id}
+                    type="button"
+                    variant="outline"
+                    aria-haspopup="dialog"
+                    aria-expanded={open}
+                    className={cn(
+                        "group h-auto w-full justify-between px-3 py-2 text-left font-normal",
+                        value && "pr-20",
+                        !value && "text-muted-foreground"
+                    )}
+                    onClick={() => setOpen(true)}
+                >
                 {value ? (
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                         <Badge variant="secondary" className="font-mono text-xs shrink-0 h-6">
@@ -468,19 +479,19 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                         <span className="truncate">{label}</span>
                     </div>
                 )}
-                <div className="flex items-center gap-1 shrink-0 ml-2">
-                    {value && (
-                        <div
-                            className="h-6 w-6 flex items-center justify-center rounded-full hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-                            onClick={handleClear}
-                            title="Hapus filter"
-                        >
-                            <X className="h-4 w-4" />
-                        </div>
-                    )}
                     <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-            </Button>
+                </Button>
+                {value && (
+                    <button
+                        type="button"
+                        className="absolute right-9 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={handleClear}
+                        aria-label="Hapus klasifikasi yang dipilih"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                )}
+            </div>
 
             {/* Dialog - Two Panel Layout */}
             <Dialog open={open} onOpenChange={setOpen}>
@@ -502,19 +513,22 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
 
                             {/* Search Bar */}
                             <div className="relative w-full md:w-[300px]">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                                 <Input
+                                    aria-label="Cari klasifikasi arsip"
                                     placeholder="Cari klasifikasi..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="pl-8 h-9 text-sm bg-background pr-8"
+                                    className="h-10 bg-background pl-8 pr-11 text-sm"
                                     autoFocus
                                 />
                                 {searchQuery && (
                                     <Button
+                                        type="button"
                                         variant="ghost"
                                         size="sm"
-                                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                                        aria-label="Hapus pencarian klasifikasi"
+                                        className="absolute right-0 top-1/2 h-10 w-10 -translate-y-1/2 p-0 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                                         onClick={() => setSearchQuery('')}
                                     >
                                         <X className="h-4 w-4" />
@@ -528,15 +542,15 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                             <TabsList className="grid w-full grid-cols-3 h-9 p-1 bg-muted/50 border">
                                 <TabsTrigger value="all" className="text-xs py-1 px-1 h-7">
                                     <span className="truncate">Semua</span>
-                                    <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px] hidden sm:inline-flex">{counts.all}</Badge>
+                                    <Badge variant="secondary" className="ml-1.5 hidden h-5 px-1 text-[10px] sm:inline-flex">{counts.all}</Badge>
                                 </TabsTrigger>
                                 <TabsTrigger value="fasilitatif" className="text-xs py-1 px-1 h-7">
                                     <span className="truncate">Fasilitatif</span>
-                                    <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px] bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hidden sm:inline-flex">{counts.fasilitatif}</Badge>
+                                    <Badge variant="secondary" className="ml-1.5 hidden h-5 bg-blue-100 px-1 text-[10px] text-blue-700 dark:bg-blue-500/15 dark:text-blue-300 sm:inline-flex">{counts.fasilitatif}</Badge>
                                 </TabsTrigger>
                                 <TabsTrigger value="substantif" className="text-xs py-1 px-1 h-7">
                                     <span className="truncate">Substantif</span>
-                                    <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px] bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hidden sm:inline-flex">{counts.substantif}</Badge>
+                                    <Badge variant="secondary" className="ml-1.5 hidden h-5 bg-emerald-100 px-1 text-[10px] text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 sm:inline-flex">{counts.substantif}</Badge>
                                 </TabsTrigger>
                             </TabsList>
                         </Tabs>
@@ -596,7 +610,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                             <Clock className="h-3.5 w-3.5 text-amber-600" />
                                             Saran Jadwal Retensi
                                         </h3>
-                                        <Badge variant="outline" className="text-[9px] h-4 px-1 bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-300">
+                                        <Badge variant="outline" className="h-5 border-amber-300 bg-amber-100 px-1 text-[9px] text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                                             {leafJRA.length} item
                                         </Badge>
                                     </div>
@@ -624,8 +638,10 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                 <div className="px-3 py-2 border-b bg-amber-50/30 flex flex-col gap-2 shrink-0">
                                     <div className="flex items-center bg-muted/50 p-1 rounded-lg border">
                                         <button
+                                            type="button"
+                                            aria-pressed={jraTab === 'suggested'}
                                             className={cn(
-                                                "flex-1 text-[10px] py-1 px-2 rounded-md font-medium transition-all",
+                                                "min-h-10 flex-1 rounded-md px-2 py-1 text-[10px] font-medium transition-all",
                                                 jraTab === 'suggested'
                                                     ? "bg-card shadow text-amber-900 dark:text-amber-300"
                                                     : "text-muted-foreground hover:text-foreground"
@@ -635,8 +651,10 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                             Disarankan ({leafJRA.length})
                                         </button>
                                         <button
+                                            type="button"
+                                            aria-pressed={jraTab === 'all'}
                                             className={cn(
-                                                "flex-1 text-[10px] py-1 px-2 rounded-md font-medium transition-all",
+                                                "min-h-10 flex-1 rounded-md px-2 py-1 text-[10px] font-medium transition-all",
                                                 jraTab === 'all'
                                                     ? "bg-card shadow text-amber-900 dark:text-amber-300"
                                                     : "text-muted-foreground hover:text-foreground"
@@ -649,12 +667,13 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
 
                                     {jraTab === 'all' && (
                                         <div className="relative">
-                                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                                            <Search aria-hidden="true" className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                                             <Input
+                                                aria-label="Cari jadwal retensi arsip"
                                                 placeholder="Cari JRA..."
                                                 value={jraSearchQuery}
                                                 onChange={(e) => setJraSearchQuery(e.target.value)}
-                                                className="h-8 text-xs pl-8 bg-card"
+                                                className="h-10 bg-card pl-8 text-xs"
                                             />
                                         </div>
                                     )}
@@ -727,7 +746,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-1.5 mb-0.5">
-                                                <Badge className="font-mono text-[9px] h-4 px-1">{selectedItem.kode}</Badge>
+                                                <Badge className="h-5 px-1 font-mono text-[9px]">{selectedItem.kode}</Badge>
                                                 <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
                                                     {selectedItem.tipe === 'fasilitatif' ? 'Fasilitatif' : 'Substantif'}
                                                 </span>
@@ -745,7 +764,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-1.5 mb-0.5">
                                                     <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">Jadwal Retensi:</span>
-                                                    <Badge variant="outline" className="font-mono text-[9px] h-4 px-1 bg-card border-amber-200 text-amber-800 dark:text-amber-300">{selectedJRA.kode}</Badge>
+                                                    <Badge variant="outline" className="h-5 border-amber-200 bg-card px-1 font-mono text-[9px] text-amber-800 dark:text-amber-300">{selectedJRA.kode}</Badge>
                                                 </div>
                                                 <div className="flex flex-wrap gap-x-3 text-[10px] leading-tight text-muted-foreground">
                                                     <span>Aktif: <b className="text-foreground">{selectedJRA.retensiAktif}</b></span>
@@ -768,16 +787,16 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                             </p>
                         )}
 
-                        <DialogFooter className="flex flex-row justify-between w-full sm:justify-between items-center gap-2">
+                        <DialogFooter className="w-full flex-col-reverse items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
                             {/* Left Side: Hapus Button */}
-                            <div>
+                            <div className="w-full sm:w-auto">
                                 {(value || selectedItem) && (
                                     <Button
                                         type="button"
                                         variant="ghost"
                                         size="sm"
                                         onClick={handleClearAndClose}
-                                        className="text-destructive hover:text-destructive hover:bg-destructive/10 h-9 px-2 text-xs md:text-sm"
+                                        className="min-h-11 w-full px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto md:text-sm"
                                     >
                                         <Trash2 className="h-4 w-4 mr-1.5" />
                                         Hapus Pilihan
@@ -786,15 +805,16 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                             </div>
 
                             {/* Right Side: Action Buttons */}
-                            <div className="flex items-center gap-2">
-                                <Button variant="outline" onClick={() => setOpen(false)} className="h-9 text-xs md:text-sm">
+                            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
+                                <Button type="button" variant="outline" onClick={() => setOpen(false)} className="min-h-11 text-xs md:text-sm">
                                     Batal
                                 </Button>
                                 <Button
+                                    type="button"
                                     onClick={handleConfirm}
                                     disabled={!selectedItem || !selectedJRA}
                                     title={!selectedItem ? 'Pilih klasifikasi arsip' : !selectedJRA ? 'Pilih dan konfirmasi JRA' : 'Gunakan pasangan klasifikasi dan JRA ini'}
-                                    className="min-w-[100px] h-9 text-xs md:text-sm font-medium shadow-sm"
+                                    className="min-h-11 text-xs font-medium shadow-sm sm:min-w-[100px] md:text-sm"
                                 >
                                     <Check className="mr-2 h-4 w-4" />
                                     Pilih

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/services/api';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 /**
  * ImportFromGDrive — Modal component for importing data from Google Spreadsheets
@@ -49,6 +50,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
     };
 
     const handleClose = () => {
+        if (step === 'importing') return;
         setIsOpen(false);
         reset();
     };
@@ -134,45 +136,42 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
         }
     };
 
-    if (!isOpen) {
-        return (
-            <button
-                onClick={handleOpen}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 border transition-colors text-sm font-medium shadow-sm"
-            >
-                <Upload className="w-4 h-4" />
-                Import dari Google Drive
-            </button>
-        );
-    }
-
     return (
         <>
-            {/* Backdrop */}
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={handleClose}>
-                <div
-                    className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col"
-                    onClick={(e) => e.stopPropagation()}
+            <button
+                type="button"
+                onClick={handleOpen}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80"
+            >
+                <Upload aria-hidden="true" className="w-4 h-4" />
+                Impor dari Google Drive
+            </button>
+            <Dialog open={isOpen} onOpenChange={(open) => !open && step !== 'importing' && handleClose()}>
+                <DialogContent
+                    showCloseButton={false}
+                    onEscapeKeyDown={(event) => step === 'importing' && event.preventDefault()}
+                    onInteractOutside={(event) => step === 'importing' && event.preventDefault()}
+                    className="flex h-[min(90dvh,52rem)] w-full max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-blue-700">
+                    <div className="flex items-center justify-between border-b bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-4 sm:px-6">
                         <div className="flex items-center gap-3">
-                            <FileSpreadsheet className="w-5 h-5 text-white" />
+                            <FileSpreadsheet aria-hidden="true" className="w-5 h-5 text-white" />
                             <div>
-                                <h2 className="text-lg font-semibold text-white">Import {typeLabel}</h2>
-                                <p className="text-blue-100 text-xs">Dari Google Spreadsheet</p>
+                                <DialogTitle className="text-lg font-semibold text-white">Impor {typeLabel}</DialogTitle>
+                                <DialogDescription className="text-xs text-blue-100">Dari Google Spreadsheet</DialogDescription>
                             </div>
                         </div>
-                        <button onClick={handleClose} className="p-1 text-white/80 hover:text-white rounded-lg hover:bg-card/10">
-                            <X className="w-5 h-5" />
+                        <button type="button" onClick={handleClose} disabled={step === 'importing'} aria-label={step === 'importing' ? 'Impor sedang berlangsung' : 'Tutup dialog impor'} className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-white/80 hover:bg-card/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-40">
+                            <X aria-hidden="true" className="w-5 h-5" />
                         </button>
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 overflow-y-auto p-6">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                         {error && (
-                            <div className="flex items-start gap-2 mb-4 p-3 bg-red-50 dark:bg-red-500/15 border border-red-200 rounded-lg text-red-700 dark:text-red-300 text-sm">
-                                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                            <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/15 dark:text-red-300">
+                                <AlertCircle aria-hidden="true" className="w-4 h-4 mt-0.5 shrink-0" />
                                 <p>{error}</p>
                             </div>
                         )}
@@ -181,32 +180,37 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                         {step === 'input' && (
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-2">
+                                    <label htmlFor="google-spreadsheet-url" className="block text-sm font-medium text-foreground mb-2">
                                         URL Google Spreadsheet
                                     </label>
                                     <input
+                                        id="google-spreadsheet-url"
                                         type="url"
                                         value={spreadsheetUrl}
                                         onChange={(e) => setSpreadsheetUrl(e.target.value)}
                                         placeholder="https://docs.google.com/spreadsheets/d/..."
-                                        className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-blue-500 text-sm"
+                                        autoComplete="url"
+                                        required
+                                        aria-describedby="google-spreadsheet-help"
+                                        className="min-h-11 w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-ring"
                                     />
-                                    <p className="mt-2 text-xs text-muted-foreground">
-                                        Pastikan spreadsheet bersifat publik (dapat diakses semua orang)
+                                    <p id="google-spreadsheet-help" className="mt-2 text-xs text-muted-foreground">
+                                        Lembar kerja perlu dapat diakses selama impor. Gunakan hanya data dan tautan yang telah diizinkan untuk dibagikan.
                                     </p>
                                 </div>
 
                                 <button
+                                    type="button"
                                     onClick={fetchSheets}
                                     disabled={isLoading || !spreadsheetUrl}
-                                    className="w-full py-2.5 bg-primary text-white rounded-lg hover:bg-primary disabled:opacity-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                                    className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                                 >
                                     {isLoading ? (
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        <div aria-hidden="true" className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                     ) : (
-                                        <ChevronDown className="w-4 h-4" />
+                                        <ChevronDown aria-hidden="true" className="w-4 h-4" />
                                     )}
-                                    Ambil Daftar Sheet
+                                    {isLoading ? 'Mengambil daftar lembar...' : 'Ambil daftar lembar'}
                                 </button>
                             </div>
                         )}
@@ -214,10 +218,10 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                         {/* Step: Select Sheet */}
                         {step === 'sheets' && (
                             <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-foreground mb-2">
-                                        Pilih Sheet
-                                    </label>
+                                <fieldset>
+                                    <legend className="block text-sm font-medium text-foreground mb-2">
+                                        Pilih lembar kerja
+                                    </legend>
                                     {sheets.length > 0 ? (
                                         <div className="space-y-2 max-h-60 overflow-y-auto">
                                             {sheets.map((sheet, idx) => (
@@ -242,38 +246,42 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                         </div>
                                     ) : (
                                         <div>
+                                            <label htmlFor="manual-sheet-name" className="sr-only">Nama lembar kerja</label>
                                             <input
+                                                id="manual-sheet-name"
                                                 type="text"
                                                 value={selectedSheet}
                                                 onChange={(e) => setSelectedSheet(e.target.value)}
-                                                placeholder="Nama sheet (mis. Surat Masuk 2024)"
-                                                className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-blue-500 text-sm"
+                                                placeholder="Nama lembar (mis. Surat Masuk 2024)"
+                                                className="min-h-11 w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-ring"
                                             />
                                             <p className="mt-2 text-xs text-muted-foreground">
-                                                Daftar sheet tidak terdeteksi. Ketik nama sheet secara manual.
+                                                Daftar lembar tidak terdeteksi. Ketik nama lembar secara manual.
                                             </p>
                                         </div>
                                     )}
-                                </div>
+                                </fieldset>
 
-                                <div className="flex gap-3">
+                                <div className="flex flex-col-reverse gap-3 sm:flex-row">
                                     <button
+                                        type="button"
                                         onClick={() => setStep('input')}
-                                        className="flex-1 py-2.5 border border-border text-foreground rounded-lg hover:bg-muted/50 transition-colors text-sm"
+                                        className="min-h-11 flex-1 rounded-lg border border-border py-2.5 text-sm text-foreground transition-colors hover:bg-muted/50"
                                     >
                                         Kembali
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={handlePreview}
                                         disabled={isLoading || !selectedSheet}
-                                        className="flex-1 py-2.5 bg-primary text-white rounded-lg hover:bg-primary disabled:opacity-50 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                                        className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                                     >
                                         {isLoading ? (
-                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            <div aria-hidden="true" className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                         ) : (
-                                            <Eye className="w-4 h-4" />
+                                            <Eye aria-hidden="true" className="w-4 h-4" />
                                         )}
-                                        Preview Data
+                                        {isLoading ? 'Menyiapkan pratinjau...' : 'Pratinjau data'}
                                     </button>
                                 </div>
                             </div>
@@ -287,12 +295,13 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                         Menampilkan <strong>{previewData.rows.length}</strong> dari <strong>{previewData.totalRows}</strong> baris
                                     </p>
                                     <span className="text-xs bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">
-                                        Sheet: {selectedSheet}
+                                        Lembar: {selectedSheet}
                                     </span>
                                 </div>
 
                                 <div className="overflow-x-auto border rounded-lg">
                                     <table className="w-full text-xs">
+                                        <caption className="sr-only">Pratinjau data yang akan diimpor</caption>
                                         <thead>
                                             <tr className="bg-muted/50 border-b">
                                                 {previewData.headers.map((h, i) => (
@@ -316,19 +325,21 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                     </table>
                                 </div>
 
-                                <div className="flex gap-3">
+                                <div className="flex flex-col-reverse gap-3 sm:flex-row">
                                     <button
+                                        type="button"
                                         onClick={() => setStep('sheets')}
-                                        className="flex-1 py-2.5 border border-border text-foreground rounded-lg hover:bg-muted/50 transition-colors text-sm"
+                                        className="min-h-11 flex-1 rounded-lg border border-border py-2.5 text-sm text-foreground transition-colors hover:bg-muted/50"
                                     >
                                         Kembali
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={handleImport}
-                                        className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                                        className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
                                     >
-                                        <Upload className="w-4 h-4" />
-                                        Import {previewData.totalRows} Baris
+                                        <Upload aria-hidden="true" className="w-4 h-4" />
+                                        Impor {previewData.totalRows} baris
                                     </button>
                                 </div>
                             </div>
@@ -336,8 +347,8 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
 
                         {/* Step: Importing */}
                         {step === 'importing' && (
-                            <div className="flex flex-col items-center py-12">
-                                <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
+                            <div role="status" aria-live="polite" className="flex flex-col items-center py-12">
+                                <div aria-hidden="true" className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
                                 <p className="text-sm text-muted-foreground font-medium">Mengimpor data...</p>
                                 <p className="text-xs text-muted-foreground mt-1">Harap tunggu, proses ini mungkin memakan waktu</p>
                             </div>
@@ -345,19 +356,19 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
 
                         {/* Step: Result */}
                         {step === 'result' && importResult && (
-                            <div className="space-y-4">
+                            <div role="status" aria-live="polite" className="space-y-4">
                                 <div className={`flex items-start gap-3 p-4 rounded-lg ${importResult.importedRows > 0
                                     ? 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200'
                                     : 'bg-red-50 dark:bg-red-500/15 border border-red-200'
                                     }`}>
                                     {importResult.importedRows > 0 ? (
-                                        <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+                                        <CheckCircle2 aria-hidden="true" className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                                     ) : (
-                                        <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                                        <AlertCircle aria-hidden="true" className="w-5 h-5 text-red-600 mt-0.5" />
                                     )}
                                     <div>
                                         <p className="font-medium text-foreground">
-                                            {importResult.importedRows > 0 ? 'Import Berhasil!' : 'Import Gagal'}
+                                            {importResult.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}
                                         </p>
                                         <p className="text-sm text-muted-foreground mt-1">
                                             {importResult.importedRows} dari {importResult.totalRows} baris berhasil diimpor
@@ -377,7 +388,7 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
 
                                 {importResult.errors && importResult.errors.length > 0 && (
                                     <div className="border rounded-lg p-3 max-h-40 overflow-y-auto bg-muted/50">
-                                        <p className="text-xs font-medium text-muted-foreground mb-2">Detail Error:</p>
+                                        <p className="text-xs font-medium text-muted-foreground mb-2">Rincian kesalahan:</p>
                                         {importResult.errors.map((err, i) => (
                                             <p key={i} className="text-xs text-red-600 leading-relaxed">{err}</p>
                                         ))}
@@ -385,8 +396,9 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                                 )}
 
                                 <button
+                                    type="button"
                                     onClick={handleClose}
-                                    className="w-full py-2.5 bg-muted text-foreground rounded-lg hover:bg-muted transition-colors text-sm font-medium"
+                                    className="min-h-11 w-full rounded-lg bg-muted py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/80"
                                 >
                                     Tutup
                                 </button>
@@ -395,8 +407,8 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                     </div>
 
                     {/* Step indicator */}
-                    <div className="px-6 py-3 border-t bg-muted/50 flex items-center justify-center gap-2">
-                        {['input', 'sheets', 'preview', 'result'].map((s, i) => (
+                    <div aria-hidden="true" className="px-6 py-3 border-t bg-muted/50 flex items-center justify-center gap-2">
+                        {['input', 'sheets', 'preview', 'result'].map((s) => (
                             <div
                                 key={s}
                                 className={`w-2 h-2 rounded-full transition-colors ${step === s || (step === 'importing' && s === 'result')
@@ -406,8 +418,8 @@ const ImportFromGDrive = ({ type, onImportComplete }) => {
                             />
                         ))}
                     </div>
-                </div>
-            </div>
+                </DialogContent>
+            </Dialog>
         </>
     );
 };

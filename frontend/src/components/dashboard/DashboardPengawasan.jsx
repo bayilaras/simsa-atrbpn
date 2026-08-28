@@ -318,7 +318,7 @@ export default function DashboardPengawasan() {
                     </CardHeader>
                     <CardContent>
                         <div className="h-[350px] w-full">
-                            <Line data={activityChartData} options={chartOptions} />
+                            <Line role="img" aria-label="Grafik aktivitas pengguna dalam periode pengawasan" data={activityChartData} options={chartOptions} />
                         </div>
                     </CardContent>
                 </Card>
@@ -331,6 +331,8 @@ export default function DashboardPengawasan() {
                     <CardContent>
                         <div className="h-[350px] w-full">
                             <Bar
+                                role="img"
+                                aria-label="Grafik perbandingan aktivitas berdasarkan unit kerja"
                                 data={userChartData}
                                 options={{
                                     ...chartOptions,

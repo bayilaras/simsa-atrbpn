@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, MoreHorizontal, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play } from 'lucide-react'
+import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -403,16 +403,20 @@ export default function Dashboard() {
                             <Card className="shadow-sm border-border/60">
                                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                                     <div>
-                                        <CardTitle className="text-lg">Analisis Trend Surat</CardTitle>
+                                        <CardTitle className="text-lg">Analisis Tren Surat</CardTitle>
                                         <CardDescription>Perbandingan surat masuk dan keluar 12 bulan terakhir</CardDescription>
                                     </div>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                                        <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
                                 </CardHeader>
                                 <CardContent>
                                     <div className="h-[250px] sm:h-[300px] w-full mt-4">
-                                        {chartData && <Line data={chartData} options={chartOptions} />}
+                                        {chartData && (
+                                            <Line
+                                                role="img"
+                                                aria-label="Grafik perbandingan jumlah surat masuk dan surat keluar selama 12 bulan terakhir"
+                                                data={chartData}
+                                                options={chartOptions}
+                                            />
+                                        )}
                                     </div>
                                 </CardContent>
                             </Card>
@@ -426,6 +430,8 @@ export default function Dashboard() {
                                 <CardContent>
                                     <div style={{ height: Math.max(200, (unitKerjaStats?.length || 3) * 60) + 'px' }}>
                                         <Bar
+                                            role="img"
+                                            aria-label="Grafik volume surat per unit kerja pada bulan ini"
                                             data={unitKerjaChartData}
                                             options={{
                                                 ...chartOptions,
@@ -511,7 +517,12 @@ export default function Dashboard() {
                                     {expiring.length > 0 ? (
                                         <div className="divide-y divide-border/50">
                                             {expiring.map((item) => (
-                                                <div key={item.id} className="p-4 hover:bg-muted/50 transition-colors cursor-pointer group" onClick={() => navigate(`/arsip/detail/${item.id}`)}>
+                                                <button
+                                                    key={item.id}
+                                                    type="button"
+                                                    className="group w-full p-4 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                                    onClick={() => navigate(`/arsip/detail/${item.id}`)}
+                                                >
                                                     <div className="flex items-start gap-3">
                                                         <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${item.daysLeft <= 15 ? 'bg-red-500 ring-2 ring-red-100' :
                                                             item.daysLeft <= 30 ? 'bg-amber-500 ring-2 ring-amber-100' : 'bg-blue-500 ring-2 ring-blue-100'
@@ -531,7 +542,7 @@ export default function Dashboard() {
                                                         </div>
                                                         <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 -ml-2 group-hover:opacity-100 group-hover:ml-0 transition-all" />
                                                     </div>
-                                                </div>
+                                                </button>
                                             ))}
                                         </div>
                                     ) : (
@@ -564,8 +575,12 @@ export default function Dashboard() {
                             <CardContent>
                                 <div className="divide-y divide-border/50">
                                     {recentActivity.map((item) => (
-                                        <div key={item.id} className="flex items-center gap-4 py-3 hover:bg-muted/50 rounded-lg px-2 transition-colors cursor-pointer group"
-                                            onClick={() => navigate(item.type === 'masuk' ? `/surat/masuk/${item.id}` : `/surat/keluar/${item.id}`)}>
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            className="group flex w-full items-center gap-4 rounded-lg px-2 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            onClick={() => navigate(item.type === 'masuk' ? `/surat/masuk/${item.id}` : `/surat/keluar/${item.id}`)}
+                                        >
                                             <div className={`p-2 rounded-lg ${item.type === 'masuk' ? 'bg-emerald-100/50' : 'bg-yellow-100/50'}`}>
                                                 {item.type === 'masuk'
                                                     ? <MailOpen className="h-4 w-4 text-emerald-600" />
@@ -584,7 +599,7 @@ export default function Dashboard() {
                                                 </p>
                                             </div>
                                             <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        </div>
+                                        </button>
                                     ))}
                                 </div>
                             </CardContent>
@@ -612,6 +627,8 @@ export default function Dashboard() {
                                     <CardContent>
                                         <div className="h-[200px] flex items-center justify-center">
                                             <Doughnut
+                                                role="img"
+                                                aria-label="Grafik komposisi format arsip elektronik"
                                                 data={{
                                                     labels: ['Aktif', 'Inaktif', 'Kadaluarsa', 'Belum Ditentukan'],
                                                     datasets: [{
@@ -866,7 +883,7 @@ export default function Dashboard() {
                                         )}
                                     </CardContent>
                                     <CardFooter className="p-3 border-t bg-muted/20">
-                                        <Button variant="ghost" size="sm" className="w-full text-xs h-8" onClick={() => navigate('/storage')}>
+                                        <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/storage-locations')}>
                                             Kelola Penyimpanan <ArrowRight className="ml-1 h-3 w-3" />
                                         </Button>
                                     </CardFooter>

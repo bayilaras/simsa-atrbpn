@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast'
 import {
     FileText, Download, Plus, Trash2, CheckCircle, ChevronRight,
     ArrowRightLeft, Flame, Send, RefreshCw, Printer, Eye, X, Repeat,
-    Archive, History, FileCheck, AlertCircle, ChevronDown
+    Archive, History, FileCheck, AlertCircle, ChevronDown, Loader2
 } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -52,6 +52,7 @@ export default function PenyusutanArsip() {
     const [showCreate, setShowCreate] = useState(false)
     const [selectedCandidates, setSelectedCandidates] = useState([])
     const [createKeterangan, setCreateKeterangan] = useState('')
+    const [creating, setCreating] = useState(false)
 
     // Load batches for active tab
     const loadBatches = useCallback(async () => {
@@ -106,11 +107,13 @@ export default function PenyusutanArsip() {
 
     // Create batch
     const handleCreate = async () => {
+        if (creating) return
         if (activeTab === 'penyerahan') return
         if (selectedCandidates.length === 0) {
             toast({ title: 'Peringatan', description: 'Pilih minimal 1 arsip', variant: 'destructive' })
             return
         }
+        setCreating(true)
         try {
             await penyusutanService.create({
                 unitKerjaId,
@@ -126,6 +129,8 @@ export default function PenyusutanArsip() {
             loadCandidates()
         } catch (err) {
             toast({ title: 'Error', description: err.response?.data?.error || 'Gagal membuat usulan', variant: 'destructive' })
+        } finally {
+            setCreating(false)
         }
     }
 
@@ -251,9 +256,9 @@ export default function PenyusutanArsip() {
                 </Card>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[600px]">
+            <div className="grid grid-cols-1 gap-6 lg:h-[calc(100vh-250px)] lg:min-h-[600px] lg:grid-cols-12">
                 {/* Left column: Batches list */}
-                <Card className="lg:col-span-4 h-full flex flex-col border-border/60 shadow-sm overflow-hidden">
+                <Card className="flex min-h-[24rem] flex-col overflow-hidden border-border/60 shadow-sm lg:col-span-4 lg:h-full lg:min-h-0">
                     <CardHeader className="pb-3 border-b bg-muted/30">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <CardTitle className="text-base font-semibold">Riwayat Usulan</CardTitle>
@@ -269,7 +274,7 @@ export default function PenyusutanArsip() {
                             </div>
                         </div>
                     </CardHeader>
-                    <CardContent className="p-0 flex-1 overflow-hidden relative">
+                    <CardContent className="relative min-h-[20rem] flex-1 overflow-hidden p-0 lg:min-h-0">
                         {loading ? (
                             <div className="p-4 space-y-3">
                                 {[1, 2, 3].map(i => (
@@ -302,9 +307,10 @@ export default function PenyusutanArsip() {
                                         const st = STATUS_CONFIG[batch.status] || STATUS_CONFIG.draft
                                         const StatusIcon = st.icon
                                         return (
-                                            <div
+                                            <button
+                                                type="button"
                                                 key={batch.id}
-                                                className={`p-4 cursor-pointer transition-all hover:bg-muted/50 ${selectedBatch?.id === batch.id ? 'bg-primary/5 border-l-4 border-l-primary pl-[13px]' : 'border-l-4 border-l-transparent'}`}
+                                                className={`w-full p-4 text-left transition-all hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selectedBatch?.id === batch.id ? 'bg-primary/5 border-l-4 border-l-primary pl-[13px]' : 'border-l-4 border-l-transparent'}`}
                                                 onClick={() => loadBatchDetail(batch.id)}
                                             >
                                                 <div className="flex justify-between items-start mb-2">
@@ -324,7 +330,7 @@ export default function PenyusutanArsip() {
                                                         {batch.createdAt ? new Date(batch.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : '-'}
                                                     </span>
                                                 </div>
-                                            </div>
+                                            </button>
                                         )
                                     })}
                                 </div>
@@ -334,9 +340,9 @@ export default function PenyusutanArsip() {
                 </Card>
 
                 {/* Right column: Main Content Area */}
-                <div className="lg:col-span-8 h-full flex flex-col gap-6 overflow-hidden">
+                <div className="flex flex-col gap-6 lg:col-span-8 lg:h-full lg:overflow-hidden">
                     {showCreate && !legacyTransferReadOnly ? (
-                        <Card className="h-full flex flex-col border-emerald-200 bg-emerald-50/10 shadow-sm overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
+                        <Card className="flex flex-col overflow-hidden border-emerald-200 bg-emerald-50/10 shadow-sm animate-in fade-in slide-in-from-right-4 duration-300 lg:h-full">
                             <CardHeader className="pb-3 border-b bg-emerald-50/50">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div className="flex items-center gap-2">
@@ -345,13 +351,13 @@ export default function PenyusutanArsip() {
                                         </div>
                                         <CardTitle className="text-base text-emerald-950">Buat Usulan {JenisConf.label} Baru</CardTitle>
                                     </div>
-                                    <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>
+                                    <Button type="button" variant="ghost" size="sm" aria-label="Tutup formulir usulan" disabled={creating} onClick={() => setShowCreate(false)}>
                                         <X className="h-4 w-4" />
                                     </Button>
                                 </div>
                                 <CardDescription>Pilih arsip yang memenuhi syarat untuk di-{activeTab}kan</CardDescription>
                             </CardHeader>
-                            <CardContent className="flex-1 overflow-hidden p-0 flex flex-col">
+                            <CardContent className="flex flex-1 flex-col p-0 lg:overflow-hidden">
                                 {candidates.length === 0 ? (
                                     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
                                         <AlertCircle className="h-10 w-10 text-muted-foreground/40 mb-3" />
@@ -364,7 +370,7 @@ export default function PenyusutanArsip() {
                                     <>
                                         <div className="p-4 border-b bg-background/50 flex items-center justify-between sticky top-0 z-10">
                                             <span className="text-sm font-medium">{selectedCandidates.length} arsip dipilih</span>
-                                            <Button variant="outline" size="sm" onClick={selectAllCandidates} className="h-8 text-xs">
+                                            <Button type="button" variant="outline" size="sm" disabled={creating} onClick={selectAllCandidates} className="h-8 text-xs">
                                                 {selectedCandidates.length === candidates.length ? 'Hapus Semua' : 'Pilih Semua'}
                                             </Button>
                                         </div>
@@ -377,6 +383,7 @@ export default function PenyusutanArsip() {
                                                     >
                                                         <input
                                                             type="checkbox"
+                                                            disabled={creating}
                                                             checked={selectedCandidates.includes(c.id)}
                                                             onChange={() => toggleCandidate(c.id)}
                                                             className="mt-1 rounded border-border text-emerald-600 focus:ring-emerald-500"
@@ -398,16 +405,17 @@ export default function PenyusutanArsip() {
                                             <label className="text-sm font-medium mb-1.5 block">Keterangan (opsional)</label>
                                             <Textarea
                                                 className="resize-none text-sm mb-4"
+                                                disabled={creating}
                                                 rows={2}
                                                 value={createKeterangan}
                                                 onChange={e => setCreateKeterangan(e.target.value)}
                                                 placeholder="Tambahkan catatan untuk usulan ini..."
                                             />
                                             <div className="flex gap-2 justify-end">
-                                                <Button variant="outline" onClick={() => setShowCreate(false)}>Batal</Button>
-                                                <Button onClick={handleCreate} disabled={selectedCandidates.length === 0} className="bg-emerald-600 hover:bg-emerald-700">
-                                                    <Plus className="mr-1.5 h-4 w-4" />
-                                                    Buat Usulan ({selectedCandidates.length})
+                                                <Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>Batal</Button>
+                                                <Button type="button" onClick={handleCreate} disabled={creating || selectedCandidates.length === 0} className="bg-emerald-600 hover:bg-emerald-700">
+                                                    {creating ? <Loader2 aria-hidden="true" className="mr-1.5 h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="mr-1.5 h-4 w-4" />}
+                                                    {creating ? 'Menyimpan…' : `Buat Usulan (${selectedCandidates.length})`}
                                                 </Button>
                                             </div>
                                         </div>
@@ -416,7 +424,7 @@ export default function PenyusutanArsip() {
                             </CardContent>
                         </Card>
                     ) : selectedBatch ? (
-                        <Card className="h-full flex flex-col border-border/60 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        <Card className="flex flex-col overflow-hidden border-border/60 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 lg:h-full">
                             <CardHeader className="pb-4 border-b bg-muted/20">
                                 <div className="flex items-start justify-between">
                                     <div className="space-y-1">
@@ -533,7 +541,7 @@ export default function PenyusutanArsip() {
                             </CardFooter>
                         </Card>
                     ) : (
-                        <Card className="h-full border-border/60 shadow-sm border-dashed flex flex-col items-center justify-center text-center p-8 bg-muted/10">
+                        <Card className="flex min-h-[20rem] flex-col items-center justify-center border-dashed border-border/60 bg-muted/10 p-8 text-center shadow-sm lg:h-full">
                             <div className="p-6 bg-background rounded-full shadow-sm mb-4">
                                 <Eye className="h-10 w-10 text-primary/30" />
                             </div>

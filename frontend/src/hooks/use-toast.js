@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 // Simple toast state management
 let toastId = 0
 let listeners = []
+const MAX_TOASTS = 3
 
 const toastState = {
     toasts: [],
@@ -11,13 +12,17 @@ const toastState = {
 function addToast(toast) {
     const id = toastId++
     const newToast = { ...toast, id }
-    toastState.toasts = [...toastState.toasts, newToast]
+    toastState.toasts = [...toastState.toasts, newToast].slice(-MAX_TOASTS)
     listeners.forEach((listener) => listener(toastState.toasts))
 
-    // Auto dismiss after 3 seconds
-    setTimeout(() => {
-        dismissToast(id)
-    }, toast.duration || 3000)
+    // Keep feedback visible long enough to be read. Callers may pass duration: 0
+    // for a persistent message that is dismissed manually.
+    const resolvedDuration = toast.duration ?? (toast.variant === 'destructive' ? 10000 : 5000)
+    if (resolvedDuration > 0) {
+        setTimeout(() => {
+            dismissToast(id)
+        }, resolvedDuration)
+    }
 
     return id
 }
@@ -37,7 +42,7 @@ export function useToast() {
         }
     }, [])
 
-    const toast = useCallback(({ title, description, variant = 'default', duration = 3000 }) => {
+    const toast = useCallback(({ title, description, variant = 'default', duration }) => {
         // For now, use browser alert as fallback since Toaster component is not set up
         if (variant === 'destructive') {
             console.error(`[Toast Error] ${title}: ${description}`)
@@ -60,7 +65,7 @@ export function useToast() {
 }
 
 // Export toast function for direct use
-export const toast = ({ title, description, variant = 'default', duration = 3000 }) => {
+export const toast = ({ title, description, variant = 'default', duration }) => {
     if (variant === 'destructive') {
         console.error(`[Toast Error] ${title}: ${description}`)
     } else {

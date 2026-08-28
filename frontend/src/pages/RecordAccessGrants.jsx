@@ -55,8 +55,8 @@ function AccessTable({ rows, reviewer, onDecision }) {
     }
 
     return (
-        <div className="overflow-x-auto">
-            <Table>
+        <div>
+            <Table responsive>
                 <TableHeader>
                     <TableRow>
                         {reviewer && <TableHead>Pemohon</TableHead>}
@@ -74,18 +74,18 @@ function AccessTable({ rows, reviewer, onDecision }) {
                         return (
                             <TableRow key={row.id}>
                                 {reviewer && (
-                                    <TableCell>
+                                    <TableCell data-label="Pemohon">
                                         <div className="font-medium">{row.requesterName || 'Tanpa nama'}</div>
                                         <div className="text-xs text-muted-foreground">{row.requesterEmail}</div>
                                     </TableCell>
                                 )}
-                                <TableCell>
+                                <TableCell data-label="Rekod">
                                     <div className="font-medium">{ENTITY_LABEL[row.entityType] || row.entityType}</div>
                                     <div className="max-w-[220px] truncate font-mono text-xs text-muted-foreground" title={row.entityId}>{row.entityId}</div>
                                     <div className="text-xs text-muted-foreground">Unit {row.unitKerjaId}</div>
                                 </TableCell>
-                                <TableCell className="capitalize">{String(row.requiredClassification || '').replace('_', ' ')}</TableCell>
-                                <TableCell className="max-w-[320px]">
+                                <TableCell data-label="Klasifikasi" className="capitalize">{String(row.requiredClassification || '').replace('_', ' ')}</TableCell>
+                                <TableCell data-label="Tujuan / Mode" className="max-w-[320px]">
                                     <div className="whitespace-pre-wrap text-sm">{row.purpose}</div>
                                     <div className="mt-1 text-xs font-medium text-muted-foreground">
                                         {row.accessMode === 'download'
@@ -95,14 +95,14 @@ function AccessTable({ rows, reviewer, onDecision }) {
                                                 : 'Tayang saja'}
                                     </div>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell data-label="Status">
                                     <Badge className={status.className}>{status.label}</Badge>
                                     <div className="mt-1 text-xs text-muted-foreground">{formatDate(row.requestedAt)}</div>
                                 </TableCell>
-                                <TableCell>{formatDate(row.expiresAt)}</TableCell>
+                                <TableCell data-label="Masa berlaku">{formatDate(row.expiresAt)}</TableCell>
                                 {reviewer && (
-                                    <TableCell className="text-right">
-                                        <div className="flex justify-end gap-2">
+                                    <TableCell data-label="Tindakan" className="text-right">
+                                        <div className="flex flex-wrap justify-end gap-2">
                                             {row.status === 'pending' && (
                                                 <>
                                                     <Button size="sm" onClick={() => onDecision('approve', row)}>Setujui</Button>
@@ -223,18 +223,18 @@ export default function RecordAccessGrants() {
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                 <div>
                     <h1 className="flex items-center gap-2 text-2xl font-bold"><FileKey2 className="h-6 w-6 text-primary" /> Persetujuan Akses Rekod</h1>
-                    <p className="mt-1 text-muted-foreground">Need-to-know berbasis tujuan, masa berlaku, dan mode tayang, unduh, atau kelola.</p>
+                    <p className="mt-1 text-muted-foreground">Akses diberikan sesuai kebutuhan tugas, tujuan penggunaan, masa berlaku, dan kewenangan pengguna.</p>
                 </div>
-                <div className="flex gap-2">
-                    <Button variant="outline" onClick={load} disabled={loading}><RefreshCw className="mr-2 h-4 w-4" /> Muat ulang</Button>
-                    <Button onClick={() => setRequestOpen(true)}><LockKeyhole className="mr-2 h-4 w-4" /> Minta akses</Button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button className="w-full sm:w-auto" variant="outline" onClick={load} disabled={loading}><RefreshCw className="mr-2 h-4 w-4" /> Muat ulang</Button>
+                    <Button className="w-full sm:w-auto" onClick={() => setRequestOpen(true)}><LockKeyhole className="mr-2 h-4 w-4" /> Minta akses</Button>
                 </div>
             </div>
 
             <Card>
                 <CardHeader>
                     <CardTitle>Kontrol akses berjangka</CardTitle>
-                    <CardDescription>Role administratif tidak otomatis membuka bitstream Terbatas, Rahasia, atau Sangat Rahasia. Persetujuan per-rekod tetap diperlukan.</CardDescription>
+                    <CardDescription>Peran administratif tidak otomatis membuka berkas digital Terbatas, Rahasia, atau Sangat Rahasia. Persetujuan untuk setiap rekod tetap diperlukan.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Tabs defaultValue="mine">
@@ -258,13 +258,13 @@ export default function RecordAccessGrants() {
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Minta akses rekod terkendali</DialogTitle>
-                        <DialogDescription>Masukkan ID rekod yang diketahui dan tujuan kedinasan yang dapat diverifikasi.</DialogDescription>
+                        <DialogDescription>Salin ID dari halaman detail rekod, lalu jelaskan tujuan kedinasan yang dapat diverifikasi.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
                         <div className="space-y-2">
-                            <Label>Jenis rekod</Label>
+                            <Label htmlFor="request-entity-type">Jenis rekod</Label>
                             <Select value={requestForm.entityType} onValueChange={(value) => setRequestForm((form) => ({ ...form, entityType: value }))}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectTrigger id="request-entity-type"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="arsip">Arsip</SelectItem>
                                     <SelectItem value="surat_masuk">Surat Masuk</SelectItem>
@@ -273,13 +273,13 @@ export default function RecordAccessGrants() {
                             </Select>
                         </div>
                         <div className="space-y-2">
-                            <Label>ID rekod</Label>
-                            <Input value={requestForm.entityId} onChange={(event) => setRequestForm((form) => ({ ...form, entityId: event.target.value.trim() }))} placeholder="UUID rekod" />
+                            <Label htmlFor="request-entity-id">ID rekod</Label>
+                            <Input id="request-entity-id" value={requestForm.entityId} onChange={(event) => setRequestForm((form) => ({ ...form, entityId: event.target.value.trim() }))} placeholder="Salin ID dari halaman detail" autoComplete="off" />
                         </div>
                         <div className="space-y-2">
-                            <Label>Mode akses</Label>
+                            <Label htmlFor="request-access-mode">Mode akses</Label>
                             <Select value={requestForm.accessMode} onValueChange={(value) => setRequestForm((form) => ({ ...form, accessMode: value }))}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectTrigger id="request-access-mode"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="view">Tayang saja</SelectItem>
                                     <SelectItem value="download">Tayang dan unduh</SelectItem>
@@ -288,8 +288,8 @@ export default function RecordAccessGrants() {
                             </Select>
                         </div>
                         <div className="space-y-2">
-                            <Label>Tujuan kedinasan</Label>
-                            <Textarea value={requestForm.purpose} onChange={(event) => setRequestForm((form) => ({ ...form, purpose: event.target.value }))} placeholder="Jelaskan kebutuhan, kegiatan, atau dasar penugasan (minimal 20 karakter)." rows={4} />
+                            <Label htmlFor="request-purpose">Tujuan kedinasan</Label>
+                            <Textarea id="request-purpose" value={requestForm.purpose} onChange={(event) => setRequestForm((form) => ({ ...form, purpose: event.target.value }))} placeholder="Jelaskan kebutuhan, kegiatan, atau dasar penugasan (minimal 20 karakter)." rows={4} />
                         </div>
                     </div>
                     <DialogFooter>

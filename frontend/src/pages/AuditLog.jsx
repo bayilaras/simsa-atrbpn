@@ -181,28 +181,34 @@ export default function AuditLog() {
                     <div className="flex min-w-0 flex-col gap-4">
                         <div className="flex flex-col gap-4 sm:flex-row">
                             <div className="relative min-w-0 flex-1">
+                                <label htmlFor="audit-search" className="sr-only">Cari audit log</label>
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
+                                    id="audit-search"
                                     placeholder="Cari user, email, atau ID..."
                                     value={search}
                                     onChange={(e) => applyFilter(setSearch)(e.target.value)}
                                     className="pl-9 bg-background focus:bg-background"
                                 />
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
                                 <span className="text-xs text-muted-foreground whitespace-nowrap">Rentang:</span>
+                                <label htmlFor="audit-start-date" className="sr-only">Tanggal mulai</label>
                                 <Input
+                                    id="audit-start-date"
                                     type="date"
                                     value={startDate}
                                     onChange={(e) => applyFilter(setStartDate)(e.target.value)}
-                                    className="w-auto bg-background"
+                                    className="w-full bg-background"
                                 />
-                                <span className="text-muted-foreground">-</span>
+                                <span className="hidden text-muted-foreground sm:inline" aria-hidden="true">–</span>
+                                <label htmlFor="audit-end-date" className="sr-only">Tanggal akhir</label>
                                 <Input
+                                    id="audit-end-date"
                                     type="date"
                                     value={endDate}
                                     onChange={(e) => applyFilter(setEndDate)(e.target.value)}
-                                    className="w-auto bg-background"
+                                    className="w-full bg-background"
                                 />
                             </div>
                         </div>
@@ -291,8 +297,18 @@ export default function AuditLog() {
 
                                             {/* Log Content Card */}
                                             <div
-                                                className={`rounded-lg border bg-card transition-all duration-200 cursor-pointer overflow-hidden ${isExpanded ? 'shadow-md border-primary/40 ring-1 ring-primary/20' : 'hover:border-primary/40 hover:shadow-sm'}`}
+                                                role="button"
+                                                tabIndex={0}
+                                                aria-expanded={isExpanded}
+                                                aria-controls={`audit-detail-${log.id}`}
+                                                className={`rounded-lg border bg-card transition-all duration-200 cursor-pointer overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${isExpanded ? 'shadow-md border-primary/40 ring-1 ring-primary/20' : 'hover:border-primary/40 hover:shadow-sm'}`}
                                                 onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                        event.preventDefault();
+                                                        setExpandedId(isExpanded ? null : log.id);
+                                                    }
+                                                }}
                                             >
                                                 <div className="p-4">
                                                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -331,13 +347,13 @@ export default function AuditLog() {
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground shrink-0 self-start sm:self-center">
+                                                        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center self-start text-muted-foreground sm:self-center" aria-hidden="true">
                                                             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                                        </Button>
+                                                        </span>
                                                     </div>
 
                                                     {/* Expanded Details */}
-                                                    <div className={`grid transition-all duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0'}`}>
+                                                    <div id={`audit-detail-${log.id}`} aria-hidden={!isExpanded} className={`grid transition-all duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0'}`}>
                                                         <div className="overflow-hidden">
                                                             {renderChanges(log.changes)}
                                                         </div>

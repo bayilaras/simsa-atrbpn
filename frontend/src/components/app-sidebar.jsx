@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard,
@@ -7,7 +8,6 @@ import {
     Archive,
     FileBarChart,
     ClipboardList,
-    Settings,
     ChevronDown,
     Users,
     FolderTree,
@@ -21,7 +21,6 @@ import {
     HardDrive,
     Link2,
     BookOpen,
-    ExternalLink,
     FileKey2,
     CloudCog,
     GitBranch,
@@ -42,6 +41,7 @@ import {
     SidebarMenuSub,
     SidebarMenuSubItem,
     SidebarMenuSubButton,
+    useSidebar,
 } from '@/components/ui/sidebar'
 import {
     Collapsible,
@@ -226,7 +226,7 @@ const menuGroups = [
                 feature: 'srikandi',
             },
             {
-                title: 'User Management',
+                title: 'Manajemen Pengguna',
                 url: '/users',
                 icon: Users,
                 allowedRoles: ['super_admin'],
@@ -238,7 +238,7 @@ const menuGroups = [
                 subItems: [
                     { title: 'Versi Aturan', url: '/master/regulatory-rules', icon: GitBranch, allowedRoles: ADMIN_AND_AUDITOR },
                     { title: 'Klasifikasi Arsip', url: '/master/klasifikasi', allowedRoles: ADMIN_ROLES },
-                    { title: 'Template Surat', url: '/settings', allowedRoles: ['super_admin'] },
+                    { title: 'Pengaturan', url: '/settings', allowedRoles: ['super_admin'] },
                 ],
             },
         ]
@@ -247,14 +247,16 @@ const menuGroups = [
 
 import { useAuth } from '@/context/AuthContext'
 
-// URL for the documentation/user guide
-const DOCS_URL = 'https://panduan-simsa.vercel.app'
-
 export function AppSidebar() {
     const { features } = useAppConfig()
     const location = useLocation()
+    const { setOpenMobile } = useSidebar()
     const { user } = useAuth()
     const userRole = user?.role || 'user'
+
+    useEffect(() => {
+        setOpenMobile(false)
+    }, [location.pathname, setOpenMobile])
 
     // Check if a menu item is visible to the current user
     const isAllowed = (item) => {
@@ -265,7 +267,7 @@ export function AppSidebar() {
 
     const isActive = (url) => {
         if (url === '/') return location.pathname === '/'
-        return location.pathname.startsWith(url)
+        return location.pathname === url || location.pathname.startsWith(`${url}/`)
     }
 
     const isParentActive = (item) => {
@@ -286,12 +288,13 @@ export function AppSidebar() {
                     />
                     <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
                         <span className="truncate text-sm font-semibold leading-none tracking-tight">{appConfig.shortName}</span>
-                        <span className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Ditjen PTPP</span>
+                        <span className="mt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Ditjen PTPP</span>
                     </div>
                 </div>
             </SidebarHeader>
 
             <SidebarContent>
+                <nav aria-label="Navigasi utama" className="flex min-h-0 flex-1 flex-col">
                 {menuGroups
                     .filter(group => !group.allowedRoles || group.allowedRoles.includes(userRole))
                     .map((group, groupIndex) => {
@@ -304,7 +307,7 @@ export function AppSidebar() {
                         if (visibleItems.length === 0) return null
                         return (
                             <SidebarGroup key={group.label} className={groupIndex === 0 ? '' : 'mt-2'}>
-                                <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</SidebarGroupLabel>
+                                <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</SidebarGroupLabel>
                                 <SidebarGroupContent>
                                     <SidebarMenu>
                                         {visibleItems.map((item) => (
@@ -323,7 +326,7 @@ export function AppSidebar() {
                                                                 {item.subItems.map((subItem) => (
                                                                     <SidebarMenuSubItem key={subItem.title}>
                                                                         <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
-                                                                            <Link to={subItem.url}>{subItem.title}</Link>
+                                                                            <Link to={subItem.url} aria-current={isActive(subItem.url) ? 'page' : undefined}>{subItem.title}</Link>
                                                                         </SidebarMenuSubButton>
                                                                     </SidebarMenuSubItem>
                                                                 ))}
@@ -334,13 +337,9 @@ export function AppSidebar() {
                                             ) : (
                                                 <SidebarMenuItem key={item.title}>
                                                     <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)}>
-                                                        <Link to={item.url}>
+                                                        <Link to={item.url} aria-current={isActive(item.url) ? 'page' : undefined}>
                                                             <item.icon className="h-4 w-4" />
                                                             <span className="font-medium">{item.title}</span>
-                                                            {/* Badge simulation for Surat Masuk */}
-                                                            {(item.title === 'Surat Masuk' || item.title === 'Distribusi') && !isActive(item.url) && (
-                                                                <div className="ml-auto h-1.5 w-1.5 rounded-full bg-sidebar-primary animate-pulse" />
-                                                            )}
                                                         </Link>
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
@@ -355,34 +354,24 @@ export function AppSidebar() {
                 <SidebarGroup className="mt-auto">
                     <SidebarGroupContent>
                         <SidebarMenu>
-                            {userRole === 'super_admin' && (
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton asChild tooltip="Settings" isActive={isActive('/settings')}>
-                                        <Link to="/settings">
-                                            <Settings className="h-4 w-4" />
-                                            <span>Settings</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                            )}
                             <SidebarMenuItem>
-                                <SidebarMenuButton asChild tooltip="Panduan Pengguna">
-                                    <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+                                <SidebarMenuButton asChild tooltip="Panduan Pengguna" isActive={isActive('/panduan')}>
+                                    <Link to="/panduan" aria-current={isActive('/panduan') ? 'page' : undefined}>
                                         <BookOpen className="h-4 w-4" />
                                         <span>Panduan</span>
-                                        <ExternalLink className="ml-auto h-3 w-3 opacity-50" />
-                                    </a>
+                                    </Link>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
                         </SidebarMenu>
                     </SidebarGroupContent>
                 </SidebarGroup>
+                </nav>
             </SidebarContent>
 
             <SidebarFooter className="border-t border-sidebar-border/50 p-4">
                 <div className="flex flex-col items-start gap-1.5 group-data-[collapsible=icon]:hidden">
-                    <div className="text-[10px] font-medium text-sidebar-foreground/50">{appConfig.name} v1.0.0</div>
-                    <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-sidebar-foreground/70">
+                    <div className="text-xs font-medium text-sidebar-foreground/60">{appConfig.name} v1.0.0</div>
+                    <Badge variant="outline" className="h-6 px-2 text-[11px] text-sidebar-foreground/75">
                         {appConfig.usageBadge}
                     </Badge>
                 </div>
