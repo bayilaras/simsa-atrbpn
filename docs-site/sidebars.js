@@ -3,6 +3,7 @@ const sidebars = {
   panduanSidebar: [
     'index',
     'profil-aplikasi-internal',
+    'panduan-pengguna',
     {
       type: 'category',
       label: '🔐 Akses SIMSA',
