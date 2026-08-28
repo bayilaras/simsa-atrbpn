@@ -40,6 +40,7 @@ import {
 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Link } from 'react-router-dom'
 
 const TINGKAT_PERKEMBANGAN_OPTIONS = [
     { value: 'Asli', label: 'Asli' },
@@ -62,14 +63,6 @@ const UNIT_PENGOLAH_OPTIONS = [
     { value: 'Dit. KTPP', label: 'Dit. KTPP' },
 ]
 
-const RETENTION_TRIGGER_OPTIONS = [
-    { value: 'kegiatan_selesai', label: 'Kegiatan selesai' },
-    { value: 'berkas_ditutup', label: 'Berkas ditutup' },
-    { value: 'serah_terima', label: 'Serah terima' },
-    { value: 'penetapan', label: 'Penetapan/keputusan' },
-    { value: 'lainnya', label: 'Peristiwa lainnya' },
-]
-
 const buildFormData = ({ nomorSurat, klasifikasiKode, perihal }) => ({
     nomorBerkas: nomorSurat || '',
     kodeKlasifikasi: klasifikasiKode || '',
@@ -82,16 +75,12 @@ const buildFormData = ({ nomorSurat, klasifikasiKode, perihal }) => ({
     // JRA
     jraKode: '',
     jraItemId: '',
-    jraUraian: '',
-    retensiAktif: '',
-    retensiInaktif: '',
-    hasilAkhir: '',
-    retentionTriggerType: '',
-    retentionTriggerLabel: '',
-    retentionTriggerDate: '',
-    retentionTriggerEvidence: '',
-    jraVersion: '',
-    jraReference: '',
+    jraUraianPreview: '',
+    retensiAktifPreview: '',
+    retensiInaktifPreview: '',
+    hasilAkhirPreview: '',
+    jraVersionPreview: '',
+    jraReferencePreview: '',
     // Keamanan & PIC
     klasifikasiKeamanan: 'biasa',
     personInCharge: '',
@@ -204,24 +193,25 @@ export function ArchiveDialog({
 
     const handleSubmit = async (e) => {
         e.preventDefault()
-        const retentionConfigured = Boolean(formData.retensiAktif || formData.retensiInaktif)
-        if (retentionConfigured && (
-            !formData.retentionTriggerType ||
-            !formData.retentionTriggerLabel.trim() ||
-            !formData.retentionTriggerDate ||
-            !formData.retentionTriggerEvidence.trim()
-        )) {
-            setFormError('Lengkapi jenis, label, tanggal, dan bukti pemicu retensi. Tanggal surat/arsip tidak digunakan sebagai pemicu otomatis.')
-            return
-        }
-
         setFormError('')
         setLoading(true)
         try {
             // Flatten items[0] data into payload for backward compat
             const firstItem = items[0] || {}
+            const registrationData = Object.fromEntries(
+                Object.entries(formData).filter(([field]) => ![
+                    'kurunWaktuDari',
+                    'kurunWaktuSampai',
+                    'jraUraianPreview',
+                    'retensiAktifPreview',
+                    'retensiInaktifPreview',
+                    'hasilAkhirPreview',
+                    'jraVersionPreview',
+                    'jraReferencePreview',
+                ].includes(field)),
+            )
             const payload = {
-                ...formData,
+                ...registrationData,
                 kurunWaktu: formData.kurunWaktuDari && formData.kurunWaktuSampai
                     ? `${formData.kurunWaktuDari} s/d ${formData.kurunWaktuSampai}`
                     : '',
@@ -318,21 +308,21 @@ export function ArchiveDialog({
                                                 if (jra) {
                                                     handleChange('jraKode', jra.kode || '')
                                                     handleChange('jraItemId', jra.id || '')
-                                                    handleChange('jraUraian', jra.uraian || '')
-                                                    handleChange('retensiAktif', jra.retensiAktif || '')
-                                                    handleChange('retensiInaktif', jra.retensiInaktif || '')
-                                                    handleChange('hasilAkhir', jra.keterangan || '')
-                                                    handleChange('jraVersion', jra.ruleSet?.version || jra.version || '')
-                                                    handleChange('jraReference', jra.ruleSet?.legalBasis || jra.referensi || jra.reference || '')
+                                                    handleChange('jraUraianPreview', jra.uraian || '')
+                                                    handleChange('retensiAktifPreview', jra.retensiAktif || '')
+                                                    handleChange('retensiInaktifPreview', jra.retensiInaktif || '')
+                                                    handleChange('hasilAkhirPreview', jra.keterangan || '')
+                                                    handleChange('jraVersionPreview', jra.ruleSet?.version || jra.version || '')
+                                                    handleChange('jraReferencePreview', jra.ruleSet?.legalBasis || jra.referensi || jra.reference || '')
                                                 } else {
                                                     handleChange('jraKode', '')
                                                     handleChange('jraItemId', '')
-                                                    handleChange('jraUraian', '')
-                                                    handleChange('retensiAktif', '')
-                                                    handleChange('retensiInaktif', '')
-                                                    handleChange('hasilAkhir', '')
-                                                    handleChange('jraVersion', '')
-                                                    handleChange('jraReference', '')
+                                                    handleChange('jraUraianPreview', '')
+                                                    handleChange('retensiAktifPreview', '')
+                                                    handleChange('retensiInaktifPreview', '')
+                                                    handleChange('hasilAkhirPreview', '')
+                                                    handleChange('jraVersionPreview', '')
+                                                    handleChange('jraReferencePreview', '')
                                                 }
                                             }}
                                             label="Klik untuk memilih klasifikasi arsip..."
@@ -363,7 +353,7 @@ export function ArchiveDialog({
                                         <AlertDescription className="text-sm ml-2">
                                             <span className="font-semibold block mb-0.5 text-emerald-700 dark:text-emerald-300">Jadwal Retensi Arsip Terpilih:</span>
                                             <span className="font-mono text-xs bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded">{formData.jraKode}</span>
-                                            <span className="ml-2">{formData.jraUraian}</span>
+                                            <span className="ml-2">{formData.jraUraianPreview}</span>
                                         </AlertDescription>
                                     </Alert>
                                 ) : (
@@ -386,7 +376,7 @@ export function ArchiveDialog({
                                         <div className="flex items-center gap-2">
                                             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-sm shadow-emerald-200"></div>
                                             <Input
-                                                value={formData.retensiAktif}
+                                                value={formData.retensiAktifPreview}
                                                 readOnly
                                                 placeholder="--"
                                                 className="bg-card border-border text-foreground h-9"
@@ -402,7 +392,7 @@ export function ArchiveDialog({
                                         <div className="flex items-center gap-2">
                                             <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0 shadow-sm shadow-amber-200"></div>
                                             <Input
-                                                value={formData.retensiInaktif}
+                                                value={formData.retensiInaktifPreview}
                                                 readOnly
                                                 placeholder="--"
                                                 className="bg-card border-border text-foreground h-9"
@@ -411,14 +401,13 @@ export function ArchiveDialog({
                                     </FormField>
 
                                     <FormField
-                                        label="Hasil Akhir"
-                                        required
-                                        hint="Nasib akhir arsip"
+                                        label="Hasil JRA (pratinjau)"
+                                        hint="Dibaca dari butir JRA; tidak dikirim sebagai keputusan manual"
                                     >
                                         <div className="flex items-center gap-2">
                                             <div className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 shadow-sm shadow-red-200"></div>
                                             <Input
-                                                value={formData.hasilAkhir}
+                                                value={formData.hasilAkhirPreview}
                                                 readOnly
                                                 placeholder="--"
                                                 className="bg-card border-border text-foreground h-9"
@@ -427,66 +416,20 @@ export function ArchiveDialog({
                                     </FormField>
                                 </div>
 
-                                <div className="space-y-5 p-5 rounded-lg border border-amber-200 bg-amber-50/40 dark:bg-amber-500/10 dark:border-amber-500/30">
+                                <div className="space-y-4 p-5 rounded-lg border border-amber-200 bg-amber-50/40 dark:bg-amber-500/10 dark:border-amber-500/30">
                                     <div className="flex items-start gap-3">
                                         <Calendar className="h-5 w-5 text-amber-700 dark:text-amber-300 mt-0.5" />
                                         <div>
-                                            <p className="font-semibold text-sm text-amber-900 dark:text-amber-200">Pemicu Retensi Berbasis Peristiwa</p>
+                                            <p className="font-semibold text-sm text-amber-900 dark:text-amber-200">Pemicu retensi dicatat setelah arsip dibuat</p>
                                             <p className="text-xs text-amber-800/80 dark:text-amber-200/80">
-                                                Retensi dihitung dari peristiwa yang ditetapkan JRA, bukan dari tanggal arsip. Bukti wajib dicatat agar arsip dapat dinilai untuk penyusutan.
+                                                Registrasi ini tidak menetapkan pemicu atau hasil akhir secara manual. Setelah arsip tersimpan, catat peristiwa beserta bukti dan minta petugas berbeda memverifikasinya melalui Tata Kelola Retensi.
                                             </p>
                                         </div>
                                     </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                                        <FormField label="Jenis Pemicu" required>
-                                            <Select
-                                                value={formData.retentionTriggerType}
-                                                onValueChange={(value) => handleChange('retentionTriggerType', value)}
-                                            >
-                                                <SelectTrigger className="bg-card border-border h-10">
-                                                    <SelectValue placeholder="Pilih peristiwa pemicu" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {RETENTION_TRIGGER_OPTIONS.map(option => (
-                                                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </FormField>
-
-                                        <FormField label="Label Peristiwa" required hint="Contoh: Berita Acara Serah Terima final">
-                                            <Input
-                                                value={formData.retentionTriggerLabel}
-                                                onChange={(e) => handleChange('retentionTriggerLabel', e.target.value)}
-                                                placeholder="Nama peristiwa pemicu"
-                                                className="bg-card border-border h-10"
-                                            />
-                                        </FormField>
-
-                                        <FormField label="Tanggal Pemicu" required>
-                                            <Input
-                                                type="date"
-                                                value={formData.retentionTriggerDate}
-                                                onChange={(e) => handleChange('retentionTriggerDate', e.target.value)}
-                                                className="bg-card border-border h-10"
-                                            />
-                                        </FormField>
-                                    </div>
-
-                                    <FormField label="Bukti Pemicu" required hint="Nomor/tanggal berita acara, keputusan, tautan dokumen, atau referensi bukti lain">
-                                        <Textarea
-                                            value={formData.retentionTriggerEvidence}
-                                            onChange={(e) => handleChange('retentionTriggerEvidence', e.target.value)}
-                                            placeholder="Contoh: BAST Nomor 12/BAST/VIII/2026 tanggal 20-08-2026"
-                                            className="min-h-[72px] bg-card border-border resize-none"
-                                        />
-                                    </FormField>
-
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                         <FormField label="Versi JRA" hint="Tahun/versi jadwal retensi yang digunakan">
                                             <Input
-                                                value={formData.jraVersion}
+                                                value={formData.jraVersionPreview}
                                                 readOnly
                                                 placeholder="Contoh: JRA 2026 / Revisi 1"
                                                 className="bg-card border-border h-10"
@@ -494,13 +437,16 @@ export function ArchiveDialog({
                                         </FormField>
                                         <FormField label="Referensi JRA" hint="Nomor peraturan/keputusan atau referensi baris JRA">
                                             <Input
-                                                value={formData.jraReference}
+                                                value={formData.jraReferencePreview}
                                                 readOnly
                                                 placeholder="Nomor dan referensi JRA"
                                                 className="bg-card border-border h-10"
                                             />
                                         </FormField>
                                     </div>
+                                    <Button type="button" variant="outline" size="sm" asChild className="w-fit border-amber-400 bg-card">
+                                        <Link to="/retention-governance"><Shield className="mr-2 h-4 w-4" />Buka Tata Kelola Retensi</Link>
+                                    </Button>
                                 </div>
 
                                 {formError && (

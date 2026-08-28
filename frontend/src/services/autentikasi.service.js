@@ -1,4 +1,5 @@
 import api from './api';
+import { API_BASE_URL } from '../lib/api-url';
 
 export const autentikasiService = {
     getAll: async (params) => {
@@ -17,6 +18,6 @@ export const autentikasiService = {
     },
 
     getPdfUrl: (id) => {
-        return `${import.meta.env.VITE_API_URL}/api/autentikasi/${id}/pdf`;
+        return `${API_BASE_URL}/api/autentikasi/${id}/pdf`;
     }
 };

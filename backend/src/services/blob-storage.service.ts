@@ -1,4 +1,4 @@
-import { put, del, get, head, list } from '@vercel/blob';
+import { put, del, get, head, list, copy } from '@vercel/blob';
 import { Readable } from 'stream';
 import { createLogger } from '../utils/logger';
 
@@ -9,6 +9,13 @@ export interface UploadFileOptions {
     mimeType: string;
     buffer: Buffer;
     folder?: string;
+}
+
+export interface CopyFileOptions {
+    sourceUrl: string;
+    fileName: string;
+    mimeType: string;
+    folder: string;
 }
 
 export interface StoredFile {
@@ -48,6 +55,28 @@ export class BlobStorageService {
             url: blob.url,
             downloadUrl: blob.downloadUrl,
             size: buffer.length,
+        };
+    }
+
+    // Copy an already-private immutable object into a new namespace.  Vercel
+    // performs this inside the backing store, avoiding a server round trip for
+    // large regulatory PDFs while retaining a rule-set-bound locator.
+    async copyFile(options: CopyFileOptions): Promise<StoredFile> {
+        const pathname = `${options.folder}/${options.fileName}`;
+        const blob = await copy(options.sourceUrl, pathname, {
+            access: 'private',
+            contentType: options.mimeType,
+            addRandomSuffix: true,
+            allowOverwrite: false,
+        });
+        const metadata = await head(blob.url);
+        return {
+            id: blob.url,
+            name: options.fileName,
+            mimeType: blob.contentType || options.mimeType,
+            url: blob.url,
+            downloadUrl: blob.downloadUrl,
+            size: metadata.size,
         };
     }
 

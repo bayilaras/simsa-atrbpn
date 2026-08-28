@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { upload } from '@vercel/blob/client';
 import {
     AlertTriangle,
     CalendarDays,
     CheckCircle2,
+    ClipboardCheck,
     CopyPlus,
     ExternalLink,
     FileCheck2,
+    FileDown,
     GitBranch,
     Hash,
     History,
     LockKeyhole,
+    RotateCcw,
     RefreshCw,
+    Send,
     ShieldCheck,
     Upload,
     XCircle,
@@ -65,6 +70,9 @@ const INSTRUMENTS = {
 const STATUS = {
     active: { label: 'Aktif', variant: 'success' },
     draft: { label: 'Draft', variant: 'warning' },
+    submitted: { label: 'Diajukan', variant: 'warning' },
+    reviewed: { label: 'Ditelaah', variant: 'outline' },
+    approved: { label: 'Disetujui', variant: 'success' },
     superseded: { label: 'Digantikan', variant: 'muted' },
     withdrawn: { label: 'Ditarik', variant: 'danger' },
 };
@@ -76,9 +84,43 @@ const EMPTY_CLONE_FORM = {
     regulationNumber: '',
     legalBasis: '',
     sourceDocumentName: '',
-    sourceDocumentSha256: '',
     sourceUrl: '',
     changeSummary: '',
+};
+
+const EMPTY_MANIFEST_FORM = {
+    expectedItemCount: '',
+    expectedSelectableCount: '',
+    sourcePageCount: '',
+    coveredPageRanges: '',
+    verificationStatement: '',
+};
+
+const AUDIT_PAGE_SIZE = 50;
+const EMPTY_AUDIT_PAGINATION = { page: 1, limit: AUDIT_PAGE_SIZE, total: 0, totalPages: 1 };
+const MULTIPART_FALLBACK_MAX_BYTES = 4 * 1024 * 1024;
+
+const WORKFLOW_ACTION = {
+    submit: {
+        title: 'Ajukan versi untuk ditelaah',
+        description: 'Setelah diajukan, isi dan bukti draft dikunci. Penelaahan harus dilakukan akun lain.',
+        button: 'Ajukan versi',
+    },
+    review: {
+        title: 'Nyatakan hasil telaah',
+        description: 'Pastikan dokumen sumber, manifest kelengkapan, diff, dan dampak terhadap arsip telah diperiksa.',
+        button: 'Selesaikan telaah',
+    },
+    approve: {
+        title: 'Setujui versi aturan',
+        description: 'Penyetuju harus berbeda dari penyusun, pengaju, dan penelaah. Aktivasi dilakukan setelah persetujuan.',
+        button: 'Setujui versi',
+    },
+    returnToDraft: {
+        title: 'Kembalikan ke draft',
+        description: 'Catat temuan yang harus diperbaiki. Bukti pengajuan dan telaah sebelumnya tetap tersimpan pada jejak audit.',
+        button: 'Kembalikan ke draft',
+    },
 };
 
 function jakartaToday() {
@@ -121,6 +163,30 @@ function formatTimestamp(value) {
         : date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function auditPaginationFrom(response, requestedPage) {
+    const pagination = response?.pagination || {};
+    const total = Number(pagination.total) || 0;
+    const totalPages = Math.max(1, Number(pagination.totalPages) || Math.ceil(total / AUDIT_PAGE_SIZE) || 1);
+    return {
+        page: Math.min(Math.max(1, Number(pagination.page) || requestedPage), totalPages),
+        limit: Number(pagination.limit) || AUDIT_PAGE_SIZE,
+        total,
+        totalPages,
+    };
+}
+
+function AuditPagination({ pagination, loading, onPageChange }) {
+    return (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+            <p className="text-xs text-muted-foreground">{pagination.total} peristiwa · Halaman {pagination.page} dari {pagination.totalPages}</p>
+            <div className="flex gap-2">
+                <Button type="button" size="sm" variant="outline" disabled={loading || pagination.page <= 1} onClick={() => onPageChange(pagination.page - 1)}>Sebelumnya</Button>
+                <Button type="button" size="sm" variant="outline" disabled={loading || pagination.page >= pagination.totalPages} onClick={() => onPageChange(pagination.page + 1)}>Berikutnya</Button>
+            </div>
+        </div>
+    );
+}
+
 function shortHash(value) {
     if (!value) return 'Belum tersedia';
     return `${value.slice(0, 10)}…${value.slice(-8)}`;
@@ -136,7 +202,6 @@ function cleanClonePayload(form) {
         'regulationNumber',
         'legalBasis',
         'sourceDocumentName',
-        'sourceDocumentSha256',
         'sourceUrl',
         'changeSummary',
     ]) {
@@ -146,12 +211,32 @@ function cleanClonePayload(form) {
     return payload;
 }
 
+function parsePageRanges(value) {
+    const parts = value.split(',').map((part) => part.trim()).filter(Boolean);
+    if (!parts.length) throw new Error('Isi sedikitnya satu rentang halaman, misalnya 1-25, 27.');
+    return parts.map((part) => {
+        const match = part.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+        if (!match) throw new Error(`Rentang halaman "${part}" tidak valid.`);
+        const start = Number(match[1]);
+        const end = Number(match[2] || match[1]);
+        if (start < 1 || end < start) throw new Error(`Rentang halaman "${part}" tidak valid.`);
+        return { start, end };
+    });
+}
+
+function workflowSummary(ruleSet) {
+    if (ruleSet.approvedAt) return `Disetujui ${formatTimestamp(ruleSet.approvedAt)}`;
+    if (ruleSet.reviewedAt) return `Ditelaah ${formatTimestamp(ruleSet.reviewedAt)}`;
+    if (ruleSet.submittedAt) return `Diajukan ${formatTimestamp(ruleSet.submittedAt)}`;
+    return 'Belum diajukan';
+}
+
 function StatusBadge({ status }) {
     const config = STATUS[status] || { label: status, variant: 'outline' };
     return <Badge variant={config.variant}>{config.label}</Badge>;
 }
 
-function ActiveRuleCard({ instrumentType, ruleSet, canPublish, onClone }) {
+function ActiveRuleCard({ instrumentType, ruleSet, canPublish, canAudit, onClone, onAudit, onSourceDocument }) {
     const instrument = INSTRUMENTS[instrumentType];
 
     if (!ruleSet) {
@@ -208,6 +293,19 @@ function ActiveRuleCard({ instrumentType, ruleSet, canPublish, onClone }) {
                     </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2 border-t pt-4">
+                    {canAudit && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!ruleSet.sourceDocumentStored}
+                            title={ruleSet.sourceDocumentStored
+                                ? 'Tampilkan PDF sumber terverifikasi; penampil PDF menyediakan opsi unduh.'
+                                : 'PDF baseline lama belum tersedia pada private Blob.'}
+                            onClick={() => onSourceDocument(ruleSet)}
+                        >
+                            <FileDown className="h-3.5 w-3.5" /> Lihat/Unduh PDF
+                        </Button>
+                    )}
                     <Button variant="outline" size="sm" asChild>
                         <Link to={`${instrument.editorPath}?ruleSetId=${ruleSet.id}`}>
                             Lihat master aktif <ExternalLink className="h-3.5 w-3.5" />
@@ -220,6 +318,7 @@ function ActiveRuleCard({ instrumentType, ruleSet, canPublish, onClone }) {
                             </a>
                         </Button>
                     )}
+                    {canAudit && <Button variant="ghost" size="sm" onClick={onAudit}><History className="h-3.5 w-3.5" /> Jejak audit</Button>}
                 </div>
             </CardContent>
         </Card>
@@ -235,10 +334,10 @@ function ValidationReport({ report }) {
                 {report.valid
                     ? <CheckCircle2 className="h-4 w-4 text-success" />
                     : <XCircle className="h-4 w-4" />}
-                <AlertTitle>{report.valid ? 'Draft lolos validasi' : 'Draft belum dapat diaktifkan'}</AlertTitle>
+                <AlertTitle>{report.valid ? 'Draft lolos validasi struktur' : 'Draft belum siap diajukan'}</AlertTitle>
                 <AlertDescription>
                     {report.valid
-                        ? 'Struktur dan aturan wajib sudah konsisten. Peringatan tetap perlu ditinjau sebelum aktivasi.'
+                        ? 'Struktur, PDF sumber, manifest kelengkapan, dan laporan dampak sudah konsisten untuk tahapan tata kelola berikutnya.'
                         : 'Perbaiki seluruh kesalahan pada isi draft, lalu jalankan validasi kembali.'}
                 </AlertDescription>
             </Alert>
@@ -291,6 +390,8 @@ export default function RegulatoryRuleSets() {
     const { toast } = useToast();
     const [searchParams, setSearchParams] = useSearchParams();
     const canPublish = user?.role === 'super_admin';
+    const canGovern = ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
+    const canAudit = canGovern || user?.role === 'auditor';
     const requestedInstrument = searchParams.get('instrument');
     const [instrumentType, setInstrumentType] = useState(
         requestedInstrument === 'jra' ? 'jra' : 'klasifikasi',
@@ -310,6 +411,18 @@ export default function RegulatoryRuleSets() {
     const [importFileName, setImportFileName] = useState('');
     const [importError, setImportError] = useState('');
     const [importResult, setImportResult] = useState(null);
+    const [sourceRuleSet, setSourceRuleSet] = useState(null);
+    const [sourceFile, setSourceFile] = useState(null);
+    const [sourceUploadProgress, setSourceUploadProgress] = useState(null);
+    const [manifestRuleSet, setManifestRuleSet] = useState(null);
+    const [manifestForm, setManifestForm] = useState(EMPTY_MANIFEST_FORM);
+    const [workflow, setWorkflow] = useState(null);
+    const [workflowNote, setWorkflowNote] = useState('');
+    const [eventsRuleSet, setEventsRuleSet] = useState(null);
+    const [events, setEvents] = useState([]);
+    const [eventsIntegrity, setEventsIntegrity] = useState(null);
+    const [eventsLoading, setEventsLoading] = useState(false);
+    const [eventsPagination, setEventsPagination] = useState(EMPTY_AUDIT_PAGINATION);
 
     const activeRuleSet = useMemo(
         () => ruleSets.find((ruleSet) => ruleSet.status === 'active') || null,
@@ -319,8 +432,8 @@ export default function RegulatoryRuleSets() {
         () => ruleSets.filter((ruleSet) => ruleSet.id !== activeRuleSet?.id),
         [activeRuleSet?.id, ruleSets],
     );
-    const draftCount = useMemo(
-        () => ruleSets.filter((ruleSet) => ruleSet.status === 'draft').length,
+    const inProgressCount = useMemo(
+        () => ruleSets.filter((ruleSet) => ['draft', 'submitted', 'reviewed', 'approved'].includes(ruleSet.status)).length,
         [ruleSets],
     );
 
@@ -344,6 +457,16 @@ export default function RegulatoryRuleSets() {
         loadRuleSets();
     }, [loadRuleSets]);
 
+    const showValidationDetails = (error, ruleSet) => {
+        if (!error?.details || Array.isArray(error.details) || typeof error.details !== 'object') return false;
+        if (!('valid' in error.details)) return false;
+        setValidationRuleSet(ruleSet);
+        setValidationReport(error.details);
+        setValidationLoading(false);
+        setValidationOpen(true);
+        return true;
+    };
+
     const openClone = () => {
         if (!activeRuleSet) return;
         const date = defaultEffectiveDate(activeRuleSet);
@@ -358,15 +481,6 @@ export default function RegulatoryRuleSets() {
     const submitClone = async (event) => {
         event.preventDefault();
         if (!cloneForm.version.trim() || !cloneForm.effectiveFrom) return;
-        if (cloneForm.sourceDocumentSha256
-            && !/^[0-9a-fA-F]{64}$/.test(cloneForm.sourceDocumentSha256.trim())) {
-            toast({
-                title: 'SHA-256 tidak valid',
-                description: 'Hash dokumen harus tepat 64 karakter heksadesimal.',
-                variant: 'destructive',
-            });
-            return;
-        }
 
         try {
             setActionLoading(true);
@@ -377,7 +491,7 @@ export default function RegulatoryRuleSets() {
             setCloneOpen(false);
             toast({
                 title: 'Draft versi baru dibuat',
-                description: `${response.data?.itemCount ?? 0} item disalin dari versi aktif. Edit dan validasi draft sebelum aktivasi.`,
+                description: `${response.data?.itemCount ?? 0} item disalin. Lengkapi bukti sumber dan tahapan pemeriksaan sebelum aktivasi.`,
             });
             await loadRuleSets();
         } catch (error) {
@@ -387,20 +501,14 @@ export default function RegulatoryRuleSets() {
         }
     };
 
-    const validateDraft = async (ruleSet, forActivation = false) => {
+    const validateDraft = async (ruleSet) => {
         try {
             setValidationRuleSet(ruleSet);
             setValidationReport(null);
             setValidationLoading(true);
-            if (!forActivation) setValidationOpen(true);
+            setValidationOpen(true);
             const response = await regulatoryRuleSetService.validateDraft(ruleSet.id);
-            const report = response.data;
-            setValidationReport(report);
-            if (forActivation && report.valid) {
-                setActivation({ ruleSet, report });
-            } else if (forActivation) {
-                setValidationOpen(true);
-            }
+            setValidationReport(response.data);
         } catch (error) {
             toast({ title: 'Validasi draft gagal', description: error.message, variant: 'destructive' });
         } finally {
@@ -421,6 +529,193 @@ export default function RegulatoryRuleSets() {
             await loadRuleSets();
         } catch (error) {
             toast({ title: 'Aktivasi gagal', description: error.message, variant: 'destructive' });
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const uploadSourceDocument = async () => {
+        if (!sourceRuleSet || !sourceFile) return;
+        try {
+            setActionLoading(true);
+            setSourceUploadProgress(0);
+            let response;
+            let blob = null;
+            try {
+                blob = await upload(`regulatory-sources/${sourceRuleSet.id}/${sourceFile.name}`, sourceFile, {
+                    access: 'private',
+                    handleUploadUrl: '/api/client-upload',
+                    multipart: sourceFile.size > MULTIPART_FALLBACK_MAX_BYTES,
+                    clientPayload: JSON.stringify({ purpose: 'regulatory-source', ruleSetId: sourceRuleSet.id }),
+                    onUploadProgress: ({ percentage }) => setSourceUploadProgress(Math.round(percentage)),
+                });
+            } catch (directUploadError) {
+                if (sourceFile.size > MULTIPART_FALLBACK_MAX_BYTES) throw directUploadError;
+                setSourceUploadProgress(null);
+                response = await regulatoryRuleSetService.verifySourceDocument(sourceRuleSet.id, sourceFile);
+            }
+            if (blob) {
+                setSourceUploadProgress(null);
+                response = await regulatoryRuleSetService.verifySourceDocumentFromBlob(
+                    sourceRuleSet.id,
+                    blob.url,
+                    sourceFile.name,
+                );
+            }
+            toast({
+                title: 'PDF sumber terverifikasi',
+                description: `${response.data?.sourceDocumentPageCount ?? response.data?.ruleSet?.sourceDocumentPageCount ?? 'Jumlah'} halaman dihitung server dan hash SHA-256 disimpan.`,
+            });
+            setSourceRuleSet(null);
+            setSourceFile(null);
+            await loadRuleSets();
+        } catch (error) {
+            toast({ title: 'Verifikasi PDF gagal', description: error.message, variant: 'destructive' });
+        } finally {
+            setActionLoading(false);
+            setSourceUploadProgress(null);
+        }
+    };
+
+    const openManifest = (ruleSet) => {
+        const existing = ruleSet.completenessManifest || {};
+        setManifestForm({
+            expectedItemCount: existing.expectedItemCount ?? '',
+            expectedSelectableCount: existing.expectedSelectableCount ?? '',
+            sourcePageCount: existing.sourcePageCount ?? ruleSet.sourceDocumentPageCount ?? '',
+            coveredPageRanges: Array.isArray(existing.coveredPageRanges)
+                ? existing.coveredPageRanges.map(({ start, end }) => start === end ? String(start) : `${start}-${end}`).join(', ')
+                : '',
+            verificationStatement: existing.verificationStatement || '',
+        });
+        setManifestRuleSet(ruleSet);
+    };
+
+    const saveManifest = async (event) => {
+        event.preventDefault();
+        if (!manifestRuleSet) return;
+        try {
+            setActionLoading(true);
+            const payload = {
+                expectedItemCount: Number(manifestForm.expectedItemCount),
+                expectedSelectableCount: Number(manifestForm.expectedSelectableCount),
+                sourcePageCount: Number(manifestForm.sourcePageCount),
+                coveredPageRanges: parsePageRanges(manifestForm.coveredPageRanges),
+                verificationStatement: manifestForm.verificationStatement.trim(),
+            };
+            await regulatoryRuleSetService.saveCompletenessManifest(manifestRuleSet.id, payload);
+            toast({ title: 'Manifest kelengkapan terverifikasi', description: 'Jumlah butir dan cakupan halaman telah dicocokkan oleh server.' });
+            setManifestRuleSet(null);
+            await loadRuleSets();
+        } catch (error) {
+            toast({ title: 'Manifest belum dapat disimpan', description: error.message, variant: 'destructive' });
+            showValidationDetails(error, manifestRuleSet);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const generateImpact = async (ruleSet) => {
+        try {
+            setActionLoading(true);
+            const response = await regulatoryRuleSetService.generateImpactReport(ruleSet.id);
+            const report = response.data?.report;
+            toast({
+                title: 'Diff dan laporan dampak dibuat',
+                description: report
+                    ? `${report.diff?.added?.length || 0} tambah, ${report.diff?.changed?.length || 0} berubah, ${report.diff?.removed?.length || 0} dihapus; ${report.archiveImpact?.affectedByChangedOrRemovedRules || 0} arsip terdampak.`
+                    : 'Laporan tersimpan dan diikat dengan hash.',
+            });
+            await loadRuleSets();
+        } catch (error) {
+            toast({ title: 'Laporan dampak gagal dibuat', description: error.message, variant: 'destructive' });
+            showValidationDetails(error, ruleSet);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const openWorkflow = (ruleSet, action) => {
+        setWorkflow({ ruleSet, action });
+        setWorkflowNote('');
+    };
+
+    const runWorkflow = async () => {
+        if (!workflow || workflowNote.trim().length < 10) return;
+        try {
+            setActionLoading(true);
+            await regulatoryRuleSetService[workflow.action](workflow.ruleSet.id, workflowNote.trim());
+            toast({
+                title: `${WORKFLOW_ACTION[workflow.action].button} berhasil`,
+                description: 'Status dan catatan keputusan tersimpan dalam rantai audit yang dapat diverifikasi.',
+            });
+            setWorkflow(null);
+            setWorkflowNote('');
+            await loadRuleSets();
+        } catch (error) {
+            toast({ title: 'Perubahan status gagal', description: error.message, variant: 'destructive' });
+            showValidationDetails(error, workflow.ruleSet);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const loadEventsPage = async (ruleSet, page, checkIntegrity = false) => {
+        if (!ruleSet) return;
+        setEventsLoading(true);
+        try {
+            const [eventsResult, integrityResult] = await Promise.allSettled([
+                regulatoryRuleSetService.listEvents(ruleSet.id, { page, limit: AUDIT_PAGE_SIZE }),
+                checkIntegrity ? regulatoryRuleSetService.verifyEventIntegrity(ruleSet.id) : Promise.resolve(null),
+            ]);
+            if (eventsResult.status === 'rejected') throw eventsResult.reason;
+            setEvents(eventsResult.value.data || []);
+            setEventsPagination(auditPaginationFrom(eventsResult.value, page));
+            if (checkIntegrity) {
+                setEventsIntegrity(integrityResult.status === 'fulfilled'
+                    ? integrityResult.value?.data
+                    : { valid: false, error: integrityResult.reason?.message || 'Verifikasi gagal' });
+            }
+        } catch (error) {
+            toast({ title: 'Jejak audit gagal dimuat', description: error.message, variant: 'destructive' });
+        } finally {
+            setEventsLoading(false);
+        }
+    };
+
+    const openEvents = async (ruleSet) => {
+        setEventsRuleSet(ruleSet);
+        setEvents([]);
+        setEventsPagination(EMPTY_AUDIT_PAGINATION);
+        setEventsIntegrity(null);
+        await loadEventsPage(ruleSet, 1, true);
+    };
+
+    const openSourceDocument = async (ruleSet) => {
+        const viewer = window.open('about:blank', '_blank');
+        if (viewer) viewer.opener = null;
+        try {
+            setActionLoading(true);
+            const { blob, fileName } = await regulatoryRuleSetService.fetchSourceDocument(ruleSet.id);
+            const objectUrl = window.URL.createObjectURL(blob);
+            if (viewer) {
+                viewer.location.replace(objectUrl);
+            } else {
+                const link = document.createElement('a');
+                link.href = objectUrl;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+            window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000);
+        } catch (error) {
+            if (viewer) viewer.close();
+            toast({
+                title: 'PDF sumber belum dapat dibuka',
+                description: error.message,
+                variant: 'destructive',
+            });
         } finally {
             setActionLoading(false);
         }
@@ -503,7 +798,7 @@ export default function RegulatoryRuleSets() {
             <PageHeader
                 icon={GitBranch}
                 title="Versi Aturan Kearsipan"
-                description="Kelola edisi Klasifikasi Arsip dan JRA secara berjejak. Versi aktif bersifat terkunci; perubahan disiapkan pada draft baru."
+                description="Kelola edisi Klasifikasi Arsip dan JRA dengan bukti sumber, pemeriksaan kelengkapan, analisis dampak, dan persetujuan berjenjang."
                 actions={(
                     <Button variant="outline" onClick={loadRuleSets} disabled={loading}>
                         <RefreshCw className={loading ? 'animate-spin' : ''} /> Muat ulang
@@ -513,9 +808,9 @@ export default function RegulatoryRuleSets() {
 
             <Alert>
                 <LockKeyhole className="h-4 w-4" />
-                <AlertTitle>Pemisahan draft dan aturan aktif</AlertTitle>
+                <AlertTitle>Maker–checker dan bukti regulasi</AlertTitle>
                 <AlertDescription>
-                    Registrasi arsip selalu memakai versi aktif. Buat clone untuk perubahan regulasi, sunting isi draft melalui master data, validasi, lalu aktifkan setelah tanggal berlakunya.
+                    Registrasi arsip selalu memakai versi aktif. Draft wajib dilengkapi PDF resmi, manifest cakupan, diff dampak, lalu melewati pengajuan, telaah, dan persetujuan oleh akun yang berbeda sebelum aktivasi.
                     {!canPublish && ' Akun Anda memiliki akses baca; publikasi versi hanya dapat dilakukan super administrator.'}
                 </AlertDescription>
             </Alert>
@@ -543,13 +838,16 @@ export default function RegulatoryRuleSets() {
                                 <h2 id="active-rule-heading" className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck className="h-5 w-5 text-success" /> {instrument.label} aktif</h2>
                                 <p className="text-sm text-muted-foreground">Sumber aturan kanonik untuk registrasi arsip baru.</p>
                             </div>
-                            <Badge variant="outline">{ruleSets.length} versi · {draftCount} draft</Badge>
+                            <Badge variant="outline">{ruleSets.length} versi · {inProgressCount} dalam proses</Badge>
                         </div>
                         <ActiveRuleCard
                             instrumentType={instrumentType}
                             ruleSet={activeRuleSet}
                             canPublish={canPublish}
+                            canAudit={canAudit}
                             onClone={openClone}
+                            onAudit={() => openEvents(activeRuleSet)}
+                            onSourceDocument={openSourceDocument}
                         />
                     </section>
 
@@ -557,7 +855,7 @@ export default function RegulatoryRuleSets() {
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2"><History className="h-5 w-5" /> Draft dan riwayat versi</CardTitle>
                             <CardDescription>
-                                Draft dapat diperbaiki. Versi yang sudah aktif, digantikan, atau ditarik tetap immutable untuk menjaga bukti administrasi.
+                                Draft dapat diperbaiki. Setelah diajukan, isi dikunci dan keputusan setiap tahap dicatat pada rantai audit ber-hash.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="px-0 sm:px-5">
@@ -585,9 +883,10 @@ export default function RegulatoryRuleSets() {
                                                         <StatusBadge status={ruleSet.status} />
                                                     </div>
                                                     <p className="mt-1 max-w-[280px] truncate text-xs text-muted-foreground" title={ruleSet.name}>{ruleSet.name}</p>
-                                                    {ruleSet.status === 'draft' && effectiveInFuture(ruleSet) && (
+                                                    {ruleSet.status === 'approved' && effectiveInFuture(ruleSet) && (
                                                         <p className="mt-1 text-xs text-warning-foreground dark:text-warning">Aktivasi tersedia mulai {formatDate(ruleSet.effectiveFrom)}</p>
                                                     )}
+                                                    <p className="mt-1 text-xs text-muted-foreground">{workflowSummary(ruleSet)}</p>
                                                 </TableCell>
                                                 <TableCell data-label="Dasar hukum">
                                                     <p className="max-w-[300px] truncate font-medium" title={ruleSet.regulationNumber}>{ruleSet.regulationNumber}</p>
@@ -599,30 +898,81 @@ export default function RegulatoryRuleSets() {
                                                 </TableCell>
                                                 <TableCell data-label="Integritas">
                                                     <p className="font-mono text-xs" title={ruleSet.contentHash || ''}>{shortHash(ruleSet.contentHash)}</p>
-                                                    <p className="mt-1 text-xs text-muted-foreground">{ruleSet.sourceDocumentSha256 ? 'Dokumen ter-hash' : 'Hash dokumen belum dicatat'}</p>
+                                                    <p className="mt-1 text-xs text-muted-foreground">{ruleSet.sourceDocumentVerifiedAt ? `PDF terverifikasi · ${ruleSet.sourceDocumentPageCount || 0} halaman` : 'PDF sumber belum diverifikasi'}</p>
+                                                    <p className="text-xs text-muted-foreground">{ruleSet.completenessVerifiedAt ? 'Manifest lengkap' : 'Manifest belum diverifikasi'} · {ruleSet.impactReportGeneratedAt ? 'dampak tersedia' : 'dampak belum dibuat'}</p>
                                                 </TableCell>
                                                 <TableCell data-label="Tindakan" className="text-right">
-                                                    {ruleSet.status === 'draft' && canPublish ? (
+                                                    {canGovern ? (
                                                         <div className="flex flex-wrap justify-end gap-2">
-                                                            <Button variant="outline" size="sm" asChild>
-                                                                <Link to={`${instrument.editorPath}?ruleSetId=${ruleSet.id}&mode=draft`}>
-                                                                    Edit isi
-                                                                </Link>
-                                                            </Button>
-                                                            <Button variant="outline" size="sm" onClick={() => validateDraft(ruleSet)}>
-                                                                <FileCheck2 /> Validasi
-                                                            </Button>
-                                                            <Button variant="outline" size="sm" onClick={() => openImport(ruleSet)}>
-                                                                <Upload /> Impor JSON
-                                                            </Button>
                                                             <Button
+                                                                variant="outline"
                                                                 size="sm"
-                                                                disabled={validationLoading || effectiveInFuture(ruleSet)}
-                                                                title={effectiveInFuture(ruleSet) ? `Belum berlaku sampai ${formatDate(ruleSet.effectiveFrom)}` : 'Validasi lalu aktifkan'}
-                                                                onClick={() => validateDraft(ruleSet, true)}
-                                                            >
-                                                                <ShieldCheck /> Aktifkan
-                                                            </Button>
+                                                                disabled={!ruleSet.sourceDocumentStored || actionLoading}
+                                                                title={ruleSet.sourceDocumentStored
+                                                                    ? 'Tampilkan PDF sumber terverifikasi; penampil PDF menyediakan opsi unduh.'
+                                                                    : 'PDF belum tersedia pada private Blob.'}
+                                                                onClick={() => openSourceDocument(ruleSet)}
+                                                            ><FileDown /> PDF</Button>
+                                                            {ruleSet.status === 'draft' && canPublish && (
+                                                                <>
+                                                                    <Button variant="outline" size="sm" asChild>
+                                                                        <Link to={`${instrument.editorPath}?ruleSetId=${ruleSet.id}&mode=draft`}>Edit isi</Link>
+                                                                    </Button>
+                                                                    <Button variant="outline" size="sm" onClick={() => validateDraft(ruleSet)}><FileCheck2 /> Validasi</Button>
+                                                                    <Button variant="outline" size="sm" onClick={() => openImport(ruleSet)}><Upload /> Impor JSON</Button>
+                                                                    <Button variant="outline" size="sm" onClick={() => { setSourceRuleSet(ruleSet); setSourceFile(null); setSourceUploadProgress(null); }}><Upload /> PDF sumber</Button>
+                                                                    <Button variant="outline" size="sm" onClick={() => openManifest(ruleSet)}><ClipboardCheck /> Manifest</Button>
+                                                                    <Button variant="outline" size="sm" onClick={() => generateImpact(ruleSet)} disabled={actionLoading}><GitBranch /> Diff & dampak</Button>
+                                                                    <Button size="sm" onClick={() => openWorkflow(ruleSet, 'submit')}><Send /> Ajukan</Button>
+                                                                </>
+                                                            )}
+                                                            {ruleSet.status === 'submitted' && (
+                                                                <>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        disabled={user?.id === ruleSet.createdBy || user?.id === ruleSet.submittedBy}
+                                                                        title={user?.id === ruleSet.createdBy || user?.id === ruleSet.submittedBy ? 'Penelaah harus akun lain' : 'Telaah versi'}
+                                                                        onClick={() => openWorkflow(ruleSet, 'review')}
+                                                                    ><ClipboardCheck /> Telaah</Button>
+                                                                    <Button variant="outline" size="sm" onClick={() => openWorkflow(ruleSet, 'returnToDraft')}><RotateCcw /> Kembalikan</Button>
+                                                                </>
+                                                            )}
+                                                            {ruleSet.status === 'reviewed' && (
+                                                                <>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        disabled={[ruleSet.createdBy, ruleSet.submittedBy, ruleSet.reviewedBy].includes(user?.id)}
+                                                                        title={[ruleSet.createdBy, ruleSet.submittedBy, ruleSet.reviewedBy].includes(user?.id) ? 'Penyetuju harus akun lain' : 'Setujui versi'}
+                                                                        onClick={() => openWorkflow(ruleSet, 'approve')}
+                                                                    ><ShieldCheck /> Setujui</Button>
+                                                                    <Button variant="outline" size="sm" onClick={() => openWorkflow(ruleSet, 'returnToDraft')}><RotateCcw /> Kembalikan</Button>
+                                                                </>
+                                                            )}
+                                                            {ruleSet.status === 'approved' && (
+                                                                <>
+                                                                    {canPublish && <Button
+                                                                            size="sm"
+                                                                            disabled={actionLoading || effectiveInFuture(ruleSet)}
+                                                                            title={effectiveInFuture(ruleSet) ? `Belum berlaku sampai ${formatDate(ruleSet.effectiveFrom)}` : 'Aktifkan versi yang telah disetujui'}
+                                                                            onClick={() => setActivation({ ruleSet })}
+                                                                        ><ShieldCheck /> Aktifkan</Button>}
+                                                                    <Button variant="outline" size="sm" onClick={() => openWorkflow(ruleSet, 'returnToDraft')}><RotateCcw /> Kembalikan</Button>
+                                                                </>
+                                                            )}
+                                                            <Button variant="ghost" size="sm" onClick={() => openEvents(ruleSet)}><History /> Audit</Button>
+                                                        </div>
+                                                    ) : canAudit ? (
+                                                        <div className="flex flex-wrap justify-end gap-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                disabled={!ruleSet.sourceDocumentStored || actionLoading}
+                                                                title={ruleSet.sourceDocumentStored
+                                                                    ? 'Tampilkan PDF sumber terverifikasi; penampil PDF menyediakan opsi unduh.'
+                                                                    : 'PDF belum tersedia pada private Blob.'}
+                                                                onClick={() => openSourceDocument(ruleSet)}
+                                                            ><FileDown /> PDF</Button>
+                                                            <Button variant="ghost" size="sm" onClick={() => openEvents(ruleSet)}><History /> Audit</Button>
                                                         </div>
                                                     ) : (
                                                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><LockKeyhole className="h-3.5 w-3.5" /> Terkunci</span>
@@ -673,10 +1023,6 @@ export default function RegulatoryRuleSets() {
                                 <Textarea id="legal-basis" value={cloneForm.legalBasis} onChange={(event) => setCloneForm((form) => ({ ...form, legalBasis: event.target.value }))} rows={2} placeholder="Kosongkan untuk memakai dasar hukum versi aktif" />
                             </div>
                             <div className="space-y-2 sm:col-span-2">
-                                <Label htmlFor="source-hash">SHA-256 dokumen sumber</Label>
-                                <Input id="source-hash" className="font-mono text-xs" value={cloneForm.sourceDocumentSha256} maxLength={64} onChange={(event) => setCloneForm((form) => ({ ...form, sourceDocumentSha256: event.target.value.replace(/\s/g, '') }))} placeholder="64 karakter heksadesimal" />
-                            </div>
-                            <div className="space-y-2 sm:col-span-2">
                                 <Label htmlFor="source-url">URL sumber resmi</Label>
                                 <Input id="source-url" type="url" value={cloneForm.sourceUrl} onChange={(event) => setCloneForm((form) => ({ ...form, sourceUrl: event.target.value }))} placeholder="https://..." />
                             </div>
@@ -710,14 +1056,6 @@ export default function RegulatoryRuleSets() {
                     )}
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setValidationOpen(false)}>Tutup</Button>
-                        {validationReport?.valid && canPublish && validationRuleSet && !effectiveInFuture(validationRuleSet) && (
-                            <Button onClick={() => {
-                                setValidationOpen(false);
-                                setActivation({ ruleSet: validationRuleSet, report: validationReport });
-                            }}>
-                                Lanjut ke aktivasi
-                            </Button>
-                        )}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -791,6 +1129,147 @@ export default function RegulatoryRuleSets() {
                 </DialogContent>
             </Dialog>
 
+            <Dialog open={Boolean(sourceRuleSet)} onOpenChange={(open) => {
+                if (!open && !actionLoading) {
+                    setSourceRuleSet(null);
+                    setSourceFile(null);
+                    setSourceUploadProgress(null);
+                }
+            }}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Verifikasi PDF sumber {sourceRuleSet?.version}</DialogTitle>
+                        <DialogDescription>
+                            Unggah salinan PDF resmi (maks. 50 MB) langsung ke penyimpanan privat. Nama, ukuran, jumlah halaman, dan SHA-256 diverifikasi server; hash tidak dapat diisi manual.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3 py-3">
+                        <Label htmlFor="official-source-pdf">Dokumen PDF resmi</Label>
+                        <Input
+                            id="official-source-pdf"
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            disabled={actionLoading}
+                            onChange={(event) => { setSourceFile(event.target.files?.[0] || null); setSourceUploadProgress(null); }}
+                        />
+                        {sourceFile && <p className="text-sm text-muted-foreground">{sourceFile.name} · {(sourceFile.size / 1024 / 1024).toFixed(2)} MB</p>}
+                        {sourceUploadProgress !== null && <p className="text-sm text-muted-foreground">Mengunggah ke penyimpanan privat: {sourceUploadProgress}%</p>}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" disabled={actionLoading} onClick={() => { setSourceRuleSet(null); setSourceFile(null); setSourceUploadProgress(null); }}>Batal</Button>
+                        <Button disabled={!sourceFile || actionLoading} onClick={uploadSourceDocument}>
+                            <Upload /> {actionLoading ? sourceUploadProgress === null ? 'Memverifikasi…' : `Mengunggah ${sourceUploadProgress}%` : 'Unggah dan verifikasi'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={Boolean(manifestRuleSet)} onOpenChange={(open) => !open && !actionLoading && setManifestRuleSet(null)}>
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+                    <form onSubmit={saveManifest}>
+                        <DialogHeader>
+                            <DialogTitle>Manifest kelengkapan {manifestRuleSet?.version}</DialogTitle>
+                            <DialogDescription>
+                                Nyatakan jumlah butir yang diharapkan dan halaman PDF yang sudah dialihaksarakan. Server mencocokkannya dengan isi draft dan PDF terverifikasi.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-5 sm:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="expected-items">Jumlah seluruh butir</Label>
+                                <Input id="expected-items" type="number" min="1" value={manifestForm.expectedItemCount} onChange={(event) => setManifestForm((form) => ({ ...form, expectedItemCount: event.target.value }))} required />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="expected-selectable">Jumlah butir dapat dipilih</Label>
+                                <Input id="expected-selectable" type="number" min="1" value={manifestForm.expectedSelectableCount} onChange={(event) => setManifestForm((form) => ({ ...form, expectedSelectableCount: event.target.value }))} required />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="source-pages">Jumlah halaman sumber</Label>
+                                <Input id="source-pages" type="number" min="1" value={manifestForm.sourcePageCount} onChange={(event) => setManifestForm((form) => ({ ...form, sourcePageCount: event.target.value }))} required />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="covered-pages">Halaman tercakup</Label>
+                                <Input id="covered-pages" value={manifestForm.coveredPageRanges} onChange={(event) => setManifestForm((form) => ({ ...form, coveredPageRanges: event.target.value }))} placeholder="1-25, 27, 30-42" required />
+                            </div>
+                            <div className="space-y-2 sm:col-span-2">
+                                <Label htmlFor="verification-statement">Pernyataan pemeriksaan</Label>
+                                <Textarea id="verification-statement" minLength={20} maxLength={4000} rows={4} value={manifestForm.verificationStatement} onChange={(event) => setManifestForm((form) => ({ ...form, verificationStatement: event.target.value }))} placeholder="Jelaskan cara jumlah butir dan cakupan halaman diperiksa terhadap PDF resmi." required />
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button type="button" variant="outline" disabled={actionLoading} onClick={() => setManifestRuleSet(null)}>Batal</Button>
+                            <Button type="submit" disabled={actionLoading || manifestForm.verificationStatement.trim().length < 20}>{actionLoading ? 'Memeriksa…' : 'Verifikasi manifest'}</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={Boolean(workflow)} onOpenChange={(open) => !open && !actionLoading && setWorkflow(null)}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>{workflow ? WORKFLOW_ACTION[workflow.action].title : ''}</DialogTitle>
+                        <DialogDescription>{workflow ? WORKFLOW_ACTION[workflow.action].description : ''}</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2 py-3">
+                        <Label htmlFor="workflow-note">Catatan keputusan <span className="text-destructive">*</span></Label>
+                        <Textarea id="workflow-note" rows={5} minLength={10} maxLength={4000} value={workflowNote} onChange={(event) => setWorkflowNote(event.target.value)} placeholder="Tuliskan hasil pemeriksaan, dasar keputusan, atau koreksi yang diperlukan." />
+                        <p className="text-xs text-muted-foreground">Minimal 10 karakter. Catatan menjadi bagian dari bukti audit.</p>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" disabled={actionLoading} onClick={() => setWorkflow(null)}>Batal</Button>
+                        <Button disabled={actionLoading || workflowNote.trim().length < 10} onClick={runWorkflow}>
+                            {actionLoading ? 'Menyimpan…' : workflow ? WORKFLOW_ACTION[workflow.action].button : 'Simpan'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={Boolean(eventsRuleSet)} onOpenChange={(open) => !open && setEventsRuleSet(null)}>
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+                    <DialogHeader>
+                        <DialogTitle>Jejak audit versi {eventsRuleSet?.version}</DialogTitle>
+                        <DialogDescription>Perubahan isi, bukti, dan status tersusun kronologis serta saling ditautkan oleh hash.</DialogDescription>
+                    </DialogHeader>
+                    {eventsIntegrity && (
+                        <Alert variant={eventsIntegrity.valid ? 'default' : 'destructive'}>
+                            {eventsIntegrity.valid ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4" />}
+                            <AlertTitle>{eventsIntegrity.valid ? 'Rantai audit utuh' : 'Integritas rantai audit bermasalah'}</AlertTitle>
+                            <AlertDescription>
+                                {eventsIntegrity.valid
+                                    ? `${eventsIntegrity.checkedEvents || 0} peristiwa diverifikasi ulang dari isi dan hash sebelumnya.`
+                                    : eventsIntegrity.error || `Rantai terputus pada peristiwa ${eventsIntegrity.brokenEventId || 'yang tidak diketahui'}.`}
+                            </AlertDescription>
+                        </Alert>
+                    )}
+                    {eventsLoading ? (
+                        <div className="space-y-3"><Skeleton className="h-20" /><Skeleton className="h-20" /></div>
+                    ) : events.length === 0 ? (
+                        <p className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">Belum ada peristiwa audit.</p>
+                    ) : (
+                        <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+                            {events.map((event) => (
+                                <div key={event.id} className="rounded-md border p-3 text-sm">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2"><Badge variant="outline">{event.entityType}</Badge><span className="font-semibold">{event.action}</span>{event.itemCode && <span className="font-mono text-xs">{event.itemCode}</span>}</div>
+                                        <span className="text-xs text-muted-foreground">{formatTimestamp(event.createdAt)}</span>
+                                    </div>
+                                    <p className="mt-2">{event.reason || 'Tanpa catatan tambahan'}</p>
+                                    <p className="mt-2 text-xs text-muted-foreground">Pelaku: {event.actorEmail || event.actorId || 'sistem'}</p>
+                                    <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">Hash: {event.eventHash}</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {eventsPagination.total > 0 && (
+                        <AuditPagination
+                            pagination={eventsPagination}
+                            loading={eventsLoading}
+                            onPageChange={(page) => loadEventsPage(eventsRuleSet, page)}
+                        />
+                    )}
+                    <DialogFooter><Button variant="outline" onClick={() => setEventsRuleSet(null)}>Tutup</Button></DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <AlertDialog open={Boolean(activation)} onOpenChange={(open) => !open && !actionLoading && setActivation(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
@@ -799,7 +1278,7 @@ export default function RegulatoryRuleSets() {
                             Versi ini akan menjadi sumber aturan untuk registrasi arsip baru. Versi aktif saat ini dipindahkan ke riwayat dan tidak dapat diedit lagi. Snapshot pada arsip lama tidak berubah.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
-                    {activation?.report.warnings?.length > 0 && (
+                    {activation?.report?.warnings?.length > 0 && (
                         <Alert>
                             <AlertTriangle className="h-4 w-4 text-warning" />
                             <AlertTitle>{activation.report.warnings.length} peringatan perlu dicatat</AlertTitle>

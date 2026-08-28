@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -123,6 +124,14 @@ function filterJraTree(nodes, query) {
     }, [])
 }
 
+function flattenTree(nodes, result = []) {
+    for (const node of nodes || []) {
+        result.push(node)
+        flattenTree(node.children, result)
+    }
+    return result
+}
+
 export default function JadwalRetensi() {
     const { user } = useAuth()
     const [searchParams] = useSearchParams()
@@ -143,7 +152,15 @@ export default function JadwalRetensi() {
         retensiInaktif: '',
         keterangan: '',
         parentKode: '',
+        parentItemId: '__root__',
         kategori: '',
+        activeMonths: '',
+        inactiveMonths: '',
+        calculationMode: 'manual',
+        dispositionCode: 'manual_review',
+        triggerGuidance: '',
+        sourcePage: '',
+        isSelectable: true,
     })
 
     // Fetch tree data
@@ -188,6 +205,16 @@ export default function JadwalRetensi() {
         return filterJraTree(treeData, searchQuery)
     }, [treeData, searchQuery])
 
+    const parentOptions = useMemo(
+        () => flattenTree(treeData, []).filter((node) => !currentItem || node.id !== currentItem.id),
+        [treeData, currentItem],
+    )
+
+    const selectedParent = useMemo(
+        () => parentOptions.find((node) => String(node.id) === formData.parentItemId),
+        [parentOptions, formData.parentItemId],
+    )
+
     // Handle save
     const handleSave = async () => {
         try {
@@ -198,6 +225,13 @@ export default function JadwalRetensi() {
                     retensiInaktif: formData.retensiInaktif,
                     keterangan: formData.keterangan,
                     kategori: formData.kategori,
+                    activeMonths: formData.activeMonths === '' ? null : Number(formData.activeMonths),
+                    inactiveMonths: formData.inactiveMonths === '' ? null : Number(formData.inactiveMonths),
+                    calculationMode: formData.calculationMode,
+                    dispositionCode: formData.dispositionCode,
+                    triggerGuidance: formData.triggerGuidance || null,
+                    sourcePage: formData.sourcePage ? Number(formData.sourcePage) : null,
+                    isSelectable: formData.isSelectable,
                     ruleSetId,
                 })
                 if (response.success) {
@@ -207,9 +241,14 @@ export default function JadwalRetensi() {
             } else {
                 const response = await api.post('/api/jra', {
                     ...formData,
+                    parentItemId: undefined,
+                    parentKode: selectedParent?.kode || null,
+                    activeMonths: formData.activeMonths === '' ? null : Number(formData.activeMonths),
+                    inactiveMonths: formData.inactiveMonths === '' ? null : Number(formData.inactiveMonths),
+                    sourcePage: formData.sourcePage ? Number(formData.sourcePage) : null,
                     ruleSetId,
                     tipe: activeTab,
-                    level: formData.parentKode ? 1 : 0,
+                    level: selectedParent ? Number(selectedParent.level || 0) + 1 : 0,
                 })
                 if (response.success) {
                     // alert('JRA berhasil ditambahkan')
@@ -234,7 +273,15 @@ export default function JadwalRetensi() {
             retensiInaktif: node.retensiInaktif || '',
             keterangan: node.keterangan || '',
             parentKode: node.parentKode || '',
+            parentItemId: '__root__',
             kategori: node.kategori || '',
+            activeMonths: node.activeMonths ?? '',
+            inactiveMonths: node.inactiveMonths ?? '',
+            calculationMode: node.calculationMode || 'manual',
+            dispositionCode: node.dispositionCode || 'manual_review',
+            triggerGuidance: node.triggerGuidance || '',
+            sourcePage: node.sourcePage || '',
+            isSelectable: node.isSelectable !== false,
         })
         setDialogOpen(true)
     }
@@ -262,7 +309,15 @@ export default function JadwalRetensi() {
             retensiInaktif: '',
             keterangan: '',
             parentKode: '',
+            parentItemId: '__root__',
             kategori: '',
+            activeMonths: '',
+            inactiveMonths: '',
+            calculationMode: 'manual',
+            dispositionCode: 'manual_review',
+            triggerGuidance: '',
+            sourcePage: '',
+            isSelectable: true,
         })
         setEditMode(false)
         setCurrentItem(null)
@@ -428,7 +483,7 @@ export default function JadwalRetensi() {
 
             {/* Create/Edit Dialog */}
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="sm:max-w-[600px]">
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[720px]">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-xl">
                             <div className="p-1.5 bg-primary/10 rounded-md">
@@ -469,53 +524,143 @@ export default function JadwalRetensi() {
                         </div>
 
                         <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="retensiAktif" className="text-right font-medium">Retensi Aktif</Label>
+                            <Label htmlFor="retensiAktif" className="text-right font-medium">Rumusan aktif</Label>
                             <Input
                                 id="retensiAktif"
                                 value={formData.retensiAktif}
                                 onChange={(e) => setFormData({ ...formData, retensiAktif: e.target.value })}
                                 className="col-span-3"
-                                placeholder="Contoh: 2 tahun"
+                                placeholder="Teks resmi, mis. 2 tahun setelah serah terima"
                             />
                         </div>
 
                         <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="retensiInaktif" className="text-right font-medium">Retensi Inaktif</Label>
+                            <Label htmlFor="retensiInaktif" className="text-right font-medium">Rumusan inaktif</Label>
                             <Input
                                 id="retensiInaktif"
                                 value={formData.retensiInaktif}
                                 onChange={(e) => setFormData({ ...formData, retensiInaktif: e.target.value })}
                                 className="col-span-3"
-                                placeholder="Contoh: 5 tahun"
+                                placeholder="Teks resmi, mis. 3 tahun"
                             />
                         </div>
 
                         <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="keterangan" className="text-right font-medium">Nasib Akhir</Label>
+                            <Label htmlFor="calculationMode" className="text-right font-medium">Mode hitung</Label>
                             <Select
-                                value={formData.keterangan}
-                                onValueChange={(val) => setFormData({ ...formData, keterangan: val })}
+                                value={formData.calculationMode}
+                                onValueChange={(value) => setFormData({ ...formData, calculationMode: value })}
                             >
-                                <SelectTrigger className="col-span-3">
-                                    <SelectValue placeholder="Pilih nasib akhir" />
-                                </SelectTrigger>
+                                <SelectTrigger id="calculationMode" className="col-span-3"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="Musnah">Musnah</SelectItem>
-                                    <SelectItem value="Permanen">Permanen</SelectItem>
-                                    <SelectItem value="Dinilai Kembali">Dinilai Kembali</SelectItem>
+                                    <SelectItem value="duration">Durasi terstruktur</SelectItem>
+                                    <SelectItem value="manual">Manual / berbasis peristiwa atau kondisi</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
 
                         <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="parentKode" className="text-right font-medium">Parent Kode</Label>
+                            <Label htmlFor="activeMonths" className="text-right font-medium">Bulan aktif</Label>
                             <Input
-                                id="parentKode"
-                                value={formData.parentKode}
-                                onChange={(e) => setFormData({ ...formData, parentKode: e.target.value })}
-                                className="col-span-3 font-mono"
-                                placeholder="Kode parent (kosong jika root)"
+                                id="activeMonths"
+                                type="number"
+                                min="0"
+                                value={formData.activeMonths}
+                                onChange={(e) => setFormData({ ...formData, activeMonths: e.target.value })}
+                                className="col-span-3"
+                                placeholder="Kosong jika tidak dapat dihitung otomatis"
                             />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="inactiveMonths" className="text-right font-medium">Bulan inaktif</Label>
+                            <Input
+                                id="inactiveMonths"
+                                type="number"
+                                min="0"
+                                value={formData.inactiveMonths}
+                                onChange={(e) => setFormData({ ...formData, inactiveMonths: e.target.value })}
+                                className="col-span-3"
+                                placeholder="Kosong jika memerlukan penilaian"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-start gap-4">
+                            <Label htmlFor="triggerGuidance" className="text-right pt-2 font-medium">Pemicu retensi</Label>
+                            <Textarea
+                                id="triggerGuidance"
+                                value={formData.triggerGuidance}
+                                onChange={(e) => setFormData({ ...formData, triggerGuidance: e.target.value })}
+                                className="col-span-3"
+                                placeholder="Peristiwa yang menandai proses selesai dan bukti yang wajib tersedia"
+                                rows={2}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="dispositionCode" className="text-right font-medium">Keputusan terstruktur</Label>
+                            <Select
+                                value={formData.dispositionCode}
+                                onValueChange={(value) => setFormData({ ...formData, dispositionCode: value })}
+                            >
+                                <SelectTrigger id="dispositionCode" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="musnah">Musnah</SelectItem>
+                                    <SelectItem value="permanen">Permanen</SelectItem>
+                                    <SelectItem value="dinilai_kembali">Dinilai Kembali</SelectItem>
+                                    <SelectItem value="manual_review">Bersyarat / wajib appraisal</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid grid-cols-4 items-start gap-4">
+                            <Label htmlFor="keterangan" className="text-right pt-2 font-medium">Rumusan keputusan</Label>
+                            <Textarea
+                                id="keterangan"
+                                value={formData.keterangan}
+                                onChange={(e) => setFormData({ ...formData, keterangan: e.target.value })}
+                                className="col-span-3"
+                                placeholder="Salin rumusan resmi lengkap, termasuk pengecualian"
+                                rows={3}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="parentKode" className="text-right font-medium">Parent</Label>
+                            {editMode ? (
+                                <Input value={formData.parentKode || 'Root'} className="col-span-3 font-mono" disabled />
+                            ) : (
+                                <Select value={formData.parentItemId} onValueChange={(value) => setFormData({ ...formData, parentItemId: value })}>
+                                    <SelectTrigger id="parentKode" className="col-span-3"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__root__">Root / tanpa parent</SelectItem>
+                                        {parentOptions.map((parent) => (
+                                            <SelectItem key={parent.id} value={String(parent.id)}>{parent.kode} — {parent.uraian}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="kategori" className="text-right font-medium">Kategori</Label>
+                            <Input id="kategori" value={formData.kategori} onChange={(e) => setFormData({ ...formData, kategori: e.target.value })} className="col-span-3" />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="sourcePage" className="text-right font-medium">Halaman sumber</Label>
+                            <Input id="sourcePage" type="number" min="1" value={formData.sourcePage} onChange={(e) => setFormData({ ...formData, sourcePage: e.target.value })} className="col-span-3" />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="isSelectable" className="text-right font-medium">Dapat dipilih</Label>
+                            <Select value={formData.isSelectable ? 'yes' : 'no'} onValueChange={(value) => setFormData({ ...formData, isSelectable: value === 'yes' })}>
+                                <SelectTrigger id="isSelectable" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="yes">Ya, jenis arsip</SelectItem>
+                                    <SelectItem value="no">Tidak, hanya simpul hierarki</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
                     </div>
 

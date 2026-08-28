@@ -5,13 +5,14 @@ const apiMock = vi.hoisted(() => ({
     post: vi.fn(),
 }));
 
-vi.mock('./api', () => ({ default: apiMock }));
+vi.mock('./api', () => ({ default: apiMock, API_BASE_URL: 'https://api.example.test' }));
 
 import regulatoryRuleSetService from './regulatory-rule-set.service';
 
 describe('regulatoryRuleSetService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal('fetch', vi.fn());
     });
 
     it('lists rule sets using optional filters', () => {
@@ -73,5 +74,27 @@ describe('regulatoryRuleSetService', () => {
             '/api/regulatory-rule-sets/jra/clone-active',
             payload,
         );
+    });
+
+    it('fetches an authenticated private PDF stream and reads its safe filename', async () => {
+        const pdf = new Blob(['%PDF-1.7\nsource'], { type: 'application/pdf' });
+        globalThis.fetch.mockResolvedValue({
+            ok: true,
+            headers: {
+                get: (name) => name.toLowerCase() === 'content-disposition'
+                    ? "inline; filename=\"Permen_ATR.pdf\"; filename*=UTF-8''Permen%20ATR.pdf"
+                    : null,
+            },
+            blob: async () => pdf,
+        });
+
+        const result = await regulatoryRuleSetService.fetchSourceDocument('rule-set-id');
+
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+            'https://api.example.test/api/regulatory-rule-sets/rule-set-id/source-document',
+            { method: 'GET', credentials: 'include' },
+        );
+        expect(result.fileName).toBe('Permen ATR.pdf');
+        expect(result.blob).toBe(pdf);
     });
 });

@@ -1,4 +1,5 @@
 import { authClient } from '../lib/auth-client';
+import { API_BASE_URL } from '../lib/api-url';
 import { clearOfflineStorage } from '../lib/offline-storage';
 
 export const authService = {
@@ -49,9 +50,8 @@ export const authService = {
         if (import.meta.env.PROD) {
             throw new Error('Dev login is not available in production');
         }
-        const API_URL = import.meta.env.VITE_API_URL || '';
         try {
-            const response = await fetch(`${API_URL}/api/dev/dev-login`, {
+            const response = await fetch(`${API_BASE_URL}/api/dev/dev-login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

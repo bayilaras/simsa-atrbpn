@@ -2,8 +2,23 @@ import { db } from '../config/database';
 import { suratMasuk } from '../db/schema/surat-masuk';
 import { suratKeluar } from '../db/schema/surat-keluar';
 import { arsip } from '../db/schema/arsip';
-import { archiveLending } from '../db/schema';
-import { eq, and, desc, sql, gte, lte, or, isNull, isNotNull, inArray } from 'drizzle-orm';
+import {
+    archiveLending,
+    arsipRuleSnapshots,
+    jraAppraisalCases,
+    jraAppraisalDecisions,
+    retentionTriggerEvents,
+    retentionTriggerVerifications,
+} from '../db/schema';
+import { eq, and, desc, sql, gte, lte, or, isNull, inArray } from 'drizzle-orm';
+import {
+    archiveRuleAssignmentService,
+    CURRENT_APPRAISAL_CASE_JOIN,
+    CURRENT_APPRAISAL_DECISION_JOIN,
+    CURRENT_RETENTION_TRIGGER_JOIN,
+    CURRENT_RETENTION_VERIFICATION_JOIN,
+    RETENTION_GOVERNANCE_EVIDENCE_SELECT,
+} from './archive-rule-assignment.service';
 
 // Types
 export interface ReportFilters {
@@ -39,6 +54,52 @@ export interface LendingReportFilters {
 }
 
 class ReportService {
+    private evaluateArchiveRetention(row: any) {
+        return archiveRuleAssignmentService.evaluateCanonicalRetention(
+            row.retentionTriggerDate,
+            {
+                arsipId: row.id,
+                ruleProvenanceStatus: row.ruleProvenanceStatus,
+                currentRuleSnapshotId: row.currentRuleSnapshotId,
+                jraItemId: row.jraItemId,
+                jraRuleSetId: row.jraRuleSetId,
+                retentionDecisionHash: row.retentionDecisionHash,
+                snapshotId: row.ruleSnapshotId,
+                snapshotArsipId: row.ruleSnapshotArsipId,
+                snapshotStatus: row.ruleSnapshotStatus,
+                snapshotJraItemId: row.ruleSnapshotJraItemId,
+                snapshotJraRuleSetId: row.ruleSnapshotJraRuleSetId,
+                snapshot: row.ruleSnapshot,
+                snapshotSha256: row.ruleSnapshotSha256,
+                currentRetentionTriggerEventId: row.currentRetentionTriggerEventId,
+                triggerEventRecordId: row.triggerEventRecordId,
+                triggerEventArsipId: row.triggerEventArsipId,
+                triggerEventDate: row.triggerEventDate,
+                triggerEventRevision: row.triggerEventRevision,
+                triggerEventActorId: row.triggerEventActorId,
+                triggerVerificationVerdict: row.triggerVerificationVerdict,
+                triggerVerifierId: row.triggerVerifierId,
+                latestTriggerEventRevision: row.latestTriggerEventRevision,
+                currentAppraisalDecisionId: row.currentAppraisalDecisionId,
+                appraisalDecisionRecordId: row.appraisalDecisionRecordId,
+                appraisalDecisionArsipId: row.appraisalDecisionArsipId,
+                appraisalDecisionStatus: row.appraisalDecisionStatus,
+                appraisalDecisionOutcome: row.appraisalDecisionOutcome,
+                appraisalDecisionSnapshot: row.appraisalDecisionSnapshot,
+                appraisalDecisionSha256: row.appraisalDecisionSha256,
+                appraisalCaseStatus: row.appraisalCaseStatus,
+                hasActiveAppraisalCase: row.hasActiveAppraisalCase,
+            },
+        );
+    }
+
+    private canonicalDispositionLabel(code: string | null | undefined) {
+        if (code === 'musnah') return 'Musnah';
+        if (code === 'permanen') return 'Permanen';
+        if (code === 'dinilai_kembali' || code === 'manual_review') return 'Dinilai Kembali';
+        return null;
+    }
+
     private incomingClassificationCondition(classes: string[] | null | undefined) {
         if (classes === undefined || classes === null) return undefined;
         if (classes.length === 0) return sql`false`;
@@ -288,16 +349,10 @@ class ReportService {
         const futureDate = new Date();
         futureDate.setDate(now.getDate() + daysAhead);
 
-        if (type === 'expiring') {
-            // Archives expiring within daysAhead days
-            conditions.push(eq(arsip.legalHold, false));
-            conditions.push(isNotNull(arsip.retentionTriggerDate));
-            conditions.push(gte(arsip.tanggalKadaluarsa, now.toISOString().split('T')[0]));
-            conditions.push(lte(arsip.tanggalKadaluarsa, futureDate.toISOString().split('T')[0]));
-        } else if (type === 'permanent') {
-            conditions.push(eq(arsip.retensiInaktif, 'Permanen'));
-        } else if (type === 'destroyed') {
-            conditions.push(eq(arsip.hasilAkhir, 'Musnah'));
+        if (type === 'destroyed') {
+            // A destruction report describes an executed action, not the JRA's
+            // intended outcome.  The workflow status is therefore authoritative.
+            conditions.push(eq(arsip.disposalStatus, 'executed'));
         }
 
         if (mediaType && mediaType !== 'all') {
@@ -308,13 +363,7 @@ class ReportService {
             conditions.push(eq(arsip.tahun, year));
         }
 
-        const countResult = await db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(arsip)
-            .where(and(...conditions));
-        const total = countResult?.[0]?.count ?? 0;
-
-        const data = await db
+        const rows = await db
             .select({
                 id: arsip.id,
                 kodeKlasifikasi: arsip.kodeKlasifikasi,
@@ -330,17 +379,104 @@ class ReportService {
                 retentionTriggerDate: arsip.retentionTriggerDate,
                 legalHold: arsip.legalHold,
                 hasilAkhir: arsip.hasilAkhir,
+                disposalStatus: arsip.disposalStatus,
+                ruleProvenanceStatus: arsip.ruleProvenanceStatus,
+                currentRuleSnapshotId: arsip.currentRuleSnapshotId,
+                currentRetentionTriggerEventId: arsip.currentRetentionTriggerEventId,
+                currentAppraisalDecisionId: arsip.currentAppraisalDecisionId,
+                jraItemId: arsip.jraItemId,
+                jraRuleSetId: arsip.jraRuleSetId,
+                retentionDecisionHash: arsip.retentionDecisionHash,
+                ruleSnapshotId: arsipRuleSnapshots.id,
+                ruleSnapshotArsipId: arsipRuleSnapshots.arsipId,
+                ruleSnapshotStatus: arsipRuleSnapshots.status,
+                ruleSnapshotJraItemId: arsipRuleSnapshots.jraItemId,
+                ruleSnapshotJraRuleSetId: arsipRuleSnapshots.jraRuleSetId,
+                ruleSnapshot: arsipRuleSnapshots.snapshot,
+                ruleSnapshotSha256: arsipRuleSnapshots.snapshotSha256,
+                ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
                 createdAt: arsip.createdAt,
             })
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
-            .orderBy(desc(arsip.createdAt))
-            .limit(limit)
-            .offset(offset);
+            .orderBy(desc(arsip.createdAt));
 
-        const filteredData = type === 'expiring'
-            ? data.filter(item => !item.legalHold && item.retentionTriggerDate)
-            : data;
+        const todayIso = now.toISOString().slice(0, 10);
+        const futureIso = futureDate.toISOString().slice(0, 10);
+        const canonicalRows = rows.flatMap((row) => {
+            const evaluation = this.evaluateArchiveRetention(row);
+            const expiry = evaluation.dates.tanggalKadaluarsa;
+            const dispositionCode = evaluation.effectiveDispositionCode;
+            const {
+                ruleSnapshotId: _ruleSnapshotId,
+                ruleSnapshotArsipId: _ruleSnapshotArsipId,
+                ruleSnapshotStatus: _ruleSnapshotStatus,
+                ruleSnapshotJraItemId: _ruleSnapshotJraItemId,
+                ruleSnapshotJraRuleSetId: _ruleSnapshotJraRuleSetId,
+                ruleSnapshot: _ruleSnapshot,
+                ruleSnapshotSha256: _ruleSnapshotSha256,
+                triggerEventRecordId: _triggerEventRecordId,
+                triggerEventArsipId: _triggerEventArsipId,
+                triggerEventType: _triggerEventType,
+                triggerEventLabel: _triggerEventLabel,
+                triggerEventDate: _triggerEventDate,
+                triggerEventEvidenceUri: _triggerEventEvidenceUri,
+                triggerEventRevision: _triggerEventRevision,
+                triggerEventActorId: _triggerEventActorId,
+                triggerVerificationVerdict: _triggerVerificationVerdict,
+                triggerVerifierId: _triggerVerifierId,
+                latestTriggerEventRevision: _latestTriggerEventRevision,
+                appraisalDecisionRecordId: _appraisalDecisionRecordId,
+                appraisalDecisionArsipId: _appraisalDecisionArsipId,
+                appraisalDecisionStatus: _appraisalDecisionStatus,
+                appraisalDecisionOutcome: _appraisalDecisionOutcome,
+                appraisalDecisionSnapshot: _appraisalDecisionSnapshot,
+                appraisalDecisionSha256: _appraisalDecisionSha256,
+                appraisalCaseStatus: _appraisalCaseStatus,
+                hasActiveAppraisalCase: _hasActiveAppraisalCase,
+                ...archiveRow
+            } = row;
+            const canonical = {
+                ...archiveRow,
+                retentionTriggerType: evaluation.verified ? row.triggerEventType : null,
+                retentionTriggerLabel: evaluation.verified ? row.triggerEventLabel : null,
+                retentionTriggerDate: evaluation.verified ? row.triggerEventDate : null,
+                retentionTriggerEvidence: evaluation.verified
+                    ? row.triggerEventEvidenceUri
+                    : null,
+                tanggalKadaluarsa: evaluation.verified ? expiry : null,
+                hasilAkhir: evaluation.verified
+                    ? this.canonicalDispositionLabel(dispositionCode)
+                    : null,
+                retentionEvaluationStatus: evaluation.verified
+                    ? (evaluation.effectiveDispositionCode ? 'effective' : 'appraisal_required')
+                    : 'blocked',
+                retentionBlockReason: evaluation.blockReason
+                    || evaluation.dispositionBlockReason
+                    || evaluation.calculationBlockReason,
+                canonicalRetention: evaluation,
+            };
+
+            if (type === 'expiring') {
+                if (row.legalHold || !evaluation.verified
+                    || !evaluation.calculationEligible || !expiry
+                    || expiry < todayIso || expiry > futureIso) return [];
+            } else if (type === 'permanent') {
+                if (!evaluation.verified || dispositionCode !== 'permanen') return [];
+            }
+            return [canonical];
+        });
+
+        const total = canonicalRows.length;
+        const filteredData = canonicalRows.slice(offset, offset + limit);
 
         const stats = await this.getArsipStats(unitKerjaId, year, securityClassifications);
 
@@ -378,10 +514,45 @@ class ReportService {
                 total: sql<number>`count(*)::int`,
                 masuk: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'masuk')::int`,
                 keluar: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'keluar')::int`,
-                permanen: sql<number>`count(*) filter (where ${arsip.retensiInaktif} = 'Permanen')::int`,
             })
             .from(arsip)
             .where(and(...conditions));
+
+        const retentionRows = await db
+            .select({
+                id: arsip.id,
+                retentionTriggerDate: arsip.retentionTriggerDate,
+                ruleProvenanceStatus: arsip.ruleProvenanceStatus,
+                currentRuleSnapshotId: arsip.currentRuleSnapshotId,
+                currentRetentionTriggerEventId: arsip.currentRetentionTriggerEventId,
+                currentAppraisalDecisionId: arsip.currentAppraisalDecisionId,
+                jraItemId: arsip.jraItemId,
+                jraRuleSetId: arsip.jraRuleSetId,
+                retentionDecisionHash: arsip.retentionDecisionHash,
+                ruleSnapshotId: arsipRuleSnapshots.id,
+                ruleSnapshotArsipId: arsipRuleSnapshots.arsipId,
+                ruleSnapshotStatus: arsipRuleSnapshots.status,
+                ruleSnapshotJraItemId: arsipRuleSnapshots.jraItemId,
+                ruleSnapshotJraRuleSetId: arsipRuleSnapshots.jraRuleSetId,
+                ruleSnapshot: arsipRuleSnapshots.snapshot,
+                ruleSnapshotSha256: arsipRuleSnapshots.snapshotSha256,
+                ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
+            })
+            .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
+            .where(and(...conditions));
+        const permanentCount = retentionRows.filter((row) => {
+            const evaluation = this.evaluateArchiveRetention(row);
+            return evaluation.verified
+                && evaluation.effectiveDispositionCode === 'permanen';
+        }).length;
 
         // By classification type
         const byClassification = await db
@@ -407,7 +578,7 @@ class ReportService {
             .orderBy(desc(sql`count(*)`));
 
         return {
-            summary: stats[0] || { total: 0, masuk: 0, keluar: 0, permanen: 0 },
+            summary: { ...(stats[0] || { total: 0, masuk: 0, keluar: 0 }), permanen: permanentCount },
             byClassification,
             byMediaType,
         };

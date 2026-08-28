@@ -33,6 +33,7 @@ const ArchiveLending = lazy(() => import('@/pages/ArchiveLending'))
 const Dosir = lazy(() => import('@/pages/Dosir'))
 const DosirDetail = lazy(() => import('@/pages/DosirDetail'))
 const RetentionManagement = lazy(() => import('@/pages/RetentionManagement'))
+const RetentionGovernance = lazy(() => import('@/pages/RetentionGovernance'))
 const BulkUpload = lazy(() => import('@/pages/BulkUpload'))
 const DistributionInbox = lazy(() => import('@/pages/DistributionInbox'))
 const SuratMasukDetail = lazy(() => import('@/pages/SuratMasukDetail'))
@@ -177,7 +178,7 @@ const router = createBrowserRouter([
       { path: "/surat/keluar/edit/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar /></RoleGuard> },
       { path: "/distribusi", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><DistributionInbox /></RoleGuard> },
       { path: "/arsip", element: <Navigate to="/arsip/keluar" replace /> },
-      { path: "/arsip/detail/:id", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><ArsipDetail /></RoleGuard> },
+      { path: "/arsip/detail/:id", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><ArsipDetail /></RoleGuard> },
       { path: "/arsip/:tab", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><Arsip /></RoleGuard> },
       { path: "/bulk-upload", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard> },
       { path: "/laporan", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><Laporan /></RoleGuard> },
@@ -197,12 +198,13 @@ const router = createBrowserRouter([
       { path: "/users", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><UserManagement /></RoleGuard> },
       { path: "/master/klasifikasi", element: <RoleGuard allowedRoles={ADMIN_ROLES}><KlasifikasiArsip /></RoleGuard> },
       { path: "/master/jra", element: <RoleGuard allowedRoles={ADMIN_ROLES}><JadwalRetensi /></RoleGuard> },
-      { path: "/master/regulatory-rules", element: <RoleGuard allowedRoles={ADMIN_ROLES}><RegulatoryRuleSets /></RoleGuard> },
+      { path: "/master/regulatory-rules", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><RegulatoryRuleSets /></RoleGuard> },
       { path: "/storage-locations", element: <RoleGuard allowedRoles={ADMIN_ROLES}><StorageLocations /></RoleGuard> },
       { path: "/archive-lending", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArchiveLending /></RoleGuard> },
       { path: "/dosir", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><Dosir /></RoleGuard> },
       { path: "/dosir/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><DosirDetail /></RoleGuard> },
       { path: "/retention", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><RetentionManagement /></RoleGuard> },
+      { path: "/retention-governance", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><RetentionGovernance /></RoleGuard> },
       { path: "/penyusutan", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><PenyusutanArsip /></RoleGuard> },
       { path: "/arsip-vital", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipVital /></RoleGuard> },
       { path: "/arsip-terjaga", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipTerjaga /></RoleGuard> },

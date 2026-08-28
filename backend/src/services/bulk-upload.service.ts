@@ -202,6 +202,17 @@ class BulkUploadService {
                         extractedText: batchItem.metadata?.extractedText,
                         ocrStatus: 'completed',
                         ocrProcessedAt: new Date(),
+                        // OCR/imported labels are untrusted hints. The record
+                        // remains fail-closed until an archivist reconciles it
+                        // to immutable classification/JRA snapshots and records
+                        // a separately verified retention event.
+                        ruleProvenanceStatus: 'pending_jra',
+                        retentionTriggerType: null,
+                        retentionTriggerLabel: null,
+                        retentionTriggerDate: null,
+                        retentionTriggerEvidence: null,
+                        tanggalKadaluarsa: null,
+                        hasilAkhir: null,
                         createdBy: batch.createdBy
                     } as any)
                     .returning();

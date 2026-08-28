@@ -15,6 +15,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
+import { Link } from 'react-router-dom'
 
 const STATUS_CONFIG = {
     draft: { label: 'Draft', color: 'bg-muted text-foreground border-border', icon: FileText },
@@ -28,7 +29,7 @@ const JENIS_CONFIG = {
     pemindahan: { label: 'Pemindahan', icon: ArrowRightLeft, desc: 'Transfer arsip dari Unit Pengolah ke Unit Kearsipan', color: 'text-blue-600', bg: 'bg-blue-100 dark:bg-blue-500/15', border: 'border-blue-200' },
     pemusnahan: { label: 'Pemusnahan', icon: Flame, desc: 'Pemusnahan arsip yang telah melewati masa retensi (JRA: Musnah)', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-500/15', border: 'border-red-200' },
     alih_media: { label: 'Alih Media', icon: Repeat, desc: 'Alih media arsip dari bentuk fisik ke digital atau sebaliknya', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-100 dark:bg-indigo-500/15', border: 'border-indigo-200' },
-    penyerahan: { label: 'Penyerahan', icon: Archive, desc: 'Penyerahan arsip statis ke Lembaga Kearsipan Nasional', color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-500/15', border: 'border-amber-200' },
+    penyerahan: { label: 'Penyerahan (Riwayat)', icon: Archive, desc: 'Riwayat batch penyerahan lama tersedia dalam mode baca dan cetak', color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-500/15', border: 'border-amber-200' },
 }
 
 const NEXT_ACTION_LABEL = {
@@ -72,6 +73,10 @@ export default function PenyusutanArsip() {
     // Load candidates
     const loadCandidates = useCallback(async () => {
         if (!unitKerjaId) return
+        if (activeTab === 'penyerahan') {
+            setCandidates([])
+            return
+        }
         try {
             const result = await penyusutanService.getCandidates(unitKerjaId, activeTab)
             setCandidates(result.data || [])
@@ -95,12 +100,13 @@ export default function PenyusutanArsip() {
             const result = await penyusutanService.findById(id)
             setSelectedBatch(result.data)
         } catch (err) {
-            toast({ title: 'Error', description: 'Gagal memuat detail batch', variant: 'destructive' })
+            toast({ title: 'Error', description: err.response?.data?.error || 'Gagal memuat detail batch', variant: 'destructive' })
         }
     }
 
     // Create batch
     const handleCreate = async () => {
+        if (activeTab === 'penyerahan') return
         if (selectedCandidates.length === 0) {
             toast({ title: 'Peringatan', description: 'Pilih minimal 1 arsip', variant: 'destructive' })
             return
@@ -119,7 +125,7 @@ export default function PenyusutanArsip() {
             loadBatches()
             loadCandidates()
         } catch (err) {
-            toast({ title: 'Error', description: 'Gagal membuat usulan', variant: 'destructive' })
+            toast({ title: 'Error', description: err.response?.data?.error || 'Gagal membuat usulan', variant: 'destructive' })
         }
     }
 
@@ -175,6 +181,7 @@ export default function PenyusutanArsip() {
     }
 
     const JenisConf = JENIS_CONFIG[activeTab]
+    const legacyTransferReadOnly = activeTab === 'penyerahan'
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -225,6 +232,25 @@ export default function PenyusutanArsip() {
                 </div>
             </Card>
 
+            {legacyTransferReadOnly && (
+                <Card className="border-amber-300 bg-amber-50/60 dark:bg-amber-500/10">
+                    <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-start gap-3">
+                            <Archive className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
+                            <div>
+                                <p className="font-semibold text-amber-950 dark:text-amber-100">Penyerahan lama hanya untuk riwayat</p>
+                                <p className="text-sm text-amber-900/80 dark:text-amber-100/80">
+                                    Batch lama tetap dapat dibaca dan dicetak, tetapi tidak dapat dibuat, diubah, atau dilanjutkan. Gunakan manifest penyerahan permanen dengan pemeriksaan bukti dan maker-checker.
+                                </p>
+                            </div>
+                        </div>
+                        <Button asChild className="shrink-0">
+                            <Link to="/retention-governance">Buka Tata Kelola Retensi</Link>
+                        </Button>
+                    </CardContent>
+                </Card>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[600px]">
                 {/* Left column: Batches list */}
                 <Card className="lg:col-span-4 h-full flex flex-col border-border/60 shadow-sm overflow-hidden">
@@ -235,9 +261,11 @@ export default function PenyusutanArsip() {
                                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { loadBatches(); loadCandidates(); }}>
                                     <RefreshCw className="h-4 w-4" />
                                 </Button>
-                                <Button size="icon" className="h-8 w-8" onClick={() => setShowCreate(true)}>
-                                    <Plus className="h-4 w-4" />
-                                </Button>
+                                {!legacyTransferReadOnly && (
+                                    <Button size="icon" className="h-8 w-8" onClick={() => setShowCreate(true)}>
+                                        <Plus className="h-4 w-4" />
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     </CardHeader>
@@ -259,11 +287,13 @@ export default function PenyusutanArsip() {
                                 <div className="p-4 bg-muted/50 rounded-full mb-4">
                                     <FileText className="h-8 w-8 text-muted-foreground/50" />
                                 </div>
-                                <h3 className="font-medium mb-1">Belum ada usulan</h3>
-                                <p className="text-sm text-muted-foreground mb-4">Mulai dengan membuat usulan baru</p>
-                                <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
-                                    <Plus className="mr-1.5 h-3.5 w-3.5" /> Buat Usulan
-                                </Button>
+                                <h3 className="font-medium mb-1">{legacyTransferReadOnly ? 'Belum ada riwayat penyerahan' : 'Belum ada usulan'}</h3>
+                                <p className="text-sm text-muted-foreground mb-4">{legacyTransferReadOnly ? 'Manifest baru dikelola melalui Tata Kelola Retensi.' : 'Mulai dengan membuat usulan baru'}</p>
+                                {!legacyTransferReadOnly && (
+                                    <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
+                                        <Plus className="mr-1.5 h-3.5 w-3.5" /> Buat Usulan
+                                    </Button>
+                                )}
                             </div>
                         ) : (
                             <ScrollArea className="h-full">
@@ -305,7 +335,7 @@ export default function PenyusutanArsip() {
 
                 {/* Right column: Main Content Area */}
                 <div className="lg:col-span-8 h-full flex flex-col gap-6 overflow-hidden">
-                    {showCreate ? (
+                    {showCreate && !legacyTransferReadOnly ? (
                         <Card className="h-full flex flex-col border-emerald-200 bg-emerald-50/10 shadow-sm overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
                             <CardHeader className="pb-3 border-b bg-emerald-50/50">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -434,9 +464,21 @@ export default function PenyusutanArsip() {
                                                     <Download className="mr-1.5 h-3 w-3" /> Daftar Musnah
                                                 </Button>
                                             )}
-                                            <Button variant="outline" size="sm" onClick={() => handlePrint('berita-acara', selectedBatch.id)} className="h-8 text-xs" disabled={selectedBatch.status === 'draft'}>
-                                                <Printer className="mr-1.5 h-3 w-3" /> Berita Acara
-                                            </Button>
+                                            {activeTab === 'penyerahan' && (
+                                                <>
+                                                    <Button variant="outline" size="sm" onClick={() => handlePrint('usul-serah', selectedBatch.id)} className="h-8 text-xs">
+                                                        <Download className="mr-1.5 h-3 w-3" /> Daftar Usul Lama
+                                                    </Button>
+                                                    <Button variant="outline" size="sm" onClick={() => handlePrint('berita-acara-penyerahan', selectedBatch.id)} className="h-8 text-xs">
+                                                        <Printer className="mr-1.5 h-3 w-3" /> Berita Acara Lama
+                                                    </Button>
+                                                </>
+                                            )}
+                                            {activeTab !== 'penyerahan' && (
+                                                <Button variant="outline" size="sm" onClick={() => handlePrint('berita-acara', selectedBatch.id)} className="h-8 text-xs" disabled={selectedBatch.status === 'draft'}>
+                                                    <Printer className="mr-1.5 h-3 w-3" /> Berita Acara
+                                                </Button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -474,14 +516,14 @@ export default function PenyusutanArsip() {
                             </CardContent>
 
                             <CardFooter className="border-t bg-muted/10 p-4 flex justify-between gap-4">
-                                {selectedBatch.status === 'draft' && (
+                                {!legacyTransferReadOnly && selectedBatch.status === 'draft' && (
                                     <Button variant="destructive" size="sm" onClick={() => handleDelete(selectedBatch.id)}>
                                         <Trash2 className="mr-1.5 h-4 w-4" /> Hapus Draft
                                     </Button>
                                 )}
 
                                 <div className="flex gap-2 ml-auto">
-                                    {NEXT_ACTION_LABEL[selectedBatch.status] && (
+                                    {!legacyTransferReadOnly && NEXT_ACTION_LABEL[selectedBatch.status] && (
                                         <Button onClick={() => handleAdvanceStatus(selectedBatch.id)} className="bg-primary hover:bg-primary/90">
                                             <CheckCircle className="mr-1.5 h-4 w-4" />
                                             {NEXT_ACTION_LABEL[selectedBatch.status]}
@@ -496,7 +538,7 @@ export default function PenyusutanArsip() {
                                 <Eye className="h-10 w-10 text-primary/30" />
                             </div>
                             <h3 className="text-lg font-semibold text-foreground">Detail Usulan</h3>
-                            <p className="text-muted-foreground max-w-xs mt-2">Pilih salah satu usulan dari daftar di sebelah kiri untuk melihat detail arsip dan melakukan tindakan.</p>
+                            <p className="text-muted-foreground max-w-xs mt-2">{legacyTransferReadOnly ? 'Pilih riwayat penyerahan untuk membaca detail dan mencetak dokumen lama.' : 'Pilih salah satu usulan dari daftar di sebelah kiri untuk melihat detail arsip dan melakukan tindakan.'}</p>
                         </Card>
                     )}
                 </div>

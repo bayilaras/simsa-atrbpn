@@ -3,6 +3,9 @@ import { z } from 'zod';
 export const regulatoryInstrumentTypeSchema = z.enum(['klasifikasi', 'jra']);
 export const regulatoryRuleSetStatusSchema = z.enum([
     'draft',
+    'submitted',
+    'reviewed',
+    'approved',
     'active',
     'superseded',
     'withdrawn',
@@ -43,11 +46,76 @@ export const cloneActiveRuleSetSchema = z.object({
     sourceDocumentName: optionalNullableText(1000),
     sourceDocumentSha256: sha256Schema.nullable().optional(),
     sourceUrl: z.string().trim().url().max(4000).nullable().optional(),
+    reuseVerifiedSource: z.boolean().optional(),
     changeSummary: optionalNullableText(4000),
     metadata: z.record(z.string(), z.unknown()).optional(),
-}).strict();
+}).strict().superRefine((value, context) => {
+    if (!value.reuseVerifiedSource) return;
+
+    // Reuse is an explicit all-or-nothing provenance decision.  Mixing copied
+    // verification evidence with caller-supplied source metadata could make a
+    // different PDF appear to have inherited the predecessor's verification.
+    for (const field of ['sourceDocumentName', 'sourceDocumentSha256', 'sourceUrl'] as const) {
+        if (value[field] !== undefined) {
+            context.addIssue({
+                code: 'custom',
+                path: [field],
+                message: 'Metadata sumber tidak boleh diubah ketika memakai ulang PDF terverifikasi.',
+            });
+        }
+    }
+});
 
 export const emptyRegulatoryRuleSetActionSchema = z.object({}).strict().default({});
+
+export const verifyRegulatorySourceBlobSchema = z.object({
+    blobUrl: z.string().trim().url().max(4000),
+    originalFileName: z.string()
+        .trim()
+        .min(1)
+        .max(1000)
+        .refine((value) => value.toLowerCase().endsWith('.pdf'), 'Nama berkas sumber harus berekstensi .pdf')
+        .refine((value) => !/[\\/\u0000-\u001f\u007f]/.test(value), 'Nama berkas sumber tidak valid'),
+}).strict();
+
+export const regulatoryWorkflowActionSchema = z.object({
+    note: z.string().trim().min(10, 'Catatan wajib berisi sedikitnya 10 karakter').max(4000),
+}).strict();
+
+export const regulatoryCompletenessManifestSchema = z.object({
+    expectedItemCount: z.coerce.number().int().positive(),
+    expectedSelectableCount: z.coerce.number().int().positive(),
+    sourcePageCount: z.coerce.number().int().positive(),
+    coveredPageRanges: z.array(z.object({
+        start: z.coerce.number().int().positive(),
+        end: z.coerce.number().int().positive(),
+    }).strict().refine(({ start, end }) => end >= start, {
+        message: 'Halaman akhir tidak boleh lebih kecil dari halaman awal',
+    })).min(1).max(100),
+    verificationStatement: z.string().trim().min(20).max(4000),
+}).strict().superRefine((value, context) => {
+    if (value.expectedSelectableCount > value.expectedItemCount) {
+        context.addIssue({
+            code: 'custom',
+            path: ['expectedSelectableCount'],
+            message: 'Jumlah butir selectable tidak boleh melebihi jumlah seluruh butir',
+        });
+    }
+    for (const [index, range] of value.coveredPageRanges.entries()) {
+        if (range.end > value.sourcePageCount) {
+            context.addIssue({
+                code: 'custom',
+                path: ['coveredPageRanges', index, 'end'],
+                message: 'Rentang cakupan tidak boleh melampaui jumlah halaman dokumen sumber',
+            });
+        }
+    }
+});
+
+export const listRegulatoryEventsQuerySchema = z.object({
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(200).default(50),
+}).strict();
 
 const nullableText = (maximum: number) => z.string().trim().max(maximum).nullable().optional();
 const commonImportedRuleFields = {
@@ -95,3 +163,6 @@ export type RegulatoryRuleSetStatus = z.infer<typeof regulatoryRuleSetStatusSche
 export type ListRegulatoryRuleSetsQuery = z.infer<typeof listRegulatoryRuleSetsQuerySchema>;
 export type CloneActiveRuleSetInput = z.infer<typeof cloneActiveRuleSetSchema>;
 export type ImportRegulatoryRuleItemsInput = z.infer<typeof importRegulatoryRuleItemsSchema>;
+export type RegulatoryCompletenessManifestInput = z.infer<typeof regulatoryCompletenessManifestSchema>;
+export type RegulatoryWorkflowActionInput = z.infer<typeof regulatoryWorkflowActionSchema>;
+export type VerifyRegulatorySourceBlobInput = z.infer<typeof verifyRegulatorySourceBlobSchema>;

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { notificationService } from '../services/notification.service'
+import { API_BASE_URL } from '../lib/api-url'
 
 // Use the same base URL pattern as other services
-const API_BASE = import.meta.env.VITE_API_URL || ''
+const API_BASE = API_BASE_URL
 
 /**
  * Hook for fetching notifications from the API

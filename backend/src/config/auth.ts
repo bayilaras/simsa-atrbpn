@@ -6,25 +6,30 @@ import { env } from './env';
 import { getTrustedOrigins, isTrustedOrigin } from './trusted-origins';
 import * as schema from '../db/schema';
 
-// Determine the base URL for Better Auth:
-// 1. Use BETTER_AUTH_URL if explicitly set (and not localhost in production)
-// 2. Fall back to VERCEL_URL (auto-set by Vercel) in production
-// 3. Default to localhost for local development
+// OAuth is served through the public frontend origin in production. Falling
+// back to the backend's Vercel hostname would move the state cookie to a
+// different origin and make the Google callback fail, so production must be
+// configured explicitly and fails closed when it is not.
 function resolveBaseURL(): string {
     const configured = env.BETTER_AUTH_URL;
-    if (configured && !configured.includes('localhost')) {
-        return configured;
+    if (env.NODE_ENV === 'production') {
+        if (!configured || configured.includes('localhost')) {
+            throw new Error('BETTER_AUTH_URL must be the public frontend origin in production.');
+        }
+        let authOrigin: string;
+        let frontendOrigin: string;
+        try {
+            authOrigin = new URL(configured).origin;
+            frontendOrigin = new URL(env.FRONTEND_URL).origin;
+        } catch {
+            throw new Error('BETTER_AUTH_URL and FRONTEND_URL must be valid absolute URLs.');
+        }
+        if (authOrigin !== frontendOrigin) {
+            throw new Error('BETTER_AUTH_URL must match the public FRONTEND_URL origin in production.');
+        }
+        return authOrigin;
     }
-    // In production, try Vercel's auto-set URL
-    if (env.NODE_ENV === 'production' && process.env.VERCEL_URL) {
-        const url = `https://${process.env.VERCEL_URL}`;
-        console.warn(`[Auth] BETTER_AUTH_URL not set for production. Using VERCEL_URL: ${url}`);
-        return url;
-    }
-    if (env.NODE_ENV === 'production' && configured?.includes('localhost')) {
-        console.error('[Auth] CRITICAL: BETTER_AUTH_URL points to localhost in production! Google OAuth will fail.');
-    }
-    return configured || 'http://localhost:3001';
+    return (configured || 'http://localhost:3001').replace(/\/+$/, '');
 }
 
 // This origin guard is an additional boundary around Better Auth's built-in
@@ -67,6 +72,26 @@ export const auth = betterAuth({
         google: {
             clientId: env.GOOGLE_CLIENT_ID,
             clientSecret: env.GOOGLE_CLIENT_SECRET,
+            // SIMSA is an internal records system: Google authenticates an
+            // identity, but it must never provision application access. An
+            // administrator creates the user first; Better Auth may then link
+            // the verified Google identity to that existing account.
+            disableImplicitSignUp: true,
+            // `requestSignUp: true` can explicitly bypass the implicit-only
+            // switch in Better Auth. Disable provider sign-up entirely so the
+            // client cannot turn an OAuth login into unmanaged provisioning.
+            disableSignUp: true,
+        },
+    },
+    account: {
+        accountLinking: {
+            enabled: true,
+            // A passwordless account is provisioned by a SIMSA administrator
+            // with an unverified local email. Permit linking only when the
+            // provider itself returns the same verified email; unknown emails
+            // still cannot sign up because disableImplicitSignUp is enabled.
+            requireLocalEmailVerified: false,
+            allowDifferentEmails: false,
         },
     },
     trustedOrigins: getTrustedOrigins(),

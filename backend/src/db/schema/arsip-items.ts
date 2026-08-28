@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, date, integer, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, date, integer, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { arsip } from './arsip';
 import { relations } from 'drizzle-orm';
 
@@ -15,7 +15,11 @@ export const arsipItems = pgTable('arsip_items', {
     lokasiLaci: varchar('lokasi_laci', { length: 50 }),
     lokasiFolder: varchar('lokasi_folder', { length: 50 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => [
+    // Allows child retention decisions to prove that the selected component
+    // belongs to the same archive as its parent appraisal decision.
+    uniqueIndex('arsip_items_id_arsip_unique').on(table.id, table.arsipId),
+]);
 
 export const arsipItemsRelations = relations(arsipItems, ({ one }) => ({
     arsip: one(arsip, {

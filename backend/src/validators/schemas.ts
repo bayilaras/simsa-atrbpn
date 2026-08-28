@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE } from '../utils/permanent-transfer-policy';
 
 // Common schemas
 export const uuidSchema = z.string().uuid('Invalid UUID format');
@@ -10,16 +11,6 @@ export const dateSchema = z.string()
             && parsed.toISOString().slice(0, 10) === value;
     }, 'Tanggal tidak valid');
 
-function jakartaToday(): string {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Jakarta',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    }).formatToParts(new Date());
-    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    return `${values.year}-${values.month}-${values.day}`;
-}
 export const timestampSchema = z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/));
 
 export type SuratBlobFolder = 'surat-masuk' | 'surat-keluar';
@@ -162,6 +153,7 @@ const retentionMetadataFields = {
     jraUraian: z.string().max(2000).optional(),
     retensiAktif: z.string().max(50).optional(),
     retensiInaktif: z.string().max(50).optional(),
+    tanggalKadaluarsa: dateSchema.optional(),
     hasilAkhir: z.enum(['Musnah', 'Permanen', 'Dinilai Kembali']).optional(),
     retentionTriggerType: retentionTriggerTypeSchema.optional(),
     retentionTriggerLabel: z.string().max(255).optional(),
@@ -185,9 +177,9 @@ const archiveItemRegistrationSchema = z.object({
 
 /**
  * Strict registration command used by both incoming and outgoing letters.
- * Authoritative retention text is accepted only for compatibility with the
- * current UI and is ignored by the service; the canonical value is always
- * loaded server-side from klasifikasiItemId/jraItemId (or their active codes).
+ * Canonical classification/JRA values are always loaded server-side from the
+ * selected item ids (or their active codes). Trigger, expiry, and final-outcome
+ * fields are present only to return an explicit workflow validation error.
  */
 export const archiveRegistrationSchema = z.object({
     nomorBerkas: z.string().trim().min(1, 'Nomor berkas wajib diisi').max(100),
@@ -219,6 +211,7 @@ export const archiveRegistrationSchema = z.object({
     jraUraian: z.string().max(2000).optional(),
     retensiAktif: z.string().max(150).optional(),
     retensiInaktif: z.string().max(150).optional(),
+    tanggalKadaluarsa: dateSchema.optional(),
     hasilAkhir: z.string().max(255).optional(),
     jraVersion: z.string().max(100).optional(),
     jraReference: z.string().max(2000).optional(),
@@ -229,7 +222,7 @@ export const archiveRegistrationSchema = z.object({
     if (!data.jraItemId && !data.jraKode) {
         ctx.addIssue({ code: 'custom', path: ['jraItemId'], message: 'Pilih Jadwal Retensi Arsip' });
     }
-    validateRetentionTrigger(data, ctx);
+    rejectDirectRetentionTrigger(data, ctx);
 });
 
 export const reconcileArchiveRulesSchema = z.object({
@@ -238,34 +231,30 @@ export const reconcileArchiveRulesSchema = z.object({
     reason: z.string().trim().min(10, 'Alasan rekonsiliasi minimal 10 karakter').max(2000),
 }).strict();
 
-function validateRetentionTrigger(
+function rejectDirectRetentionTrigger(
     data: Record<string, unknown>,
     ctx: z.RefinementCtx,
 ) {
-    // A trigger date can only become legally actionable when its event and evidence
-    // are recorded. Existing integrations may omit all trigger fields; those rows are
-    // accepted for compatibility but remain safely outside every disposal candidate list.
-    if (!data.retentionTriggerDate) return;
-
-    if (typeof data.retentionTriggerDate === 'string'
-        && data.retentionTriggerDate > jakartaToday()) {
-        ctx.addIssue({
-            code: 'custom',
-            path: ['retentionTriggerDate'],
-            message: 'Tanggal pemicu tidak boleh di masa depan',
-        });
-    }
-
-    const requiredFields = [
-        ['retentionTriggerType', 'Jenis pemicu retensi wajib diisi'],
-        ['retentionTriggerLabel', 'Label pemicu retensi wajib diisi'],
-        ['retentionTriggerEvidence', 'Bukti pemicu retensi wajib diisi'],
+    const fields = [
+        'retentionTriggerType',
+        'retentionTriggerLabel',
+        'retentionTriggerDate',
+        'retentionTriggerEvidence',
+        'tanggalKadaluarsa',
+        'hasilAkhir',
     ] as const;
-
-    for (const [field, message] of requiredFields) {
+    for (const field of fields) {
         const value = data[field];
-        if (typeof value !== 'string' || value.trim().length === 0) {
-            ctx.addIssue({ code: 'custom', path: [field], message });
+        if (value !== undefined && value !== null && value !== '') {
+            ctx.addIssue({
+                code: 'custom',
+                path: [field],
+                message: field === 'hasilAkhir'
+                    ? 'Hasil akhir hanya boleh berasal dari snapshot JRA atau keputusan appraisal efektif'
+                    : field === 'tanggalKadaluarsa'
+                        ? 'Tanggal kedaluwarsa dihitung sistem dari snapshot JRA dan peristiwa retensi terverifikasi'
+                        : 'Catat pemicu setelah registrasi melalui workflow peristiwa retensi dan verifikasi independen',
+            });
         }
     }
 }
@@ -286,12 +275,12 @@ const baseArsipSchema = z.object({
     ...retentionMetadataFields,
 });
 
-export const createArsipSchema = baseArsipSchema.superRefine(validateRetentionTrigger);
+export const createArsipSchema = baseArsipSchema.superRefine(rejectDirectRetentionTrigger);
 
 export const updateArsipSchema = baseArsipSchema
     .partial()
     .omit({ unitKerjaId: true })
-    .superRefine(validateRetentionTrigger);
+    .superRefine(rejectDirectRetentionTrigger);
 
 export const queryArsipSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -461,6 +450,14 @@ export const createPenyusutanSchema = z.object({
     jenisPenyusutan: z.enum(['pemindahan', 'pemusnahan', 'penyerahan', 'alih_media']),
     arsipIds: z.array(uuidSchema).min(1, 'Minimal satu arsip harus dipilih'),
     keterangan: z.string().max(2000).optional(),
+}).superRefine((value, ctx) => {
+    if (value.jenisPenyusutan === 'penyerahan') {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['jenisPenyusutan'],
+            message: LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE,
+        });
+    }
 });
 
 export const updatePenyusutanStatusSchema = z.object({

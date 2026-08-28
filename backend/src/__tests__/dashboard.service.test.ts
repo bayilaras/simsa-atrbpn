@@ -23,11 +23,43 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 
+const { arsipService } = await import('../services/arsip.service');
+const canonicalEvaluationSpy = vi.spyOn(arsipService, 'evaluateCanonicalRetention');
 const { dashboardService } = await import('../services/dashboard.service');
 
 describe('DashboardService', () => {
     beforeEach(() => {
         resultQueue.length = 0;
+        canonicalEvaluationSpy.mockImplementation((row: any) => {
+            const isManual = row.retensiAktif === null && row.retensiInaktif === null;
+            const hasCachedExpiryForTest = Boolean(row.tanggalKadaluarsa);
+            const tenDaysFromNow = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000)
+                .toISOString().slice(0, 10);
+            const expiry = isManual ? null
+                : hasCachedExpiryForTest ? tenDaysFromNow
+                    : row.retentionTriggerDate?.startsWith('2000') ? '2002-01-01' : '2092-01-01';
+            const status = isManual ? 'aktif'
+                : row.retentionTriggerDate?.startsWith('2000') ? 'kadaluarsa' : 'aktif';
+            return {
+                verified: true,
+                blockReason: null,
+                calculationEligible: !isManual,
+                calculationBlockReason: isManual ? 'memerlukan penilaian manusia' : null,
+                normalizedRetention: {
+                    activeMonths: isManual ? null : 12,
+                    inactiveMonths: isManual ? null : 12,
+                    calculationMode: isManual ? 'manual' : 'duration',
+                    dispositionCode: isManual ? 'manual_review' : 'musnah',
+                },
+                dates: {
+                    tanggalAktifBerakhir: expiry,
+                    tanggalInaktifBerakhir: expiry,
+                    tanggalKadaluarsa: expiry,
+                },
+                effectiveDispositionCode: isManual ? null : 'musnah',
+                status,
+            } as any;
+        });
     });
 
     describe('getStats', () => {
@@ -176,11 +208,11 @@ describe('DashboardService', () => {
     describe('getWidgetData retention lifecycle', () => {
         it('uses explicit triggers and excludes held/missing-trigger records from lifecycle statuses', async () => {
             enqueue([
-                { retentionTriggerDate: '2090-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false },
-                { retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false },
-                { retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: true },
-                { retentionTriggerDate: null, retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false },
-                { retentionTriggerDate: '2026-01-01', retensiAktif: null, retensiInaktif: null, legalHold: false },
+                { currentRetentionTriggerEventId: 'event-1', retentionTriggerDate: '2090-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false, ruleProvenanceStatus: 'verified' },
+                { currentRetentionTriggerEventId: 'event-2', retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false, ruleProvenanceStatus: 'verified' },
+                { currentRetentionTriggerEventId: 'event-3', retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: true, ruleProvenanceStatus: 'verified' },
+                { retentionTriggerDate: null, retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false, ruleProvenanceStatus: 'verified' },
+                { currentRetentionTriggerEventId: 'event-4', retentionTriggerDate: '2026-01-01', retensiAktif: null, retensiInaktif: null, legalHold: false, ruleProvenanceStatus: 'verified' },
             ]); // lifecycle data
             enqueue([]); // storage
             enqueue([{ count: 0 }]); // lending borrowed
@@ -200,8 +232,10 @@ describe('DashboardService', () => {
                 belumDitentukan: 1,
                 held: 1,
                 missingTrigger: 1,
+                manualReview: 1,
                 total: 5,
             });
+            expect(canonicalEvaluationSpy).toHaveBeenCalled();
         });
     });
 });

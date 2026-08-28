@@ -35,7 +35,8 @@ SIMSA merupakan aplikasi internal/substantif Ditjen PTPP, bukan pengganti SRIKAN
 - [ ] Dokumentasikan penerimaan risiko sementara untuk advisory `image-size` pada pipeline build Docusaurus (belum ada patch upstream); hanya proses image yang berasal dari repositori tepercaya dan jangan menjalankan build pada input tidak tepercaya.
 - [ ] Tinjau empat advisory moderat `esbuild` pada rantai tooling `drizzle-kit`/`tsx`; jangan mengekspos development server, isolasi runner build, dan pantau perbaikan upstream. Jangan memakai `npm audit fix --force` yang menurunkan `drizzle-kit` secara breaking tanpa pengujian migrasi penuh.
 - [ ] Gunakan custom same-site domain, misalnya frontend dan API berada di subdomain dari domain institusi yang sama.
-- [ ] Set `NODE_ENV=production`, `BETTER_AUTH_URL`, `FRONTEND_URL`, `ADDITIONAL_TRUSTED_ORIGINS`, `COOKIE_DOMAIN`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, OAuth, dan token blob melalui secret manager; jangan commit nilainya.
+- [ ] Set `NODE_ENV=production`, `BETTER_AUTH_URL`, `FRONTEND_URL`, `ADDITIONAL_TRUSTED_ORIGINS`, `COOKIE_DOMAIN`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, OAuth, dan `BLOB_READ_WRITE_TOKEN` melalui secret manager; jangan commit nilainya dan jangan pernah mengekspos token Blob sebagai variabel `VITE_*`.
+- [ ] Hubungkan private Vercel Blob store ke backend production. Uji token unggah PDF regulasi yang terikat `ruleSetId`, batas 50 MiB, random suffix, larangan overwrite/public locator, serta server refetch sebelum bukti sumber diterima.
 - [ ] Untuk profil inti, tetapkan backend `APP_PROFILE=internal` dan `SRIKANDI_ENABLED=false`, lalu build frontend dengan `VITE_APP_PROFILE=internal` dan `VITE_FEATURE_SRIKANDI=false`.
 - [ ] Pastikan OAuth redirect URI, cookie `Secure`/`HttpOnly`/`SameSite`, CORS allow-list, CSRF, HSTS, CSP, rate limit, dan idle/session expiry diuji dari browser sasaran.
 - [ ] Pastikan pendaftaran publik mati, role tidak dapat diisi klien, provisioning hanya oleh admin berwenang, dan perubahan role/unit/status mencabut sesi.
@@ -50,7 +51,7 @@ SIMSA merupakan aplikasi internal/substantif Ditjen PTPP, bukan pengganti SRIKAN
 - [ ] Catat waktu cut-off dan batasi write selama langkah yang memerlukan konsistensi.
 - [ ] Verifikasi bahwa backup mencakup database **dan bitstream**; backup database saja tidak cukup.
 
-## 5. Migrasi database 0010 sampai 0016
+## 5. Migrasi database 0010 sampai 0020
 
 Migrasi yang harus berurutan:
 
@@ -61,6 +62,10 @@ Migrasi yang harus berurutan:
 5. `backend/src/db/migrations/0014_purpose_bound_record_access.sql`
 6. `backend/src/db/migrations/0015_better_auth_account_issuer.sql`
 7. `backend/src/db/migrations/0016_versioned_regulatory_rules.sql`
+8. `backend/src/db/migrations/0017_retention_appraisal_governance.sql`
+9. `backend/src/db/migrations/0018_regulatory_maker_checker.sql`
+10. `backend/src/db/migrations/0019_authoritative_retention_decisions.sql`
+11. `backend/src/db/migrations/0020_permanent_transfer_lifecycle.sql`
 
 `0010` menambahkan pemicu retensi berbasis peristiwa, bukti/versi/rujukan JRA, legal hold, constraint, dan indeks kandidat. Migrasi ini sengaja **tidak** mengisi pemicu dari `tanggal_arsip`; rekod legacy tetap tidak layak menjadi kandidat penyusutan sampai arsiparis memasukkan bukti peristiwa yang sah.
 
@@ -76,9 +81,13 @@ Migrasi yang harus berurutan:
 
 `0016` menambahkan edisi klasifikasi/JRA yang berversi, item aturan terikat edisi, snapshot keputusan arsip append-only, provenance aturan, serta perlindungan database terhadap perubahan item versi terbit. Migrasi sengaja menandai arsip lama `legacy_unverified`; jangan mengubahnya menjadi `verified` secara massal tanpa rekonsiliasi arsiparis.
 
+`0018` menambahkan workflow maker-checker, bukti PDF private Blob terverifikasi server, manifest kelengkapan/cakupan halaman, diff dan analisis dampak, serta rantai audit append-only untuk perubahan master klasifikasi/JRA. Locator private hanya disimpan internal dan wajib ada untuk edisi baru sebelum aktivasi.
+
+`0020` menambahkan lifecycle penyerahan arsip permanen, reservasi satu proses aktif per arsip, pembatalan/riwayat manifest append-only, serta pengikatan bukti serah pada lampiran terverifikasi.
+
 Langkah eksekusi:
 
-- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan ketujuh file SQL dan pastikan tidak ada migration ID ganda.
+- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan kesebelas file SQL dan pastikan tidak ada migration ID ganda.
 - [ ] Uji seluruh migrasi pada salinan production yang telah dianonimkan; catat durasi, lock, ukuran indeks, dan error.
 - [ ] Jalankan preflight duplikasi `(arsip_id, versi_dokumen)`. Migrasi `0011` sengaja berhenti bila data legacy ambigu; rekonsiliasi provenans bersama arsiparis dan jangan melakukan auto-renumber.
 - [ ] Jalankan preflight hubungan tunjuk silang aktif duplikat. Migrasi `0012` juga sengaja berhenti sampai duplikasi direkonsiliasi dan keputusannya dicatat.
@@ -95,16 +104,17 @@ Langkah eksekusi:
 
 1. Aktifkan maintenance window atau kontrol write yang disetujui.
 2. Ambil backup dan bukti restore.
-3. Jalankan migrasi sampai `0016` dengan `npm run db:migrate`.
+3. Jalankan migrasi sampai `0020` dengan `npm run db:migrate`.
 4. Jalankan `npm run seed:all`, lalu verifikasi jumlah, hash sumber, status versi aktif, dan snapshot legacy.
 5. Deploy backend baru dan lakukan health check internal.
 6. Deploy frontend baru; invalidasi asset cache, tetapi jangan cache respons `/api/*`.
 7. Smoke test login Google/email, pemilih klasifikasi/JRA aktif, registrasi arsip, rekonsiliasi arsip legacy, legal hold, dan penolakan penyusutan tanpa provenance.
 8. Verifikasi provisioning super admin, role, unit kerja, isolasi lintas unit, dan sesi yang dicabut setelah perubahan otorisasi.
 9. Verifikasi file baru tersimpan private dan hanya dapat diambil melalui `/api/files/...` dengan audit serta header `no-store`.
-10. Migrasikan blob publik legacy sesuai Bagian 7.
-11. **Kondisional — SRIKANDI:** deploy worker persisten dan aktifkan connector hanya setelah uji sandbox serta rekonsiliasi lulus; jika tidak diwajibkan, pertahankan outbound nonaktif.
-12. Buka pilot terbatas; pantau error, audit, AV, fixity, storage, dan database, serta queue integrasi bila diaktifkan.
+10. Unggah PDF sumber regulasi berukuran di atas 4 MiB melalui direct private Blob, selesaikan verifikasi server, dan pastikan respons daftar/detail aturan tidak memuat locator Blob.
+11. Migrasikan blob publik legacy sesuai Bagian 7.
+12. **Kondisional — SRIKANDI:** deploy worker persisten dan aktifkan connector hanya setelah uji sandbox serta rekonsiliasi lulus; jika tidak diwajibkan, pertahankan outbound nonaktif.
+13. Buka pilot terbatas; pantau error, audit, AV, fixity, storage, dan database, serta queue integrasi bila diaktifkan.
 
 ## 7. Migrasi blob publik legacy
 
@@ -185,6 +195,7 @@ Lewati aktivasi pada bagian ini bila fitur tidak diwajibkan. Kontrol gagal-tertu
 - [ ] Arsip tanpa bukti pemicu atau dengan legal hold tidak menjadi kandidat penyusutan.
 - [ ] Arsip `legacy_unverified` tidak menjadi kandidat penyusutan; rekonsiliasi menambah revisi snapshot dan tidak menimpa bukti lama.
 - [ ] Versi aturan aktif tidak dapat diedit; aktivasi draft menutup versi sebelumnya dan registrasi baru memakai tepat versi aktif terbaru.
+- [ ] PDF sumber edisi baru tersimpan pada private Blob di namespace draft, SHA-256/jumlah halaman berasal dari server refetch, locator tidak bocor melalui API, dan objek hilang/berukuran salah ditolak.
 - [ ] Kode klasifikasi cetak yang sama tetap dibedakan berdasarkan ID/identitas baris sumber.
 - [ ] Pelaku yang sama tidak dapat melewati separation-of-duties.
 - [ ] Logout, session expiry, dan perubahan role membersihkan data lokal serta mencabut sesi.
@@ -193,7 +204,7 @@ Lewati aktivasi pada bagian ini bila fitur tidak diwajibkan. Kontrol gagal-tertu
 
 ## 14. Strategi rollback
 
-Migrasi `0010` sampai `0016` bersifat aditif, tetapi rollback dengan `DROP COLUMN`/`DROP TABLE` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, keputusan akses, audit integrasi, versi aturan, snapshot keputusan, atau pelaku workflow. Karena itu:
+Migrasi `0010` sampai `0020` pada umumnya bersifat aditif, tetapi rollback dengan `DROP COLUMN`/`DROP TABLE` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, keputusan akses, audit integrasi, versi aturan, appraisal/penyusutan, penyerahan permanen, snapshot keputusan, atau pelaku workflow. Karena itu:
 
 1. **Sebelum cutover dan belum ada write baru:** batalkan deploy aplikasi; bila migrasi gagal, pulihkan database ke branch/snapshot pra-migrasi dan verifikasi checksum/count.
 2. **Sesudah cutover tetapi belum ada data bermakna:** arahkan trafik ke maintenance, pulihkan snapshot ke environment baru, validasi, lalu switch connection secara terkontrol.

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import appConfig, { resolveRuntimeFeatures } from '@/lib/app-config'
+import { API_BASE_URL } from '@/lib/api-url'
 import { AppConfigContext, DISABLED_FEATURES } from './app-config-context'
 
 export function AppConfigProvider({ children }) {
@@ -15,7 +16,7 @@ export function AppConfigProvider({ children }) {
         const controller = new AbortController()
         let active = true
         const timeoutId = window.setTimeout(() => controller.abort(), 5000)
-        const apiBaseUrl = import.meta.env.VITE_API_URL || ''
+        const apiBaseUrl = API_BASE_URL
 
         fetch(`${apiBaseUrl}/api/health`, {
             credentials: 'include',

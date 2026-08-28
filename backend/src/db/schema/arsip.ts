@@ -60,10 +60,14 @@ export const arsip = pgTable('arsip', {
     retentionTriggerLabel: varchar('retention_trigger_label', { length: 255 }),
     retentionTriggerDate: date('retention_trigger_date'),
     retentionTriggerEvidence: text('retention_trigger_evidence'),
+    // Circular governance references are enforced by composite foreign keys in
+    // migration 0019. Keeping the UUID columns here avoids a schema import cycle.
+    currentRetentionTriggerEventId: uuid('current_retention_trigger_event_id'),
     jraVersion: varchar('jra_version', { length: 100 }),
     jraReference: text('jra_reference'),
     retentionDecisionHash: varchar('retention_decision_hash', { length: 64 }),
     currentRuleSnapshotId: uuid('current_rule_snapshot_id'),
+    currentAppraisalDecisionId: uuid('current_appraisal_decision_id'),
     ruleProvenanceStatus: varchar('rule_provenance_status', { length: 30 })
         .default('legacy_unverified').notNull(),
     // Original Surat Info (denormalized for performance)

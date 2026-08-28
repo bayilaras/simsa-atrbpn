@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, FolderTree, Book, Building2, Folder, GitBranch, LockKeyhole } from 'lucide-react'
 import { api } from '@/services/api'
@@ -106,6 +107,14 @@ function filterKlasifikasiTree(nodes, query) {
     }, [])
 }
 
+function flattenTree(nodes, result = []) {
+    for (const node of nodes || []) {
+        result.push(node)
+        flattenTree(node.children, result)
+    }
+    return result
+}
+
 // Main Page Component
 export default function KlasifikasiArsip() {
     const { user } = useAuth()
@@ -113,6 +122,7 @@ export default function KlasifikasiArsip() {
     const ruleSetId = searchParams.get('ruleSetId') || ''
     const requestedDraftMode = searchParams.get('mode') === 'draft'
     const [activeTab, setActiveTab] = useState('fasilitatif')
+    const [scopeFilter, setScopeFilter] = useState('kementerian')
     const [searchQuery, setSearchQuery] = useState('')
     const [treeData, setTreeData] = useState([])
     const [loading, setLoading] = useState(true)
@@ -123,17 +133,23 @@ export default function KlasifikasiArsip() {
     const [currentItem, setCurrentItem] = useState(null)
     const [formData, setFormData] = useState({
         kode: '',
+        sourceCode: '',
+        sourceRecordKey: '',
         jenis: '',
         keterangan: '',
         parentKode: '',
+        parentItemId: '__root__',
         kategori: '',
+        organizationalScope: 'kementerian',
+        sourcePage: '',
+        isSelectable: true,
     })
 
     // Fetch tree data
     const fetchData = useCallback(async () => {
         setLoading(true)
         try {
-            const response = await api.get(`/api/klasifikasi`, { format: 'tree', tipe: activeTab, ruleSetId })
+            const response = await api.get(`/api/klasifikasi`, { format: 'tree', tipe: activeTab, ruleSetId, scope: scopeFilter })
             if (response.success) {
                 setTreeData(response.data)
             }
@@ -142,7 +158,7 @@ export default function KlasifikasiArsip() {
         } finally {
             setLoading(false)
         }
-    }, [activeTab, ruleSetId])
+    }, [activeTab, ruleSetId, scopeFilter])
 
     // Fetch stats
     const fetchStats = useCallback(async () => {
@@ -187,6 +203,16 @@ export default function KlasifikasiArsip() {
         return filterKlasifikasiTree(treeData, searchQuery)
     }, [treeData, searchQuery])
 
+    const parentOptions = useMemo(
+        () => flattenTree(treeData, []).filter((node) => !currentItem || node.id !== currentItem.id),
+        [treeData, currentItem],
+    )
+
+    const selectedParent = useMemo(
+        () => parentOptions.find((node) => String(node.id) === formData.parentItemId),
+        [parentOptions, formData.parentItemId],
+    )
+
     // Handle create/edit
     const handleSave = async () => {
         try {
@@ -196,6 +222,11 @@ export default function KlasifikasiArsip() {
                     jenis: formData.jenis,
                     keterangan: formData.keterangan,
                     kategori: formData.kategori,
+                    sourceCode: formData.sourceCode || formData.kode,
+                    sourceRecordKey: formData.sourceRecordKey || undefined,
+                    organizationalScope: formData.organizationalScope,
+                    sourcePage: formData.sourcePage ? Number(formData.sourcePage) : null,
+                    isSelectable: formData.isSelectable,
                     ruleSetId,
                 })
                 if (response.success) {
@@ -206,9 +237,14 @@ export default function KlasifikasiArsip() {
                 // Create
                 const response = await api.post('/api/klasifikasi', {
                     ...formData,
+                    parentItemId: undefined,
+                    parentKode: selectedParent?.kode || null,
+                    sourceCode: formData.sourceCode || formData.kode,
+                    sourceRecordKey: formData.sourceRecordKey || undefined,
+                    sourcePage: formData.sourcePage ? Number(formData.sourcePage) : null,
                     ruleSetId,
                     tipe: activeTab,
-                    level: formData.parentKode ? 1 : 0,
+                    level: selectedParent ? Number(selectedParent.level || 0) + 1 : 0,
                 })
                 if (response.success) {
                     // alert('Klasifikasi berhasil ditambahkan')
@@ -229,10 +265,16 @@ export default function KlasifikasiArsip() {
         setCurrentItem(node)
         setFormData({
             kode: node.kode,
+            sourceCode: node.sourceCode || node.kode,
+            sourceRecordKey: node.sourceRecordKey || '',
             jenis: node.jenis,
             keterangan: node.keterangan || '',
             parentKode: node.parentKode || '',
+            parentItemId: '__root__',
             kategori: node.kategori || '',
+            organizationalScope: node.organizationalScope || 'kementerian',
+            sourcePage: node.sourcePage || '',
+            isSelectable: node.isSelectable !== false,
         })
         setDialogOpen(true)
     }
@@ -256,10 +298,16 @@ export default function KlasifikasiArsip() {
     const resetForm = () => {
         setFormData({
             kode: '',
+            sourceCode: '',
+            sourceRecordKey: '',
             jenis: '',
             keterangan: '',
             parentKode: '',
+            parentItemId: '__root__',
             kategori: '',
+            organizationalScope: scopeFilter,
+            sourcePage: '',
+            isSelectable: true,
         })
         setEditMode(false)
         setCurrentItem(null)
@@ -267,6 +315,7 @@ export default function KlasifikasiArsip() {
 
     const handleAddNew = () => {
         resetForm()
+        setFormData((current) => ({ ...current, organizationalScope: scopeFilter }))
         setDialogOpen(true)
     }
 
@@ -367,6 +416,17 @@ export default function KlasifikasiArsip() {
                             </TabsList>
                         </Tabs>
 
+                        <Select value={scopeFilter} onValueChange={setScopeFilter}>
+                            <SelectTrigger className="w-full sm:w-48" aria-label="Lingkup organisasi">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="kementerian">Kementerian</SelectItem>
+                                <SelectItem value="kanwil">Kantor Wilayah</SelectItem>
+                                <SelectItem value="kantah">Kantor Pertanahan</SelectItem>
+                            </SelectContent>
+                        </Select>
+
                         <div className="relative w-full sm:w-72 sm:max-w-full">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
@@ -412,7 +472,7 @@ export default function KlasifikasiArsip() {
 
             {/* Create/Edit Dialog */}
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="sm:max-w-[500px]">
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-xl">
                             <div className="p-1.5 bg-primary/10 rounded-md">
@@ -453,15 +513,49 @@ export default function KlasifikasiArsip() {
                         </div>
 
                         <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="parentKode" className="text-right font-medium">Parent</Label>
+                            <Label htmlFor="sourceCode" className="text-right font-medium">Kode sumber</Label>
                             <Input
-                                id="parentKode"
-                                value={formData.parentKode}
-                                onChange={(e) => setFormData({ ...formData, parentKode: e.target.value })}
+                                id="sourceCode"
+                                value={formData.sourceCode}
+                                onChange={(e) => setFormData({ ...formData, sourceCode: e.target.value })}
                                 className="col-span-3 font-mono"
-                                placeholder="Kode parent (kosong jika root)"
-                                disabled={editMode}
+                                placeholder="Kode sebagaimana tercetak pada sumber"
                             />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="sourceRecordKey" className="text-right font-medium">Identitas baris</Label>
+                            <Input
+                                id="sourceRecordKey"
+                                value={formData.sourceRecordKey}
+                                onChange={(e) => setFormData({ ...formData, sourceRecordKey: e.target.value })}
+                                className="col-span-3 font-mono text-xs"
+                                placeholder="Unik dalam versi; kosongkan untuk dibuat server"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="parentKode" className="text-right font-medium">Parent</Label>
+                            {editMode ? (
+                                <Input value={formData.parentKode || 'Root'} className="col-span-3 font-mono" disabled />
+                            ) : (
+                                <Select
+                                    value={formData.parentItemId}
+                                    onValueChange={(value) => setFormData({ ...formData, parentItemId: value })}
+                                >
+                                    <SelectTrigger id="parentKode" className="col-span-3">
+                                        <SelectValue placeholder="Pilih parent" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__root__">Root / tanpa parent</SelectItem>
+                                        {parentOptions.map((parent) => (
+                                            <SelectItem key={parent.id || parent.sourceRecordKey} value={String(parent.id)}>
+                                                {parent.kode} — {parent.jenis}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-4 items-center gap-4">
@@ -473,6 +567,48 @@ export default function KlasifikasiArsip() {
                                 className="col-span-3"
                                 placeholder="Kategori utama (opsional)"
                             />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="organizationalScope" className="text-right font-medium">Lingkup</Label>
+                            <Select
+                                value={formData.organizationalScope}
+                                onValueChange={(value) => setFormData({ ...formData, organizationalScope: value })}
+                            >
+                                <SelectTrigger id="organizationalScope" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="kementerian">Kementerian</SelectItem>
+                                    <SelectItem value="kanwil">Kantor Wilayah</SelectItem>
+                                    <SelectItem value="kantah">Kantor Pertanahan</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="sourcePage" className="text-right font-medium">Halaman sumber</Label>
+                            <Input
+                                id="sourcePage"
+                                type="number"
+                                min="1"
+                                value={formData.sourcePage}
+                                onChange={(e) => setFormData({ ...formData, sourcePage: e.target.value })}
+                                className="col-span-3"
+                                placeholder="Nomor halaman PDF resmi"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="isSelectable" className="text-right font-medium">Dapat dipilih</Label>
+                            <Select
+                                value={formData.isSelectable ? 'yes' : 'no'}
+                                onValueChange={(value) => setFormData({ ...formData, isSelectable: value === 'yes' })}
+                            >
+                                <SelectTrigger id="isSelectable" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="yes">Ya, butir arsip</SelectItem>
+                                    <SelectItem value="no">Tidak, hanya simpul hierarki</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         <div className="grid grid-cols-4 items-start gap-4">

@@ -1,19 +1,10 @@
 import { db } from '../config/database';
 import { suratMasuk } from '../db/schema/surat-masuk';
-import { arsip } from '../db/schema/arsip';
 import { notificationReads } from '../db/schema/notification-reads';
-import { eq, and, gte, lte, desc, isNotNull, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { eq, and, desc, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { arsipService } from './arsip.service';
 
 type SecurityClassScope = string[] | null | undefined;
-
-function archiveSecurityCondition(classes: SecurityClassScope) {
-    if (classes === undefined || classes === null) return undefined;
-    if (classes.length === 0) return sql`false`;
-    return inArray(
-        sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
-        classes,
-    );
-}
 
 function incomingSecurityCondition(classes: SecurityClassScope) {
     if (classes === undefined || classes === null) return undefined;
@@ -147,31 +138,13 @@ export class NotificationService {
         securityClassifications?: string[] | null,
     ): Promise<Notification[]> {
         const currentDate = new Date();
-        const futureDate = new Date(currentDate.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-
-        const expiringArchives = await db
-            .select({
-                id: arsip.id,
-                nomorBerkas: arsip.nomorBerkas,
-                uraianBerkas: arsip.uraianBerkas,
-                kodeKlasifikasi: arsip.kodeKlasifikasi,
-                tanggalKadaluarsa: arsip.tanggalKadaluarsa,
-                hasilAkhir: arsip.hasilAkhir,
-                retentionTriggerDate: arsip.retentionTriggerDate,
-                legalHold: arsip.legalHold,
-                createdAt: arsip.createdAt,
-            })
-            .from(arsip)
-            .where(and(
-                eq(arsip.unitKerjaId, unitKerjaId),
-                eq(arsip.legalHold, false),
-                isNotNull(arsip.retentionTriggerDate),
-                gte(arsip.tanggalKadaluarsa, currentDate.toISOString().split('T')[0]),
-                lte(arsip.tanggalKadaluarsa, futureDate.toISOString().split('T')[0]),
-                archiveSecurityCondition(securityClassifications),
-            ))
-            .orderBy(arsip.tanggalKadaluarsa)
-            .limit(50);
+        // Reuse the canonical, hash-verified snapshot evaluator. Cached expiry
+        // and outcome columns are display caches and must never trigger alerts.
+        const expiringArchives = (await arsipService.getExpiring(
+            unitKerjaId,
+            daysAhead,
+            securityClassifications,
+        )).slice(0, 50);
 
         // Get read notifications for this user
         const readNotifications = await db
@@ -181,8 +154,11 @@ export class NotificationService {
 
         const readIds = readNotifications.map(n => n.notificationId);
 
+        // getExpiring exposes canonical compatibility fields sourced from the
+        // verified event/evaluator. Keep this final defensive filter so a
+        // malformed adapter or stale test double cannot emit a notification.
         const notifications = expiringArchives
-            .filter(arc => !arc.legalHold && arc.retentionTriggerDate)
+            .filter(arc => !arc.legalHold && arc.retentionTriggerDate && arc.tanggalKadaluarsa)
             .map(arc => {
                 const tanggalKadaluarsa = new Date(arc.tanggalKadaluarsa as string);
                 const daysLeft = Math.ceil((tanggalKadaluarsa.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));

@@ -38,6 +38,8 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
+    execute: async () => [],
+    transaction: async (work: (tx: any) => Promise<any>) => work(mockDb),
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
@@ -107,7 +109,13 @@ describe('KlasifikasiService', () => {
 
     describe('create', () => {
         it('should create new klasifikasi', async () => {
-            enqueue([{ ...activeClassification, status: 'draft' }], [{ kode: 'KU.03', jenis: 'Pajak' }]);
+            enqueue(
+                [{ ...activeClassification, status: 'draft' }],
+                [{ id: 3, kode: 'KU.03', jenis: 'Pajak' }],
+                [],
+                [],
+                [],
+            );
             const result = await klasifikasiService.create({
                 ruleSetId: activeClassification.id,
                 kode: 'KU.03',
@@ -119,21 +127,18 @@ describe('KlasifikasiService', () => {
     });
 
     describe('update', () => {
-        it('should update klasifikasi', async () => {
-            enqueue([{ ...activeClassification, status: 'draft' }], [{ kode: 'KU', jenis: 'Updated' }]);
-            const result = await klasifikasiService.update('KU', {
+        it('retires ambiguous code-based updates', async () => {
+            await expect(klasifikasiService.update('KU', {
                 ruleSetId: activeClassification.id,
                 jenis: 'Updated',
-            } as any);
-            expect(result.jenis).toBe('Updated');
+            } as any)).rejects.toThrow(/updateById/i);
         });
     });
 
     describe('delete (soft)', () => {
-        it('should set isActive to false', async () => {
-            enqueue([{ ...activeClassification, status: 'draft' }], [{ kode: 'KU', isActive: false }]);
-            const result = await klasifikasiService.delete('KU', activeClassification.id);
-            expect(result.isActive).toBe(false);
+        it('retires ambiguous code-based deletion', async () => {
+            await expect(klasifikasiService.delete('KU', activeClassification.id))
+                .rejects.toThrow(/deleteById/i);
         });
     });
 
@@ -177,7 +182,13 @@ describe('JRAService', () => {
 
     describe('create', () => {
         it('should create new JRA', async () => {
-            enqueue([{ ...activeJra, status: 'draft' }], [{ kode: 'F.I.05', uraian: 'New JRA' }]);
+            enqueue(
+                [{ ...activeJra, status: 'draft' }],
+                [{ id: 5, kode: 'F.I.05', uraian: 'New JRA' }],
+                [],
+                [],
+                [],
+            );
             const result = await jraService.create({ ruleSetId: activeJra.id, kode: 'F.I.05' } as any);
             expect(result.kode).toBe('F.I.05');
         });

@@ -2,15 +2,29 @@ import { db } from '../config/database.js';
 import { suratMasuk } from '../db/schema/surat-masuk.js';
 import { suratKeluar } from '../db/schema/surat-keluar.js';
 import { arsip } from '../db/schema/arsip.js';
+import { arsipRuleSnapshots } from '../db/schema/arsip-rule-snapshots.js';
+import {
+    jraAppraisalCases,
+    jraAppraisalDecisions,
+    retentionTriggerEvents,
+    retentionTriggerVerifications,
+} from '../db/schema/index.js';
 import { unitKerja } from '../db/schema/unit-kerja.js';
 import { archiveLending } from '../db/schema/archive-lending.js';
 import { storageLocations } from '../db/schema/storage-locations.js';
 import { penyusutanArsip, penyusutanItems } from '../db/schema/penyusutan.js';
 import { arsipVital } from '../db/schema/arsip-vital.js';
 import { arsipTerjaga } from '../db/schema/arsip-terjaga.js';
-import { sql, eq, and, gte, lte, lt, count, inArray, or, isNotNull } from 'drizzle-orm';
+import { sql, eq, and, gte, lte, lt, count, inArray, or } from 'drizzle-orm';
 import { createLogger } from '../utils/logger.js';
 import { arsipService } from './arsip.service.js';
+import {
+    CURRENT_APPRAISAL_CASE_JOIN,
+    CURRENT_APPRAISAL_DECISION_JOIN,
+    CURRENT_RETENTION_TRIGGER_JOIN,
+    CURRENT_RETENTION_VERIFICATION_JOIN,
+    RETENTION_GOVERNANCE_EVIDENCE_SELECT,
+} from './archive-rule-assignment.service.js';
 
 const log = createLogger('DashboardService');
 
@@ -72,8 +86,6 @@ export const dashboardService = {
     ): Promise<DashboardStats> {
         const currentYear = tahun || new Date().getFullYear();
         const currentMonth = new Date().getMonth() + 1;
-        const currentDate = new Date();
-        const thirtyDaysFromNow = new Date(currentDate.getTime() + 30 * 24 * 60 * 60 * 1000);
         const incomingClass = incomingClassificationCondition(securityClassifications);
         const outgoingClass = outgoingClassificationCondition(securityClassifications);
         const archiveClass = arsipClassificationCondition(securityClassifications);
@@ -96,7 +108,7 @@ export const dashboardService = {
             [totalArsipResult],
             [arsipMasukResult],
             [arsipKeluarResult],
-            [expiringResult],
+            expiringArchives,
             [masukBulanIniResult],
             [keluarBulanIniResult],
             masukMonthlyRaw,
@@ -135,16 +147,8 @@ export const dashboardService = {
                     archiveClass,
                 )),
 
-            // Expiring archives (next 30 days)
-            db.select({ count: count() }).from(arsip)
-                .where(and(
-                    eq(arsip.legalHold, false),
-                    isNotNull(arsip.retentionTriggerDate),
-                    gte(arsip.tanggalKadaluarsa, currentDate.toISOString().split('T')[0]),
-                    lte(arsip.tanggalKadaluarsa, thirtyDaysFromNow.toISOString().split('T')[0]),
-                    unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
-                    archiveClass,
-                )),
+            // Expiring archives (next 30 days), verified from canonical snapshots.
+            arsipService.getExpiring(unitKerjaId, 30, securityClassifications),
 
             // Current month counts
             db.select({ count: count() }).from(suratMasuk)
@@ -224,7 +228,7 @@ export const dashboardService = {
             totalArsip: totalArsipResult?.count || 0,
             arsipMasuk: arsipMasukResult?.count || 0,
             arsipKeluar: arsipKeluarResult?.count || 0,
-            segmenKadaluarsa: expiringResult?.count || 0,
+            segmenKadaluarsa: expiringArchives.length,
             masukBulanIni: masukBulanIniResult?.count || 0,
             keluarBulanIni: keluarBulanIniResult?.count || 0,
             monthlyTrend,
@@ -292,31 +296,14 @@ export const dashboardService = {
         securityClassifications?: string[] | null,
     ) {
         const currentDate = new Date();
-        const futureDate = new Date(currentDate.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-
-        const expiringArchives = await db
-            .select({
-                id: arsip.id,
-                uraianBerkas: arsip.uraianBerkas,
-                kodeKlasifikasi: arsip.kodeKlasifikasi,
-                tanggalKadaluarsa: arsip.tanggalKadaluarsa,
-                retentionTriggerDate: arsip.retentionTriggerDate,
-                legalHold: arsip.legalHold,
-            })
-            .from(arsip)
-            .where(and(
-                ...(unitKerjaId ? [eq(arsip.unitKerjaId, unitKerjaId)] : []),
-                arsipClassificationCondition(securityClassifications),
-                eq(arsip.legalHold, false),
-                isNotNull(arsip.retentionTriggerDate),
-                gte(arsip.tanggalKadaluarsa, currentDate.toISOString().split('T')[0]),
-                lte(arsip.tanggalKadaluarsa, futureDate.toISOString().split('T')[0])
-            ))
-            .orderBy(arsip.tanggalKadaluarsa)
-            .limit(10);
+        const expiringArchives = await arsipService.getExpiring(
+            unitKerjaId,
+            daysAhead,
+            securityClassifications,
+        );
 
         return expiringArchives
-            .filter((a: any) => !a.legalHold && a.retentionTriggerDate)
+            .slice(0, 10)
             .map((a: any) => ({
             ...a,
             daysLeft: Math.ceil(
@@ -445,7 +432,6 @@ export const dashboardService = {
     ) {
         try {
             const today = new Date().toISOString().split('T')[0];
-            const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             const archiveClass = arsipClassificationCondition(securityClassifications);
 
             // Build unit kerja filter conditions for each table
@@ -477,11 +463,33 @@ export const dashboardService = {
                 // evaluation. Held and missing-trigger records are never classified as
                 // active/inactive/expired.
                 db.select({
+                    id: arsip.id,
                     retentionTriggerDate: arsip.retentionTriggerDate,
-                    retensiAktif: arsip.retensiAktif,
-                    retensiInaktif: arsip.retensiInaktif,
                     legalHold: arsip.legalHold,
+                    ruleProvenanceStatus: arsip.ruleProvenanceStatus,
+                    currentRuleSnapshotId: arsip.currentRuleSnapshotId,
+                    currentRetentionTriggerEventId: arsip.currentRetentionTriggerEventId,
+                    currentAppraisalDecisionId: arsip.currentAppraisalDecisionId,
+                    jraItemId: arsip.jraItemId,
+                    jraRuleSetId: arsip.jraRuleSetId,
+                    retentionDecisionHash: arsip.retentionDecisionHash,
+                    ruleSnapshotId: arsipRuleSnapshots.id,
+                    ruleSnapshotArsipId: arsipRuleSnapshots.arsipId,
+                    ruleSnapshotStatus: arsipRuleSnapshots.status,
+                    ruleSnapshotJraItemId: arsipRuleSnapshots.jraItemId,
+                    ruleSnapshotJraRuleSetId: arsipRuleSnapshots.jraRuleSetId,
+                    ruleSnapshot: arsipRuleSnapshots.snapshot,
+                    ruleSnapshotSha256: arsipRuleSnapshots.snapshotSha256,
+                    ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
                 }).from(arsip)
+                    .leftJoin(arsipRuleSnapshots, and(
+                        eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                        eq(arsipRuleSnapshots.arsipId, arsip.id),
+                    ))
+                    .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+                    .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+                    .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+                    .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
                     .where(and(...arsipUnitFilter, archiveClass)),
 
                 // 2. Storage Capacity — top-level locations (gedung) with aggregate capacity
@@ -622,30 +630,41 @@ export const dashboardService = {
             let belumDitentukan = 0;
             let heldCount = 0;
             let missingTriggerCount = 0;
+            let manualReviewCount = 0;
+            let unverifiedRulesCount = 0;
 
             for (const archive of arsipLifecycleData) {
                 if (archive.legalHold) {
                     heldCount += 1;
                     continue;
                 }
-                if (!archive.retentionTriggerDate) {
+                if (!archive.currentRetentionTriggerEventId) {
                     missingTriggerCount += 1;
                     continue;
                 }
 
-                const totalRetentionMonths =
-                    arsipService.parseRetentionMonths(archive.retensiAktif) +
-                    arsipService.parseRetentionMonths(archive.retensiInaktif);
-                if (totalRetentionMonths === 0) {
+                if (archive.ruleProvenanceStatus !== 'verified') {
+                    unverifiedRulesCount += 1;
                     belumDitentukan += 1;
                     continue;
                 }
 
-                const status = arsipService.getArchiveStatus(
-                    archive.retentionTriggerDate,
-                    archive.retensiAktif,
-                    archive.retensiInaktif,
-                );
+                const evaluation = arsipService.evaluateCanonicalRetention(archive);
+                if (!evaluation.verified) {
+                    unverifiedRulesCount += 1;
+                    belumDitentukan += 1;
+                    continue;
+                }
+                if (!evaluation.calculationEligible) {
+                    manualReviewCount += 1;
+                    belumDitentukan += 1;
+                    continue;
+                }
+                if (!evaluation.effectiveDispositionCode) {
+                    manualReviewCount += 1;
+                }
+
+                const status = evaluation.status;
                 if (status === 'aktif' || status === 'akan_inaktif') aktifCount += 1;
                 if (status === 'inaktif' || status === 'akan_kadaluarsa') inaktifCount += 1;
                 if (status === 'kadaluarsa') kadaluarsaCount += 1;
@@ -661,6 +680,8 @@ export const dashboardService = {
                     belumDitentukan,
                     held: heldCount,
                     missingTrigger: missingTriggerCount,
+                    manualReview: manualReviewCount,
+                    unverifiedRules: unverifiedRulesCount,
                     total: totalArsip,
                 },
                 storageCapacity,

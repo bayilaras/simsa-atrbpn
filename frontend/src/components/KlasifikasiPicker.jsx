@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { API_BASE_URL } from '@/lib/api-url'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -22,6 +23,39 @@ import {
     ChevronUp
 } from 'lucide-react'
 import { cn } from "@/lib/utils"
+
+const ARCHIVE_SEARCH_THESAURUS = {
+    ptp: ['pengadaan tanah', 'pengembangan pertanahan'],
+    'ganti rugi': ['ganti kerugian', 'musyawarah penetapan ganti kerugian'],
+    konsinyasi: ['penitipan uang ganti kerugian'],
+    ba: ['berita acara'],
+    sk: ['surat keputusan', 'keputusan'],
+    tu: ['tata usaha', 'ketatausahaan'],
+    ukur: ['pengukuran', 'pemetaan'],
+    sengketa: ['sengketa konflik perkara', 'penanganan perkara'],
+}
+
+function normalizedSearch(value) {
+    return String(value || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim()
+}
+
+function expandedSearchTerms(query) {
+    const normalized = normalizedSearch(query)
+    if (!normalized) return []
+    const terms = new Set([normalized])
+    for (const [alias, equivalents] of Object.entries(ARCHIVE_SEARCH_THESAURUS)) {
+        if (normalized.includes(alias) || equivalents.some((item) => normalizedSearch(item).includes(normalized))) {
+            terms.add(alias)
+            equivalents.forEach((item) => terms.add(normalizedSearch(item)))
+        }
+    }
+    return [...terms]
+}
+
+function matchesTerms(item, terms, fields) {
+    const haystack = fields.map((field) => normalizedSearch(item?.[field])).join(' ')
+    return terms.some((term) => haystack.includes(term))
+}
 
 function ruleItemIdentity(item) {
     return item?.id ?? item?.sourceRecordKey ?? item?.kode
@@ -71,6 +105,10 @@ function KlasifikasiItem({ item, isSelected, onSelect }) {
                     >
                         {item.tipe === 'fasilitatif' ? 'Fasilitatif' : 'Substantif'}
                     </Badge>
+                    <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                        {item.organizationalScope === 'kanwil' ? 'Kanwil' : item.organizationalScope === 'kantah' ? 'Kantah' : 'Kementerian'}
+                    </Badge>
+                    {item.version && <span className="text-[10px] text-muted-foreground">Versi {item.version}</span>}
                 </div>
                 <p className={cn(
                     "text-sm font-medium leading-tight",
@@ -97,6 +135,9 @@ function KlasifikasiItem({ item, isSelected, onSelect }) {
                         <FolderTree className="h-2.5 w-2.5" />
                         Induk: {item.parentKode}
                     </p>
+                )}
+                {item.sourcePage && (
+                    <p className="mt-0.5 text-[10px] text-muted-foreground/70">Sumber halaman {item.sourcePage}</p>
                 )}
             </div>
 
@@ -166,7 +207,12 @@ function JRAItem({ item, isSelected, onSelect }) {
                             item.keterangan?.toLowerCase().includes('permanen') ? "text-red-600 dark:text-red-400 font-bold" : "text-foreground"
                         )}>{item.keterangan}</span>
                     </span>
+                    <span>Mode: <b className="text-foreground">{item.calculationMode === 'duration' ? 'terstruktur' : 'appraisal'}</b></span>
+                    {item.sourcePage && <span>Sumber hlm. {item.sourcePage}</span>}
                 </div>
+                {item.triggerGuidance && (
+                    <p className="mt-1 line-clamp-2 text-[9px] text-muted-foreground">Pemicu: {item.triggerGuidance}</p>
+                )}
             </div>
         </div>
     )
@@ -176,7 +222,7 @@ function JRAItem({ item, isSelected, onSelect }) {
  * KlasifikasiPicker Component - Enhanced with JRA Mapping Suggestions
  */
 export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi Arsip" }) {
-    const API_BASE = import.meta.env.VITE_API_URL || '';
+    const API_BASE = API_BASE_URL;
     const [open, setOpen] = useState(false)
     const [activeTab, setActiveTab] = useState('all')
     const [allData, setAllData] = useState([])
@@ -296,13 +342,10 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
 
         // Filter by search query
         if (searchQuery.trim()) {
-            const query = searchQuery.toLowerCase()
-            filtered = filtered.filter(item =>
-                item.kode?.toLowerCase().includes(query) ||
-                item.jenis?.toLowerCase().includes(query) ||
-                item.kategori?.toLowerCase().includes(query) ||
-                item.keterangan?.toLowerCase().includes(query)
-            )
+            const terms = expandedSearchTerms(searchQuery)
+            filtered = filtered.filter((item) => matchesTerms(item, terms, [
+                'kode', 'sourceCode', 'sourceRecordKey', 'jenis', 'kategori', 'keterangan',
+            ]))
         }
 
         // Sort by kode
@@ -351,12 +394,10 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         if (jraTab !== 'all') return []
         let filtered = allJRA
         if (jraSearchQuery.trim()) {
-            const q = jraSearchQuery.toLowerCase()
-            filtered = filtered.filter(item =>
-                item.kode?.toLowerCase().includes(q) ||
-                item.uraian?.toLowerCase().includes(q) ||
-                item.keterangan?.toLowerCase().includes(q)
-            )
+            const terms = expandedSearchTerms(jraSearchQuery)
+            filtered = filtered.filter((item) => matchesTerms(item, terms, [
+                'kode', 'uraian', 'keterangan', 'triggerGuidance',
+            ]))
         }
         return filtered
     }, [allJRA, jraTab, jraSearchQuery])
@@ -371,7 +412,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     }
 
     const handleConfirm = () => {
-        if (selectedItem) {
+        if (selectedItem && selectedJRA) {
             onChange(selectedItem.kode, selectedItem, selectedJRA)
             setOpen(false)
         }
@@ -721,6 +762,12 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                             </div>
                         ) : null}
 
+                        {selectedItem && !selectedJRA && (
+                            <p className="px-1 text-xs text-amber-700 dark:text-amber-300" role="status">
+                                Pilih satu butir JRA untuk melengkapi pasangan klasifikasi. Rekomendasi yang tampil hanya bantuan dan tetap harus Anda konfirmasi.
+                            </p>
+                        )}
+
                         <DialogFooter className="flex flex-row justify-between w-full sm:justify-between items-center gap-2">
                             {/* Left Side: Hapus Button */}
                             <div>
@@ -745,7 +792,8 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                 </Button>
                                 <Button
                                     onClick={handleConfirm}
-                                    disabled={!selectedItem}
+                                    disabled={!selectedItem || !selectedJRA}
+                                    title={!selectedItem ? 'Pilih klasifikasi arsip' : !selectedJRA ? 'Pilih dan konfirmasi JRA' : 'Gunakan pasangan klasifikasi dan JRA ini'}
                                     className="min-w-[100px] h-9 text-xs md:text-sm font-medium shadow-sm"
                                 >
                                     <Check className="mr-2 h-4 w-4" />

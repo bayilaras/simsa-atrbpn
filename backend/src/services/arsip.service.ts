@@ -1,8 +1,29 @@
 import { db } from '../config/database';
-import { arsip, NewArsip, Arsip, arsipItems, arsipRuleSnapshots } from '../db/schema';
-import { eq, and, desc, sql, lte, gte, ilike, or, isNotNull, isNull, ne, inArray } from 'drizzle-orm';
+import {
+    arsip,
+    NewArsip,
+    Arsip,
+    arsipItems,
+    arsipRuleSnapshots,
+    jraAppraisalCases,
+    jraAppraisalDecisions,
+    retentionTriggerEvents,
+    retentionTriggerVerifications,
+} from '../db/schema';
+import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns } from 'drizzle-orm';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
-import { archiveRuleAssignmentService } from './archive-rule-assignment.service';
+import {
+    archiveRuleAssignmentService,
+    CURRENT_APPRAISAL_CASE_JOIN,
+    CURRENT_APPRAISAL_DECISION_JOIN,
+    CURRENT_RETENTION_TRIGGER_JOIN,
+    CURRENT_RETENTION_VERIFICATION_JOIN,
+    RETENTION_GOVERNANCE_EVIDENCE_SELECT,
+    type ArchiveLifecycleStatus,
+    type CanonicalRetentionEvidence,
+    type CanonicalRetentionEvaluation,
+    type StructuredRetentionRule,
+} from './archive-rule-assignment.service';
 
 export interface ArsipFilters {
     unitKerjaId?: string;
@@ -77,12 +98,89 @@ const SYSTEM_MANAGED_RETENTION_FIELDS = new Set([
     'tanggalKadaluarsa',
 ]);
 
+const ARCHIVE_WITH_RULE_SNAPSHOT = {
+    ...getTableColumns(arsip),
+    ruleSnapshotId: arsipRuleSnapshots.id,
+    ruleSnapshotArsipId: arsipRuleSnapshots.arsipId,
+    ruleSnapshotStatus: arsipRuleSnapshots.status,
+    ruleSnapshotJraItemId: arsipRuleSnapshots.jraItemId,
+    ruleSnapshotJraRuleSetId: arsipRuleSnapshots.jraRuleSetId,
+    ruleSnapshot: arsipRuleSnapshots.snapshot,
+    ruleSnapshotSha256: arsipRuleSnapshots.snapshotSha256,
+    ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
+};
+
+type ArchiveWithRuleSnapshot = Arsip & CanonicalRetentionEvidence & {
+    ruleSnapshotId: string | null;
+    ruleSnapshotArsipId: string | null;
+    ruleSnapshotStatus: string | null;
+    ruleSnapshotJraItemId: number | null;
+    ruleSnapshotJraRuleSetId: string | null;
+    ruleSnapshot: unknown;
+    ruleSnapshotSha256: string | null;
+};
+
+function withoutRuleSnapshot(row: ArchiveWithRuleSnapshot): Arsip {
+    const {
+        ruleSnapshotId: _ruleSnapshotId,
+        ruleSnapshotArsipId: _ruleSnapshotArsipId,
+        ruleSnapshotStatus: _ruleSnapshotStatus,
+        ruleSnapshotJraItemId: _ruleSnapshotJraItemId,
+        ruleSnapshotJraRuleSetId: _ruleSnapshotJraRuleSetId,
+        ruleSnapshot: _ruleSnapshot,
+        ruleSnapshotSha256: _ruleSnapshotSha256,
+        triggerEventRecordId: _triggerEventRecordId,
+        triggerEventArsipId: _triggerEventArsipId,
+        triggerEventType: _triggerEventType,
+        triggerEventLabel: _triggerEventLabel,
+        triggerEventDate: _triggerEventDate,
+        triggerEventEvidenceUri: _triggerEventEvidenceUri,
+        triggerEventRevision: _triggerEventRevision,
+        triggerEventActorId: _triggerEventActorId,
+        triggerVerificationVerdict: _triggerVerificationVerdict,
+        triggerVerifierId: _triggerVerifierId,
+        latestTriggerEventRevision: _latestTriggerEventRevision,
+        appraisalDecisionRecordId: _appraisalDecisionRecordId,
+        appraisalDecisionArsipId: _appraisalDecisionArsipId,
+        appraisalDecisionStatus: _appraisalDecisionStatus,
+        appraisalDecisionOutcome: _appraisalDecisionOutcome,
+        appraisalDecisionSnapshot: _appraisalDecisionSnapshot,
+        appraisalDecisionSha256: _appraisalDecisionSha256,
+        appraisalCaseStatus: _appraisalCaseStatus,
+        hasActiveAppraisalCase: _hasActiveAppraisalCase,
+        ...archive
+    } = row;
+    return archive as Arsip;
+}
+
+function dispositionLabel(code: string | null | undefined): Arsip['hasilAkhir'] {
+    if (code === 'musnah') return 'Musnah';
+    if (code === 'permanen') return 'Permanen';
+    return 'Dinilai Kembali';
+}
+
 export class ArsipService {
-    private assertRetentionTriggerDocumented(data: Record<string, any>) {
-        if (!data.retentionTriggerDate) return;
-        if (!data.retentionTriggerType || !data.retentionTriggerLabel?.trim() || !data.retentionTriggerEvidence?.trim()) {
+    private assertNoDirectRetentionTrigger(data: Record<string, any>) {
+        if ([
+            data.retentionTriggerType,
+            data.retentionTriggerLabel,
+            data.retentionTriggerDate,
+            data.retentionTriggerEvidence,
+        ].some((value) => value !== undefined && value !== null && value !== '')) {
             throw new ValidationError(
-                'Pemicu retensi harus dilengkapi jenis, label, tanggal, dan bukti pendukung.',
+                'Pemicu retensi tidak boleh dicatat langsung pada arsip. Gunakan workflow peristiwa retensi dan verifikasi independen setelah registrasi.',
+            );
+        }
+        if (data.tanggalKadaluarsa !== undefined
+            && data.tanggalKadaluarsa !== null
+            && data.tanggalKadaluarsa !== '') {
+            throw new ValidationError(
+                'Tanggal kedaluwarsa hanya dihitung sistem dari snapshot JRA dan peristiwa retensi terverifikasi.',
+            );
+        }
+        if (data.hasilAkhir !== undefined && data.hasilAkhir !== null && data.hasilAkhir !== '') {
+            throw new ValidationError(
+                'Hasil akhir hanya boleh berasal dari snapshot JRA atau keputusan appraisal efektif.',
             );
         }
     }
@@ -137,13 +235,22 @@ export class ArsipService {
             .from(arsip)
             .where(and(...conditions));
 
-        const data = await db
-            .select()
+        const rows = await db
+            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
             .orderBy(desc(arsip.createdAt))
             .limit(limit)
             .offset(offset);
+        const data = rows.map((row) => this.toCanonicalReadModel(row as ArchiveWithRuleSnapshot));
 
 
         return {
@@ -159,8 +266,16 @@ export class ArsipService {
 
     async findById(id: string) {
         const [result] = await db
-            .select()
+            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(eq(arsip.id, id))
             .limit(1);
 
@@ -173,40 +288,32 @@ export class ArsipService {
             .where(eq(arsipItems.arsipId, id))
             .orderBy(arsipItems.nomorItem);
 
-        return { ...result, items };
-    }
-
-    private deriveRetentionFields<T extends Record<string, any>>(
-        data: T,
-        existing?: Pick<Arsip, 'retentionTriggerDate' | 'retensiAktif' | 'retensiInaktif'>,
-    ): T & { tanggalKadaluarsa: string | null } {
-        const triggerDate = data.retentionTriggerDate !== undefined
-            ? data.retentionTriggerDate
-            : existing?.retentionTriggerDate;
-        const retensiAktif = data.retensiAktif !== undefined
-            ? data.retensiAktif
-            : existing?.retensiAktif;
-        const retensiInaktif = data.retensiInaktif !== undefined
-            ? data.retensiInaktif
-            : existing?.retensiInaktif;
-
-        const dates = this.calculateRetentionDates(
-            triggerDate || null,
-            retensiAktif || null,
-            retensiInaktif || null,
-        );
-
-        return { ...data, tanggalKadaluarsa: dates.tanggalKadaluarsa };
+        return {
+            ...this.toCanonicalReadModel(result as ArchiveWithRuleSnapshot),
+            items,
+        };
     }
 
     async create(data: NewArsip) {
-        // tanggalKadaluarsa is always derived from an explicit retention trigger.
-        // A caller-provided expiry without a trigger is intentionally discarded.
-        this.assertRetentionTriggerDocumented(data);
-        const preparedData = this.deriveRetentionFields(data);
+        // Direct registration is disabled at the route. Keep this lower-level
+        // method fail-closed as well: legacy display text can never create an
+        // actionable expiry without a verified canonical snapshot.
+        this.assertNoDirectRetentionTrigger(data);
+        if (Object.keys(data).some((field) => RULE_ASSIGNMENT_FIELDS.has(field))) {
+            throw new ValidationError(
+                'Klasifikasi dan hasil akhir JRA wajib ditetapkan melalui registrasi bersnapshot atau rekonsiliasi aturan.',
+            );
+        }
         const [result] = await db
             .insert(arsip)
-            .values(preparedData)
+            .values({
+                ...data,
+                retentionTriggerType: null,
+                retentionTriggerLabel: null,
+                retentionTriggerDate: null,
+                retentionTriggerEvidence: null,
+                tanggalKadaluarsa: null,
+            })
             .returning();
 
         return result;
@@ -253,6 +360,20 @@ export class ArsipService {
                     'Rekonsiliasi aturan tidak dapat dilakukan saat legal hold atau setelah arsip masuk workflow penyusutan.'
                 );
             }
+            const [activeAppraisal] = await tx
+                .select({ id: jraAppraisalCases.id })
+                .from(jraAppraisalCases)
+                .where(and(
+                    eq(jraAppraisalCases.arsipId, id),
+                    inArray(jraAppraisalCases.status, ['open', 'in_review']),
+                ))
+                .limit(1)
+                .for('update');
+            if (activeAppraisal) {
+                throw new ConflictError(
+                    'Rekonsiliasi aturan ditolak selama appraisal masih terbuka atau sedang ditelaah.',
+                );
+            }
 
             const assignment = await archiveRuleAssignmentService.resolveActive(tx, selection);
             if (
@@ -297,6 +418,11 @@ export class ArsipService {
                 'Klasifikasi dan keputusan JRA hanya dapat diubah melalui rekonsiliasi aturan agar riwayat revisi tetap utuh.'
             );
         }
+        if (changesRetentionTrigger) {
+            throw new ValidationError(
+                'Pemicu retensi hanya dapat diubah melalui workflow peristiwa retensi dan verifikasi independen.',
+            );
+        }
 
         return db.transaction(async (tx: any) => {
             const [existing] = await tx
@@ -313,23 +439,9 @@ export class ArsipService {
                 );
             }
 
-            const isInDisposalWorkflow = existing.disposalStatus !== 'active'
-                || Boolean(existing.disposalBatchId);
-            if (changesRetentionTrigger && (existing.legalHold || isInDisposalWorkflow)) {
-                throw new ConflictError(
-                    'Keputusan retensi/JRA tidak dapat diubah saat legal hold atau setelah arsip masuk workflow penyusutan.'
-                );
-            }
-
-            let preparedData: Partial<Arsip> = data;
-            if (changesRetentionTrigger) {
-                this.assertRetentionTriggerDocumented({ ...existing, ...data });
-                preparedData = this.deriveRetentionFields(data, existing) as Partial<Arsip>;
-            }
-
             const [result] = await tx
                 .update(arsip)
-                .set({ ...preparedData, updatedAt: new Date() })
+                .set({ ...data, updatedAt: new Date() })
                 .where(eq(arsip.id, id))
                 .returning();
 
@@ -378,7 +490,7 @@ export class ArsipService {
         createdBy?: string;
     }, authorizedUnitKerjaId?: string) {
         const { suratMasuk } = await import('../db/schema');
-        this.assertRetentionTriggerDocumented(metadata);
+        this.assertNoDirectRetentionTrigger(metadata);
 
         return await db.transaction(async (tx: any) => {
             // Get the surat masuk — locked so concurrent requests cannot both pass the
@@ -424,10 +536,6 @@ export class ArsipService {
             // Client-provided retention text/version/outcome is display-only and is
             // intentionally ignored to prevent a forged disposal decision.
             const assignment = await archiveRuleAssignmentService.resolveActive(tx, metadata);
-            const tanggalKadaluarsa = archiveRuleAssignmentService.calculateExpiry(
-                metadata.retentionTriggerDate,
-                assignment.normalizedRetention,
-            );
 
             // Create arsip entry
             const [arsipEntry] = await tx
@@ -443,10 +551,10 @@ export class ArsipService {
                     lokasiFc: metadata.lokasiFc,
                     lokasiLaci: metadata.lokasiLaci,
                     lokasiFolder: metadata.lokasiFolder,
-                    retentionTriggerType: metadata.retentionTriggerType,
-                    retentionTriggerLabel: metadata.retentionTriggerLabel,
-                    retentionTriggerDate: metadata.retentionTriggerDate,
-                    retentionTriggerEvidence: metadata.retentionTriggerEvidence,
+                    retentionTriggerType: null,
+                    retentionTriggerLabel: null,
+                    retentionTriggerDate: null,
+                    retentionTriggerEvidence: null,
                     klasifikasiKeamanan: metadata.klasifikasiKeamanan,
                     personInCharge: metadata.personInCharge,
                     unitPengolah: metadata.unitPengolah,
@@ -459,7 +567,7 @@ export class ArsipService {
                     nomorSuratOriginal: surat.nomorSurat,
                     tanggalSuratOriginal: surat.tanggalSurat,
                     perihalOriginal: surat.perihal,
-                    tanggalKadaluarsa,
+                    tanggalKadaluarsa: null,
                     ...assignment.cache,
                     createdBy: metadata.createdBy,
                 })
@@ -531,7 +639,7 @@ export class ArsipService {
         createdBy?: string;
     }, authorizedUnitKerjaId?: string) {
         const { suratKeluar } = await import('../db/schema');
-        this.assertRetentionTriggerDocumented(metadata);
+        this.assertNoDirectRetentionTrigger(metadata);
 
         return await db.transaction(async (tx: any) => {
             // Get the surat keluar — locked so concurrent requests cannot both pass the
@@ -571,10 +679,6 @@ export class ArsipService {
             }
 
             const assignment = await archiveRuleAssignmentService.resolveActive(tx, metadata);
-            const tanggalKadaluarsa = archiveRuleAssignmentService.calculateExpiry(
-                metadata.retentionTriggerDate,
-                assignment.normalizedRetention,
-            );
 
             // Create arsip entry
             const [arsipEntry] = await tx
@@ -590,10 +694,10 @@ export class ArsipService {
                     lokasiFc: metadata.lokasiFc,
                     lokasiLaci: metadata.lokasiLaci,
                     lokasiFolder: metadata.lokasiFolder,
-                    retentionTriggerType: metadata.retentionTriggerType,
-                    retentionTriggerLabel: metadata.retentionTriggerLabel,
-                    retentionTriggerDate: metadata.retentionTriggerDate,
-                    retentionTriggerEvidence: metadata.retentionTriggerEvidence,
+                    retentionTriggerType: null,
+                    retentionTriggerLabel: null,
+                    retentionTriggerDate: null,
+                    retentionTriggerEvidence: null,
                     klasifikasiKeamanan: metadata.klasifikasiKeamanan,
                     personInCharge: metadata.personInCharge,
                     unitPengolah: metadata.unitPengolah,
@@ -606,7 +710,7 @@ export class ArsipService {
                     nomorSuratOriginal: surat.nomorSurat,
                     tanggalSuratOriginal: surat.tanggalSurat,
                     perihalOriginal: surat.perihal,
-                    tanggalKadaluarsa,
+                    tanggalKadaluarsa: null,
                     ...assignment.cache,
                     createdBy: metadata.createdBy,
                 })
@@ -647,12 +751,22 @@ export class ArsipService {
     // Find arsip by source surat id
     async findBySourceSurat(sourceSuratId: string) {
         const [result] = await db
-            .select()
+            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(eq(arsip.sourceSuratId, sourceSuratId))
             .limit(1);
 
-        return result || null;
+        return result
+            ? this.toCanonicalReadModel(result as ArchiveWithRuleSnapshot)
+            : null;
     }
 
     // Get arsip with source surat details
@@ -686,9 +800,80 @@ export class ArsipService {
         };
     }
 
+    /** Evaluate lifecycle state from the archive's immutable current snapshot. */
+    evaluateCanonicalRetention(row: Partial<ArchiveWithRuleSnapshot>): CanonicalRetentionEvaluation {
+        return archiveRuleAssignmentService.evaluateCanonicalRetention(
+            row.retentionTriggerDate,
+            {
+                arsipId: row.id,
+                ruleProvenanceStatus: row.ruleProvenanceStatus,
+                currentRuleSnapshotId: row.currentRuleSnapshotId,
+                jraItemId: row.jraItemId,
+                jraRuleSetId: row.jraRuleSetId,
+                retentionDecisionHash: row.retentionDecisionHash,
+                snapshotId: row.ruleSnapshotId,
+                snapshotArsipId: row.ruleSnapshotArsipId,
+                snapshotStatus: row.ruleSnapshotStatus,
+                snapshotJraItemId: row.ruleSnapshotJraItemId,
+                snapshotJraRuleSetId: row.ruleSnapshotJraRuleSetId,
+                snapshot: row.ruleSnapshot,
+                snapshotSha256: row.ruleSnapshotSha256,
+                currentRetentionTriggerEventId: row.currentRetentionTriggerEventId,
+                triggerEventRecordId: row.triggerEventRecordId,
+                triggerEventArsipId: row.triggerEventArsipId,
+                triggerEventDate: row.triggerEventDate,
+                triggerEventRevision: row.triggerEventRevision,
+                triggerEventActorId: row.triggerEventActorId,
+                triggerVerificationVerdict: row.triggerVerificationVerdict,
+                triggerVerifierId: row.triggerVerifierId,
+                latestTriggerEventRevision: row.latestTriggerEventRevision,
+                currentAppraisalDecisionId: row.currentAppraisalDecisionId,
+                appraisalDecisionRecordId: row.appraisalDecisionRecordId,
+                appraisalDecisionArsipId: row.appraisalDecisionArsipId,
+                appraisalDecisionStatus: row.appraisalDecisionStatus,
+                appraisalDecisionOutcome: row.appraisalDecisionOutcome,
+                appraisalDecisionSnapshot: row.appraisalDecisionSnapshot,
+                appraisalDecisionSha256: row.appraisalDecisionSha256,
+                appraisalCaseStatus: row.appraisalCaseStatus,
+                hasActiveAppraisalCase: row.hasActiveAppraisalCase,
+            },
+        );
+    }
+
+    /**
+     * Public archive reads expose the raw columns only as compatibility fields.
+     * Their values are replaced from verified evidence, while canonicalRetention
+     * makes the authority and any fail-closed reason explicit to clients.
+     */
+    private toCanonicalReadModel(row: ArchiveWithRuleSnapshot) {
+        const canonicalRetention = this.evaluateCanonicalRetention(row);
+        const archive = withoutRuleSnapshot(row);
+        const displayDisposition = canonicalRetention.effectiveDispositionCode
+            || canonicalRetention.normalizedRetention?.dispositionCode
+            || null;
+        return {
+            ...archive,
+            retentionTriggerType: canonicalRetention.verified
+                ? (row.triggerEventType as Arsip['retentionTriggerType'])
+                : null,
+            retentionTriggerLabel: canonicalRetention.verified ? row.triggerEventLabel : null,
+            retentionTriggerDate: canonicalRetention.verified ? row.triggerEventDate : null,
+            retentionTriggerEvidence: canonicalRetention.verified
+                ? row.triggerEventEvidenceUri
+                : null,
+            tanggalKadaluarsa: canonicalRetention.verified
+                ? canonicalRetention.dates.tanggalKadaluarsa
+                : null,
+            hasilAkhir: canonicalRetention.verified && displayDisposition
+                ? dispositionLabel(displayDisposition)
+                : null,
+            canonicalRetention,
+        };
+    }
+
     // Get arsip that will expire within N days
     async getExpiring(
-        unitKerjaId: string,
+        unitKerjaId?: string | null,
         daysAhead: number = 30,
         securityClassifications?: string[] | null,
     ) {
@@ -696,21 +881,44 @@ export class ArsipService {
         const futureDate = new Date();
         futureDate.setDate(today.getDate() + daysAhead);
 
-        const data = await db
-            .select()
+        const rows = await db
+            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(
-                eq(arsip.unitKerjaId, unitKerjaId),
+                unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
                 archiveSecurityCondition(securityClassifications),
                 eq(arsip.legalHold, false),
                 eq(arsip.ruleProvenanceStatus, 'verified'),
-                isNotNull(arsip.retentionTriggerDate),
-                gte(arsip.tanggalKadaluarsa, today.toISOString().split('T')[0]),
-                lte(arsip.tanggalKadaluarsa, futureDate.toISOString().split('T')[0])
-            ))
-            .orderBy(arsip.tanggalKadaluarsa);
+                isNotNull(arsip.currentRetentionTriggerEventId)
+            ));
 
-        return data;
+        const todayIso = today.toISOString().slice(0, 10);
+        const futureIso = futureDate.toISOString().slice(0, 10);
+        return rows.flatMap(row => {
+            // The cache check is only an additional fail-closed invariant; all
+            // dates and eligibility below still come from canonical evidence.
+            if (row.legalHold || !row.retentionTriggerDate) return [];
+            const evaluation = this.evaluateCanonicalRetention(row as ArchiveWithRuleSnapshot);
+            const expiry = evaluation.dates.tanggalKadaluarsa;
+            if (!evaluation.verified || !evaluation.calculationEligible || !expiry) return [];
+            if (expiry < todayIso || expiry > futureIso) return [];
+            const displayDisposition = evaluation.effectiveDispositionCode
+                || evaluation.normalizedRetention?.dispositionCode;
+            return [{
+                ...withoutRuleSnapshot(row as ArchiveWithRuleSnapshot),
+                tanggalKadaluarsa: expiry,
+                hasilAkhir: displayDisposition ? dispositionLabel(displayDisposition) : null,
+                canonicalRetention: evaluation,
+            }];
+        }).sort((a, b) => String(a.tanggalKadaluarsa).localeCompare(String(b.tanggalKadaluarsa)));
     }
 
     async getLegalHolds(unitKerjaId: string, securityClassifications?: string[] | null) {
@@ -826,98 +1034,38 @@ export class ArsipService {
         return stats[0];
     }
 
-    // Calculate retention end dates
-    parseRetentionPeriod(retention: string | null): number {
-        if (!retention) return 0;
-        // Parse "2 tahun", "5 tahun", "1 tahun", etc.
-        const match = retention.match(/(\d+)\s*tahun/i);
-        return match ? parseInt(match[1], 10) : 0;
+    calculateRetentionDates(
+        retentionTriggerDate: string | null,
+        normalizedOrLegacyText: StructuredRetentionRule | string | null,
+        _legacyInactiveText?: string | null,
+    ) {
+        // String arguments are retained only for binary/source compatibility
+        // with older callers. They deliberately fail closed instead of parsing.
+        const normalized = normalizedOrLegacyText !== null
+            && typeof normalizedOrLegacyText === 'object'
+            ? normalizedOrLegacyText
+            : null;
+        return archiveRuleAssignmentService.calculateRetentionDates(
+            retentionTriggerDate,
+            normalized,
+        );
     }
 
-    // Retention expressed in months, so "6 bulan" is not silently treated as no retention
-    parseRetentionMonths(retention: string | null): number {
-        const years = this.parseRetentionPeriod(retention);
-        if (years > 0) return years * 12;
-
-        const match = retention ? retention.match(/(\d+)\s*bulan/i) : null;
-        return match ? parseInt(match[1], 10) : 0;
-    }
-
-    calculateRetentionDates(retentionTriggerDate: string | null, retensiAktif: string | null, retensiInaktif: string | null) {
-        if (!retentionTriggerDate) {
-            return {
-                tanggalAktifBerakhir: null,
-                tanggalInaktifBerakhir: null,
-                tanggalKadaluarsa: null,
-            };
-        }
-
-        const triggerDate = new Date(`${retentionTriggerDate}T00:00:00.000Z`);
-        if (Number.isNaN(triggerDate.getTime())) {
-            return {
-                tanggalAktifBerakhir: null,
-                tanggalInaktifBerakhir: null,
-                tanggalKadaluarsa: null,
-            };
-        }
-
-        const aktifMonths = this.parseRetentionMonths(retensiAktif);
-        const inaktifMonths = this.parseRetentionMonths(retensiInaktif);
-
-        const addMonths = (source: Date, months: number) => {
-            const year = source.getUTCFullYear();
-            const month = source.getUTCMonth();
-            const day = source.getUTCDate();
-            const targetMonthStart = new Date(Date.UTC(year, month + months, 1));
-            const lastTargetDay = new Date(Date.UTC(
-                targetMonthStart.getUTCFullYear(),
-                targetMonthStart.getUTCMonth() + 1,
-                0,
-            )).getUTCDate();
-            return new Date(Date.UTC(
-                targetMonthStart.getUTCFullYear(),
-                targetMonthStart.getUTCMonth(),
-                Math.min(day, lastTargetDay),
-            ));
-        };
-
-        const endAktif = addMonths(triggerDate, aktifMonths);
-
-        const endInaktif = addMonths(endAktif, inaktifMonths);
-
-        const totalMonths = aktifMonths + inaktifMonths;
-
-        return {
-            tanggalAktifBerakhir: aktifMonths > 0 ? endAktif.toISOString().split('T')[0] : null,
-            tanggalInaktifBerakhir: totalMonths > 0 ? endInaktif.toISOString().split('T')[0] : null,
-            // No parsable retention (JRA rows use '-') means no expiry, not "expired today"
-            tanggalKadaluarsa: totalMonths > 0 ? endInaktif.toISOString().split('T')[0] : null,
-        };
-    }
-
-    // Get archive lifecycle status
-    getArchiveStatus(retentionTriggerDate: string | null, retensiAktif: string | null, retensiInaktif: string | null):
-        'belum_ditentukan' | 'aktif' | 'akan_inaktif' | 'inaktif' | 'akan_kadaluarsa' | 'kadaluarsa' {
-        if (!retentionTriggerDate) return 'belum_ditentukan';
-
-        const today = new Date();
-        const dates = this.calculateRetentionDates(retentionTriggerDate, retensiAktif, retensiInaktif);
-
-        if (!dates.tanggalKadaluarsa) return 'aktif';
-
-        const aktifEnd = dates.tanggalAktifBerakhir
-            ? new Date(dates.tanggalAktifBerakhir)
-            : new Date(retentionTriggerDate);
-        const inaktifEnd = dates.tanggalInaktifBerakhir ? new Date(dates.tanggalInaktifBerakhir) : aktifEnd;
-
-        const thirtyDaysFromNow = new Date();
-        thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-
-        if (today > inaktifEnd) return 'kadaluarsa';
-        if (today > aktifEnd && inaktifEnd <= thirtyDaysFromNow) return 'akan_kadaluarsa';
-        if (today > aktifEnd) return 'inaktif';
-        if (aktifEnd <= thirtyDaysFromNow) return 'akan_inaktif';
-        return 'aktif';
+    getArchiveStatus(
+        retentionTriggerDate: string | null,
+        normalizedOrLegacyText: StructuredRetentionRule | string | null,
+        legacyInactiveOrNow?: string | null | Date,
+    ): ArchiveLifecycleStatus {
+        const normalized = normalizedOrLegacyText !== null
+            && typeof normalizedOrLegacyText === 'object'
+            ? normalizedOrLegacyText
+            : null;
+        const now = legacyInactiveOrNow instanceof Date ? legacyInactiveOrNow : new Date();
+        return archiveRuleAssignmentService.getArchiveStatus(
+            retentionTriggerDate,
+            normalized,
+            now,
+        );
     }
 
     // Get lifecycle notifications for all archives in unit
@@ -927,25 +1075,35 @@ export class ArsipService {
     ) {
         // Keep held/missing-trigger counts visible, but never mix them into actionable
         // lifecycle collections.
-        const allArchives = await db
-            .select()
+        const rows = await db
+            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
                 archiveSecurityCondition(securityClassifications),
             ));
 
         const notifications = {
-            willBeInactive: [] as typeof allArchives,      // Akan memasuki masa inaktif
-            alreadyInactive: [] as typeof allArchives,     // Sudah inaktif
-            willExpire: [] as typeof allArchives,          // Akan kadaluarsa (30 hari)
-            expired: [] as typeof allArchives,             // Sudah kadaluarsa, perlu action
+            willBeInactive: [] as Arsip[],      // Akan memasuki masa inaktif
+            alreadyInactive: [] as Arsip[],     // Sudah inaktif
+            willExpire: [] as Arsip[],          // Akan kadaluarsa (30 hari)
+            expired: [] as Arsip[],             // Sudah kadaluarsa, perlu action
         };
         let held = 0;
         let missingTrigger = 0;
         let unverifiedRules = 0;
+        let manualReview = 0;
 
-        for (const arch of allArchives) {
+        for (const row of rows as ArchiveWithRuleSnapshot[]) {
+            const arch = withoutRuleSnapshot(row);
             if (arch.legalHold) {
                 held += 1;
                 continue;
@@ -954,29 +1112,43 @@ export class ArsipService {
                 unverifiedRules += 1;
                 continue;
             }
-            if (!arch.retentionTriggerDate) {
+            if (!row.currentRetentionTriggerEventId) {
                 missingTrigger += 1;
                 continue;
             }
 
-            const status = this.getArchiveStatus(
-                arch.retentionTriggerDate,
-                arch.retensiAktif,
-                arch.retensiInaktif
-            );
+            const evaluation = this.evaluateCanonicalRetention(row);
+            if (!evaluation.verified) {
+                unverifiedRules += 1;
+                continue;
+            }
+            if (!evaluation.calculationEligible) {
+                manualReview += 1;
+                continue;
+            }
+            const status = evaluation.status;
+            const canonicalArchive = {
+                ...arch,
+                tanggalKadaluarsa: evaluation.dates.tanggalKadaluarsa,
+                hasilAkhir: dispositionLabel(
+                    evaluation.effectiveDispositionCode
+                    || evaluation.normalizedRetention?.dispositionCode,
+                ),
+                canonicalRetention: evaluation,
+            };
 
             switch (status) {
                 case 'akan_inaktif':
-                    notifications.willBeInactive.push(arch);
+                    notifications.willBeInactive.push(canonicalArchive);
                     break;
                 case 'inaktif':
-                    notifications.alreadyInactive.push(arch);
+                    notifications.alreadyInactive.push(canonicalArchive);
                     break;
                 case 'akan_kadaluarsa':
-                    notifications.willExpire.push(arch);
+                    notifications.willExpire.push(canonicalArchive);
                     break;
                 case 'kadaluarsa':
-                    notifications.expired.push(arch);
+                    notifications.expired.push(canonicalArchive);
                     break;
             }
         }
@@ -991,7 +1163,8 @@ export class ArsipService {
                 held,
                 missingTrigger,
                 unverifiedRules,
-                total: allArchives.length,
+                manualReview,
+                total: rows.length,
             }
         };
     }
@@ -1019,34 +1192,47 @@ export class ArsipService {
             eq(arsip.disposalStatus, 'active'),
             eq(arsip.legalHold, false),
             eq(arsip.ruleProvenanceStatus, 'verified'),
-            isNotNull(arsip.retentionTriggerDate),
+            isNotNull(arsip.currentRetentionTriggerEventId),
             archiveSecurityCondition(securityClassifications),
         ];
-        if (hasilAkhir) {
-            conditions.push(eq(arsip.hasilAkhir, hasilAkhir));
-        }
-
-        const allArchives = await db
-            .select()
+        const rows = await db
+            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
             .orderBy(arsip.tanggalKadaluarsa);
 
-        // Recalculate from the explicit trigger so stale legacy tanggalKadaluarsa values
-        // can never make a record eligible.
-        const evaluatedArchives = allArchives.flatMap(arch => {
-            if (arch.legalHold || !arch.retentionTriggerDate) return [];
-            const retentionStatus = this.getArchiveStatus(
-                arch.retentionTriggerDate,
-                arch.retensiAktif,
-                arch.retensiInaktif,
-            );
-            const dates = this.calculateRetentionDates(
-                arch.retentionTriggerDate,
-                arch.retensiAktif,
-                arch.retensiInaktif,
-            );
-            return [{ ...arch, retentionStatus, tanggalKadaluarsa: dates.tanggalKadaluarsa }];
+        // Recalculate only from the verified current snapshot. Legacy text and
+        // stale cached expiry/outcome fields are never authoritative here.
+        const evaluatedArchives = (rows as ArchiveWithRuleSnapshot[]).flatMap(row => {
+            const arch = withoutRuleSnapshot(row);
+            if (arch.legalHold) return [];
+            const evaluation = this.evaluateCanonicalRetention(row);
+            if (!evaluation.verified
+                || (!evaluation.calculationEligible
+                    && evaluation.effectiveDecisionSource !== 'appraisal')) return [];
+            const dispositionCode = evaluation.effectiveDispositionCode
+                || evaluation.normalizedRetention?.dispositionCode;
+            const canonicalOutcome = dispositionLabel(dispositionCode);
+            if (hasilAkhir && canonicalOutcome !== hasilAkhir) return [];
+            return [{
+                ...arch,
+                hasilAkhir: canonicalOutcome,
+                canonicalDispositionCode: dispositionCode,
+                canonicalDecisionSource: evaluation.effectiveDecisionSource,
+                canonicalAppraisalDecisionId: evaluation.effectiveAppraisalDecisionId,
+                dispositionEligible: evaluation.dispositionEligible,
+                dispositionBlockReason: evaluation.dispositionBlockReason,
+                retentionStatus: evaluation.status,
+                tanggalKadaluarsa: evaluation.dates.tanggalKadaluarsa,
+            }];
         });
 
         // Filter by lifecycle status
@@ -1060,9 +1246,12 @@ export class ArsipService {
         }
 
         const grouped = {
-            musnah: filteredArchives.filter(a => a.hasilAkhir === 'Musnah'),
-            permanen: filteredArchives.filter(a => a.hasilAkhir === 'Permanen'),
-            dinilaiKembali: filteredArchives.filter(a => a.hasilAkhir === 'Dinilai Kembali'),
+            musnah: filteredArchives.filter(a => a.canonicalDispositionCode === 'musnah'),
+            permanen: filteredArchives.filter(a => a.canonicalDispositionCode === 'permanen'),
+            dinilaiKembali: filteredArchives.filter(a =>
+                a.canonicalDispositionCode === 'manual_review'
+                || a.canonicalDispositionCode === 'dinilai_kembali',
+            ),
             belumDitentukan: filteredArchives.filter(a => !a.hasilAkhir),
         };
 
@@ -1120,17 +1309,25 @@ export class ArsipService {
         const requestedIds = archiveIds && archiveIds.length > 0
             ? [...new Set(archiveIds)]
             : undefined;
-        const allArchives = await db
-            .select()
+        const rows = await db
+            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
                 archiveSecurityCondition(securityClassifications),
             ));
 
         const selectedArchives = requestedIds
-            ? allArchives.filter(a => requestedIds.includes(a.id))
-            : allArchives;
+            ? (rows as ArchiveWithRuleSnapshot[]).filter(a => requestedIds.includes(a.id))
+            : rows as ArchiveWithRuleSnapshot[];
 
         if (requestedIds) {
             const foundIds = new Set(selectedArchives.map(a => a.id));
@@ -1140,19 +1337,19 @@ export class ArsipService {
             }
         }
 
-        const isEligibleForDestruction = (arch: Arsip) =>
-            !arch.legalHold &&
-            arch.ruleProvenanceStatus === 'verified' &&
-            Boolean(arch.retentionTriggerDate) &&
-            arch.disposalStatus === 'active' &&
-            arch.hasilAkhir === 'Musnah' &&
-            this.getArchiveStatus(
-                arch.retentionTriggerDate,
-                arch.retensiAktif,
-                arch.retensiInaktif,
-            ) === 'kadaluarsa';
-
-        const archives = selectedArchives.filter(isEligibleForDestruction);
+        const archives = selectedArchives.flatMap(row => {
+            if (row.legalHold || row.ruleProvenanceStatus !== 'verified'
+                || row.disposalStatus !== 'active') return [];
+            const evaluation = this.evaluateCanonicalRetention(row);
+            if (!evaluation.verified
+                || !evaluation.dispositionEligible
+                || evaluation.effectiveDispositionCode !== 'musnah') return [];
+            return [{
+                ...withoutRuleSnapshot(row),
+                hasilAkhir: 'Musnah' as const,
+                tanggalKadaluarsa: evaluation.dates.tanggalKadaluarsa,
+            }];
+        });
         if (requestedIds && archives.length !== selectedArchives.length) {
             throw new ValidationError(
                 'Berita acara hanya dapat dibuat untuk arsip Musnah yang retensinya telah berakhir, memiliki pemicu, tidak di-hold, dan belum masuk proses penyusutan.',

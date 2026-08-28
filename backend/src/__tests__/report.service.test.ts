@@ -22,6 +22,44 @@ const mockDb = {
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/archive-rule-assignment.service', () => ({
+    RETENTION_GOVERNANCE_EVIDENCE_SELECT: {},
+    CURRENT_RETENTION_TRIGGER_JOIN: {},
+    CURRENT_RETENTION_VERIFICATION_JOIN: {},
+    CURRENT_APPRAISAL_DECISION_JOIN: {},
+    CURRENT_APPRAISAL_CASE_JOIN: {},
+    archiveRuleAssignmentService: {
+        evaluateCanonicalRetention: (triggerDate: string | null | undefined, evidence: any) => {
+            const due = new Date();
+            due.setDate(due.getDate() + 10);
+            const dueIso = due.toISOString().slice(0, 10);
+            const effectiveDispositionCode = evidence?.appraisalDecisionOutcome || 'musnah';
+            return {
+                verified: true,
+                blockReason: null,
+                calculationEligible: true,
+                calculationBlockReason: null,
+                normalizedRetention: {
+                    activeMonths: 12,
+                    inactiveMonths: 12,
+                    calculationMode: 'duration',
+                    dispositionCode: 'musnah',
+                },
+                dates: {
+                    tanggalAktifBerakhir: triggerDate || null,
+                    tanggalInaktifBerakhir: triggerDate ? dueIso : null,
+                    tanggalKadaluarsa: triggerDate ? dueIso : null,
+                },
+                status: triggerDate ? 'akan_kadaluarsa' : 'belum_ditentukan',
+                effectiveDispositionCode,
+                effectiveDecisionSource: evidence?.appraisalDecisionOutcome ? 'appraisal' : 'jra',
+                effectiveAppraisalDecisionId: evidence?.appraisalDecisionRecordId || null,
+                dispositionEligible: false,
+                dispositionBlockReason: 'masa retensi belum berakhir',
+            };
+        },
+    },
+}));
 
 const { reportService } = await import('../services/report.service');
 
@@ -76,8 +114,9 @@ describe('ReportService', () => {
 
     describe('getArsipStats', () => {
         it('should return arsip statistics', async () => {
-            // 3 DB calls: aggregation + byClassification + byMediaType
-            enqueue([{ total: 500, masuk: 300, keluar: 150, permanen: 50 }]);
+            // 4 DB calls: aggregation + canonical-retention rows + breakdowns
+            enqueue([{ total: 500, masuk: 300, keluar: 150 }]);
+            enqueue([]); // canonical-retention rows
             enqueue([{ kode: 'KU', count: 100 }]); // byClassification
             enqueue([{ mediaType: 'kertas', count: 400 }]); // byMediaType
 
@@ -91,13 +130,13 @@ describe('ReportService', () => {
 
     describe('getArsipReport expiring', () => {
         it('excludes held and missing-trigger records from expiry reports', async () => {
-            enqueue([{ count: 1 }]);
             enqueue([
                 { id: 'eligible', retentionTriggerDate: '2085-01-01', legalHold: false },
                 { id: 'held', retentionTriggerDate: '2085-01-01', legalHold: true },
                 { id: 'missing-trigger', retentionTriggerDate: null, legalHold: false },
             ]);
-            enqueue([{ total: 3, masuk: 2, keluar: 1, permanen: 0 }]);
+            enqueue([{ total: 3, masuk: 2, keluar: 1 }]);
+            enqueue([]);
             enqueue([]);
             enqueue([]);
 
@@ -106,6 +145,34 @@ describe('ReportService', () => {
                 type: 'expiring',
             });
             expect(result.data.map(item => item.id)).toEqual(['eligible']);
+        });
+    });
+
+    describe('getArsipReport permanent', () => {
+        it('uses the effective approved appraisal outcome instead of a legacy cache', async () => {
+            enqueue([{
+                id: 'appraised-permanent',
+                retentionTriggerDate: '2020-01-01',
+                legalHold: false,
+                hasilAkhir: 'Musnah',
+                appraisalDecisionOutcome: 'permanen',
+                appraisalDecisionRecordId: 'decision-1',
+            }]);
+            enqueue([{ total: 1, masuk: 1, keluar: 0 }]);
+            enqueue([]);
+            enqueue([]);
+            enqueue([]);
+
+            const result = await reportService.getArsipReport({
+                unitKerjaId: 'ditjen',
+                type: 'permanent',
+            });
+
+            expect(result.data).toHaveLength(1);
+            expect(result.data[0]).toMatchObject({
+                id: 'appraised-permanent',
+                hasilAkhir: 'Permanen',
+            });
         });
     });
 

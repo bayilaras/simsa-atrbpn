@@ -63,6 +63,11 @@ const canonicalAssignment = {
 };
 
 vi.mock('../services/archive-rule-assignment.service', () => ({
+    RETENTION_GOVERNANCE_EVIDENCE_SELECT: {},
+    CURRENT_RETENTION_TRIGGER_JOIN: {},
+    CURRENT_RETENTION_VERIFICATION_JOIN: {},
+    CURRENT_APPRAISAL_DECISION_JOIN: {},
+    CURRENT_APPRAISAL_CASE_JOIN: {},
     archiveRuleAssignmentService: {
         resolveActive: vi.fn().mockResolvedValue(canonicalAssignment),
         calculateExpiry: vi.fn((triggerDate: string | undefined, normalized: any) => {
@@ -70,6 +75,74 @@ vi.mock('../services/archive-rule-assignment.service', () => ({
             const date = new Date(`${triggerDate}T00:00:00.000Z`);
             date.setUTCMonth(date.getUTCMonth() + normalized.activeMonths + normalized.inactiveMonths);
             return date.toISOString().slice(0, 10);
+        }),
+        calculateRetentionDates: vi.fn((triggerDate: string | undefined, normalized: any) => {
+            const empty = {
+                tanggalAktifBerakhir: null,
+                tanggalInaktifBerakhir: null,
+                tanggalKadaluarsa: null,
+            };
+            if (!triggerDate || !normalized || normalized.calculationMode !== 'duration'
+                || !Number.isInteger(normalized.activeMonths)
+                || !Number.isInteger(normalized.inactiveMonths)) return empty;
+            const active = new Date(`${triggerDate}T00:00:00.000Z`);
+            active.setUTCMonth(active.getUTCMonth() + normalized.activeMonths);
+            const inactive = new Date(active);
+            inactive.setUTCMonth(inactive.getUTCMonth() + normalized.inactiveMonths);
+            return {
+                tanggalAktifBerakhir: active.toISOString().slice(0, 10),
+                tanggalInaktifBerakhir: inactive.toISOString().slice(0, 10),
+                tanggalKadaluarsa: inactive.toISOString().slice(0, 10),
+            };
+        }),
+        getArchiveStatus: vi.fn((triggerDate: string | undefined, normalized: any, now = new Date()) => {
+            if (!triggerDate) return 'belum_ditentukan';
+            if (!normalized || normalized.calculationMode !== 'duration'
+                || !Number.isInteger(normalized.activeMonths)
+                || !Number.isInteger(normalized.inactiveMonths)) return 'aktif';
+            const active = new Date(`${triggerDate}T00:00:00.000Z`);
+            active.setUTCMonth(active.getUTCMonth() + normalized.activeMonths);
+            const inactive = new Date(active);
+            inactive.setUTCMonth(inactive.getUTCMonth() + normalized.inactiveMonths);
+            if (now > inactive) return 'kadaluarsa';
+            if (now > active) return 'inaktif';
+            return 'aktif';
+        }),
+        evaluateCanonicalRetention: vi.fn((triggerDate: string | undefined, evidence: any) => {
+            const normalized = evidence?.snapshot?.retention || canonicalAssignment.normalizedRetention;
+            const calculationEligible = normalized.calculationMode === 'duration'
+                && Number.isInteger(normalized.activeMonths)
+                && Number.isInteger(normalized.inactiveMonths);
+            const active = triggerDate && calculationEligible
+                ? new Date(`${triggerDate}T00:00:00.000Z`)
+                : null;
+            active?.setUTCMonth(active.getUTCMonth() + normalized.activeMonths);
+            const inactive = active ? new Date(active) : null;
+            inactive?.setUTCMonth(inactive.getUTCMonth() + normalized.inactiveMonths);
+            const dates = {
+                tanggalAktifBerakhir: active?.toISOString().slice(0, 10) || null,
+                tanggalInaktifBerakhir: inactive?.toISOString().slice(0, 10) || null,
+                tanggalKadaluarsa: inactive?.toISOString().slice(0, 10) || null,
+            };
+            return {
+                verified: true,
+                blockReason: null,
+                calculationEligible,
+                calculationBlockReason: calculationEligible ? null : 'memerlukan penilaian manusia',
+                normalizedRetention: normalized,
+                dates,
+                status: !triggerDate ? 'belum_ditentukan'
+                    : !inactive ? 'aktif'
+                        : new Date() > inactive ? 'kadaluarsa'
+                            : new Date() > (active as Date) ? 'inaktif' : 'aktif',
+                effectiveDispositionCode: normalized.dispositionCode,
+                effectiveDecisionSource: 'jra',
+                effectiveAppraisalDecisionId: null,
+                dispositionEligible: Boolean(inactive && new Date() > inactive),
+                dispositionBlockReason: inactive && new Date() > inactive
+                    ? null
+                    : 'masa retensi arsip belum berakhir',
+            };
         }),
         attachInitialSnapshot: vi.fn(async (_tx: any, id: string) => ({ id })),
         appendRevision: vi.fn(),
@@ -127,7 +200,12 @@ describe('ArsipService', () => {
             // findById makes 2 DB calls: select arsip + select arsipItems
             enqueue([{ id: '1', jenisArsip: 'masuk' }]); // arsip
             enqueue([{ nomorItem: 1 }]); // arsipItems
-            expect(await svc.findById('1')).toEqual({ id: '1', jenisArsip: 'masuk', items: [{ nomorItem: 1 }] });
+            expect(await svc.findById('1')).toMatchObject({
+                id: '1',
+                jenisArsip: 'masuk',
+                items: [{ nomorItem: 1 }],
+                canonicalRetention: { verified: true },
+            });
         });
 
         it('should return null when not found', async () => {
@@ -322,7 +400,7 @@ describe('ArsipService', () => {
             }]);
 
             await expect(svc.update('1', { retentionTriggerDate: '2026-01-01' } as any))
-                .rejects.toThrow(/workflow penyusutan/i);
+                .rejects.toThrow(/workflow peristiwa retensi/i);
         });
 
         it('should make an executed archive immutable', async () => {
@@ -351,34 +429,14 @@ describe('ArsipService', () => {
             expect(resultQueue).toHaveLength(0);
         });
 
-        it('should derive expiry when a documented trigger changes, without changing canonical JRA', async () => {
-            enqueue(
-                [{
-                    id: '1',
-                    disposalStatus: 'active',
-                    disposalBatchId: null,
-                    legalHold: false,
-                    retentionTriggerType: 'berkas_ditutup',
-                    retentionTriggerLabel: 'Berkas perkara ditutup',
-                    retentionTriggerDate: '2020-01-15',
-                    retentionTriggerEvidence: 'Berita acara penutupan nomor 1/2020',
-                    retensiAktif: '2 tahun',
-                    retensiInaktif: '3 tahun',
-                }],
-                [{ id: '1', retentionTriggerDate: '2021-01-15', tanggalKadaluarsa: '2026-01-15' }],
-            );
-
-            await svc.update('1', {
+        it('should reject direct trigger mutation in favor of the verified event workflow', async () => {
+            await expect(svc.update('1', {
                 retentionTriggerType: 'berkas_ditutup',
                 retentionTriggerLabel: 'Berkas perkara ditutup ulang',
                 retentionTriggerDate: '2021-01-15',
                 retentionTriggerEvidence: 'Berita acara koreksi nomor 2/2021',
-            } as any);
-
-            expect(capturedSets[0]).toMatchObject({
-                retentionTriggerDate: '2021-01-15',
-                tanggalKadaluarsa: '2026-01-15',
-            });
+            } as any)).rejects.toThrow(/workflow peristiwa retensi/i);
+            expect(resultQueue).toHaveLength(0);
         });
 
         it('should require evidence when adding a retention trigger', async () => {
@@ -391,7 +449,7 @@ describe('ArsipService', () => {
             }]);
 
             await expect(svc.update('1', { retentionTriggerDate: '2026-01-01' } as any))
-                .rejects.toThrow(/bukti pendukung/i);
+                .rejects.toThrow(/workflow peristiwa retensi/i);
         });
     });
 
@@ -402,72 +460,60 @@ describe('ArsipService', () => {
         });
     });
 
-    // ── Pure function: parseRetentionPeriod ──
-    describe('parseRetentionPeriod', () => {
-        it('should parse "2 tahun" to 2', () => {
-            expect(svc.parseRetentionPeriod('2 tahun')).toBe(2);
-        });
-
-        it('should parse "5 Tahun" (case-insensitive)', () => {
-            expect(svc.parseRetentionPeriod('5 Tahun')).toBe(5);
-        });
-
-        it('should parse "10 tahun"', () => {
-            expect(svc.parseRetentionPeriod('10 tahun')).toBe(10);
-        });
-
-        it('should parse "1 tahun"', () => {
-            expect(svc.parseRetentionPeriod('1 tahun')).toBe(1);
-        });
-
-        it('should return 0 for null', () => {
-            expect(svc.parseRetentionPeriod(null)).toBe(0);
-        });
-
-        it('should return 0 for empty string', () => {
-            expect(svc.parseRetentionPeriod('')).toBe(0);
-        });
-
-        it('should return 0 for invalid format', () => {
-            expect(svc.parseRetentionPeriod('abc')).toBe(0);
-        });
-    });
-
     // ── Pure function: calculateRetentionDates ──
     describe('calculateRetentionDates', () => {
         it('should calculate active and inactive end dates from the explicit trigger', () => {
-            const result = svc.calculateRetentionDates('2020-01-15', '2 tahun', '3 tahun');
+            const result = svc.calculateRetentionDates('2020-01-15', {
+                activeMonths: 24,
+                inactiveMonths: 36,
+                calculationMode: 'duration',
+                dispositionCode: 'musnah',
+            });
             expect(result.tanggalAktifBerakhir).toBe('2022-01-15');
             expect(result.tanggalInaktifBerakhir).toBe('2025-01-15');
             expect(result.tanggalKadaluarsa).toBe('2025-01-15');
         });
 
-        it('should handle null active retention', () => {
-            const result = svc.calculateRetentionDates('2020-01-15', null, '5 tahun');
-            expect(result.tanggalAktifBerakhir).toBeNull();
-            expect(result.tanggalInaktifBerakhir).toBe('2025-01-15');
-        });
-
-        it('should handle both retentions as null', () => {
-            const result = svc.calculateRetentionDates('2020-01-15', null, null);
+        it('should fail closed when duration months are incomplete', () => {
+            const result = svc.calculateRetentionDates('2020-01-15', {
+                activeMonths: null,
+                inactiveMonths: 60,
+                calculationMode: 'duration',
+                dispositionCode: 'musnah',
+            });
             expect(result.tanggalAktifBerakhir).toBeNull();
             expect(result.tanggalInaktifBerakhir).toBeNull();
-            // No parsable retention means no expiry date at all, not "expired on day one"
+        });
+
+        it('should never parse legacy retention display text', () => {
+            const result = svc.calculateRetentionDates('2020-01-15', '2 tahun', '3 tahun');
+            expect(result.tanggalAktifBerakhir).toBeNull();
+            expect(result.tanggalInaktifBerakhir).toBeNull();
             expect(result.tanggalKadaluarsa).toBeNull();
         });
 
         it('should never calculate an expiry without a retention trigger', () => {
-            const result = svc.calculateRetentionDates(null, '2 tahun', '3 tahun');
+            const result = svc.calculateRetentionDates(null, {
+                activeMonths: 24,
+                inactiveMonths: 36,
+                calculationMode: 'duration',
+                dispositionCode: 'musnah',
+            });
             expect(result.tanggalAktifBerakhir).toBeNull();
             expect(result.tanggalInaktifBerakhir).toBeNull();
             expect(result.tanggalKadaluarsa).toBeNull();
         });
 
-        it('should handle only active retention (no inactive)', () => {
-            const result = svc.calculateRetentionDates('2020-06-01', '3 tahun', null);
-            expect(result.tanggalAktifBerakhir).toBe('2023-06-01');
-            expect(result.tanggalInaktifBerakhir).toBe('2023-06-01');
-            expect(result.tanggalKadaluarsa).toBe('2023-06-01');
+        it('should keep a manual 1-year/"-" rule non-actionable', () => {
+            const result = svc.calculateRetentionDates('2000-01-01', {
+                activeMonths: 12,
+                inactiveMonths: null,
+                calculationMode: 'manual',
+                dispositionCode: 'musnah',
+            });
+            expect(result.tanggalAktifBerakhir).toBeNull();
+            expect(result.tanggalInaktifBerakhir).toBeNull();
+            expect(result.tanggalKadaluarsa).toBeNull();
         });
     });
 
@@ -475,26 +521,36 @@ describe('ArsipService', () => {
     describe('getArchiveStatus', () => {
         it('should return "aktif" for archive within active period', () => {
             const farFuture = `${new Date().getFullYear() + 10}-01-01`;
-            expect(svc.getArchiveStatus(farFuture, '20 tahun', '10 tahun')).toBe('aktif');
+            expect(svc.getArchiveStatus(farFuture, {
+                activeMonths: 240, inactiveMonths: 120, calculationMode: 'duration', dispositionCode: 'musnah',
+            })).toBe('aktif');
         });
 
         it('should return "kadaluarsa" for expired archive', () => {
-            expect(svc.getArchiveStatus('2000-01-01', '1 tahun', '1 tahun')).toBe('kadaluarsa');
+            expect(svc.getArchiveStatus('2000-01-01', {
+                activeMonths: 12, inactiveMonths: 12, calculationMode: 'duration', dispositionCode: 'musnah',
+            })).toBe('kadaluarsa');
         });
 
         it('should return "inaktif" for archive in inactive period', () => {
             const twoYearsAgo = new Date();
             twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
             const dateStr = twoYearsAgo.toISOString().split('T')[0];
-            expect(svc.getArchiveStatus(dateStr, '1 tahun', '10 tahun')).toBe('inaktif');
+            expect(svc.getArchiveStatus(dateStr, {
+                activeMonths: 12, inactiveMonths: 120, calculationMode: 'duration', dispositionCode: 'musnah',
+            })).toBe('inaktif');
         });
 
-        it('should return "aktif" when no active retention is set', () => {
-            expect(svc.getArchiveStatus('2020-01-01', null, null)).toBe('aktif');
+        it('should return "aktif" for non-calculable manual rules', () => {
+            expect(svc.getArchiveStatus('2020-01-01', {
+                activeMonths: 12, inactiveMonths: null, calculationMode: 'manual', dispositionCode: 'musnah',
+            })).toBe('aktif');
         });
 
         it('should return an undetermined status when the trigger is missing', () => {
-            expect(svc.getArchiveStatus(null, '1 tahun', '1 tahun')).toBe('belum_ditentukan');
+            expect(svc.getArchiveStatus(null, {
+                activeMonths: 12, inactiveMonths: 12, calculationMode: 'duration', dispositionCode: 'musnah',
+            })).toBe('belum_ditentukan');
         });
     });
 
@@ -563,29 +619,30 @@ describe('ArsipService', () => {
             });
 
             expect(capturedValues[0].tanggalArsip).toBe('2020-01-15');
-            expect(capturedValues[0].retentionTriggerDate).toBeUndefined();
+            expect(capturedValues[0].retentionTriggerDate).toBeNull();
             expect(capturedValues[0].tanggalKadaluarsa).toBeNull();
         });
 
-        it('should derive expiry from a documented trigger instead', async () => {
-            enqueue([
-                { id: 'sm-1', unitKerjaId: 'u1', tahun: 2020, tanggalSurat: '2020-01-15', nomorSurat: '1/2020', perihal: 'Test' },
-            ]);
-            enqueue([]);
-            enqueue([{ id: 'a1' }]);
-            enqueue([]);
-
-            await svc.archiveFromSuratMasuk('sm-1', {
+        it('should reject a trigger embedded in the registration command', async () => {
+            await expect(svc.archiveFromSuratMasuk('sm-1', {
                 retensiAktif: '2 tahun',
                 retensiInaktif: '3 tahun',
                 retentionTriggerType: 'serah_terima',
                 retentionTriggerLabel: 'BAST final',
                 retentionTriggerDate: '2021-06-30',
                 retentionTriggerEvidence: 'BAST Nomor 12/2021 tanggal 30 Juni 2021',
-            });
+            })).rejects.toThrow(/workflow peristiwa retensi.*setelah registrasi/i);
+            expect(resultQueue).toHaveLength(0);
+        });
 
-            expect(capturedValues[0].tanggalKadaluarsa).toBe('2026-06-30');
-            expect(capturedValues[0].tanggalKadaluarsa).not.toBe('2025-01-15');
+        it('rejects client-provided expiry and outcome caches during registration', async () => {
+            await expect(svc.archiveFromSuratMasuk('sm-1', {
+                tanggalKadaluarsa: '2031-06-30',
+            } as any)).rejects.toThrow(/dihitung sistem/i);
+            await expect(svc.archiveFromSuratMasuk('sm-1', {
+                hasilAkhir: 'Musnah',
+            } as any)).rejects.toThrow(/snapshot JRA.*appraisal efektif/i);
+            expect(resultQueue).toHaveLength(0);
         });
     });
 
@@ -638,7 +695,7 @@ describe('ArsipService', () => {
             enqueue([
                 { id: 'held', legalHold: true, retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
                 { id: 'missing-trigger', legalHold: false, ruleProvenanceStatus: 'verified', retentionTriggerDate: null, retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
-                { id: 'expired', legalHold: false, ruleProvenanceStatus: 'verified', retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
+                { id: 'expired', legalHold: false, ruleProvenanceStatus: 'verified', currentRetentionTriggerEventId: 'event-1', retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun' },
             ]);
 
             const result = await svc.getLifecycleNotifications('u1');

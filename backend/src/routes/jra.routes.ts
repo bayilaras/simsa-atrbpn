@@ -3,37 +3,59 @@ import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { roleMiddleware } from '../middlewares/role.middleware';
 import { jraService } from '../services/klasifikasi.service';
 import { createLogger } from '../utils/logger';
+import { ValidationError } from '../utils/errors';
 
 const log = createLogger('JraRoutes');
 
 const router = Router();
 
-function retentionMonths(value: unknown): number | null {
-    if (typeof value !== 'string') return null;
-    const years = value.trim().match(/^(\d+)\s*tahun\b/i);
-    if (years) return Number(years[1]) * 12;
-    const months = value.trim().match(/^(\d+)\s*bulan\b/i);
-    return months ? Number(months[1]) : null;
-}
+export function normalizeStructuredJraFields(data: Record<string, any>) {
+    const calculationMode = data.calculationMode;
+    if (!['duration', 'manual'].includes(calculationMode)) {
+        throw new ValidationError('Mode hitung JRA wajib dipilih secara eksplisit: duration atau manual.');
+    }
 
-function normalizedJraFields(data: Record<string, any>) {
-    const activeMonths = retentionMonths(data.retensiAktif);
-    const inactiveMonths = retentionMonths(data.retensiInaktif);
-    const outcome = String(data.keterangan || '').trim().toLowerCase();
+    const dispositionCode = data.dispositionCode;
+    if (!['musnah', 'permanen', 'dinilai_kembali', 'manual_review'].includes(dispositionCode)) {
+        throw new ValidationError('Keputusan JRA terstruktur wajib dipilih secara eksplisit.');
+    }
+
+    const structuredMonth = (value: unknown, field: string): number | null => {
+        if (value === null || value === undefined || value === '') return null;
+        const parsed = typeof value === 'number' ? value : Number(value);
+        if (!Number.isInteger(parsed) || parsed < 0) {
+            throw new ValidationError(`${field} harus berupa jumlah bulan bulat non-negatif.`);
+        }
+        return parsed;
+    };
+    let activeMonths = structuredMonth(data.activeMonths, 'Bulan aktif');
+    let inactiveMonths = structuredMonth(data.inactiveMonths, 'Bulan inaktif');
+    const triggerGuidance = typeof data.triggerGuidance === 'string'
+        ? data.triggerGuidance.trim()
+        : '';
+
+    if (calculationMode === 'duration' && (activeMonths === null || inactiveMonths === null)) {
+        throw new ValidationError('Mode durasi memerlukan bulan aktif dan bulan inaktif terstruktur.');
+    }
+    if (calculationMode === 'manual') {
+        // Textual durations and conditional phrases are evidence only. They must
+        // never be promoted into executable retention durations.
+        activeMonths = null;
+        inactiveMonths = null;
+        if (data.isSelectable !== false && triggerGuidance.length < 10) {
+            throw new ValidationError('Mode manual memerlukan panduan pemicu/bukti sedikitnya 10 karakter.');
+        }
+    }
+    if (calculationMode === 'duration' && dispositionCode === 'manual_review') {
+        throw new ValidationError('Keputusan bersyarat/wajib appraisal harus memakai mode manual.');
+    }
+
     return {
         activeMonths,
         inactiveMonths,
-        calculationMode: activeMonths !== null && inactiveMonths !== null ? 'duration' : 'manual',
-        dispositionCode: outcome === 'musnah'
-            ? 'musnah'
-            : outcome === 'permanen'
-                ? 'permanen'
-                : outcome.startsWith('dinilai kembali')
-                    ? 'dinilai_kembali'
-                    : 'manual_review',
-        triggerGuidance: activeMonths === null && data.retensiAktif
-            ? String(data.retensiAktif).trim()
-            : null,
+        calculationMode,
+        dispositionCode,
+        triggerGuidance: triggerGuidance || null,
         contentHash: null,
     };
 }
@@ -197,7 +219,12 @@ router.post('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: 
             isActive: true,
             isSelectable: isSelectable ?? true,
             sourcePage: sourcePage ?? null,
-            ...normalizedJraFields(req.body),
+            ...normalizeStructuredJraFields(req.body),
+        }, {
+            actorId: req.user?.id,
+            actorEmail: req.user?.email,
+            ipAddress: req.ip,
+            reason: typeof req.body.changeReason === 'string' ? req.body.changeReason.trim() : undefined,
         });
 
         res.status(201).json({ success: true, data: created });
@@ -220,7 +247,12 @@ router.put('/items/:id', roleMiddleware(['super_admin']), async (req: AuthReques
         const updated = await jraService.updateById(id, {
             ruleSetId, uraian, retensiAktif, retensiInaktif, keterangan, kategori,
             parentKode, tipe, level, isActive, isSelectable, sourcePage,
-            ...normalizedJraFields(req.body),
+            ...normalizeStructuredJraFields(req.body),
+        }, {
+            actorId: req.user?.id,
+            actorEmail: req.user?.email,
+            ipAddress: req.ip,
+            reason: typeof req.body.changeReason === 'string' ? req.body.changeReason.trim() : undefined,
         });
         if (!updated) return res.status(404).json({ error: 'Butir JRA tidak ditemukan pada draft' });
         res.json({ success: true, data: updated });
@@ -236,7 +268,12 @@ router.delete('/items/:id', roleMiddleware(['super_admin']), async (req: AuthReq
         if (!Number.isInteger(id) || id <= 0 || !ruleSetId) {
             return res.status(400).json({ error: 'ID item dan ruleSetId draft wajib diisi' });
         }
-        const deleted = await jraService.deleteById(id, ruleSetId);
+        const deleted = await jraService.deleteById(id, ruleSetId, {
+            actorId: req.user?.id,
+            actorEmail: req.user?.email,
+            ipAddress: req.ip,
+            reason: typeof req.query.reason === 'string' ? req.query.reason.trim() : undefined,
+        });
         if (!deleted) return res.status(404).json({ error: 'Butir JRA tidak ditemukan pada draft' });
         res.json({ success: true, message: 'Butir JRA dinonaktifkan', data: deleted });
     } catch (error) {

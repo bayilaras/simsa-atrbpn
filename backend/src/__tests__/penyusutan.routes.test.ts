@@ -117,6 +117,22 @@ describe('penyusutan batch unit scoping', () => {
         expect(mocks.service.deleteBatch).toHaveBeenCalledWith('batch-1', 'unit-a', ['biasa']);
     });
 
+    it('fails closed before creating a legacy permanent-transfer batch', async () => {
+        await request(app)
+            .post('/penyusutan')
+            .send({
+                unitKerjaId: 'unit-a',
+                jenisPenyusutan: 'penyerahan',
+                arsipIds: ['arsip-1'],
+            })
+            .expect(409)
+            .expect(({ body }) => {
+                expect(body.error).toMatch(/Tata Kelola Retensi.*permanent-transfers/i);
+            });
+
+        expect(mocks.service.create).not.toHaveBeenCalled();
+    });
+
     it('passes the assigned staff unit to every batch print generator', async () => {
         for (const [path] of batchPrintCases) {
             await request(app).get(`${path}?unitKerjaId=unit-b`).expect(200);

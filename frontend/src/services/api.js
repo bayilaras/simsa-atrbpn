@@ -1,7 +1,8 @@
 // API Configuration
 import { clearOfflineStorage } from '../lib/offline-storage';
+import { API_BASE_URL } from '../lib/api-url';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+export { API_BASE_URL };
 
 // Read a cookie value by name
 function getCookie(name) {

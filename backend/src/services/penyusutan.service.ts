@@ -2,16 +2,26 @@ import { db } from '../config/database';
 import {
     penyusutanArsip, NewPenyusutanArsip, PenyusutanArsip,
     penyusutanItems, NewPenyusutanItem,
-    arsip
+    arsip, arsipRuleSnapshots,
+    jraAppraisalCases, jraAppraisalDecisions,
+    retentionTriggerEvents, retentionTriggerVerifications,
 } from '../db/schema';
-import { eq, and, desc, sql, inArray, isNotNull } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray, isNotNull, getTableColumns } from 'drizzle-orm';
 import { arsipService } from './arsip.service';
+import {
+    CURRENT_APPRAISAL_CASE_JOIN,
+    CURRENT_APPRAISAL_DECISION_JOIN,
+    CURRENT_RETENTION_TRIGGER_JOIN,
+    CURRENT_RETENTION_VERIFICATION_JOIN,
+    RETENTION_GOVERNANCE_EVIDENCE_SELECT,
+} from './archive-rule-assignment.service';
 import { ValidationError } from '../utils/errors';
 import {
     NO_RECORD_UNIT_ACCESS,
     scopedRecordByIdWhere,
     type RecordUnitScope,
 } from '../utils/record-unit-scope';
+import { assertLegacyPermanentTransferMutationAllowed } from '../utils/permanent-transfer-policy';
 
 // Types
 interface PenyusutanFilters {
@@ -32,6 +42,27 @@ interface CreatePenyusutanData {
     createdBy?: string;
     securityClassifications?: string[] | null;
 }
+
+const RULE_SNAPSHOT_EVIDENCE_SELECT = {
+    ruleSnapshotId: arsipRuleSnapshots.id,
+    ruleSnapshotArsipId: arsipRuleSnapshots.arsipId,
+    ruleSnapshotStatus: arsipRuleSnapshots.status,
+    ruleSnapshotJraItemId: arsipRuleSnapshots.jraItemId,
+    ruleSnapshotJraRuleSetId: arsipRuleSnapshots.jraRuleSetId,
+    ruleSnapshot: arsipRuleSnapshots.snapshot,
+    ruleSnapshotSha256: arsipRuleSnapshots.snapshotSha256,
+};
+
+const ARCHIVE_WITH_RULE_SNAPSHOT_SELECT = {
+    ...getTableColumns(arsip),
+    ...RULE_SNAPSHOT_EVIDENCE_SELECT,
+    ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
+};
+
+const CURRENT_RULE_SNAPSHOT_JOIN = and(
+    eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+    eq(arsipRuleSnapshots.arsipId, arsip.id),
+);
 
 type PenyusutanStatus = 'draft' | 'proposed' | 'reviewed' | 'approved' | 'executed';
 
@@ -229,24 +260,49 @@ class PenyusutanService {
      * disposalBatchId would be silently overwritten while the old batch still lists it.
      */
     private getDispositionBlockReason(row: any, jenisPenyusutan: string): string | null {
-        const status = arsipService.getArchiveStatus(
-            row.retentionTriggerDate,
-            row.retensiAktif,
-            row.retensiInaktif,
-        );
-        const outcome = String(row.hasilAkhir || '').trim().toLowerCase();
+        // Alih media is a preservation action, not a retention outcome. Its
+        // separate controls must not be made dependent on a calculable JRA.
+        if (jenisPenyusutan === 'alih_media') return null;
 
-        if (jenisPenyusutan === 'pemusnahan') {
-            if (outcome !== 'musnah') return 'hasil akhir JRA bukan Musnah';
-            if (status !== 'kadaluarsa') return 'retensi belum berakhir';
+        const evaluation = arsipService.evaluateCanonicalRetention(row);
+        if (!evaluation.verified) {
+            return evaluation.blockReason || 'snapshot JRA tidak terverifikasi';
         }
-        if (jenisPenyusutan === 'penyerahan') {
-            if (outcome !== 'permanen') return 'hasil akhir JRA bukan Permanen';
-            if (status !== 'kadaluarsa') return 'retensi belum berakhir';
-        }
+        const status = evaluation.status;
+        const dispositionCode = evaluation.effectiveDispositionCode;
+
         if (jenisPenyusutan === 'pemindahan') {
+            if (!evaluation.calculationEligible
+                || evaluation.normalizedRetention?.calculationMode !== 'duration') {
+                return evaluation.calculationBlockReason
+                    || 'aturan JRA tidak memiliki durasi terstruktur';
+            }
             if (!['inaktif', 'akan_kadaluarsa', 'kadaluarsa'].includes(status)) {
                 return 'masa aktif belum berakhir';
+            }
+            return null;
+        }
+
+        if (jenisPenyusutan === 'pemusnahan') {
+            if (dispositionCode !== 'musnah') {
+                return dispositionCode
+                    ? 'keputusan efektif bukan Musnah'
+                    : evaluation.dispositionBlockReason
+                        || 'hasil akhir JRA memerlukan appraisal efektif';
+            }
+            if (!evaluation.dispositionEligible) {
+                return evaluation.dispositionBlockReason || 'arsip belum layak dimusnahkan';
+            }
+        }
+        if (jenisPenyusutan === 'penyerahan') {
+            if (dispositionCode !== 'permanen') {
+                return dispositionCode
+                    ? 'keputusan efektif bukan Permanen'
+                    : evaluation.dispositionBlockReason
+                        || 'hasil akhir JRA memerlukan appraisal efektif';
+            }
+            if (!evaluation.dispositionEligible) {
+                return evaluation.dispositionBlockReason || 'arsip belum layak diserahkan';
             }
         }
         return null;
@@ -278,13 +334,22 @@ class PenyusutanService {
             jraRuleSetId: arsip.jraRuleSetId,
             retentionDecisionHash: arsip.retentionDecisionHash,
             currentRuleSnapshotId: arsip.currentRuleSnapshotId,
+            currentRetentionTriggerEventId: arsip.currentRetentionTriggerEventId,
+            currentAppraisalDecisionId: arsip.currentAppraisalDecisionId,
             ruleProvenanceStatus: arsip.ruleProvenanceStatus,
             legalHold: arsip.legalHold,
             klasifikasiKeamanan: arsip.klasifikasiKeamanan,
+            ...RULE_SNAPSHOT_EVIDENCE_SELECT,
+            ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
         })
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, CURRENT_RULE_SNAPSHOT_JOIN)
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(inArray(arsip.id, arsipIds))
-            .for('update');
+            .for('update', { of: arsip });
 
         const foundIds = new Set(rows.map((r: any) => r.id));
         const missing = arsipIds.filter(id => !foundIds.has(id));
@@ -313,17 +378,17 @@ class PenyusutanService {
             throw new ValidationError('Sebagian arsip tidak ditemukan atau tidak dapat diakses.');
         }
 
-        const tanpaPemicu = rows.filter((r: any) => !r.retentionTriggerDate);
-        if (tanpaPemicu.length > 0) {
-            throw new ValidationError(
-                `Arsip belum memiliki pemicu retensi yang sah: ${tanpaPemicu.map((r: any) => r.id).join(', ')}`
-            );
-        }
-
         const ditahan = rows.filter((r: any) => r.legalHold);
         if (ditahan.length > 0) {
             throw new ValidationError(
                 `Arsip sedang dalam legal hold dan tidak dapat disusutkan: ${ditahan.map((r: any) => r.id).join(', ')}`
+            );
+        }
+
+        const tanpaPemicu = rows.filter((r: any) => !r.currentRetentionTriggerEventId);
+        if (tanpaPemicu.length > 0) {
+            throw new ValidationError(
+                `Arsip belum memiliki pemicu retensi yang sah: ${tanpaPemicu.map((r: any) => r.id).join(', ')}`
             );
         }
 
@@ -377,14 +442,23 @@ class PenyusutanService {
             jraRuleSetId: arsip.jraRuleSetId,
             retentionDecisionHash: arsip.retentionDecisionHash,
             currentRuleSnapshotId: arsip.currentRuleSnapshotId,
+            currentRetentionTriggerEventId: arsip.currentRetentionTriggerEventId,
+            currentAppraisalDecisionId: arsip.currentAppraisalDecisionId,
             ruleProvenanceStatus: arsip.ruleProvenanceStatus,
             legalHold: arsip.legalHold,
             klasifikasiKeamanan: arsip.klasifikasiKeamanan,
+            ...RULE_SNAPSHOT_EVIDENCE_SELECT,
+            ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
         })
             .from(penyusutanItems)
             .innerJoin(arsip, eq(penyusutanItems.arsipId, arsip.id))
+            .leftJoin(arsipRuleSnapshots, CURRENT_RULE_SNAPSHOT_JOIN)
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(eq(penyusutanItems.penyusutanId, batchId))
-            .for('update');
+            .for('update', { of: arsip });
 
         if (rows.length === 0) {
             throw new ValidationError('Workflow penyusutan tidak dapat diproses tanpa arsip.');
@@ -396,7 +470,9 @@ class PenyusutanService {
             throw new ValidationError('Batch tidak ditemukan atau tidak dapat diakses.');
         }
 
-        const blocked = rows.filter((row: any) => row.legalHold || !row.retentionTriggerDate);
+        const blocked = rows.filter((row: any) =>
+            row.legalHold || !row.currentRetentionTriggerEventId,
+        );
         if (blocked.length > 0) {
             throw new ValidationError(
                 `Workflow penyusutan dihentikan: arsip tanpa pemicu retensi atau dalam legal hold: ${blocked.map((r: any) => r.id).join(', ')}`
@@ -435,6 +511,7 @@ class PenyusutanService {
      * Create a new penyusutan batch with arsip items
      */
     async create(data: CreatePenyusutanData) {
+        assertLegacyPermanentTransferMutationAllowed(data.jenisPenyusutan);
         const { arsipIds, securityClassifications, ...batchData } = data;
         assertArchiveIdList(arsipIds);
 
@@ -511,6 +588,7 @@ class PenyusutanService {
                 batchSecurityCondition(securityClassifications),
             )).for('update');
             if (!batch[0]) throw new Error('Penyusutan batch not found');
+            assertLegacyPermanentTransferMutationAllowed(batch[0].jenisPenyusutan);
 
             const currentStatus = batch[0].status as PenyusutanStatus;
             const nextStatus = STATUS_FLOW[currentStatus];
@@ -661,6 +739,7 @@ class PenyusutanService {
                 batchSecurityCondition(securityClassifications),
             )).for('update');
             if (!batch[0]) throw new Error('Batch not found');
+            assertLegacyPermanentTransferMutationAllowed(batch[0].jenisPenyusutan);
             if (batch[0].status !== 'draft') throw new Error('Can only add items to draft batches');
 
             await this.assertArsipEligible(
@@ -732,6 +811,7 @@ class PenyusutanService {
                 batchSecurityCondition(securityClassifications),
             )).for('update');
             if (!batch[0]) throw new Error('Batch not found');
+            assertLegacyPermanentTransferMutationAllowed(batch[0].jenisPenyusutan);
             if (batch[0].status !== 'draft') throw new Error('Can only remove items from draft batches');
 
             await tx.delete(penyusutanItems)
@@ -785,6 +865,7 @@ class PenyusutanService {
                 batchSecurityCondition(securityClassifications),
             )).for('update');
             if (!batch[0]) throw new Error('Batch not found');
+            assertLegacyPermanentTransferMutationAllowed(batch[0].jenisPenyusutan);
             if (batch[0].status !== 'draft') throw new Error('Can only delete draft batches');
 
             const items = await tx.select({ arsipId: penyusutanItems.arsipId })
@@ -828,13 +909,18 @@ class PenyusutanService {
         securityClassifications?: string[] | null,
     ) {
         // Only get arsip that are not already in a batch
-        const allArchives = await db.select()
+        const allArchives = await db.select(ARCHIVE_WITH_RULE_SNAPSHOT_SELECT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, CURRENT_RULE_SNAPSHOT_JOIN)
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
                 eq(arsip.disposalStatus, 'active'),
                 eq(arsip.legalHold, false),
-                isNotNull(arsip.retentionTriggerDate),
+                isNotNull(arsip.currentRetentionTriggerEventId),
                 eq(arsip.ruleProvenanceStatus, 'verified'),
                 isNotNull(arsip.klasifikasiArsipId),
                 isNotNull(arsip.klasifikasiRuleSetId),
@@ -848,11 +934,12 @@ class PenyusutanService {
 
         // Filter based on lifecycle status and hasilAkhir
         const candidates = allArchives.filter(arch => {
-            if (arch.legalHold || !arch.retentionTriggerDate) return false;
+            if (arch.legalHold || !arch.currentRetentionTriggerEventId) return false;
             if (getRuleProvenanceBlockReason(arch)) return false;
-            const status = arsipService.getArchiveStatus(
-                arch.retentionTriggerDate, arch.retensiAktif, arch.retensiInaktif
-            );
+            const evaluation = arsipService.evaluateCanonicalRetention(arch);
+            if (!evaluation.verified) return false;
+            const status = evaluation.status;
+            const dispositionCode = evaluation.effectiveDispositionCode;
             const hasJraProvenance = Boolean(
                 String(arch.jraKode || '').trim()
                 && String(arch.jraVersion || '').trim()
@@ -862,32 +949,68 @@ class PenyusutanService {
             switch (jenisPenyusutan) {
                 case 'pemindahan':
                     // Archives where aktif period has expired, should be moved to Unit Kearsipan
-                    return status === 'inaktif' || status === 'akan_kadaluarsa';
+                    return evaluation.calculationEligible
+                        && evaluation.normalizedRetention?.calculationMode === 'duration'
+                        && (status === 'inaktif' || status === 'akan_kadaluarsa');
                 case 'pemusnahan':
-                    // Archives with hasilAkhir 'Musnah' that are kadaluarsa
-                    return hasJraProvenance && status === 'kadaluarsa' &&
-                        arch.hasilAkhir === 'Musnah';
+                    return hasJraProvenance
+                        && evaluation.dispositionEligible
+                        && dispositionCode === 'musnah';
                 case 'penyerahan':
-                    // Archives with hasilAkhir 'Permanen' that are kadaluarsa (to be submitted to ANRI)
-                    return hasJraProvenance && status === 'kadaluarsa' && arch.hasilAkhir === 'Permanen';
+                    return hasJraProvenance && evaluation.dispositionEligible
+                        && dispositionCode === 'permanen';
                 default:
                     return false;
             }
         });
 
-        return candidates.map(arch => ({
-            ...arch,
-            retentionStatus: arsipService.getArchiveStatus(
-                arch.retentionTriggerDate,
-                arch.retensiAktif,
-                arch.retensiInaktif,
-            ),
-            tanggalKadaluarsa: arsipService.calculateRetentionDates(
-                arch.retentionTriggerDate,
-                arch.retensiAktif,
-                arch.retensiInaktif,
-            ).tanggalKadaluarsa,
-        }));
+        return candidates.map(arch => {
+            const evaluation = arsipService.evaluateCanonicalRetention(arch);
+            const {
+                ruleSnapshotId: _ruleSnapshotId,
+                ruleSnapshotArsipId: _ruleSnapshotArsipId,
+                ruleSnapshotStatus: _ruleSnapshotStatus,
+                ruleSnapshotJraItemId: _ruleSnapshotJraItemId,
+                ruleSnapshotJraRuleSetId: _ruleSnapshotJraRuleSetId,
+                ruleSnapshot: _ruleSnapshot,
+                ruleSnapshotSha256: _ruleSnapshotSha256,
+                triggerEventRecordId: _triggerEventRecordId,
+                triggerEventArsipId: _triggerEventArsipId,
+                triggerEventType: _triggerEventType,
+                triggerEventLabel: _triggerEventLabel,
+                triggerEventDate: _triggerEventDate,
+                triggerEventEvidenceUri: _triggerEventEvidenceUri,
+                triggerEventRevision: _triggerEventRevision,
+                triggerEventActorId: _triggerEventActorId,
+                triggerVerificationVerdict: _triggerVerificationVerdict,
+                triggerVerifierId: _triggerVerifierId,
+                latestTriggerEventRevision: _latestTriggerEventRevision,
+                appraisalDecisionRecordId: _appraisalDecisionRecordId,
+                appraisalDecisionArsipId: _appraisalDecisionArsipId,
+                appraisalDecisionStatus: _appraisalDecisionStatus,
+                appraisalDecisionOutcome: _appraisalDecisionOutcome,
+                appraisalDecisionSnapshot: _appraisalDecisionSnapshot,
+                appraisalDecisionSha256: _appraisalDecisionSha256,
+                appraisalCaseStatus: _appraisalCaseStatus,
+                hasActiveAppraisalCase: _hasActiveAppraisalCase,
+                ...archive
+            } = arch;
+            return {
+                ...archive,
+                retentionTriggerType: arch.triggerEventType,
+                retentionTriggerLabel: arch.triggerEventLabel,
+                retentionTriggerDate: arch.triggerEventDate,
+                retentionTriggerEvidence: arch.triggerEventEvidenceUri,
+                retentionStatus: evaluation.status,
+                tanggalKadaluarsa: evaluation.dates.tanggalKadaluarsa,
+                hasilAkhir: evaluation.effectiveDispositionCode === 'musnah'
+                    ? 'Musnah'
+                    : evaluation.effectiveDispositionCode === 'permanen'
+                        ? 'Permanen'
+                        : 'Dinilai Kembali',
+                canonicalRetention: evaluation,
+            };
+        });
     }
 
     /**
@@ -903,18 +1026,24 @@ class PenyusutanService {
         const securityCondition = archiveSecurityCondition(securityClassifications);
         if (securityCondition) conditions.push(securityCondition);
 
-        const allArchives = await db.select()
+        const allArchives = await db.select(ARCHIVE_WITH_RULE_SNAPSHOT_SELECT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, CURRENT_RULE_SNAPSHOT_JOIN)
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
             .orderBy(arsip.kodeKlasifikasi, arsip.nomorBerkas);
 
         // Filter to aktif status only
         const aktifArchives = allArchives.filter(arch => {
-            if (!arch.retentionTriggerDate) return true; // Undetermined remains active, never disposable
-            const status = arsipService.getArchiveStatus(
-                arch.retentionTriggerDate, arch.retensiAktif, arch.retensiInaktif
-            );
-            return status === 'belum_ditentukan' || status === 'aktif' || status === 'akan_inaktif';
+            if (!arch.currentRetentionTriggerEventId) return true; // Undetermined remains active, never disposable
+            const evaluation = arsipService.evaluateCanonicalRetention(arch);
+            if (!evaluation.verified || !evaluation.calculationEligible) return true;
+            return evaluation.status === 'belum_ditentukan'
+                || evaluation.status === 'aktif'
+                || evaluation.status === 'akan_inaktif';
         });
 
         return {
@@ -953,18 +1082,24 @@ class PenyusutanService {
         const securityCondition = archiveSecurityCondition(securityClassifications);
         if (securityCondition) conditions.push(securityCondition);
 
-        const allArchives = await db.select()
+        const allArchives = await db.select(ARCHIVE_WITH_RULE_SNAPSHOT_SELECT)
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, CURRENT_RULE_SNAPSHOT_JOIN)
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
             .orderBy(arsip.kodeKlasifikasi, arsip.nomorBerkas);
 
         // Filter to inaktif status
         const inaktifArchives = allArchives.filter(arch => {
-            if (!arch.retentionTriggerDate) return false;
-            const status = arsipService.getArchiveStatus(
-                arch.retentionTriggerDate, arch.retensiAktif, arch.retensiInaktif
-            );
-            return status === 'inaktif' || status === 'akan_kadaluarsa' || status === 'kadaluarsa';
+            if (!arch.currentRetentionTriggerEventId) return false;
+            const evaluation = arsipService.evaluateCanonicalRetention(arch);
+            if (!evaluation.verified || !evaluation.calculationEligible) return false;
+            return evaluation.status === 'inaktif'
+                || evaluation.status === 'akan_kadaluarsa'
+                || evaluation.status === 'kadaluarsa';
         });
 
         return {
@@ -983,7 +1118,13 @@ class PenyusutanService {
                 lokasiSimpan: [arch.lokasiFc, arch.lokasiLaci, arch.lokasiFolder].filter(Boolean).join('/') || '-',
                 klasifikasiKeamanan: arch.klasifikasiKeamanan || 'Biasa',
                 jangkaSimpan: `${arch.retensiAktif || '-'} / ${arch.retensiInaktif || '-'}`,
-                nasibAkhir: arch.hasilAkhir || '-',
+                nasibAkhir: (() => {
+                    const outcome = arsipService.evaluateCanonicalRetention(arch)
+                        .effectiveDispositionCode;
+                    if (outcome === 'musnah') return 'Musnah';
+                    if (outcome === 'permanen') return 'Permanen';
+                    return 'Dinilai Kembali';
+                })(),
                 kategoriArsip: arch.jraKode || '-',
                 keterangan: arch.keterangan || '-',
             })),

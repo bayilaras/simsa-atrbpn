@@ -27,6 +27,11 @@ const mockDb = {
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/arsip.service', () => ({
+    arsipService: {
+        getExpiring: async () => resultQueue.shift() ?? [],
+    },
+}));
 
 const { notificationService } = await import('../services/notification.service');
 

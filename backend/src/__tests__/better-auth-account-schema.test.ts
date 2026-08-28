@@ -55,4 +55,21 @@ describe('Better Auth account schema contract', () => {
             'CREATE UNIQUE INDEX "accounts_issuer_account_id_unique"',
         );
     });
+
+    it('keeps Google login invitation-only for the internal application', () => {
+        const authConfigPath = fileURLToPath(new URL('../config/auth.ts', import.meta.url));
+        const authConfig = readFileSync(authConfigPath, 'utf8');
+
+        expect(authConfig).toMatch(
+            /google:\s*\{[\s\S]*disableImplicitSignUp:\s*true[\s\S]*disableSignUp:\s*true/,
+        );
+        expect(authConfig).toMatch(
+            /accountLinking:\s*\{[\s\S]*requireLocalEmailVerified:\s*false/,
+        );
+        expect(authConfig).toMatch(/allowDifferentEmails:\s*false/);
+        expect(authConfig).toContain('authOrigin !== frontendOrigin');
+        expect(authConfig).toContain(
+            'BETTER_AUTH_URL must match the public FRONTEND_URL origin in production.',
+        );
+    });
 });

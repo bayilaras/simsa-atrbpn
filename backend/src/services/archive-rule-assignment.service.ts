@@ -1,11 +1,15 @@
 import { createHash } from 'node:crypto';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import {
     arsip,
     arsipRuleSnapshots,
     jadwalRetensiArsip,
+    jraAppraisalCases,
+    jraAppraisalDecisions,
     klasifikasiArsip,
     regulatoryRuleSets,
+    retentionTriggerEvents,
+    retentionTriggerVerifications,
 } from '../db/schema';
 import { ConflictError, ValidationError } from '../utils/errors';
 
@@ -15,6 +19,127 @@ export interface RuleSelectionInput {
     jraItemId?: number;
     jraKode?: string;
 }
+
+export type ArchiveLifecycleStatus =
+    | 'belum_ditentukan'
+    | 'aktif'
+    | 'akan_inaktif'
+    | 'inaktif'
+    | 'akan_kadaluarsa'
+    | 'kadaluarsa';
+
+export interface StructuredRetentionRule {
+    activeMonths: number | null;
+    inactiveMonths: number | null;
+    calculationMode: string;
+    dispositionCode: string;
+    triggerGuidance?: string | null;
+}
+
+export interface CanonicalRetentionEvidence {
+    arsipId?: string | null;
+    ruleProvenanceStatus?: string | null;
+    currentRuleSnapshotId?: string | null;
+    jraItemId?: number | null;
+    jraRuleSetId?: string | null;
+    retentionDecisionHash?: string | null;
+    snapshotId?: string | null;
+    snapshotArsipId?: string | null;
+    snapshotStatus?: string | null;
+    snapshotJraItemId?: number | null;
+    snapshotJraRuleSetId?: string | null;
+    snapshot?: unknown;
+    snapshotSha256?: string | null;
+    currentRetentionTriggerEventId?: string | null;
+    triggerEventRecordId?: string | null;
+    triggerEventArsipId?: string | null;
+    triggerEventType?: string | null;
+    triggerEventLabel?: string | null;
+    triggerEventDate?: string | null;
+    triggerEventEvidenceUri?: string | null;
+    triggerEventRevision?: number | null;
+    triggerEventActorId?: string | null;
+    triggerVerificationVerdict?: string | null;
+    triggerVerifierId?: string | null;
+    latestTriggerEventRevision?: number | null;
+    currentAppraisalDecisionId?: string | null;
+    appraisalDecisionRecordId?: string | null;
+    appraisalDecisionArsipId?: string | null;
+    appraisalDecisionStatus?: string | null;
+    appraisalDecisionOutcome?: string | null;
+    appraisalDecisionSnapshot?: unknown;
+    appraisalDecisionSha256?: string | null;
+    appraisalCaseStatus?: string | null;
+    hasActiveAppraisalCase?: boolean | null;
+}
+
+export interface RetentionDates {
+    tanggalAktifBerakhir: string | null;
+    tanggalInaktifBerakhir: string | null;
+    tanggalKadaluarsa: string | null;
+}
+
+export interface CanonicalRetentionEvaluation {
+    verified: boolean;
+    blockReason: string | null;
+    calculationEligible: boolean;
+    calculationBlockReason: string | null;
+    normalizedRetention: StructuredRetentionRule | null;
+    dates: RetentionDates;
+    status: ArchiveLifecycleStatus;
+    effectiveDispositionCode: string | null;
+    effectiveDecisionSource: 'jra' | 'appraisal' | null;
+    effectiveAppraisalDecisionId: string | null;
+    dispositionEligible: boolean;
+    dispositionBlockReason: string | null;
+}
+
+export const RETENTION_GOVERNANCE_EVIDENCE_SELECT = {
+    triggerEventRecordId: retentionTriggerEvents.id,
+    triggerEventArsipId: retentionTriggerEvents.arsipId,
+    triggerEventType: retentionTriggerEvents.eventType,
+    triggerEventLabel: retentionTriggerEvents.label,
+    triggerEventDate: retentionTriggerEvents.eventDate,
+    triggerEventEvidenceUri: retentionTriggerEvents.evidenceUri,
+    triggerEventRevision: retentionTriggerEvents.revision,
+    triggerEventActorId: retentionTriggerEvents.actorId,
+    triggerVerificationVerdict: retentionTriggerVerifications.verdict,
+    triggerVerifierId: retentionTriggerVerifications.verifierId,
+    latestTriggerEventRevision: sql<number | null>`(
+        SELECT max(latest_trigger.revision)::int
+        FROM retention_trigger_events latest_trigger
+        WHERE latest_trigger.arsip_id = ${arsip.id}
+    )`,
+    appraisalDecisionRecordId: jraAppraisalDecisions.id,
+    appraisalDecisionArsipId: jraAppraisalDecisions.arsipId,
+    appraisalDecisionStatus: jraAppraisalDecisions.decisionStatus,
+    appraisalDecisionOutcome: jraAppraisalDecisions.outcome,
+    appraisalDecisionSnapshot: jraAppraisalDecisions.decisionSnapshot,
+    appraisalDecisionSha256: jraAppraisalDecisions.decisionSha256,
+    appraisalCaseStatus: jraAppraisalCases.status,
+    hasActiveAppraisalCase: sql<boolean>`EXISTS (
+        SELECT 1 FROM jra_appraisal_cases active_appraisal
+        WHERE active_appraisal.arsip_id = ${arsip.id}
+          AND active_appraisal.status IN ('open', 'in_review')
+    )`,
+};
+
+export const CURRENT_RETENTION_TRIGGER_JOIN = and(
+    eq(retentionTriggerEvents.id, arsip.currentRetentionTriggerEventId),
+    eq(retentionTriggerEvents.arsipId, arsip.id),
+);
+export const CURRENT_RETENTION_VERIFICATION_JOIN = eq(
+    retentionTriggerVerifications.eventId,
+    retentionTriggerEvents.id,
+);
+export const CURRENT_APPRAISAL_DECISION_JOIN = and(
+    eq(jraAppraisalDecisions.id, arsip.currentAppraisalDecisionId),
+    eq(jraAppraisalDecisions.arsipId, arsip.id),
+);
+export const CURRENT_APPRAISAL_CASE_JOIN = eq(
+    jraAppraisalCases.id,
+    jraAppraisalDecisions.caseId,
+);
 
 type Executor = any;
 
@@ -53,6 +178,22 @@ function addMonths(dateValue: string, months: number): string {
         Math.min(date.getUTCDate(), targetLastDay),
     ));
     return result.toISOString().slice(0, 10);
+}
+
+const EMPTY_RETENTION_DATES: RetentionDates = {
+    tanggalAktifBerakhir: null,
+    tanggalInaktifBerakhir: null,
+    tanggalKadaluarsa: null,
+};
+
+function isMonthCount(value: unknown): value is number {
+    return Number.isInteger(value) && Number(value) >= 0;
+}
+
+function snapshotObject(value: unknown): Record<string, any> | null {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, any>
+        : null;
 }
 
 export class ArchiveRuleAssignmentService {
@@ -191,30 +332,267 @@ export class ArchiveRuleAssignmentService {
 
     calculateExpiry(
         triggerDate: string | null | undefined,
-        normalized: {
-            activeMonths: number | null;
-            inactiveMonths: number | null;
-            calculationMode: string;
-            triggerGuidance?: string | null;
-        },
+        normalized: StructuredRetentionRule,
     ): string | null {
-        if (!triggerDate) return null;
-        if (normalized.calculationMode === 'duration'
-            && normalized.activeMonths !== null
-            && normalized.inactiveMonths !== null) {
-            return addMonths(triggerDate, normalized.activeMonths + normalized.inactiveMonths);
+        return this.calculateRetentionDates(triggerDate, normalized).tanggalKadaluarsa;
+    }
+
+    /**
+     * Calculate lifecycle dates exclusively from normalized numeric values
+     * captured in the immutable rule snapshot. Text such as "1 tahun" is a
+     * display label and is deliberately never parsed here.
+     */
+    calculateRetentionDates(
+        triggerDate: string | null | undefined,
+        normalized: StructuredRetentionRule | null | undefined,
+    ): RetentionDates {
+        if (!triggerDate || !normalized) return { ...EMPTY_RETENTION_DATES };
+        if (normalized.calculationMode !== 'duration') return { ...EMPTY_RETENTION_DATES };
+        if (!isMonthCount(normalized.activeMonths) || !isMonthCount(normalized.inactiveMonths)) {
+            return { ...EMPTY_RETENTION_DATES };
         }
-        // For event-based active retention (for example "selama dipergunakan"),
-        // the documented trigger is the date that active use ended. Only the
-        // numeric inactive period is added. Rows without a usable inactive
-        // period remain non-actionable and require appraisal.
-        if (normalized.calculationMode === 'manual'
-            && normalized.activeMonths === null
-            && normalized.inactiveMonths !== null
-            && String(normalized.triggerGuidance || '').trim()) {
-            return addMonths(triggerDate, normalized.inactiveMonths);
+
+        const tanggalAktifBerakhir = addMonths(triggerDate, normalized.activeMonths);
+        const tanggalInaktifBerakhir = addMonths(tanggalAktifBerakhir, normalized.inactiveMonths);
+        return {
+            tanggalAktifBerakhir,
+            tanggalInaktifBerakhir,
+            tanggalKadaluarsa: tanggalInaktifBerakhir,
+        };
+    }
+
+    getArchiveStatus(
+        triggerDate: string | null | undefined,
+        normalized: StructuredRetentionRule | null | undefined,
+        now = new Date(),
+    ): ArchiveLifecycleStatus {
+        if (!triggerDate) return 'belum_ditentukan';
+
+        const dates = this.calculateRetentionDates(triggerDate, normalized);
+        if (!dates.tanggalKadaluarsa) return 'aktif';
+
+        const today = new Date(Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate(),
+        ));
+        const activeEnd = new Date(`${dates.tanggalAktifBerakhir}T00:00:00.000Z`);
+        const inactiveEnd = new Date(`${dates.tanggalInaktifBerakhir}T00:00:00.000Z`);
+        const thirtyDaysFromNow = new Date(today);
+        thirtyDaysFromNow.setUTCDate(thirtyDaysFromNow.getUTCDate() + 30);
+
+        if (today > inactiveEnd) return 'kadaluarsa';
+        if (today > activeEnd && inactiveEnd <= thirtyDaysFromNow) return 'akan_kadaluarsa';
+        if (today > activeEnd) return 'inaktif';
+        if (activeEnd <= thirtyDaysFromNow) return 'akan_inaktif';
+        return 'aktif';
+    }
+
+    /**
+     * Verify that a current snapshot is the exact source of the cached JRA
+     * decision, then return its normalized retention fields. Any broken link,
+     * hash mismatch, or non-duration rule fails closed and cannot become an
+     * automated disposition candidate.
+     */
+    evaluateCanonicalRetention(
+        triggerDate: string | null | undefined,
+        evidence: CanonicalRetentionEvidence,
+        now = new Date(),
+    ): CanonicalRetentionEvaluation {
+        const blocked = (reason: string): CanonicalRetentionEvaluation => ({
+            verified: false,
+            blockReason: reason,
+            calculationEligible: false,
+            calculationBlockReason: reason,
+            normalizedRetention: null,
+            dates: { ...EMPTY_RETENTION_DATES },
+            status: triggerDate ? 'aktif' : 'belum_ditentukan',
+            effectiveDispositionCode: null,
+            effectiveDecisionSource: null,
+            effectiveAppraisalDecisionId: null,
+            dispositionEligible: false,
+            dispositionBlockReason: reason,
+        });
+
+        if (evidence.ruleProvenanceStatus !== 'verified') {
+            return blocked('provenance aturan arsip belum terverifikasi');
         }
-        return null;
+        if (!evidence.currentRuleSnapshotId || evidence.snapshotId !== evidence.currentRuleSnapshotId) {
+            return blocked('snapshot JRA saat ini tidak ditemukan atau penunjuk snapshot tidak cocok');
+        }
+        if (evidence.snapshotStatus !== 'verified') {
+            return blocked('snapshot JRA belum terverifikasi');
+        }
+        if (evidence.arsipId && evidence.snapshotArsipId !== evidence.arsipId) {
+            return blocked('snapshot JRA bukan milik arsip ini');
+        }
+        if (!evidence.snapshot || !evidence.snapshotSha256
+            || sha256(evidence.snapshot) !== evidence.snapshotSha256) {
+            return blocked('hash snapshot JRA tidak valid');
+        }
+
+        const snapshot = snapshotObject(evidence.snapshot);
+        const retention = snapshotObject(snapshot?.retention);
+        if (!snapshot || snapshot.schemaVersion !== 1 || !retention) {
+            return blocked('struktur snapshot JRA tidak didukung');
+        }
+        if (!evidence.retentionDecisionHash
+            || sha256(retention) !== evidence.retentionDecisionHash) {
+            return blocked('hash keputusan retensi tidak cocok dengan snapshot');
+        }
+
+        if (!evidence.currentRetentionTriggerEventId
+            || evidence.triggerEventRecordId !== evidence.currentRetentionTriggerEventId) {
+            return blocked('peristiwa pemicu retensi terverifikasi belum ditetapkan');
+        }
+        if (evidence.arsipId && evidence.triggerEventArsipId !== evidence.arsipId) {
+            return blocked('peristiwa pemicu retensi bukan milik arsip ini');
+        }
+        if (evidence.triggerVerificationVerdict !== 'verified'
+            || !evidence.triggerVerifierId
+            || evidence.triggerVerifierId === evidence.triggerEventActorId) {
+            return blocked('peristiwa pemicu retensi belum diverifikasi secara independen');
+        }
+        if (!Number.isInteger(evidence.triggerEventRevision)
+            || evidence.triggerEventRevision !== evidence.latestTriggerEventRevision) {
+            return blocked('peristiwa pemicu retensi bukan revisi terbaru');
+        }
+        if (!evidence.triggerEventDate || triggerDate !== evidence.triggerEventDate) {
+            return blocked('tanggal pemicu retensi tidak cocok dengan peristiwa terverifikasi');
+        }
+
+        const itemId = Number(retention.itemId);
+        const ruleSetId = String(retention.ruleSetId || '');
+        if (!Number.isInteger(itemId) || itemId <= 0 || !ruleSetId) {
+            return blocked('identitas butir JRA pada snapshot tidak lengkap');
+        }
+        if (evidence.jraItemId !== itemId || evidence.snapshotJraItemId !== itemId
+            || evidence.jraRuleSetId !== ruleSetId || evidence.snapshotJraRuleSetId !== ruleSetId) {
+            return blocked('identitas butir JRA tidak konsisten dengan snapshot');
+        }
+
+        const activeMonths = retention.activeMonths;
+        const inactiveMonths = retention.inactiveMonths;
+        if (activeMonths !== null && !isMonthCount(activeMonths)) {
+            return blocked('durasi aktif terstruktur pada snapshot tidak valid');
+        }
+        if (inactiveMonths !== null && !isMonthCount(inactiveMonths)) {
+            return blocked('durasi inaktif terstruktur pada snapshot tidak valid');
+        }
+        const calculationMode = String(retention.calculationMode || '');
+        const dispositionCode = String(retention.dispositionCode || '');
+        if (!calculationMode || !dispositionCode) {
+            return blocked('mode perhitungan atau hasil akhir JRA tidak lengkap');
+        }
+        if (!['duration', 'manual'].includes(calculationMode)) {
+            return blocked('mode perhitungan JRA pada snapshot tidak dikenal');
+        }
+        if (!['musnah', 'permanen', 'dinilai_kembali', 'manual_review'].includes(dispositionCode)) {
+            return blocked('hasil akhir JRA pada snapshot tidak dikenal');
+        }
+
+        const normalizedRetention: StructuredRetentionRule = {
+            activeMonths,
+            inactiveMonths,
+            calculationMode,
+            dispositionCode,
+            triggerGuidance: retention.triggerGuidance ?? null,
+        };
+        // A duration may still be calculated for "Dinilai kembali". The date
+        // calculation and authority to dispose are separate decisions: only a
+        // current approved appraisal may turn that outcome into Musnah or
+        // Permanen.
+        const requiresHumanAppraisal = calculationMode === 'manual'
+            || ['dinilai_kembali', 'manual_review'].includes(dispositionCode);
+        const calculationEligible = calculationMode === 'duration'
+            && isMonthCount(activeMonths)
+            && isMonthCount(inactiveMonths);
+        const calculationBlockReason = calculationEligible
+            ? null
+            : calculationMode !== 'duration'
+                ? `mode perhitungan JRA ${calculationMode} memerlukan penilaian manusia`
+                : 'durasi aktif/inaktif terstruktur belum lengkap';
+        const dates = calculationEligible
+            ? this.calculateRetentionDates(triggerDate, normalizedRetention)
+            : { ...EMPTY_RETENTION_DATES };
+        const status = calculationEligible
+            ? this.getArchiveStatus(triggerDate, normalizedRetention, now)
+            : triggerDate ? 'aktif' : 'belum_ditentukan';
+
+        let effectiveDispositionCode: string | null = requiresHumanAppraisal
+            ? null
+            : dispositionCode;
+        let effectiveDecisionSource: 'jra' | 'appraisal' | null = requiresHumanAppraisal
+            ? null
+            : 'jra';
+        let effectiveAppraisalDecisionId: string | null = null;
+
+        if (evidence.currentAppraisalDecisionId) {
+            if (evidence.appraisalDecisionRecordId !== evidence.currentAppraisalDecisionId
+                || evidence.appraisalDecisionArsipId !== evidence.arsipId
+                || evidence.appraisalDecisionStatus !== 'approved'
+                || evidence.appraisalCaseStatus !== 'approved') {
+                return blocked('keputusan appraisal saat ini tidak sah atau bukan milik arsip ini');
+            }
+            if (!evidence.appraisalDecisionSnapshot || !evidence.appraisalDecisionSha256
+                || sha256(evidence.appraisalDecisionSnapshot) !== evidence.appraisalDecisionSha256) {
+                return blocked('hash keputusan appraisal saat ini tidak valid');
+            }
+            const decision = snapshotObject(evidence.appraisalDecisionSnapshot);
+            const submission = snapshotObject(decision?.submissionSnapshot);
+            const submittedRule = snapshotObject(submission?.ruleSnapshot);
+            const submittedArchive = snapshotObject(submission?.archive);
+            const submittedTrigger = snapshotObject(submission?.retentionTrigger);
+            const submittedEvent = snapshotObject(submittedTrigger?.event);
+            const submittedVerification = snapshotObject(submittedTrigger?.verification);
+            if (!decision || decision.schemaVersion !== 1
+                || String(decision.arsipId || '') !== String(evidence.arsipId || '')
+                || submittedRule?.id !== evidence.currentRuleSnapshotId
+                || submittedRule?.sha256 !== evidence.snapshotSha256
+                || submittedArchive?.retentionDecisionHash !== evidence.retentionDecisionHash
+                || submittedEvent?.id !== evidence.currentRetentionTriggerEventId
+                || submittedVerification?.verdict !== 'verified'
+                || submittedVerification?.verifierId !== evidence.triggerVerifierId) {
+                return blocked('keputusan appraisal sudah kedaluwarsa terhadap aturan atau pemicu retensi saat ini');
+            }
+            const outcome = String(evidence.appraisalDecisionOutcome || '');
+            if (!['musnah', 'permanen', 'dinilai_kembali'].includes(outcome)) {
+                return blocked('hasil keputusan appraisal saat ini tidak dikenal');
+            }
+            effectiveDispositionCode = outcome;
+            effectiveDecisionSource = 'appraisal';
+            effectiveAppraisalDecisionId = evidence.currentAppraisalDecisionId;
+        }
+
+        const hasFinalOutcome = ['musnah', 'permanen'].includes(effectiveDispositionCode || '');
+        const lifecycleReady = calculationEligible ? status === 'kadaluarsa' : true;
+        const dispositionEligible = hasFinalOutcome
+            && lifecycleReady
+            && !evidence.hasActiveAppraisalCase;
+        const dispositionBlockReason = dispositionEligible
+            ? null
+            : evidence.hasActiveAppraisalCase
+                ? 'masih ada appraisal aktif yang dapat mengubah keputusan retensi'
+                : !hasFinalOutcome
+                    ? 'hasil akhir efektif masih memerlukan appraisal'
+                    : calculationEligible
+                        ? 'masa retensi arsip belum berakhir'
+                        : 'keputusan appraisal efektif belum tersedia';
+
+        return {
+            verified: true,
+            blockReason: null,
+            calculationEligible,
+            calculationBlockReason,
+            normalizedRetention,
+            dates,
+            status,
+            effectiveDispositionCode,
+            effectiveDecisionSource,
+            effectiveAppraisalDecisionId,
+            dispositionEligible,
+            dispositionBlockReason,
+        };
     }
 
     async attachInitialSnapshot(
@@ -290,6 +668,7 @@ export class ArchiveRuleAssignmentService {
             ...assignment.cache,
             tanggalKadaluarsa,
             currentRuleSnapshotId: record.id,
+            currentAppraisalDecisionId: null,
             ruleProvenanceStatus: 'verified',
             updatedAt: new Date(),
         }).where(eq(arsip.id, arsipId)).returning();

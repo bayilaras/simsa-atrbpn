@@ -45,4 +45,15 @@ router.get('/stats/compliance', async (req, res) => {
     }
 });
 
+router.get('/stats/compliance/issues', async (req, res) => {
+    try {
+        const limit = req.query.limit ? Number.parseInt(req.query.limit as string, 10) : 50;
+        const data = await supervisionService.getComplianceIssues(Number.isFinite(limit) ? limit : 50);
+        res.json({ data, total: data.length });
+    } catch (error) {
+        log.error({ err: error }, 'Error fetching compliance issue queue:');
+        res.status(500).json({ error: 'Failed to fetch compliance issue queue' });
+    }
+});
+
 export default router;

@@ -17,6 +17,7 @@ const routeNameMap = {
     'klasifikasi': 'Klasifikasi Arsip',
     'jra': 'Jadwal Retensi',
     'regulatory-rules': 'Versi Aturan',
+    'retention-governance': 'Tata Kelola Retensi',
     'storage-locations': 'Lokasi Penyimpanan',
     'archive-lending': 'Peminjaman Arsip',
     'dosir': 'Pemberkasan Perkara',

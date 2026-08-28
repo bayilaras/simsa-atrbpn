@@ -199,6 +199,11 @@ router.post('/', permissionMiddleware('klasifikasi', 'create'), async (req: Auth
             isActive: true,
             isSelectable: isSelectable ?? true,
             sourcePage: sourcePage ?? null,
+        }, {
+            actorId: req.user?.id,
+            actorEmail: req.user?.email,
+            ipAddress: req.ip,
+            reason: typeof req.body.changeReason === 'string' ? req.body.changeReason.trim() : undefined,
         });
 
         res.status(201).json({ success: true, data: created });
@@ -221,7 +226,12 @@ router.put('/items/:id', permissionMiddleware('klasifikasi', 'update'), async (r
             ruleSetId, jenis, keterangan, kategori, parentKode, tipe, level,
             isActive, isSelectable, sourceCode, sourceRecordKey, organizationalScope, sourcePage,
         }))(req.body);
-        const updated = await klasifikasiService.updateById(id, allowed);
+        const updated = await klasifikasiService.updateById(id, allowed, {
+            actorId: req.user?.id,
+            actorEmail: req.user?.email,
+            ipAddress: req.ip,
+            reason: typeof req.body.changeReason === 'string' ? req.body.changeReason.trim() : undefined,
+        });
         if (!updated) return res.status(404).json({ error: 'Butir klasifikasi tidak ditemukan pada draft' });
         res.json({ success: true, data: updated });
     } catch (error) {
@@ -236,7 +246,12 @@ router.delete('/items/:id', permissionMiddleware('klasifikasi', 'delete'), async
         if (!Number.isInteger(id) || id <= 0 || !ruleSetId) {
             return res.status(400).json({ error: 'ID item dan ruleSetId draft wajib diisi' });
         }
-        const deleted = await klasifikasiService.deleteById(id, ruleSetId);
+        const deleted = await klasifikasiService.deleteById(id, ruleSetId, {
+            actorId: req.user?.id,
+            actorEmail: req.user?.email,
+            ipAddress: req.ip,
+            reason: typeof req.query.reason === 'string' ? req.query.reason.trim() : undefined,
+        });
         if (!deleted) return res.status(404).json({ error: 'Butir klasifikasi tidak ditemukan pada draft' });
         res.json({ success: true, message: 'Butir klasifikasi dinonaktifkan', data: deleted });
     } catch (error) {

@@ -9,6 +9,10 @@ import {
 } from '../db/schema';
 import { eq, and, like, or } from 'drizzle-orm';
 import { ConflictError, NotFoundError } from '../utils/errors';
+import {
+    appendRegulatoryEvents,
+    type GovernanceAuditContext,
+} from './regulatory-audit.service';
 
 interface KlasifikasiTreeNode {
     id: number;
@@ -31,29 +35,79 @@ function buildTree(items: KlasifikasiTreeNode[], parentKode: string | null = nul
         .map(item => ({ ...item, children: buildTree(items, item.kode) }));
 }
 
-async function resolveRuleSet(instrumentType: 'klasifikasi' | 'jra', ruleSetId?: string) {
+async function resolveRuleSet(
+    instrumentType: 'klasifikasi' | 'jra',
+    ruleSetId?: string,
+    executor: any = db,
+    lock = false,
+) {
     const conditions = [eq(regulatoryRuleSets.instrumentType, instrumentType)];
     if (ruleSetId) conditions.push(eq(regulatoryRuleSets.id, ruleSetId));
     else conditions.push(eq(regulatoryRuleSets.status, 'active'));
-    const [ruleSet] = await db.select().from(regulatoryRuleSets).where(and(...conditions)).limit(1);
+    let query = executor.select().from(regulatoryRuleSets).where(and(...conditions)).limit(1);
+    if (lock) query = query.for('update');
+    const [ruleSet] = await query;
     if (!ruleSet) throw new NotFoundError(`Versi ${instrumentType}`);
     return ruleSet;
 }
 
-async function assertDraft(ruleSetId: string | undefined, instrumentType: 'klasifikasi' | 'jra') {
-    const ruleSet = await resolveRuleSet(instrumentType, ruleSetId);
+async function assertDraft(
+    ruleSetId: string | undefined,
+    instrumentType: 'klasifikasi' | 'jra',
+    executor: any = db,
+) {
+    const ruleSet = await resolveRuleSet(instrumentType, ruleSetId, executor, true);
     if (ruleSet.status !== 'draft') {
         throw new ConflictError('Versi yang sudah dipublikasikan bersifat immutable. Buat atau kloning versi draft terlebih dahulu.');
     }
     return ruleSet;
 }
 
+function auditSnapshot(row: Record<string, any> | null | undefined) {
+    if (!row) return null;
+    const {
+        ruleSet: _ruleSet,
+        version: _version,
+        reference: _reference,
+        createdAt: _createdAt,
+        updatedAt: _updatedAt,
+        ...snapshot
+    } = row;
+    return snapshot;
+}
+
+async function invalidateGovernanceEvidence(tx: any, ruleSetId: string) {
+    await tx.update(regulatoryRuleSets).set({
+        completenessManifest: null,
+        completenessManifestSha256: null,
+        completenessVerifiedAt: null,
+        completenessVerifiedBy: null,
+        impactReport: null,
+        impactReportSha256: null,
+        impactReportGeneratedAt: null,
+        impactReportGeneratedBy: null,
+        updatedAt: new Date(),
+    }).where(and(
+        eq(regulatoryRuleSets.id, ruleSetId),
+        eq(regulatoryRuleSets.status, 'draft'),
+    ));
+}
+
+function presentMasterRuleSet(ruleSet: any) {
+    const { sourceDocumentBlobUrl, ...visibleRuleSet } = ruleSet;
+    return {
+        ...visibleRuleSet,
+        sourceDocumentStored: Boolean(sourceDocumentBlobUrl),
+    };
+}
+
 function withRuleSet<T extends Record<string, any>>(rows: T[], ruleSet: any) {
+    const presentedRuleSet = presentMasterRuleSet(ruleSet);
     return rows.map(row => ({
         ...row,
         version: ruleSet.version,
         reference: ruleSet.legalBasis,
-        ruleSet,
+        ruleSet: presentedRuleSet,
     }));
 }
 
@@ -125,47 +179,91 @@ class KlasifikasiService {
         return withRuleSet(rows, ruleSet);
     }
 
-    async create(data: NewKlasifikasiArsip) {
-        const ruleSet = await assertDraft(data.ruleSetId, 'klasifikasi');
-        const [created] = await db.insert(klasifikasiArsip)
-            .values({ ...data, ruleSetId: ruleSet.id }).returning();
-        return withRuleSet([created], ruleSet)[0];
+    async create(data: NewKlasifikasiArsip, auditContext: GovernanceAuditContext = {}) {
+        return db.transaction(async (tx: any) => {
+            const ruleSet = await assertDraft(data.ruleSetId, 'klasifikasi', tx);
+            const [created] = await tx.insert(klasifikasiArsip)
+                .values({ ...data, ruleSetId: ruleSet.id }).returning();
+            await invalidateGovernanceEvidence(tx, ruleSet.id);
+            await appendRegulatoryEvents(tx, [{
+                ruleSetId: ruleSet.id,
+                instrumentType: 'klasifikasi',
+                entityType: 'item',
+                itemId: created.id,
+                itemCode: created.kode,
+                action: 'create',
+                before: null,
+                after: auditSnapshot(created),
+                reason: auditContext.reason || 'Menambahkan butir klasifikasi pada draft.',
+            }], auditContext);
+            return withRuleSet([created], ruleSet)[0];
+        });
     }
 
-    async updateById(id: number, data: Partial<NewKlasifikasiArsip>) {
-        const ruleSet = await assertDraft(data.ruleSetId, 'klasifikasi');
-        const [updated] = await db.update(klasifikasiArsip)
-            .set({ ...data, ruleSetId: ruleSet.id, contentHash: null, updatedAt: new Date() })
-            .where(and(eq(klasifikasiArsip.id, id), eq(klasifikasiArsip.ruleSetId, ruleSet.id)))
-            .returning();
-        return updated ? withRuleSet([updated], ruleSet)[0] : null;
+    async updateById(
+        id: number,
+        data: Partial<NewKlasifikasiArsip>,
+        auditContext: GovernanceAuditContext = {},
+    ) {
+        return db.transaction(async (tx: any) => {
+            const ruleSet = await assertDraft(data.ruleSetId, 'klasifikasi', tx);
+            const [before] = await tx.select().from(klasifikasiArsip).where(and(
+                eq(klasifikasiArsip.id, id), eq(klasifikasiArsip.ruleSetId, ruleSet.id),
+            )).limit(1).for('update');
+            if (!before) return null;
+            const [updated] = await tx.update(klasifikasiArsip)
+                .set({ ...data, ruleSetId: ruleSet.id, contentHash: null, updatedAt: new Date() })
+                .where(and(eq(klasifikasiArsip.id, id), eq(klasifikasiArsip.ruleSetId, ruleSet.id)))
+                .returning();
+            await invalidateGovernanceEvidence(tx, ruleSet.id);
+            await appendRegulatoryEvents(tx, [{
+                ruleSetId: ruleSet.id,
+                instrumentType: 'klasifikasi',
+                entityType: 'item',
+                itemId: id,
+                itemCode: updated.kode,
+                action: 'update',
+                before: auditSnapshot(before),
+                after: auditSnapshot(updated),
+                reason: auditContext.reason || 'Mengubah butir klasifikasi pada draft.',
+            }], auditContext);
+            return withRuleSet([updated], ruleSet)[0];
+        });
     }
 
-    async update(kode: string, data: Partial<NewKlasifikasiArsip>) {
-        const ruleSet = await assertDraft(data.ruleSetId, 'klasifikasi');
-        const [updated] = await db.update(klasifikasiArsip)
-            .set({ ...data, ruleSetId: ruleSet.id, updatedAt: new Date() })
-            .where(and(eq(klasifikasiArsip.ruleSetId, ruleSet.id), eq(klasifikasiArsip.kode, kode)))
-            .returning();
-        return updated ? withRuleSet([updated], ruleSet)[0] : null;
+    async update(_kode: string, _data: Partial<NewKlasifikasiArsip>) {
+        throw new ConflictError('Mutasi berdasarkan kode dinonaktifkan. Gunakan updateById agar audit item tidak ambigu.');
     }
 
-    async delete(kode: string, ruleSetId?: string) {
-        const ruleSet = await assertDraft(ruleSetId, 'klasifikasi');
-        const [deleted] = await db.update(klasifikasiArsip)
-            .set({ isActive: false, updatedAt: new Date() })
-            .where(and(eq(klasifikasiArsip.ruleSetId, ruleSet.id), eq(klasifikasiArsip.kode, kode)))
-            .returning();
-        return deleted ? withRuleSet([deleted], ruleSet)[0] : null;
+    async delete(_kode: string, _ruleSetId?: string) {
+        throw new ConflictError('Mutasi berdasarkan kode dinonaktifkan. Gunakan deleteById agar audit item tidak ambigu.');
     }
 
-    async deleteById(id: number, ruleSetId?: string) {
-        const ruleSet = await assertDraft(ruleSetId, 'klasifikasi');
-        const [deleted] = await db.update(klasifikasiArsip)
-            .set({ isActive: false, isSelectable: false, contentHash: null, updatedAt: new Date() })
-            .where(and(eq(klasifikasiArsip.id, id), eq(klasifikasiArsip.ruleSetId, ruleSet.id)))
-            .returning();
-        return deleted ? withRuleSet([deleted], ruleSet)[0] : null;
+    async deleteById(id: number, ruleSetId?: string, auditContext: GovernanceAuditContext = {}) {
+        return db.transaction(async (tx: any) => {
+            const ruleSet = await assertDraft(ruleSetId, 'klasifikasi', tx);
+            const [before] = await tx.select().from(klasifikasiArsip).where(and(
+                eq(klasifikasiArsip.id, id), eq(klasifikasiArsip.ruleSetId, ruleSet.id),
+            )).limit(1).for('update');
+            if (!before) return null;
+            const [deleted] = await tx.update(klasifikasiArsip)
+                .set({ isActive: false, isSelectable: false, contentHash: null, updatedAt: new Date() })
+                .where(and(eq(klasifikasiArsip.id, id), eq(klasifikasiArsip.ruleSetId, ruleSet.id)))
+                .returning();
+            await invalidateGovernanceEvidence(tx, ruleSet.id);
+            await appendRegulatoryEvents(tx, [{
+                ruleSetId: ruleSet.id,
+                instrumentType: 'klasifikasi',
+                entityType: 'item',
+                itemId: id,
+                itemCode: deleted.kode,
+                action: 'deactivate',
+                before: auditSnapshot(before),
+                after: auditSnapshot(deleted),
+                reason: auditContext.reason || 'Menonaktifkan butir klasifikasi pada draft.',
+            }], auditContext);
+            return withRuleSet([deleted], ruleSet)[0];
+        });
     }
 
     async getStats(ruleSetId?: string) {
@@ -178,7 +276,9 @@ class KlasifikasiService {
             substantif: substantif.length,
             rootFasilitatif: fasilitatif.filter(i => i.level === 0).length,
             rootSubstantif: substantif.filter(i => i.level === 0).length,
-            ruleSet: all[0]?.ruleSet || await resolveRuleSet('klasifikasi', ruleSetId),
+            ruleSet: all[0]?.ruleSet || presentMasterRuleSet(
+                await resolveRuleSet('klasifikasi', ruleSetId),
+            ),
         };
     }
 }
@@ -217,47 +317,91 @@ class JRAService {
         return item ? withRuleSet([item], ruleSet)[0] : null;
     }
 
-    async create(data: NewJadwalRetensiArsip) {
-        const ruleSet = await assertDraft(data.ruleSetId, 'jra');
-        const [created] = await db.insert(jadwalRetensiArsip)
-            .values({ ...data, ruleSetId: ruleSet.id }).returning();
-        return withRuleSet([created], ruleSet)[0];
+    async create(data: NewJadwalRetensiArsip, auditContext: GovernanceAuditContext = {}) {
+        return db.transaction(async (tx: any) => {
+            const ruleSet = await assertDraft(data.ruleSetId, 'jra', tx);
+            const [created] = await tx.insert(jadwalRetensiArsip)
+                .values({ ...data, ruleSetId: ruleSet.id }).returning();
+            await invalidateGovernanceEvidence(tx, ruleSet.id);
+            await appendRegulatoryEvents(tx, [{
+                ruleSetId: ruleSet.id,
+                instrumentType: 'jra',
+                entityType: 'item',
+                itemId: created.id,
+                itemCode: created.kode,
+                action: 'create',
+                before: null,
+                after: auditSnapshot(created),
+                reason: auditContext.reason || 'Menambahkan butir JRA pada draft.',
+            }], auditContext);
+            return withRuleSet([created], ruleSet)[0];
+        });
     }
 
-    async updateById(id: number, data: Partial<NewJadwalRetensiArsip>) {
-        const ruleSet = await assertDraft(data.ruleSetId, 'jra');
-        const [updated] = await db.update(jadwalRetensiArsip)
-            .set({ ...data, ruleSetId: ruleSet.id, contentHash: null, updatedAt: new Date() })
-            .where(and(eq(jadwalRetensiArsip.id, id), eq(jadwalRetensiArsip.ruleSetId, ruleSet.id)))
-            .returning();
-        return updated ? withRuleSet([updated], ruleSet)[0] : null;
+    async updateById(
+        id: number,
+        data: Partial<NewJadwalRetensiArsip>,
+        auditContext: GovernanceAuditContext = {},
+    ) {
+        return db.transaction(async (tx: any) => {
+            const ruleSet = await assertDraft(data.ruleSetId, 'jra', tx);
+            const [before] = await tx.select().from(jadwalRetensiArsip).where(and(
+                eq(jadwalRetensiArsip.id, id), eq(jadwalRetensiArsip.ruleSetId, ruleSet.id),
+            )).limit(1).for('update');
+            if (!before) return null;
+            const [updated] = await tx.update(jadwalRetensiArsip)
+                .set({ ...data, ruleSetId: ruleSet.id, contentHash: null, updatedAt: new Date() })
+                .where(and(eq(jadwalRetensiArsip.id, id), eq(jadwalRetensiArsip.ruleSetId, ruleSet.id)))
+                .returning();
+            await invalidateGovernanceEvidence(tx, ruleSet.id);
+            await appendRegulatoryEvents(tx, [{
+                ruleSetId: ruleSet.id,
+                instrumentType: 'jra',
+                entityType: 'item',
+                itemId: id,
+                itemCode: updated.kode,
+                action: 'update',
+                before: auditSnapshot(before),
+                after: auditSnapshot(updated),
+                reason: auditContext.reason || 'Mengubah butir JRA pada draft.',
+            }], auditContext);
+            return withRuleSet([updated], ruleSet)[0];
+        });
     }
 
-    async update(kode: string, data: Partial<NewJadwalRetensiArsip>) {
-        const ruleSet = await assertDraft(data.ruleSetId, 'jra');
-        const [updated] = await db.update(jadwalRetensiArsip)
-            .set({ ...data, ruleSetId: ruleSet.id, updatedAt: new Date() })
-            .where(and(eq(jadwalRetensiArsip.ruleSetId, ruleSet.id), eq(jadwalRetensiArsip.kode, kode)))
-            .returning();
-        return updated ? withRuleSet([updated], ruleSet)[0] : null;
+    async update(_kode: string, _data: Partial<NewJadwalRetensiArsip>) {
+        throw new ConflictError('Mutasi berdasarkan kode dinonaktifkan. Gunakan updateById agar audit item tidak ambigu.');
     }
 
-    async delete(kode: string, ruleSetId?: string) {
-        const ruleSet = await assertDraft(ruleSetId, 'jra');
-        const [deleted] = await db.update(jadwalRetensiArsip)
-            .set({ isActive: false, updatedAt: new Date() })
-            .where(and(eq(jadwalRetensiArsip.ruleSetId, ruleSet.id), eq(jadwalRetensiArsip.kode, kode)))
-            .returning();
-        return deleted ? withRuleSet([deleted], ruleSet)[0] : null;
+    async delete(_kode: string, _ruleSetId?: string) {
+        throw new ConflictError('Mutasi berdasarkan kode dinonaktifkan. Gunakan deleteById agar audit item tidak ambigu.');
     }
 
-    async deleteById(id: number, ruleSetId?: string) {
-        const ruleSet = await assertDraft(ruleSetId, 'jra');
-        const [deleted] = await db.update(jadwalRetensiArsip)
-            .set({ isActive: false, isSelectable: false, contentHash: null, updatedAt: new Date() })
-            .where(and(eq(jadwalRetensiArsip.id, id), eq(jadwalRetensiArsip.ruleSetId, ruleSet.id)))
-            .returning();
-        return deleted ? withRuleSet([deleted], ruleSet)[0] : null;
+    async deleteById(id: number, ruleSetId?: string, auditContext: GovernanceAuditContext = {}) {
+        return db.transaction(async (tx: any) => {
+            const ruleSet = await assertDraft(ruleSetId, 'jra', tx);
+            const [before] = await tx.select().from(jadwalRetensiArsip).where(and(
+                eq(jadwalRetensiArsip.id, id), eq(jadwalRetensiArsip.ruleSetId, ruleSet.id),
+            )).limit(1).for('update');
+            if (!before) return null;
+            const [deleted] = await tx.update(jadwalRetensiArsip)
+                .set({ isActive: false, isSelectable: false, contentHash: null, updatedAt: new Date() })
+                .where(and(eq(jadwalRetensiArsip.id, id), eq(jadwalRetensiArsip.ruleSetId, ruleSet.id)))
+                .returning();
+            await invalidateGovernanceEvidence(tx, ruleSet.id);
+            await appendRegulatoryEvents(tx, [{
+                ruleSetId: ruleSet.id,
+                instrumentType: 'jra',
+                entityType: 'item',
+                itemId: id,
+                itemCode: deleted.kode,
+                action: 'deactivate',
+                before: auditSnapshot(before),
+                after: auditSnapshot(deleted),
+                reason: auditContext.reason || 'Menonaktifkan butir JRA pada draft.',
+            }], auditContext);
+            return withRuleSet([deleted], ruleSet)[0];
+        });
     }
 }
 

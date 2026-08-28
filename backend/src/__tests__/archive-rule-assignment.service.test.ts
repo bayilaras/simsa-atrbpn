@@ -1,8 +1,22 @@
+import { createHash } from 'node:crypto';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ArchiveRuleAssignmentService } from '../services/archive-rule-assignment.service';
 
 type RecordedCall = { method: PropertyKey; args: any[] };
+
+function canonicalJson(value: unknown): string {
+    if (value === null || typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort()
+        .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+        .join(',')}}`;
+}
+
+function canonicalSha256(value: unknown): string {
+    return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
 
 function createExecutor(...results: any[]) {
     const calls: RecordedCall[] = [];
@@ -171,6 +185,255 @@ describe('ArchiveRuleAssignmentService', () => {
         });
 
         expect(result.cache.hasilAkhir).toBe('Dinilai Kembali');
+    });
+
+    it('never turns a manual active 1 year / inactive dash rule into an expiry', async () => {
+        const manualRetention = {
+            ...retention,
+            item: {
+                ...retention.item,
+                retensiAktif: '1 tahun',
+                retensiInaktif: '-',
+                activeMonths: 12,
+                inactiveMonths: null,
+                calculationMode: 'manual',
+                dispositionCode: 'musnah',
+                keterangan: 'Musnah',
+            },
+        };
+        const assignment = await service.resolveActive(
+            createExecutor([classification], [manualRetention]).executor,
+            { klasifikasiItemId: 10, jraItemId: 20 },
+        );
+
+        expect(service.calculateExpiry('2000-01-01', assignment.normalizedRetention)).toBeNull();
+        expect(service.calculateRetentionDates('2000-01-01', assignment.normalizedRetention))
+            .toEqual({
+                tanggalAktifBerakhir: null,
+                tanggalInaktifBerakhir: null,
+                tanggalKadaluarsa: null,
+            });
+
+        const evaluation = service.evaluateCanonicalRetention('2000-01-01', {
+            arsipId: 'archive-1',
+            ruleProvenanceStatus: 'verified',
+            currentRuleSnapshotId: 'snapshot-1',
+            jraItemId: assignment.cache.jraItemId,
+            jraRuleSetId: assignment.cache.jraRuleSetId,
+            retentionDecisionHash: assignment.cache.retentionDecisionHash,
+            snapshotId: 'snapshot-1',
+            snapshotArsipId: 'archive-1',
+            snapshotStatus: 'verified',
+            snapshotJraItemId: assignment.cache.jraItemId,
+            snapshotJraRuleSetId: assignment.cache.jraRuleSetId,
+            snapshot: assignment.snapshot,
+            snapshotSha256: assignment.snapshotSha256,
+            currentRetentionTriggerEventId: 'event-1',
+            triggerEventRecordId: 'event-1',
+            triggerEventArsipId: 'archive-1',
+            triggerEventDate: '2000-01-01',
+            triggerEventRevision: 1,
+            triggerEventActorId: 'actor-1',
+            triggerVerificationVerdict: 'verified',
+            triggerVerifierId: 'verifier-1',
+            latestTriggerEventRevision: 1,
+            currentAppraisalDecisionId: null,
+            hasActiveAppraisalCase: false,
+        });
+
+        expect(evaluation).toMatchObject({
+            verified: true,
+            calculationEligible: false,
+            status: 'aktif',
+        });
+        expect(evaluation.calculationBlockReason).toMatch(/penilaian manusia/i);
+    });
+
+    it('accepts dinilai_kembali as verified but never automates its disposition', async () => {
+        const appraisalRetention = {
+            ...retention,
+            item: {
+                ...retention.item,
+                calculationMode: 'duration',
+                dispositionCode: 'dinilai_kembali',
+                keterangan: 'Dinilai Kembali',
+            },
+        };
+        const assignment = await service.resolveActive(
+            createExecutor([classification], [appraisalRetention]).executor,
+            { klasifikasiItemId: 10, jraItemId: 20 },
+        );
+
+        const evaluation = service.evaluateCanonicalRetention('2000-01-01', {
+            arsipId: 'archive-1',
+            ruleProvenanceStatus: 'verified',
+            currentRuleSnapshotId: 'snapshot-1',
+            jraItemId: assignment.cache.jraItemId,
+            jraRuleSetId: assignment.cache.jraRuleSetId,
+            retentionDecisionHash: assignment.cache.retentionDecisionHash,
+            snapshotId: 'snapshot-1',
+            snapshotArsipId: 'archive-1',
+            snapshotStatus: 'verified',
+            snapshotJraItemId: assignment.cache.jraItemId,
+            snapshotJraRuleSetId: assignment.cache.jraRuleSetId,
+            snapshot: assignment.snapshot,
+            snapshotSha256: assignment.snapshotSha256,
+            currentRetentionTriggerEventId: 'event-1',
+            triggerEventRecordId: 'event-1',
+            triggerEventArsipId: 'archive-1',
+            triggerEventDate: '2000-01-01',
+            triggerEventRevision: 1,
+            triggerEventActorId: 'actor-1',
+            triggerVerificationVerdict: 'verified',
+            triggerVerifierId: 'verifier-1',
+            latestTriggerEventRevision: 1,
+            currentAppraisalDecisionId: null,
+            hasActiveAppraisalCase: false,
+        });
+
+        expect(evaluation).toMatchObject({
+            verified: true,
+            calculationEligible: true,
+            dates: {
+                tanggalKadaluarsa: '2005-01-01',
+            },
+            effectiveDispositionCode: null,
+            dispositionEligible: false,
+        });
+        expect(evaluation.dispositionBlockReason).toMatch(/appraisal/i);
+    });
+
+    it('accepts only the current, latest, independently verified trigger event', async () => {
+        const assignment = await service.resolveActive(
+            createExecutor([classification], [retention]).executor,
+            { klasifikasiItemId: 10, jraItemId: 20 },
+        );
+        const evidence = {
+            arsipId: 'archive-1',
+            ruleProvenanceStatus: 'verified',
+            currentRuleSnapshotId: 'snapshot-1',
+            jraItemId: assignment.cache.jraItemId,
+            jraRuleSetId: assignment.cache.jraRuleSetId,
+            retentionDecisionHash: assignment.cache.retentionDecisionHash,
+            snapshotId: 'snapshot-1',
+            snapshotArsipId: 'archive-1',
+            snapshotStatus: 'verified',
+            snapshotJraItemId: assignment.cache.jraItemId,
+            snapshotJraRuleSetId: assignment.cache.jraRuleSetId,
+            snapshot: assignment.snapshot,
+            snapshotSha256: assignment.snapshotSha256,
+            currentRetentionTriggerEventId: 'event-1',
+            triggerEventRecordId: 'event-1',
+            triggerEventArsipId: 'archive-1',
+            triggerEventDate: '2000-01-01',
+            triggerEventRevision: 1,
+            triggerEventActorId: 'actor-1',
+            triggerVerificationVerdict: 'verified',
+            triggerVerifierId: 'verifier-1',
+            latestTriggerEventRevision: 1,
+            currentAppraisalDecisionId: null,
+            hasActiveAppraisalCase: false,
+        };
+
+        expect(service.evaluateCanonicalRetention('2000-01-01', evidence))
+            .toMatchObject({ verified: true, effectiveDispositionCode: 'musnah' });
+        expect(service.evaluateCanonicalRetention('2000-01-01', {
+            ...evidence,
+            latestTriggerEventRevision: 2,
+        })).toMatchObject({ verified: false, blockReason: expect.stringMatching(/revisi terbaru/i) });
+        expect(service.evaluateCanonicalRetention('2000-01-01', {
+            ...evidence,
+            triggerVerifierId: 'actor-1',
+        })).toMatchObject({ verified: false, blockReason: expect.stringMatching(/independen/i) });
+        expect(service.evaluateCanonicalRetention('2000-01-01', {
+            ...evidence,
+            currentRetentionTriggerEventId: 'event-2',
+        })).toMatchObject({ verified: false, blockReason: expect.stringMatching(/belum ditetapkan/i) });
+    });
+
+    it('uses only a current approved appraisal and rejects a stale rule or trigger snapshot', async () => {
+        const appraisalRetention = {
+            ...retention,
+            item: {
+                ...retention.item,
+                dispositionCode: 'dinilai_kembali',
+                keterangan: 'Dinilai Kembali',
+            },
+        };
+        const assignment = await service.resolveActive(
+            createExecutor([classification], [appraisalRetention]).executor,
+            { klasifikasiItemId: 10, jraItemId: 20 },
+        );
+        const submissionSnapshot = {
+            ruleSnapshot: { id: 'snapshot-1', sha256: assignment.snapshotSha256 },
+            archive: { retentionDecisionHash: assignment.cache.retentionDecisionHash },
+            retentionTrigger: {
+                event: { id: 'event-1' },
+                verification: { verdict: 'verified', verifierId: 'verifier-1' },
+            },
+        };
+        const decisionSnapshot = {
+            schemaVersion: 1,
+            arsipId: 'archive-1',
+            submissionSnapshot,
+        };
+        const evidence = {
+            arsipId: 'archive-1',
+            ruleProvenanceStatus: 'verified',
+            currentRuleSnapshotId: 'snapshot-1',
+            jraItemId: assignment.cache.jraItemId,
+            jraRuleSetId: assignment.cache.jraRuleSetId,
+            retentionDecisionHash: assignment.cache.retentionDecisionHash,
+            snapshotId: 'snapshot-1',
+            snapshotArsipId: 'archive-1',
+            snapshotStatus: 'verified',
+            snapshotJraItemId: assignment.cache.jraItemId,
+            snapshotJraRuleSetId: assignment.cache.jraRuleSetId,
+            snapshot: assignment.snapshot,
+            snapshotSha256: assignment.snapshotSha256,
+            currentRetentionTriggerEventId: 'event-1',
+            triggerEventRecordId: 'event-1',
+            triggerEventArsipId: 'archive-1',
+            triggerEventDate: '2000-01-01',
+            triggerEventRevision: 1,
+            triggerEventActorId: 'actor-1',
+            triggerVerificationVerdict: 'verified',
+            triggerVerifierId: 'verifier-1',
+            latestTriggerEventRevision: 1,
+            currentAppraisalDecisionId: 'decision-1',
+            appraisalDecisionRecordId: 'decision-1',
+            appraisalDecisionArsipId: 'archive-1',
+            appraisalDecisionStatus: 'approved',
+            appraisalDecisionOutcome: 'permanen',
+            appraisalDecisionSnapshot: decisionSnapshot,
+            appraisalDecisionSha256: canonicalSha256(decisionSnapshot),
+            appraisalCaseStatus: 'approved',
+            hasActiveAppraisalCase: false,
+        };
+
+        expect(service.evaluateCanonicalRetention('2000-01-01', evidence)).toMatchObject({
+            verified: true,
+            effectiveDispositionCode: 'permanen',
+            effectiveDecisionSource: 'appraisal',
+            effectiveAppraisalDecisionId: 'decision-1',
+            dispositionEligible: true,
+        });
+
+        const staleDecisionSnapshot = {
+            ...decisionSnapshot,
+            submissionSnapshot: {
+                ...submissionSnapshot,
+                ruleSnapshot: { id: 'snapshot-old', sha256: assignment.snapshotSha256 },
+            },
+        };
+        expect(service.evaluateCanonicalRetention('2000-01-01', {
+            ...evidence,
+            appraisalDecisionSnapshot: staleDecisionSnapshot,
+            appraisalDecisionSha256: canonicalSha256(staleDecisionSnapshot),
+        })).toMatchObject({
+            verified: false,
+            blockReason: expect.stringMatching(/kedaluwarsa/i),
+        });
     });
 
     it('creates revision one and only updates the archive pointer/cache status', async () => {

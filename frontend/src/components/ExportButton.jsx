@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Download, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react';
+import { API_BASE_URL } from '@/lib/api-url';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = API_BASE_URL;
 
 /**
  * ExportButton - dropdown for exporting data in Excel/PDF
@@ -10,12 +11,10 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 const ExportButton = ({ type, filters = {} }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
-    const [showArsipSubMenu, setShowArsipSubMenu] = useState(false);
 
     const handleExport = async (format, formulirType = null) => {
         setIsExporting(true);
         setShowDropdown(false);
-        setShowArsipSubMenu(false);
 
         try {
             const queryParams = new URLSearchParams();
@@ -152,10 +151,7 @@ const ExportButton = ({ type, filters = {} }) => {
             {showDropdown && (
                 <div
                     className="fixed inset-0 z-40"
-                    onClick={() => {
-                        setShowDropdown(false);
-                        setShowArsipSubMenu(false);
-                    }}
+                    onClick={() => setShowDropdown(false)}
                 />
             )}
         </div>

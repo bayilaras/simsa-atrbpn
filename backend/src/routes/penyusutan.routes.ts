@@ -9,6 +9,7 @@ import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { printTemplateService } from '../services/print-template.service';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
+import { LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE } from '../utils/permanent-transfer-policy';
 
 const router = Router();
 
@@ -151,6 +152,9 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
 router.post('/', canWriteMiddleware(), sensitiveLimiter, validateBody(createPenyusutanSchema), async (req: AuthRequest, res, next) => {
     try {
         const { jenisPenyusutan, nomorBA, keterangan, arsipIds } = req.body;
+        if (jenisPenyusutan === 'penyerahan') {
+            return res.status(409).json({ error: LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE });
+        }
         const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId;
         if (!unitKerjaId || !jenisPenyusutan || !arsipIds || !Array.isArray(arsipIds)) {
             return res.status(400).json({

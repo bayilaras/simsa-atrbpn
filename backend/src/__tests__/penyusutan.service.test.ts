@@ -16,6 +16,7 @@ const validJraProvenance = {
     jraRuleSetId: 'jra-ruleset-2020',
     retentionDecisionHash: 'b'.repeat(64),
     currentRuleSnapshotId: 'snapshot-1',
+    currentRetentionTriggerEventId: 'trigger-event-1',
     ruleProvenanceStatus: 'verified',
 };
 
@@ -46,6 +47,7 @@ vi.mock('../services/arsip.service', () => ({
         getDisposalCandidates: vi.fn().mockResolvedValue({ data: [], pagination: { total: 0 } }),
         getArchiveStatus: vi.fn().mockReturnValue('kadaluarsa'),
         calculateRetentionDates: vi.fn().mockReturnValue({ tanggalKadaluarsa: '2002-01-01' }),
+        evaluateCanonicalRetention: vi.fn(),
     },
 }));
 
@@ -58,6 +60,50 @@ describe('PenyusutanService', () => {
         resultQueue.length = 0;
         chainCalls.length = 0;
         vi.mocked(arsipService.getArchiveStatus).mockReturnValue('kadaluarsa');
+        vi.mocked(arsipService.evaluateCanonicalRetention).mockImplementation((row: any) => {
+            const calculationMode = row.calculationMode || 'duration';
+            const calculationEligible = calculationMode === 'duration';
+            const dispositionCode = row.dispositionCode
+                || (row.hasilAkhir === 'Permanen' ? 'permanen'
+                    : row.hasilAkhir === 'Dinilai Kembali' ? 'manual_review' : 'musnah');
+            const status = calculationEligible
+                ? arsipService.getArchiveStatus(row.retentionTriggerDate, null, null)
+                : 'aktif';
+            const requiresAppraisal = calculationMode === 'manual'
+                || ['manual_review', 'dinilai_kembali'].includes(dispositionCode);
+            const effectiveDispositionCode = row.appraisalOutcome
+                || (requiresAppraisal ? null : dispositionCode);
+            const dispositionEligible = ['musnah', 'permanen'].includes(
+                effectiveDispositionCode || '',
+            ) && (calculationEligible ? status === 'kadaluarsa' : Boolean(row.appraisalOutcome));
+            return {
+                verified: row.snapshotVerified !== false,
+                blockReason: row.snapshotVerified === false ? 'snapshot JRA tidak terverifikasi' : null,
+                calculationEligible,
+                calculationBlockReason: calculationEligible ? null : 'mode perhitungan JRA manual memerlukan penilaian manusia',
+                normalizedRetention: {
+                    activeMonths: calculationEligible ? 12 : 12,
+                    inactiveMonths: calculationEligible ? 12 : null,
+                    calculationMode,
+                    dispositionCode,
+                },
+                dates: {
+                    tanggalAktifBerakhir: calculationEligible ? '2001-01-01' : null,
+                    tanggalInaktifBerakhir: calculationEligible ? '2002-01-01' : null,
+                    tanggalKadaluarsa: calculationEligible ? '2002-01-01' : null,
+                },
+                status,
+                effectiveDispositionCode,
+                effectiveDecisionSource: row.appraisalOutcome ? 'appraisal'
+                    : effectiveDispositionCode ? 'jra' : null,
+                effectiveAppraisalDecisionId: row.appraisalOutcome ? 'decision-1' : null,
+                dispositionEligible,
+                dispositionBlockReason: dispositionEligible ? null
+                    : effectiveDispositionCode && status !== 'kadaluarsa'
+                        ? 'retensi belum berakhir'
+                        : 'hasil akhir JRA memerlukan appraisal efektif',
+            } as any;
+        });
     });
 
     // ── findAll ──
@@ -125,6 +171,16 @@ describe('PenyusutanService', () => {
 
     // ── create ──
     describe('create', () => {
+        it('should fail closed for legacy permanent-transfer batches before database access', async () => {
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1',
+                jenisPenyusutan: 'penyerahan',
+                arsipIds: ['a1'],
+            })).rejects.toThrow(/Tata Kelola Retensi.*permanent-transfers/i);
+            expect(resultQueue).toHaveLength(0);
+            expect(chainCalls).toHaveLength(0);
+        });
+
         it('should create batch with arsip items', async () => {
             enqueue([
                 { id: 'a1', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null, retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false, ...validJraProvenance },
@@ -235,6 +291,7 @@ describe('PenyusutanService', () => {
                 id: 'a-legacy', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null,
                 retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
                 hasilAkhir: 'Musnah', legalHold: false,
+                currentRetentionTriggerEventId: 'trigger-event-1',
                 ruleProvenanceStatus: 'legacy_unverified',
             }]);
             await expect(penyusutanService.create({
@@ -247,6 +304,7 @@ describe('PenyusutanService', () => {
                 id: 'a-pending', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null,
                 retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
                 hasilAkhir: 'Musnah', legalHold: false,
+                currentRetentionTriggerEventId: 'trigger-event-1',
                 ruleProvenanceStatus: 'pending_jra',
             }]);
             await expect(penyusutanService.create({
@@ -284,6 +342,14 @@ describe('PenyusutanService', () => {
 
     // ── updateStatus ──
     describe('updateStatus', () => {
+        it('should keep a grandfathered transfer batch read-only', async () => {
+            enqueue([{ id: 'p1', status: 'approved', jenisPenyusutan: 'penyerahan', unitKerjaId: 'u1' }]);
+            await expect(penyusutanService.updateStatus('p1', {
+                user: { id: 'executor-1', role: 'super_admin', unitKerjaId: '' },
+            }, null)).rejects.toThrow(/Tata Kelola Retensi.*permanent-transfers/i);
+            expect(resultQueue).toHaveLength(0);
+        });
+
         it('should advance status from draft to proposed', async () => {
             enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1' }]); // find batch
             enqueue([{
@@ -361,6 +427,7 @@ describe('PenyusutanService', () => {
             enqueue([{
                 id: 'a-legacy', retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun',
                 retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false,
+                currentRetentionTriggerEventId: 'trigger-event-1',
                 ruleProvenanceStatus: 'legacy_unverified',
             }]);
             await expect(penyusutanService.updateStatus('p1', {
@@ -403,6 +470,13 @@ describe('PenyusutanService', () => {
 
     // ── addItems ──
     describe('addItems', () => {
+        it('should block adding items to a grandfathered transfer batch', async () => {
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'penyerahan', unitKerjaId: 'u1' }]);
+            await expect(penyusutanService.addItems('p1', ['a-new'], 'u1'))
+                .rejects.toThrow(/Tata Kelola Retensi.*permanent-transfers/i);
+            expect(resultQueue).toHaveLength(0);
+        });
+
         it('should add arsip items to draft batch', async () => {
             enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1' }]); // find batch
             enqueue([{ id: 'a-new', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null, retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false, ...validJraProvenance }]); // eligibility check
@@ -463,6 +537,32 @@ describe('PenyusutanService', () => {
             expect(result.map(item => item.id)).toEqual(['eligible']);
         });
 
+        it('should exclude a manual active 1 year / inactive dash rule from destruction candidates', async () => {
+            enqueue([{
+                id: 'manual-rule', disposalStatus: 'active', legalHold: false,
+                retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '-',
+                calculationMode: 'manual', dispositionCode: 'musnah', hasilAkhir: 'Musnah',
+                ...validJraProvenance,
+            }]);
+
+            const result = await penyusutanService.getCandidates('u1', 'pemusnahan');
+
+            expect(result).toEqual([]);
+        });
+
+        it('should exclude a duration rule whose disposition is conditional/manual review', async () => {
+            enqueue([{
+                id: 'conditional-rule', disposalStatus: 'active', legalHold: false,
+                retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun',
+                calculationMode: 'duration', dispositionCode: 'manual_review',
+                hasilAkhir: 'Dinilai Kembali', ...validJraProvenance,
+            }]);
+
+            const result = await penyusutanService.getCandidates('u1', 'pemusnahan');
+
+            expect(result).toEqual([]);
+        });
+
         it('should reject duplicate archive IDs before touching a draft batch', async () => {
             await expect(penyusutanService.addItems('p1', ['a1', 'a1'], 'u1'))
                 .rejects.toThrow(/ID duplikat/i);
@@ -472,6 +572,13 @@ describe('PenyusutanService', () => {
 
     // ── removeItems ──
     describe('removeItems', () => {
+        it('should block removing items from a grandfathered transfer batch', async () => {
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'penyerahan' }]);
+            await expect(penyusutanService.removeItems('p1', ['a1'], 'u1'))
+                .rejects.toThrow(/Tata Kelola Retensi.*permanent-transfers/i);
+            expect(resultQueue).toHaveLength(0);
+        });
+
         it('should remove items from draft batch', async () => {
             enqueue([{ id: 'p1', status: 'draft' }]); // find batch
             enqueue([]); // delete items
@@ -490,6 +597,13 @@ describe('PenyusutanService', () => {
 
     // ── deleteBatch ──
     describe('deleteBatch', () => {
+        it('should block deleting a grandfathered transfer batch', async () => {
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'penyerahan' }]);
+            await expect(penyusutanService.deleteBatch('p1', 'u1'))
+                .rejects.toThrow(/Tata Kelola Retensi.*permanent-transfers/i);
+            expect(resultQueue).toHaveLength(0);
+        });
+
         it('should delete draft batch', async () => {
             enqueue([{ id: 'p1', status: 'draft' }]); // find batch
             enqueue([{ arsipId: 'a1' }]); // get items

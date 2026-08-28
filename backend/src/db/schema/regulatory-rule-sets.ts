@@ -4,6 +4,7 @@ import {
     varchar,
     text,
     date,
+    integer,
     timestamp,
     jsonb,
     check,
@@ -36,6 +37,16 @@ export const regulatoryRuleSets = pgTable('regulatory_rule_sets', {
     regulationNumber: varchar('regulation_number', { length: 100 }).notNull(),
     sourceDocumentName: text('source_document_name'),
     sourceDocumentSha256: varchar('source_document_sha256', { length: 64 }),
+    // Canonical locator of the exact, private, non-overwritable source bytes.
+    // It is deliberately removed by the presentation layer before rule sets
+    // are returned to clients.
+    sourceDocumentBlobUrl: text('source_document_blob_url'),
+    sourceDocumentMimeType: varchar('source_document_mime_type', { length: 100 }),
+    sourceDocumentSizeBytes: integer('source_document_size_bytes'),
+    sourceDocumentPageCount: integer('source_document_page_count'),
+    sourceDocumentVerifiedAt: timestamp('source_document_verified_at'),
+    sourceDocumentVerifiedBy: uuid('source_document_verified_by')
+        .references(() => users.id, { onDelete: 'restrict' }),
     sourceUrl: text('source_url'),
     status: varchar('status', { length: 20 }).default('draft').notNull(),
     effectiveFrom: date('effective_from').notNull(),
@@ -43,6 +54,25 @@ export const regulatoryRuleSets = pgTable('regulatory_rule_sets', {
     supersedesId: uuid('supersedes_id'),
     changeSummary: text('change_summary'),
     metadata: jsonb('metadata'),
+    completenessManifest: jsonb('completeness_manifest'),
+    completenessManifestSha256: varchar('completeness_manifest_sha256', { length: 64 }),
+    completenessVerifiedAt: timestamp('completeness_verified_at'),
+    completenessVerifiedBy: uuid('completeness_verified_by')
+        .references(() => users.id, { onDelete: 'restrict' }),
+    impactReport: jsonb('impact_report'),
+    impactReportSha256: varchar('impact_report_sha256', { length: 64 }),
+    impactReportGeneratedAt: timestamp('impact_report_generated_at'),
+    impactReportGeneratedBy: uuid('impact_report_generated_by')
+        .references(() => users.id, { onDelete: 'restrict' }),
+    submittedAt: timestamp('submitted_at'),
+    submittedBy: uuid('submitted_by').references(() => users.id, { onDelete: 'restrict' }),
+    submissionNote: text('submission_note'),
+    reviewedAt: timestamp('reviewed_at'),
+    reviewedBy: uuid('reviewed_by').references(() => users.id, { onDelete: 'restrict' }),
+    reviewNote: text('review_note'),
+    approvedAt: timestamp('approved_at'),
+    approvedBy: uuid('approved_by').references(() => users.id, { onDelete: 'restrict' }),
+    approvalNote: text('approval_note'),
     publishedAt: timestamp('published_at'),
     // Users are deactivated rather than deleted once they are part of a legal
     // publication trail, so the accountable actor cannot silently disappear.
@@ -67,11 +97,34 @@ export const regulatoryRuleSets = pgTable('regulatory_rule_sets', {
     ),
     check(
         'regulatory_rule_sets_status_check',
-        sql`${table.status} in ('draft', 'active', 'superseded', 'withdrawn')`,
+        sql`${table.status} in ('draft', 'submitted', 'reviewed', 'approved', 'active', 'superseded', 'withdrawn')`,
     ),
     check(
         'regulatory_rule_sets_sha256_check',
         sql`${table.sourceDocumentSha256} is null or ${table.sourceDocumentSha256} ~ '^[0-9a-fA-F]{64}$'`,
+    ),
+    check(
+        'regulatory_rule_sets_source_blob_check',
+        sql`${table.sourceDocumentBlobUrl} is null or (
+            ${table.sourceDocumentBlobUrl} ~ '^https://[^/]+[.]private[.]blob[.]vercel-storage[.]com/regulatory-sources/[0-9a-fA-F-]{36}/[^/?#]+$'
+            and ${table.sourceDocumentBlobUrl} like ('https://%.private.blob.vercel-storage.com/regulatory-sources/' || ${table.id}::text || '/%')
+        )`,
+    ),
+    check(
+        'regulatory_rule_sets_source_size_check',
+        sql`${table.sourceDocumentSizeBytes} is null or ${table.sourceDocumentSizeBytes} > 0`,
+    ),
+    check(
+        'regulatory_rule_sets_source_pages_check',
+        sql`${table.sourceDocumentPageCount} is null or ${table.sourceDocumentPageCount} > 0`,
+    ),
+    check(
+        'regulatory_rule_sets_manifest_sha256_check',
+        sql`${table.completenessManifestSha256} is null or ${table.completenessManifestSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+        'regulatory_rule_sets_impact_sha256_check',
+        sql`${table.impactReportSha256} is null or ${table.impactReportSha256} ~ '^[0-9a-f]{64}$'`,
     ),
     check(
         'regulatory_rule_sets_effective_range_check',

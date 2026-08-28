@@ -25,6 +25,7 @@ import {
     FileKey2,
     CloudCog,
     GitBranch,
+    Scale,
 } from 'lucide-react'
 
 import {
@@ -121,6 +122,12 @@ const menuGroups = [
                 url: '/retention',
                 icon: FileBarChart,
                 allowedRoles: ADMIN_ROLES,
+            },
+            {
+                title: 'Tata Kelola Retensi',
+                url: '/retention-governance',
+                icon: Scale,
+                allowedRoles: ADMIN_AND_AUDITOR,
             },
             {
                 title: 'Penyusutan',
@@ -227,11 +234,11 @@ const menuGroups = [
             {
                 title: 'Master Data',
                 icon: FolderTree,
-                allowedRoles: ADMIN_ROLES,
+                allowedRoles: ADMIN_AND_AUDITOR,
                 subItems: [
-                    { title: 'Versi Aturan', url: '/master/regulatory-rules', icon: GitBranch },
-                    { title: 'Klasifikasi Arsip', url: '/master/klasifikasi' },
-                    { title: 'Template Surat', url: '/settings' },
+                    { title: 'Versi Aturan', url: '/master/regulatory-rules', icon: GitBranch, allowedRoles: ADMIN_AND_AUDITOR },
+                    { title: 'Klasifikasi Arsip', url: '/master/klasifikasi', allowedRoles: ADMIN_ROLES },
+                    { title: 'Template Surat', url: '/settings', allowedRoles: ['super_admin'] },
                 ],
             },
         ]
@@ -288,7 +295,12 @@ export function AppSidebar() {
                 {menuGroups
                     .filter(group => !group.allowedRoles || group.allowedRoles.includes(userRole))
                     .map((group, groupIndex) => {
-                        const visibleItems = group.items.filter(isAllowed)
+                        const visibleItems = group.items
+                            .filter(isAllowed)
+                            .map((item) => item.subItems
+                                ? { ...item, subItems: item.subItems.filter(isAllowed) }
+                                : item)
+                            .filter((item) => !item.subItems || item.subItems.length > 0)
                         if (visibleItems.length === 0) return null
                         return (
                             <SidebarGroup key={group.label} className={groupIndex === 0 ? '' : 'mt-2'}>

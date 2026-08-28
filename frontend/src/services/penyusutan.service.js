@@ -1,4 +1,5 @@
 import api from './api';
+import { API_BASE_URL } from '../lib/api-url';
 
 const BASE_URL = '/api/penyusutan';
 
@@ -61,7 +62,7 @@ export const penyusutanService = {
         Object.entries(params).forEach(([key, value]) => {
             if (value != null) searchParams.set(key, String(value));
         });
-        const base = import.meta.env.VITE_API_URL || '';
+        const base = API_BASE_URL;
         switch (type) {
             case 'daftar-arsip-aktif':
                 return `${base}${BASE_URL}/print/daftar-arsip-aktif?${searchParams.toString()}`;
@@ -73,7 +74,7 @@ export const penyusutanService = {
     },
 
     getBatchPrintUrl(batchId, type) {
-        const base = import.meta.env.VITE_API_URL || '';
+        const base = API_BASE_URL;
         switch (type) {
             case 'usul-musnah':
                 return `${base}${BASE_URL}/${batchId}/print/usul-musnah`;

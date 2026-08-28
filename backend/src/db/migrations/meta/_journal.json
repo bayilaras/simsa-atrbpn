@@ -120,6 +120,34 @@
       "when": 1787706000000,
       "tag": "0016_versioned_regulatory_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787965200000,
+      "tag": "0017_retention_appraisal_governance",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787965800000,
+      "tag": "0018_regulatory_maker_checker",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787966400000,
+      "tag": "0019_authoritative_retention_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787967000000,
+      "tag": "0020_permanent_transfer_lifecycle",
+      "breakpoints": true
     }
   ]
 }
