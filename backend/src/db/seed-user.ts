@@ -1,9 +1,9 @@
 import { db } from '../config/database';
 import { users, accounts } from './schema';
-import { sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { hashCredentialPassword } from '../config/password-hashing.js';
 
 async function seedTestUser() {
     console.log('🌱 Creating test user...');
@@ -17,6 +17,7 @@ async function seedTestUser() {
     const email = process.env.SEED_ADMIN_EMAIL || 'admin@simsa.local';
     const generated = !process.env.SEED_ADMIN_PASSWORD;
     const password = process.env.SEED_ADMIN_PASSWORD || crypto.randomBytes(15).toString('base64url');
+    const hashedPassword = await hashCredentialPassword(password);
 
     const userId = uuidv4();
 
@@ -27,7 +28,36 @@ async function seedTestUser() {
         });
 
         if (existingUser) {
-            console.log('✅ Test user already exists:', existingUser.email);
+            const existingCredential = await db.query.accounts.findFirst({
+                where: and(
+                    eq(accounts.userId, existingUser.id),
+                    eq(accounts.providerId, 'credential'),
+                ),
+            });
+
+            if (existingCredential) {
+                await db.update(accounts)
+                    .set({ password: hashedPassword, updatedAt: new Date() })
+                    .where(and(
+                        eq(accounts.userId, existingUser.id),
+                        eq(accounts.providerId, 'credential'),
+                    ));
+            } else {
+                await db.insert(accounts).values({
+                    userId: existingUser.id,
+                    issuer: 'local:credential',
+                    accountId: existingUser.id,
+                    providerId: 'credential',
+                    password: hashedPassword,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                });
+            }
+
+            console.log('✅ Test user credential is ready:', existingUser.email);
+            console.log(generated
+                ? `🔑 Password (generated — set SEED_ADMIN_PASSWORD to choose your own): ${password}`
+                : '🔑 Password: (from SEED_ADMIN_PASSWORD)');
             process.exit(0);
         }
 
@@ -42,10 +72,9 @@ async function seedTestUser() {
             updatedAt: new Date(),
         });
 
-        // Create credential account for password login. Better Auth's credential
-        // provider reads the bcrypt hash from the `password` column.
-        const hashedPassword = await bcrypt.hash(password, 10);
-
+        // Create a credential account using the same native hash writer wired
+        // into Better Auth. Legacy bcrypt rows remain readable via the
+        // compatibility verifier, but no new bcrypt credentials are created.
         await db.insert(accounts).values({
             userId: userId,
             issuer: 'local:credential',

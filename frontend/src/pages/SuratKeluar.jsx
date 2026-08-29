@@ -256,6 +256,7 @@ export default function SuratKeluar() {
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             });
+            throw error;
         }
     };
 
@@ -586,6 +587,9 @@ export default function SuratKeluar() {
                                                                 Balasan
                                                             </Badge>
                                                         )}
+                                                        <Badge variant="outline" className="capitalize">
+                                                            {(row.klasifikasiKeamanan || 'terbatas').replaceAll('_', ' ')}
+                                                        </Badge>
                                                         {row.isArchived ? (
                                                             <Badge variant="outline" className="border-green-500 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/15">
                                                                 <FolderArchive className="h-3 w-3 mr-1" />

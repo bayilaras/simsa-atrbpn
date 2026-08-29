@@ -286,16 +286,17 @@ class GlobalSearchService {
         fetchLimit: number,
         securityClassifications?: string[] | null,
     ): Promise<ModuleSearchResult> {
-        // The legacy outgoing table has no security field. It is treated as
-        // Terbatas until re-registered in the controlled archive model.
-        if (securityClassifications !== undefined
-            && securityClassifications !== null
-            && !securityClassifications.includes('terbatas')) {
-            return { items: [], total: 0 };
-        }
         const conditions: any[] = [
             or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted)),  // Exclude soft-deleted records (NULL-safe)
         ];
+        if (securityClassifications !== undefined && securityClassifications !== null) {
+            conditions.push(securityClassifications.length > 0
+                ? inArray(
+                    sql<string>`lower(coalesce(${suratKeluar.klasifikasiKeamanan}, 'terbatas'))`,
+                    securityClassifications,
+                )
+                : sql`false`);
+        }
 
         for (const term of terms) {
             conditions.push(

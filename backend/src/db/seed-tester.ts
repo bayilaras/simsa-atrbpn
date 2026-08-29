@@ -1,9 +1,9 @@
 import { db } from '../config/database';
 import { users, accounts } from './schema/users';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { hashCredentialPassword } from '../config/password-hashing.js';
 
 async function seedTester() {
     console.log('🧪 Seeding tester account...');
@@ -19,7 +19,7 @@ async function seedTester() {
     // and printed. It is never hard-coded in the repo.
     const generated = !process.env.SEED_TESTER_PASSWORD;
     const password = process.env.SEED_TESTER_PASSWORD || crypto.randomBytes(15).toString('base64url');
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await hashCredentialPassword(password);
 
     // Check if user exists
     const existingUser = await db.query.users.findFirst({
@@ -31,15 +31,21 @@ async function seedTester() {
 
         // Check if account exists
         const existingAccount = await db.query.accounts.findFirst({
-            where: eq(accounts.userId, existingUser.id),
+            where: and(
+                eq(accounts.userId, existingUser.id),
+                eq(accounts.providerId, 'credential'),
+            ),
         });
 
         if (existingAccount) {
             console.log('⚠️ Tester user and account already exists.');
             console.log('🔄 Updating password for existing user...');
             await db.update(accounts)
-                .set({ password: hashedPassword })
-                .where(eq(accounts.userId, existingUser.id));
+                .set({ password: hashedPassword, updatedAt: new Date() })
+                .where(and(
+                    eq(accounts.userId, existingUser.id),
+                    eq(accounts.providerId, 'credential'),
+                ));
             console.log('✅ Password updated in accounts.');
         } else {
             console.log('🆕 Creating account for existing user...');

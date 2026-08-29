@@ -14,6 +14,7 @@
     "start:srikandi-worker": "node dist/workers/srikandi.js",
     "dev:blob-reconciler": "tsx src/workers/blob-reconciliation.ts",
     "start:blob-reconciler": "node dist/workers/blob-reconciliation.js",
+    "smoke:clamav": "tsx scripts/clamav-smoke.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",

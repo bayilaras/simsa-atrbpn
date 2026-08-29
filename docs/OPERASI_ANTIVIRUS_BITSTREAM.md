@@ -81,12 +81,23 @@ source lokal/staging, tambahkan override build. Host memerlukan Docker Compose
 docker compose --env-file .env -f compose.yml -f compose.local.yml up -d --build clamav malware-worker
 ```
 
-Produksi harus memakai image yang dibangun dan dipush oleh pipeline/proses rilis
-yang disetujui dari commit yang telah lulus CI. Isi
-`SIMSA_WORKER_IMAGE` dengan referensi immutable `tag@sha256:digest`, lalu pakai
-hanya base file agar host tidak membangun source lain:
+Produksi harus memakai image yang diterbitkan workflow GitHub Actions **Publish
+Immutable Worker Image (No Deployment)** dari commit default branch yang telah
+lulus CI. Workflow memeriksa entrypoint, menerbitkan image GHCR, lalu menempelkan
+provenance BuildKit, SBOM SPDX, dan GitHub build provenance. Workflow itu tidak
+memiliki langkah deployment. Salin referensi immutable `name@sha256:digest` dari
+job summary; jangan memakai tag commit saja.
+
+Simpan digest yang sama di `.env`, ekspor nilainya pada shell deployment, dan
+jalankan preflight sebelum setiap pull/rollout. Preflight menolak tag mutable,
+registry implisit, digest cacat, Compose lama, atau manifest yang tidak dapat
+diakses. Ekspor shell juga memastikan Compose tidak memakai nilai `.env` yang
+stale:
 
 ```sh
+export SIMSA_WORKER_IMAGE='ghcr.io/owner/repository-worker@sha256:<64-lowercase-hex>'
+sh ./preflight-worker-image.sh
+docker compose --env-file .env -f compose.yml config --quiet
 docker compose --env-file .env -f compose.yml pull clamav malware-worker
 docker compose --env-file .env -f compose.yml up -d --no-build clamav malware-worker
 ```
@@ -117,7 +128,10 @@ setelah `MALWARE_SCAN_STALE_AFTER_MS`. Hasil dari worker lama ditolak dengan
 conditional update. Setiap transisi yang diterima ditulis atomik ke `audit_log`
 tanpa menyimpan locator object storage di bukti audit.
 
-Sebelum rilis, uji setidaknya: `PING` ke scanner, sampel bersih, sampel uji EICAR
+Job CI `ClamAV Clean, EICAR & Restart Smoke` memakai implementasi `INSTREAM`
+aplikasi terhadap image ClamAV Linux yang dipatok digest, memverifikasi sampel
+bersih dan EICAR, me-restart container, lalu mengulangi kedua scan. Sebelum
+rilis, tetap uji setidaknya: `PING` ke scanner, sampel bersih, sampel uji EICAR
 yang disediakan resmi oleh organisasi antivirus, scanner mati/timeout, objek
 lebih besar dari batas, serta perubahan byte setelah baseline. Jangan menandai
 status database secara manual sebagai `clean`.

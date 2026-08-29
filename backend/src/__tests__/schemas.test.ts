@@ -31,6 +31,22 @@ describe('createSuratKeluarSchema numbering contract', () => {
         kepada: 'Seluruh unit',
     };
 
+    it('defaults newly registered outgoing records to ordinary/open', () => {
+        const result = createSuratKeluarSchema.safeParse({
+            ...base,
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.klasifikasiKeamanan).toBe('biasa');
+    });
+
+    it('rejects unknown outgoing security classifications', () => {
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            klasifikasiKeamanan: 'internal-khusus',
+        }).success).toBe(false);
+    });
+
     it('accepts explicit automatic numbering only when nomorSurat is omitted', () => {
         expect(createSuratKeluarSchema.safeParse({
             ...base,

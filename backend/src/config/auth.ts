@@ -4,6 +4,7 @@ import { createAuthMiddleware, APIError } from 'better-auth/api';
 import { db } from './database';
 import { env } from './env';
 import { getTrustedOrigins, isTrustedOrigin } from './trusted-origins';
+import { hashCredentialPassword, verifyCredentialPassword } from './password-hashing.js';
 import * as schema from '../db/schema';
 
 // OAuth is served through the public frontend origin in production. Falling
@@ -62,6 +63,13 @@ export const auth = betterAuth({
     }),
     emailAndPassword: {
         enabled: true,
+        password: {
+            // Write only Better Auth's current scrypt format while retaining a
+            // verification path for credential rows created by older bcrypt
+            // seed/provisioning scripts.
+            hash: hashCredentialPassword,
+            verify: verifyCredentialPassword,
+        },
         // Production accounts are provisioned by an administrator. Existing
         // credential accounts may still sign in, but the public sign-up endpoint
         // cannot create unmanaged government-system users.

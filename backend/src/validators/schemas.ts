@@ -143,28 +143,35 @@ const suratKeluarBaseSchema = z.object({
     klasifikasiFasilitatif: z.string().max(2000).optional(),
     klasifikasiSubstantifKode: z.string().max(50).optional(),
     klasifikasiSubstantif: z.string().max(2000).optional(),
+    klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional(),
     filePath: privateVercelBlobUrlSchema('surat-keluar').optional(),
     fileOriginalName: z.string().max(255).optional(),
 });
 
-export const createSuratKeluarSchema = suratKeluarBaseSchema.superRefine((value, ctx) => {
-    const effectiveNumberingMode = value.numberingMode
-        ?? (value.nomorSurat ? 'manual' : 'auto');
-    if (effectiveNumberingMode === 'auto' && value.nomorSurat) {
-        ctx.addIssue({
-            code: 'custom',
-            path: ['nomorSurat'],
-            message: 'Nomor preview tidak boleh dikirim pada mode penomoran otomatis',
-        });
-    }
-    if (effectiveNumberingMode === 'manual' && !value.nomorSurat) {
-        ctx.addIssue({
-            code: 'custom',
-            path: ['nomorSurat'],
-            message: 'Nomor surat wajib diisi pada mode manual',
-        });
-    }
-});
+export const createSuratKeluarSchema = suratKeluarBaseSchema
+    .extend({
+        // Older clients remain compatible, but every newly registered record
+        // receives an explicit security classification.
+        klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).default('biasa'),
+    })
+    .superRefine((value, ctx) => {
+        const effectiveNumberingMode = value.numberingMode
+            ?? (value.nomorSurat ? 'manual' : 'auto');
+        if (effectiveNumberingMode === 'auto' && value.nomorSurat) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['nomorSurat'],
+                message: 'Nomor preview tidak boleh dikirim pada mode penomoran otomatis',
+            });
+        }
+        if (effectiveNumberingMode === 'manual' && !value.nomorSurat) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['nomorSurat'],
+                message: 'Nomor surat wajib diisi pada mode manual',
+            });
+        }
+    });
 
 export const updateSuratKeluarSchema = suratKeluarBaseSchema
     .omit({ unitKerjaId: true, numberingMode: true })

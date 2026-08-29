@@ -67,6 +67,18 @@ jobs:
           docker compose --env-file .env.example -f compose.yml -f compose.local.yml --profile '*' config --quiet
         working-directory: deploy/workers
 
+      - name: Validate production worker image preflight
+        run: |
+          digest=$(printf 'a%.0s' {1..64})
+          SIMSA_WORKER_IMAGE="ghcr.io/example/simsa-worker@sha256:${digest}" \
+            sh ./preflight-worker-image.sh --format-only
+          if SIMSA_WORKER_IMAGE="ghcr.io/example/simsa-worker:latest" \
+            sh ./preflight-worker-image.sh --format-only; then
+            echo "::error::Worker preflight unexpectedly accepted a mutable tag."
+            exit 1
+          fi
+        working-directory: deploy/workers
+
       - name: Build and inspect worker image
         run: |
           docker build --check --file backend/Dockerfile.worker backend
@@ -92,6 +104,66 @@ jobs:
       - name: Build documentation
         run: npm run build
         working-directory: docs-site
+
+  clamav-smoke:
+    name: ClamAV Clean, EICAR & Restart Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Scan clean and EICAR samples before and after restart
+        shell: bash
+        env:
+          CLAMAV_HOST: 127.0.0.1
+          CLAMAV_PORT: '3310'
+          CLAMAV_SMOKE_WAIT_MS: '360000'
+          CLAMAV_SMOKE_POLL_MS: '2000'
+        run: |
+          set -Eeuo pipefail
+          container="simsa-clamav-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            status=$?
+            trap - EXIT
+            if [ "$status" -ne 0 ]; then
+              docker logs --tail 200 "$container" || true
+            fi
+            docker rm --force "$container" >/dev/null 2>&1 || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          clamav_image=$(docker compose \
+            --env-file deploy/workers/.env.example \
+            -f deploy/workers/compose.yml \
+            config --images | awk '/^clamav\/clamav:/{ print; exit }')
+          if [ -z "$clamav_image" ]; then
+            echo "::error::Could not resolve the pinned ClamAV image from Compose."
+            exit 1
+          fi
+
+          docker run --detach \
+            --name "$container" \
+            --publish 127.0.0.1:3310:3310 \
+            --env CLAMD_CONF_StreamMaxLength=52428800 \
+            "$clamav_image"
+
+          npm --prefix backend run smoke:clamav
+          docker restart --time 30 "$container"
+          npm --prefix backend run smoke:clamav
 
   test:
     name: Backend Tests

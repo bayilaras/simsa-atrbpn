@@ -127,11 +127,11 @@ export default function Dosir() {
     }, [fetchData])
 
     const handleCreate = async () => {
-        if (!formData.judul.trim()) return
+        if (!formData.judul.trim() || !resolvedUnitKerjaId) return
 
         try {
             setCreateLoading(true)
-            await dosirService.create(formData)
+            await dosirService.create(formData, resolvedUnitKerjaId)
             setIsCreateOpen(false)
             setFormData({ judul: '', deskripsi: '', kategori: '', tanggalMulai: '' })
             fetchData()
@@ -187,7 +187,7 @@ export default function Dosir() {
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                    <SelectItem value="all">📊 Semua Unit Kerja (hanya lihat)</SelectItem>
                                     {unitKerjaList.map(uk => (
                                         <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
                                     ))}
@@ -197,7 +197,7 @@ export default function Dosir() {
                     )}
                     <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                         <DialogTrigger asChild>
-                            <Button className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
+                            <Button disabled={!resolvedUnitKerjaId} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
                                 <Plus className="h-4 w-4 mr-2" />
                                 Buat Dosir Baru
                             </Button>

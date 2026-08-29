@@ -23,39 +23,9 @@ import {
     ChevronUp
 } from 'lucide-react'
 import { cn } from "@/lib/utils"
+import { filterJraPickerItems, filterKlasifikasiPickerItems } from '@/lib/klasifikasi-picker-search'
 
-const ARCHIVE_SEARCH_THESAURUS = {
-    ptp: ['pengadaan tanah', 'pengembangan pertanahan'],
-    'ganti rugi': ['ganti kerugian', 'musyawarah penetapan ganti kerugian'],
-    konsinyasi: ['penitipan uang ganti kerugian'],
-    ba: ['berita acara'],
-    sk: ['surat keputusan', 'keputusan'],
-    tu: ['tata usaha', 'ketatausahaan'],
-    ukur: ['pengukuran', 'pemetaan'],
-    sengketa: ['sengketa konflik perkara', 'penanganan perkara'],
-}
-
-function normalizedSearch(value) {
-    return String(value || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim()
-}
-
-function expandedSearchTerms(query) {
-    const normalized = normalizedSearch(query)
-    if (!normalized) return []
-    const terms = new Set([normalized])
-    for (const [alias, equivalents] of Object.entries(ARCHIVE_SEARCH_THESAURUS)) {
-        if (normalized.includes(alias) || equivalents.some((item) => normalizedSearch(item).includes(normalized))) {
-            terms.add(alias)
-            equivalents.forEach((item) => terms.add(normalizedSearch(item)))
-        }
-    }
-    return [...terms]
-}
-
-function matchesTerms(item, terms, fields) {
-    const haystack = fields.map((field) => normalizedSearch(item?.[field])).join(' ')
-    return terms.some((term) => haystack.includes(term))
-}
+const RESULT_PAGE_SIZE = 100
 
 function ruleItemIdentity(item) {
     return item?.id ?? item?.sourceRecordKey ?? item?.kode
@@ -234,6 +204,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     const [allData, setAllData] = useState([])
     const [loading, setLoading] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
+    const [visibleResultLimit, setVisibleResultLimit] = useState(RESULT_PAGE_SIZE)
     const [selectedItem, setSelectedItem] = useState(null)
     const [error, setError] = useState(null)
 
@@ -246,11 +217,6 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     const [showJRAPanel, setShowJRAPanel] = useState(false)
     const [jraTab, setJraTab] = useState('suggested') // New: 'suggested' | 'all'
     const [jraSearchQuery, setJraSearchQuery] = useState('') // New: Search for JRA
-
-    // Reset search when tab changes
-    useEffect(() => {
-        setSearchQuery('')
-    }, [activeTab])
 
     const fetchData = useCallback(async () => {
         setLoading(true)
@@ -339,24 +305,12 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
 
     // Filter data based on tab and search
     const filteredData = useMemo(() => {
-        let filtered = allData
-
-        // Filter by tab (tipe)
-        if (activeTab !== 'all') {
-            filtered = filtered.filter(item => item.tipe === activeTab)
-        }
-
-        // Filter by search query
-        if (searchQuery.trim()) {
-            const terms = expandedSearchTerms(searchQuery)
-            filtered = filtered.filter((item) => matchesTerms(item, terms, [
-                'kode', 'sourceCode', 'sourceRecordKey', 'jenis', 'kategori', 'keterangan',
-            ]))
-        }
-
-        // Sort by kode
-        return filtered.sort((a, b) => (a.kode || '').localeCompare(b.kode || ''))
+        return filterKlasifikasiPickerItems(allData, activeTab, searchQuery)
     }, [allData, activeTab, searchQuery])
+    const visibleData = useMemo(
+        () => filteredData.slice(0, visibleResultLimit),
+        [filteredData, visibleResultLimit],
+    )
 
     // Count by type for badges
     const counts = useMemo(() => ({
@@ -398,15 +352,24 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     // New: Filtered All JRA list
     const filteredAllJRA = useMemo(() => {
         if (jraTab !== 'all') return []
-        let filtered = allJRA
-        if (jraSearchQuery.trim()) {
-            const terms = expandedSearchTerms(jraSearchQuery)
-            filtered = filtered.filter((item) => matchesTerms(item, terms, [
-                'kode', 'uraian', 'keterangan', 'triggerGuidance',
-            ]))
-        }
-        return filtered
+        return filterJraPickerItems(allJRA, jraSearchQuery)
     }, [allJRA, jraTab, jraSearchQuery])
+
+    const handleActiveTabChange = (nextTab) => {
+        setActiveTab(nextTab)
+        setSearchQuery('')
+        setVisibleResultLimit(RESULT_PAGE_SIZE)
+    }
+
+    const handleSearchChange = (event) => {
+        setSearchQuery(event.target.value)
+        setVisibleResultLimit(RESULT_PAGE_SIZE)
+    }
+
+    const handleClearSearch = () => {
+        setSearchQuery('')
+        setVisibleResultLimit(RESULT_PAGE_SIZE)
+    }
 
     const handleSelect = (item) => {
         setSelectedItem(item)
@@ -454,7 +417,10 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                         value && "pr-20",
                         !value && "text-muted-foreground"
                     )}
-                    onClick={() => setOpen(true)}
+                    onClick={() => {
+                        setVisibleResultLimit(RESULT_PAGE_SIZE)
+                        setOpen(true)
+                    }}
                 >
                 {value ? (
                     <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -518,7 +484,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                     aria-label="Cari klasifikasi arsip"
                                     placeholder="Cari klasifikasi..."
                                     value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onChange={handleSearchChange}
                                     className="h-10 bg-background pl-8 pr-11 text-sm"
                                     autoFocus
                                 />
@@ -529,7 +495,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                         size="sm"
                                         aria-label="Hapus pencarian klasifikasi"
                                         className="absolute right-0 top-1/2 h-10 w-10 -translate-y-1/2 p-0 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                                        onClick={() => setSearchQuery('')}
+                                        onClick={handleClearSearch}
                                     >
                                         <X className="h-4 w-4" />
                                     </Button>
@@ -538,7 +504,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                         </div>
 
                         {/* Tabs */}
-                        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                        <Tabs value={activeTab} onValueChange={handleActiveTabChange} className="w-full">
                             <TabsList className="grid w-full grid-cols-3 h-9 p-1 bg-muted/50 border">
                                 <TabsTrigger value="all" className="text-xs py-1 px-1 h-7">
                                     <span className="truncate">Semua</span>
@@ -584,7 +550,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                 </div>
                             ) : (
                                 <div className="space-y-1.5 pb-2">
-                                    {filteredData.map((item) => (
+                                    {visibleData.map((item) => (
                                         <KlasifikasiItem
                                             key={ruleItemIdentity(item)}
                                             item={item}
@@ -592,6 +558,21 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                             onSelect={handleSelect}
                                         />
                                     ))}
+                                    {visibleData.length < filteredData.length && (
+                                        <div className="flex flex-col items-center gap-2 py-3 text-center">
+                                            <p className="text-xs text-muted-foreground" role="status">
+                                                Menampilkan {visibleData.length} dari {filteredData.length} hasil.
+                                            </p>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setVisibleResultLimit((limit) => limit + RESULT_PAGE_SIZE)}
+                                            >
+                                                Tampilkan lebih banyak
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

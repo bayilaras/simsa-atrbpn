@@ -70,6 +70,55 @@ describe('collectReadiness', () => {
         expect(result.status).toBe('not_ready');
         expect(result.dependencies.database).toMatchObject({ ready: false, reason: 'probe_failed' });
         expect(result.dependencies.blobStorage.runtime).toMatchObject({ ready: false, reason: 'probe_failed' });
+        expect(JSON.stringify(result)).not.toContain('database unavailable');
+    });
+
+    it('requires migration 0029 and the critical schema contract in the default database probe', async () => {
+        const databaseQuery = vi.fn().mockResolvedValue({ rows: [{ schema_ready: true }] });
+        const databaseRelease = vi.fn();
+        const heartbeatRelease = vi.fn();
+        poolConnect
+            .mockResolvedValueOnce({ query: databaseQuery, release: databaseRelease })
+            .mockResolvedValueOnce({
+                query: vi.fn().mockResolvedValue({ rows: [] }),
+                release: heartbeatRelease,
+            });
+
+        const result = await collectReadiness();
+
+        expect(result.status).toBe('ready');
+        expect(result.dependencies.database.ready).toBe(true);
+        expect(databaseQuery).toHaveBeenCalledOnce();
+        const [query, parameters] = databaseQuery.mock.calls[0] as [string, number[]];
+        expect(parameters).toEqual([1_787_972_400_000]);
+        expect(query).toContain('drizzle.__drizzle_migrations');
+        expect(query).toContain("('users', 'jabatan')");
+        expect(query).toContain("('users', 'nip')");
+        expect(query).toContain("('surat_keluar', 'klasifikasi_keamanan')");
+        expect(query).toContain('users_role_unit_mandate_check');
+        expect(query).toContain('surat_keluar_klasifikasi_keamanan_check');
+        expect(databaseRelease).toHaveBeenCalledWith(false);
+    });
+
+    it('fails closed without leaking schema details when the database contract is incomplete', async () => {
+        const databaseRelease = vi.fn();
+        poolConnect
+            .mockResolvedValueOnce({
+                query: vi.fn().mockResolvedValue({ rows: [{ schema_ready: false }] }),
+                release: databaseRelease,
+            })
+            .mockResolvedValueOnce({
+                query: vi.fn().mockResolvedValue({ rows: [] }),
+                release: vi.fn(),
+            });
+
+        const result = await collectReadiness();
+
+        expect(result.status).toBe('not_ready');
+        expect(result.dependencies.database).toMatchObject({ ready: false, reason: 'probe_failed' });
+        expect(JSON.stringify(result)).not.toMatch(/jabatan|nip|migration|schema contract/i);
+        // A structurally stale database is still a healthy pool connection.
+        expect(databaseRelease).toHaveBeenCalledWith(false);
     });
 
     it('aborts live probes when their readiness deadline expires', async () => {

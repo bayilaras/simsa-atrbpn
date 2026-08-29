@@ -4,10 +4,10 @@ on:
   schedule:
     # Setiap hari jam 00:00 UTC (07:00 WIB)
     - cron: '0 0 * * *'
-  workflow_dispatch: # Manual trigger
+  workflow_dispatch:
 
-# Least privilege: the job only reads the repo and uploads an artifact; it never
-# needs write access to repository contents.
+# The workflow only reads PostgreSQL and uploads an Actions artifact. It never
+# changes repository content, deployments, Neon branches, or Blob objects.
 permissions:
   contents: read
 
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   backup:
-    name: Backup Neon PostgreSQL
+    name: Stream, encrypt, and restore Neon PostgreSQL
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -40,117 +40,459 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Create and encrypt backup
+      - name: Validate dedicated read-only backup role
         env:
-          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
         run: |
           set -euo pipefail
 
-          # The dump contains the full production database (users, correspondence,
-          # personnel records). Refuse to run unless an encryption passphrase is set,
-          # so we never store a plaintext dump as a workflow artifact.
           if [ -z "$DATABASE_URL" ]; then
-            echo "::error::NEON_DATABASE_URL secret is not set."
+            echo "::error::NEON_BACKUP_DATABASE_URL secret is not set."
             exit 1
           fi
+          case "$DATABASE_URL" in
+            *-pooler.*)
+              echo "::error::Use a direct Neon endpoint for pg_dump, not a pooled endpoint."
+              exit 1
+              ;;
+          esac
+          case "$DATABASE_URL" in
+            *sslmode=require*|*sslmode=verify-full*) ;;
+            *)
+              echo "::error::NEON_BACKUP_DATABASE_URL must require TLS."
+              exit 1
+              ;;
+          esac
+
+          ROLE_IS_READ_ONLY=$(docker run --rm --interactive --network host \
+            --env DATABASE_URL \
+            "$POSTGRES_IMAGE" \
+            sh -eu -c 'exec psql "$DATABASE_URL" --set ON_ERROR_STOP=on --quiet --tuples-only --no-align' <<'SQL'
+          WITH required_tables(table_name) AS (
+            VALUES
+              ('public.users'),
+              ('public.accounts'),
+              ('public.sessions'),
+              ('public.unit_kerja'),
+              ('public.surat_masuk'),
+              ('public.surat_keluar'),
+              ('public.arsip'),
+              ('public.file_attachments'),
+              ('public.audit_log'),
+              ('public.klasifikasi_arsip'),
+              ('public.jadwal_retensi_arsip'),
+              ('drizzle.__drizzle_migrations')
+          ), resolved AS (
+            SELECT table_name, to_regclass(table_name) AS relation
+            FROM required_tables
+          ), role_state AS (
+            SELECT rolinherit, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
+            FROM pg_roles
+            WHERE rolname = current_user
+          )
+          SELECT
+            role_state.rolinherit
+            AND NOT role_state.rolsuper
+            AND NOT role_state.rolcreatedb
+            AND NOT role_state.rolcreaterole
+            AND NOT role_state.rolreplication
+            AND NOT role_state.rolbypassrls
+            AND EXISTS (
+              SELECT 1
+              FROM pg_stat_ssl
+              WHERE pid = pg_backend_pid() AND ssl
+            )
+            AND pg_has_role(current_user, 'pg_read_all_data', 'member')
+            AND NOT pg_has_role(current_user, 'pg_write_all_data', 'member')
+            AND NOT has_database_privilege(current_user, current_database(), 'CREATE')
+            AND NOT has_schema_privilege(current_user, 'public', 'CREATE')
+            AND bool_and(
+              resolved.relation IS NOT NULL
+              AND has_table_privilege(current_user, resolved.relation, 'SELECT')
+              AND NOT has_table_privilege(current_user, resolved.relation, 'INSERT')
+              AND NOT has_table_privilege(current_user, resolved.relation, 'UPDATE')
+              AND NOT has_table_privilege(current_user, resolved.relation, 'DELETE')
+              AND NOT has_table_privilege(current_user, resolved.relation, 'TRUNCATE')
+            )
+          FROM role_state
+          CROSS JOIN resolved
+          GROUP BY
+            role_state.rolinherit,
+            role_state.rolsuper,
+            role_state.rolcreatedb,
+            role_state.rolcreaterole,
+            role_state.rolreplication,
+            role_state.rolbypassrls;
+          SQL
+          )
+
+          if [ "$ROLE_IS_READ_ONLY" != 't' ]; then
+            echo "::error::The backup credential must use TLS and be a dedicated inheriting pg_read_all_data member without write, CREATE, superuser, BYPASSRLS, or administrative privileges."
+            exit 1
+          fi
+
+      - name: Stream custom dump directly into encryption
+        id: create
+        env:
+          DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+
           if [ -z "$BACKUP_PASSPHRASE" ]; then
-            echo "::error::BACKUP_ENCRYPTION_PASSPHRASE secret is not set — refusing to create an unencrypted production dump."
+            echo "::error::BACKUP_ENCRYPTION_PASSPHRASE secret is not set."
             exit 1
           fi
+          if [ "${#BACKUP_PASSPHRASE}" -lt 32 ]; then
+            echo "::error::BACKUP_ENCRYPTION_PASSPHRASE must contain at least 32 characters."
+            exit 1
+          fi
+          case "$BACKUP_PASSPHRASE" in
+            *$'\r'*|*$'\n'*)
+              echo "::error::BACKUP_ENCRYPTION_PASSPHRASE must be a single-line value."
+              exit 1
+              ;;
+          esac
 
-          BACKUP_FILE="simsa-backup-$(date +%Y-%m-%d).sql"
-          echo "Creating backup: $BACKUP_FILE"
+          BACKUP_FILE="simsa-db-$(date -u +%Y-%m-%d)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.dump.gpg"
 
+          # No plaintext SQL/custom archive is written to the runner. pg_dump's
+          # compressed custom-format stdout is consumed directly by GnuPG.
           docker run --rm --network host \
             --env DATABASE_URL \
             "$POSTGRES_IMAGE" \
-            sh -eu -c 'pg_dump "$DATABASE_URL" \
+            sh -eu -c 'exec pg_dump "$DATABASE_URL" \
+              --format=custom \
+              --compress=9 \
               --no-owner \
               --no-privileges \
-              --clean \
-              --if-exists \
-              --format=plain' \
-            > "$BACKUP_FILE"
+              --serializable-deferrable \
+              --lock-wait-timeout=60000' \
+            | gpg --batch --yes --pinentry-mode loopback \
+                --no-symkey-cache \
+                --passphrase-fd 3 \
+                --symmetric \
+                --cipher-algo AES256 \
+                --s2k-mode 3 \
+                --s2k-digest-algo SHA512 \
+                --output "$BACKUP_FILE" \
+                3<<<"$BACKUP_PASSPHRASE"
 
-          # Compress, then encrypt with AES-256. Remove the plaintext copies so only
-          # the encrypted file ever leaves this runner.
-          # Decrypt later with:
-          #   gpg --batch --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" \
-          #     --decrypt simsa-backup-YYYY-MM-DD.sql.gz.gpg > simsa-backup.sql.gz
-          gzip "$BACKUP_FILE"
-          printf '%s' "$BACKUP_PASSPHRASE" | \
-            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
-              --symmetric --cipher-algo AES256 \
-              --output "${BACKUP_FILE}.gz.gpg" \
-              "${BACKUP_FILE}.gz"
-          rm -f "${BACKUP_FILE}.gz"
+          FILE_SIZE=$(stat -c%s "$BACKUP_FILE")
+          if [ "$FILE_SIZE" -lt 4096 ]; then
+            echo "::error::Encrypted archive is suspiciously small ($FILE_SIZE bytes)."
+            exit 1
+          fi
 
-          ls -lh "${BACKUP_FILE}.gz.gpg"
+          echo "file=$BACKUP_FILE" >> "$GITHUB_OUTPUT"
+          echo "size=$FILE_SIZE" >> "$GITHUB_OUTPUT"
+          echo "encrypted_sha256=$(sha256sum "$BACKUP_FILE" | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
 
-      - name: Verify encrypted backup by restoring it
+      - name: Stream decrypt into isolated restore and verify
+        id: verify
         env:
+          BACKUP_FILE: ${{ steps.create.outputs.file }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
         run: |
           set -euo pipefail
 
-          BACKUP_FILE=$(ls simsa-backup-*.sql.gz.gpg 2>/dev/null | head -1)
-          if [ -z "$BACKUP_FILE" ]; then
-            echo "::error::Backup file not found"
-            exit 1
-          fi
-          FILE_SIZE=$(stat -c%s "$BACKUP_FILE")
-          if [ "$FILE_SIZE" -lt 1024 ]; then
-            echo "::error::Backup file is suspiciously small ($FILE_SIZE bytes)"
+          if [ ! -f "$BACKUP_FILE" ]; then
+            echo "::error::Encrypted backup file was not produced."
             exit 1
           fi
 
-          printf '%s' "$BACKUP_PASSPHRASE" | \
-            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
-              --decrypt \
-              --output restore.sql.gz \
-              "$BACKUP_FILE"
-          gunzip restore.sql.gz
+          # Validate that the decrypted stream is a readable custom archive.
+          TOC_ENTRY_COUNT=$(gpg --batch --yes --pinentry-mode loopback \
+              --no-symkey-cache \
+              --passphrase-fd 3 \
+              --decrypt "$BACKUP_FILE" \
+              3<<<"$BACKUP_PASSPHRASE" \
+            | {
+                # pg_restore --list stops after the archive TOC. Drain the
+                # remaining decrypted bytes so GnuPG does not fail with
+                # EPIPE under pipefail; nothing is persisted.
+                if docker run --rm --interactive "$POSTGRES_IMAGE" pg_restore --list; then
+                  LIST_STATUS=0
+                else
+                  LIST_STATUS=$?
+                fi
+                cat > /dev/null
+                exit "$LIST_STATUS"
+              } \
+            | awk '!/^;/ && NF { count++ } END { print count + 0 }')
+          if [ "$TOC_ENTRY_COUNT" -lt 1 ]; then
+            echo "::error::The decrypted custom archive has an empty table of contents."
+            exit 1
+          fi
 
-          docker run --rm --network host \
+          # Decrypted bytes remain in the pipe and are never persisted on disk.
+          gpg --batch --yes --pinentry-mode loopback \
+              --no-symkey-cache \
+              --passphrase-fd 3 \
+              --decrypt "$BACKUP_FILE" \
+              3<<<"$BACKUP_PASSPHRASE" \
+            | docker run --rm --interactive --network host \
+                --env PGPASSWORD=restore-only-password \
+                "$POSTGRES_IMAGE" \
+                pg_restore \
+                  --host 127.0.0.1 \
+                  --username simsa_restore \
+                  --dbname simsa_restore_validation \
+                  --exit-on-error \
+                  --single-transaction \
+                  --clean \
+                  --if-exists \
+                  --no-owner \
+                  --no-privileges
+
+          VERIFICATION_SUMMARY=$(docker run --rm --interactive --network host \
             --env PGPASSWORD=restore-only-password \
-            --volume "$PWD:/backup:ro" \
             "$POSTGRES_IMAGE" \
             psql \
               --host 127.0.0.1 \
               --username simsa_restore \
               --dbname simsa_restore_validation \
               --set ON_ERROR_STOP=on \
-              --file /backup/restore.sql
-
-          TABLE_COUNT=$(docker run --rm --network host \
-            --env PGPASSWORD=restore-only-password \
-            "$POSTGRES_IMAGE" \
-            psql \
-              --host 127.0.0.1 \
-              --username simsa_restore \
-              --dbname simsa_restore_validation \
+              --set toc_entries="$TOC_ENTRY_COUNT" \
+              --quiet \
               --tuples-only \
-              --no-align \
-              --command "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';")
-          rm -f restore.sql
+              --no-align <<'SQL'
+          DO $verify$
+          DECLARE
+            missing_tables text;
+            missing_columns text;
+            missing_primary_keys text;
+            migration_count bigint;
+            latest_migration bigint;
+          BEGIN
+            IF current_database() <> 'simsa_restore_validation' THEN
+              RAISE EXCEPTION 'restore validation must run only in the isolated database';
+            END IF;
 
-          if [ "$TABLE_COUNT" -lt 1 ]; then
-            echo "::error::Restore completed without application tables."
-            exit 1
-          fi
-          echo "Encrypted backup restored successfully: $BACKUP_FILE ($FILE_SIZE bytes, $TABLE_COUNT public tables)"
+            SELECT string_agg(required.schema_name || '.' || required.table_name, ', ' ORDER BY required.schema_name, required.table_name)
+            INTO missing_tables
+            FROM (VALUES
+              ('public', 'users'),
+              ('public', 'accounts'),
+              ('public', 'sessions'),
+              ('public', 'unit_kerja'),
+              ('public', 'surat_masuk'),
+              ('public', 'surat_keluar'),
+              ('public', 'arsip'),
+              ('public', 'file_attachments'),
+              ('public', 'audit_log'),
+              ('public', 'klasifikasi_arsip'),
+              ('public', 'jadwal_retensi_arsip'),
+              ('drizzle', '__drizzle_migrations')
+            ) AS required(schema_name, table_name)
+            WHERE to_regclass(format('%I.%I', required.schema_name, required.table_name)) IS NULL;
 
-      - name: Upload verified backup artifact
-        uses: actions/upload-artifact@v4
+            IF missing_tables IS NOT NULL THEN
+              RAISE EXCEPTION 'restore is missing critical tables: %', missing_tables;
+            END IF;
+
+            SELECT string_agg(required.table_name || '.' || required.column_name, ', ' ORDER BY required.table_name, required.column_name)
+            INTO missing_columns
+            FROM (VALUES
+              ('users', 'id'),
+              ('users', 'email'),
+              ('users', 'role'),
+              ('users', 'unit_kerja_id'),
+              ('users', 'is_active'),
+              ('users', 'jabatan'),
+              ('users', 'nip'),
+              ('accounts', 'user_id'),
+              ('accounts', 'account_id'),
+              ('accounts', 'provider_id'),
+              ('accounts', 'password'),
+              ('sessions', 'user_id'),
+              ('sessions', 'token'),
+              ('sessions', 'expires_at'),
+              ('unit_kerja', 'id'),
+              ('surat_masuk', 'id'),
+              ('surat_keluar', 'id'),
+              ('surat_keluar', 'klasifikasi_keamanan'),
+              ('arsip', 'id'),
+              ('arsip', 'unit_kerja_id'),
+              ('file_attachments', 'id'),
+              ('file_attachments', 'file_url'),
+              ('file_attachments', 'size_bytes'),
+              ('file_attachments', 'sha256'),
+              ('file_attachments', 'storage_access'),
+              ('file_attachments', 'uploaded_by'),
+              ('file_attachments', 'integrity_status'),
+              ('file_attachments', 'malware_scan_status'),
+              ('client_blob_uploads', 'blob_url'),
+              ('client_blob_uploads', 'purpose'),
+              ('client_blob_uploads', 'uploaded_by'),
+              ('client_blob_uploads', 'status'),
+              ('client_blob_uploads', 'expires_at'),
+              ('client_blob_uploads', 'claimed_at'),
+              ('client_blob_uploads', 'claimed_entity_type'),
+              ('client_blob_uploads', 'claimed_entity_id'),
+              ('autentikasi', 'file_lampiran'),
+              ('autentikasi', 'file_lampiran_sha256'),
+              ('autentikasi', 'file_lampiran_size_bytes'),
+              ('bulk_upload_batches', 'created_by'),
+              ('bulk_upload_batches', 'unit_kerja_id'),
+              ('bulk_upload_batches', 'status'),
+              ('bulk_upload_batches', 'expires_at'),
+              ('bulk_upload_items', 'batch_id'),
+              ('bulk_upload_items', 'blob_url'),
+              ('bulk_upload_items', 'sha256'),
+              ('bulk_upload_items', 'status'),
+              ('operational_heartbeats', 'worker'),
+              ('operational_heartbeats', 'instance_id'),
+              ('operational_heartbeats', 'status'),
+              ('operational_heartbeats', 'last_seen_at'),
+              ('ocr_capacity_control', 'singleton_id'),
+              ('ocr_capacity_control', 'max_concurrency'),
+              ('ocr_capacity_control', 'lease_duration_seconds'),
+              ('ocr_capacity_control', 'retry_after_seconds'),
+              ('ocr_processing_leases', 'token'),
+              ('ocr_processing_leases', 'item_id'),
+              ('ocr_processing_leases', 'lease_expires_at'),
+              ('audit_log', 'id'),
+              ('audit_log', 'action'),
+              ('klasifikasi_arsip', 'id'),
+              ('jadwal_retensi_arsip', 'id')
+            ) AS required(table_name, column_name)
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM information_schema.columns AS actual
+              WHERE actual.table_schema = 'public'
+                AND actual.table_name = required.table_name
+                AND actual.column_name = required.column_name
+            );
+
+            IF missing_columns IS NOT NULL THEN
+              RAISE EXCEPTION 'restore is missing critical columns: %', missing_columns;
+            END IF;
+
+            SELECT string_agg(required.table_name, ', ' ORDER BY required.table_name)
+            INTO missing_primary_keys
+            FROM (VALUES
+              ('users'),
+              ('unit_kerja'),
+              ('surat_masuk'),
+              ('surat_keluar'),
+              ('arsip'),
+              ('file_attachments'),
+              ('audit_log'),
+              ('klasifikasi_arsip'),
+              ('jadwal_retensi_arsip')
+            ) AS required(table_name)
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM pg_constraint AS constraint_record
+              INNER JOIN pg_class AS relation ON relation.oid = constraint_record.conrelid
+              INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+              WHERE namespace.nspname = 'public'
+                AND relation.relname = required.table_name
+                AND constraint_record.contype = 'p'
+                AND constraint_record.convalidated
+            );
+
+            IF missing_primary_keys IS NOT NULL THEN
+              RAISE EXCEPTION 'restore is missing validated primary keys: %', missing_primary_keys;
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_constraint AS constraint_record
+              INNER JOIN pg_class AS relation ON relation.oid = constraint_record.conrelid
+              INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+              WHERE namespace.nspname = 'public'
+                AND relation.relname = 'users'
+                AND constraint_record.conname = 'users_role_unit_mandate_check'
+                AND constraint_record.convalidated
+            ) THEN
+              RAISE EXCEPTION 'restore is missing the validated users role/unit mandate constraint';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_constraint AS constraint_record
+              INNER JOIN pg_class AS relation ON relation.oid = constraint_record.conrelid
+              INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+              WHERE namespace.nspname = 'public'
+                AND relation.relname = 'surat_keluar'
+                AND constraint_record.conname = 'surat_keluar_klasifikasi_keamanan_check'
+                AND constraint_record.convalidated
+            ) THEN
+              RAISE EXCEPTION 'restore is missing the validated outgoing security-classification constraint';
+            END IF;
+
+            SELECT count(*), COALESCE(max(created_at), 0)
+            INTO migration_count, latest_migration
+            FROM drizzle.__drizzle_migrations;
+
+            IF migration_count < 30 OR latest_migration < 1787972400000 THEN
+              RAISE EXCEPTION 'migration history is incomplete: count %, latest %', migration_count, latest_migration;
+            END IF;
+            IF EXISTS (
+              SELECT 1
+              FROM drizzle.__drizzle_migrations
+              WHERE hash IS NULL OR hash !~ '^[0-9a-f]{64}$' OR created_at IS NULL OR created_at <= 0
+            ) THEN
+              RAISE EXCEPTION 'migration history contains an invalid hash or timestamp';
+            END IF;
+            IF migration_count <> (SELECT count(DISTINCT created_at) FROM drizzle.__drizzle_migrations) THEN
+              RAISE EXCEPTION 'migration history contains duplicate timestamps';
+            END IF;
+            IF (SELECT count(*) FROM public.users) < 1 THEN
+              RAISE EXCEPTION 'production restore contains no user records';
+            END IF;
+          END
+          $verify$;
+
+          SELECT json_build_object(
+            'public_tables', (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'),
+            'migration_count', (SELECT count(*) FROM drizzle.__drizzle_migrations),
+            'latest_migration_created_at', (SELECT max(created_at) FROM drizzle.__drizzle_migrations),
+            'toc_entries', :toc_entries
+          );
+          SQL
+          )
+          VERIFICATION_SUMMARY=$(printf '%s' "$VERIFICATION_SUMMARY" | tr -d '\r\n')
+
+          echo "summary=$VERIFICATION_SUMMARY" >> "$GITHUB_OUTPUT"
+          echo "Restore verification passed: $VERIFICATION_SUMMARY"
+
+      - name: Upload verified encrypted archive
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: neon-backup-${{ github.run_id }}
-          path: simsa-backup-*.sql.gz.gpg
+          name: neon-backup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.create.outputs.file }}
+          if-no-files-found: error
           retention-days: 30
-          compression-level: 0  # Already compressed + encrypted
+          compression-level: 0
+
+      - name: Record verified backup evidence
+        env:
+          BACKUP_FILE: ${{ steps.create.outputs.file }}
+          BACKUP_SIZE: ${{ steps.create.outputs.size }}
+          ENCRYPTED_SHA256: ${{ steps.create.outputs.encrypted_sha256 }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          VERIFICATION_SUMMARY: ${{ steps.verify.outputs.summary }}
+        run: |
+          {
+            echo '### Encrypted Neon database backup verified'
+            echo
+            echo "- File: \`$BACKUP_FILE\`"
+            echo "- Encrypted bytes: \`$BACKUP_SIZE\`"
+            echo "- Encrypted file SHA-256: \`$ENCRYPTED_SHA256\`"
+            echo "- Artifact SHA-256: \`$ARTIFACT_DIGEST\`"
+            echo "- Restore checks: \`$VERIFICATION_SUMMARY\`"
+            echo
+            echo 'The custom archive was streamed into encryption and streamed from decryption into an isolated PostgreSQL restore; no plaintext dump file was created.'
+            echo 'Private Blob bitstreams are not included and remain a separate production-release blocker until their backup and restore drill is proven.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Notify on failure
         if: failure()
         run: |
-          echo "::error::Database backup failed! Check the logs above."
-          echo "::error::Create an encrypted manual backup and verify a restore before any production migration."
+          echo "::error::Database backup or isolated restore verification failed."
+          echo "::error::Do not run a production migration until a verified encrypted database backup and independent private Blob backup exist."

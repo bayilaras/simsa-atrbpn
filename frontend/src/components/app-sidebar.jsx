@@ -51,13 +51,13 @@ import {
 } from '@/components/ui/collapsible'
 import { Badge } from '@/components/ui/badge'
 import appConfig from '@/lib/app-config'
+import { PROVISIONED_ROLES } from '@/lib/provisioning-access'
 import { useAppConfig } from '@/context/app-config-context'
 
 // Role constants for menu access
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen']
-const STAFF_AND_ABOVE = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff']
 const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor']
-const ALL_PROVISIONED_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']
+const ALL_PROVISIONED_ROLES = PROVISIONED_ROLES
 
 // Menu items grouped by section
 // allowedRoles: if set, only users with these roles can see the menu item
@@ -79,7 +79,7 @@ const menuGroups = [
             {
                 title: 'Surat',
                 icon: Mail,
-                allowedRoles: STAFF_AND_ABOVE,
+                allowedRoles: ALL_PROVISIONED_ROLES,
                 subItems: [
                     { title: 'Surat Masuk', url: '/surat/masuk', icon: MailOpen },
                     { title: 'Surat Keluar', url: '/surat/keluar', icon: Send },
@@ -100,7 +100,7 @@ const menuGroups = [
                 title: 'Arsip Aktif',
                 icon: Archive,
                 url: '/arsip',
-                allowedRoles: STAFF_AND_ABOVE,
+                allowedRoles: ALL_PROVISIONED_ROLES,
                 subItems: [
                     { title: 'Arsip Surat Masuk', url: '/arsip/masuk' },
                     { title: 'Arsip Surat Keluar', url: '/arsip/keluar' },
@@ -205,13 +205,15 @@ const menuGroups = [
                 title: 'Laporan',
                 url: '/laporan',
                 icon: FileBarChart,
-                allowedRoles: STAFF_AND_ABOVE,
+                allowedRoles: ALL_PROVISIONED_ROLES,
             },
             {
                 title: 'Audit Log',
                 url: '/audit-log',
                 icon: ClipboardList,
-                allowedRoles: ADMIN_AND_AUDITOR,
+                // Backend intentionally limits global audit rows to super admin
+                // until every row carries an enforceable unit dimension.
+                allowedRoles: ['super_admin'],
             },
             {
                 title: 'Persetujuan Akses',

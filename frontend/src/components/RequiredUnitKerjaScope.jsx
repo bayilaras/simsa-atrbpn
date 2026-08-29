@@ -12,7 +12,7 @@ export function RequiredUnitKerjaScope({ scope, disabled = false }) {
                 <Building2 className="h-4 w-4" /> Unit kerja tujuan
             </Label>
             <Select
-                value={scope.selectedUnitKerjaId || undefined}
+                value={scope.selectedUnitKerjaId || ''}
                 onValueChange={scope.setSelectedUnitKerjaId}
                 disabled={disabled || scope.loading}
             >

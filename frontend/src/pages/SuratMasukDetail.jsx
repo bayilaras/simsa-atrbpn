@@ -63,6 +63,7 @@ export default function SuratMasukDetail() {
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             })
+            throw error
         }
     }
 

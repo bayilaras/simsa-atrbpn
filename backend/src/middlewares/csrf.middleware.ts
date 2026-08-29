@@ -58,12 +58,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
 
     // Skip Better Auth routes (handled internally by Better Auth)
     // Middleware is mounted at /api, so path is relative to /api
-    if (req.path.startsWith('/auth')) {
-        return next();
-    }
-
-    // Skip dev routes in development mode (dev-login, etc.)
-    if (req.path.startsWith('/dev') && process.env.NODE_ENV !== 'production') {
+    if (req.path === '/auth' || req.path.startsWith('/auth/')) {
         return next();
     }
 

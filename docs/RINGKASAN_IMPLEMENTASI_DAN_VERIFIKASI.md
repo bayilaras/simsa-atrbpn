@@ -55,31 +55,33 @@ Jalankan berurutan setelah backup dan preflight pada salinan data produksi:
 16. `0025_worker_readiness_heartbeats.sql`
 17. `0026_global_ocr_capacity.sql`
 18. `0027_canonical_user_unit_mandates.sql`
+19. `0028_user_profile_columns.sql`
+20. `0029_outgoing_security_classification.sql`
 
-Migrasi `0011`, `0012`, `0021`, dan `0022` melakukan preflight/reconciliation fail-loud untuk data legacy yang ambigu atau tidak konsisten. `0013`–`0020` membangun governance SRIKANDI, akses, aturan, appraisal, dan penyerahan permanen. `0023`–`0025` mempersistensikan lease Blob, bulk ingest/PDF autentikasi, dan heartbeat worker. `0026` menyediakan kapasitas OCR global berbasis lease PostgreSQL dengan release bertoken dan pemulihan setelah kedaluwarsa. `0027` membersihkan assignment unit pengguna legacy serta menegakkan mandat unit kanonis berdasarkan peran. Setelah migrasi, jalankan `npm run seed:all` dalam maintenance window untuk memverifikasi dan mengaktifkan dataset klasifikasi/JRA awal.
+Migrasi `0011`, `0012`, `0021`, dan `0022` melakukan preflight/reconciliation fail-loud untuk data legacy yang ambigu atau tidak konsisten. `0013`–`0020` membangun governance SRIKANDI, akses, aturan, appraisal, dan penyerahan permanen. `0023`–`0025` mempersistensikan lease Blob, bulk ingest/PDF autentikasi, dan heartbeat worker. `0026` menyediakan kapasitas OCR global berbasis lease PostgreSQL dengan release bertoken dan pemulihan setelah kedaluwarsa. `0027` membersihkan assignment unit pengguna legacy serta menegakkan mandat unit kanonis berdasarkan peran. `0028` menambahkan profil `jabatan`/`nip`; `0029` memberi surat keluar baru klasifikasi keamanan eksplisit `biasa` sambil mempertahankan baris legacy `NULL` sebagai efektif Terbatas. Setelah migrasi, jalankan `npm run seed:all` dalam maintenance window untuk memverifikasi dan mengaktifkan dataset klasifikasi/JRA awal.
 
 SQL `0004` dan `0005` juga memuat repair idempotent untuk tiga tabel yang dahulu hanya tercatat dalam snapshot Drizzle. Rantai migrasi kini diuji dari database kosong serta dari kondisi partial-resume ketika `0004` lama sudah tercatat tetapi tabelnya belum terbentuk.
 
 ## Bukti verifikasi
 
-- Backend: 98 berkas test, 1128 test lulus.
-- Frontend: 22 berkas test, 107 test lulus.
+- Backend Node 24: 101 berkas test, 1.153 test lulus.
+- Frontend Node 24: 27 berkas test, 130 test lulus.
 - TypeScript backend: lulus.
 - Build produksi backend: lulus.
 - Build produksi frontend/PWA: lulus.
 - Build produksi Docusaurus: lulus tanpa broken-link warning.
 - Pemeriksaan konfigurasi Drizzle: lulus.
-- Migration smoke test PostgreSQL: fresh `0000` sampai `0027`, partial-resume dari `0005`, deduplikasi legacy notifikasi, rekonsiliasi integritas surat–arsip, dan backfill mandat unit pengguna lulus (11/11). Dua proses `seed:all` paralel serta satu rerun berikutnya sama-sama keluar 0 dengan tepat satu edisi aktif per instrumen; advisory lock mencegah race bootstrap lintas host.
+- Rantai migrasi fresh `0000` sampai `0029`, partial-resume dari `0005`, deduplikasi legacy notifikasi, rekonsiliasi integritas surat–arsip, backfill mandat unit pengguna, sinkronisasi seluruh kolom schema, serta perlindungan klasifikasi surat keluar legacy/baru lulus. Seluruh migrasi juga diterapkan ke PostgreSQL 18 disposable. Dua proses `seed:all` paralel serta satu rerun berikutnya sama-sama keluar 0 dengan tepat satu edisi aktif per instrumen; advisory lock mencegah race bootstrap lintas host.
 - Concurrency test pada PostgreSQL 18 disposable dengan dua koneksi: shared/exclusive authorization gate, blocking revokasi, dan paralelisme approval lulus (2/2).
 - Runtime API terhadap PostgreSQL 18 disposable: `/health`, `/ready`, `/api/health`, sesi, dan Swagger lulus; preflight origin tepercaya 204 dan origin asing ditolak 403 tanpa `Access-Control-Allow-Origin`. Unit regression juga menolak sibling `*.vercel.app` yang tidak didaftarkan exact.
 - Konfigurasi Compose production-pull dan local-build untuk ClamAV, malware worker, SRIKANDI worker kondisional, serta Blob reconciler lulus render/validasi. Eksekusi container belum menjadi bukti karena daemon Docker pada mesin verifikasi belum aktif.
-- Konfigurasi programatik Vercel berhasil dikompilasi oleh CLI dan memakai proxy same-origin untuk API, health, serta upload. Preview wajib mempunyai `API_PROXY_ORIGIN` terisolasi pada branch yang cocok dan menolak backend production; untuk branch alias SIMSA yang dilindungi, routing layer juga mewajibkan `BACKEND_VERCEL_PROTECTION_BYPASS` dan mengirim header bypass tanpa memasukkan nilainya ke bundle browser. Seluruh build production menolak `VITE_API_URL` lintas-origin agar cookie auth/CSRF tidak terputus.
-- Callback direct-upload Vercel Blob tidak diasumsikan melewati proxy browser. Startup/readiness Preview gagal-tertutup tanpa `VERCEL_BLOB_CALLBACK_URL` custom, dan callback `*.vercel.app` ditolak untuk mencegah redirect Deployment Protection; keterjangkauan callback dan pembentukan/claim lease tetap wajib dibuktikan dengan unggah nyata.
+- Konfigurasi programatik Vercel memakai proxy same-origin untuk API, liveness, readiness, serta upload. Preview yang belum memiliki `API_PROXY_ORIGIN` memakai build maintenance-only (tanpa bundle SPA), melayani shell/no-store `503 preview_not_provisioned`, membersihkan cache service worker lama, dan tidak pernah fallback ke backend Production. Target non-Production yang sudah diisi menolak backend Production; alias Preview harus cocok dengan branch dan untuk alias SIMSA yang dilindungi mewajibkan `BACKEND_VERCEL_PROTECTION_BYPASS` di routing layer tanpa memasukkan nilainya ke bundle browser. Seluruh build production menolak `VITE_API_URL` lintas-origin agar cookie auth/CSRF tidak terputus.
+- Callback direct-upload Vercel Blob tidak diasumsikan melewati proxy browser. Backend Vercel Preview tidak mengimpor aplikasi atau membaca resource Production generik sampai `SIMSA_PREVIEW_ENABLED=true` dan seluruh kredensial `PREVIEW_*` lengkap. Setelah aktif, SMTP/TTL/reconciliation hanya memakai pasangan Preview atau default; konfigurasi scanner, worker, dan host `CLAMAV_*` Production dibuang dan API tetap quarantine-only. Callback `*.vercel.app` tetap ditolak untuk mencegah redirect Deployment Protection; keterjangkauan custom callback dan pembentukan/claim lease tetap wajib dibuktikan dengan unggah nyata.
 - Workflow CI memakai Node 24 dan PostgreSQL 18 nyata untuk migrasi, seed paralel/idempoten, concurrency test, validasi Compose, serta build/syntax-check image worker. Workflow backup memerlukan enkripsi serta restore terisolasi sebelum artifact diunggah; hasil remote workflow baru tetap harus dibuktikan hijau.
 - `npm ci --dry-run`: lulus untuk backend, frontend, dan situs dokumentasi.
 - ESLint penuh frontend: lulus tanpa error maupun warning; artefak PWA hasil generate dikecualikan dari lingkup source lint.
 - Secret scan working tree tidak menemukan kredensial test lama; secret yang pernah masuk riwayat Git tetap wajib dicabut atau dirotasi.
-- Browser QA Playwright: lulus untuk banner antrean persetujuan, detail dan aksi Setujui/Tolak, mutasi `POST /api/approval/approve`, penegasan tanpa BSrE/PSrE, mandat superadmin tanpa unit tersimpan, serta kewajiban memilih satu unit kerja pada halaman laporan dan unggah massal. Daftar request tidak memuat endpoint tanda tangan elektronik.
+- Browser QA Playwright: lulus untuk surat masuk dan keluar dari pembuatan, maker-checker dua akun, persetujuan, klasifikasi exact-match, pemilihan JRA, sampai registrasi/penayangan arsip. Penyapuan 29 rute utama tidak menemukan respons 5xx, page error, console error, atau halaman fatal. Alur menegaskan tanpa BSrE/PSrE dan daftar request tidak memuat endpoint tanda tangan elektronik.
 
 ## Status dependency audit
 

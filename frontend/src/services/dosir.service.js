@@ -22,8 +22,8 @@ const dosirService = {
     /**
      * Generate next kode
      */
-    async generateKode() {
-        const response = await api.get(`${BASE_URL}/generate-kode`);
+    async generateKode(unitKerjaId) {
+        const response = await api.get(`${BASE_URL}/generate-kode`, { unitKerjaId });
         return response.data;
     },
 
@@ -46,8 +46,11 @@ const dosirService = {
     /**
      * Create new dosir
      */
-    async create(data) {
-        const response = await api.post(BASE_URL, data);
+    async create(data, unitKerjaId) {
+        const unitQuery = unitKerjaId
+            ? `?unitKerjaId=${encodeURIComponent(unitKerjaId)}`
+            : '';
+        const response = await api.post(`${BASE_URL}${unitQuery}`, data);
         return response.data;
     },
 

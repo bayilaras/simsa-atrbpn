@@ -25,16 +25,22 @@ VITE_FEATURE_SRIKANDI=false
 ## Deployment production
 
 Biarkan `VITE_API_URL` tidak disetel pada seluruh build production. Host frontend
-wajib menyediakan reverse proxy same-origin untuk `/api`, `/health`, dan
-`/uploads` agar cookie sesi, CSRF, serta token upload bekerja. Pada Vercel,
+wajib menyediakan reverse proxy same-origin untuk `/api`, `/health`, `/ready`,
+dan `/uploads` agar cookie sesi, CSRF, probe readiness, serta token upload
+bekerja. Pada Vercel,
 tetapkan `API_PROXY_ORIGIN` sebagai environment server-side:
 
 - Production boleh memakai default `https://simsa-backend.vercel.app` atau origin
   backend institusi yang eksplisit.
-- Preview wajib memakai backend HTTPS terisolasi. Untuk project Vercel SIMSA,
+- Preview wajib memakai backend HTTPS terisolasi. Jika `API_PROXY_ORIGIN` belum
+  ada, deployment tetap berhasil tetapi hanya melayani halaman pemeliharaan dan
+  respons `503 preview_not_provisioned`; tidak ada fallback ke Production. Untuk
+  mode ini build khusus hanya menghasilkan shell/status dan service worker
+  pembersih cache lama, bukan bundle aplikasi penuh. Untuk
+  project Vercel SIMSA yang sudah diprovisikan,
   gunakan branch alias `simsa-backend-git-...` yang cocok dengan
-  `VERCEL_GIT_COMMIT_REF` frontend; konfigurasi menolak nilai kosong, branch
-  production, alias branch lain, dan URL deployment yang environment-nya ambigu.
+  `VERCEL_GIT_COMMIT_REF` frontend; konfigurasi menolak branch Production,
+  alias branch lain, dan URL deployment yang environment-nya ambigu.
 - Preview backend SIMSA saat ini memakai Vercel Deployment Protection. Buat
   Automation Bypass pada project backend, lalu simpan nilainya pada environment
   **Preview frontend** sebagai `BACKEND_VERCEL_PROTECTION_BYPASS`. Rewrite
@@ -44,14 +50,20 @@ tetapkan `API_PROXY_ORIGIN` sebagai environment server-side:
 
 Aktifkan Vercel System Environment Variables agar `VERCEL_ENV` dan
 `VERCEL_GIT_COMMIT_REF` tersedia saat build. Jika referensi Git tidak tersedia,
-target Preview project SIMSA ditolak secara fail-closed.
+target backend alias Vercel pada Preview ditolak secara fail-closed.
 
 Database, Blob token/store, OAuth callback, serta secret backend Preview juga
 wajib terpisah dari Production. Guard routing tidak dapat membuktikan isi
-resource backend, sehingga pemisahan tersebut tetap harus diverifikasi saat
-deployment. Direct-upload Blob memiliki callback server-to-server yang tidak
+resource backend, sehingga entrypoint backend menolak mengimpor aplikasi sampai
+`SIMSA_PREVIEW_ENABLED=true` dan seluruh kredensial `PREVIEW_*` yang tercantum di
+`backend/.env.example` tersedia. Nilai tersebut baru dipetakan ke nama runtime
+setelah kontrak lengkap; variabel Production generik yang diwariskan tidak
+dipakai oleh Preview yang belum siap. Entrypoint juga menghapus konfigurasi
+SMTP/reconciliation Production yang tidak mempunyai pasangan `PREVIEW_*` dan
+memaksa API Preview ke mode antivirus internal quarantine-only tanpa host atau
+jadwal worker Production. Direct-upload Blob memiliki callback server-to-server yang tidak
 melewati proxy frontend; backend Preview wajib diberi
-`VERCEL_BLOB_CALLBACK_URL` custom yang tidak terkena Deployment Protection dan
+`PREVIEW_VERCEL_BLOB_CALLBACK_URL` custom yang tidak terkena Deployment Protection dan
 alur callback/lease harus diuji dengan upload nyata.
 
 Platform static-hosting selain Vercel harus menyediakan aturan reverse proxy

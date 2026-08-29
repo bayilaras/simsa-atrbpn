@@ -8,10 +8,12 @@ import { Toaster } from '@/components/ui/toaster'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import { IdleWarningBanner } from '@/components/IdleWarningBanner'
+import { ProvisionedAccessGate } from '@/components/ProvisionedAccessGate'
 import { useAuth } from './context/AuthContext'
 import Login from '@/pages/Login' // Eager: first page users see
 import PrintLayout from '@/layouts/PrintLayout'
 import appConfig from '@/lib/app-config'
+import { PROVISIONED_ROLES } from '@/lib/provisioning-access'
 import { useAppConfig } from '@/context/app-config-context'
 import './index.css'
 
@@ -89,7 +91,7 @@ function PageLoader() {
 
 // Protected route wrapper
 function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user, checkAuth, signOut } = useAuth();
 
   if (loading) {
     return <PageLoader />;
@@ -99,7 +101,11 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/login" replace />;
   }
 
-  return children ? children : <Outlet />;
+  return (
+    <ProvisionedAccessGate user={user} onRefresh={checkAuth} onSignOut={signOut}>
+      {children ? children : <Outlet />}
+    </ProvisionedAccessGate>
+  );
 }
 
 // Role-based route guard — redirects to dashboard if user lacks required role
@@ -137,7 +143,7 @@ const SUPER_ADMIN_ONLY = ['super_admin'];
 const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
 const ALL_ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
 const STAFF_AND_ABOVE = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff'];
-const ALL_PROVISIONED_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor'];
+const ALL_PROVISIONED_ROLES = PROVISIONED_ROLES;
 
 function AppLayout() {
   return (
@@ -170,9 +176,15 @@ function AppLayout() {
 }
 
 function GuideLayout() {
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, user, checkAuth, signOut } = useAuth()
 
-  if (!loading && isAuthenticated) return <AppLayout />
+  if (!loading && isAuthenticated) {
+    return (
+      <ProvisionedAccessGate user={user} onRefresh={checkAuth} onSignOut={signOut}>
+        <AppLayout />
+      </ProvisionedAccessGate>
+    )
+  }
 
   return (
     <div className="min-h-svh bg-background">
@@ -225,21 +237,21 @@ const router = createBrowserRouter([
     ),
     children: [
       { path: "/", element: <Dashboard /> },
-      { path: "/surat/masuk", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><SuratMasuk /></RoleGuard> },
+      { path: "/surat/masuk", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><SuratMasuk /></RoleGuard> },
       { path: "/surat/masuk/tambah", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratMasuk /></RoleGuard> },
       { path: "/surat/masuk/:id", element: <SuratMasukDetail /> },
       { path: "/surat/masuk/edit/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratMasuk /></RoleGuard> },
-      { path: "/surat/keluar", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><SuratKeluar /></RoleGuard> },
+      { path: "/surat/keluar", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><SuratKeluar /></RoleGuard> },
       { path: "/surat/keluar/tambah", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar /></RoleGuard> },
       { path: "/surat/keluar/:id", element: <SuratKeluarDetail /> },
       { path: "/surat/keluar/edit/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar /></RoleGuard> },
       { path: "/distribusi", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><DistributionInbox /></RoleGuard> },
       { path: "/arsip", element: <Navigate to="/arsip/keluar" replace /> },
       { path: "/arsip/detail/:id", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><ArsipDetail /></RoleGuard> },
-      { path: "/arsip/:tab", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><Arsip /></RoleGuard> },
+      { path: "/arsip/:tab", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Arsip /></RoleGuard> },
       { path: "/bulk-upload", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard> },
-      { path: "/laporan", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><Laporan /></RoleGuard> },
-      { path: "/audit-log", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><AuditLog /></RoleGuard> },
+      { path: "/laporan", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Laporan /></RoleGuard> },
+      { path: "/audit-log", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AuditLog /></RoleGuard> },
       { path: "/record-access-grants", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><RecordAccessGrants /></RoleGuard> },
       {
         path: "/integrations/srikandi",

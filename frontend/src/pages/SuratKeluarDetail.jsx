@@ -148,6 +148,7 @@ export default function SuratKeluarDetail() {
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             })
+            throw error
         }
     }
 
@@ -435,7 +436,7 @@ export default function SuratKeluarDetail() {
                             </div>
 
                             {/* Type & Classification */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Jenis Surat</label>
                                     <p className="text-sm font-medium">{surat.naskahDinas || '-'}</p>
@@ -451,6 +452,12 @@ export default function SuratKeluarDetail() {
                                     <p className="text-sm font-medium">
                                         {surat.klasifikasiSubstantifKode || surat.klasifikasiSubstantif || '-'}
                                     </p>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Keamanan</label>
+                                    <Badge variant="outline" className="capitalize">
+                                        {(surat.klasifikasiKeamanan || 'terbatas').replaceAll('_', ' ')}
+                                    </Badge>
                                 </div>
                             </div>
 

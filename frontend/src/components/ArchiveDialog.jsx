@@ -4,6 +4,7 @@ import {
     Dialog,
     DialogContent,
     DialogClose,
+    DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -42,6 +43,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Link } from 'react-router-dom'
+import { validateArchiveRegistration } from './archive-registration-validation'
 
 const TINGKAT_PERKEMBANGAN_OPTIONS = [
     { value: 'Asli', label: 'Asli' },
@@ -195,6 +197,11 @@ export function ArchiveDialog({
     const handleSubmit = async (e) => {
         e.preventDefault()
         setFormError('')
+        const validationError = validateArchiveRegistration(formData, items)
+        if (validationError) {
+            setFormError(validationError)
+            return
+        }
         setLoading(true)
         try {
             // Flatten items[0] data into payload for backward compat
@@ -233,7 +240,10 @@ export function ArchiveDialog({
             await onArchive(payload)
             onOpenChange(false)
         } catch (error) {
-            console.error('Archive failed:', error)
+            const detailMessage = Array.isArray(error?.details)
+                ? error.details.map((detail) => detail.message).filter(Boolean).join('; ')
+                : ''
+            setFormError(detailMessage || error?.message || 'Gagal menyimpan arsip')
         } finally {
             setLoading(false)
         }
@@ -259,7 +269,9 @@ export function ArchiveDialog({
                             <DialogTitle className="text-lg font-bold tracking-tight text-white sm:text-xl">Arsipkan Surat</DialogTitle>
                             <span className="bg-card/20 text-xs px-2 py-0.5 rounded-full font-medium border border-white/10">Input Data</span>
                         </div>
-                        <p className="mt-0.5 hidden truncate text-sm text-teal-50 opacity-90 sm:block">Lengkapi data arsip dengan teliti untuk kemudahan pencarian.</p>
+                        <DialogDescription className="mt-0.5 hidden truncate text-sm text-teal-50 opacity-90 sm:block">
+                            Lengkapi data arsip dengan teliti untuk kemudahan pencarian.
+                        </DialogDescription>
                     </div>
                     <DialogClose disabled={loading} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/80 transition-all hover:bg-card/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
                         <X className="h-5 w-5" />
@@ -500,6 +512,7 @@ export function ArchiveDialog({
 
                                     <FormField
                                         label="Kurun Waktu"
+                                        required
                                         icon={Calendar}
                                         hint="Rentang waktu periode arsip"
                                     >
@@ -507,6 +520,7 @@ export function ArchiveDialog({
                                             <div className="flex-1">
                                                 <Input
                                                     type="date"
+                                                    required
                                                     value={formData.kurunWaktuDari}
                                                     onChange={(e) => handleChange('kurunWaktuDari', e.target.value)}
                                                     className="bg-muted/50 border-border h-10 focus:border-teal-500 focus:ring-teal-500"
@@ -516,6 +530,7 @@ export function ArchiveDialog({
                                             <div className="flex-1">
                                                 <Input
                                                     type="date"
+                                                    required
                                                     value={formData.kurunWaktuSampai}
                                                     onChange={(e) => handleChange('kurunWaktuSampai', e.target.value)}
                                                     className="bg-muted/50 border-border h-10 focus:border-teal-500 focus:ring-teal-500"
@@ -654,6 +669,7 @@ export function ArchiveDialog({
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-amber-50/30 p-4 rounded-lg border border-amber-100/50">
                                                     <FormField label="No. Filing Cabinet" required>
                                                         <Input
+                                                            required
                                                             value={item.lokasiFc}
                                                             onChange={(e) => handleItemChange(index, 'lokasiFc', e.target.value)}
                                                             placeholder="Ex: FC-01"
@@ -662,6 +678,7 @@ export function ArchiveDialog({
                                                     </FormField>
                                                     <FormField label="No. Laci" required>
                                                         <Input
+                                                            required
                                                             value={item.lokasiLaci}
                                                             onChange={(e) => handleItemChange(index, 'lokasiLaci', e.target.value)}
                                                             placeholder="Ex: L-02"
@@ -670,6 +687,7 @@ export function ArchiveDialog({
                                                     </FormField>
                                                     <FormField label="No. Folder" required>
                                                         <Input
+                                                            required
                                                             value={item.lokasiFolder}
                                                             onChange={(e) => handleItemChange(index, 'lokasiFolder', e.target.value)}
                                                             placeholder="Ex: F-003"
@@ -724,6 +742,7 @@ export function ArchiveDialog({
                                         hint="Nama yang bertanggung jawab atas pengarsipan"
                                     >
                                         <Input
+                                            required
                                             value={formData.personInCharge}
                                             onChange={(e) => handleChange('personInCharge', e.target.value)}
                                             placeholder="Contoh: Nama Staff / Admin"

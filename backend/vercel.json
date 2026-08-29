@@ -1,7 +1,7 @@
 {
     "version": 2,
     "buildCommand": "npm run build",
-    "installCommand": "npm install --include=dev",
+    "installCommand": "npm ci --include=dev",
     "rewrites": [
         {
             "source": "/(.*)",

@@ -131,7 +131,20 @@ describe('SuratKeluarService', () => {
                 noUrut: 43,
                 tahun: 2026,
                 nomorSurat: '043/ND/08/2026',
+                klasifikasiKeamanan: 'biasa',
             });
+        });
+
+        it('preserves an explicitly controlled security classification', async () => {
+            enqueue([], [templateRow], [], [{ id: 'new', noUrut: 1 }]);
+
+            await svc.create({
+                unitKerjaId: 'u1',
+                tahun: 2026,
+                klasifikasiKeamanan: 'terbatas',
+            } as any);
+
+            expect(capturedValues.at(-1).klasifikasiKeamanan).toBe('terbatas');
         });
 
         it('should start at noUrut 1 for new unit/year', async () => {

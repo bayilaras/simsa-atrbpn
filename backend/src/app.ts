@@ -43,7 +43,6 @@ import distributionRoutes from './routes/distribution.routes';
 import { reportRoutes } from './routes/report.routes';
 import { settingsRoutes } from './routes/settings.routes';
 import searchRoutes from './routes/search.routes';
-import devAuthRoutes from './routes/dev-auth.routes';
 import penyusutanRoutes from './routes/penyusutan.routes';
 import arsipVitalRoutes from './routes/arsip-vital.routes';
 import arsipTerjagaRoutes from './routes/arsip-terjaga.routes';
@@ -322,11 +321,6 @@ app.use('/api/client-upload', clientUploadRoutes); // Client-side Vercel Blob up
 app.use('/api/files', fileAccessRoutes); // Authenticated, unit-scoped private file streaming
 app.use('/api/integrations/srikandi', srikandiRoutes);
 app.use('/api/record-access-grants', recordAccessGrantRoutes); // Purpose-bound, time-limited need-to-know workflow
-
-// Dev auth routes - ONLY available in development mode
-if (env.NODE_ENV === 'development') {
-    app.use('/api/dev', devAuthRoutes);
-}
 
 // Setup Swagger API documentation - available at /api/docs
 setupSwagger(app);

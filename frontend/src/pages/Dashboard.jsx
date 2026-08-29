@@ -100,7 +100,6 @@ export default function Dashboard() {
     const location = useLocation();
     const { user, canWrite } = useAuth();
     const isAdmin = canWrite();
-    const isUserRole = user?.role === 'user';
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [stats, setStats] = useState(null);
@@ -354,23 +353,6 @@ export default function Dashboard() {
             />
 
             <Tabs defaultValue="overview" className="space-y-6">
-
-                {/* Activation Banner for 'user' role */}
-                {isUserRole && (
-                    <Card className="border-amber-200 bg-amber-50/50 shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className="p-3 bg-amber-100 rounded-full">
-                                <Clock className="h-6 w-6 text-amber-600" />
-                            </div>
-                            <div className="flex-1">
-                                <h3 className="font-semibold text-amber-900">Menunggu Aktivasi Role</h3>
-                                <p className="text-sm text-amber-700 mt-1">
-                                    Akun Anda belum memiliki akses ke data surat dan arsip. Silakan hubungi Admin untuk penetapan role dan unit kerja.
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
 
                 <TabsList className="bg-muted/50 p-1 rounded-xl">
                     <TabsTrigger value="overview" className="rounded-lg">Ringkasan</TabsTrigger>

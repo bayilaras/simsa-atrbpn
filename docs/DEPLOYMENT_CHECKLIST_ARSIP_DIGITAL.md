@@ -29,17 +29,19 @@ SIMSA merupakan aplikasi internal/substantif Ditjen PTPP, bukan pengganti SRIKAN
 
 - [ ] Kunci commit/artifact yang akan dirilis; hasil build backend/frontend dan seluruh test tersimpan sebagai bukti CI.
 - [ ] Gunakan Node 24 yang sama pada CI, Vercel, dan image worker; jangan merilis artifact yang dibangun dengan major runtime berbeda.
-- [ ] Pisahkan `DATABASE_URL`, private Blob store/token, OAuth callback, dan domain antara Preview dan Production. Pada Vercel, biarkan `VITE_API_URL` kosong agar cookie auth, CSRF, dan upload Blob tetap same-origin; tetapkan `API_PROXY_ORIGIN` server-side ke branch alias backend Preview HTTPS (`simsa-backend-git-...`) yang cocok dengan `VERCEL_GIT_COMMIT_REF` frontend. Konfigurasi menolak target kosong, branch/alias production, alias branch lain, FQDN ekuivalen, dan URL deployment Vercel yang environment-nya ambigu; pemisahan database/Blob tetap wajib dibuktikan secara operasional.
+- [ ] Pisahkan `DATABASE_URL`, private Blob store/token, OAuth callback, dan domain antara Preview dan Production. Pada Vercel, biarkan `VITE_API_URL` kosong agar cookie auth, CSRF, dan upload Blob tetap same-origin; tetapkan `API_PROXY_ORIGIN` server-side ke branch alias backend Preview HTTPS (`simsa-backend-git-...`) yang cocok dengan `VERCEL_GIT_COMMIT_REF` frontend. Target kosong menghasilkan shell `503` tanpa proxy; target branch/alias Production, alias branch lain, FQDN ekuivalen, dan URL deployment Vercel yang environment-nya ambigu ditolak. Pemisahan database/Blob tetap wajib dibuktikan secara operasional.
+- [ ] Isi seluruh kontrak backend `PREVIEW_*`, kemudian dan hanya kemudian set `SIMSA_PREVIEW_ENABLED=true`. Sebelum itu backend tidak mengimpor aplikasi: `/health` tetap menunjukkan proses hidup, sedangkan `/ready` dan seluruh route bisnis mengembalikan `503 preview_not_provisioned`. Frontend tanpa `API_PROXY_ORIGIN` juga hanya menampilkan shell 503 tanpa proxy ke Production.
+- [ ] Backend Vercel Preview dipaksa ke mode antivirus internal quarantine-only: scanner/worker/`CLAMAV_*` Production tidak diwarisi. `SMTP_TIMEOUT_MS`, TTL lease Blob, dan batch reconciliation memakai `PREVIEW_*` eksplisit atau default aman. Worker scanner Preview, bila diuji, harus berupa deployment persisten terpisah yang hanya terhubung ke database/Blob Preview.
 - [ ] Aktifkan Vercel System Environment Variables dan verifikasi `VERCEL_ENV` serta `VERCEL_GIT_COMMIT_REF` ada pada build Preview; guard menolak target project SIMSA bila referensi branch tidak tersedia.
 - [ ] Aktifkan Automation Bypass pada project backend Preview yang dilindungi Vercel, simpan secret-nya hanya pada environment **Preview frontend** sebagai `BACKEND_VERCEL_PROTECTION_BYPASS`, dan uji `/health` melalui proxy frontend tanpa redirect SSO. Header `x-vercel-protection-bypass` harus ditambahkan oleh routing layer, bukan kode browser; jangan memakai prefiks `VITE_`, mencatat, atau mengirim secret ke origin selain branch alias backend SIMSA.
-- [ ] Provision custom HTTPS callback origin backend Preview yang dapat dijangkau Vercel Blob dan tidak terkena Deployment Protection, lalu set `VERCEL_BLOB_CALLBACK_URL` tanpa path/trailing slash. Jangan menaruh bypass secret dalam URL callback/client token. Uji direct upload sungguhan sampai callback bertanda tangan membuat lease `pending`, transaksi surat/rule-set mengklaimnya, dan object yatim dipulihkan reconciler; konfigurasi menolak callback Preview `*.vercel.app`.
+- [ ] Provision custom HTTPS callback origin backend Preview yang dapat dijangkau Vercel Blob dan tidak terkena Deployment Protection, lalu set `PREVIEW_VERCEL_BLOB_CALLBACK_URL` tanpa path/trailing slash. Jangan menaruh bypass secret dalam URL callback/client token. Uji direct upload sungguhan sampai callback bertanda tangan membuat lease `pending`, transaksi surat/rule-set mengklaimnya, dan object yatim dipulihkan reconciler; konfigurasi menolak callback Preview `*.vercel.app`.
 - [ ] Jalankan SAST, SCA/dependency scan, secret scan, IaC scan, dan pentest; seluruh temuan kritis/tinggi ditutup atau diterima tertulis.
 - [ ] Pastikan tidak ada secret di Git, artifact, log, source map, browser bundle, atau file test.
 - [x] Utilitas test di working tree membaca kredensial dari environment dan menolak berjalan tanpa konfigurasi eksplisit.
 - [ ] Rotasi/nonaktifkan akun test, API key, dan proxy credential yang pernah tersimpan pada riwayat Git; perubahan working tree tidak mencabut secret yang sudah terekspos.
 - [ ] Dokumentasikan penerimaan risiko sementara untuk advisory `image-size` pada pipeline build Docusaurus (belum ada patch upstream); hanya proses image yang berasal dari repositori tepercaya dan jangan menjalankan build pada input tidak tepercaya.
 - [ ] Tinjau empat advisory moderat `esbuild` pada rantai tooling `drizzle-kit`/`tsx`; jangan mengekspos development server, isolasi runner build, dan pantau perbaikan upstream. Jangan memakai `npm audit fix --force` yang menurunkan `drizzle-kit` secara breaking tanpa pengujian migrasi penuh.
-- [ ] Gunakan custom domain institusi dan reverse proxy API same-origin. Seluruh build production harus membiarkan `VITE_API_URL` kosong; hosting selain Vercel wajib menyediakan aturan `/api`, `/health`, dan `/uploads` yang ekuivalen.
+- [ ] Gunakan custom domain institusi dan reverse proxy API same-origin. Seluruh build production harus membiarkan `VITE_API_URL` kosong; hosting selain Vercel wajib menyediakan aturan `/api`, `/health`, `/ready`, dan `/uploads` yang ekuivalen.
 - [ ] Set `NODE_ENV=production`, `BETTER_AUTH_URL`, `FRONTEND_URL`, `ADDITIONAL_TRUSTED_ORIGINS`, `COOKIE_DOMAIN`, `DATABASE_URL`, `BETTER_AUTH_SECRET`, OAuth, dan `BLOB_READ_WRITE_TOKEN` melalui secret manager; daftarkan setiap alias Preview secara exact dan jangan pernah mempercayai wildcard `*.vercel.app`, commit nilainya, atau mengekspos token Blob sebagai variabel `VITE_*`.
 - [ ] Set `OCR_TESSDATA_PATH` ke sumber/direktori terkontrol yang memuat `ind.traineddata.gz` dan `eng.traineddata.gz`. Pastikan runtime dapat membacanya tanpa bergantung pada unduhan internet; bila perlu, set `OCR_CACHE_PATH` ke direktori cache writable dengan kapasitas dan lifecycle yang dipantau.
 - [ ] Hubungkan private Vercel Blob store ke backend production. Uji token unggah PDF regulasi yang terikat `ruleSetId`, batas 50 MiB, random suffix, larangan overwrite/public locator, serta server refetch sebelum bukti sumber diterima.
@@ -51,14 +53,14 @@ SIMSA merupakan aplikasi internal/substantif Ditjen PTPP, bukan pengganti SRIKAN
 
 ## 4. Backup pra-migrasi
 
-- [ ] Pastikan secret GitHub `NEON_DATABASE_URL` dan `BACKUP_ENCRYPTION_PASSPHRASE` aktif. Workflow backup wajib hijau: dump dibuat dengan client PostgreSQL yang kompatibel, dienkripsi, dipulihkan ke PostgreSQL terisolasi dengan `ON_ERROR_STOP`, dan baru kemudian diunggah sebagai artifact.
+- [ ] Pastikan secret GitHub `NEON_BACKUP_DATABASE_URL` memakai direct endpoint TLS dan role khusus `INHERIT pg_read_all_data` tanpa hak tulis/admin, serta `BACKUP_ENCRYPTION_PASSPHRASE` acak satu baris minimal 32 karakter tersedia juga di secret manager terpisah. Workflow wajib hijau: custom dump dialirkan langsung ke enkripsi, dekripsi dialirkan langsung ke restore PostgreSQL terisolasi, tabel/kolom/PK/constraint/migrasi kritis diverifikasi, lalu artifact terenkripsi diunggah.
 - [ ] Buat snapshot/PITR database dan `pg_dump` terenkripsi; uji restore ke lingkungan terisolasi.
 - [ ] Ekspor inventaris seluruh object: URL/key, ukuran, MIME, SHA-256 bila ada, entity, kelas keamanan, access mode, dan version ID.
 - [ ] Backup konfigurasi, kebijakan IAM/storage, serta audit; simpan terpisah dari production account. Sertakan mapping SRIKANDI dan material KMS bila kapabilitas tersebut digunakan.
 - [ ] Catat waktu cut-off dan batasi write selama langkah yang memerlukan konsistensi.
-- [ ] Verifikasi bahwa backup mencakup database **dan bitstream**; backup database saja tidak cukup.
+- [ ] Verifikasi bahwa backup mencakup database **dan bitstream**. Workflow Neon hanya mencakup database; backup dan restore private Blob tetap blocker eksternal sampai inventory, salinan independen, checksum, dan drill pasangan database–Blob dibuktikan.
 
-## 5. Migrasi database 0010 sampai 0027
+## 5. Migrasi database 0010 sampai 0029
 
 Migrasi yang harus berurutan:
 
@@ -80,6 +82,8 @@ Migrasi yang harus berurutan:
 16. `backend/src/db/migrations/0025_worker_readiness_heartbeats.sql`
 17. `backend/src/db/migrations/0026_global_ocr_capacity.sql`
 18. `backend/src/db/migrations/0027_canonical_user_unit_mandates.sql`
+19. `backend/src/db/migrations/0028_user_profile_columns.sql`
+20. `backend/src/db/migrations/0029_outgoing_security_classification.sql`
 
 `0010` menambahkan pemicu retensi berbasis peristiwa, bukti/versi/rujukan JRA, legal hold, constraint, dan indeks kandidat. Migrasi ini sengaja **tidak** mengisi pemicu dari `tanggal_arsip`; rekod legacy tetap tidak layak menjadi kandidat penyusutan sampai arsiparis memasukkan bukti peristiwa yang sah.
 
@@ -103,11 +107,11 @@ Migrasi yang harus berurutan:
 
 `0021` mengunci integritas domain relasi surat–arsip, menyelaraskan flag `is_archived`, menolak sumber ganda/salah jenis, dan membuat linkage sumber immutable. `0022` mempersistensikan preferensi, template nomor, dan status baca notifikasi dengan constraint yang direkonsiliasi secara fail-loud.
 
-`0023` mencatat lease unggahan Blob langsung agar objek yang sudah diklaim transaksi tidak dihapus rekonsiliator dan objek kedaluwarsa yang belum diklaim dapat dibersihkan aman. `0024` membuat batch/item bulk upload durable serta memindahkan PDF autentikasi ke private Blob. `0025` menyimpan heartbeat per-instance untuk readiness worker antivirus dan SRIKANDI. `0026` menambahkan semaphore OCR global berbasis lease PostgreSQL; kapasitas, durasi lease, dan jeda retry tersimpan secara otoritatif di `ocr_capacity_control`, bukan pada konfigurasi masing-masing instance. `0027` merekonsiliasi unit kerja pengguna legacy dan menegakkan mandat kanonis di database: superadmin lintas unit disimpan tanpa unit, sedangkan administrator Ditjen/Sesditjen selalu terikat ke unit mandatnya.
+`0023` mencatat lease unggahan Blob langsung agar objek yang sudah diklaim transaksi tidak dihapus rekonsiliator dan objek kedaluwarsa yang belum diklaim dapat dibersihkan aman. `0024` membuat batch/item bulk upload durable serta memindahkan PDF autentikasi ke private Blob. `0025` menyimpan heartbeat per-instance untuk readiness worker antivirus dan SRIKANDI. `0026` menambahkan semaphore OCR global berbasis lease PostgreSQL; kapasitas, durasi lease, dan jeda retry tersimpan secara otoritatif di `ocr_capacity_control`, bukan pada konfigurasi masing-masing instance. `0027` merekonsiliasi unit kerja pengguna legacy dan menegakkan mandat kanonis di database: superadmin lintas unit disimpan tanpa unit, sedangkan administrator Ditjen/Sesditjen selalu terikat ke unit mandatnya. `0028` menambahkan kolom profil pengguna `jabatan` dan `nip`. `0029` menambahkan klasifikasi keamanan eksplisit untuk surat keluar baru; baris legacy tetap `NULL` dan diperlakukan sebagai `terbatas` oleh access layer.
 
 Langkah eksekusi:
 
-- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan kedelapan belas file SQL `0010`–`0027` dan pastikan tidak ada migration ID ganda.
+- [ ] Cocokkan `backend/src/db/migrations/meta/_journal.json` dengan kedua puluh file SQL `0010`–`0029` dan pastikan tidak ada migration ID ganda.
 - [ ] Uji seluruh migrasi pada salinan production yang telah dianonimkan; catat durasi, lock, ukuran indeks, dan error.
 - [ ] Jalankan preflight duplikasi `(arsip_id, versi_dokumen)`. Migrasi `0011` sengaja berhenti bila data legacy ambigu; rekonsiliasi provenans bersama arsiparis dan jangan melakukan auto-renumber.
 - [ ] Jalankan preflight hubungan tunjuk silang aktif duplikat. Migrasi `0012` juga sengaja berhenti sampai duplikasi direkonsiliasi dan keputusannya dicatat.
@@ -125,7 +129,7 @@ Langkah eksekusi:
 
 1. Aktifkan maintenance window atau kontrol write yang disetujui.
 2. Ambil backup dan bukti restore.
-3. Jalankan migrasi sampai `0027` dengan `npm run db:migrate`.
+3. Jalankan migrasi sampai `0029` dengan `npm run db:migrate`.
 4. Jalankan `npm run seed:all`, lalu verifikasi jumlah, hash sumber, status versi aktif, dan snapshot legacy.
 5. Deploy backend baru; pastikan `/health` menjawab liveness dan `/ready` atau `/api/health` lulus probe database/private Blob serta heartbeat worker yang diwajibkan.
 6. Deploy frontend baru; invalidasi asset cache, tetapi jangan cache respons `/api/*`.
@@ -153,10 +157,12 @@ Langkah eksekusi:
 
 - [x] Gateway aplikasi menolak file `not_scanned`, sedang dipindai, retry, gagal, terinfeksi, public legacy, tanpa hash, atau hash mismatch.
 - [x] Adaptor ClamAV INSTREAM dan worker PostgreSQL idempotent tersedia di kode, termasuk retry/backoff, stale-claim recovery, dan verifikasi fixity sebelum status `clean`.
+- [x] CI Linux menjalankan scanner aplikasi terhadap ClamAV yang dipatok digest, membuktikan sampel bersih dan EICAR sebelum serta sesudah restart container.
 - [x] Unggah massal menyimpan batch/item secara durable; ekstraksi memakai text layer bila tersedia dan OCR citra nyata untuk PDF hasil pindai, dengan batas fail-closed pada ukuran, halaman, piksel, waktu, serta hasil teks.
 - [x] Setiap item OCR mengambil lease kapasitas global dari PostgreSQL sebelum diproses, memperpanjangnya berkala berdasarkan pasangan item/token selama unduh dan Tesseract, lalu melepasnya dengan token di blok `finally`; database tidak dikunci selama Tesseract berjalan. Commit hasil juga dipagari oleh claim item (`status` + `processing_started_at`) agar worker lama tidak dapat menimpa hasil claim baru. Kapasitas penuh mengembalikan `503` dan `Retry-After` tanpa menandai item gagal, sedangkan lease proses yang mati dapat diambil kembali setelah kedaluwarsa.
 - [ ] Deploy clamd dan worker sebagai proses persisten pada jaringan privat; jangan mengandalkan `setInterval` dalam fungsi Vercel/serverless. Uji EICAR, timeout, scanner mati, objek hilang, hash mismatch, dan restart worker.
 - [ ] Pastikan jaringan `scanner` tetap internal, jaringan `clamav-updates` memiliki egress untuk FreshClam, batas stream clamd sama dengan `CLAMAV_MAX_STREAM_BYTES`, image memakai digest yang disetujui, resource/log limit aktif, dan shutdown grace period lebih panjang dari deadline shutdown internal worker 30 detik; verifikasi klaim stale pulih secara fail-closed setelah penghentian paksa.
+- [ ] Terbitkan worker hanya melalui workflow rilis tanpa auto-deploy, simpan provenance dan SBOM-nya, lalu jalankan `preflight-worker-image.sh` terhadap referensi `registry/repository@sha256:<digest>` sebelum setiap `pull` dan rollout produksi.
 - [ ] Uji model OCR `ind+eng` dari `OCR_TESSDATA_PATH` pada image/artifact produksi, termasuk PDF scan maksimal 10 halaman, dokumen tanpa teks bermakna, timeout unduh Blob 30 detik, restart proses, konsumsi CPU/memori, cleanup cache, saturasi lintas replica, penghormatan `Retry-After`, renewal/reklamasi lease, serta penolakan hasil worker stale. Handler Vercel menetapkan `maxDuration=300` detik: 30 detik text-layer + 180 detik scan OCR + 30 detik unduh Blob + 60 detik margin cold-start/database/cleanup; pastikan plan/runtime deployment mendukung nilai tersebut. Kalibrasi `ocr_capacity_control.max_concurrency` hanya melalui perubahan operasional database yang diaudit dan uji beban; jangan membuat override berbeda pada tiap instance. Metadata hasil OCR wajib ditinjau manusia sebelum dikonfirmasi.
 - [ ] Terapkan private object access, encryption-at-rest yang didukung platform, least privilege, lifecycle, backup, dan pemisahan admin.
 - [ ] **Kondisional — hardening storage:** integrasikan content disarm/DLP, KMS/HSM khusus, versioning, dan object lock/WORM bila kelas data, kebijakan, atau keputusan risiko mensyaratkannya; simpan bukti konfigurasi dan uji.
@@ -202,7 +208,7 @@ Lewati aktivasi pada bagian ini bila SRIKANDI tidak diwajibkan. Kontrol gagal-te
 ## 12. Backup, restore, dan observabilitas
 
 - [ ] Terapkan strategi 3-2-1 untuk database, private object, audit, dan konfigurasi, serta material KMS bila digunakan; pastikan semuanya dapat dipulihkan secara sah.
-- [ ] Enkripsi backup, pisahkan akun/credential backup, dan pantau kegagalan job.
+- [ ] Enkripsi backup tanpa file plaintext sementara, pisahkan akun/credential backup dari akun aplikasi, simpan key di luar GitHub untuk pemulihan, catat checksum artifact, dan pantau kegagalan job.
 - [ ] **Kondisional — immutable backup:** terapkan immutable retention/object lock pada backup bila diwajibkan kebijakan atau keputusan risiko.
 - [ ] Lakukan restore drill end-to-end; cek konsistensi database–bitstream, hash, legal hold, dan audit, serta mapping integrasi bila digunakan.
 - [ ] Ukur serta setujui RPO/RTO berdasarkan hasil drill, bukan nilai asumsi.
@@ -229,7 +235,7 @@ Lewati aktivasi pada bagian ini bila SRIKANDI tidak diwajibkan. Kontrol gagal-te
 
 ## 14. Strategi rollback
 
-Migrasi `0010` sampai `0027` pada umumnya bersifat aditif, tetapi rollback dengan `DROP COLUMN`/`DROP TABLE` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, keputusan akses, audit integrasi, versi aturan, appraisal/penyusutan, penyerahan permanen, lease Blob/OCR, batch ingest, heartbeat, snapshot keputusan, pelaku workflow, atau constraint mandat unit. Karena itu:
+Migrasi `0010` sampai `0029` pada umumnya bersifat aditif, tetapi rollback dengan `DROP COLUMN`/`DROP TABLE` berisiko menghapus bukti legal hold, hash, koreksi tunjuk silang, keputusan akses, audit integrasi, versi aturan, appraisal/penyusutan, penyerahan permanen, lease Blob/OCR, batch ingest, heartbeat, snapshot keputusan, profil pengguna, klasifikasi keamanan surat keluar, atau constraint mandat unit. Karena itu:
 
 1. **Sebelum cutover dan belum ada write baru:** batalkan deploy aplikasi; bila migrasi gagal, pulihkan database ke branch/snapshot pra-migrasi dan verifikasi checksum/count.
 2. **Sesudah cutover tetapi belum ada data bermakna:** arahkan trafik ke maintenance, pulihkan snapshot ke environment baru, validasi, lalu switch connection secara terkontrol.

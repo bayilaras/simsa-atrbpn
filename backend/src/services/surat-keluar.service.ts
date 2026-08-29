@@ -51,10 +51,13 @@ export class SuratKeluarService {
         const conditions = [
             eq(suratKeluar.isDeleted, false),  // Exclude soft-deleted records
         ];
-        if (securityClassifications !== undefined
-            && securityClassifications !== null
-            && !securityClassifications.includes('terbatas')) {
-            conditions.push(sql`false`);
+        if (securityClassifications !== undefined && securityClassifications !== null) {
+            conditions.push(securityClassifications.length > 0
+                ? inArray(
+                    sql<string>`lower(coalesce(${suratKeluar.klasifikasiKeamanan}, 'terbatas'))`,
+                    securityClassifications,
+                )
+                : sql`false`);
         }
 
         // Only filter by unitKerjaId when provided (super_admin sees all)
@@ -232,7 +235,15 @@ export class SuratKeluarService {
 
                 const [inserted] = await tx
                     .insert(suratKeluar)
-                    .values({ ...recordData, nomorSurat, noUrut, tahun })
+                    .values({
+                        ...recordData,
+                        // Direct service callers and older API clients receive
+                        // the same safe, explicit default as the current form.
+                        klasifikasiKeamanan: recordData.klasifikasiKeamanan || 'biasa',
+                        nomorSurat,
+                        noUrut,
+                        tahun,
+                    })
                     .returning();
 
                 if (clientBlobClaim) {
@@ -530,10 +541,13 @@ export class SuratKeluarService {
         const conditions = [
             ...(unitKerjaId !== null ? [eq(suratKeluar.unitKerjaId, unitKerjaId)] : []),
             ...(tahun ? [eq(suratKeluar.tahun, tahun)] : []),
-            ...(securityClassifications !== undefined
-                && securityClassifications !== null
-                && !securityClassifications.includes('terbatas')
-                ? [sql`false`]
+            ...(securityClassifications !== undefined && securityClassifications !== null
+                ? [securityClassifications.length > 0
+                    ? inArray(
+                        sql<string>`lower(coalesce(${suratKeluar.klasifikasiKeamanan}, 'terbatas'))`,
+                        securityClassifications,
+                    )
+                    : sql`false`]
                 : []),
         ];
 

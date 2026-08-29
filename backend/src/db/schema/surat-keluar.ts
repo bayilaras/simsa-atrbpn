@@ -23,6 +23,10 @@ export const suratKeluar = pgTable('surat_keluar', {
     klasifikasiFasilitatif: text('klasifikasi_fasilitatif'),
     klasifikasiSubstantifKode: varchar('klasifikasi_substantif_kode', { length: 50 }),
     klasifikasiSubstantif: text('klasifikasi_substantif'),
+    // New records default to ordinary/open. Migration 0029 deliberately keeps
+    // legacy NULL rows so the access layer can continue treating them as
+    // Terbatas until an authorised registrar explicitly classifies them.
+    klasifikasiKeamanan: varchar('klasifikasi_keamanan', { length: 30 }).default('biasa'),
     // File attachment fields
     filePath: text('file_path'),
     fileOriginalName: varchar('file_original_name', { length: 255 }),

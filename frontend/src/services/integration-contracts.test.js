@@ -104,6 +104,22 @@ describe('frontend/API integration contracts', () => {
         });
     });
 
+    it('preserves the selected super-admin unit for dosir code generation and creation', async () => {
+        apiMock.get.mockResolvedValue({ success: true, data: { kode: 'DOS-001' } });
+        apiMock.post.mockResolvedValue({ success: true, data: { id: 'dosir-1' } });
+
+        await dosirService.generateKode('unit/a');
+        await dosirService.create({ judul: 'Perkara A' }, 'unit/a');
+
+        expect(apiMock.get).toHaveBeenCalledWith('/api/dosir/generate-kode', {
+            unitKerjaId: 'unit/a',
+        });
+        expect(apiMock.post).toHaveBeenCalledWith(
+            '/api/dosir?unitKerjaId=unit%2Fa',
+            { judul: 'Perkara A' },
+        );
+    });
+
     it('returns one normalized domain layer for list and detail services', async () => {
         const rows = [{ id: 'one' }];
         const detail = { id: 'one', status: 'draft' };

@@ -28,6 +28,10 @@ yang menyimpan surat atau PDF regulasi. Migrasi
   path request `/api/client-upload` sendiri; origin tersebut harus dapat
   dijangkau layanan Vercel Blob. Callback tidak membawa session pengguna, tetapi
   diverifikasi kriptografis oleh SDK sebelum lease ditulis.
+- Pada Vercel Preview, isi origin tadi melalui
+  `PREVIEW_VERCEL_BLOB_CALLBACK_URL`; entrypoint baru memetakannya ke nama SDK
+  hanya setelah seluruh kontrak resource `PREVIEW_*` lengkap dan
+  `SIMSA_PREVIEW_ENABLED=true`.
 - Untuk Preview terlindungi, gunakan custom HTTPS origin khusus yang tidak
   terkena Deployment Protection; konfigurasi menolak origin `*.vercel.app`.
   Jangan menambahkan bypass secret sebagai query string callback karena URL

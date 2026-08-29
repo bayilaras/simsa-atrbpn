@@ -1,138 +1,160 @@
-# Strategi Backup & Recovery — SIMSA Database (Neon PostgreSQL)
+# Strategi Backup & Recovery SIMSA
 
-## Arsitektur Backup 3 Lapis
+## Cakupan dan status
 
-| Layer | Metode | Retensi | RPO | Otomatis |
-|-------|--------|---------|-----|----------|
-| 1 | **Neon PITR** (built-in) | 7–30 hari | Milidetik | ✅ |
-| 2 | **pg_dump Harian** (GitHub Actions) | 30 hari | 24 jam | ✅ |
-| 3 | **Neon Branching** (manual) | Permanen | Point-in-time | ❌ |
+Backup SIMSA terdiri dari dua domain yang harus dapat dipulihkan bersama:
 
----
+| Domain | Mekanisme | Status bukti |
+|---|---|---|
+| PostgreSQL Neon | PITR/branch Neon dan `pg_dump` custom-format terenkripsi harian | Workflow tersedia; run dengan secret baru dan drill independen masih wajib dibuktikan |
+| Private Blob | Salinan bitstream ke penyimpanan privat independen, manifest hash, retensi, dan drill restore | **Blocker eksternal — belum tersedia di repositori ini** |
 
-## Layer 1: Neon Point-in-Time Recovery (PITR)
+`pg_dump` hanya mencadangkan metadata, locator, dan hash objek yang tersimpan di
+PostgreSQL. Byte PDF/lampiran di private Blob tidak masuk ke archive database.
+Karena itu workflow database hijau tidak boleh dianggap sebagai backup SIMSA
+lengkap dan tidak menghapus blocker private Blob.
 
-Neon secara otomatis menyimpan WAL (Write-Ahead Log) untuk seluruh database.
+Retensi PITR/branch bergantung pada plan dan konfigurasi project Neon yang aktif.
+Verifikasi nilainya langsung di console dan simpan bukti konfigurasi; jangan
+mengandalkan asumsi plan dalam dokumen ini. RPO/RTO baru boleh disahkan dari
+hasil drill terukur.
 
-### Cara Menggunakan PITR
+## Backup database harian
 
-1. Buka [Neon Console](https://console.neon.tech)
-2. Pilih project → **Branches**
-3. Klik **Restore** pada branch `main`
-4. Pilih tanggal dan waktu yang diinginkan
-5. Neon akan membuat branch baru dari titik waktu tersebut
+Workflow `.github/workflows/backup-neon.yml` berjalan terjadwal pukul 00:00 UTC
+dan dapat dipicu manual. Alurnya:
 
-### Konfigurasi Retensi
+1. menolak endpoint pooled/TLS opsional dan memvalidasi role sumber efektif
+   hanya-baca;
+2. mengalirkan output `pg_dump --format=custom` terkompresi langsung ke enkripsi
+   simetris AES-256, tanpa file dump plaintext;
+3. membaca TOC archive dari stream dekripsi;
+4. mengalirkan dekripsi langsung ke `pg_restore` PostgreSQL 18 yang terisolasi,
+   memakai satu transaksi dan berhenti pada error pertama;
+5. memverifikasi tabel, kolom operasional/readiness, primary key, constraint
+   mandat unit dan klasifikasi keamanan surat keluar, riwayat migrasi minimal
+   `0029_outgoing_security_classification`, serta
+   keberadaan user produksi minimum; dan
+6. baru mengunggah archive terenkripsi sebagai artifact immutable per-run selama
+   30 hari, disertai checksum archive/artifact dan ringkasan restore.
 
-| Plan | Retensi PITR |
-|------|-------------|
-| Free | 24 jam |
-| Launch | 7 hari |
-| Scale | 14 hari |
-| Business | 30 hari |
+PostgreSQL image dan action upload dipatok ke digest/commit. Tidak ada langkah
+yang membuat branch Neon, mengubah deployment, atau membaca/menyalin private
+Blob.
 
-> **Rekomendasi:** Gunakan plan **Launch** atau **Scale** untuk retensi PITR lebih lama.
+### Role sumber least-privilege
 
----
+Buat credential terpisah dari akun aplikasi, misalnya `simsa_backup`. Role itu
+harus `LOGIN`, `INHERIT`, `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`,
+`NOREPLICATION`, dan `NOBYPASSRLS`, menjadi anggota `pg_read_all_data`, serta
+tidak menjadi anggota `pg_write_all_data`. Role tidak boleh memiliki hak efektif
+`CREATE` pada database atau schema `public`, maupun `INSERT`, `UPDATE`, `DELETE`,
+atau `TRUNCATE` pada tabel kritis. Workflow juga memeriksa sesi sumber benar-benar
+menggunakan TLS, bukan sekadar mempercayai teks URI.
 
-## Layer 2: pg_dump Otomatis (GitHub Actions)
+Contoh dijalankan oleh administrator database melalui sesi aman; tetapkan
+password secara interaktif/secret manager, jangan menaruhnya di history shell:
 
-Backup harian menggunakan `pg_dump` via GitHub Actions. File backup disimpan sebagai GitHub Artifact (retensi 30 hari).
-
-### Setup
-
-1. **Tambahkan secret** di GitHub repo → Settings → Secrets:
-   - `NEON_DATABASE_URL`: Connection string Neon (contoh: `postgresql://user:pass@host/db?sslmode=require`)
-
-2. **Workflow file**: `.github/workflows/backup-neon.yml` (sudah dibuat)
-
-3. **Jadwal**: Setiap hari pukul 00:00 UTC (07:00 WIB)
-
-### Cara Download Backup
-
-1. Buka GitHub repo → **Actions** tab
-2. Klik workflow **"Daily Neon DB Backup"**
-3. Pilih run yang diinginkan
-4. Download artifact `neon-backup-YYYY-MM-DD`
-
-### Cara Restore dari Backup
-
-```bash
-# 1. Download file backup dari GitHub Actions artifacts
-
-# 2. Restore ke database baru di Neon
-#    Buat branch baru di Neon Console terlebih dahulu
-psql "postgresql://user:pass@new-host/db?sslmode=require" < backup-file.sql
-
-# 3. Atau restore ke database lokal untuk testing
-createdb simsa_restore
-psql simsa_restore < backup-file.sql
+```sql
+CREATE ROLE simsa_backup
+  LOGIN INHERIT
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+GRANT CONNECT ON DATABASE simsa TO simsa_backup;
+GRANT pg_read_all_data TO simsa_backup;
+REVOKE CREATE ON DATABASE simsa FROM simsa_backup;
+REVOKE CREATE ON SCHEMA public FROM simsa_backup;
 ```
 
----
+Periksa juga grant melalui `PUBLIC` atau role lain karena PostgreSQL tidak
+memiliki grant “deny”. Workflow memeriksa hak efektif dan gagal tertutup bila
+credential masih dapat menulis. Jika Row-Level Security diperkenalkan, jangan
+memberi `BYPASSRLS` diam-diam; desain ulang role/prosedur backup dan buktikan
+bahwa dump lengkap tanpa memperluas hak lebih dari yang disetujui.
 
-## Layer 3: Neon Branching (Pre-Migration)
+Gunakan direct endpoint Neon dan `sslmode=require` atau `sslmode=verify-full`.
+Simpan URI itu sebagai `NEON_BACKUP_DATABASE_URL`, bukan `NEON_DATABASE_URL`
+akun aplikasi.
 
-Sebelum menjalankan migrasi database, buat branch sebagai snapshot.
+### Secret enkripsi
 
-### Prosedur Pre-Migration Backup
+Tambahkan dua Actions secrets:
+
+- `NEON_BACKUP_DATABASE_URL`: URI direct endpoint untuk role hanya-baca;
+- `BACKUP_ENCRYPTION_PASSPHRASE`: nilai acak satu baris, minimal 32 karakter.
+
+Simpan salinan passphrase di secret manager terpisah dengan dual control. Jika
+passphrase hanya ada di GitHub lalu hilang/dirotasi, artifact lama tidak dapat
+dipulihkan. Rotasi wajib mempertahankan key lama selama seluruh artifact yang
+dienkripsi dengannya masih berada dalam masa retensi.
+
+## Restore database
+
+Selalu pulihkan ke database baru/terisolasi terlebih dahulu. Jangan mengarahkan
+drill ke Production. Archive adalah custom-format sehingga dipulihkan dengan
+`pg_restore`, bukan `psql`.
+
+Contoh streaming manual tanpa dump terdekripsi di disk:
 
 ```bash
-# 1. Buat branch sebelum migrasi
-# Di Neon Console:
-#   Branches → Create Branch → dari branch "main"
-#   Nama: "pre-migration-YYYY-MM-DD"
+export BACKUP_FILE='simsa-db-YYYY-MM-DD-RUN-ATTEMPT.dump.gpg'
+export BACKUP_PASSPHRASE='ambil-dari-secret-manager'
+export RESTORE_DATABASE_URL='postgresql://.../simsa_restore?sslmode=require'
 
-# 2. Jalankan migrasi
-cd backend
-npm run db:push
-
-# 3. Verifikasi migrasi berhasil
-npm run dev
-# Test di browser
-
-# 4. Jika migrasi gagal — rollback:
-#    Di Neon Console:
-#    Branches → main → Restore → pilih branch "pre-migration-YYYY-MM-DD"
+gpg --batch --yes --pinentry-mode loopback \
+  --no-symkey-cache --passphrase-fd 3 \
+  --decrypt "$BACKUP_FILE" 3<<<"$BACKUP_PASSPHRASE" \
+| docker run --rm --interactive \
+    --env RESTORE_DATABASE_URL \
+    postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2 \
+    sh -eu -c 'exec pg_restore \
+      --dbname "$RESTORE_DATABASE_URL" \
+      --exit-on-error --single-transaction \
+      --clean --if-exists --no-owner --no-privileges'
 ```
 
-### Kapan Harus Membuat Branch
+Sesudah restore, jalankan smoke test autentikasi, query arsip/surat, audit,
+relasi klasifikasi/JRA, dan rekonsiliasi locator–hash Blob. Restore database yang
+berhasil tetapi bitstream tidak dapat diambil atau hash berbeda tetap merupakan
+drill gagal.
 
-- ✅ Sebelum `npm run db:push` atau `npm run db:migrate`
-- ✅ Sebelum menjalankan seed yang menghapus data
-- ✅ Sebelum perubahan schema besar
-- ✅ Sebelum deploy ke production
+## Backup private Blob — blocker eksternal
 
----
+Sebelum Production dinyatakan siap, pemilik infrastruktur wajib menyediakan dan
+membuktikan proses di luar workflow database ini yang:
 
-## Prosedur Recovery Darurat
+1. menghasilkan inventory objek privat dengan locator internal, ukuran, hash
+   SHA-256, status malware, dan referensi database;
+2. menyalin byte ke penyimpanan privat independen dengan encryption-at-rest,
+   least privilege, lifecycle, dan retensi yang disahkan;
+3. tidak mengubah objek menjadi publik dan tidak mencatat token/URL privat ke
+   log atau artifact;
+4. memverifikasi checksum setiap salinan serta mendeteksi objek DB tanpa byte dan
+   byte tanpa referensi DB; dan
+5. melakukan restore drill sampel dan penuh bersama snapshot database yang
+   se-zaman, termasuk pemeriksaan fixity dan akses terautentikasi.
 
-### Skenario 1: Data Terhapus Tidak Sengaja (< 24 jam)
+Sampai bukti tersebut ada, status backup keseluruhan adalah **belum lengkap**.
 
-1. Gunakan **Neon PITR** → restore ke titik sebelum penghapusan
-2. Bandingkan data di branch baru vs branch main
-3. Copy data yang hilang menggunakan SQL
+## Prosedur pre-migration dan insiden
 
-### Skenario 2: Data Corrupt (> 24 jam)
+Sebelum migrasi Production:
 
-1. Download **pg_dump backup** terdekat dari GitHub Actions
-2. Buat branch baru di Neon
-3. Restore backup ke branch baru
-4. Bandingkan dan sinkronisasi data
+1. pastikan workflow database manual hijau dan artifact/checksum tercatat;
+2. pastikan backup private Blob serta manifest pasangannya selesai;
+3. buat branch/PITR Neon dari titik yang sama dan catat timestamp;
+4. lakukan restore drill terisolasi; lalu
+5. jalankan `npm run db:migrate` hanya setelah approval operasional.
 
-### Skenario 3: Database Tidak Bisa Diakses
+Saat insiden, pulihkan ke environment terpisah, bandingkan snapshot dengan
+Production, dan salin data kembali hanya melalui prosedur yang diaudit. Jangan
+melakukan restore in-place atau menghapus branch/object lama sebelum validasi
+bisnis, fixity, audit, serta persetujuan pemilik data selesai.
 
-1. Cek status Neon di [status.neon.tech](https://status.neon.tech)
-2. Jika ada outage, tunggu Neon recovery
-3. Jika perlu restore, gunakan pg_dump backup terakhir ke database baru
+## Bukti berkala
 
----
-
-## Checklist Maintenance Berkala
-
-| Frekuensi | Tugas |
-|-----------|-------|
-| Harian | ✅ Verifikasi backup GitHub Actions berhasil |
-| Mingguan | ✅ Download dan test restore backup terakhir |
-| Bulanan | ✅ Review retensi dan hapus branch lama |
-| Sebelum deploy | ✅ Buat Neon branch sebagai snapshot |
+| Frekuensi | Bukti minimum |
+|---|---|
+| Harian | Workflow database hijau, checksum artifact, ringkasan schema/migrasi restore |
+| Mingguan | Unduh artifact dan uji dekripsi/TOC dari runner independen |
+| Bulanan | Drill database + private Blob, fixity, serta pengukuran RPO/RTO |
+| Sebelum deploy/migrasi | Backup pasangan database–Blob, branch/PITR, restore terisolasi, approval |

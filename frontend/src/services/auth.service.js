@@ -1,5 +1,4 @@
 import { authClient } from '../lib/auth-client';
-import { API_BASE_URL } from '../lib/api-url';
 import { clearOfflineStorage } from '../lib/offline-storage';
 
 export const authService = {
@@ -41,31 +40,6 @@ export const authService = {
             return result;
         } catch (error) {
             console.error('Email sign in failed:', error);
-            throw error;
-        }
-    },
-
-    // DEV ONLY: Direct login for testing — guarded so it never runs in production builds
-    async devLogin(email) {
-        if (import.meta.env.PROD) {
-            throw new Error('Dev login is not available in production');
-        }
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/dev/dev-login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'include',
-                body: JSON.stringify({ email }),
-            });
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error || 'Login failed');
-            }
-            return data;
-        } catch (error) {
-            console.error('Dev login failed:', error);
             throw error;
         }
     },

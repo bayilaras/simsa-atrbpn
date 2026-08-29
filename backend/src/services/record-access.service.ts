@@ -126,19 +126,18 @@ async function findAccessMetadata(
         const [record] = await db
             .select({
                 unitKerjaId: suratKeluar.unitKerjaId,
+                classification: suratKeluar.klasifikasiKeamanan,
                 isDeleted: suratKeluar.isDeleted,
                 isArchived: suratKeluar.isArchived,
             })
             .from(suratKeluar)
             .where(eq(suratKeluar.id, entityId))
             .limit(1);
-        // The legacy surat_keluar table has no security-classification column.
-        // Do not silently treat that missing metadata as public: restrict its
-        // bitstream like a Terbatas record until the registrar classifies it in
-        // the controlled archive model.
+        // Preserve the fail-closed policy for pre-0029 rows. New records carry
+        // an explicit value; legacy NULL remains Terbatas until reclassified.
         return record ? {
             unitKerjaId: record.unitKerjaId,
-            classification: 'terbatas',
+            classification: record.classification ?? 'terbatas',
             readable: record.isDeleted !== true,
             mutable: record.isDeleted !== true && record.isArchived !== true,
         } : null;

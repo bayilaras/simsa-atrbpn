@@ -213,6 +213,44 @@ describe('purpose-bound record access', () => {
         expect(mocks.chain.select).toHaveBeenCalledTimes(1);
     });
 
+    it('allows a newly classified ordinary outgoing record without a grant', async () => {
+        mocks.selectQueue.push([{
+            unitKerjaId: 'ditjen',
+            classification: 'biasa',
+            isDeleted: false,
+            isArchived: false,
+        }]);
+
+        const result = await recordAccessService.check(
+            user,
+            'surat_keluar',
+            '550e8400-e29b-41d4-a716-446655440010',
+        );
+
+        expect(result.allowed).toBe(true);
+        expect(result.mutable).toBe(true);
+        expect(mocks.chain.select).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a legacy outgoing record without classification grant-protected', async () => {
+        mocks.selectQueue.push([{
+            unitKerjaId: 'ditjen',
+            classification: null,
+            isDeleted: false,
+            isArchived: false,
+        }], []);
+
+        const result = await recordAccessService.check(
+            user,
+            'surat_keluar',
+            '550e8400-e29b-41d4-a716-446655440010',
+        );
+
+        expect(result.allowed).toBe(false);
+        expect(result.mutable).toBe(false);
+        expect(result.classification).toBe('terbatas');
+    });
+
     it('atomically refuses to mark a revoked or expired grant as used', async () => {
         mocks.updateQueue.push([]);
         await expect(recordAccessService.markGrantUsed('550e8400-e29b-41d4-a716-446655440020'))

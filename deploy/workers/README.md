@@ -25,12 +25,22 @@ and starts:
 - Load `.env` values from an approved secret manager or a host file readable
   only by the service account. Container environment variables are visible to
   Docker administrators.
-- The Node 24 and ClamAV base images are pinned by digest. Review release notes,
+- Repository Node tooling is pinned to Node 24 by `.nvmrc`, `.node-version`, and
+  package metadata. The Node 24 and ClamAV base images are pinned by digest. Review release notes,
   refresh the digest deliberately, and repeat clean/EICAR/restart tests before
   upgrading them.
 
-For production, build and push the worker image from the exact released commit,
-then set `SIMSA_WORKER_IMAGE` to an immutable registry tag plus digest. The base
+For production, run the GitHub Actions workflow **Publish Immutable Worker Image
+(No Deployment)** from the current default-branch head, or create a controlled
+`worker-v*` tag whose commit is already on that branch. The workflow first tests
+all worker entrypoints, then publishes
+`ghcr.io/<owner>/<repository>-worker:sha-<commit>` and records the immutable
+`name@sha256:<digest>` reference in its job summary. BuildKit provenance, an SPDX
+SBOM attestation, and GitHub build provenance are attached to that digest. The
+workflow deliberately has no deployment job and changes no runtime environment.
+
+Only the digest reference from a successful workflow is valid for production;
+the commit tag is for discovery and must not be deployed by itself. The base
 `compose.yml` never builds source and always pulls that artifact. Local
 validation adds `compose.local.yml`, which builds the `simsa-worker:local` tag.
 Do not combine an image digest with `--build`.
@@ -40,23 +50,35 @@ Do not combine an image digest with `--build`.
 1. Copy `.env.example` to `.env` and replace every required value.
 2. Make sure the database and private Blob token point to the same environment
    as the API.
-3. Apply database migrations through `0027_canonical_user_unit_mandates`.
+3. Apply every committed database migration with `npm run db:migrate`.
 4. For local/staging source validation, run:
 
    ```text
    docker compose --env-file .env -f compose.yml -f compose.local.yml up -d --build clamav malware-worker
    ```
 
-   For production, set `SIMSA_WORKER_IMAGE` to the released digest and run only
-   the base file so the host cannot rebuild a different artifact:
+   For production, authenticate Docker to GHCR (when the package is private),
+   put the released digest in the host `.env`, and export the exact same value in
+   the deployment shell. The export makes Compose use the reference that the
+   preflight validated even if a stale `.env` is accidentally present. Run the
+   preflight before every pull or rollout; it rejects tags, implicit registries,
+   malformed digests, unsupported Compose versions, and inaccessible manifests:
 
    ```text
+   export SIMSA_WORKER_IMAGE='ghcr.io/owner/repository-worker@sha256:<64-lowercase-hex>'
+   sh ./preflight-worker-image.sh
+   docker compose --env-file .env -f compose.yml config --quiet
    docker compose --env-file .env -f compose.yml pull clamav malware-worker
    docker compose --env-file .env -f compose.yml up -d --no-build clamav malware-worker
    ```
 
 5. Confirm `/ready` reports a fresh `malware-scan` heartbeat, then upload a clean sample and EICAR test
    sample, and verify that only the clean object leaves quarantine.
+
+The `ClamAV Clean, EICAR & Restart Smoke` CI job also exercises the application's
+real `INSTREAM` client against the pinned Linux ClamAV image, verifies clean and
+EICAR verdicts, restarts the container, and repeats both scans. A passing unit
+suite or Docker image build alone is not treated as antivirus proof.
 
 The first ClamAV start may remain in its health-check start period for up to six
 minutes while signatures initialize. Inspect `docker compose ps` and bounded

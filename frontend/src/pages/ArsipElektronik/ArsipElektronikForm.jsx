@@ -125,7 +125,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                             <div className="space-y-2 rounded-lg border p-3">
                                 <Label>Bitstream/lampiran terkendali *</Label>
                                 <Select
-                                    value={form.fileAttachmentId || undefined}
+                                    value={form.fileAttachmentId || ''}
                                     onValueChange={(value) => setForm(current => ({ ...current, fileAttachmentId: value }))}
                                 >
                                     <SelectTrigger>

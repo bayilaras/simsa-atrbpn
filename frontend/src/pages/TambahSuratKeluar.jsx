@@ -152,6 +152,7 @@ export default function TambahSuratKeluar() {
         klasifikasiFasilitatifKode: '',
         klasifikasiSubstantif: '',
         klasifikasiSubstantifKode: '',
+        klasifikasiKeamanan: 'biasa',
         linkDokumen: '',
         balasanUntuk: null,
     });
@@ -194,6 +195,8 @@ export default function TambahSuratKeluar() {
                 klasifikasiFasilitatifKode: data.klasifikasiFasilitatifKode || '',
                 klasifikasiSubstantif: data.klasifikasiSubstantif || '',
                 klasifikasiSubstantifKode: data.klasifikasiSubstantifKode || '',
+                // Historical rows without explicit metadata remain fail-closed.
+                klasifikasiKeamanan: data.klasifikasiKeamanan || 'terbatas',
                 linkDokumen: data.linkDokumen || '',
                 balasanUntuk: data.balasanUntuk || null,
             });
@@ -765,27 +768,52 @@ export default function TambahSuratKeluar() {
                             step={4}
                         />
 
-                        <div className="space-y-2">
-                            <Label htmlFor="klasifikasi-surat-keluar" className="text-sm font-medium flex items-center gap-2">
-                                <FolderOpen className="h-4 w-4 text-muted-foreground" />
-                                Klasifikasi
-                            </Label>
-                            <KlasifikasiPicker
-                                id="klasifikasi-surat-keluar"
-                                value={formData.klasifikasiFasilitatifKode}
-                                onChange={(kode, klasifikasi) => {
-                                    setFormData(prev => ({
-                                        ...prev,
-                                        klasifikasiFasilitatifKode: kode,
-                                        klasifikasiFasilitatif: klasifikasi?.jenis || '',
-                                    }));
-                                    setError(null);
-                                }}
-                                label="Klik untuk memilih klasifikasi arsip..."
-                            />
-                            <p className="text-xs text-muted-foreground">
-                                Pilih klasifikasi arsip Fasilitatif atau Substantif sesuai peraturan kearsipan
-                            </p>
+                        <div className="grid gap-5 md:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="klasifikasi-surat-keluar" className="text-sm font-medium flex items-center gap-2">
+                                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                                    Klasifikasi
+                                </Label>
+                                <KlasifikasiPicker
+                                    id="klasifikasi-surat-keluar"
+                                    value={formData.klasifikasiFasilitatifKode}
+                                    onChange={(kode, klasifikasi) => {
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            klasifikasiFasilitatifKode: kode,
+                                            klasifikasiFasilitatif: klasifikasi?.jenis || '',
+                                        }));
+                                        setError(null);
+                                    }}
+                                    label="Klik untuk memilih klasifikasi arsip..."
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Pilih klasifikasi arsip Fasilitatif atau Substantif sesuai peraturan kearsipan
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="klasifikasi-keamanan-surat-keluar" className="text-sm font-medium">
+                                    Klasifikasi Keamanan <span className="text-destructive">*</span>
+                                </Label>
+                                <Select
+                                    value={formData.klasifikasiKeamanan}
+                                    onValueChange={(value) => handleChange('klasifikasiKeamanan', value)}
+                                >
+                                    <SelectTrigger id="klasifikasi-keamanan-surat-keluar" aria-label="Klasifikasi keamanan">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="biasa">Biasa / Terbuka</SelectItem>
+                                        <SelectItem value="terbatas">Terbatas</SelectItem>
+                                        <SelectItem value="rahasia">Rahasia</SelectItem>
+                                        <SelectItem value="sangat_rahasia">Sangat Rahasia</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    Rekod Terbatas atau lebih tinggi memerlukan persetujuan akses berjangka sebelum dapat ditayangkan atau dikelola.
+                                </p>
+                            </div>
                         </div>
                     </CardContent>
                 </Card>

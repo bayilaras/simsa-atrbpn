@@ -10,6 +10,109 @@ import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('ReadinessService');
 
+// Drizzle records the journal timestamp of the latest applied migration in
+// drizzle.__drizzle_migrations. 0029 adds the explicit outgoing-record security
+// classification consumed by list, detail, approval, and access-control flows.
+const MINIMUM_DATABASE_MIGRATION_CREATED_AT = 1_787_972_400_000;
+
+const DATABASE_SCHEMA_READINESS_SQL = `
+    WITH required_columns(table_name, column_name) AS (
+        VALUES
+            ('users', 'role'),
+            ('users', 'unit_kerja_id'),
+            ('users', 'is_active'),
+            ('users', 'jabatan'),
+            ('users', 'nip'),
+            ('surat_keluar', 'klasifikasi_keamanan'),
+            ('accounts', 'account_id'),
+            ('accounts', 'provider_id'),
+            ('accounts', 'password'),
+            ('sessions', 'token'),
+            ('sessions', 'expires_at'),
+            ('file_attachments', 'file_url'),
+            ('file_attachments', 'size_bytes'),
+            ('file_attachments', 'sha256'),
+            ('file_attachments', 'storage_access'),
+            ('file_attachments', 'uploaded_by'),
+            ('file_attachments', 'integrity_status'),
+            ('file_attachments', 'malware_scan_status'),
+            ('client_blob_uploads', 'blob_url'),
+            ('client_blob_uploads', 'purpose'),
+            ('client_blob_uploads', 'uploaded_by'),
+            ('client_blob_uploads', 'status'),
+            ('client_blob_uploads', 'expires_at'),
+            ('client_blob_uploads', 'claimed_at'),
+            ('client_blob_uploads', 'claimed_entity_type'),
+            ('client_blob_uploads', 'claimed_entity_id'),
+            ('autentikasi', 'file_lampiran'),
+            ('autentikasi', 'file_lampiran_sha256'),
+            ('autentikasi', 'file_lampiran_size_bytes'),
+            ('bulk_upload_batches', 'created_by'),
+            ('bulk_upload_batches', 'unit_kerja_id'),
+            ('bulk_upload_batches', 'status'),
+            ('bulk_upload_batches', 'expires_at'),
+            ('bulk_upload_items', 'batch_id'),
+            ('bulk_upload_items', 'blob_url'),
+            ('bulk_upload_items', 'sha256'),
+            ('bulk_upload_items', 'status'),
+            ('operational_heartbeats', 'worker'),
+            ('operational_heartbeats', 'instance_id'),
+            ('operational_heartbeats', 'status'),
+            ('operational_heartbeats', 'last_seen_at'),
+            ('ocr_capacity_control', 'singleton_id'),
+            ('ocr_capacity_control', 'max_concurrency'),
+            ('ocr_capacity_control', 'lease_duration_seconds'),
+            ('ocr_capacity_control', 'retry_after_seconds'),
+            ('ocr_processing_leases', 'token'),
+            ('ocr_processing_leases', 'item_id'),
+            ('ocr_processing_leases', 'lease_expires_at')
+    ),
+    migration_state AS (
+        SELECT COALESCE(MAX(created_at), 0::bigint) >= $1::bigint AS ready
+        FROM drizzle.__drizzle_migrations
+    ),
+    column_state AS (
+        SELECT NOT EXISTS (
+            SELECT 1
+            FROM required_columns AS required
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM information_schema.columns AS actual
+                WHERE actual.table_schema = 'public'
+                  AND actual.table_name = required.table_name
+                  AND actual.column_name = required.column_name
+            )
+        ) AS ready
+    ),
+    required_constraints(table_name, constraint_name) AS (
+        VALUES
+            ('users', 'users_role_unit_mandate_check'),
+            ('surat_keluar', 'surat_keluar_klasifikasi_keamanan_check')
+    ),
+    constraint_state AS (
+        SELECT NOT EXISTS (
+            SELECT 1
+            FROM required_constraints AS required
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint AS constraint_record
+                INNER JOIN pg_class AS relation
+                    ON relation.oid = constraint_record.conrelid
+                INNER JOIN pg_namespace AS namespace
+                    ON namespace.oid = relation.relnamespace
+                WHERE namespace.nspname = 'public'
+                  AND relation.relname = required.table_name
+                  AND constraint_record.conname = required.constraint_name
+                  AND constraint_record.convalidated
+            )
+        ) AS ready
+    )
+    SELECT migration_state.ready
+        AND column_state.ready
+        AND constraint_state.ready AS schema_ready
+    FROM migration_state, column_state, constraint_state
+`;
+
 type RuntimeState = 'ready' | 'not_ready' | 'disabled';
 
 export interface HeartbeatRow {
@@ -58,9 +161,16 @@ async function withAbortableDatabaseClient<T>(
 
 const defaultDependencies: ReadinessDependencies = {
     async probeDatabase(signal) {
-        await withAbortableDatabaseClient(signal, async (client) => {
-            await client.query('SELECT 1 AS ready');
+        const schemaReady = await withAbortableDatabaseClient(signal, async (client) => {
+            const result = await client.query<{ schema_ready: boolean }>(
+                DATABASE_SCHEMA_READINESS_SQL,
+                [MINIMUM_DATABASE_MIGRATION_CREATED_AT],
+            );
+            return result.rows[0]?.schema_ready === true;
         });
+        // Keep the reason private: timedProbe maps this to the stable public
+        // probe_failed code while the server log retains the diagnostic.
+        if (!schemaReady) throw new Error('database schema readiness contract failed');
     },
     async probeBlob(signal) {
         await blobStorageService.listFiles('__simsa_readiness_probe__/', { abortSignal: signal });

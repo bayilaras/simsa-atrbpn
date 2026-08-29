@@ -3,7 +3,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { getTableColumns, getTableName, is } from 'drizzle-orm';
+import { PgTable } from 'drizzle-orm/pg-core';
 import { afterEach, describe, expect, it } from 'vitest';
+import * as schema from '../db/schema/index.js';
 
 type JournalEntry = {
     idx: number;
@@ -54,6 +57,32 @@ async function repairedTables(database: PGlite): Promise<string[]> {
     return result.rows.map(({ table_name }) => table_name);
 }
 
+function expectedSchemaColumns(): Array<{ tableName: string; columnName: string }> {
+    const expected = new Map<string, Set<string>>();
+
+    for (const value of Object.values(schema)) {
+        if (!is(value, PgTable)) continue;
+
+        const table = value as PgTable;
+        const tableName = getTableName(table);
+        const columns = expected.get(tableName) ?? new Set<string>();
+        for (const column of Object.values(getTableColumns(table))) {
+            columns.add(column.name);
+        }
+        expected.set(tableName, columns);
+    }
+
+    return [...expected.entries()]
+        .flatMap(([tableName, columns]) =>
+            [...columns].map((columnName) => ({ tableName, columnName })),
+        )
+        .sort((left, right) =>
+            `${left.tableName}.${left.columnName}`.localeCompare(
+                `${right.tableName}.${right.columnName}`,
+            ),
+        );
+}
+
 afterEach(async () => {
     await Promise.all(openDatabases.splice(0).map((database) => database.close()));
 });
@@ -75,8 +104,36 @@ describe('PostgreSQL migration chain', () => {
         const database = await createDatabase();
 
         for (const entry of journal.entries) {
+            if (entry.tag === '0029_outgoing_security_classification') {
+                // This row represents data created by a pre-0029 deployment.
+                // The migration must not silently downgrade it to Biasa.
+                await database.exec(`
+                    INSERT INTO unit_kerja (id, name)
+                    VALUES ('unit-legacy-outgoing-security', 'Legacy Outgoing Security');
+                    INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun)
+                    VALUES ('unit-legacy-outgoing-security', 1, 2026);
+                `);
+            }
             await applyMigration(database, entry);
         }
+
+        const actualColumns = await database.query<{
+            table_name: string;
+            column_name: string;
+        }>(`
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+        `);
+        const actualColumnNames = new Set(
+            actualColumns.rows.map(({ table_name, column_name }) =>
+                `${table_name}.${column_name}`,
+            ),
+        );
+        const missingSchemaColumns = expectedSchemaColumns()
+            .map(({ tableName, columnName }) => `${tableName}.${columnName}`)
+            .filter((name) => !actualColumnNames.has(name));
+        expect(missingSchemaColumns).toEqual([]);
 
         await expect(repairedTables(database)).resolves.toEqual([
             'arsip_elektronik',
@@ -93,6 +150,13 @@ describe('PostgreSQL migration chain', () => {
         `);
         expect(disposisi.rows).toEqual([{ udt_name: '_text' }]);
 
+        const legacyOutgoing = await database.query<{ klasifikasi_keamanan: string | null }>(`
+            SELECT klasifikasi_keamanan
+            FROM surat_keluar
+            WHERE unit_kerja_id = 'unit-legacy-outgoing-security'
+        `);
+        expect(legacyOutgoing.rows).toEqual([{ klasifikasi_keamanan: null }]);
+
         await database.exec(`
             INSERT INTO unit_kerja (id, name) VALUES ('unit-numbering-unique', 'Unit Numbering');
             INSERT INTO surat_masuk (unit_kerja_id, no_urut, tahun)
@@ -108,6 +172,25 @@ describe('PostgreSQL migration chain', () => {
             INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun)
             VALUES ('unit-numbering-unique', 1, 2026)
         `)).rejects.toThrow(/surat_keluar_unit_year_sequence_uidx|duplicate key/i);
+        const newOutgoing = await database.query<{ klasifikasi_keamanan: string | null }>(`
+            SELECT klasifikasi_keamanan
+            FROM surat_keluar
+            WHERE unit_kerja_id = 'unit-numbering-unique'
+        `);
+        expect(newOutgoing.rows).toEqual([{ klasifikasi_keamanan: 'biasa' }]);
+        await expect(database.exec(`
+            INSERT INTO surat_keluar (
+                unit_kerja_id,
+                no_urut,
+                tahun,
+                klasifikasi_keamanan
+            ) VALUES (
+                'unit-numbering-unique',
+                2,
+                2026,
+                'internal-khusus'
+            )
+        `)).rejects.toThrow(/surat_keluar_klasifikasi_keamanan_check|check constraint/i);
         await expect(database.exec(`
             INSERT INTO surat_templates (unit_kerja_id, masuk_format, keluar_format)
             VALUES (

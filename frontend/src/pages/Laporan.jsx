@@ -14,6 +14,7 @@ import { reportService } from '@/services/report.service';
 import { PageHeader } from '@/components/PageHeader';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
+import { canExportReports } from '@/lib/provisioning-access';
 import { FileSpreadsheet, FileText, Download, BarChart3, Mail, Send, Archive, BookOpen, TrendingUp, FileImage, Film, FileAudio, Loader2 } from 'lucide-react';
 import {
     BarChart,
@@ -33,6 +34,7 @@ export default function Laporan() {
     const { toast } = useToast();
     const unitScope = useRequiredUnitKerjaScope(user);
     const unitKerjaId = unitScope.unitKerjaId;
+    const canExport = canExportReports(user?.role);
 
     const [activeTab, setActiveTab] = useState('summary');
     const [loading, setLoading] = useState(false);
@@ -428,7 +430,7 @@ export default function Laporan() {
                                 Total: <span className="font-bold text-foreground">{suratMasukData?.pagination?.total || 0}</span> surat
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        {canExport && <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -449,7 +451,7 @@ export default function Laporan() {
                                 <FileText className="h-4 w-4 mr-2" />
                                 PDF
                             </Button>
-                        </div>
+                        </div>}
                     </div>
                     <Card className="border-border/60 shadow-sm overflow-hidden">
                         <Table responsive>
@@ -507,7 +509,7 @@ export default function Laporan() {
                                 Total: <span className="font-bold text-foreground">{suratKeluarData?.pagination?.total || 0}</span> surat
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        {canExport && <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -528,7 +530,7 @@ export default function Laporan() {
                                 <FileText className="h-4 w-4 mr-2" />
                                 PDF
                             </Button>
-                        </div>
+                        </div>}
                     </div>
                     <Card className="border-border/60 shadow-sm overflow-hidden">
                         <Table responsive>
@@ -617,7 +619,7 @@ export default function Laporan() {
                                 </Select>
                             </div>
                         </div>
-                        <div className="flex gap-2 w-full md:w-auto">
+                        {canExport && <div className="flex gap-2 w-full md:w-auto">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -638,7 +640,7 @@ export default function Laporan() {
                                 <FileText className="h-4 w-4 mr-2" />
                                 PDF
                             </Button>
-                        </div>
+                        </div>}
                     </div>
 
                     {arsipData?.stats?.byMediaType && (

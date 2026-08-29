@@ -3,11 +3,25 @@ import { deploymentEnv, routes } from '@vercel/config/v1'
 
 const PRODUCTION_BACKEND_ORIGIN = 'https://simsa-backend.vercel.app'
 const PROTECTION_BYPASS_ENV = 'BACKEND_VERCEL_PROTECTION_BYPASS'
+const DEPLOYMENT_BUILD = Object.freeze({
+  framework: 'vite',
+  installCommand: 'npm ci',
+  buildCommand: 'npm run build',
+  outputDirectory: 'dist',
+})
 const PRODUCTION_BACKEND_HOSTS = new Set([
   'simsa-backend.vercel.app',
   'simsa-backend-bayilaras-projects.vercel.app',
 ])
 const PRODUCTION_GIT_BRANCHES = new Set(['main', 'master', 'production'])
+const KNOWN_DEPLOYMENT_ENVIRONMENTS = new Set(['production', 'preview', 'development'])
+const PROTECTED_SPA_FALLBACK = Object.freeze({
+  // Low-level routes run before filesystem lookup. Exclude the rewrite
+  // destination and every static path emitted/copied by Vite/PWA so assets are
+  // served normally and /index.html cannot loop back through this rule.
+  src: '^/(?!index\\.html$|assets(?:/|$)|icons(?:/|$)|logo-simsa\\.png$|manifest\\.json$|vite\\.svg$|favicon\\.ico$|robots\\.txt$|registerSW\\.js$|sw\\.js$|workbox-[^/]+\\.js$)(.*)$',
+  dest: '/index.html',
+})
 
 function normalizeProxyOrigin(value, deploymentEnvironment) {
   const configuredOrigin = value.trim()
@@ -46,7 +60,7 @@ function vercelBranchSlug(gitCommitRef) {
     .replace(/^-+|-+$/g, '')
 }
 
-function isUnsafePreviewBackendTarget(origin, gitCommitRef) {
+function isUnsafeNonProductionBackendTarget(origin, gitCommitRef) {
   const hostname = new URL(origin).hostname
   if (PRODUCTION_BACKEND_HOSTS.has(hostname)) return true
 
@@ -83,22 +97,72 @@ function proxyRewrite(source, destination, useProtectionBypass) {
   })
 }
 
+function unprovisionedPreviewConfig() {
+  const noStoreHeaders = {
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Robots-Tag': 'noindex, nofollow',
+  }
+
+  return {
+    ...DEPLOYMENT_BUILD,
+    buildCommand: 'node scripts/build-preview-unavailable.mjs',
+    routes: [
+      {
+        src: '^/sw\\.js$',
+        headers: {
+          ...noStoreHeaders,
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Service-Worker-Allowed': '/',
+        },
+        continue: true,
+      },
+      {
+        src: '^/(?:api(?:/.*)?|health|ready|uploads(?:/.*)?)$',
+        dest: '/preview-unavailable.json',
+        status: 503,
+        headers: {
+          ...noStoreHeaders,
+          'Content-Type': 'application/json; charset=utf-8',
+          'Retry-After': '300',
+        },
+      },
+      {
+        // Exclude both rewrite destinations so Vercel can resolve the static
+        // file instead of feeding it through this catch-all again.
+        src: '^/(?!preview-unavailable\\.(?:html|json)$|sw\\.js$)(.*)$',
+        dest: '/preview-unavailable.html',
+        status: 503,
+        headers: {
+          ...noStoreHeaders,
+          'Content-Type': 'text/html; charset=utf-8',
+          'Retry-After': '300',
+        },
+      },
+    ],
+  }
+}
+
 export function createVercelConfig({
   deploymentEnvironment = process.env.VERCEL_ENV?.trim() ?? '',
   proxyOrigin = process.env.API_PROXY_ORIGIN?.trim() ?? '',
   gitCommitRef = process.env.VERCEL_GIT_COMMIT_REF?.trim() ?? '',
   protectionBypassConfigured = Boolean(process.env[PROTECTION_BYPASS_ENV]?.trim()),
 } = {}) {
-  if (deploymentEnvironment === 'preview' && !proxyOrigin) {
-    throw new Error('Preview deployment requires an isolated API_PROXY_ORIGIN; refusing to proxy to the production API.')
+  if (!KNOWN_DEPLOYMENT_ENVIRONMENTS.has(deploymentEnvironment)) {
+    return unprovisionedPreviewConfig()
+  }
+
+  if (deploymentEnvironment !== 'production' && !proxyOrigin) {
+    return unprovisionedPreviewConfig()
   }
 
   const apiOrigin = proxyOrigin
     ? normalizeProxyOrigin(proxyOrigin, deploymentEnvironment)
     : PRODUCTION_BACKEND_ORIGIN
 
-  if (deploymentEnvironment === 'preview' && isUnsafePreviewBackendTarget(apiOrigin, gitCommitRef)) {
-    throw new Error('Preview deployment cannot proxy to the production SIMSA backend.')
+  if (deploymentEnvironment !== 'production' && isUnsafeNonProductionBackendTarget(apiOrigin, gitCommitRef)) {
+    throw new Error('Non-Production deployment cannot proxy to the production SIMSA backend.')
   }
 
   const useProtectionBypass = deploymentEnvironment === 'preview'
@@ -111,24 +175,26 @@ export function createVercelConfig({
   const proxyRules = [
     proxyRewrite('/api/:path*', `${apiOrigin}/api/:path*`, useProtectionBypass),
     proxyRewrite('/health', `${apiOrigin}/health`, useProtectionBypass),
+    proxyRewrite('/ready', `${apiOrigin}/ready`, useProtectionBypass),
     proxyRewrite('/uploads/:path*', `${apiOrigin}/uploads/:path*`, useProtectionBypass),
   ]
   const spaFallback = routes.rewrite('/(.*)', '/index.html')
 
   if (useProtectionBypass) {
-    // Header transforms require the low-level routes format. Preserve Vercel's
-    // static-file lookup phase before the SPA catch-all so /assets is not
-    // rewritten to index.html.
+    // Header transforms require the low-level routes format. The fallback's
+    // negative lookahead leaves Vite/PWA asset paths to normal filesystem
+    // serving instead of rewriting them to index.html.
     return {
+      ...DEPLOYMENT_BUILD,
       routes: [
         ...proxyRules,
-        { handle: 'filesystem' },
-        spaFallback,
+        PROTECTED_SPA_FALLBACK,
       ],
     }
   }
 
   return {
+    ...DEPLOYMENT_BUILD,
     rewrites: [...proxyRules, spaFallback],
   }
 }

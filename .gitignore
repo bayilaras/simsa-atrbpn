@@ -35,6 +35,7 @@ server*.log
 debug-seed.log
 
 # Test output
+output/
 test-output*.txt
 tsc_errors*.txt
 reproduction_error*.txt

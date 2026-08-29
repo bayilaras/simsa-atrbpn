@@ -253,6 +253,7 @@ export default function SuratMasuk() {
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             });
+            throw error;
         }
     };
 
