@@ -8,6 +8,21 @@ const log = createLogger('SupervisionRoutes');
 
 const router = Router();
 
+const MAX_ACTIVITY_DAYS = 365;
+const MAX_USER_ACTIVITY_LIMIT = 100;
+const MAX_COMPLIANCE_ISSUES_LIMIT = 200;
+
+function boundedPositiveInteger(value: unknown, fallback: number, maximum: number): number {
+    if (typeof value !== 'string') return fallback;
+
+    const normalized = value.trim();
+    if (!/^-?\d+$/.test(normalized)) return fallback;
+
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return normalized.startsWith('-') ? 1 : maximum;
+    return Math.min(maximum, Math.max(1, parsed));
+}
+
 // These aggregates currently contain cross-unit user and compliance activity.
 // Restrict them until every underlying event has an enforceable unit dimension.
 router.use(requireAuth);
@@ -15,7 +30,7 @@ router.use(roleMiddleware(['super_admin']));
 
 router.get('/stats/activity', async (req, res) => {
     try {
-        const days = req.query.days ? parseInt(req.query.days as string) : 7;
+        const days = boundedPositiveInteger(req.query.days, 7, MAX_ACTIVITY_DAYS);
         const stats = await supervisionService.getActivityStats(days);
         res.json(stats);
     } catch (error) {
@@ -26,7 +41,7 @@ router.get('/stats/activity', async (req, res) => {
 
 router.get('/stats/users', async (req, res) => {
     try {
-        const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
+        const limit = boundedPositiveInteger(req.query.limit, 5, MAX_USER_ACTIVITY_LIMIT);
         const stats = await supervisionService.getUserActivityStats(limit);
         res.json(stats);
     } catch (error) {
@@ -47,8 +62,12 @@ router.get('/stats/compliance', async (req, res) => {
 
 router.get('/stats/compliance/issues', async (req, res) => {
     try {
-        const limit = req.query.limit ? Number.parseInt(req.query.limit as string, 10) : 50;
-        const data = await supervisionService.getComplianceIssues(Number.isFinite(limit) ? limit : 50);
+        const limit = boundedPositiveInteger(
+            req.query.limit,
+            50,
+            MAX_COMPLIANCE_ISSUES_LIMIT,
+        );
+        const data = await supervisionService.getComplianceIssues(limit);
         res.json({ data, total: data.length });
     } catch (error) {
         log.error({ err: error }, 'Error fetching compliance issue queue:');

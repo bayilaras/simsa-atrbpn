@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../config/database';
@@ -185,7 +186,8 @@ export async function seedKlasifikasiArsip() {
   );
 }
 
-const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = Boolean(process.argv[1])
+  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (isMain) {
   seedKlasifikasiArsip()
     .then(() => process.exit(0))

@@ -1,5 +1,6 @@
-import { db } from '../config/database.js';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { db } from '../config/database.js';
 import {
     JRA_RULE_SET_2020_ID,
     KLASIFIKASI_RULE_SET_2018_ID,
@@ -88,7 +89,8 @@ export async function seedKlasifikasiJraMapping() {
 }
 
 // ESM-compatible entry point
-const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = Boolean(process.argv[1])
+    && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (isMain) {
     seedKlasifikasiJraMapping()
         .then(() => process.exit(0))
