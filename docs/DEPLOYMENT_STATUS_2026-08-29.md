@@ -36,8 +36,8 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
 - CI telah diselaraskan ke Node 24, lint frontend menjadi blocking, image worker
   benar-benar dibangun/diperiksa, job ClamAV menjalankan clean/EICAR/restart,
   dan job backend menjalankan migrasi, seed paralel idempoten, serta concurrency
-  test pada PostgreSQL 18 nyata. Seluruh job tersebut lulus pada commit
-  implementasi `d88b176`.
+  test pada PostgreSQL 18 nyata. Seluruh job tersebut lulus pada kandidat
+  hardening `fa8b137` melalui run push dan synthetic merge PR.
 - Kandidat workflow backup memakai koneksi Neon langsung dengan TLS ketat,
   snapshot sumber tunggal, dump yang langsung dienkripsi, artifact beranggotakan
   file terenkripsi saja, serta job runner baru yang mengunduh, memulihkan, dan
@@ -51,37 +51,38 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
 
 ## Bukti remote branch
 
-- [Draft PR #2](https://github.com/bayilaras/simsa-atrbpn/pull/2) menargetkan
-  `main`. Branch protection `main` kini strict/up-to-date, berlaku untuk admin,
-  memerlukan satu approval independen, penyelesaian percakapan, approval setelah
-  push terakhir, dan lima required checks. Force-push serta deletion dilarang.
+- [PR #2](https://github.com/bayilaras/simsa-atrbpn/pull/2) telah keluar dari
+  status draft dan siap untuk review independen dengan target `main`. Branch
+  protection `main` strict/up-to-date, berlaku untuk admin, memerlukan satu
+  approval independen, penyelesaian percakapan, approval setelah push terakhir,
+  dan lima required checks. Force-push serta deletion dilarang.
 - Environment GitHub `production-backup` dibatasi ke protected branch dan dua
   variable non-secret telah mengikat workflow ke direct host serta nama database
   Production yang diaudit. Nilainya sengaja tidak dicatat di repository.
-- Commit `d88b176` pada `codex/full-integration` lulus seluruh
-  [SIMSA CI](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33242350291):
+- Commit `fa8b137` pada `codex/full-integration` lulus seluruh
+  [SIMSA CI push](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33255150798):
   lint/typecheck/build, audit dependency, 130 test frontend, 1.153 test backend,
   build/inspect image worker, validasi Compose/preflight digest, migrasi
   PostgreSQL 18, seed paralel idempoten, concurrency lock, dan ClamAV
   clean/EICAR/restart.
-- [Preview backend](https://simsa-backend-6ecbh83y8-bayilaras-projects.vercel.app)
+- [Preview backend](https://simsa-backend-fq89wrew0-bayilaras-projects.vercel.app)
   berstatus `Ready`. Pemeriksaan dengan bypass Deployment Protection yang sah
   membuktikan `/health` mengembalikan `200`/`applicationReady:false`, sedangkan
   `/ready` dan route bisnis mengembalikan `503 preview_not_provisioned`, seluruhnya
   `no-store`. Entrypoint tidak mengimpor aplikasi atau membaca kredensial
   Production generik sampai marker dan seluruh `PREVIEW_*` lengkap.
-- [Preview frontend](https://simsa-frontend-3ga82wmb8-bayilaras-projects.vercel.app)
-  merupakan bukti fail-closed awal sebelum proxy terisolasi tersedia. Preview
-  frontend terbaru `simsa-frontend-hhlgb7s8i-bayilaras-projects.vercel.app`
-  telah memakai `API_PROXY_ORIGIN` branch alias backend dan Automation Bypass
-  yang hanya ada pada environment Preview frontend. Melalui origin frontend,
-  `/health` mengembalikan `200` dan `/ready` mengembalikan fail-closed `503
-  preview_not_provisioned` tanpa redirect SSO. `VITE_API_URL` tetap kosong.
-- [Preview dokumentasi](https://simsa-atrbpn-4li12c05a-bayilaras-projects.vercel.app)
-  berstatus `Ready` dan mengembalikan halaman Docusaurus `200`. Ketiga project
-  Vercel menggunakan Node `24.x`; backend Lambda memakai `nodejs24.x`.
-- Synthetic merge PR pada SHA `052d8ed` lulus kelima job required di
-  [run 33250326028](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33250326028).
+- [Preview frontend](https://simsa-frontend-8tywry4hf-bayilaras-projects.vercel.app)
+  telah memakai `API_PROXY_ORIGIN` branch alias backend yang sesuai commit dan
+  Automation Bypass yang hanya ada pada environment Preview frontend. Melalui
+  origin frontend, `/health` mengembalikan `200` dan `/ready` mengembalikan
+  fail-closed `503 preview_not_provisioned` tanpa redirect SSO dari backend.
+  `VITE_API_URL` tetap kosong.
+- [Preview dokumentasi](https://simsa-atrbpn-f6mbjvh3g-bayilaras-projects.vercel.app)
+  berstatus `Ready`. Ketiga project Vercel untuk commit `fa8b137` berhasil
+  dibangun; runtime tetap memakai Node `24.x` dan backend Lambda `nodejs24.x`.
+- Synthetic merge PR pada SHA `b17629f` lulus kelima job required di
+  [run 33255152073](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33255152073).
+  Log checkout mengonfirmasi `refs/pull/2/merge` dan SHA tersebut.
   Bukti ini adalah pre-merge; checks pada commit merge aktual tetap wajib
   diulang sebelum promosi.
 
