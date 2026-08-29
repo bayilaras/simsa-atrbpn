@@ -62,15 +62,20 @@ SQL `0004` dan `0005` juga memuat repair idempotent untuk tiga tabel yang dahulu
 
 ## Bukti verifikasi
 
-- Backend: 98 berkas test, 1126 test lulus.
-- Frontend: 21 berkas test, 97 test lulus.
+- Backend: 98 berkas test, 1128 test lulus.
+- Frontend: 22 berkas test, 107 test lulus.
 - TypeScript backend: lulus.
 - Build produksi backend: lulus.
 - Build produksi frontend/PWA: lulus.
 - Build produksi Docusaurus: lulus tanpa broken-link warning.
 - Pemeriksaan konfigurasi Drizzle: lulus.
-- Migration smoke test PostgreSQL: fresh `0000` sampai `0027`, partial-resume dari `0005`, deduplikasi legacy notifikasi, rekonsiliasi integritas surat–arsip, dan backfill mandat unit pengguna lulus (11/11).
-- Concurrency test pada PostgreSQL 18 embedded dengan dua koneksi: shared/exclusive authorization gate, blocking revokasi, dan paralelisme approval lulus (2/2).
+- Migration smoke test PostgreSQL: fresh `0000` sampai `0027`, partial-resume dari `0005`, deduplikasi legacy notifikasi, rekonsiliasi integritas surat–arsip, dan backfill mandat unit pengguna lulus (11/11). Dua proses `seed:all` paralel serta satu rerun berikutnya sama-sama keluar 0 dengan tepat satu edisi aktif per instrumen; advisory lock mencegah race bootstrap lintas host.
+- Concurrency test pada PostgreSQL 18 disposable dengan dua koneksi: shared/exclusive authorization gate, blocking revokasi, dan paralelisme approval lulus (2/2).
+- Runtime API terhadap PostgreSQL 18 disposable: `/health`, `/ready`, `/api/health`, sesi, dan Swagger lulus; preflight origin tepercaya 204 dan origin asing ditolak 403 tanpa `Access-Control-Allow-Origin`. Unit regression juga menolak sibling `*.vercel.app` yang tidak didaftarkan exact.
+- Konfigurasi Compose production-pull dan local-build untuk ClamAV, malware worker, SRIKANDI worker kondisional, serta Blob reconciler lulus render/validasi. Eksekusi container belum menjadi bukti karena daemon Docker pada mesin verifikasi belum aktif.
+- Konfigurasi programatik Vercel berhasil dikompilasi oleh CLI dan memakai proxy same-origin untuk API, health, serta upload. Preview wajib mempunyai `API_PROXY_ORIGIN` terisolasi pada branch yang cocok dan menolak backend production; untuk branch alias SIMSA yang dilindungi, routing layer juga mewajibkan `BACKEND_VERCEL_PROTECTION_BYPASS` dan mengirim header bypass tanpa memasukkan nilainya ke bundle browser. Seluruh build production menolak `VITE_API_URL` lintas-origin agar cookie auth/CSRF tidak terputus.
+- Callback direct-upload Vercel Blob tidak diasumsikan melewati proxy browser. Startup/readiness Preview gagal-tertutup tanpa `VERCEL_BLOB_CALLBACK_URL` custom, dan callback `*.vercel.app` ditolak untuk mencegah redirect Deployment Protection; keterjangkauan callback dan pembentukan/claim lease tetap wajib dibuktikan dengan unggah nyata.
+- Workflow CI memakai Node 24 dan PostgreSQL 18 nyata untuk migrasi, seed paralel/idempoten, concurrency test, validasi Compose, serta build/syntax-check image worker. Workflow backup memerlukan enkripsi serta restore terisolasi sebelum artifact diunggah; hasil remote workflow baru tetap harus dibuktikan hijau.
 - `npm ci --dry-run`: lulus untuk backend, frontend, dan situs dokumentasi.
 - ESLint penuh frontend: lulus tanpa error maupun warning; artefak PWA hasil generate dikecualikan dari lingkup source lint.
 - Secret scan working tree tidak menemukan kredensial test lama; secret yang pernah masuk riwayat Git tetap wajib dicabut atau dirotasi.
@@ -83,6 +88,8 @@ SQL `0004` dan `0005` juga memuat repair idempotent untuk tiga tabel yang dahulu
 - Situs dokumentasi: critical turun menjadi 0; audit masih melaporkan 17 high yang semuanya berakar pada `image-size` di pipeline build Docusaurus dan belum memiliki patch upstream. Build hanya boleh memproses image dari repositori tepercaya.
 
 ## Kesiapan operasional yang tersisa
+
+Keputusan deployment per 29 Agustus 2026 adalah **NO-GO production**. Lihat [Status Deployment SIMSA](DEPLOYMENT_STATUS_2026-08-29.md) untuk bukti, blocker, dan urutan rollout aman.
 
 Baseline profil internal sebelum data produksi digunakan:
 

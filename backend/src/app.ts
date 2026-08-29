@@ -16,7 +16,7 @@ import { roleMiddleware } from './middlewares/role.middleware';
 import { csrfCookieSetter, csrfProtection } from './middlewares/csrf.middleware';
 import { sanitizeInput } from './middlewares/sanitize.middleware';
 import { setupSwagger } from './config/swagger';
-import { AppError } from './utils/errors';
+import { AppError, ForbiddenError } from './utils/errors';
 import { logger } from './utils/logger';
 
 // Import routes
@@ -88,7 +88,7 @@ app.use(cors({
             return callback(null, true);
         }
 
-        return callback(new Error('Not allowed by CORS'));
+        return callback(new ForbiddenError('Origin tidak diizinkan oleh kebijakan CORS.'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-CSRF-Token'],

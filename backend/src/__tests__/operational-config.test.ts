@@ -54,8 +54,40 @@ describe('operational integration configuration', () => {
         expect(buildBlobStorageConfig({
             NODE_ENV: 'production',
             VERCEL: '1',
+            VERCEL_ENV: 'production',
             BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_token_value',
         })).toMatchObject({ callbackRequired: false, callbackConfigured: false, ready: true });
+
+        const protectedPreview = buildBlobStorageConfig({
+            NODE_ENV: 'production',
+            VERCEL: '1',
+            VERCEL_ENV: 'preview',
+            BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_token_value',
+        });
+        expect(protectedPreview).toMatchObject({
+            callbackRequired: true,
+            callbackConfigured: false,
+            ready: false,
+        });
+        expect(protectedPreview.validationErrors.join(' ')).toContain('Deployment Protection');
+
+        const previewDeploymentUrl = buildBlobStorageConfig({
+            NODE_ENV: 'production',
+            VERCEL: '1',
+            VERCEL_ENV: 'preview',
+            BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_token_value',
+            VERCEL_BLOB_CALLBACK_URL: 'https://simsa-backend-git-feature.example.vercel.app',
+        });
+        expect(previewDeploymentUrl.ready).toBe(false);
+        expect(previewDeploymentUrl.validationErrors.join(' ')).toContain('unprotected custom HTTPS origin');
+
+        expect(buildBlobStorageConfig({
+            NODE_ENV: 'production',
+            VERCEL: '1',
+            VERCEL_ENV: 'preview',
+            BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_token_value',
+            VERCEL_BLOB_CALLBACK_URL: 'https://callback-preview.example.go.id',
+        })).toMatchObject({ callbackRequired: true, callbackConfigured: true, ready: true });
 
         expect(buildBlobStorageConfig({
             NODE_ENV: 'production',

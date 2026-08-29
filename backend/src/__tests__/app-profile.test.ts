@@ -130,6 +130,20 @@ describe('backend application profile', () => {
         }
     });
 
+    it('rejects an untrusted CORS preflight as forbidden without an allow-origin header', async () => {
+        const response = await request(app)
+            .options('/api/health')
+            .set('Origin', 'https://untrusted.example')
+            .set('Access-Control-Request-Method', 'GET')
+            .expect(403);
+
+        expect(response.headers['access-control-allow-origin']).toBeUndefined();
+        expect(response.body).toEqual(expect.objectContaining({
+            success: false,
+            error: 'ForbiddenError',
+        }));
+    });
+
     it('keeps Vercel routing free of a second static CORS authority', () => {
         const vercelConfig = JSON.parse(readFileSync(
             new URL('../../vercel.json', import.meta.url),

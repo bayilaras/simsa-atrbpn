@@ -164,6 +164,28 @@ describe('collectReadiness', () => {
         expect(probeBlob).not.toHaveBeenCalled();
     });
 
+    it('fails before probing Blob when required storage configuration is invalid', async () => {
+        blobStatus.mockReturnValue({
+            provider: 'vercel-blob-private', required: true, configured: true,
+            ready: false, validationErrors: ['VERCEL_BLOB_CALLBACK_URL is invalid'],
+        });
+        const probeBlob = vi.fn().mockResolvedValue(undefined);
+        const result = await collectReadiness({
+            probeDatabase: vi.fn().mockResolvedValue(undefined),
+            probeBlob,
+            readHeartbeats: vi.fn().mockResolvedValue([]),
+            now: () => Date.parse('2026-08-28T12:00:00.000Z'),
+        });
+
+        expect(result.status).toBe('not_ready');
+        expect(result.dependencies.blobStorage.runtime).toEqual({
+            ready: false,
+            skipped: true,
+            reason: 'configuration_invalid',
+        });
+        expect(probeBlob).not.toHaveBeenCalled();
+    });
+
     it('requires a fresh running heartbeat for an enabled persistent worker', () => {
         const now = Date.parse('2026-08-28T12:00:00.000Z');
         expect(evaluateWorkerReadiness([], 'malware-scan', true, 60_000, now))

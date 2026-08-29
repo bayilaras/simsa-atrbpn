@@ -1,5 +1,5 @@
 import { pool } from '../config/database.js';
-import type { PoolClient } from '@neondatabase/serverless';
+import type { PoolClient } from 'pg';
 import { malwareScanConfig } from '../config/env.js';
 import { getBlobStorageConfigurationStatus } from '../config/blob-storage.js';
 import { getEmailConfigurationStatus } from '../config/email.js';
@@ -165,9 +165,15 @@ export async function collectReadiness(
     let heartbeatRows: HeartbeatRow[] = [];
     const [database, blobStorage, embeddedScanner, heartbeatRuntime] = await Promise.all([
         timedProbe('database', dependencies.probeDatabase),
-        blobConfiguration.configured
+        blobConfiguration.configured && blobConfiguration.ready
             ? timedProbe('blob_storage', dependencies.probeBlob)
-            : Promise.resolve({ ready: !blobConfiguration.required, skipped: true }),
+            : Promise.resolve({
+                ready: !blobConfiguration.required,
+                skipped: true,
+                ...(blobConfiguration.required && !blobConfiguration.ready
+                    ? { reason: 'configuration_invalid' }
+                    : {}),
+            }),
         embeddedScannerRequired
             ? timedProbe(
                 'malware_scanner',
@@ -209,6 +215,7 @@ export async function collectReadiness(
         );
 
     const requiredReady = database.ready
+        && (!blobConfiguration.required || blobConfiguration.ready)
         && blobStorage.ready
         && embeddedScanner.ready
         && malwareWorker.state !== 'not_ready'

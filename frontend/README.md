@@ -22,6 +22,42 @@ VITE_FEATURE_SRIKANDI=false
 - `VITE_FEATURE_SRIKANDI` default `false`. Menu dan route SRIKANDI hanya tersedia jika profil build `integrated`, flag bernilai `true`, dan metadata `/api/health` mengonfirmasi backend `integrated` dengan connector aktif. Kegagalan verifikasi menyembunyikan fitur.
 - Profil frontend dan backend harus sama pada deployment terintegrasi. Menampilkan menu bukan pengganti autentikasi, otorisasi role, dan kontrol akses API.
 
+## Deployment production
+
+Biarkan `VITE_API_URL` tidak disetel pada seluruh build production. Host frontend
+wajib menyediakan reverse proxy same-origin untuk `/api`, `/health`, dan
+`/uploads` agar cookie sesi, CSRF, serta token upload bekerja. Pada Vercel,
+tetapkan `API_PROXY_ORIGIN` sebagai environment server-side:
+
+- Production boleh memakai default `https://simsa-backend.vercel.app` atau origin
+  backend institusi yang eksplisit.
+- Preview wajib memakai backend HTTPS terisolasi. Untuk project Vercel SIMSA,
+  gunakan branch alias `simsa-backend-git-...` yang cocok dengan
+  `VERCEL_GIT_COMMIT_REF` frontend; konfigurasi menolak nilai kosong, branch
+  production, alias branch lain, dan URL deployment yang environment-nya ambigu.
+- Preview backend SIMSA saat ini memakai Vercel Deployment Protection. Buat
+  Automation Bypass pada project backend, lalu simpan nilainya pada environment
+  **Preview frontend** sebagai `BACKEND_VERCEL_PROTECTION_BYPASS`. Rewrite
+  mengirim `x-vercel-protection-bypass` di routing layer; nilai secret tidak
+  masuk JavaScript/browser. Jangan gunakan prefiks `VITE_`, jangan commit nilai,
+  dan rotasi secret jika pernah terekspos.
+
+Aktifkan Vercel System Environment Variables agar `VERCEL_ENV` dan
+`VERCEL_GIT_COMMIT_REF` tersedia saat build. Jika referensi Git tidak tersedia,
+target Preview project SIMSA ditolak secara fail-closed.
+
+Database, Blob token/store, OAuth callback, serta secret backend Preview juga
+wajib terpisah dari Production. Guard routing tidak dapat membuktikan isi
+resource backend, sehingga pemisahan tersebut tetap harus diverifikasi saat
+deployment. Direct-upload Blob memiliki callback server-to-server yang tidak
+melewati proxy frontend; backend Preview wajib diberi
+`VERCEL_BLOB_CALLBACK_URL` custom yang tidak terkena Deployment Protection dan
+alur callback/lease harus diuji dengan upload nyata.
+
+Platform static-hosting selain Vercel harus menyediakan aturan reverse proxy
+yang ekuivalen. Menetapkan `VITE_API_URL` ke origin backend lain bukan pengganti
+proxy dan sengaja ditolak oleh build production.
+
 ## Verifikasi
 
 ```bash
@@ -30,4 +66,5 @@ npm run lint:profile
 npm run build
 ```
 
-`npm run lint` tetap tersedia untuk audit seluruh source tree. Baseline lama masih memuat temuan pada file generated/legacy yang tidak terkait profil aplikasi; `lint:profile` memeriksa seluruh modul yang disentuh oleh perubahan profil internal.
+`npm run lint` memeriksa seluruh source tree dan menjadi gate CI. `lint:profile`
+tetap tersedia untuk pemeriksaan cepat modul profil internal.

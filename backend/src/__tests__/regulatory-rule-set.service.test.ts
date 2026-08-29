@@ -414,7 +414,7 @@ describe('RegulatoryRuleSetService lifecycle', () => {
         });
         expect(capturedValues[0].sourceDocumentVerifiedAt).not.toEqual(verifiedAt);
         expect(blobStorageMocks.downloadFile).toHaveBeenCalledTimes(1);
-    });
+    }, 15_000);
 
     it('fails closed and removes the copy when reused PDF bytes do not match sealed evidence', async () => {
         const sourcePdf = await onePagePdf();

@@ -13,7 +13,11 @@ export interface BlobStorageConfigOptions {
 }
 
 function isVercelRuntime(source: NodeJS.ProcessEnv): boolean {
-    return Boolean(source.VERCEL?.trim());
+    return source.VERCEL?.trim() === '1';
+}
+
+function isVercelPreview(source: NodeJS.ProcessEnv): boolean {
+    return isVercelRuntime(source) && source.VERCEL_ENV?.trim() === 'preview';
 }
 
 export function assertValidBlobCallbackOrigin(value: string): void {
@@ -50,8 +54,12 @@ export function buildBlobStorageConfig(
     options: BlobStorageConfigOptions = {},
 ): BlobStorageConfig {
     const required = source.NODE_ENV === 'production' || isVercelRuntime(source);
+    const previewRuntime = isVercelPreview(source);
     const callbackRequired = options.requireCallbackUrl
-        ?? (source.NODE_ENV === 'production' && !isVercelRuntime(source));
+        ?? (
+            (source.NODE_ENV === 'production' && !isVercelRuntime(source))
+            || previewRuntime
+        );
     const token = source.BLOB_READ_WRITE_TOKEN?.trim() || '';
     const callbackUrl = source.VERCEL_BLOB_CALLBACK_URL || '';
     const callbackConfigured = Boolean(callbackUrl.trim());
@@ -64,11 +72,21 @@ export function buildBlobStorageConfig(
         errors.push('BLOB_READ_WRITE_TOKEN has an invalid format');
     }
     if (callbackRequired && !callbackConfigured) {
-        errors.push('VERCEL_BLOB_CALLBACK_URL is required for a production API outside Vercel');
+        errors.push(previewRuntime
+            ? 'VERCEL_BLOB_CALLBACK_URL is required for Vercel Preview so signed Blob callbacks do not target a Deployment Protection URL'
+            : 'VERCEL_BLOB_CALLBACK_URL is required for a production API outside Vercel');
     }
     if (callbackConfigured) {
         try {
             assertValidBlobCallbackOrigin(callbackUrl);
+            const callbackHostname = new URL(callbackUrl).hostname
+                .replace(/\.+$/, '')
+                .toLowerCase();
+            if (previewRuntime && callbackHostname.endsWith('.vercel.app')) {
+                errors.push(
+                    'VERCEL_BLOB_CALLBACK_URL for Preview must use an unprotected custom HTTPS origin, not a *.vercel.app deployment URL',
+                );
+            }
         } catch (error) {
             errors.push(error instanceof Error ? error.message : 'VERCEL_BLOB_CALLBACK_URL is invalid');
         }

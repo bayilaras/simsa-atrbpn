@@ -69,11 +69,15 @@ describe('trusted origins', () => {
         expect(isTrustedOrigin('https://simsa-frontend-git-branch-acme.vercel.app')).toBe(false);
     });
 
-    it('trusts sibling vercel.app previews only on preview deployments', async () => {
-        const { isTrustedOrigin } = await loadWith({ VERCEL_ENV: 'preview' });
-        expect(isTrustedOrigin('https://simsa-frontend-git-branch-acme.vercel.app')).toBe(true);
-        // still not a free-for-all
-        expect(isTrustedOrigin('http://simsa-frontend-git-branch-acme.vercel.app')).toBe(false);
-        expect(isTrustedOrigin('https://evil.example')).toBe(false);
+    it('requires every Vercel Preview alias to be configured explicitly', async () => {
+        const approvedPreview = 'https://simsa-frontend-git-approved-acme.vercel.app';
+        const { isTrustedOrigin } = await loadWith({
+            VERCEL_ENV: 'preview',
+            ADDITIONAL_TRUSTED_ORIGINS: approvedPreview,
+        });
+
+        expect(isTrustedOrigin(approvedPreview)).toBe(true);
+        expect(isTrustedOrigin('https://simsa-frontend-git-attacker-acme.vercel.app')).toBe(false);
+        expect(isTrustedOrigin('https://unrelated-project.vercel.app')).toBe(false);
     });
 });

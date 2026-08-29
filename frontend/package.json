@@ -42,9 +42,10 @@
     "@eslint/js": "^9.39.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^25.2.1",
+    "@types/node": "^24.13.3",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
+    "@vercel/config": "0.7.0",
     "@vitejs/plugin-react": "^5.1.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -59,5 +60,10 @@
     "vite-plugin-pwa": "^1.2.0",
     "vitest": "^4.1.11",
     "workbox-window": "^7.4.0"
+  },
+  "overrides": {
+    "@vercel/routing-utils": {
+      "path-to-regexp": "6.3.0"
+    }
   }
 }

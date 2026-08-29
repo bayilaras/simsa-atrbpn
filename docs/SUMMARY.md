@@ -56,6 +56,7 @@
 
 ## Tata Kelola Internal
 
+* [Status Deployment 29 Agustus 2026](DEPLOYMENT_STATUS_2026-08-29.md)
 * [Ringkasan Implementasi dan Verifikasi](RINGKASAN_IMPLEMENTASI_DAN_VERIFIKASI.md)
 * [Checklist Deployment Arsip Digital](DEPLOYMENT_CHECKLIST_ARSIP_DIGITAL.md)
 * [Peta Rujukan Desain Permen 2/2026 dan ANRI](KEPATUHAN_PERMEN_2_2026_DAN_ANRI.md)

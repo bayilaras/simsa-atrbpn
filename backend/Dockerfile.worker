@@ -1,4 +1,5 @@
-FROM node:20-bookworm-slim AS build
+ARG NODE_IMAGE=node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e
+FROM ${NODE_IMAGE} AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -8,7 +9,7 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:20-bookworm-slim AS runtime
+FROM ${NODE_IMAGE} AS runtime
 
 ENV NODE_ENV=production
 WORKDIR /app
@@ -19,7 +20,6 @@ COPY --from=build /app/dist ./dist
 
 USER node
 
-# Compose or the target runtime selects start:malware-worker or
-# start:srikandi-worker explicitly. The safe default is the AV worker because
-# it refuses to start unless scanning and the persistent runtime are enabled.
-CMD ["npm", "run", "start:malware-worker"]
+# Compose or the target runtime may override this with another worker entrypoint.
+# Run Node directly so it receives termination signals without an npm wrapper.
+CMD ["node", "dist/workers/malware-scan.js"]

@@ -172,9 +172,7 @@ export function validateRuntimeEnv(
 
     // Private Blob is the canonical bitstream store. Production must fail at
     // startup rather than accepting records whose evidence cannot be stored.
-    assertValidBlobStorageEnvironment(source, {
-        requireCallbackUrl: source.NODE_ENV === 'production' && !source.VERCEL?.trim(),
-    });
+    assertValidBlobStorageEnvironment(source);
 }
 
 // Backwards-compatible API/server validation entry point.

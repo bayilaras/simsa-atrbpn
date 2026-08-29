@@ -80,6 +80,7 @@ Login dan Daftar
 | Dokumen | Keterangan |
 |----------|------------|
 | [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md) | Ruang lingkup, prioritas, baseline keamanan, dan integrasi kondisional |
+| [Status Deployment 29 Agustus 2026](DEPLOYMENT_STATUS_2026-08-29.md) | Hasil verifikasi runtime, blocker production, dan urutan rollout aman |
 | [Ringkasan Implementasi dan Verifikasi](RINGKASAN_IMPLEMENTASI_DAN_VERIFIKASI.md) | Ringkasan kontrol yang tersedia dan batas verifikasi |
 | [Checklist Deployment Arsip Digital](DEPLOYMENT_CHECKLIST_ARSIP_DIGITAL.md) | Gerbang operasional profil inti dan ekstensi kondisional |
 | [Peta Rujukan Desain Permen 2/2026 dan ANRI](KEPATUHAN_PERMEN_2_2026_DAN_ANRI.md) | Pemetaan rujukan ke kontrol, bukan sertifikasi |

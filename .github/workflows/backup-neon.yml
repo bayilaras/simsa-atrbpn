@@ -12,28 +12,48 @@ permissions:
   contents: read
 
 env:
-  PG_VERSION: '16'
+  POSTGRES_IMAGE: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+
+concurrency:
+  group: neon-production-backup
+  cancel-in-progress: false
 
 jobs:
   backup:
     name: Backup Neon PostgreSQL
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
+
+    services:
+      restore-db:
+        image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+        env:
+          POSTGRES_USER: simsa_restore
+          POSTGRES_PASSWORD: restore-only-password
+          POSTGRES_DB: simsa_restore_validation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U simsa_restore -d simsa_restore_validation"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-${{ env.PG_VERSION }}
-
       - name: Create and encrypt backup
         env:
           DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
         run: |
+          set -euo pipefail
+
           # The dump contains the full production database (users, correspondence,
           # personnel records). Refuse to run unless an encryption passphrase is set,
           # so we never store a plaintext dump as a workflow artifact.
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::NEON_DATABASE_URL secret is not set."
+            exit 1
+          fi
           if [ -z "$BACKUP_PASSPHRASE" ]; then
             echo "::error::BACKUP_ENCRYPTION_PASSPHRASE secret is not set — refusing to create an unencrypted production dump."
             exit 1
@@ -42,13 +62,16 @@ jobs:
           BACKUP_FILE="simsa-backup-$(date +%Y-%m-%d).sql"
           echo "Creating backup: $BACKUP_FILE"
 
-          pg_dump "$DATABASE_URL" \
-            --no-owner \
-            --no-privileges \
-            --clean \
-            --if-exists \
-            --format=plain \
-            --file="$BACKUP_FILE"
+          docker run --rm --network host \
+            --env DATABASE_URL \
+            "$POSTGRES_IMAGE" \
+            sh -eu -c 'pg_dump "$DATABASE_URL" \
+              --no-owner \
+              --no-privileges \
+              --clean \
+              --if-exists \
+              --format=plain' \
+            > "$BACKUP_FILE"
 
           # Compress, then encrypt with AES-256. Remove the plaintext copies so only
           # the encrypted file ever leaves this runner.
@@ -56,26 +79,21 @@ jobs:
           #   gpg --batch --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" \
           #     --decrypt simsa-backup-YYYY-MM-DD.sql.gz.gpg > simsa-backup.sql.gz
           gzip "$BACKUP_FILE"
-          gpg --batch --yes --symmetric --cipher-algo AES256 \
-            --passphrase "$BACKUP_PASSPHRASE" \
-            --output "${BACKUP_FILE}.gz.gpg" \
-            "${BACKUP_FILE}.gz"
+          printf '%s' "$BACKUP_PASSPHRASE" | \
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+              --symmetric --cipher-algo AES256 \
+              --output "${BACKUP_FILE}.gz.gpg" \
+              "${BACKUP_FILE}.gz"
           rm -f "${BACKUP_FILE}.gz"
 
           ls -lh "${BACKUP_FILE}.gz.gpg"
-          echo "BACKUP_FILE=${BACKUP_FILE}.gz.gpg" >> $GITHUB_ENV
 
-      - name: Upload backup artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: neon-backup-${{ github.run_id }}
-          path: simsa-backup-*.sql.gz.gpg
-          retention-days: 30
-          compression-level: 0  # Already compressed + encrypted
-
-      - name: Verify backup
+      - name: Verify encrypted backup by restoring it
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
         run: |
-          # Quick verification - check file size is reasonable (> 1KB)
+          set -euo pipefail
+
           BACKUP_FILE=$(ls simsa-backup-*.sql.gz.gpg 2>/dev/null | head -1)
           if [ -z "$BACKUP_FILE" ]; then
             echo "::error::Backup file not found"
@@ -86,10 +104,53 @@ jobs:
             echo "::error::Backup file is suspiciously small ($FILE_SIZE bytes)"
             exit 1
           fi
-          echo "✅ Encrypted backup verified: $BACKUP_FILE ($FILE_SIZE bytes)"
+
+          printf '%s' "$BACKUP_PASSPHRASE" | \
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+              --decrypt \
+              --output restore.sql.gz \
+              "$BACKUP_FILE"
+          gunzip restore.sql.gz
+
+          docker run --rm --network host \
+            --env PGPASSWORD=restore-only-password \
+            --volume "$PWD:/backup:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_restore \
+              --dbname simsa_restore_validation \
+              --set ON_ERROR_STOP=on \
+              --file /backup/restore.sql
+
+          TABLE_COUNT=$(docker run --rm --network host \
+            --env PGPASSWORD=restore-only-password \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_restore \
+              --dbname simsa_restore_validation \
+              --tuples-only \
+              --no-align \
+              --command "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';")
+          rm -f restore.sql
+
+          if [ "$TABLE_COUNT" -lt 1 ]; then
+            echo "::error::Restore completed without application tables."
+            exit 1
+          fi
+          echo "Encrypted backup restored successfully: $BACKUP_FILE ($FILE_SIZE bytes, $TABLE_COUNT public tables)"
+
+      - name: Upload verified backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-backup-${{ github.run_id }}
+          path: simsa-backup-*.sql.gz.gpg
+          retention-days: 30
+          compression-level: 0  # Already compressed + encrypted
 
       - name: Notify on failure
         if: failure()
         run: |
           echo "::error::Database backup failed! Check the logs above."
-          echo "::error::Manual backup recommended: pg_dump \$DATABASE_URL > backup.sql"
+          echo "::error::Create an encrypted manual backup and verify a restore before any production migration."

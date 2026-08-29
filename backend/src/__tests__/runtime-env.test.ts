@@ -87,7 +87,7 @@ describe('runtime-specific environment validation', () => {
         })).toThrow(/FRONTEND_URL/);
     });
 
-    it('requires the Blob callback origin only for a production API outside Vercel', () => {
+    it('requires a reachable Blob callback origin outside Vercel and on Preview', () => {
         const productionApi = {
             ...database,
             NODE_ENV: 'production',
@@ -111,6 +111,24 @@ describe('runtime-specific environment validation', () => {
         expect(() => validateRuntimeEnv('api', {
             ...productionApi,
             VERCEL: '1',
+            VERCEL_ENV: 'production',
+        })).not.toThrow();
+        expect(() => validateRuntimeEnv('api', {
+            ...productionApi,
+            VERCEL: '1',
+            VERCEL_ENV: 'preview',
+        })).toThrow(/Deployment Protection/);
+        expect(() => validateRuntimeEnv('api', {
+            ...productionApi,
+            VERCEL: '1',
+            VERCEL_ENV: 'preview',
+            VERCEL_BLOB_CALLBACK_URL: 'https://simsa-backend-git-feature-bayilaras-projects.vercel.app',
+        })).toThrow(/unprotected custom HTTPS origin/);
+        expect(() => validateRuntimeEnv('api', {
+            ...productionApi,
+            VERCEL: '1',
+            VERCEL_ENV: 'preview',
+            VERCEL_BLOB_CALLBACK_URL: 'https://callback-preview.example.go.id',
         })).not.toThrow();
     });
 });

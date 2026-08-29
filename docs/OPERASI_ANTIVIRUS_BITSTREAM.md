@@ -21,7 +21,10 @@ tangan memakai `freshclam` dan pantau kegagalannya.
 Salah satu cara menjalankan image resmi ClamAV hanya pada loopback:
 
 ```sh
-docker run --rm --name simsa-clamav -p 127.0.0.1:3310:3310 clamav/clamav:stable
+docker run --rm --name simsa-clamav \
+  -e CLAMD_CONF_StreamMaxLength=52428800 \
+  -p 127.0.0.1:3310:3310 \
+  clamav/clamav:1.5-debian13-slim@sha256:967334b92d1782e4d1314ddf903ae537d26792d21c9a39adecb8ac9757980514
 ```
 
 Atur environment backend (nilai token harus berasal dari secret manager atau
@@ -70,15 +73,31 @@ npm run start:malware-worker
 
 Repositori juga menyediakan definisi deployment siap-validasi di
 `deploy/workers/compose.yml`. Salin `deploy/workers/.env.example` menjadi `.env`,
-isi secret yang benar, lalu jalankan dari direktori tersebut:
+isi secret yang benar, lalu jalankan dari direktori tersebut. Untuk validasi
+source lokal/staging, tambahkan override build. Host memerlukan Docker Compose
+2.33.1 atau lebih baru karena routing egress memakai `gw_priority`:
 
 ```sh
-docker compose --env-file .env -f compose.yml up -d --build clamav malware-worker
+docker compose --env-file .env -f compose.yml -f compose.local.yml up -d --build clamav malware-worker
 ```
 
-Definisi itu menempatkan port ClamAV hanya pada jaringan internal Compose,
-menunggu health check `clamd`, dan menjalankan worker dari commit backend yang
-sama dengan API.
+Produksi harus memakai image yang dibangun dan dipush oleh pipeline/proses rilis
+yang disetujui dari commit yang telah lulus CI. Isi
+`SIMSA_WORKER_IMAGE` dengan referensi immutable `tag@sha256:digest`, lalu pakai
+hanya base file agar host tidak membangun source lain:
+
+```sh
+docker compose --env-file .env -f compose.yml pull clamav malware-worker
+docker compose --env-file .env -f compose.yml up -d --no-build clamav malware-worker
+```
+
+Definisi itu tidak memublikasikan port ClamAV ke host; hanya malware worker yang
+berbagi jaringan scanner internal, sedangkan ClamAV juga bergabung ke jaringan
+egress terpisah untuk pembaruan FreshClam. Compose menunggu
+health check IPv4 `clamd`, menyamakan `StreamMaxLength` dengan batas aplikasi,
+serta menjalankan worker Node 24 langsung dari artifact commit backend yang
+sama dengan API. Image produksi dipatok dengan digest dan seluruh container memiliki batas
+CPU/memori serta rotasi log; perubahan digest wajib disertai uji ulang.
 
 Cold-start produksi akan gagal bila Vercel dikonfigurasi `embedded`, scanner
 dinonaktifkan, worker dinonaktifkan, token Blob hilang, atau pengakuan jaringan

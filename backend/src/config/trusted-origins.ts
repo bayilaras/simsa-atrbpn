@@ -28,25 +28,12 @@ export function getTrustedOrigins(): string[] {
     return [...new Set(origins)];
 }
 
-/**
- * Vercel preview deployments get a generated URL per branch, so they can never
- * match FRONTEND_URL. VERCEL_ENV is 'preview' only on those deployments — never
- * on production — so trusting sibling *.vercel.app origins here lets a PR be
- * reviewed end to end without loosening anything in production.
- */
-function isVercelPreviewOrigin(origin: string): boolean {
-    if (env.VERCEL_ENV !== 'preview') return false;
-    try {
-        const { protocol, hostname } = new URL(origin);
-        return protocol === 'https:' && hostname.endsWith('.vercel.app');
-    } catch {
-        return false;
-    }
-}
-
 export function isTrustedOrigin(origin: string | undefined | null): boolean {
     if (!origin) return false;
     const candidate = normalize(origin);
     if (!candidate) return false;
-    return getTrustedOrigins().includes(candidate) || isVercelPreviewOrigin(candidate);
+    // Preview aliases must be configured explicitly. Trusting every
+    // *.vercel.app sibling would let an unrelated Vercel site read credentialed
+    // responses from a SIMSA Preview through the frontend's same-origin proxy.
+    return getTrustedOrigins().includes(candidate);
 }

@@ -2,21 +2,39 @@ name: simsa-persistent-workers
 
 services:
   clamav:
-    image: clamav/clamav:stable
+    image: clamav/clamav:1.5-debian13-slim@sha256:967334b92d1782e4d1314ddf903ae537d26792d21c9a39adecb8ac9757980514
     restart: unless-stopped
+    environment:
+      CLAMD_CONF_StreamMaxLength: ${CLAMAV_MAX_STREAM_BYTES:-52428800}
     expose:
       - "3310"
     volumes:
       - clamav-signatures:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc 127.0.0.1 3310 | grep -qx PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 6m
+    mem_limit: ${CLAMAV_MEMORY_LIMIT:-4g}
+    cpus: ${CLAMAV_CPU_LIMIT:-2.0}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-20m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
     networks:
-      - scanner
+      scanner: {}
+      clamav-updates:
+        gw_priority: 1
 
   malware-worker:
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile.worker
+    image: ${SIMSA_WORKER_IMAGE:?SIMSA_WORKER_IMAGE is required}
+    pull_policy: always
     restart: unless-stopped
-    command: ["npm", "run", "start:malware-worker"]
+    init: true
+    stop_grace_period: 1m
+    command: ["node", "dist/workers/malware-scan.js"]
     environment:
       NODE_ENV: production
       APP_PROFILE: internal
@@ -28,20 +46,39 @@ services:
       CLAMAV_HOST: clamav
       CLAMAV_PORT: "3310"
       CLAMAV_TRUSTED_NETWORK: ${CLAMAV_TRUSTED_NETWORK:-true}
+      CLAMAV_MAX_STREAM_BYTES: ${CLAMAV_MAX_STREAM_BYTES:-52428800}
+      CLAMAV_CONNECT_TIMEOUT_MS: ${CLAMAV_CONNECT_TIMEOUT_MS:-5000}
+      CLAMAV_SCAN_TIMEOUT_MS: ${CLAMAV_SCAN_TIMEOUT_MS:-120000}
+      MALWARE_SCAN_DOWNLOAD_TIMEOUT_MS: ${MALWARE_SCAN_DOWNLOAD_TIMEOUT_MS:-30000}
+      MALWARE_SCAN_INTERVAL_MS: ${MALWARE_SCAN_INTERVAL_MS:-15000}
+      MALWARE_SCAN_BATCH_SIZE: ${MALWARE_SCAN_BATCH_SIZE:-5}
+      MALWARE_SCAN_STALE_AFTER_MS: ${MALWARE_SCAN_STALE_AFTER_MS:-180000}
+      MALWARE_SCAN_MAX_ATTEMPTS: ${MALWARE_SCAN_MAX_ATTEMPTS:-5}
+      MALWARE_SCAN_RETRY_BASE_MS: ${MALWARE_SCAN_RETRY_BASE_MS:-30000}
+      MALWARE_SCAN_RETRY_MAX_MS: ${MALWARE_SCAN_RETRY_MAX_MS:-900000}
+    mem_limit: ${MALWARE_WORKER_MEMORY_LIMIT:-1g}
+    cpus: ${MALWARE_WORKER_CPU_LIMIT:-1.0}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-20m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
     depends_on:
       clamav:
         condition: service_healthy
     networks:
-      - scanner
-      - outbound
+      scanner: {}
+      outbound:
+        gw_priority: 1
 
   srikandi-worker:
     profiles: ["srikandi"]
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile.worker
+    image: ${SIMSA_WORKER_IMAGE:?SIMSA_WORKER_IMAGE is required}
+    pull_policy: always
     restart: unless-stopped
-    command: ["npm", "run", "start:srikandi-worker"]
+    init: true
+    stop_grace_period: 1m
+    command: ["node", "dist/workers/srikandi.js"]
     environment:
       NODE_ENV: production
       APP_PROFILE: integrated
@@ -50,26 +87,50 @@ services:
       SRIKANDI_BASE_URL: ${SRIKANDI_BASE_URL:-}
       SRIKANDI_SYNC_PATH: ${SRIKANDI_SYNC_PATH:-}
       SRIKANDI_API_TOKEN: ${SRIKANDI_API_TOKEN:-}
+      SRIKANDI_AUTH_HEADER: ${SRIKANDI_AUTH_HEADER:-Authorization}
+      SRIKANDI_AUTH_PREFIX: "${SRIKANDI_AUTH_PREFIX:-Bearer }"
+      SRIKANDI_IDEMPOTENCY_HEADER: ${SRIKANDI_IDEMPOTENCY_HEADER:-Idempotency-Key}
       SRIKANDI_CONTRACT_VERSION: ${SRIKANDI_CONTRACT_VERSION:-}
       SRIKANDI_ACK_FIELD: ${SRIKANDI_ACK_FIELD:-}
       SRIKANDI_ACK_VALUE: ${SRIKANDI_ACK_VALUE:-}
       SRIKANDI_REMOTE_ID_FIELD: ${SRIKANDI_REMOTE_ID_FIELD:-}
+      SRIKANDI_TIMEOUT_MS: ${SRIKANDI_TIMEOUT_MS:-15000}
+      SRIKANDI_MAX_ATTEMPTS: ${SRIKANDI_MAX_ATTEMPTS:-5}
+      SRIKANDI_BACKOFF_BASE_SECONDS: ${SRIKANDI_BACKOFF_BASE_SECONDS:-30}
+      SRIKANDI_BACKOFF_MAX_SECONDS: ${SRIKANDI_BACKOFF_MAX_SECONDS:-3600}
+      SRIKANDI_WORKER_POLL_MS: ${SRIKANDI_WORKER_POLL_MS:-15000}
+      SRIKANDI_WORKER_BATCH_SIZE: ${SRIKANDI_WORKER_BATCH_SIZE:-10}
+    mem_limit: ${SRIKANDI_WORKER_MEMORY_LIMIT:-512m}
+    cpus: ${SRIKANDI_WORKER_CPU_LIMIT:-0.5}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-20m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
     networks:
       - outbound
 
   blob-reconciler:
     profiles: ["maintenance"]
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile.worker
+    image: ${SIMSA_WORKER_IMAGE:?SIMSA_WORKER_IMAGE is required}
+    pull_policy: always
     restart: "no"
-    command: ["npm", "run", "start:blob-reconciler"]
+    init: true
+    stop_grace_period: 1m
+    command: ["node", "dist/workers/blob-reconciliation.js"]
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       BLOB_READ_WRITE_TOKEN: ${BLOB_READ_WRITE_TOKEN:?BLOB_READ_WRITE_TOKEN is required}
       CLIENT_BLOB_UPLOAD_TTL_HOURS: ${CLIENT_BLOB_UPLOAD_TTL_HOURS:-24}
       CLIENT_BLOB_RECONCILE_BATCH_SIZE: ${CLIENT_BLOB_RECONCILE_BATCH_SIZE:-100}
+    mem_limit: ${BLOB_RECONCILER_MEMORY_LIMIT:-512m}
+    cpus: ${BLOB_RECONCILER_CPU_LIMIT:-0.5}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-20m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
     networks:
       - outbound
 
@@ -79,4 +140,5 @@ volumes:
 networks:
   scanner:
     internal: true
+  clamav-updates:
   outbound:

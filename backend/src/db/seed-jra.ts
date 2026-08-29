@@ -13,6 +13,7 @@ import {
   regulatoryRuleSetService,
   validateRegulatoryRuleItems,
 } from '../services/regulatory-rule-set.service.js';
+import { REGULATORY_SEED_LOCK, withRegulatorySeedLock } from './regulatory-seed-lock.js';
 
 type JraSeedRecord = {
   kode: string;
@@ -88,7 +89,7 @@ function assertCompleteSeedAsset() {
   }
 }
 
-export async function seedJadwalRetensiArsip() {
+async function seedJadwalRetensiArsipUnlocked() {
   console.log('Seeding JRA lengkap Permen ATR/BPN 8/2020...');
   assertCompleteSeedAsset();
 
@@ -176,6 +177,10 @@ export async function seedJadwalRetensiArsip() {
   }
 
   const expectedValidation = validateRegulatoryRuleItems('jra', prepared.items);
+  // Persist a baseline impact report before invoking the shared validator.
+  // Bootstrap activation remains actor-less, while the report proves that the
+  // validated database contents match the initial all-added edition.
+  await regulatoryRuleSetService.generateImpactReport(JRA_RULE_SET_2020_ID);
   const validation = await regulatoryRuleSetService.validateDraft(JRA_RULE_SET_2020_ID);
   if (!expectedValidation.valid
     || !validation.valid
@@ -189,6 +194,13 @@ export async function seedJadwalRetensiArsip() {
   await regulatoryRuleSetService.activate(JRA_RULE_SET_2020_ID);
   console.log(`JRA 2020 diaktifkan: ${jraSeed.expectedCounts.rules} aturan retensi legal dan ${jraSeed.expectedCounts.hierarchyNodes} simpul navigasi.`);
   return { status: 'activated' as const, validation };
+}
+
+export async function seedJadwalRetensiArsip() {
+  return withRegulatorySeedLock(
+    REGULATORY_SEED_LOCK.jra,
+    seedJadwalRetensiArsipUnlocked,
+  );
 }
 
 const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;

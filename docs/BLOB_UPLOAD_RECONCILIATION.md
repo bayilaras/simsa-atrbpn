@@ -21,12 +21,19 @@ yang menyimpan surat atau PDF regulasi. Migrasi
 
 - Terapkan migrasi `0023` sebelum menerima client upload.
 - Sediakan `DATABASE_URL` dan `BLOB_READ_WRITE_TOKEN` dari environment yang sama.
-- Di luar Vercel, set
+- Di luar Vercel, dan selalu pada Vercel Preview yang memakai Deployment
+  Protection, set
   `VERCEL_BLOB_CALLBACK_URL=https://<backend>` sebagai origin HTTPS tanpa
   trailing slash, path, query, fragment, atau kredensial. SDK Blob menambahkan
   path request `/api/client-upload` sendiri; origin tersebut harus dapat
   dijangkau layanan Vercel Blob. Callback tidak membawa session pengguna, tetapi
   diverifikasi kriptografis oleh SDK sebelum lease ditulis.
+- Untuk Preview terlindungi, gunakan custom HTTPS origin khusus yang tidak
+  terkena Deployment Protection; konfigurasi menolak origin `*.vercel.app`.
+  Jangan menambahkan bypass secret sebagai query string callback karena URL
+  masuk ke client token/browser. Uji unggah langsung sungguhan sampai callback
+  menghasilkan lease `pending`, lalu klaim lease dalam transaksi surat/rule-set.
+  Respons token saja belum membuktikan callback dapat dijangkau.
 - `CLIENT_BLOB_UPLOAD_TTL_HOURS` default 24 jam dan dibatasi 1–168 jam.
 
 ## Jadwal operasi

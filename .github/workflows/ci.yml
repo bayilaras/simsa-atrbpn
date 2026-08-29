@@ -2,9 +2,17 @@ name: SIMSA CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, 'codex/**']
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simsa-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-typecheck:
@@ -18,7 +26,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: |
             backend/package-lock.json
@@ -45,14 +53,40 @@ jobs:
         run: npm run build
         working-directory: backend
 
-      # Non-blocking until the pre-existing eslint errors in frontend/src are cleared.
       - name: Lint frontend
         run: npm run lint
         working-directory: frontend
-        continue-on-error: true
 
       - name: Build frontend
         run: npx vite build
+        working-directory: frontend
+
+      - name: Validate worker Compose definitions
+        run: |
+          docker compose --env-file .env.example -f compose.yml --profile '*' config --quiet
+          docker compose --env-file .env.example -f compose.yml -f compose.local.yml --profile '*' config --quiet
+        working-directory: deploy/workers
+
+      - name: Build and inspect worker image
+        run: |
+          docker build --check --file backend/Dockerfile.worker backend
+          docker build --file backend/Dockerfile.worker --tag simsa-worker:${{ github.sha }} backend
+          docker run --rm --entrypoint node simsa-worker:${{ github.sha }} --check dist/workers/malware-scan.js
+
+      - name: Verify production uses the same-origin API proxy
+        run: |
+          if VITE_API_URL=https://simsa-backend.vercel.app npm run build > api-proxy-guard.log 2>&1; then
+            echo "::error::Production build unexpectedly accepted a cross-origin client API."
+            exit 1
+          fi
+          grep -q "must leave VITE_API_URL unset" api-proxy-guard.log
+          if VITE_API_URL=https://simsa-backend.vercel.app npm run build -- --mode staging > api-proxy-guard-staging.log 2>&1; then
+            echo "::error::Staging-mode deployment build unexpectedly accepted a cross-origin client API."
+            exit 1
+          fi
+          grep -q "must leave VITE_API_URL unset" api-proxy-guard-staging.log
+          rm -f api-proxy-guard.log
+          rm -f api-proxy-guard-staging.log
         working-directory: frontend
 
       - name: Build documentation
@@ -64,6 +98,21 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
 
+    services:
+      postgres:
+        image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+        env:
+          POSTGRES_USER: simsa_test
+          POSTGRES_PASSWORD: simsa_test_password
+          POSTGRES_DB: simsa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U simsa_test -d simsa_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,7 +120,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
@@ -82,6 +131,26 @@ jobs:
       - name: Run tests
         run: npx vitest run --reporter=verbose
         working-directory: backend
+
+      - name: Apply migrations and prove concurrent seed idempotency
+        run: |
+          npm run db:migrate
+          npm run seed:all &
+          first_seed=$!
+          npm run seed:all &
+          second_seed=$!
+          wait "$first_seed"
+          wait "$second_seed"
+          npm run seed:all
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
+
+      - name: Run PostgreSQL concurrency tests
+        run: npm run test:postgres-locks
+        working-directory: backend
+        env:
+          TEST_POSTGRES_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
 
   frontend-test:
     name: Frontend Tests
@@ -95,7 +164,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -118,7 +187,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Audit backend
         run: npm audit --audit-level=high

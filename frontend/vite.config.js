@@ -1,14 +1,27 @@
 import path from "path"
+import process from "node:process"
 import { fileURLToPath } from "node:url"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { defineConfig, loadEnv } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
+function validateClientApiTarget(command, mode) {
+  const loadedEnvironment = loadEnv(mode, currentDirectory, '')
+  const configuredApiUrl = (process.env.VITE_API_URL ?? loadedEnvironment.VITE_API_URL ?? '').trim()
+
+  if (command !== 'build' || !configuredApiUrl) return
+
+  throw new Error('Deployment builds must leave VITE_API_URL unset and use a same-origin API proxy; cross-origin client API URLs break cookie-authenticated uploads.')
+}
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command, mode }) => {
+  validateClientApiTarget(command, mode)
+
+  return {
   plugins: [
     react(),
     tailwindcss(),
@@ -141,4 +154,5 @@ export default defineConfig({
     // Increase chunk size warning — Radix bundle is naturally larger
     chunkSizeWarningLimit: 600,
   },
+  }
 })

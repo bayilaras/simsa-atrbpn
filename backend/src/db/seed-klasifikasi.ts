@@ -13,6 +13,7 @@ import {
   regulatoryRuleSetService,
   validateRegulatoryRuleItems,
 } from '../services/regulatory-rule-set.service';
+import { REGULATORY_SEED_LOCK, withRegulatorySeedLock } from './regulatory-seed-lock';
 
 type ClassificationSeedRecord = {
   sourceRecordKey: string;
@@ -73,7 +74,7 @@ function assertCompleteSeedAsset() {
   }
 }
 
-export async function seedKlasifikasiArsip() {
+async function seedKlasifikasiArsipUnlocked() {
   console.log('Seeding klasifikasi arsip lengkap Permen ATR/BPN 10/2018...');
   assertCompleteSeedAsset();
 
@@ -157,6 +158,11 @@ export async function seedKlasifikasiArsip() {
   }
 
   const expectedValidation = validateRegulatoryRuleItems('klasifikasi', prepared.items);
+  // The bootstrap edition may activate without maker-checker actors, but the
+  // shared draft validator still requires a fresh persisted impact report.
+  // Generate the baseline diff (all items added, no predecessor) so `seed:all`
+  // exercises the same evidence/hash checks used by later editions.
+  await regulatoryRuleSetService.generateImpactReport(KLASIFIKASI_RULE_SET_2018_ID);
   const validation = await regulatoryRuleSetService.validateDraft(KLASIFIKASI_RULE_SET_2018_ID);
   if (!expectedValidation.valid
     || !validation.valid
@@ -170,6 +176,13 @@ export async function seedKlasifikasiArsip() {
   await regulatoryRuleSetService.activate(KLASIFIKASI_RULE_SET_2018_ID);
   console.log(`Klasifikasi 2018 diaktifkan: ${validation.stats.total} butir, ${validation.stats.selectable} dapat dipilih.`);
   return { status: 'activated' as const, validation };
+}
+
+export async function seedKlasifikasiArsip() {
+  return withRegulatorySeedLock(
+    REGULATORY_SEED_LOCK.klasifikasi,
+    seedKlasifikasiArsipUnlocked,
+  );
 }
 
 const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
