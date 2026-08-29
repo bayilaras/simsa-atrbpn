@@ -35,7 +35,8 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
 - CI telah diselaraskan ke Node 24, lint frontend menjadi blocking, image worker
   benar-benar dibangun/diperiksa, job ClamAV menjalankan clean/EICAR/restart,
   dan job backend menjalankan migrasi, seed paralel idempoten, serta concurrency
-  test pada PostgreSQL 18 nyata. Bukti run commit final masih menunggu push.
+  test pada PostgreSQL 18 nyata. Seluruh job tersebut lulus pada commit
+  implementasi `d88b176`.
 - Workflow backup kini menolak secret kosong, mengalirkan dump langsung ke
   enkripsi, memulihkannya ke database terisolasi dengan fail-fast, dan hanya
   mengunggah artifact yang lolos restore. Drill lokal nyata lulus dengan 58
@@ -44,34 +45,27 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
 
 ## Bukti remote branch
 
-- Commit `02ce1ac` pada `codex/full-integration` lulus seluruh
-  [SIMSA CI](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33237018505):
-  lint/typecheck/build, audit dependency, 107 test frontend, 1128 test backend,
-  build/inspect image worker, migrasi PostgreSQL 18, seed paralel idempoten, dan
-  concurrency lock.
-- Vercel berhasil membangun Preview backend. Bukti remote sebelum gate Preview
-  menunjukkan `/health` dan `/ready` mengembalikan 500 karena resource belum
-  diprovisikan. Entrypoint sekarang tidak mengimpor aplikasi atau membaca
-  kredensial Production generik sampai marker dan seluruh `PREVIEW_*` lengkap;
-  keadaan belum siap melayani `/health` hidup dan
-  `503 preview_not_provisioned` untuk readiness/route bisnis. Frontend tanpa
-  `API_PROXY_ORIGIN` sekarang membangun shell pemeliharaan `503` tanpa fallback
-  ke API Production. Build maintenance tidak memuat bundle SPA dan menyediakan
-  service worker kecil untuk membuang cache deployment lama. Setelah gate
-  aktif, API Preview tetap quarantine-only dan
-  tidak mewarisi host/jadwal scanner Production; SMTP, TTL lease, dan batch
-  reconciliation memakai pasangan `PREVIEW_*` atau default aman. Proxy
-  same-origin juga meneruskan `/ready`, bukan menyajikan SPA 200 palsu.
-  Perilaku remote baru harus dibuktikan pada redeployment.
-- Project dokumentasi root semula menghasilkan nol output. Redeployment commit
-  `4421bf5` sekarang berstatus `Ready`, membangun Docusaurus dari `docs-site`,
-  dan asset halaman panduan dapat diambil dari URL Preview branch.
-- Log deployment pertama menunjukkan project Vercel lama masih memilih Node 20.
-  Seluruh package root kemudian dipatok ke `engines.node` `24.x`; metadata
-  redeployment backend `46f4207` membuktikan build memakai Node `24.x` dan
-  Lambda memakai `nodejs24.x`. Project settings frontend dan dokumentasi juga
-  sudah menunjukkan Node `24.x`; shell Preview belum terprovision yang baru
-  tetap perlu dibuktikan pada redeployment berikutnya.
+- Commit `d88b176` pada `codex/full-integration` lulus seluruh
+  [SIMSA CI](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33242350291):
+  lint/typecheck/build, audit dependency, 130 test frontend, 1.153 test backend,
+  build/inspect image worker, validasi Compose/preflight digest, migrasi
+  PostgreSQL 18, seed paralel idempoten, concurrency lock, dan ClamAV
+  clean/EICAR/restart.
+- [Preview backend](https://simsa-backend-6ecbh83y8-bayilaras-projects.vercel.app)
+  berstatus `Ready`. Pemeriksaan dengan bypass Deployment Protection yang sah
+  membuktikan `/health` mengembalikan `200`/`applicationReady:false`, sedangkan
+  `/ready` dan route bisnis mengembalikan `503 preview_not_provisioned`, seluruhnya
+  `no-store`. Entrypoint tidak mengimpor aplikasi atau membaca kredensial
+  Production generik sampai marker dan seluruh `PREVIEW_*` lengkap.
+- [Preview frontend](https://simsa-frontend-3ga82wmb8-bayilaras-projects.vercel.app)
+  berstatus `Ready` dan, karena `API_PROXY_ORIGIN` terisolasi belum tersedia,
+  sengaja hanya menyajikan shell pemeliharaan HTML serta respons API JSON
+  `503 preview_not_provisioned`. Build ini tidak memuat bundle SPA Production,
+  menggunakan `no-store`, dan membersihkan cache deployment lama melalui
+  service worker kecil.
+- [Preview dokumentasi](https://simsa-atrbpn-4li12c05a-bayilaras-projects.vercel.app)
+  berstatus `Ready` dan mengembalikan halaman Docusaurus `200`. Ketiga project
+  Vercel menggunakan Node `24.x`; backend Lambda memakai `nodejs24.x`.
 
 ## Blocker production
 
@@ -79,25 +73,27 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
    diaudit adalah <https://github.com/bayilaras/simsa-atrbpn/actions/runs/33156207726>.
    Workflow yang diperbaiki sudah berada di branch, tetapi secret baru dan
    restore drill tetap belum dapat dibuktikan sebelum run manual yang sah.
-2. Perubahan belum digabung ke `main`; CI branch `02ce1ac` sudah hijau, tetapi
-   tidak menggantikan required checks pada commit final yang benar-benar akan
-   dirilis.
+2. Perubahan belum digabung ke `main`; CI branch commit implementasi `d88b176`
+   sudah hijau, tetapi tidak menggantikan review dan required checks pada merge
+   commit yang benar-benar akan dirilis.
 3. Environment Vercel backend masih mewariskan database/Blob Production ke
    Preview. Gate baru tidak memakai nilai generik itu selama kontrak
    `PREVIEW_*` belum lengkap. Frontend memakai proxy same-origin setelah
    `API_PROXY_ORIGIN` terisolasi tersedia; sebelum itu hanya shell `503` yang
-   dilayani. Branch
-   alias backend juga mengembalikan redirect SSO karena Deployment Protection;
-   routing frontend sudah mendukung bypass server-side, tetapi secret
+   dilayani. Perilaku fail-closed remote tersebut sudah terbukti. Branch alias
+   backend mengembalikan redirect SSO karena Deployment Protection; routing
+   frontend sudah mendukung bypass server-side, tetapi secret
    `BACKEND_VERCEL_PROTECTION_BYPASS` belum diprovisikan dan alur end-to-end
    belum dapat dibuktikan. Callback direct-upload Vercel Blob juga berjalan
    server-to-server dan tidak melewati proxy frontend; backend sekarang menolak
    Preview tanpa `PREVIEW_VERCEL_BLOB_CALLBACK_URL` custom yang tidak
    terlindungi, tetapi origin tersebut belum disediakan dan alur callback/lease
    belum diuji nyata.
-4. Worker antivirus belum memiliki host persisten. Docker Desktop pada mesin
-   verifikasi adalah instalasi parsial: binary ada, daemon tidak aktif, registry
-   instalasi hilang, dan Compose hanya dapat dipanggil melalui plugin langsung.
+4. Worker antivirus belum memiliki host persisten. CI Linux sudah membangun dan
+   memeriksa image worker serta menjalankan ClamAV clean/EICAR/restart. Docker
+   Desktop pada mesin verifikasi adalah instalasi parsial: binary ada, daemon
+   tidak aktif, registry instalasi hilang, dan Compose hanya dapat dipanggil
+   melalui plugin langsung.
    Repair/reinstall membutuhkan keputusan administrator dan penerimaan lisensi
    oleh pihak yang berwenang; itu tidak dilakukan otomatis.
 5. Backend production masih versi lama: `/health` hidup, tetapi `/ready` 404 dan
@@ -108,8 +104,8 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
 
 ## Urutan aman berikutnya
 
-1. Pastikan CI branch hijau, selesaikan review PR, dan ulangi required checks
-   pada commit final sebelum merge.
+1. Selesaikan review PR dan ulangi required checks pada merge commit sebelum
+   promosi apa pun ke Production.
 2. Konfigurasi dua secret backup, jalankan workflow manual, unduh artifact
    terenkripsi, dan lakukan restore drill independen.
 3. Sediakan database dan private Blob Preview terpisah; biarkan
