@@ -33,14 +33,20 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
   lint/typecheck/build, audit dependency, 107 test frontend, 1128 test backend,
   build/inspect image worker, migrasi PostgreSQL 18, seed paralel idempoten, dan
   concurrency lock.
-- Vercel berhasil membangun Preview backend dan dokumentasi. Backend Preview
-  sengaja gagal tertutup saat dipanggil (`/health` dan `/ready` mengembalikan
-  500) karena callback Blob Preview publik belum dikonfigurasi. Frontend Preview
-  juga sengaja ditolak saat kompilasi konfigurasi karena `API_PROXY_ORIGIN`
-  terisolasi belum tersedia; tidak ada fallback ke API production.
-- Log deployment menunjukkan project Vercel lama masih memilih Node 20.
-  Seluruh package root kini mematok `engines.node` ke `24.x`; redeployment harus
-  membuktikan build/function menggunakan Node 24 sebelum promosi.
+- Vercel berhasil membangun Preview backend. Backend Preview sengaja gagal
+  tertutup saat dipanggil (`/health` dan `/ready` mengembalikan 500) karena
+  callback Blob Preview publik belum dikonfigurasi. Frontend Preview juga
+  sengaja ditolak saat kompilasi konfigurasi karena `API_PROXY_ORIGIN`
+  terisolasi belum tersedia; tidak ada fallback ke API production. Project
+  dokumentasi root awalnya berstatus `Ready` tetapi menghasilkan nol output;
+  konfigurasi root kini secara eksplisit membangun `docs-site` dan harus
+  dibuktikan pada redeployment.
+- Log deployment pertama menunjukkan project Vercel lama masih memilih Node 20.
+  Seluruh package root kemudian dipatok ke `engines.node` `24.x`; metadata
+  redeployment backend `46f4207` membuktikan build memakai Node `24.x` dan
+  Lambda memakai `nodejs24.x`. Project settings frontend dan dokumentasi juga
+  sudah menunjukkan Node `24.x`; frontend tetap berhenti lebih awal pada guard
+  konfigurasi sampai environment Preview terisolasi tersedia.
 
 ## Blocker production
 
