@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
@@ -187,10 +187,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
@@ -218,6 +218,197 @@ jobs:
         env:
           DATABASE_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
 
+      - name: Validate exact backup schema profiles
+        env:
+          PGPASSWORD: simsa_test_password
+        run: |
+          set -euo pipefail
+          POSTGRES_IMAGE='postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2'
+          EXPECTED_MIGRATIONS_JSON=$(python3 \
+            "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py")
+          PROFILE_ERROR_LOG="$RUNNER_TEMP/simsa-backup-pre-profile-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+          POST_AUTO_EVIDENCE="$RUNNER_TEMP/simsa-backup-post-auto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.evidence"
+          PRE_AUTO_EVIDENCE="$RUNNER_TEMP/simsa-backup-pre-auto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.evidence"
+          PRE_PROFILE_DATABASE='simsa_backup_pre_profile'
+          cleanup_backup_profile_tests() {
+            status=$?
+            trap - EXIT
+            docker run --rm --network host \
+              --env PGPASSWORD \
+              "$POSTGRES_IMAGE" \
+              dropdb \
+                --host 127.0.0.1 \
+                --username simsa_test \
+                --if-exists \
+                --force \
+                "$PRE_PROFILE_DATABASE" >/dev/null 2>&1 || true
+            rm -f -- "$PROFILE_ERROR_LOG" "$POST_AUTO_EVIDENCE" "$PRE_AUTO_EVIDENCE"
+            exit "$status"
+          }
+          trap cleanup_backup_profile_tests EXIT
+
+          # The fully migrated CI database must compile and pass the exact
+          # 0000-0029 post-migration profile. Verifier output contains only
+          # counts/digests and is discarded here; no application rows are logged.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname simsa_test \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=post_migration \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > /dev/null <<'SQL'
+          INSERT INTO public.users (email)
+          VALUES ('backup-verifier@ci.invalid')
+          ON CONFLICT (email) DO NOTHING;
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+
+          # Scheduled mode may resolve only one of the exact histories. On the
+          # current 30-migration DB it must resolve to post_migration.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname simsa_test \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=auto \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > "$POST_AUTO_EVIDENCE" <<'SQL'
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+          grep -Fq $'schema_profile\tpost_migration\t1\t' "$POST_AUTO_EVIDENCE"
+
+          # A 30-migration database must fail closed when the operator chooses
+          # the pre-migration (0000-0020) profile.
+          if docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname simsa_test \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=pre_migration \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > "$PROFILE_ERROR_LOG" 2>&1 <<'SQL'
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+          then
+            echo "::error::pre_migration profile unexpectedly accepted migration 0021-0029."
+            exit 1
+          fi
+          grep -Fq 'migration history does not exactly match the pre_migration profile' \
+            "$PROFILE_ERROR_LOG"
+
+          # Build an independent database from the real 0000-0020 migration SQL
+          # and hashes. Deleting later history rows from the 0029 schema would
+          # not exercise the schema that the first Production backup will use.
+          docker run --rm --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            dropdb \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --if-exists \
+              --force \
+              "$PRE_PROFILE_DATABASE"
+          docker run --rm --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            createdb \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --template template0 \
+              "$PRE_PROFILE_DATABASE"
+          python3 "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py" \
+              --emit-profile-sql pre_migration | \
+            docker run --rm --interactive --network host \
+              --env PGPASSWORD \
+              "$POSTGRES_IMAGE" \
+              psql \
+                --host 127.0.0.1 \
+                --username simsa_test \
+                --dbname "$PRE_PROFILE_DATABASE" \
+                --no-psqlrc \
+                --set ON_ERROR_STOP=on \
+                --quiet
+
+          # Explicit pre_migration must pass on the actual 0020 schema.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname "$PRE_PROFILE_DATABASE" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=pre_migration \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > /dev/null <<'SQL'
+          INSERT INTO public.users (email)
+          VALUES ('backup-verifier-pre@ci.invalid')
+          ON CONFLICT (email) DO NOTHING;
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+
+          # Scheduled auto mode must resolve the exact same 0020 fixture to the
+          # pre_migration profile, never merely accept a numeric threshold.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname "$PRE_PROFILE_DATABASE" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=auto \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > "$PRE_AUTO_EVIDENCE" <<'SQL'
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+          grep -Fq $'schema_profile\tpre_migration\t1\t' "$PRE_AUTO_EVIDENCE"
+
       - name: Run PostgreSQL concurrency tests
         run: npm run test:postgres-locks
         working-directory: backend
@@ -231,10 +422,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
@@ -254,10 +445,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
 

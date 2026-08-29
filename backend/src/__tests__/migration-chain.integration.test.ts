@@ -449,6 +449,74 @@ describe('PostgreSQL migration chain', () => {
             .rejects.toThrow(/legacy autentikasi\.file_lampiran.*explicit reconciliation.*private Blob/i);
     }, 30_000);
 
+    it('blocks 0021 before schema changes for an active privileged user without an identity', async () => {
+        const database = await createDatabase();
+        const integrityIndex = journal.entries.findIndex(
+            ({ tag }) => tag === '0021_archive_source_domain_integrity',
+        );
+        expect(integrityIndex).toBeGreaterThan(0);
+
+        // Production is currently journaled through 0020. Reproduce that exact
+        // resume point, including the old 0009 which has already removed
+        // users.password, before exercising the new forward preflight.
+        for (const entry of journal.entries.slice(0, integrityIndex)) {
+            await applyMigration(database, entry);
+        }
+
+        const superAdminId = '10000000-0000-4000-8000-000000000021';
+        const dirjenAdminId = '11000000-0000-4000-8000-000000000021';
+        const sesditjenAdminId = '12000000-0000-4000-8000-000000000021';
+        const importedStaffId = '20000000-0000-4000-8000-000000000021';
+        const importedUserId = '21000000-0000-4000-8000-000000000021';
+        await database.exec(`
+            INSERT INTO users (id, email, role, is_active)
+            VALUES
+                ('${superAdminId}', 'orphaned-super-admin@example.test', 'super_admin', true),
+                ('${dirjenAdminId}', 'orphaned-dirjen-admin@example.test', 'admin_dirjen', true),
+                ('${sesditjenAdminId}', 'orphaned-sesditjen-admin@example.test', 'admin_sesditjen', true)
+        `);
+
+        await expect(applyMigration(database, journal.entries[integrityIndex]))
+            .rejects.toThrow(/0021 preflight failed.*active privileged user.*no account identity/i);
+
+        const schemaAfterRejection = await database.query<{ index_name: string | null }>(`
+            SELECT to_regclass('public.arsip_source_surat_kind_unique')::text AS index_name
+        `);
+        expect(schemaAfterRejection.rows).toEqual([{ index_name: null }]);
+
+        // Owner reconciliation is an explicit operator action. Deactivation
+        // is safe here; the migration must never invent a credential. An
+        // account-less imported staff record remains a supported state.
+        await database.exec(`
+            UPDATE users
+            SET is_active = false
+            WHERE id IN ('${superAdminId}', '${dirjenAdminId}', '${sesditjenAdminId}');
+            INSERT INTO users (id, email, role, is_active)
+            VALUES
+                ('${importedStaffId}', 'imported-staff@example.test', 'staff', true),
+                ('${importedUserId}', 'imported-user@example.test', 'user', true)
+        `);
+
+        await applyMigration(database, journal.entries[integrityIndex]);
+
+        const postconditions = await database.query<{
+            index_name: string | null;
+            imported_account_count: number;
+        }>(`
+            SELECT
+                to_regclass('public.arsip_source_surat_kind_unique')::text AS index_name,
+                (
+                    SELECT count(*)::int
+                    FROM accounts
+                    WHERE user_id IN ('${importedStaffId}', '${importedUserId}')
+                ) AS imported_account_count
+        `);
+        expect(postconditions.rows).toEqual([{
+            index_name: 'arsip_source_surat_kind_unique',
+            imported_account_count: 0,
+        }]);
+    }, 60_000);
+
     it('reconciles stale surat archive flags when source links do not exist', async () => {
         const database = await createDatabase();
         const integrityIndex = journal.entries.findIndex(

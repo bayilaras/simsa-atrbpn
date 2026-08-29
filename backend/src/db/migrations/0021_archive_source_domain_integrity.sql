@@ -3,6 +3,32 @@
 -- than deleting or silently rewriting archival evidence during deployment.
 DO $$
 DECLARE
+    orphaned_privileged_users integer;
+BEGIN
+    SELECT count(*)::integer
+    INTO orphaned_privileged_users
+    FROM public.users u
+    WHERE u.is_active IS TRUE
+      AND u.role IN ('super_admin', 'admin_dirjen', 'admin_sesditjen')
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.accounts a
+          WHERE a.user_id = u.id
+      );
+
+    IF orphaned_privileged_users > 0 THEN
+        RAISE EXCEPTION USING
+            MESSAGE = format(
+                '0021 preflight failed: %s active privileged user(s) have no account identity',
+                orphaned_privileged_users
+            ),
+            HINT = 'Reconcile each verified owner identity or deactivate the user before rerunning; do not auto-create credentials.';
+    END IF;
+END $$;
+--> statement-breakpoint
+
+DO $$
+DECLARE
     duplicate_link text;
     invalid_archive uuid;
 BEGIN

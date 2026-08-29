@@ -4,7 +4,8 @@
 
 Status production saat verifikasi ini adalah **NO-GO**. Kode dapat dilanjutkan
 ke review/CI dan deployment preview terisolasi, tetapi migrasi atau promosi
-production belum aman.
+production belum aman. Tidak ada migrasi, seed, penggantian alias, atau
+promosi Production yang dilakukan selama audit ini.
 
 BSrE/PSrE tetap di luar ruang lingkup. Profil inti tetap `internal` dan
 SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
@@ -37,14 +38,26 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
   dan job backend menjalankan migrasi, seed paralel idempoten, serta concurrency
   test pada PostgreSQL 18 nyata. Seluruh job tersebut lulus pada commit
   implementasi `d88b176`.
-- Workflow backup kini menolak secret kosong, mengalirkan dump langsung ke
-  enkripsi, memulihkannya ke database terisolasi dengan fail-fast, dan hanya
-  mengunggah artifact yang lolos restore. Drill lokal nyata lulus dengan 58
-  tabel, 30 migrasi, dan 486 entri TOC tanpa dump plaintext; run Production
-  dengan secret resmi tetap wajib dibuktikan terpisah.
+- Kandidat workflow backup memakai koneksi Neon langsung dengan TLS ketat,
+  snapshot sumber tunggal, dump yang langsung dienkripsi, artifact beranggotakan
+  file terenkripsi saja, serta job runner baru yang mengunduh, memulihkan, dan
+  membandingkan bukti sumber–restore. Profil schema harus cocok persis dengan
+  `0000`–`0020` atau `0000`–`0029`; run Production dengan dua secret resmi tetap
+  wajib lulus sebelum migrasi.
+- Migration forward `0021` sekarang fail-closed sebelum DDL jika pengguna aktif
+  dengan role administratif tidak mempunyai account identity. Migration historis
+  `0009` tetap immutable agar hash yang sudah tercatat di Production tidak
+  menyimpang dari file repository.
 
 ## Bukti remote branch
 
+- [Draft PR #2](https://github.com/bayilaras/simsa-atrbpn/pull/2) menargetkan
+  `main`. Branch protection `main` kini strict/up-to-date, berlaku untuk admin,
+  memerlukan satu approval independen, penyelesaian percakapan, approval setelah
+  push terakhir, dan lima required checks. Force-push serta deletion dilarang.
+- Environment GitHub `production-backup` dibatasi ke protected branch dan dua
+  variable non-secret telah mengikat workflow ke direct host serta nama database
+  Production yang diaudit. Nilainya sengaja tidak dicatat di repository.
 - Commit `d88b176` pada `codex/full-integration` lulus seluruh
   [SIMSA CI](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33242350291):
   lint/typecheck/build, audit dependency, 130 test frontend, 1.153 test backend,
@@ -58,47 +71,58 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
   `no-store`. Entrypoint tidak mengimpor aplikasi atau membaca kredensial
   Production generik sampai marker dan seluruh `PREVIEW_*` lengkap.
 - [Preview frontend](https://simsa-frontend-3ga82wmb8-bayilaras-projects.vercel.app)
-  berstatus `Ready` dan, karena `API_PROXY_ORIGIN` terisolasi belum tersedia,
-  sengaja hanya menyajikan shell pemeliharaan HTML serta respons API JSON
-  `503 preview_not_provisioned`. Build ini tidak memuat bundle SPA Production,
-  menggunakan `no-store`, dan membersihkan cache deployment lama melalui
-  service worker kecil.
+  merupakan bukti fail-closed awal sebelum proxy terisolasi tersedia. Preview
+  frontend terbaru `simsa-frontend-hhlgb7s8i-bayilaras-projects.vercel.app`
+  telah memakai `API_PROXY_ORIGIN` branch alias backend dan Automation Bypass
+  yang hanya ada pada environment Preview frontend. Melalui origin frontend,
+  `/health` mengembalikan `200` dan `/ready` mengembalikan fail-closed `503
+  preview_not_provisioned` tanpa redirect SSO. `VITE_API_URL` tetap kosong.
 - [Preview dokumentasi](https://simsa-atrbpn-4li12c05a-bayilaras-projects.vercel.app)
   berstatus `Ready` dan mengembalikan halaman Docusaurus `200`. Ketiga project
   Vercel menggunakan Node `24.x`; backend Lambda memakai `nodejs24.x`.
+- Synthetic merge PR pada SHA `052d8ed` lulus kelima job required di
+  [run 33250326028](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33250326028).
+  Bukti ini adalah pre-merge; checks pada commit merge aktual tetap wajib
+  diulang sebelum promosi.
 
 ## Blocker production
 
-1. Sedikitnya sepuluh backup Neon terjadwal terakhir gagal; run terbaru yang
-   diaudit adalah <https://github.com/bayilaras/simsa-atrbpn/actions/runs/33156207726>.
-   Workflow yang diperbaiki sudah berada di branch, tetapi secret baru dan
-   restore drill tetap belum dapat dibuktikan sebelum run manual yang sah.
-2. Perubahan belum digabung ke `main`; CI branch commit implementasi `d88b176`
-   sudah hijau, tetapi tidak menggantikan review dan required checks pada merge
-   commit yang benar-benar akan dirilis.
-3. Environment Vercel backend masih mewariskan database/Blob Production ke
+1. Workflow backup lama pada `main` telah dinonaktifkan karena memakai
+   `NEON_DATABASE_URL` berhak tinggi dan pernah mengunggah dump terkompresi tanpa
+   enkripsi. Environment GitHub `production-backup` sudah dibatasi ke protected
+   branch dan identitas sumber non-secret sudah dikunci, tetapi
+   `NEON_BACKUP_DATABASE_URL` untuk role read-only khusus dan
+   `BACKUP_ENCRYPTION_PASSPHRASE` dari secret manager belum tersedia. Artifact
+   terenkripsi dan restore drill independen karena itu belum terbukti.
+2. Perubahan belum digabung ke `main`; CI branch dan synthetic merge sudah
+   hijau, tetapi belum ada reviewer independen dan keduanya tidak menggantikan
+   required checks pada commit merge aktual.
+3. Database Production berada tepat pada 21 migration `0000`–`0020`. Temuan
+   audit privat terkait secret historis dan rekonsiliasi identitas privileged
+   masih terbuka; migration `0021` sengaja fail-closed sampai keduanya ditangani
+   setelah backup terverifikasi. Rincian insiden aktif tidak disimpan dalam
+   repository publik ini.
+4. Kontrol akses dan backup independen bitstream Production belum lulus gate
+   rilis. Store private baru, salinan terenkripsi, checksum, restore drill, dan
+   migrasi tervalidasi wajib selesai sebelum Production aman; rincian inventory
+   aktif disimpan pada bukti audit privat.
+5. Environment Vercel backend masih mewariskan database/Blob Production ke
    Preview. Gate baru tidak memakai nilai generik itu selama kontrak
-   `PREVIEW_*` belum lengkap. Frontend memakai proxy same-origin setelah
-   `API_PROXY_ORIGIN` terisolasi tersedia; sebelum itu hanya shell `503` yang
-   dilayani. Perilaku fail-closed remote tersebut sudah terbukti. Branch alias
-   backend mengembalikan redirect SSO karena Deployment Protection; routing
-   frontend sudah mendukung bypass server-side, tetapi secret
-   `BACKEND_VERCEL_PROTECTION_BYPASS` belum diprovisikan dan alur end-to-end
-   belum dapat dibuktikan. Callback direct-upload Vercel Blob juga berjalan
-   server-to-server dan tidak melewati proxy frontend; backend sekarang menolak
-   Preview tanpa `PREVIEW_VERCEL_BLOB_CALLBACK_URL` custom yang tidak
-   terlindungi, tetapi origin tersebut belum disediakan dan alur callback/lease
-   belum diuji nyata.
-4. Worker antivirus belum memiliki host persisten. CI Linux sudah membangun dan
+   `PREVIEW_*` belum lengkap. Proxy same-origin menggunakan branch alias yang
+   sesuai commit dan bypass server-side Preview-only; respons tanpa redirect SSO
+   sudah terbukti. Callback direct-upload berjalan server-to-server dan tidak
+   melewati proxy frontend; backend menolak Preview tanpa
+   `PREVIEW_VERCEL_BLOB_CALLBACK_URL` custom yang tidak terlindungi, tetapi origin,
+   database, serta private Blob Preview belum disediakan dan alur
+   upload–callback–lease–claim belum diuji nyata.
+6. Worker antivirus belum memiliki host persisten. CI Linux sudah membangun dan
    memeriksa image worker serta menjalankan ClamAV clean/EICAR/restart. Docker
-   Desktop pada mesin verifikasi adalah instalasi parsial: binary ada, daemon
-   tidak aktif, registry instalasi hilang, dan Compose hanya dapat dipanggil
-   melalui plugin langsung.
-   Repair/reinstall membutuhkan keputusan administrator dan penerimaan lisensi
-   oleh pihak yang berwenang; itu tidak dilakukan otomatis.
-5. Backend production masih versi lama: `/health` hidup, tetapi `/ready` 404 dan
+   Desktop pada mesin verifikasi memiliki binary, tetapi service daemon berhenti
+   dan tidak dapat dijalankan tanpa hak administrator; Compose tidak tersedia
+   dan WSL belum mempunyai distro. Bukti host Linux persisten tetap diperlukan.
+7. Backend production masih versi lama: `/health` hidup, tetapi `/ready` 404 dan
    `/api/health` belum memuat kontrak dependency readiness baru.
-6. `OCR_TESSDATA_PATH`, model `ind+eng`, domain institusi same-site, monitoring,
+8. `OCR_TESSDATA_PATH`, model `ind+eng`, domain institusi same-site, monitoring,
    backup bitstream, rotasi kredensial lama, dan persetujuan operasional belum
    mempunyai bukti lengkap.
 

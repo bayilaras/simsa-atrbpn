@@ -8,6 +8,11 @@ const DEPLOYMENT_BUILD = Object.freeze({
   installCommand: 'npm ci',
   buildCommand: 'npm run build',
   outputDirectory: 'dist',
+  // Production is staged explicitly with `vercel --prod --skip-domain`,
+  // verified, and then promoted. A merge to main must never bypass that gate.
+  git: Object.freeze({
+    deploymentEnabled: Object.freeze({ main: false }),
+  }),
 })
 const PRODUCTION_BACKEND_HOSTS = new Set([
   'simsa-backend.vercel.app',

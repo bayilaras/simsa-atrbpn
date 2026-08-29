@@ -5,9 +5,20 @@ on:
     # Setiap hari jam 00:00 UTC (07:00 WIB)
     - cron: '0 0 * * *'
   workflow_dispatch:
+    inputs:
+      schema_profile:
+        description: Exact migration history expected in the source backup
+        required: true
+        type: choice
+        # The first Production backup must be taken before migrations 0021-0029.
+        # After that maintenance window, explicitly select post_migration.
+        default: pre_migration
+        options:
+          - pre_migration
+          - post_migration
 
-# The workflow only reads PostgreSQL and uploads an Actions artifact. It never
-# changes repository content, deployments, Neon branches, or Blob objects.
+# The workflow only reads PostgreSQL and stores encrypted Actions artifacts. It
+# never changes repository content, deployments, Neon branches, or Blob objects.
 permissions:
   contents: read
 
@@ -20,29 +31,42 @@ concurrency:
 
 jobs:
   backup:
-    name: Stream, encrypt, and restore Neon PostgreSQL
+    name: Stream and encrypt Neon PostgreSQL
     runs-on: ubuntu-latest
+    # Never expose Production backup credentials to a manual run from a feature
+    # branch, even if the GitHub Environment is accidentally misconfigured.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    # Secrets must be stored on this protected Environment with deployment
+    # branches restricted to the default branch.
+    environment: production-backup
     timeout-minutes: 45
-
-    services:
-      restore-db:
-        image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
-        env:
-          POSTGRES_USER: simsa_restore
-          POSTGRES_PASSWORD: restore-only-password
-          POSTGRES_DB: simsa_restore_validation
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U simsa_restore -d simsa_restore_validation"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    env:
+      # Scheduled runs auto-resolve only one of the two exact safe histories;
+      # manual runs must deliberately select the expected source schema state.
+      BACKUP_SCHEMA_PROFILE: ${{ github.event_name == 'schedule' && 'auto' || inputs.schema_profile }}
+    outputs:
+      archive_name: ${{ steps.create.outputs.archive_name }}
+      archive_sha256: ${{ steps.create.outputs.archive_sha256 }}
+      evidence_name: ${{ steps.create.outputs.evidence_name }}
+      evidence_sha256: ${{ steps.create.outputs.evidence_sha256 }}
+      artifact_name: ${{ steps.create.outputs.artifact_name }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+      schema_profile: ${{ steps.create.outputs.schema_profile }}
+      database_name: ${{ steps.preflight.outputs.database_name }}
 
     steps:
-      - name: Validate dedicated read-only backup role
+      - name: Checkout trusted default-branch verifier
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate dedicated read-only backup role and TLS
+        id: preflight
         env:
           DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
+          EXPECTED_DATABASE: ${{ vars.NEON_BACKUP_EXPECTED_DATABASE }}
+          EXPECTED_HOST: ${{ vars.NEON_BACKUP_EXPECTED_HOST }}
         run: |
           set -euo pipefail
 
@@ -50,24 +74,122 @@ jobs:
             echo "::error::NEON_BACKUP_DATABASE_URL secret is not set."
             exit 1
           fi
-          case "$DATABASE_URL" in
-            *-pooler.*)
-              echo "::error::Use a direct Neon endpoint for pg_dump, not a pooled endpoint."
-              exit 1
-              ;;
-          esac
-          case "$DATABASE_URL" in
-            *sslmode=require*|*sslmode=verify-full*) ;;
-            *)
-              echo "::error::NEON_BACKUP_DATABASE_URL must require TLS."
-              exit 1
-              ;;
-          esac
+          if [ -z "$EXPECTED_HOST" ] || [ -z "$EXPECTED_DATABASE" ]; then
+            echo "::error::The expected Neon backup host/database Environment variables are not set."
+            exit 1
+          fi
+          # sslrootcert=system depends on the libpq image trust store. Check it
+          # explicitly before attempting any connection so image/platform drift
+          # fails closed with an actionable error.
+          if ! docker run --rm "$POSTGRES_IMAGE" \
+              test -s /etc/ssl/certs/ca-certificates.crt; then
+            echo "::error::The pinned libpq image has no usable system CA bundle."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import os
+          import re
+          from urllib.parse import parse_qsl, unquote, urlsplit
+
+          def reject(message: str) -> None:
+              print(f"::error::{message}")
+              raise SystemExit(1)
+
+          try:
+              parsed = urlsplit(os.environ["DATABASE_URL"])
+              host = (parsed.hostname or "").lower()
+              port = parsed.port
+              database = unquote(parsed.path.removeprefix("/"))
+              pairs = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+          except (KeyError, TypeError, ValueError):
+              reject("NEON_BACKUP_DATABASE_URL is not a valid PostgreSQL URI.")
+
+          if parsed.scheme not in {"postgres", "postgresql"}:
+              reject("NEON_BACKUP_DATABASE_URL must use the postgres/postgresql URI scheme.")
+          if not parsed.username or not host or not database or "/" in database or parsed.fragment:
+              reject("The backup URI must identify one explicit user, host, and database without a fragment.")
+          if "," in host:
+              reject("The backup URI must identify exactly one direct host.")
+          if host == "neon.tech" or not host.endswith(".neon.tech") or "-pooler." in host:
+              reject("Use a direct Neon endpoint, not a pooled or non-Neon host.")
+          if port not in {None, 5432}:
+              reject("The direct Neon backup URI must use port 5432.")
+          if database.lower() in {"postgres", "template0", "template1"}:
+              reject("The backup URI must identify the application database, not a maintenance database.")
+          expected_host = os.environ["EXPECTED_HOST"].strip().lower()
+          expected_database = os.environ["EXPECTED_DATABASE"].strip()
+          if not expected_host or not expected_database:
+              reject("The expected backup host/database values must not be blank.")
+          if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,62}", expected_database):
+              reject("The expected backup database name is unsafe or unsupported.")
+          if host != expected_host or database != expected_database:
+              reject("The backup URI does not identify the approved Production host and database.")
+
+          security_parameters: dict[str, list[str]] = {
+              "sslmode": [],
+              "channel_binding": [],
+              "sslrootcert": [],
+          }
+          connection_overrides = {
+              "host",
+              "hostaddr",
+              "port",
+              "dbname",
+              "database",
+              "user",
+              "password",
+              "service",
+              "servicefile",
+          }
+          for key, value in pairs:
+              normalized_key = key.lower()
+              if normalized_key in connection_overrides:
+                  reject("The backup URI must not override authority, identity, or service fields in its query.")
+              if normalized_key == "ssl":
+                  reject("Do not use the ambiguous ssl URI parameter; use sslmode exactly once.")
+              if normalized_key in security_parameters:
+                  security_parameters[normalized_key].append(value.lower())
+
+          expected = {
+              "sslmode": "verify-full",
+              "channel_binding": "require",
+              "sslrootcert": "system",
+          }
+          for key, expected_value in expected.items():
+              values = security_parameters[key]
+              if len(values) != 1 or values[0] != expected_value:
+                  reject(f"The backup URI must set {key}={expected_value} exactly once.")
+          PY
+
+          # Neon terminates TLS before PostgreSQL, so pg_stat_ssl can report
+          # false even for an encrypted client socket. Prove TLS at the libpq
+          # client instead; the strict URI above also verifies the certificate,
+          # hostname, and SCRAM channel binding.
+          CONNECTION_INFO=$(docker run --rm --network host \
+            --env DATABASE_URL \
+            "$POSTGRES_IMAGE" \
+            sh -eu -c 'exec psql "$DATABASE_URL" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --pset format=unaligned \
+              --pset footer=off \
+              --command "\\conninfo"')
+          if ! grep -Eiq '^[[:space:]]*SSL Connection[[:space:]]*\|[[:space:]]*true[[:space:]]*$' \
+              <<<"$CONNECTION_INFO" || \
+             ! grep -Eiq '^[[:space:]]*SSL Protocol[[:space:]]*\|[[:space:]]*TLSv1\.[23][[:space:]]*$' \
+              <<<"$CONNECTION_INFO" || \
+             ! grep -Eiq '^[[:space:]]*SSL Cipher[[:space:]]*\|[[:space:]]*[A-Z0-9_-]+[[:space:]]*$' \
+              <<<"$CONNECTION_INFO"; then
+            echo "::error::libpq did not prove an encrypted TLS 1.2+ connection with a negotiated cipher."
+            exit 1
+          fi
+          unset CONNECTION_INFO
 
           ROLE_IS_READ_ONLY=$(docker run --rm --interactive --network host \
             --env DATABASE_URL \
             "$POSTGRES_IMAGE" \
-            sh -eu -c 'exec psql "$DATABASE_URL" --set ON_ERROR_STOP=on --quiet --tuples-only --no-align' <<'SQL'
+            sh -eu -c 'exec psql "$DATABASE_URL" --no-psqlrc \
+              --set ON_ERROR_STOP=on --quiet --tuples-only --no-align' <<'SQL'
           WITH required_tables(table_name) AS (
             VALUES
               ('public.users'),
@@ -85,10 +207,66 @@ jobs:
           ), resolved AS (
             SELECT table_name, to_regclass(table_name) AS relation
             FROM required_tables
+          ), required_privileges AS (
+            SELECT bool_and(
+              resolved.relation IS NOT NULL
+              AND has_table_privilege(current_user, resolved.relation, 'SELECT')
+            ) AS valid
+            FROM resolved
+          ), application_relations AS (
+            SELECT relation.oid
+            FROM pg_class AS relation
+            INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+            WHERE namespace.nspname IN ('public', 'drizzle')
+              AND relation.relkind IN ('r', 'p', 'v', 'm', 'f')
+          ), relation_privileges AS (
+            SELECT COALESCE(bool_and(
+              has_table_privilege(current_user, application_relations.oid, 'SELECT')
+              AND NOT has_table_privilege(current_user, application_relations.oid, 'INSERT')
+              AND NOT has_any_column_privilege(current_user, application_relations.oid, 'INSERT')
+              AND NOT has_table_privilege(current_user, application_relations.oid, 'UPDATE')
+              AND NOT has_any_column_privilege(current_user, application_relations.oid, 'UPDATE')
+              AND NOT has_table_privilege(current_user, application_relations.oid, 'DELETE')
+              AND NOT has_table_privilege(current_user, application_relations.oid, 'TRUNCATE')
+              AND NOT has_table_privilege(current_user, application_relations.oid, 'REFERENCES')
+              AND NOT has_any_column_privilege(current_user, application_relations.oid, 'REFERENCES')
+              AND NOT has_table_privilege(current_user, application_relations.oid, 'TRIGGER')
+              AND NOT has_table_privilege(current_user, application_relations.oid, 'MAINTAIN')
+            ), false) AS valid
+            FROM application_relations
+          ), application_sequences AS (
+            SELECT relation.oid
+            FROM pg_class AS relation
+            INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+            WHERE namespace.nspname IN ('public', 'drizzle')
+              AND relation.relkind = 'S'
+          ), sequence_privileges AS (
+            SELECT COALESCE(bool_and(
+              has_sequence_privilege(current_user, application_sequences.oid, 'SELECT')
+              AND NOT has_sequence_privilege(current_user, application_sequences.oid, 'USAGE')
+              AND NOT has_sequence_privilege(current_user, application_sequences.oid, 'UPDATE')
+            ), true) AS valid
+            FROM application_sequences
           ), role_state AS (
-            SELECT rolinherit, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
+            SELECT oid, rolinherit, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
             FROM pg_roles
             WHERE rolname = current_user
+          ), role_escalation AS (
+            SELECT
+              EXISTS (
+                SELECT 1
+                FROM pg_roles AS candidate
+                CROSS JOIN role_state
+                WHERE candidate.oid NOT IN (role_state.oid, 'pg_read_all_data'::regrole)
+                  AND pg_has_role(current_user, candidate.oid, 'MEMBER')
+              ) AS has_unsafe_membership,
+              EXISTS (
+                SELECT 1
+                FROM pg_auth_members AS membership
+                CROSS JOIN role_state
+                WHERE membership.member = role_state.oid
+                  AND membership.admin_option
+              ) AS has_admin_option
           )
           SELECT
             role_state.rolinherit
@@ -97,41 +275,32 @@ jobs:
             AND NOT role_state.rolcreaterole
             AND NOT role_state.rolreplication
             AND NOT role_state.rolbypassrls
-            AND EXISTS (
-              SELECT 1
-              FROM pg_stat_ssl
-              WHERE pid = pg_backend_pid() AND ssl
-            )
+            AND NOT role_escalation.has_unsafe_membership
+            AND NOT role_escalation.has_admin_option
+            AND NOT pg_is_in_recovery()
             AND pg_has_role(current_user, 'pg_read_all_data', 'member')
             AND NOT pg_has_role(current_user, 'pg_write_all_data', 'member')
             AND NOT has_database_privilege(current_user, current_database(), 'CREATE')
             AND NOT has_schema_privilege(current_user, 'public', 'CREATE')
-            AND bool_and(
-              resolved.relation IS NOT NULL
-              AND has_table_privilege(current_user, resolved.relation, 'SELECT')
-              AND NOT has_table_privilege(current_user, resolved.relation, 'INSERT')
-              AND NOT has_table_privilege(current_user, resolved.relation, 'UPDATE')
-              AND NOT has_table_privilege(current_user, resolved.relation, 'DELETE')
-              AND NOT has_table_privilege(current_user, resolved.relation, 'TRUNCATE')
-            )
+            AND NOT has_schema_privilege(current_user, 'drizzle', 'CREATE')
+            AND required_privileges.valid
+            AND relation_privileges.valid
+            AND sequence_privileges.valid
           FROM role_state
-          CROSS JOIN resolved
-          GROUP BY
-            role_state.rolinherit,
-            role_state.rolsuper,
-            role_state.rolcreatedb,
-            role_state.rolcreaterole,
-            role_state.rolreplication,
-            role_state.rolbypassrls;
+          CROSS JOIN required_privileges
+          CROSS JOIN relation_privileges
+          CROSS JOIN sequence_privileges
+          CROSS JOIN role_escalation;
           SQL
           )
 
           if [ "$ROLE_IS_READ_ONLY" != 't' ]; then
-            echo "::error::The backup credential must use TLS and be a dedicated inheriting pg_read_all_data member without write, CREATE, superuser, BYPASSRLS, or administrative privileges."
+            echo "::error::The backup credential must have only pg_read_all_data membership, SELECT but no mutation/CREATE, no ADMIN OPTION, and no administrative privileges."
             exit 1
           fi
+          echo "database_name=$EXPECTED_DATABASE" >> "$GITHUB_OUTPUT"
 
-      - name: Stream custom dump directly into encryption
+      - name: Capture one source snapshot and stream dump into encryption
         id: create
         env:
           DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
@@ -154,20 +323,156 @@ jobs:
               exit 1
               ;;
           esac
+          REQUESTED_SCHEMA_PROFILE="$BACKUP_SCHEMA_PROFILE"
+          case "$REQUESTED_SCHEMA_PROFILE" in
+            auto|pre_migration|post_migration) ;;
+            *)
+              echo "::error::Unknown backup schema profile."
+              exit 1
+              ;;
+          esac
+          EXPECTED_MIGRATIONS_JSON=$(python3 \
+            "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py")
+          if [ -z "$EXPECTED_MIGRATIONS_JSON" ]; then
+            echo "::error::Checked-out migration manifest is empty."
+            exit 1
+          fi
 
-          BACKUP_FILE="simsa-db-$(date -u +%Y-%m-%d)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.dump.gpg"
+          EVIDENCE_DIR="$RUNNER_TEMP/simsa-source-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          OUTPUT_DIR="$RUNNER_TEMP/simsa-encrypted-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          install -d -m 700 "$EVIDENCE_DIR" "$OUTPUT_DIR"
+          install -m 600 \
+            "$GITHUB_WORKSPACE/.github/scripts/collect-backup-evidence.sql" \
+            "$EVIDENCE_DIR/collect-backup-evidence.sql"
 
-          # No plaintext SQL/custom archive is written to the runner. pg_dump's
-          # compressed custom-format stdout is consumed directly by GnuPG.
+          RELEASE_PIPE="$EVIDENCE_DIR/release.pipe"
+          SOURCE_READY="$EVIDENCE_DIR/source.ready"
+          SNAPSHOT_FILE="$EVIDENCE_DIR/snapshot.id"
+          SOURCE_EVIDENCE="$EVIDENCE_DIR/source.evidence"
+          SOURCE_LOG="$EVIDENCE_DIR/source-session.log"
+          ARCHIVE_FILE=''
+          EVIDENCE_FILE=''
+          CREATE_COMPLETED=false
+          mkfifo "$RELEASE_PIPE"
+
+          cat > "$EVIDENCE_DIR/source-session.sql" <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE;
+          SELECT pg_export_snapshot() \g /evidence/snapshot.id
+          \o /evidence/source.evidence
+          \i /evidence/collect-backup-evidence.sql
+          \o
+          \! touch /evidence/source.ready
+          \! cat /evidence/release.pipe > /dev/null
+          COMMIT;
+          SQL
+
+          SNAPSHOT_CONTAINER="simsa-source-snapshot-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          SOURCE_SESSION_PID=''
+          cleanup_create() {
+            status=$?
+            trap - EXIT
+            if [ -n "$SOURCE_SESSION_PID" ]; then
+              if kill -0 "$SOURCE_SESSION_PID" 2>/dev/null; then
+                docker rm --force "$SNAPSHOT_CONTAINER" >/dev/null 2>&1 || true
+              fi
+              wait "$SOURCE_SESSION_PID" 2>/dev/null || true
+            fi
+            rm -f -- "$SOURCE_EVIDENCE" "$SNAPSHOT_FILE" "$SOURCE_LOG" \
+              "$SOURCE_READY" "$RELEASE_PIPE" "$EVIDENCE_DIR/source-session.sql" \
+              "$EVIDENCE_DIR/collect-backup-evidence.sql"
+            rmdir "$EVIDENCE_DIR" 2>/dev/null || true
+            if [ "$CREATE_COMPLETED" != true ]; then
+              if [ -n "$ARCHIVE_FILE" ]; then rm -f -- "$ARCHIVE_FILE"; fi
+              if [ -n "$EVIDENCE_FILE" ]; then rm -f -- "$EVIDENCE_FILE"; fi
+              rmdir "$OUTPUT_DIR" 2>/dev/null || true
+            fi
+            exit "$status"
+          }
+          trap cleanup_create EXIT
+
+          docker run --rm --name "$SNAPSHOT_CONTAINER" --network host \
+            --env DATABASE_URL \
+            --env BACKUP_SCHEMA_PROFILE \
+            --volume "$EVIDENCE_DIR:/evidence" \
+            "$POSTGRES_IMAGE" \
+            psql "$DATABASE_URL" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile="$BACKUP_SCHEMA_PROFILE" \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              --file /evidence/source-session.sql \
+            > "$SOURCE_LOG" 2>&1 &
+          SOURCE_SESSION_PID=$!
+
+          # Full-table evidence can be I/O intensive on a large Production DB.
+          # Allow up to 20 minutes while the overall job still enforces 45.
+          for attempt in $(seq 1 1200); do
+            if [ -f "$SOURCE_READY" ]; then
+              break
+            fi
+            if ! kill -0 "$SOURCE_SESSION_PID" 2>/dev/null; then
+              wait "$SOURCE_SESSION_PID" || true
+              SOURCE_SESSION_PID=''
+              echo "::error::The read-only source snapshot session exited before evidence capture."
+              sed -n '1,30p' "$SOURCE_LOG"
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ ! -f "$SOURCE_READY" ]; then
+            echo "::error::Timed out while capturing the consistent source evidence."
+            exit 1
+          fi
+
+          SOURCE_SNAPSHOT=$(tr -d '\r\n[:space:]' < "$SNAPSHOT_FILE")
+          if [[ ! "$SOURCE_SNAPSHOT" =~ ^[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9]+$ ]]; then
+            echo "::error::PostgreSQL returned an invalid exported snapshot identifier."
+            exit 1
+          fi
+          if [ ! -s "$SOURCE_EVIDENCE" ]; then
+            echo "::error::Source evidence is empty."
+            exit 1
+          fi
+          RESOLVED_SCHEMA_PROFILE=$(awk -F '\t' \
+            '$1 == "schema_profile" { print $2 }' "$SOURCE_EVIDENCE")
+          case "$RESOLVED_SCHEMA_PROFILE" in
+            pre_migration|post_migration) ;;
+            *)
+              echo "::error::Source evidence did not resolve exactly one safe schema profile."
+              exit 1
+              ;;
+          esac
+          if [ "$REQUESTED_SCHEMA_PROFILE" != 'auto' ] && \
+             [ "$REQUESTED_SCHEMA_PROFILE" != "$RESOLVED_SCHEMA_PROFILE" ]; then
+            echo "::error::Resolved schema profile differs from the manual selection."
+            exit 1
+          fi
+
+          BACKUP_STEM="simsa-db-$(date -u +%Y-%m-%d)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ARCHIVE_NAME="$BACKUP_STEM.dump.gpg"
+          EVIDENCE_NAME="$BACKUP_STEM.evidence.gpg"
+          ARTIFACT_NAME="neon-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ARCHIVE_FILE="$OUTPUT_DIR/$ARCHIVE_NAME"
+          EVIDENCE_FILE="$OUTPUT_DIR/$EVIDENCE_NAME"
+
+          # pg_dump imports exactly the snapshot used to calculate the source
+          # evidence. The custom-format bytes go directly to GnuPG and are
+          # never materialized as a plaintext dump.
           docker run --rm --network host \
             --env DATABASE_URL \
+            --env SOURCE_SNAPSHOT \
             "$POSTGRES_IMAGE" \
             sh -eu -c 'exec pg_dump "$DATABASE_URL" \
               --format=custom \
+              --create \
               --compress=9 \
               --no-owner \
               --no-privileges \
-              --serializable-deferrable \
+              --snapshot="$SOURCE_SNAPSHOT" \
               --lock-wait-timeout=60000' \
             | gpg --batch --yes --pinentry-mode loopback \
                 --no-symkey-cache \
@@ -176,42 +481,215 @@ jobs:
                 --cipher-algo AES256 \
                 --s2k-mode 3 \
                 --s2k-digest-algo SHA512 \
-                --output "$BACKUP_FILE" \
+                --output "$ARCHIVE_FILE" \
                 3<<<"$BACKUP_PASSPHRASE"
 
-          FILE_SIZE=$(stat -c%s "$BACKUP_FILE")
-          if [ "$FILE_SIZE" -lt 4096 ]; then
-            echo "::error::Encrypted archive is suspiciously small ($FILE_SIZE bytes)."
+          # Release the exporter only after pg_dump has consumed its snapshot.
+          printf 'release\n' > "$RELEASE_PIPE"
+          if ! wait "$SOURCE_SESSION_PID"; then
+            SOURCE_SESSION_PID=''
+            echo "::error::The source snapshot transaction did not close cleanly."
+            sed -n '1,30p' "$SOURCE_LOG"
+            exit 1
+          fi
+          SOURCE_SESSION_PID=''
+
+          # The source manifest contains only counts and digests, never row
+          # values, but it is encrypted too so every uploaded artifact member
+          # is encrypted at rest independently of GitHub's artifact storage.
+          gpg --batch --yes --pinentry-mode loopback \
+            --no-symkey-cache \
+            --passphrase-fd 3 \
+            --symmetric \
+            --cipher-algo AES256 \
+            --s2k-mode 3 \
+            --s2k-digest-algo SHA512 \
+            --output "$EVIDENCE_FILE" \
+            3<<<"$BACKUP_PASSPHRASE" \
+            "$SOURCE_EVIDENCE"
+          rm -f -- "$SOURCE_EVIDENCE" "$SNAPSHOT_FILE" "$SOURCE_LOG" \
+            "$SOURCE_READY" "$RELEASE_PIPE" "$EVIDENCE_DIR/source-session.sql" \
+            "$EVIDENCE_DIR/collect-backup-evidence.sql"
+          rmdir "$EVIDENCE_DIR"
+
+          ARCHIVE_SIZE=$(stat -c%s "$ARCHIVE_FILE")
+          EVIDENCE_SIZE=$(stat -c%s "$EVIDENCE_FILE")
+          if [ "$ARCHIVE_SIZE" -lt 4096 ]; then
+            echo "::error::Encrypted archive is suspiciously small ($ARCHIVE_SIZE bytes)."
+            exit 1
+          fi
+          if [ "$EVIDENCE_SIZE" -lt 256 ]; then
+            echo "::error::Encrypted source evidence is suspiciously small ($EVIDENCE_SIZE bytes)."
             exit 1
           fi
 
-          echo "file=$BACKUP_FILE" >> "$GITHUB_OUTPUT"
-          echo "size=$FILE_SIZE" >> "$GITHUB_OUTPUT"
-          echo "encrypted_sha256=$(sha256sum "$BACKUP_FILE" | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
+          echo "archive_file=$ARCHIVE_FILE" >> "$GITHUB_OUTPUT"
+          echo "archive_name=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
+          echo "archive_size=$ARCHIVE_SIZE" >> "$GITHUB_OUTPUT"
+          echo "archive_sha256=$(sha256sum "$ARCHIVE_FILE" | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
+          echo "evidence_file=$EVIDENCE_FILE" >> "$GITHUB_OUTPUT"
+          echo "evidence_name=$EVIDENCE_NAME" >> "$GITHUB_OUTPUT"
+          echo "evidence_size=$EVIDENCE_SIZE" >> "$GITHUB_OUTPUT"
+          echo "evidence_sha256=$(sha256sum "$EVIDENCE_FILE" | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+          echo "schema_profile=$RESOLVED_SCHEMA_PROFILE" >> "$GITHUB_OUTPUT"
+          CREATE_COMPLETED=true
 
-      - name: Stream decrypt into isolated restore and verify
+      - name: Upload encrypted archive and encrypted source evidence
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.create.outputs.artifact_name }}
+          path: |
+            ${{ steps.create.outputs.archive_file }}
+            ${{ steps.create.outputs.evidence_file }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Record encrypted backup pending independent drill
+        env:
+          ARCHIVE_NAME: ${{ steps.create.outputs.archive_name }}
+          ARCHIVE_SIZE: ${{ steps.create.outputs.archive_size }}
+          ARCHIVE_SHA256: ${{ steps.create.outputs.archive_sha256 }}
+          EVIDENCE_NAME: ${{ steps.create.outputs.evidence_name }}
+          EVIDENCE_SIZE: ${{ steps.create.outputs.evidence_size }}
+          EVIDENCE_SHA256: ${{ steps.create.outputs.evidence_sha256 }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          BACKUP_SCHEMA_PROFILE: ${{ steps.create.outputs.schema_profile }}
+        run: |
+          {
+            echo '### Encrypted Neon database backup uploaded'
+            echo
+            echo "- Archive: \`$ARCHIVE_NAME\` (\`$ARCHIVE_SIZE\` bytes)"
+            echo "- Archive SHA-256: \`$ARCHIVE_SHA256\`"
+            echo "- Encrypted evidence: \`$EVIDENCE_NAME\` (\`$EVIDENCE_SIZE\` bytes)"
+            echo "- Evidence SHA-256: \`$EVIDENCE_SHA256\`"
+            echo "- Artifact digest (recorded): \`$ARTIFACT_DIGEST\`"
+            echo "- Exact migration profile: \`$BACKUP_SCHEMA_PROFILE\`"
+            echo
+            echo 'This job only creates the backup. The workflow is not successful until the fresh-runner independent restore-drill job passes.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify on backup failure
+        if: failure()
+        run: |
+          echo "::error::Database backup creation or encryption failed."
+          echo "::error::Do not run a Production migration without a successful independent restore drill and private Blob backup."
+
+  independent-restore-drill:
+    name: Download artifact and independently restore
+    needs: backup
+    runs-on: ubuntu-latest
+    environment: production-backup
+    timeout-minutes: 45
+
+    services:
+      restore-db:
+        image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+        env:
+          POSTGRES_USER: simsa_restore
+          POSTGRES_PASSWORD: restore-only-password
+          POSTGRES_DB: postgres
+        ports:
+          - '127.0.0.1:5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U simsa_restore -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout trusted default-branch verifier
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download encrypted artifact on fresh runner
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.backup.outputs.artifact_name }}
+          path: ${{ runner.temp }}/downloaded-neon-backup
+
+      - name: Verify downloaded files, stream restore, and compare evidence
         id: verify
         env:
-          BACKUP_FILE: ${{ steps.create.outputs.file }}
+          ARCHIVE_NAME: ${{ needs.backup.outputs.archive_name }}
+          EXPECTED_ARCHIVE_SHA256: ${{ needs.backup.outputs.archive_sha256 }}
+          EVIDENCE_NAME: ${{ needs.backup.outputs.evidence_name }}
+          EXPECTED_EVIDENCE_SHA256: ${{ needs.backup.outputs.evidence_sha256 }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ needs.backup.outputs.artifact_digest }}
+          BACKUP_SCHEMA_PROFILE: ${{ needs.backup.outputs.schema_profile }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          RESTORED_DATABASE: ${{ needs.backup.outputs.database_name }}
         run: |
           set -euo pipefail
+          umask 077
 
-          if [ ! -f "$BACKUP_FILE" ]; then
-            echo "::error::Encrypted backup file was not produced."
+          DOWNLOAD_DIR="$RUNNER_TEMP/downloaded-neon-backup"
+          ARCHIVE_FILE="$DOWNLOAD_DIR/$ARCHIVE_NAME"
+          EVIDENCE_FILE="$DOWNLOAD_DIR/$EVIDENCE_NAME"
+          RESTORE_EVIDENCE_DIR="$RUNNER_TEMP/simsa-restore-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RESTORE_EVIDENCE="$RESTORE_EVIDENCE_DIR/restore.evidence"
+          cleanup_restore_evidence() {
+            status=$?
+            trap - EXIT
+            rm -f -- "$RESTORE_EVIDENCE" \
+              "$RESTORE_EVIDENCE_DIR/restore-session.sql" \
+              "$RESTORE_EVIDENCE_DIR/collect-backup-evidence.sql"
+            rmdir "$RESTORE_EVIDENCE_DIR" 2>/dev/null || true
+            exit "$status"
+          }
+          trap cleanup_restore_evidence EXIT
+          EXPECTED_MIGRATIONS_JSON=$(python3 \
+            "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py")
+          if [ -z "$EXPECTED_MIGRATIONS_JSON" ]; then
+            echo "::error::Checked-out migration manifest is empty on the drill runner."
             exit 1
           fi
+          if [ ! -f "$ARCHIVE_FILE" ] || [ ! -f "$EVIDENCE_FILE" ]; then
+            echo "::error::The downloaded artifact does not contain both expected encrypted files."
+            exit 1
+          fi
+          case "$BACKUP_SCHEMA_PROFILE" in
+            pre_migration|post_migration) ;;
+            *)
+              echo "::error::Unknown backup schema profile received from the source job."
+              exit 1
+              ;;
+          esac
+          if [[ ! "$RESTORED_DATABASE" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,62}$ ]]; then
+            echo "::error::The approved restore database name is missing or unsafe."
+            exit 1
+          fi
+          if [ "$(find "$DOWNLOAD_DIR" -maxdepth 1 -type f | wc -l)" -ne 2 ]; then
+            echo "::error::The downloaded artifact contains unexpected files."
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The upload action did not return a valid artifact digest."
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+             [[ ! "$EXPECTED_EVIDENCE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Expected encrypted-file digests are invalid."
+            exit 1
+          fi
+          printf '%s  %s\n' "$EXPECTED_ARCHIVE_SHA256" "$ARCHIVE_FILE" \
+            | sha256sum --check --status -
+          printf '%s  %s\n' "$EXPECTED_EVIDENCE_SHA256" "$EVIDENCE_FILE" \
+            | sha256sum --check --status -
 
-          # Validate that the decrypted stream is a readable custom archive.
-          TOC_ENTRY_COUNT=$(gpg --batch --yes --pinentry-mode loopback \
+          # The upload-time artifact digest is retained as evidence, but the
+          # download action reports a mismatch only as a warning. The explicit
+          # SHA-256 checks above are the hard integrity gate for both members.
+          TOC_COUNTS=$(gpg --batch --yes --pinentry-mode loopback \
               --no-symkey-cache \
               --passphrase-fd 3 \
-              --decrypt "$BACKUP_FILE" \
+              --decrypt "$ARCHIVE_FILE" \
               3<<<"$BACKUP_PASSPHRASE" \
             | {
-                # pg_restore --list stops after the archive TOC. Drain the
-                # remaining decrypted bytes so GnuPG does not fail with
-                # EPIPE under pipefail; nothing is persisted.
                 if docker run --rm --interactive "$POSTGRES_IMAGE" pg_restore --list; then
                   LIST_STATUS=0
                 else
@@ -220,17 +698,30 @@ jobs:
                 cat > /dev/null
                 exit "$LIST_STATUS"
               } \
-            | awk '!/^;/ && NF { count++ } END { print count + 0 }')
-          if [ "$TOC_ENTRY_COUNT" -lt 1 ]; then
+            | awk '
+                !/^;/ && NF {
+                  count++
+                  if ($0 ~ / SEQUENCE SET /) sequence_sets++
+                }
+                END { print count + 0, sequence_sets + 0 }
+              '
+          )
+          read -r TOC_ENTRY_COUNT TOC_SEQUENCE_SET_COUNT <<<"$TOC_COUNTS"
+          unset TOC_COUNTS
+          if [[ ! "$TOC_ENTRY_COUNT" =~ ^[0-9]+$ ]] || \
+             [[ ! "$TOC_SEQUENCE_SET_COUNT" =~ ^[0-9]+$ ]] || \
+             [ "$TOC_ENTRY_COUNT" -lt 1 ]; then
             echo "::error::The decrypted custom archive has an empty table of contents."
             exit 1
           fi
 
-          # Decrypted bytes remain in the pipe and are never persisted on disk.
+          # The decrypted dump stream never becomes a plaintext dump file. The
+          # isolated PostgreSQL service necessarily materializes a transient
+          # plaintext database and is destroyed with this fresh runner.
           gpg --batch --yes --pinentry-mode loopback \
               --no-symkey-cache \
               --passphrase-fd 3 \
-              --decrypt "$BACKUP_FILE" \
+              --decrypt "$ARCHIVE_FILE" \
               3<<<"$BACKUP_PASSPHRASE" \
             | docker run --rm --interactive --network host \
                 --env PGPASSWORD=restore-only-password \
@@ -238,13 +729,86 @@ jobs:
                 pg_restore \
                   --host 127.0.0.1 \
                   --username simsa_restore \
-                  --dbname simsa_restore_validation \
+                  --dbname postgres \
+                  --create \
                   --exit-on-error \
-                  --single-transaction \
                   --clean \
                   --if-exists \
                   --no-owner \
                   --no-privileges
+
+          RESTORED_SEQUENCE_COUNT=$(docker run --rm --interactive --network host \
+            --env PGPASSWORD=restore-only-password \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_restore \
+              --dbname "$RESTORED_DATABASE" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --quiet \
+              --tuples-only \
+              --no-align <<'SQL'
+          SELECT count(*)
+          FROM pg_class AS relation
+          INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+          WHERE namespace.nspname IN ('public', 'drizzle')
+            AND relation.relkind = 'S';
+          SQL
+          )
+          RESTORED_SEQUENCE_COUNT=$(printf '%s' "$RESTORED_SEQUENCE_COUNT" | tr -d '\r\n[:space:]')
+          if [[ ! "$RESTORED_SEQUENCE_COUNT" =~ ^[0-9]+$ ]] || \
+             [ "$RESTORED_SEQUENCE_COUNT" -ne "$TOC_SEQUENCE_SET_COUNT" ]; then
+            echo "::error::Restored sequence count does not match successful SEQUENCE SET archive entries."
+            exit 1
+          fi
+
+          install -d -m 700 "$RESTORE_EVIDENCE_DIR"
+          install -m 600 \
+            "$GITHUB_WORKSPACE/.github/scripts/collect-backup-evidence.sql" \
+            "$RESTORE_EVIDENCE_DIR/collect-backup-evidence.sql"
+          cat > "$RESTORE_EVIDENCE_DIR/restore-session.sql" <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \o /evidence/restore.evidence
+          \i /evidence/collect-backup-evidence.sql
+          \o
+          COMMIT;
+          SQL
+
+          docker run --rm --network host \
+            --env PGPASSWORD=restore-only-password \
+            --volume "$RESTORE_EVIDENCE_DIR:/evidence" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_restore \
+              --dbname "$RESTORED_DATABASE" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile="$BACKUP_SCHEMA_PROFILE" \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              --file /evidence/restore-session.sql
+
+          if [ ! -s "$RESTORE_EVIDENCE" ]; then
+            echo "::error::The independent restore evidence is empty."
+            exit 1
+          fi
+
+          # Source evidence is decrypted only into the comparison pipe; no
+          # plaintext source manifest is written on this fresh runner.
+          if ! gpg --batch --yes --pinentry-mode loopback \
+              --no-symkey-cache \
+              --passphrase-fd 3 \
+              --decrypt "$EVIDENCE_FILE" \
+              3<<<"$BACKUP_PASSPHRASE" \
+            | cmp --silent - "$RESTORE_EVIDENCE"; then
+            echo "::error::Source and independent-restore evidence differ."
+            exit 1
+          fi
 
           VERIFICATION_SUMMARY=$(docker run --rm --interactive --network host \
             --env PGPASSWORD=restore-only-password \
@@ -252,247 +816,68 @@ jobs:
             psql \
               --host 127.0.0.1 \
               --username simsa_restore \
-              --dbname simsa_restore_validation \
+              --dbname "$RESTORED_DATABASE" \
+              --no-psqlrc \
               --set ON_ERROR_STOP=on \
               --set toc_entries="$TOC_ENTRY_COUNT" \
+              --set sequence_sets="$TOC_SEQUENCE_SET_COUNT" \
+              --set schema_profile="$BACKUP_SCHEMA_PROFILE" \
               --quiet \
               --tuples-only \
               --no-align <<'SQL'
-          DO $verify$
-          DECLARE
-            missing_tables text;
-            missing_columns text;
-            missing_primary_keys text;
-            migration_count bigint;
-            latest_migration bigint;
-          BEGIN
-            IF current_database() <> 'simsa_restore_validation' THEN
-              RAISE EXCEPTION 'restore validation must run only in the isolated database';
-            END IF;
-
-            SELECT string_agg(required.schema_name || '.' || required.table_name, ', ' ORDER BY required.schema_name, required.table_name)
-            INTO missing_tables
-            FROM (VALUES
-              ('public', 'users'),
-              ('public', 'accounts'),
-              ('public', 'sessions'),
-              ('public', 'unit_kerja'),
-              ('public', 'surat_masuk'),
-              ('public', 'surat_keluar'),
-              ('public', 'arsip'),
-              ('public', 'file_attachments'),
-              ('public', 'audit_log'),
-              ('public', 'klasifikasi_arsip'),
-              ('public', 'jadwal_retensi_arsip'),
-              ('drizzle', '__drizzle_migrations')
-            ) AS required(schema_name, table_name)
-            WHERE to_regclass(format('%I.%I', required.schema_name, required.table_name)) IS NULL;
-
-            IF missing_tables IS NOT NULL THEN
-              RAISE EXCEPTION 'restore is missing critical tables: %', missing_tables;
-            END IF;
-
-            SELECT string_agg(required.table_name || '.' || required.column_name, ', ' ORDER BY required.table_name, required.column_name)
-            INTO missing_columns
-            FROM (VALUES
-              ('users', 'id'),
-              ('users', 'email'),
-              ('users', 'role'),
-              ('users', 'unit_kerja_id'),
-              ('users', 'is_active'),
-              ('users', 'jabatan'),
-              ('users', 'nip'),
-              ('accounts', 'user_id'),
-              ('accounts', 'account_id'),
-              ('accounts', 'provider_id'),
-              ('accounts', 'password'),
-              ('sessions', 'user_id'),
-              ('sessions', 'token'),
-              ('sessions', 'expires_at'),
-              ('unit_kerja', 'id'),
-              ('surat_masuk', 'id'),
-              ('surat_keluar', 'id'),
-              ('surat_keluar', 'klasifikasi_keamanan'),
-              ('arsip', 'id'),
-              ('arsip', 'unit_kerja_id'),
-              ('file_attachments', 'id'),
-              ('file_attachments', 'file_url'),
-              ('file_attachments', 'size_bytes'),
-              ('file_attachments', 'sha256'),
-              ('file_attachments', 'storage_access'),
-              ('file_attachments', 'uploaded_by'),
-              ('file_attachments', 'integrity_status'),
-              ('file_attachments', 'malware_scan_status'),
-              ('client_blob_uploads', 'blob_url'),
-              ('client_blob_uploads', 'purpose'),
-              ('client_blob_uploads', 'uploaded_by'),
-              ('client_blob_uploads', 'status'),
-              ('client_blob_uploads', 'expires_at'),
-              ('client_blob_uploads', 'claimed_at'),
-              ('client_blob_uploads', 'claimed_entity_type'),
-              ('client_blob_uploads', 'claimed_entity_id'),
-              ('autentikasi', 'file_lampiran'),
-              ('autentikasi', 'file_lampiran_sha256'),
-              ('autentikasi', 'file_lampiran_size_bytes'),
-              ('bulk_upload_batches', 'created_by'),
-              ('bulk_upload_batches', 'unit_kerja_id'),
-              ('bulk_upload_batches', 'status'),
-              ('bulk_upload_batches', 'expires_at'),
-              ('bulk_upload_items', 'batch_id'),
-              ('bulk_upload_items', 'blob_url'),
-              ('bulk_upload_items', 'sha256'),
-              ('bulk_upload_items', 'status'),
-              ('operational_heartbeats', 'worker'),
-              ('operational_heartbeats', 'instance_id'),
-              ('operational_heartbeats', 'status'),
-              ('operational_heartbeats', 'last_seen_at'),
-              ('ocr_capacity_control', 'singleton_id'),
-              ('ocr_capacity_control', 'max_concurrency'),
-              ('ocr_capacity_control', 'lease_duration_seconds'),
-              ('ocr_capacity_control', 'retry_after_seconds'),
-              ('ocr_processing_leases', 'token'),
-              ('ocr_processing_leases', 'item_id'),
-              ('ocr_processing_leases', 'lease_expires_at'),
-              ('audit_log', 'id'),
-              ('audit_log', 'action'),
-              ('klasifikasi_arsip', 'id'),
-              ('jadwal_retensi_arsip', 'id')
-            ) AS required(table_name, column_name)
-            WHERE NOT EXISTS (
-              SELECT 1
-              FROM information_schema.columns AS actual
-              WHERE actual.table_schema = 'public'
-                AND actual.table_name = required.table_name
-                AND actual.column_name = required.column_name
-            );
-
-            IF missing_columns IS NOT NULL THEN
-              RAISE EXCEPTION 'restore is missing critical columns: %', missing_columns;
-            END IF;
-
-            SELECT string_agg(required.table_name, ', ' ORDER BY required.table_name)
-            INTO missing_primary_keys
-            FROM (VALUES
-              ('users'),
-              ('unit_kerja'),
-              ('surat_masuk'),
-              ('surat_keluar'),
-              ('arsip'),
-              ('file_attachments'),
-              ('audit_log'),
-              ('klasifikasi_arsip'),
-              ('jadwal_retensi_arsip')
-            ) AS required(table_name)
-            WHERE NOT EXISTS (
-              SELECT 1
-              FROM pg_constraint AS constraint_record
-              INNER JOIN pg_class AS relation ON relation.oid = constraint_record.conrelid
-              INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-              WHERE namespace.nspname = 'public'
-                AND relation.relname = required.table_name
-                AND constraint_record.contype = 'p'
-                AND constraint_record.convalidated
-            );
-
-            IF missing_primary_keys IS NOT NULL THEN
-              RAISE EXCEPTION 'restore is missing validated primary keys: %', missing_primary_keys;
-            END IF;
-
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_constraint AS constraint_record
-              INNER JOIN pg_class AS relation ON relation.oid = constraint_record.conrelid
-              INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-              WHERE namespace.nspname = 'public'
-                AND relation.relname = 'users'
-                AND constraint_record.conname = 'users_role_unit_mandate_check'
-                AND constraint_record.convalidated
-            ) THEN
-              RAISE EXCEPTION 'restore is missing the validated users role/unit mandate constraint';
-            END IF;
-
-            IF NOT EXISTS (
-              SELECT 1
-              FROM pg_constraint AS constraint_record
-              INNER JOIN pg_class AS relation ON relation.oid = constraint_record.conrelid
-              INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-              WHERE namespace.nspname = 'public'
-                AND relation.relname = 'surat_keluar'
-                AND constraint_record.conname = 'surat_keluar_klasifikasi_keamanan_check'
-                AND constraint_record.convalidated
-            ) THEN
-              RAISE EXCEPTION 'restore is missing the validated outgoing security-classification constraint';
-            END IF;
-
-            SELECT count(*), COALESCE(max(created_at), 0)
-            INTO migration_count, latest_migration
-            FROM drizzle.__drizzle_migrations;
-
-            IF migration_count < 30 OR latest_migration < 1787972400000 THEN
-              RAISE EXCEPTION 'migration history is incomplete: count %, latest %', migration_count, latest_migration;
-            END IF;
-            IF EXISTS (
-              SELECT 1
-              FROM drizzle.__drizzle_migrations
-              WHERE hash IS NULL OR hash !~ '^[0-9a-f]{64}$' OR created_at IS NULL OR created_at <= 0
-            ) THEN
-              RAISE EXCEPTION 'migration history contains an invalid hash or timestamp';
-            END IF;
-            IF migration_count <> (SELECT count(DISTINCT created_at) FROM drizzle.__drizzle_migrations) THEN
-              RAISE EXCEPTION 'migration history contains duplicate timestamps';
-            END IF;
-            IF (SELECT count(*) FROM public.users) < 1 THEN
-              RAISE EXCEPTION 'production restore contains no user records';
-            END IF;
-          END
-          $verify$;
-
           SELECT json_build_object(
-            'public_tables', (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'),
-            'migration_count', (SELECT count(*) FROM drizzle.__drizzle_migrations),
-            'latest_migration_created_at', (SELECT max(created_at) FROM drizzle.__drizzle_migrations),
-            'toc_entries', :toc_entries
+            'public_tables', (
+              SELECT count(*)
+              FROM information_schema.tables
+              WHERE table_schema = 'public'
+            ),
+            'migration_count', (
+              SELECT count(*) FROM drizzle.__drizzle_migrations
+            ),
+            'latest_migration_created_at', (
+              SELECT max(created_at) FROM drizzle.__drizzle_migrations
+            ),
+            'schema_profile', :'schema_profile',
+            'toc_entries', :toc_entries,
+            'sequence_sets', :sequence_sets,
+            'source_restore_evidence_match', true
           );
           SQL
           )
           VERIFICATION_SUMMARY=$(printf '%s' "$VERIFICATION_SUMMARY" | tr -d '\r\n')
-
           echo "summary=$VERIFICATION_SUMMARY" >> "$GITHUB_OUTPUT"
-          echo "Restore verification passed: $VERIFICATION_SUMMARY"
+          echo "evidence_sha256=$(sha256sum "$RESTORE_EVIDENCE" | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
 
-      - name: Upload verified encrypted archive
-        id: upload
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: neon-backup-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.create.outputs.file }}
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
+          rm -f -- "$RESTORE_EVIDENCE_DIR/restore.evidence" \
+            "$RESTORE_EVIDENCE_DIR/restore-session.sql" \
+            "$RESTORE_EVIDENCE_DIR/collect-backup-evidence.sql"
+          rmdir "$RESTORE_EVIDENCE_DIR"
 
-      - name: Record verified backup evidence
+      - name: Record verified independent restore evidence
         env:
-          BACKUP_FILE: ${{ steps.create.outputs.file }}
-          BACKUP_SIZE: ${{ steps.create.outputs.size }}
-          ENCRYPTED_SHA256: ${{ steps.create.outputs.encrypted_sha256 }}
-          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          ARTIFACT_NAME: ${{ needs.backup.outputs.artifact_name }}
+          ARTIFACT_DIGEST: ${{ needs.backup.outputs.artifact_digest }}
+          ARCHIVE_SHA256: ${{ needs.backup.outputs.archive_sha256 }}
+          EVIDENCE_SHA256: ${{ steps.verify.outputs.evidence_sha256 }}
           VERIFICATION_SUMMARY: ${{ steps.verify.outputs.summary }}
+          BACKUP_SCHEMA_PROFILE: ${{ needs.backup.outputs.schema_profile }}
         run: |
           {
-            echo '### Encrypted Neon database backup verified'
+            echo '### Encrypted Neon backup independently restored'
             echo
-            echo "- File: \`$BACKUP_FILE\`"
-            echo "- Encrypted bytes: \`$BACKUP_SIZE\`"
-            echo "- Encrypted file SHA-256: \`$ENCRYPTED_SHA256\`"
-            echo "- Artifact SHA-256: \`$ARTIFACT_DIGEST\`"
+            echo "- Downloaded artifact: \`$ARTIFACT_NAME\`"
+            echo "- Upload-time artifact digest (recorded): \`$ARTIFACT_DIGEST\`"
+            echo "- Encrypted archive SHA-256: \`$ARCHIVE_SHA256\`"
+            echo "- Source/restore evidence SHA-256: \`$EVIDENCE_SHA256\`"
+            echo "- Exact migration profile: \`$BACKUP_SCHEMA_PROFILE\`"
             echo "- Restore checks: \`$VERIFICATION_SUMMARY\`"
             echo
-            echo 'The custom archive was streamed into encryption and streamed from decryption into an isolated PostgreSQL restore; no plaintext dump file was created.'
-            echo 'Private Blob bitstreams are not included and remain a separate production-release blocker until their backup and restore drill is proven.'
+            echo 'The archive was created on one runner, uploaded, downloaded on a fresh runner, and streamed without a plaintext dump file into a new isolated PostgreSQL service. The transient restored database is destroyed with the runner.'
+            echo 'Private Blob bitstreams are not included and remain a separate Production-release blocker until their backup and restore drill is proven.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Notify on failure
+      - name: Notify on independent drill failure
         if: failure()
         run: |
-          echo "::error::Database backup or isolated restore verification failed."
-          echo "::error::Do not run a production migration until a verified encrypted database backup and independent private Blob backup exist."
+          echo "::error::Downloaded-artifact integrity or independent restore verification failed."
+          echo "::error::Do not run a Production migration until this job and the independent private Blob backup drill both pass."

@@ -12,6 +12,7 @@ describe('Vercel API proxy configuration', () => {
     const result = createVercelConfig({ deploymentEnvironment: 'production' })
 
     expect(result.installCommand).toBe('npm ci')
+    expect(result.git.deploymentEnabled.main).toBe(false)
     expect(result.rewrites[0].destination)
       .toBe('https://simsa-backend.vercel.app/api/:path*')
   })
