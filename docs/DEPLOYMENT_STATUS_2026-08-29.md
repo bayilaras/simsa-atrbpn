@@ -26,14 +26,31 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
   ke database terisolasi dengan fail-fast, dan hanya mengunggah artifact yang
   lolos restore.
 
+## Bukti remote branch
+
+- Commit `02ce1ac` pada `codex/full-integration` lulus seluruh
+  [SIMSA CI](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33237018505):
+  lint/typecheck/build, audit dependency, 107 test frontend, 1128 test backend,
+  build/inspect image worker, migrasi PostgreSQL 18, seed paralel idempoten, dan
+  concurrency lock.
+- Vercel berhasil membangun Preview backend dan dokumentasi. Backend Preview
+  sengaja gagal tertutup saat dipanggil (`/health` dan `/ready` mengembalikan
+  500) karena callback Blob Preview publik belum dikonfigurasi. Frontend Preview
+  juga sengaja ditolak saat kompilasi konfigurasi karena `API_PROXY_ORIGIN`
+  terisolasi belum tersedia; tidak ada fallback ke API production.
+- Log deployment menunjukkan project Vercel lama masih memilih Node 20.
+  Seluruh package root kini mematok `engines.node` ke `24.x`; redeployment harus
+  membuktikan build/function menggunakan Node 24 sebelum promosi.
+
 ## Blocker production
 
 1. Sedikitnya sepuluh backup Neon terjadwal terakhir gagal; run terbaru yang
    diaudit adalah <https://github.com/bayilaras/simsa-atrbpn/actions/runs/33156207726>.
-   Secret baru dan workflow yang diperbaiki belum dapat dibuktikan sebelum
-   branch dipush dan run manual berhasil beserta restore drill.
-2. Perubahan belum digabung ke `main`; CI branch dan review PR tidak menggantikan
-   required checks pada commit final yang benar-benar akan dirilis.
+   Workflow yang diperbaiki sudah berada di branch, tetapi secret baru dan
+   restore drill tetap belum dapat dibuktikan sebelum run manual yang sah.
+2. Perubahan belum digabung ke `main`; CI branch `02ce1ac` sudah hijau, tetapi
+   tidak menggantikan required checks pada commit final yang benar-benar akan
+   dirilis.
 3. Preview Vercel backend masih berbagi database/Blob dengan production.
    Frontend sekarang memakai proxy same-origin dan menolak Preview tanpa
    `API_PROXY_ORIGIN` terisolasi, branch alias yang tidak cocok, serta target
@@ -45,6 +62,8 @@ SRIKANDI tetap nonaktif sampai kontrak resmi, sandbox, serta persetujuannya ada.
    server-to-server dan tidak melewati proxy frontend; backend sekarang menolak
    Preview tanpa `VERCEL_BLOB_CALLBACK_URL` custom yang tidak terlindungi, tetapi
    origin tersebut belum disediakan dan alur callback/lease belum diuji nyata.
+   Bukti remote mengonfirmasi guard frontend dan backend gagal tertutup ketika
+   dua prasyarat ini tidak ada.
 4. Worker antivirus belum memiliki host persisten. Docker Desktop pada mesin
    verifikasi adalah instalasi parsial: binary ada, daemon tidak aktif, registry
    instalasi hilang, dan Compose hanya dapat dipanggil melalui plugin langsung.

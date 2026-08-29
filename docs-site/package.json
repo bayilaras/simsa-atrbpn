@@ -39,7 +39,7 @@
     ]
   },
   "engines": {
-    "node": ">=20.0"
+    "node": "24.x"
   },
   "overrides": {
     "serialize-javascript": "7.1.0",
