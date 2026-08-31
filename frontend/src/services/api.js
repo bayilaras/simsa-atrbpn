@@ -1,11 +1,22 @@
 // API Configuration
 import { clearOfflineStorage } from '../lib/offline-storage';
 import { API_BASE_URL } from '../lib/api-url';
+import { USE_FIREBASE_AUTH } from '../lib/cloud-provider-config';
+import {
+    getFirebaseAppCheckToken,
+    getFirebaseLimitedUseAppCheckToken,
+} from '../lib/firebase-client';
+import {
+    clearFirebaseSessionCsrfToken,
+    getFirebaseSessionCsrfToken,
+    setFirebaseSessionCsrfToken,
+} from '../lib/firebase-session-security';
 
 export { API_BASE_URL };
 
 // Read a cookie value by name
 function getCookie(name) {
+    if (typeof document === 'undefined') return null;
     const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
     return match ? decodeURIComponent(match[2]) : null;
 }
@@ -13,6 +24,16 @@ function getCookie(name) {
 // Generic API client with auth support, global error handling, CSRF protection, and retry logic
 const STATE_CHANGING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 const SAFE_METHODS = ['GET', 'HEAD'];
+const REPLAY_PROTECTED_APP_CHECK_OPERATIONS = new Set([
+    'POST /api/auth/session',
+    'POST /api/auth/revoke-sessions',
+    'POST /api/object-uploads',
+]);
+
+export function requiresReplayProtectedAppCheck(endpoint, method) {
+    const path = String(endpoint).split('?', 1)[0];
+    return REPLAY_PROTECTED_APP_CHECK_OPERATIONS.has(`${String(method).toUpperCase()} ${path}`);
+}
 
 function createApiError(message, response, body = {}) {
     const error = new Error(message);
@@ -43,6 +64,29 @@ class ApiClient {
      * if the user has only made auth calls so far.
      */
     async _ensureCsrfToken() {
+        if (USE_FIREBASE_AUTH) {
+            if (getFirebaseSessionCsrfToken()) return;
+
+            if (!this._csrfFetchPromise) {
+                this._csrfFetchPromise = (async () => {
+                    const appCheckToken = await getFirebaseAppCheckToken();
+                    const response = await fetch(`${this.baseUrl}/api/auth/get-session`, {
+                        method: 'GET',
+                        credentials: 'include',
+                        headers: { 'X-Firebase-AppCheck': appCheckToken },
+                    });
+                    if (!response.ok) return;
+                    const session = await response.json().catch(() => null);
+                    if (session?.csrfToken) setFirebaseSessionCsrfToken(session.csrfToken);
+                })().finally(() => { this._csrfFetchPromise = null; });
+            }
+            await this._csrfFetchPromise;
+            if (!getFirebaseSessionCsrfToken()) {
+                throw new Error('Sesi Firebase tidak tersedia atau telah berakhir. Silakan login kembali.');
+            }
+            return;
+        }
+
         if (getCookie('csrf-token')) return;
 
         // Avoid duplicate fetches if multiple requests happen concurrently
@@ -62,13 +106,24 @@ class ApiClient {
         const method = (options.method || 'GET').toUpperCase();
         const responseType = options.responseType || 'json';
 
-        // For state-changing requests, ensure we have a CSRF token first
-        if (STATE_CHANGING_METHODS.includes(method)) {
+        // Session bootstrap and sign-out protect themselves with App Check and
+        // trusted-Origin validation. Other mutations need the session-bound
+        // CSRF token returned by the Firebase backend.
+        const firebaseCsrfExempt = endpoint === '/api/auth/session'
+            || endpoint === '/api/auth/sign-out';
+        if (STATE_CHANGING_METHODS.includes(method) && !firebaseCsrfExempt) {
             await this._ensureCsrfToken();
         }
 
         // Read CSRF token from cookie and include in header
-        const csrfToken = getCookie('csrf-token');
+        const csrfToken = USE_FIREBASE_AUTH
+            ? getFirebaseSessionCsrfToken()
+            : getCookie('csrf-token');
+        const appCheckToken = USE_FIREBASE_AUTH
+            ? await (requiresReplayProtectedAppCheck(endpoint, method)
+                ? getFirebaseLimitedUseAppCheckToken()
+                : getFirebaseAppCheckToken())
+            : null;
 
         const config = {
             ...options,
@@ -76,6 +131,7 @@ class ApiClient {
             headers: {
                 'Content-Type': 'application/json',
                 ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+                ...(appCheckToken ? { 'X-Firebase-AppCheck': appCheckToken } : {}),
                 ...options.headers,
             },
         };
@@ -118,6 +174,7 @@ class ApiClient {
                 // Purge legacy offline data before handing the workstation to a
                 // subsequent user. This also covers server-side session expiry.
                 await clearOfflineStorage();
+                clearFirebaseSessionCsrfToken();
                 window.location.href = '/login';
                 throw createApiError('Sesi telah berakhir. Silakan login kembali.', response, errorBody);
             }

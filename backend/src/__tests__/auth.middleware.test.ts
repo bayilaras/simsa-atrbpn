@@ -238,6 +238,28 @@ describe('optionalAuthMiddleware', () => {
         expect(req.user).toBeUndefined();
     });
 
+    it('does not attach an incomplete archival role through optional auth', async () => {
+        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (db.select as any).mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([{
+                        ...mockUser,
+                        role: 'auditor',
+                        unitKerjaId: null,
+                    }]),
+                }),
+            }),
+        });
+
+        const req = createMockReq();
+        const res = createMockRes();
+        await optionalAuthMiddleware(req, res, mockNext);
+
+        expect(mockNext).toHaveBeenCalledOnce();
+        expect(req.user).toBeUndefined();
+    });
+
     it('should silently continue on errors', async () => {
         // Arrange
         (auth.api.getSession as any).mockRejectedValue(new Error('Network timeout'));

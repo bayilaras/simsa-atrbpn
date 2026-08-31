@@ -53,7 +53,7 @@ import userManagementRouter from '../user-management.routes';
 import auditLogRouter from '../audit-log.routes';
 import userManagementService from '../../services/user-management.service';
 import auditLogService from '../../services/audit-log.service';
-import { ConflictError, ForbiddenError } from '../../utils/errors.js';
+import { ConflictError, ForbiddenError, ServiceUnavailableError } from '../../utils/errors.js';
 
 const app = express();
 app.use(express.json());
@@ -155,6 +155,39 @@ describe('centralized authentication on privileged routes', () => {
 
         expect(response.status).toBe(403);
         expect(response.body.error).toMatch(/bukan super admin aktif/);
+    });
+
+    it('does not expose whether a create conflict came from Firebase or the database', async () => {
+        vi.mocked(userManagementService.createUser).mockRejectedValueOnce(
+            new ConflictError('Identitas pengguna tersebut sudah digunakan.'),
+        );
+
+        const response = await request(app)
+            .post('/api/users')
+            .send({
+                email: 'existing@example.go.id',
+                name: 'Existing User',
+                role: 'staff',
+                password: 'Transient-Only-2026!',
+            });
+
+        expect(response.status).toBe(409);
+        expect(response.body).toEqual({ error: 'Identitas pengguna tersebut sudah digunakan.' });
+    });
+
+    it('returns a retryable generic response for post-commit Firebase reconciliation failure', async () => {
+        vi.mocked(userManagementService.updateUser).mockRejectedValueOnce(
+            new ServiceUnavailableError(
+                'Perubahan pengguna tersimpan, tetapi sinkronisasi sesi belum selesai. Ulangi permintaan ini.',
+            ),
+        );
+
+        const response = await request(app)
+            .put('/api/users/22222222-2222-4222-8222-222222222222')
+            .send({ isActive: false });
+
+        expect(response.status).toBe(503);
+        expect(response.body.error).toMatch(/sinkronisasi sesi belum selesai/);
     });
 
     it('rejects self-deactivation through the dedicated delete endpoint', async () => {

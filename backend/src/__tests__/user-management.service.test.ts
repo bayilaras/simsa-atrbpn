@@ -2,18 +2,34 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
+const chainCalls: Array<{ method: PropertyKey; args: any[] }> = [];
 let transactionCommits = 0;
 let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
+function enqueueError(error: unknown) { resultQueue.push({ queuedError: error }); }
 const auditMocks = vi.hoisted(() => ({ logActionOrThrow: vi.fn() }));
+const passwordMocks = vi.hoisted(() => ({ hashPassword: vi.fn() }));
+const firebaseAuthMocks = vi.hoisted(() => ({
+    createUser: vi.fn(),
+    deleteUser: vi.fn(),
+    updateUser: vi.fn(),
+    revokeRefreshTokens: vi.fn(),
+}));
 
 const mockChain: any = new Proxy({}, {
     get(_target, prop) {
         if (prop === 'then') {
             const val = resultQueue.shift() ?? [];
-            return (resolve: any) => resolve(val);
+            return (resolve: any, reject: any) => (
+                val && typeof val === 'object' && 'queuedError' in val
+                    ? reject(val.queuedError)
+                    : resolve(val)
+            );
         }
-        return (..._args: any[]) => mockChain;
+        return (...args: any[]) => {
+            chainCalls.push({ method: prop, args });
+            return mockChain;
+        };
     },
 });
 
@@ -38,13 +54,17 @@ const mockDb = {
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
 vi.mock('better-auth/crypto', () => ({
-    hashPassword: vi.fn().mockResolvedValue('secure-password-hash'),
+    hashPassword: passwordMocks.hashPassword,
+}));
+vi.mock('../config/firebase-admin.js', () => ({
+    getFirebaseAdminAuth: () => firebaseAuthMocks,
 }));
 
 const {
     userManagementService,
     VALID_ROLES,
     ADMIN_ROLES,
+    FIREBASE_ADMIN_CREATED_EMAIL_VERIFIED,
     normalizeUserUnitAssignment,
 } = await import('../services/user-management.service');
 
@@ -63,10 +83,22 @@ const actorContext = {
 describe('userManagementService', () => {
     beforeEach(() => {
         resultQueue.length = 0;
+        chainCalls.length = 0;
         vi.clearAllMocks();
         transactionCommits = 0;
         transactionRollbacks = 0;
         auditMocks.logActionOrThrow.mockResolvedValue(undefined);
+        passwordMocks.hashPassword.mockResolvedValue('secure-password-hash');
+        firebaseAuthMocks.createUser.mockResolvedValue({
+            uid: 'firebase-uid-default',
+            email: 'new@example.go.id',
+        });
+        firebaseAuthMocks.deleteUser.mockResolvedValue(undefined);
+        firebaseAuthMocks.updateUser.mockResolvedValue({});
+        firebaseAuthMocks.revokeRefreshTokens.mockResolvedValue(undefined);
+        vi.stubEnv('AUTH_PROVIDER', 'better-auth');
+        vi.stubEnv('SIMSA_CLOUD_PLATFORM', 'local');
+        vi.stubEnv('FIREBASE_PROJECT_ID', '');
     });
 
     // ── Pure functions (no DB) ──
@@ -187,6 +219,21 @@ describe('userManagementService', () => {
             expect(mockDb.insert).toHaveBeenCalledTimes(2);
         });
 
+        it('preserves the legacy Better Auth duplicate-email behavior', async () => {
+            enqueue([activeSuperAdmin], [{ id: 'existing-user' }]);
+
+            await expect(userManagementService.createUser({
+                email: 'existing@example.go.id',
+                name: 'Existing User',
+                role: 'staff',
+                password: 'Strong-Password-2026!',
+            }, actorContext)).rejects.toThrow('Email sudah terdaftar');
+
+            expect(firebaseAuthMocks.createUser).not.toHaveBeenCalled();
+            expect(firebaseAuthMocks.deleteUser).not.toHaveBeenCalled();
+            expect(mockDb.insert).not.toHaveBeenCalled();
+        });
+
         it('rolls back user provisioning when critical audit storage fails', async () => {
             enqueue([activeSuperAdmin], [], [{
                 id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'staff',
@@ -207,6 +254,205 @@ describe('userManagementService', () => {
                 expect.objectContaining({ action: 'create', entityType: 'user', entityId: 'u-new' }),
                 mockDb,
             );
+        });
+
+        it('creates a usable verified Firebase identity and persists its UID without hashing the password', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+            firebaseAuthMocks.createUser.mockResolvedValueOnce({
+                uid: 'firebase-uid-1',
+                email: 'new@example.go.id',
+            });
+            enqueue(
+                [activeSuperAdmin], [],
+                [activeSuperAdmin], [],
+                [{
+                    id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'staff',
+                    unitKerjaId: null, isActive: true, firebaseUid: 'firebase-uid-1',
+                }],
+                [{ id: 'u-new', email: 'new@example.go.id', role: 'staff' }],
+            );
+
+            const result = await userManagementService.createUser({
+                email: ' New@Example.go.id ',
+                name: 'New User',
+                role: 'staff',
+                unitKerjaId: null,
+                password: 'Transient-Only-2026!',
+            }, actorContext);
+
+            expect(result).toEqual({ id: 'u-new', email: 'new@example.go.id', role: 'staff' });
+            expect(firebaseAuthMocks.createUser).toHaveBeenCalledWith({
+                email: 'new@example.go.id',
+                password: 'Transient-Only-2026!',
+                displayName: 'New User',
+                emailVerified: FIREBASE_ADMIN_CREATED_EMAIL_VERIFIED,
+                disabled: false,
+            });
+            expect(passwordMocks.hashPassword).not.toHaveBeenCalled();
+            expect(mockDb.insert).toHaveBeenCalledTimes(1);
+            expect(chainCalls.filter(call => call.method === 'values')).toContainEqual({
+                method: 'values',
+                args: [expect.objectContaining({
+                    firebaseUid: 'firebase-uid-1',
+                    identityProvider: 'firebase',
+                    emailVerified: true,
+                })],
+            });
+            expect(JSON.stringify(chainCalls.filter(call => call.method === 'values')))
+                .not.toContain('Transient-Only-2026!');
+            expect(firebaseAuthMocks.deleteUser).not.toHaveBeenCalled();
+            expect(transactionCommits).toBe(2);
+        });
+
+        it('requires a password before opening a transaction in Firebase mode', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+
+            await expect(userManagementService.createUser({
+                email: 'new@example.go.id',
+                name: 'New User',
+                role: 'staff',
+            }, actorContext)).rejects.toThrow(/Password wajib/);
+
+            expect(mockDb.transaction).not.toHaveBeenCalled();
+            expect(firebaseAuthMocks.createUser).not.toHaveBeenCalled();
+        });
+
+        it('fails closed on an invalid auth-provider value instead of creating a Better Auth credential', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase-typo');
+
+            await expect(userManagementService.createUser({
+                email: 'new@example.go.id',
+                name: 'New User',
+                role: 'staff',
+                password: 'Transient-Only-2026!',
+            }, actorContext)).rejects.toThrow(/AUTH_PROVIDER must be one of/);
+
+            expect(passwordMocks.hashPassword).not.toHaveBeenCalled();
+            expect(firebaseAuthMocks.createUser).not.toHaveBeenCalled();
+            expect(mockDb.transaction).not.toHaveBeenCalled();
+        });
+
+        it('compensates the Firebase identity when the DB/audit transaction fails', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+            firebaseAuthMocks.createUser.mockResolvedValueOnce({
+                uid: 'firebase-uid-compensate',
+                email: 'new@example.go.id',
+            });
+            enqueue(
+                [activeSuperAdmin], [],
+                [activeSuperAdmin], [],
+                [{
+                    id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'staff',
+                    unitKerjaId: null, isActive: true, firebaseUid: 'firebase-uid-compensate',
+                }],
+            );
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(userManagementService.createUser({
+                email: 'new@example.go.id',
+                name: 'New User',
+                role: 'staff',
+                password: 'Transient-Only-2026!',
+            }, actorContext)).rejects.toThrow('audit unavailable');
+
+            expect(firebaseAuthMocks.deleteUser).toHaveBeenCalledOnce();
+            expect(firebaseAuthMocks.deleteUser).toHaveBeenCalledWith('firebase-uid-compensate');
+            expect(transactionCommits).toBe(1);
+            expect(transactionRollbacks).toBe(1);
+        });
+
+        it('fails closed when Firebase compensation fails and leaves no DB mapping', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+            firebaseAuthMocks.createUser.mockResolvedValueOnce({
+                uid: 'firebase-uid-orphan',
+                email: 'new@example.go.id',
+            });
+            firebaseAuthMocks.deleteUser.mockRejectedValueOnce(new Error('firebase unavailable'));
+            enqueue(
+                [activeSuperAdmin], [],
+                [activeSuperAdmin], [{ id: 'racing-db-user' }],
+            );
+
+            await expect(userManagementService.createUser({
+                email: 'new@example.go.id',
+                name: 'New User',
+                role: 'staff',
+                password: 'Transient-Only-2026!',
+            }, actorContext)).rejects.toMatchObject({ statusCode: 503 });
+
+            expect(firebaseAuthMocks.deleteUser).toHaveBeenCalledWith('firebase-uid-orphan');
+            expect(mockDb.insert).not.toHaveBeenCalled();
+        });
+
+        it('treats an already-deleted Firebase identity as successful idempotent compensation', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+            firebaseAuthMocks.createUser.mockResolvedValueOnce({
+                uid: 'firebase-uid-race-cleaned',
+                email: 'new@example.go.id',
+            });
+            firebaseAuthMocks.deleteUser.mockRejectedValueOnce(
+                Object.assign(new Error('missing'), { code: 'auth/user-not-found' }),
+            );
+            enqueue(
+                [activeSuperAdmin], [],
+                [activeSuperAdmin], [{ id: 'racing-db-user' }],
+            );
+
+            await expect(userManagementService.createUser({
+                email: 'new@example.go.id',
+                name: 'New User',
+                role: 'staff',
+                password: 'Transient-Only-2026!',
+            }, actorContext)).rejects.toMatchObject({ statusCode: 409 });
+
+            expect(firebaseAuthMocks.deleteUser).toHaveBeenCalledWith('firebase-uid-race-cleaned');
+        });
+
+        it('returns the same conflict for a concurrent Firebase email race without touching the DB', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+            firebaseAuthMocks.createUser.mockRejectedValueOnce(
+                Object.assign(new Error('email exists'), { code: 'auth/email-already-exists' }),
+            );
+            enqueue([activeSuperAdmin], []);
+
+            await expect(userManagementService.createUser({
+                email: 'new@example.go.id',
+                name: 'New User',
+                role: 'staff',
+                password: 'Transient-Only-2026!',
+            }, actorContext)).rejects.toMatchObject({
+                statusCode: 409,
+                message: 'Identitas pengguna tersebut sudah digunakan.',
+            });
+
+            expect(mockDb.insert).not.toHaveBeenCalled();
+            expect(firebaseAuthMocks.deleteUser).not.toHaveBeenCalled();
+        });
+
+        it('compensates a Firebase identity after a DB unique race and returns a generic conflict', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+            firebaseAuthMocks.createUser.mockResolvedValueOnce({
+                uid: 'firebase-uid-race',
+                email: 'new@example.go.id',
+            });
+            enqueue([activeSuperAdmin], [], [activeSuperAdmin], []);
+            enqueueError(Object.assign(new Error('duplicate key'), { code: '23505' }));
+
+            await expect(userManagementService.createUser({
+                email: 'new@example.go.id',
+                name: 'New User',
+                role: 'staff',
+                password: 'Transient-Only-2026!',
+            }, actorContext)).rejects.toMatchObject({ statusCode: 409 });
+
+            expect(firebaseAuthMocks.deleteUser).toHaveBeenCalledWith('firebase-uid-race');
         });
     });
 
@@ -365,6 +611,141 @@ describe('userManagementService', () => {
             expect(transactionCommits).toBe(0);
             expect(transactionRollbacks).toBe(1);
             expect(mockDb.update).not.toHaveBeenCalled();
+        });
+
+        it('commits Firebase deactivation in the DB before disabling the identity and revoking tokens', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+            enqueue(
+                [activeSuperAdmin],
+                [{
+                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: true,
+                    firebaseUid: 'firebase-uid-u1',
+                }],
+                [],
+                [{
+                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: false,
+                    firebaseUid: 'firebase-uid-u1',
+                }],
+                [],
+                [{ id: 'u1', role: 'staff', isActive: false }],
+            );
+
+            const result = await userManagementService.updateUser(
+                'u1',
+                { isActive: false },
+                actorContext,
+            );
+
+            expect(result).toEqual({ id: 'u1', role: 'staff', isActive: false });
+            expect(transactionCommits).toBe(1);
+            expect(firebaseAuthMocks.updateUser).toHaveBeenCalledWith(
+                'firebase-uid-u1',
+                { disabled: true },
+            );
+            expect(firebaseAuthMocks.revokeRefreshTokens).toHaveBeenCalledWith('firebase-uid-u1');
+            expect(firebaseAuthMocks.updateUser.mock.invocationCallOrder[0])
+                .toBeLessThan(firebaseAuthMocks.revokeRefreshTokens.mock.invocationCallOrder[0]);
+        });
+
+        it('enables a reactivated Firebase identity and revokes stale refresh tokens', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+            enqueue(
+                [activeSuperAdmin],
+                [{
+                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: false,
+                    firebaseUid: 'firebase-uid-u1',
+                }],
+                [{
+                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: true,
+                    firebaseUid: 'firebase-uid-u1',
+                }],
+                [],
+                [{ id: 'u1', role: 'staff', isActive: true }],
+            );
+
+            await userManagementService.updateUser('u1', { isActive: true }, actorContext);
+
+            expect(firebaseAuthMocks.updateUser).toHaveBeenCalledWith(
+                'firebase-uid-u1',
+                { disabled: false },
+            );
+            expect(firebaseAuthMocks.revokeRefreshTokens).toHaveBeenCalledWith('firebase-uid-u1');
+        });
+
+        it('keeps the committed DB state authoritative and allows an idempotent retry after Firebase failure', async () => {
+            vi.stubEnv('AUTH_PROVIDER', 'firebase');
+            vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-test-project');
+            firebaseAuthMocks.revokeRefreshTokens
+                .mockRejectedValueOnce(new Error('firebase unavailable'))
+                .mockResolvedValueOnce(undefined);
+            enqueue(
+                [activeSuperAdmin],
+                [{
+                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: true,
+                    firebaseUid: 'firebase-uid-u1',
+                }],
+                [],
+                [{
+                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: false,
+                    firebaseUid: 'firebase-uid-u1',
+                }],
+                [],
+                [{ id: 'u1', role: 'staff', isActive: false }],
+            );
+
+            await expect(userManagementService.updateUser(
+                'u1',
+                { isActive: false },
+                actorContext,
+            )).rejects.toMatchObject({ statusCode: 503 });
+            expect(transactionCommits).toBe(1);
+
+            enqueue(
+                [activeSuperAdmin],
+                [{
+                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: false,
+                    firebaseUid: 'firebase-uid-u1',
+                }],
+                [{
+                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: false,
+                    firebaseUid: 'firebase-uid-u1',
+                }],
+                [{ id: 'u1', role: 'staff', isActive: false }],
+            );
+
+            const retry = await userManagementService.updateUser(
+                'u1',
+                { isActive: false },
+                actorContext,
+            );
+
+            expect(retry).toEqual({ id: 'u1', role: 'staff', isActive: false });
+            expect(firebaseAuthMocks.updateUser).toHaveBeenCalledTimes(2);
+            expect(firebaseAuthMocks.revokeRefreshTokens).toHaveBeenCalledTimes(2);
+        });
+
+        it('does not call Firebase Admin for Better Auth updates', async () => {
+            enqueue(
+                [activeSuperAdmin],
+                [{
+                    id: 'u1', role: 'user', unitKerjaId: 'ditjen', isActive: true,
+                    firebaseUid: 'legacy-unexpected-uid',
+                }],
+                [],
+                [{
+                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: true,
+                    firebaseUid: 'legacy-unexpected-uid',
+                }],
+                [],
+                [{ id: 'u1', role: 'staff' }],
+            );
+
+            await userManagementService.updateUser('u1', { role: 'staff' }, actorContext);
+
+            expect(firebaseAuthMocks.updateUser).not.toHaveBeenCalled();
+            expect(firebaseAuthMocks.revokeRefreshTokens).not.toHaveBeenCalled();
         });
     });
 

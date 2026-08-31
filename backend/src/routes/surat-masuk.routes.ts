@@ -29,7 +29,7 @@ import { fileValidationMiddleware } from '../middlewares/file-validation.middlew
 
 const log = createLogger('SuratMasukRoutes');
 
-// Configure multer with memory storage for Vercel Blob uploads
+// Configure multer memory storage for the bounded server-upload fallback.
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
@@ -208,6 +208,7 @@ router.post('/',
     fileValidationMiddleware,
     async (req: AuthRequest, res, next) => {
         let requestCreatedBlobUrl: string | null = null;
+        let requestCreatedObjectGeneration: string | null = null;
         try {
             const file = req.file;
 
@@ -227,7 +228,7 @@ router.post('/',
                 });
             }
 
-            // Determine file path — either from client-side Blob upload or server-side upload
+            // Determine the locator from either direct upload or server fallback.
             let filePath: string | null = bodyValidation.data.filePath || null;
             let fileOriginalName: string | null = bodyValidation.data.fileOriginalName || null;
 
@@ -240,21 +241,22 @@ router.post('/',
                 return res.status(403).json({ error: 'Unit kerja pengguna belum ditetapkan.' });
             }
 
-            // If a file was uploaded via multipart (legacy), upload to Vercel Blob server-side
+            // Multipart is a bounded server-side compatibility path.
             if (file && file.buffer && !filePath) {
                 try {
-                    const blobFile = await blobStorageService.uploadFile({
+                    const blobFile = await blobStorageService.uploadUntrustedFile({
                         fileName: file.originalname,
                         mimeType: file.mimetype,
                         buffer: file.buffer,
                         folder: 'surat-masuk',
                     });
                     requestCreatedBlobUrl = blobFile.url;
+                    requestCreatedObjectGeneration = blobFile.generation || null;
                     filePath = `blob:${blobFile.url}`;
                     fileOriginalName = file.originalname;
-                    log.info({ blobUrl: blobFile.url, fileName: file.originalname }, 'File uploaded to Vercel Blob');
+                    log.info({ objectLocator: blobFile.url, fileName: file.originalname }, 'File uploaded to private object storage');
                 } catch (uploadError: any) {
-                    log.error({ err: uploadError }, 'Failed to upload file to Vercel Blob');
+                    log.error({ err: uploadError }, 'Failed to upload file to private object storage');
                     return res.status(500).json({
                         success: false,
                         error: 'Gagal mengunggah file',
@@ -290,6 +292,7 @@ router.post('/',
                 mimeType: file?.mimetype,
                 buffer: file?.buffer,
                 uploadedById: req.user?.id,
+                objectGeneration: file ? requestCreatedObjectGeneration : undefined,
             } : undefined);
 
             // The committed surat, client lease, canonical attachment, audit,
@@ -301,7 +304,7 @@ router.post('/',
             await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
                 operation: 'surat_masuk_create',
                 userId: req.user?.id,
-            });
+            }, requestCreatedObjectGeneration);
             next(error);
         }
     }
@@ -314,6 +317,7 @@ router.put('/:id', validateIdParam(),
     fileValidationMiddleware,
     async (req: AuthRequest, res, next) => {
         let requestCreatedBlobUrl: string | null = null;
+        let requestCreatedObjectGeneration: string | null = null;
         try {
             const id = req.params.id as string;
             const file = req.file;
@@ -364,22 +368,23 @@ router.put('/:id', validateIdParam(),
 
             const updateData: any = bodyValidation.data;
 
-            // If filePath is already provided (from client-side Blob upload), use it directly
+            // If filePath came from direct upload, use its pending lease.
             // Otherwise, if a file was uploaded via multipart (legacy), upload to Blob server-side
             if (file && file.buffer && !updateData.filePath) {
                 try {
-                    const blobFile = await blobStorageService.uploadFile({
+                    const blobFile = await blobStorageService.uploadUntrustedFile({
                         fileName: file.originalname,
                         mimeType: file.mimetype,
                         buffer: file.buffer,
                         folder: 'surat-masuk',
                     });
                     requestCreatedBlobUrl = blobFile.url;
+                    requestCreatedObjectGeneration = blobFile.generation || null;
                     updateData.filePath = `blob:${blobFile.url}`;
                     updateData.fileOriginalName = file.originalname;
-                    log.info({ blobUrl: blobFile.url, fileName: file.originalname }, 'File uploaded to Vercel Blob (update)');
+                    log.info({ objectLocator: blobFile.url, fileName: file.originalname }, 'File uploaded to private object storage (update)');
                 } catch (uploadError: any) {
-                    log.error({ err: uploadError }, 'Failed to upload file to Vercel Blob');
+                    log.error({ err: uploadError }, 'Failed to upload file to private object storage');
                     return res.status(500).json({
                         success: false,
                         error: 'Gagal mengunggah file',
@@ -426,6 +431,7 @@ router.put('/:id', validateIdParam(),
                     mimeType: file?.mimetype,
                     buffer: file?.buffer,
                     uploadedById: req.user?.id,
+                    objectGeneration: file ? requestCreatedObjectGeneration : undefined,
                 } : undefined,
             );
 
@@ -433,7 +439,7 @@ router.put('/:id', validateIdParam(),
                 await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
                     operation: 'surat_masuk_update_not_found',
                     entityId: id,
-                });
+                }, requestCreatedObjectGeneration);
                 requestCreatedBlobUrl = null;
                 return res.status(404).json({ error: 'Surat masuk not found' });
             }
@@ -446,7 +452,7 @@ router.put('/:id', validateIdParam(),
                 operation: 'surat_masuk_update',
                 entityId: req.params.id,
                 userId: req.user?.id,
-            });
+            }, requestCreatedObjectGeneration);
             log.error({ err: error, message: error?.message, stack: error?.stack }, '[PUT /surat-masuk/:id] Error:');
             next(error);
         }

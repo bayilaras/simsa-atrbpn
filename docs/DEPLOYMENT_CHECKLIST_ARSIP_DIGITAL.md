@@ -1,5 +1,13 @@
 # Checklist Deployment Profil Internal SIMSA
 
+> **Target platform aktif:** backend baru menggunakan Firebase/Google Cloud.
+> Untuk provisioning, backup, maintenance database, dan promosi gunakan
+> [blueprint Firebase/GCP](infra/firebase-gcp/README.md),
+> [runbook backup Cloud SQL](../CLOUD_SQL_BACKUP_RECOVERY.md), dan
+> [runbook rilis backend GCP](../GCP_BACKEND_RELEASE.md). Butir Vercel, Neon,
+> dan Vercel Blob di bawah dipertahankan sementara hanya sebagai bukti/rollback
+> sistem lama selama cutover; jangan menerapkannya pada lingkungan GCP baru.
+
 ## 1. Prinsip rilis
 
 Checklist ini adalah gerbang operasional untuk profil aplikasi internal, bukan checklist sertifikasi atau pernyataan kepatuhan penuh. Permen ATR/BPN Nomor 2 Tahun 2026 dan ketentuan ANRI digunakan sebagai rujukan desain. Lulus build atau unit test tidak sama dengan kesiapan operasional. Setiap butir yang berlaku harus memiliki pemilik, bukti, tanggal, lingkungan, dan pemberi persetujuan.

@@ -27,6 +27,7 @@ export const autentikasi = pgTable('autentikasi', {
     // Internal private-Blob locator. It is never returned as an access URL;
     // authenticated routes proxy the object stream instead.
     fileLampiran: text('file_lampiran'),
+    fileLampiranObjectGeneration: varchar('file_lampiran_object_generation', { length: 32 }),
     fileLampiranSha256: varchar('file_lampiran_sha256', { length: 64 }),
     fileLampiranSizeBytes: bigint('file_lampiran_size_bytes', { mode: 'number' }),
 
@@ -42,6 +43,20 @@ export const autentikasi = pgTable('autentikasi', {
         'autentikasi_file_lampiran_metadata_check',
         sql`(${table.fileLampiran} is null and ${table.fileLampiranSha256} is null and ${table.fileLampiranSizeBytes} is null)
             or (${table.fileLampiran} is not null and ${table.fileLampiranSha256} is not null and ${table.fileLampiranSizeBytes} > 0)`,
+    ),
+    check(
+        'autentikasi_file_lampiran_generation_check',
+        sql`(
+                ${table.fileLampiran} is null
+                and ${table.fileLampiranObjectGeneration} is null
+            ) or (
+                ${table.fileLampiran} like 'gs://%'
+                and ${table.fileLampiranObjectGeneration} is not null
+                and ${table.fileLampiranObjectGeneration} ~ '^[0-9]+$'
+            ) or (
+                ${table.fileLampiran} like 'https://%'
+                and ${table.fileLampiranObjectGeneration} is null
+            )`,
     ),
 ]);
 

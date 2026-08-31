@@ -56,7 +56,7 @@ vi.mock('../services/regulatory-rule-set.service', () => {
 });
 
 vi.mock('../services/audit-log.service', () => ({
-    default: { logAction: state.audit },
+    default: { logActionOrThrow: state.audit },
 }));
 
 const { default: router } = await import('../routes/regulatory-rule-set.routes');
@@ -211,6 +211,23 @@ describe('regulatory rule-set routes', () => {
             action: 'view',
             entityId: ruleSetId,
         }));
+    });
+
+    it('fails closed and destroys the source stream when read audit persistence fails', async () => {
+        const stream = Readable.from(Buffer.from('%PDF-must-not-leak'));
+        const destroy = vi.spyOn(stream, 'destroy');
+        state.service.getSourceDocumentStream.mockResolvedValueOnce({
+            stream,
+            fileName: 'protected.pdf',
+            sizeBytes: Buffer.byteLength('%PDF-must-not-leak'),
+        });
+        state.audit.mockRejectedValueOnce(new Error('audit unavailable'));
+
+        await request(app)
+            .get(`/regulatory-rule-sets/${ruleSetId}/source-document`)
+            .expect(500);
+
+        expect(destroy).toHaveBeenCalledOnce();
     });
 
     it('restricts source PDF streaming to governance admins and auditors', async () => {

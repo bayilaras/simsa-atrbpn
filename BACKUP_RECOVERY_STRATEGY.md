@@ -1,5 +1,11 @@
 # Strategi Backup & Recovery SIMSA
 
+> **Jalur legacy/rollback.** Dokumen ini menjelaskan Neon dan Vercel Blob yang
+> dipertahankan sementara untuk rollback. Target aktif setelah cutover adalah
+> Cloud SQL dan private Google Cloud Storage; gunakan
+> `CLOUD_SQL_BACKUP_RECOVERY.md` sebagai runbook database terbaru. Workflow lama
+> tidak membuktikan kesiapan backup GCP.
+
 ## Cakupan dan status
 
 Backup SIMSA terdiri dari dua domain yang harus dapat dipulihkan bersama:
@@ -51,14 +57,14 @@ Run manual wajib memilih profil migrasi yang tepat:
 
 - `pre_migration` harus persis berisi 21 timestamp Drizzle dari `0000` sampai
   `0020_permanent_transfer_lifecycle`; inilah profil backup wajib sebelum
-  migrasi `0021`–`0029`;
-- `post_migration` harus persis berisi 30 timestamp Drizzle dari `0000` sampai
-  `0029_outgoing_security_classification`.
+  migrasi `0021`–`0031`;
+- `post_migration` harus persis berisi 32 timestamp Drizzle dari `0000` sampai
+  `0031_gcs_upload_intents`.
 
 Run terjadwal memakai mode `auto` yang hanya menerima tepat salah satu dari dua
 profil tersebut, lalu mencatat profil hasil resolusinya; karena itu backup harian
 tetap berjalan sebelum dan sesudah maintenance window tanpa menerima keadaan
-transisi. Riwayat parsial (22–29 migrasi), duplikat, timestamp tak dikenal, atau
+transisi. Riwayat parsial (22–31 migrasi), duplikat, timestamp tak dikenal, atau
 migrasi di luar profil ditolak. Evidence mencakup profil terpilih, identitas
 lengkap riwayat migrasi, fingerprint SHA-256 schema semantik, jumlah persis
 setiap tabel, dan fingerprint konten setiap regular/leaf table pada schema

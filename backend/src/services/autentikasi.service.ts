@@ -8,14 +8,17 @@ import PDFDocument from 'pdfkit';
 import crypto from 'node:crypto';
 import { blobStorageService } from './blob-storage.service.js';
 import { auditLogService, type CriticalAuditContext } from './audit-log.service.js';
-import { createLogger } from '../utils/logger.js';
 import { Readable } from 'node:stream';
-
-const log = createLogger('AutentikasiService');
+import { requireImmutableObjectGeneration } from '../storage/locator.js';
+import {
+    durableFinalObjectService,
+    type FinalObjectWrite,
+} from './durable-final-object.service.js';
 
 function withoutPrivateLocator<T extends Record<string, any>>(record: T) {
     const {
         fileLampiran,
+        fileLampiranObjectGeneration: _fileLampiranObjectGeneration,
         fileLampiranSha256: _fileLampiranSha256,
         fileLampiranSizeBytes: _fileLampiranSizeBytes,
         ...safe
@@ -28,7 +31,7 @@ export class AutentikasiService {
         data: CreateAutentikasi & { userId: string },
         auditContext: CriticalAuditContext,
     ) {
-        let uploadedLocator: string | null = null;
+        let finalWrite: FinalObjectWrite | null = null;
         try {
             return await db.transaction(async (tx: any) => {
                 const uniqueItemIds = [...new Set(data.itemArsipIds)];
@@ -81,17 +84,22 @@ export class AutentikasiService {
 
                 const pdfBuffer = await this.generateBeritaAcaraPdfBuffer(newAutentikasi.id, tx);
                 const fileName = this.pdfFileName(newAutentikasi.nomorBeritaAcara);
-                const stored = await blobStorageService.uploadFile({
+                finalWrite = await durableFinalObjectService.upload(newAutentikasi.id, {
                     fileName,
                     mimeType: 'application/pdf',
                     buffer: pdfBuffer,
                     folder: 'autentikasi',
                 });
-                uploadedLocator = stored.url;
+                const stored = finalWrite.stored;
+                const uploadedObjectGeneration = requireImmutableObjectGeneration(
+                    stored.url,
+                    stored.generation,
+                );
 
                 const [updated] = await tx.update(autentikasi)
                     .set({
                         fileLampiran: stored.url,
+                        fileLampiranObjectGeneration: uploadedObjectGeneration,
                         fileLampiranSha256: crypto.createHash('sha256').update(pdfBuffer).digest('hex'),
                         fileLampiranSizeBytes: pdfBuffer.length,
                         updatedAt: new Date(),
@@ -109,18 +117,15 @@ export class AutentikasiService {
                     changes: { after: safeResult },
                 }, tx);
 
+                // This update is committed atomically with the domain row. If
+                // anything above rolls back, the pre-write reservation stays
+                // eligible for the isolated final-cleanup principal.
+                await durableFinalObjectService.markReferenced(tx, finalWrite);
+
                 return safeResult;
             });
         } catch (error) {
-            if (uploadedLocator) {
-                const deleted = await blobStorageService.deleteFile(uploadedLocator);
-                if (!deleted) {
-                    log.error(
-                        { locator: uploadedLocator, err: error },
-                        'Autentikasi Blob compensation failed; manual cleanup required',
-                    );
-                }
-            }
+            await durableFinalObjectService.compensate(finalWrite, error);
             throw error;
         }
     }
@@ -189,6 +194,7 @@ export class AutentikasiService {
     async getPdfStream(id: string, auditContext: CriticalAuditContext) {
         const [record] = await db.select({
             locator: autentikasi.fileLampiran,
+            objectGeneration: autentikasi.fileLampiranObjectGeneration,
             expectedSha256: autentikasi.fileLampiranSha256,
             expectedSizeBytes: autentikasi.fileLampiranSizeBytes,
             nomorBeritaAcara: autentikasi.nomorBeritaAcara,
@@ -198,7 +204,13 @@ export class AutentikasiService {
             .limit(1);
         if (!record?.locator || !record.expectedSha256 || !record.expectedSizeBytes) return null;
 
-        const download = await blobStorageService.downloadFile(record.locator);
+        const objectGeneration = requireImmutableObjectGeneration(
+            record.locator,
+            record.objectGeneration,
+        );
+        const download = await blobStorageService.downloadFile(record.locator, {
+            generation: objectGeneration || undefined,
+        });
         if (!download) return null;
         if (download.mimeType !== 'application/pdf') {
             throw new Error('Stored autentikasi object is not a PDF');

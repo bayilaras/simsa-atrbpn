@@ -41,6 +41,7 @@ export const regulatoryRuleSets = pgTable('regulatory_rule_sets', {
     // It is deliberately removed by the presentation layer before rule sets
     // are returned to clients.
     sourceDocumentBlobUrl: text('source_document_blob_url'),
+    sourceDocumentObjectGeneration: varchar('source_document_object_generation', { length: 32 }),
     sourceDocumentMimeType: varchar('source_document_mime_type', { length: 100 }),
     sourceDocumentSizeBytes: integer('source_document_size_bytes'),
     sourceDocumentPageCount: integer('source_document_page_count'),
@@ -106,8 +107,29 @@ export const regulatoryRuleSets = pgTable('regulatory_rule_sets', {
     check(
         'regulatory_rule_sets_source_blob_check',
         sql`${table.sourceDocumentBlobUrl} is null or (
-            ${table.sourceDocumentBlobUrl} ~ '^https://[^/]+[.]private[.]blob[.]vercel-storage[.]com/regulatory-sources/[0-9a-fA-F-]{36}/[^/?#]+$'
-            and ${table.sourceDocumentBlobUrl} like ('https://%.private.blob.vercel-storage.com/regulatory-sources/' || ${table.id}::text || '/%')
+            (
+                ${table.sourceDocumentBlobUrl} ~ '^https://[^/]+[.]private[.]blob[.]vercel-storage[.]com/regulatory-sources/[0-9a-fA-F-]{36}/[^/?#]+$'
+                and ${table.sourceDocumentBlobUrl} like ('https://%.private.blob.vercel-storage.com/regulatory-sources/' || ${table.id}::text || '/%')
+            )
+            or (
+                ${table.sourceDocumentBlobUrl} ~ '^gs://[^/]+/regulatory-sources/[0-9a-fA-F-]{36}/[^/?#]+$'
+                and ${table.sourceDocumentBlobUrl} like ('gs://%/regulatory-sources/' || ${table.id}::text || '/%')
+            )
+        )`,
+    ),
+    check(
+        'regulatory_rule_sets_source_generation_check',
+        sql`(
+            (${table.sourceDocumentBlobUrl} is null and ${table.sourceDocumentObjectGeneration} is null)
+            or (
+                ${table.sourceDocumentBlobUrl} like 'gs://%'
+                and ${table.sourceDocumentObjectGeneration} is not null
+                and ${table.sourceDocumentObjectGeneration} ~ '^[0-9]+$'
+            )
+            or (
+                ${table.sourceDocumentBlobUrl} like 'https://%'
+                and ${table.sourceDocumentObjectGeneration} is null
+            )
         )`,
     ),
     check(

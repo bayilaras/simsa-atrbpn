@@ -6,6 +6,7 @@ import {
     klasifikasiArsip,
     arsip,
     arsipRuleSnapshots,
+    fileAttachments,
     regulatoryRuleEvents,
     regulatoryRuleSets,
     KLASIFIKASI_RULE_SET_2018_ID,
@@ -33,6 +34,11 @@ import {
     clientBlobUploadService,
     type ClaimClientBlobUpload,
 } from './client-blob-upload.service.js';
+import { parseGcsLocator, toGcsLocator } from '../storage/locator.js';
+import {
+    durableFinalObjectService,
+    type FinalObjectWrite,
+} from './durable-final-object.service.js';
 
 type RuleItem = Record<string, any>;
 type JsonObject = Record<string, unknown>;
@@ -45,6 +51,7 @@ interface VerifiedSourceDocument {
     sizeBytes: number;
     pageCount: number;
     blobUrl: string;
+    objectGeneration: string | null;
 }
 
 export interface RuleSetValidationIssue {
@@ -262,6 +269,10 @@ function applyGovernanceReadinessChecks(
     } else if (ruleSet.sourceDocumentBlobUrl) {
         try {
             assertRegulatorySourceBlobLocator(ruleSet.id, ruleSet.sourceDocumentBlobUrl);
+            assertRegulatorySourceObjectGeneration(
+                ruleSet.sourceDocumentBlobUrl,
+                ruleSet.sourceDocumentObjectGeneration,
+            );
         } catch {
             addIssue(
                 report.errors,
@@ -552,6 +563,7 @@ function presentRuleSet(ruleSet: RegulatoryRuleSet) {
     const metadata = asJsonObject(ruleSet.metadata);
     const {
         sourceDocumentBlobUrl,
+        sourceDocumentObjectGeneration: _sourceDocumentObjectGeneration,
         ...visibleRuleSet
     } = ruleSet;
     return {
@@ -685,16 +697,40 @@ async function pdfPageCount(buffer: Buffer): Promise<number> {
     }
 }
 
-function sourceLocatorFingerprint(blobUrl: string | null | undefined): string | null {
-    return blobUrl ? createHash('sha256').update(blobUrl, 'utf8').digest('hex') : null;
+function sourceLocatorFingerprint(
+    blobUrl: string | null | undefined,
+    generation?: string | null,
+): string | null {
+    if (!blobUrl) return null;
+    const immutableIdentity = generation ? `${blobUrl}#generation=${generation}` : blobUrl;
+    return createHash('sha256').update(immutableIdentity, 'utf8').digest('hex');
 }
 
 /**
- * Validate that a locator belongs to the private Vercel store namespace that
- * was delegated specifically to this rule set.  This rejects public objects,
- * signed query URLs, encoded path separators and cross-rule-set substitution.
+ * Validate that a private object locator is bound specifically to this rule
+ * set. This rejects public/signed URLs, encoded separators, and cross-rule-set
+ * substitution for both the legacy Blob store and Cloud Storage.
  */
 export function assertRegulatorySourceBlobLocator(ruleSetId: string, candidate: string): string {
+    if (candidate.startsWith('gs://')) {
+        try {
+            const parsed = parseGcsLocator(candidate);
+            const segments = parsed.objectName.split('/');
+            if (
+                segments.length !== 3
+                || segments[0] !== 'regulatory-sources'
+                || segments[1] !== ruleSetId.toLowerCase()
+                || !segments[2]
+                || /[\\/\u0000-\u001f\u007f]/.test(segments[2])
+            ) {
+                throw new Error('Unexpected regulatory namespace');
+            }
+            return toGcsLocator(parsed.bucket, parsed.objectName);
+        } catch {
+            throw new ValidationError('Locator Cloud Storage PDF sumber tidak valid atau tidak terikat pada versi aturan ini.');
+        }
+    }
+
     let url: URL;
     try {
         url = new URL(candidate);
@@ -710,7 +746,7 @@ export function assertRegulatorySourceBlobLocator(ruleSetId: string, candidate: 
         || url.search
         || url.hash
     ) {
-        throw new ValidationError('PDF sumber harus berada pada private Vercel Blob tanpa URL akses sementara.');
+        throw new ValidationError('PDF sumber harus berada pada penyimpanan privat tanpa URL akses sementara.');
     }
     if (/%2f|%5c|%2e/i.test(url.pathname)) {
         throw new ValidationError('Path Blob PDF sumber mengandung encoding yang tidak diizinkan.');
@@ -738,6 +774,22 @@ export function assertRegulatorySourceBlobLocator(ruleSetId: string, candidate: 
         throw new ValidationError('Blob PDF sumber tidak terikat pada versi aturan ini.');
     }
     return url.href;
+}
+
+export function assertRegulatorySourceObjectGeneration(
+    blobUrl: string,
+    generation: string | null | undefined,
+): string | undefined {
+    if (blobUrl.startsWith('gs://')) {
+        if (!generation || !/^\d+$/.test(generation)) {
+            throw new ValidationError('Generasi immutable PDF sumber Cloud Storage tidak tersedia.');
+        }
+        return generation;
+    }
+    if (generation) {
+        throw new ValidationError('Generasi Cloud Storage tidak boleh dipasang pada sumber non-GCS.');
+    }
+    return undefined;
 }
 
 function safeRegulatorySourceFileName(originalName: string): string {
@@ -788,7 +840,7 @@ async function inspectSourcePdf(
 }
 
 /**
- * Resolve an internal private-Blob locator, retrieve the exact object bytes,
+ * Resolve an internal private-object locator, retrieve the exact object bytes,
  * and derive every piece of source evidence on the server. This is shared by
  * direct uploads and explicit source reuse so neither path can trust a hash,
  * page count, MIME type, or size supplied by a client or inherited blindly.
@@ -796,13 +848,18 @@ async function inspectSourcePdf(
 async function retrieveAndInspectSourceBlob(
     ruleSetId: string,
     candidateUrl: string,
+    candidateGeneration?: string | null,
 ): Promise<Omit<VerifiedSourceDocument, 'originalName'>> {
     const blobUrl = assertRegulatorySourceBlobLocator(ruleSetId, candidateUrl);
-    const metadata = await blobStorageService.getFile(blobUrl);
+    const objectGeneration = assertRegulatorySourceObjectGeneration(blobUrl, candidateGeneration);
+    const metadata = await blobStorageService.getFile(blobUrl, { generation: objectGeneration });
     if (!metadata) throw new ValidationError('Objek private Blob PDF sumber tidak ditemukan.');
     const canonicalMetadataUrl = assertRegulatorySourceBlobLocator(ruleSetId, metadata.url);
     if (canonicalMetadataUrl !== blobUrl) {
         throw new ValidationError('Locator Blob tidak sama dengan objek canonical pada penyimpanan.');
+    }
+    if (objectGeneration && metadata.generation !== objectGeneration) {
+        throw new ValidationError('Metadata PDF sumber berasal dari generasi Cloud Storage yang berbeda.');
     }
     if (metadata.mimeType !== 'application/pdf') {
         throw new ValidationError('Content-Type objek sumber harus application/pdf.');
@@ -814,7 +871,10 @@ async function retrieveAndInspectSourceBlob(
         throw new ValidationError('PDF sumber melebihi batas 50 MB.');
     }
 
-    const downloaded = await blobStorageService.downloadFile(blobUrl);
+    const downloaded = await blobStorageService.downloadFile(blobUrl, {
+        generation: objectGeneration,
+        throwOnError: true,
+    });
     if (!downloaded) throw new ValidationError('Byte PDF sumber tidak dapat diambil dari private Blob.');
     if (downloaded.mimeType !== 'application/pdf') {
         if (typeof (downloaded.stream as any).destroy === 'function') downloaded.stream.destroy();
@@ -825,7 +885,13 @@ async function retrieveAndInspectSourceBlob(
         throw new ValidationError('Ukuran byte unduhan berbeda dari metadata private Blob.');
     }
     const { sha256, pageCount } = await inspectSourcePdf(buffer, buffer.length);
-    return { sha256, sizeBytes: buffer.length, pageCount, blobUrl };
+    return {
+        sha256,
+        sizeBytes: buffer.length,
+        pageCount,
+        blobUrl,
+        objectGeneration: objectGeneration || null,
+    };
 }
 
 function governanceContext(
@@ -886,10 +952,15 @@ export class RegulatoryRuleSetService {
         }
 
         const blobUrl = assertRegulatorySourceBlobLocator(id, ruleSet.sourceDocumentBlobUrl);
-        const metadata = await blobStorageService.getFile(blobUrl);
+        const objectGeneration = assertRegulatorySourceObjectGeneration(
+            blobUrl,
+            ruleSet.sourceDocumentObjectGeneration,
+        );
+        const metadata = await blobStorageService.getFile(blobUrl, { generation: objectGeneration });
         if (!metadata) throw new ConflictError('PDF sumber tidak lagi tersedia pada private Blob.');
         if (
             assertRegulatorySourceBlobLocator(id, metadata.url) !== blobUrl
+            || (objectGeneration && metadata.generation !== objectGeneration)
             || metadata.mimeType !== 'application/pdf'
             || !Number.isInteger(metadata.size)
             || Number(metadata.size) <= 0
@@ -900,7 +971,10 @@ export class RegulatoryRuleSetService {
             throw new ConflictError('Metadata PDF private Blob tidak sama dengan bukti sumber terverifikasi.');
         }
 
-        const downloaded = await blobStorageService.downloadFile(blobUrl);
+        const downloaded = await blobStorageService.downloadFile(blobUrl, {
+            generation: objectGeneration,
+            throwOnError: true,
+        });
         if (!downloaded) throw new ConflictError('Byte PDF sumber tidak dapat diambil dari private Blob.');
         if (downloaded.mimeType !== 'application/pdf') {
             if (typeof (downloaded.stream as any).destroy === 'function') downloaded.stream.destroy();
@@ -950,10 +1024,15 @@ export class RegulatoryRuleSetService {
             throw new ConflictError('Byte PDF sumber belum disimpan pada private Blob.');
         }
         const blobUrl = assertRegulatorySourceBlobLocator(ruleSet.id, ruleSet.sourceDocumentBlobUrl);
-        const metadata = await blobStorageService.getFile(blobUrl);
+        const objectGeneration = assertRegulatorySourceObjectGeneration(
+            blobUrl,
+            ruleSet.sourceDocumentObjectGeneration,
+        );
+        const metadata = await blobStorageService.getFile(blobUrl, { generation: objectGeneration });
         if (!metadata) throw new ConflictError('Byte PDF sumber tidak lagi tersedia pada private Blob.');
         if (
             assertRegulatorySourceBlobLocator(ruleSet.id, metadata.url) !== blobUrl
+            || (objectGeneration && metadata.generation !== objectGeneration)
             || metadata.mimeType !== 'application/pdf'
             || metadata.size !== ruleSet.sourceDocumentSizeBytes
         ) {
@@ -983,7 +1062,9 @@ export class RegulatoryRuleSetService {
         auditContext: Omit<GovernanceAuditContext, 'actorId'> = {},
     ) {
         let copiedSourceBlobUrl: string | null = null;
+        let copiedSourceGeneration: string | null = null;
         let copiedSourceEvidence: Omit<VerifiedSourceDocument, 'originalName'> | null = null;
+        let copiedSourceWrite: FinalObjectWrite | null = null;
         try {
             return await db.transaction(async (tx: any) => {
                 const [active] = await tx
@@ -1031,15 +1112,26 @@ export class RegulatoryRuleSetService {
                 const draftId = randomUUID();
                 if (reuseVerifiedSource) {
                     assertRegulatorySourceBlobLocator(active.id, active.sourceDocumentBlobUrl!);
-                    const copied = await blobStorageService.copyFile({
+                    const activeSourceGeneration = assertRegulatorySourceObjectGeneration(
+                        active.sourceDocumentBlobUrl!,
+                        active.sourceDocumentObjectGeneration,
+                    );
+                    copiedSourceWrite = await durableFinalObjectService.copy(draftId, {
                         sourceUrl: active.sourceDocumentBlobUrl!,
+                        sourceGeneration: activeSourceGeneration,
                         folder: `regulatory-sources/${draftId}`,
                         fileName: safeRegulatorySourceFileName(active.sourceDocumentName || 'source-document.pdf'),
                         mimeType: 'application/pdf',
                     });
+                    const copied = copiedSourceWrite.stored;
                     copiedSourceBlobUrl = copied.url;
+                    copiedSourceGeneration = copied.generation || null;
                     copiedSourceBlobUrl = assertRegulatorySourceBlobLocator(draftId, copiedSourceBlobUrl);
-                    copiedSourceEvidence = await retrieveAndInspectSourceBlob(draftId, copiedSourceBlobUrl);
+                    copiedSourceEvidence = await retrieveAndInspectSourceBlob(
+                        draftId,
+                        copiedSourceBlobUrl,
+                        copiedSourceGeneration,
+                    );
                     if (
                         copiedSourceEvidence.sizeBytes !== active.sourceDocumentSizeBytes
                         || copiedSourceEvidence.pageCount !== active.sourceDocumentPageCount
@@ -1067,6 +1159,7 @@ export class RegulatoryRuleSetService {
                             ? copiedSourceEvidence!.sha256
                             : input.sourceDocumentSha256 ?? null,
                         sourceDocumentBlobUrl: copiedSourceBlobUrl,
+                        sourceDocumentObjectGeneration: copiedSourceEvidence?.objectGeneration ?? null,
                         sourceDocumentMimeType: reuseVerifiedSource ? active.sourceDocumentMimeType : null,
                         sourceDocumentSizeBytes: reuseVerifiedSource ? copiedSourceEvidence!.sizeBytes : null,
                         sourceDocumentPageCount: reuseVerifiedSource ? copiedSourceEvidence!.pageCount : null,
@@ -1148,6 +1241,10 @@ export class RegulatoryRuleSetService {
                     reason: input.changeSummary || 'Membuat edisi kerja dari aturan aktif.',
                 }], governanceContext(actorId, auditContext));
 
+                if (copiedSourceWrite) {
+                    await durableFinalObjectService.markReferenced(tx, copiedSourceWrite);
+                }
+
                 return {
                     ruleSet: presentRuleSet(draft),
                     clonedFrom: presentRuleSet(active),
@@ -1155,13 +1252,7 @@ export class RegulatoryRuleSetService {
                 };
             });
         } catch (error) {
-            if (copiedSourceBlobUrl) {
-                // The database transaction has rolled back. Remove only the
-                // exact object created by this clone attempt; failure to clean
-                // it up is logged by the storage service and never weakens the
-                // fail-closed database outcome.
-                await blobStorageService.deleteFile(copiedSourceBlobUrl);
-            }
+            await durableFinalObjectService.compensate(copiedSourceWrite, error);
             if (isUniqueViolation(error)) {
                 throw new ConflictError(`Versi ${input.version} sudah ada untuk ${instrumentType}.`);
             }
@@ -1354,6 +1445,7 @@ export class RegulatoryRuleSetService {
         action = 'server_verify_private_blob',
         clientBlobClaim?: ClaimClientBlobUpload,
     ) {
+        assertRegulatorySourceObjectGeneration(source.blobUrl, source.objectGeneration);
         return db.transaction(async (tx: any) => {
             const [ruleSet] = await tx.select().from(regulatoryRuleSets)
                 .where(eq(regulatoryRuleSets.id, id)).limit(1).for('update');
@@ -1368,17 +1460,25 @@ export class RegulatoryRuleSetService {
                 pageCount: ruleSet.sourceDocumentPageCount,
                 verifiedAt: ruleSet.sourceDocumentVerifiedAt,
                 stored: Boolean(ruleSet.sourceDocumentBlobUrl),
-                storageLocatorFingerprint: sourceLocatorFingerprint(ruleSet.sourceDocumentBlobUrl),
+                storageLocatorFingerprint: sourceLocatorFingerprint(
+                    ruleSet.sourceDocumentBlobUrl,
+                    ruleSet.sourceDocumentObjectGeneration,
+                ),
             };
             const now = new Date();
             const [updated] = await tx.update(regulatoryRuleSets).set({
                 sourceDocumentName: source.originalName,
                 sourceDocumentSha256: source.sha256,
                 sourceDocumentBlobUrl: source.blobUrl,
+                sourceDocumentObjectGeneration: source.objectGeneration,
                 sourceDocumentMimeType: 'application/pdf',
                 sourceDocumentSizeBytes: source.sizeBytes,
                 sourceDocumentPageCount: source.pageCount,
-                sourceDocumentVerifiedAt: now,
+                // Hashing and PDF parsing are ingest evidence, not a malware
+                // verdict. The scanner sets this timestamp only after ClamAV
+                // returns clean and the exact-generation fixity baseline still
+                // matches.
+                sourceDocumentVerifiedAt: null,
                 sourceDocumentVerifiedBy: actorId || null,
                 completenessManifest: null,
                 completenessManifestSha256: null,
@@ -1395,6 +1495,21 @@ export class RegulatoryRuleSetService {
             )).returning();
             if (!updated) throw new ConflictError('Status draft berubah saat dokumen diverifikasi.');
 
+            await tx.insert(fileAttachments).values({
+                entityId: id,
+                entityType: 'regulatory_rule_set',
+                fileName: source.originalName,
+                fileUrl: source.blobUrl,
+                objectGeneration: source.objectGeneration,
+                mimeType: 'application/pdf',
+                sizeBytes: source.sizeBytes,
+                sha256: source.sha256,
+                storageAccess: 'private',
+                uploadedBy: actorId || null,
+                integrityStatus: 'baseline_recorded',
+                malwareScanStatus: 'not_scanned',
+            });
+
             if (clientBlobClaim) {
                 await clientBlobUploadService.claimWithExecutor(
                     tx,
@@ -1409,10 +1524,16 @@ export class RegulatoryRuleSetService {
                 sha256: source.sha256,
                 sizeBytes: source.sizeBytes,
                 pageCount: source.pageCount,
-                verifiedAt: now,
+                verifiedAt: null,
+                malwareScanStatus: 'not_scanned',
                 stored: true,
-                storageProvider: 'vercel-private-blob',
-                storageLocatorFingerprint: sourceLocatorFingerprint(source.blobUrl),
+                storageProvider: source.blobUrl.startsWith('gs://')
+                    ? 'gcs-private'
+                    : 'vercel-private-blob',
+                storageLocatorFingerprint: sourceLocatorFingerprint(
+                    source.blobUrl,
+                    source.objectGeneration,
+                ),
             };
             await appendRegulatoryEvents(tx, [{
                 ruleSetId: id,
@@ -1421,7 +1542,7 @@ export class RegulatoryRuleSetService {
                 action,
                 before,
                 after,
-                reason: auditContext.reason || 'Byte PDF private Blob diunduh ulang, diverifikasi, dan di-hash oleh server.',
+                reason: auditContext.reason || 'Byte PDF private object diunduh, di-hash, lalu dikarantina menunggu ClamAV dan verifikasi fixity.',
             }], governanceContext(actorId, auditContext));
             return {
                 ruleSet: presentRuleSet(updated),
@@ -1446,11 +1567,11 @@ export class RegulatoryRuleSetService {
         await this.assertSourceDocumentUploadAllowed(id);
         const { sha256, pageCount } = await inspectSourcePdf(file.buffer, file.size);
         const originalName = safeRegulatorySourceFileName(file.originalname);
-        const stored = await blobStorageService.uploadFile({
+        const stored = await blobStorageService.uploadUntrustedFile({
             fileName: originalName,
             mimeType: 'application/pdf',
             buffer: file.buffer,
-            folder: `regulatory-sources/${id}`,
+            folder: `regulatory-sources/${id.toLowerCase()}`,
         });
         let blobUrl = stored.url;
         try {
@@ -1461,9 +1582,14 @@ export class RegulatoryRuleSetService {
                 sizeBytes: file.size,
                 pageCount,
                 blobUrl,
+                objectGeneration: assertRegulatorySourceObjectGeneration(blobUrl, stored.generation) ?? null,
             }, actorId, auditContext, 'server_upload_verify_private_blob');
         } catch (error) {
-            await blobStorageService.deleteFile(blobUrl);
+            if (blobUrl.startsWith('gs://')) {
+                await blobStorageService.deleteFileGeneration(blobUrl, stored.generation);
+            } else {
+                await blobStorageService.deleteFile(blobUrl);
+            }
             throw error;
         }
     }
@@ -1482,15 +1608,21 @@ export class RegulatoryRuleSetService {
             throw new ValidationError('Aktor wajib tercatat untuk mengklaim unggahan Blob langsung.');
         }
         await this.assertSourceDocumentUploadAllowed(id);
-        const verified = await retrieveAndInspectSourceBlob(id, input.blobUrl);
+        const claim = {
+            blobUrl: input.blobUrl,
+            purpose: 'regulatory_source' as const,
+            uploadedBy: actorId,
+        };
+        const lease = await clientBlobUploadService.preAuthorizeClaim(claim, 10 * 60 * 1000);
+        const verified = await retrieveAndInspectSourceBlob(
+            id,
+            input.blobUrl,
+            lease.objectGeneration,
+        );
         return this.persistVerifiedSourceDocument(id, {
             originalName: safeRegulatorySourceFileName(input.originalFileName),
             ...verified,
-        }, actorId, auditContext, 'server_retrieve_verify_private_blob', {
-            blobUrl: input.blobUrl,
-            purpose: 'regulatory_source',
-            uploadedBy: actorId,
-        });
+        }, actorId, auditContext, 'server_retrieve_verify_private_blob', claim);
     }
 
     async verifyCompletenessManifest(

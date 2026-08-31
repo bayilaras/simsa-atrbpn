@@ -4,16 +4,15 @@ import * as helmetModule from 'helmet';
 const helmet = (helmetModule as any).default || helmetModule;
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
-import { toNodeHandler } from 'better-auth/node';
-import { env, validateEnv } from './config/env';
+import { env, validateEnv, cloudPlatformConfig } from './config/env';
 import { getPublicAppMetadata } from './config/app-profile.js';
 import { srikandiConfig } from './config/srikandi.js';
 import { isTrustedOrigin } from './config/trusted-origins';
-import { auth } from './config/auth';
 import { generalLimiter, authLimiter } from './middlewares/rate-limiter.middleware';
 import { authMiddleware } from './middlewares/auth.middleware';
 import { roleMiddleware } from './middlewares/role.middleware';
 import { csrfCookieSetter, csrfProtection } from './middlewares/csrf.middleware';
+import { firebaseAppCheckMiddleware } from './middlewares/firebase-app-check.middleware.js';
 import { sanitizeInput } from './middlewares/sanitize.middleware';
 import { setupSwagger } from './config/swagger';
 import { AppError, ForbiddenError } from './utils/errors';
@@ -61,12 +60,17 @@ import srikandiRoutes from './routes/srikandi.routes';
 import recordAccessGrantRoutes from './routes/record-access-grant.routes';
 import regulatoryRuleSetRoutes from './routes/regulatory-rule-set.routes';
 import retentionGovernanceRoutes from './routes/retention-governance.routes';
+import firebaseAuthRoutes from './routes/firebase-auth.routes.js';
+import gcsUploadRoutes from './routes/gcs-upload.routes.js';
 import { getReadiness } from './services/readiness.service.js';
 
 // Vercel imports app.ts directly and never executes index.ts. Validate the
 // production environment during module cold-start as well, while unit tests
 // and local development retain their existing lightweight import behavior.
-if (env.NODE_ENV === 'production' || process.env.VERCEL) {
+const deployedRuntime = env.NODE_ENV === 'production'
+    || Boolean(process.env.K_SERVICE)
+    || Boolean(process.env.VERCEL);
+if (deployedRuntime) {
     validateEnv();
 }
 
@@ -90,7 +94,14 @@ app.use(cors({
         return callback(new ForbiddenError('Origin tidak diizinkan oleh kebijakan CORS.'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-CSRF-Token'],
+    allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'Accept',
+        'X-CSRF-Token',
+        'X-Firebase-AppCheck',
+    ],
     exposedHeaders: ['Retry-After'],
     credentials: true,
 }));
@@ -185,7 +196,10 @@ app.options('/api/auth/*splat', (req: Request, res: Response) => {
         res.setHeader('Access-Control-Allow-Origin', origin!);
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, X-CSRF-Token');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, X-Requested-With, Accept, X-CSRF-Token, X-Firebase-AppCheck',
+    );
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Max-Age', '86400');
     res.status(204).end();
@@ -195,7 +209,16 @@ app.options('/api/auth/*splat', (req: Request, res: Response) => {
 // MUST be before express.json()
 // Documentation: https://www.better-auth.com/docs/integrations/express
 // Handle both patterns for compatibility
-const authHandler = toNodeHandler(auth);
+let betterAuthHandlerPromise: Promise<(req: Request, res: Response) => Promise<void>> | null = null;
+async function getBetterAuthHandler() {
+    if (!betterAuthHandlerPromise) {
+        betterAuthHandlerPromise = Promise.all([
+            import('better-auth/node'),
+            import('./config/auth.js'),
+        ]).then(([betterAuthNode, authConfig]) => betterAuthNode.toNodeHandler(authConfig.auth));
+    }
+    return betterAuthHandlerPromise;
+}
 const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunction) => {
     // Ensure CORS headers are set for auth responses since toNodeHandler may bypass Express cors()
     const origin = req.headers.origin;
@@ -205,21 +228,26 @@ const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunctio
         res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
     try {
+        const authHandler = await getBetterAuthHandler();
         await authHandler(req, res);
     } catch (error: any) {
         console.error(`Auth handler error on ${req.method} ${req.path}:`, error.message, error.stack);
         res.status(500).json({
             error: 'Authentication Error',
-            message: env.NODE_ENV === 'production'
+            message: deployedRuntime
                 ? 'Terjadi kesalahan pada proses autentikasi.'
                 : `Auth error: ${error.message}`,
         });
     }
 };
 
-app.all('/api/auth/*splat', wrappedAuthHandler);
-app.all('/api/auth/:path', wrappedAuthHandler);
-app.all('/api/auth/:path/:subpath', wrappedAuthHandler);
+if (cloudPlatformConfig.authProvider === 'firebase') {
+    app.use('/api/auth', firebaseAuthRoutes);
+} else {
+    app.all('/api/auth/*splat', wrappedAuthHandler);
+    app.all('/api/auth/:path', wrappedAuthHandler);
+    app.all('/api/auth/:path/:subpath', wrappedAuthHandler);
+}
 
 // Body parsing - AFTER Better Auth handler
 app.use(express.json({ limit: '10mb' }));  // Limit body size to prevent DoS
@@ -232,6 +260,10 @@ app.use(sanitizeInput);
 // Applies to /api routes only (excludes auth routes which have their own CSRF)
 // Note: cookieParser and csrfCookieSetter are applied earlier (before health check)
 app.use('/api', csrfProtection);
+
+// In Firebase mode, reject forged/non-app clients before they reach domain
+// handlers. This is an anti-abuse signal, never an authorization substitute.
+app.use('/api', firebaseAppCheckMiddleware);
 
 // Response compression - compress all responses
 app.use(compression({
@@ -258,19 +290,18 @@ app.get('/api/drive-file/:fileId', authMiddleware as any, (_req: Request, res: R
 import { blobStorageService } from './services/blob-storage.service';
 app.get('/api/blob-test', authMiddleware as any, roleMiddleware(['super_admin']) as any, async (req: Request, res: Response) => {
     try {
-        const files = await blobStorageService.listFiles();
+        await blobStorageService.probeConnectivity();
         res.json({
             success: true,
-            message: 'Vercel Blob storage OK',
-            filesCount: files.length,
-            hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+            message: 'Private object storage is reachable',
+            provider: cloudPlatformConfig.storageProvider,
         });
     } catch (error: any) {
         logger.error({ err: error }, 'Blob storage test failed');
-        res.status(500).json({
+        res.status(503).json({
             success: false,
-            error: error.message,
-            hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+            error: 'Private object storage is unavailable',
+            provider: cloudPlatformConfig.storageProvider,
         });
     }
 });
@@ -317,7 +348,11 @@ app.use('/api/supervision', supervisionRoutes);
 app.use('/api/mapping', mappingRoutes);
 app.use('/api/security', securityRoutes); // Security utilities (password check, etc.)
 app.use('/api/import', googleDriveImportRoutes); // Public Google Sheets metadata import
-app.use('/api/client-upload', clientUploadRoutes); // Client-side Vercel Blob uploads (bypasses 4.5MB limit)
+if (cloudPlatformConfig.storageProvider === 'gcs') {
+    app.use('/api/object-uploads', gcsUploadRoutes);
+} else {
+    app.use('/api/client-upload', clientUploadRoutes); // Compatibility path during Vercel Blob migration
+}
 app.use('/api/files', fileAccessRoutes); // Authenticated, unit-scoped private file streaming
 app.use('/api/integrations/srikandi', srikandiRoutes);
 app.use('/api/record-access-grants', recordAccessGrantRoutes); // Purpose-bound, time-limited need-to-know workflow

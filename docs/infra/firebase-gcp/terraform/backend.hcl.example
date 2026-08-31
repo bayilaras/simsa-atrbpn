@@ -1,0 +1,5 @@
+# Non-secret backend metadata example. The state bucket must already exist in
+# a separate administration project with versioning, encryption, retention,
+# access logging, and least-privilege IAM. Never place credentials here.
+bucket = "simsa-terraform-state-example"
+prefix = "firebase-gcp/preview"

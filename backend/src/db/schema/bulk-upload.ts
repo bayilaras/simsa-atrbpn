@@ -61,6 +61,7 @@ export const bulkUploadItems = pgTable('bulk_upload_items', {
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     sha256: varchar('sha256', { length: 64 }).notNull(),
     blobUrl: text('blob_url').notNull(),
+    objectGeneration: varchar('object_generation', { length: 32 }),
     status: varchar('status', { length: 20 }).default('pending').notNull(),
     progress: integer('progress').default(0).notNull(),
     metadata: jsonb('metadata').$type<Record<string, unknown> | null>(),
@@ -82,6 +83,17 @@ export const bulkUploadItems = pgTable('bulk_upload_items', {
     check('bulk_upload_items_progress_check', sql`${table.progress} between 0 and 100`),
     check('bulk_upload_items_size_check', sql`${table.sizeBytes} > 0`),
     check('bulk_upload_items_sha256_check', sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+    check(
+        'bulk_upload_items_object_generation_check',
+        sql`(
+            ${table.blobUrl} like 'gs://%'
+            and ${table.objectGeneration} is not null
+            and ${table.objectGeneration} ~ '^[0-9]+$'
+        ) or (
+            ${table.blobUrl} not like 'gs://%'
+            and ${table.objectGeneration} is null
+        )`,
+    ),
     check(
         'bulk_upload_items_confirmation_check',
         sql`(${table.status} = 'confirmed') = (${table.arsipId} is not null and ${table.confirmedAt} is not null)`,

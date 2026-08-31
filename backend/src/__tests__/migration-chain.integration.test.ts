@@ -7,6 +7,7 @@ import { getTableColumns, getTableName, is } from 'drizzle-orm';
 import { PgTable } from 'drizzle-orm/pg-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as schema from '../db/schema/index.js';
+import { enterTestMigratorRole } from './helpers/database-role-fixture.js';
 
 type JournalEntry = {
     idx: number;
@@ -20,6 +21,9 @@ const journal = JSON.parse(
 ) as { entries: JournalEntry[] };
 
 const openDatabases: PGlite[] = [];
+// PGlite cold-start plus the complete migration chain can exceed 30 seconds on
+// Windows CI hosts when the full test suite is running concurrently.
+const PGLITE_MIGRATION_TIMEOUT_MS = 120_000;
 
 function migrationStatements(tag: string): string[] {
     return readFileSync(join(migrationsDir, `${tag}.sql`), 'utf8')
@@ -32,6 +36,14 @@ async function createDatabase(): Promise<PGlite> {
     const database = new PGlite({ extensions: { pgcrypto } });
     openDatabases.push(database);
     await database.waitReady;
+    // Cloud SQL operations preinstall approved extensions with the grant
+    // administrator; extension members remain outside ownership handoff.
+    await database.exec('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    // 0032 deliberately refuses to create roles: Production bootstraps these
+    // with a separately approved CREATEROLE identity before the application
+    // migrator runs. PGlite is an isolated database, so reproduce only the
+    // fixed NOLOGIN policy roles and migrator membership needed by the chain.
+    await enterTestMigratorRole(database);
     return database;
 }
 
@@ -199,7 +211,7 @@ describe('PostgreSQL migration chain', () => {
                 '{noUrut}/{naskahDinas}/{tahun}'
             )
         `)).rejects.toThrow(/surat_templates_masuk_placeholder_check|check constraint/i);
-    }, 30_000);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('recovers when legacy 0004 was recorded without its snapshot tables', async () => {
         const database = await createDatabase();
@@ -238,7 +250,7 @@ describe('PostgreSQL migration chain', () => {
             'klasifikasi_jra_mapping',
             'tunjuk_silang',
         ]);
-    }, 30_000);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('reconciles legacy duplicate notification reads before adding uniqueness', async () => {
         const database = await createDatabase();
@@ -268,7 +280,7 @@ describe('PostgreSQL migration chain', () => {
             INSERT INTO notification_reads (user_id, notification_id)
             VALUES ('${userId}', 'workflow:item:pending:warning')
         `)).rejects.toThrow(/notification_reads_user_notification_unique|duplicate key/i);
-    }, 30_000);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('reconciles compatible legacy settings tables and rejects incompatible shapes', async () => {
         const operationalIndex = journal.entries.findIndex(
@@ -333,7 +345,7 @@ describe('PostgreSQL migration chain', () => {
         `);
         await expect(applyMigration(incompatible, journal.entries[operationalIndex]))
             .rejects.toThrow(/user_preferences table is incompatible|expected varchar/i);
-    }, 30_000);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('fails loudly when legacy surat sequences contain duplicates', async () => {
         const database = await createDatabase();
@@ -353,7 +365,7 @@ describe('PostgreSQL migration chain', () => {
 
         await expect(applyMigration(database, journal.entries[operationalIndex]))
             .rejects.toThrow(/surat_masuk numbering uniqueness.*sequence 9 occurs 2 times/i);
-    }, 30_000);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('persists durable bulk batches and requires complete private PDF metadata', async () => {
         const database = await createDatabase();
@@ -420,11 +432,89 @@ describe('PostgreSQL migration chain', () => {
         `)).rejects.toThrow(/bulk_upload_items_confirmation_check|check constraint/i);
 
         await expect(database.exec(`
+            INSERT INTO bulk_upload_items (
+                batch_id, file_name, mime_type, size_bytes, sha256, blob_url
+            ) VALUES (
+                '${batchId}', 'gcs-missing-generation.pdf', 'application/pdf', 12,
+                repeat('b', 64), 'gs://simsa-upload/bulk-upload/missing-generation.pdf'
+            )
+        `)).rejects.toThrow(/bulk_upload_items_object_generation_check|check constraint/i);
+
+        await expect(database.exec(`
+            INSERT INTO bulk_upload_items (
+                batch_id, file_name, mime_type, size_bytes, sha256, blob_url, object_generation
+            ) VALUES (
+                '${batchId}', 'vercel-with-generation.pdf', 'application/pdf', 12,
+                repeat('c', 64),
+                'https://example.private.blob.vercel-storage.com/bulk-upload/with-generation.pdf',
+                '1735689600123456'
+            )
+        `)).rejects.toThrow(/bulk_upload_items_object_generation_check|check constraint/i);
+
+        await database.exec(`
+            INSERT INTO bulk_upload_items (
+                batch_id, file_name, mime_type, size_bytes, sha256, blob_url, object_generation
+            ) VALUES (
+                '${batchId}', 'gcs-pinned.pdf', 'application/pdf', 12,
+                repeat('d', 64), 'gs://simsa-upload/bulk-upload/pinned.pdf',
+                '1735689600123456'
+            );
+            INSERT INTO file_attachments (
+                entity_type, entity_id, file_url, object_generation
+            ) VALUES (
+                'surat_masuk', '40000000-0000-4000-8000-000000000077',
+                'gs://simsa-upload/surat-masuk/pinned.pdf', '1735689600123456'
+            );
+        `);
+
+        await expect(database.exec(`
+            INSERT INTO file_attachments (entity_type, entity_id, file_url)
+            VALUES (
+                'surat_masuk', '50000000-0000-4000-8000-000000000077',
+                'gs://simsa-upload/surat-masuk/missing-generation.pdf'
+            )
+        `)).rejects.toThrow(/file_attachments_object_generation_check|check constraint/i);
+
+        await expect(database.exec(`
             INSERT INTO autentikasi (
                 nomor_berita_acara, tanggal_autentikasi, kegiatan, jumlah_arsip, file_lampiran
             ) VALUES ('BA-INVALID', '2026-08-28', 'Uji locator', 1, 'private-locator-only')
         `)).rejects.toThrow(/autentikasi_file_lampiran_metadata_check|check constraint/i);
-    }, 30_000);
+
+        await expect(database.exec(`
+            INSERT INTO autentikasi (
+                nomor_berita_acara, tanggal_autentikasi, kegiatan, jumlah_arsip,
+                file_lampiran, file_lampiran_sha256, file_lampiran_size_bytes
+            ) VALUES (
+                'BA-GCS-MISSING-GENERATION', '2026-08-28', 'Uji generasi GCS', 1,
+                'gs://simsa-final/autentikasi/missing-generation.pdf', repeat('e', 64), 12
+            )
+        `)).rejects.toThrow(/autentikasi_file_lampiran_generation_check|check constraint/i);
+
+        await expect(database.exec(`
+            INSERT INTO autentikasi (
+                nomor_berita_acara, tanggal_autentikasi, kegiatan, jumlah_arsip,
+                file_lampiran, file_lampiran_object_generation,
+                file_lampiran_sha256, file_lampiran_size_bytes
+            ) VALUES (
+                'BA-HTTPS-WITH-GENERATION', '2026-08-28', 'Uji generasi HTTPS', 1,
+                'https://example.private.blob.vercel-storage.com/autentikasi/with-generation.pdf',
+                '1735689600123456', repeat('f', 64), 12
+            )
+        `)).rejects.toThrow(/autentikasi_file_lampiran_generation_check|check constraint/i);
+
+        await database.exec(`
+            INSERT INTO autentikasi (
+                nomor_berita_acara, tanggal_autentikasi, kegiatan, jumlah_arsip,
+                file_lampiran, file_lampiran_object_generation,
+                file_lampiran_sha256, file_lampiran_size_bytes
+            ) VALUES (
+                'BA-GCS-PINNED', '2026-08-28', 'Uji generasi GCS', 1,
+                'gs://simsa-final/autentikasi/pinned.pdf', '1735689600123456',
+                repeat('a', 64), 12
+            )
+        `);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('fails loudly when legacy autentikasi PDFs have not been reconciled to private Blob', async () => {
         const database = await createDatabase();
@@ -447,7 +537,7 @@ describe('PostgreSQL migration chain', () => {
 
         await expect(applyMigration(database, journal.entries[durableIndex]))
             .rejects.toThrow(/legacy autentikasi\.file_lampiran.*explicit reconciliation.*private Blob/i);
-    }, 30_000);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('blocks 0021 before schema changes for an active privileged user without an identity', async () => {
         const database = await createDatabase();
@@ -543,7 +633,7 @@ describe('PostgreSQL migration chain', () => {
             WHERE id = '10000000-0000-4000-8000-000000000088'
         `);
         expect(flag.rows).toEqual([{ is_archived: false }]);
-    }, 30_000);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('enforces one archive per polymorphic surat source and keeps source metadata authoritative', async () => {
         const database = await createDatabase();
@@ -656,7 +746,7 @@ describe('PostgreSQL migration chain', () => {
             DELETE FROM arsip
             WHERE jenis_arsip = 'keluar' AND source_surat_id = '${sharedSourceId}'
         `)).rejects.toThrow(/source-linked archive cannot be deleted/i);
-    }, 30_000);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('backfills legacy user units and enforces canonical role mandates', async () => {
         const database = await createDatabase();
@@ -713,5 +803,5 @@ describe('PostgreSQL migration chain', () => {
             UPDATE users SET unit_kerja_id = NULL
             WHERE role = 'admin_sesditjen'
         `)).rejects.toThrow(/users_role_unit_mandate_check|check constraint/i);
-    }, 30_000);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 });

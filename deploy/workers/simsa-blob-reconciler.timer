@@ -1,0 +1,12 @@
+[Unit]
+Description=Run SIMSA quarantine lease reconciliation hourly
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+Persistent=true
+Unit=simsa-blob-reconciler.service
+
+[Install]
+WantedBy=timers.target

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     cleanupClient: vi.fn(),
     cleanupBulk: vi.fn(),
     poolEnd: vi.fn(),
+    buildPoolConfig: vi.fn(),
     info: vi.fn(),
     fatal: vi.fn(),
 }));
@@ -16,6 +17,7 @@ vi.mock('../config/blob-storage.js', () => ({
 vi.mock('../config/database.js', () => ({
     pool: { end: mocks.poolEnd },
     db: {},
+    buildDatabasePoolConfig: mocks.buildPoolConfig,
 }));
 vi.mock('../services/client-blob-upload.service.js', () => ({
     clientBlobClaimTtlMs: mocks.validateTtl,

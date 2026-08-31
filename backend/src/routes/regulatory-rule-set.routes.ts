@@ -123,15 +123,20 @@ router.get(
             const source = await regulatoryRuleSetService.getSourceDocumentStream(
                 req.params.id as string,
             );
-            await auditLogService.logAction({
-                userId: req.user?.id,
-                userEmail: req.user?.email,
-                action: download ? 'download' : 'view',
-                entityType: 'regulatory_rule_set' as any,
-                entityId: req.params.id as string,
-                changes: { after: { evidence: 'source_document' } },
-                ipAddress: ipAddress(req),
-            });
+            try {
+                await auditLogService.logActionOrThrow({
+                    userId: req.user?.id,
+                    userEmail: req.user?.email,
+                    action: download ? 'download' : 'view',
+                    entityType: 'regulatory_rule_set',
+                    entityId: req.params.id as string,
+                    changes: { after: { evidence: 'source_document' } },
+                    ipAddress: ipAddress(req),
+                });
+            } catch (error) {
+                source.stream.destroy();
+                throw error;
+            }
 
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Length', String(source.sizeBytes));

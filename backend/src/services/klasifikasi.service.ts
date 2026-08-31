@@ -94,7 +94,11 @@ async function invalidateGovernanceEvidence(tx: any, ruleSetId: string) {
 }
 
 function presentMasterRuleSet(ruleSet: any) {
-    const { sourceDocumentBlobUrl, ...visibleRuleSet } = ruleSet;
+    const {
+        sourceDocumentBlobUrl,
+        sourceDocumentObjectGeneration: _sourceDocumentObjectGeneration,
+        ...visibleRuleSet
+    } = ruleSet;
     return {
         ...visibleRuleSet,
         sourceDocumentStored: Boolean(sourceDocumentBlobUrl),

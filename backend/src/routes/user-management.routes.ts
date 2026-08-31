@@ -125,11 +125,20 @@ router.get('/', async (req: Request, res: Response) => {
  *               nip:
  *                 type: string
  *                 nullable: true
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *                 description: Required for Firebase mode; forwarded transiently to Firebase Admin and never stored by SIMSA
  *     responses:
  *       201:
  *         description: User created successfully
  *       400:
- *         description: Validation error or email already exists
+ *         description: Validation error
+ *       409:
+ *         description: The identity is already in use
+ *       503:
+ *         description: External identity reconciliation must be retried
  */
 router.post('/', async (req: Request, res: Response) => {
     try {

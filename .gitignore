@@ -13,6 +13,14 @@ node_modules/
 dist/
 build/
 
+# Terraform working data and local state (provider lock files stay tracked)
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+
 # Logs
 *.log
 logs/
@@ -64,3 +72,7 @@ uploads/
 coverage/
 .vercel
 .env*.local
+
+# Generated Python bytecode from local workflow validators
+__pycache__/
+*.py[cod]

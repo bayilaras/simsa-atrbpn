@@ -21,7 +21,10 @@ export function getTrustedOrigins(): string[] {
         .map(normalize)
         .filter((o): o is string => o !== null);
 
-    if (env.NODE_ENV !== 'production') {
+    const deployedRuntime = env.NODE_ENV === 'production'
+        || Boolean(process.env.K_SERVICE)
+        || Boolean(process.env.VERCEL);
+    if (!deployedRuntime) {
         origins.push('http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173');
     }
 

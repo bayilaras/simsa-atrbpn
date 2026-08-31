@@ -1,0 +1,66 @@
+name: Validate Firebase GCP Terraform
+
+on:
+  pull_request:
+    paths:
+      - "docs/infra/firebase-gcp/terraform/**"
+      - ".github/scripts/check-gcp-backend-production-gate.py"
+      - ".github/scripts/collect-database-maintenance-evidence.sql"
+      - ".github/scripts/run-gcp-database-maintenance.sh"
+      - ".github/scripts/validate-gcp-preview-database-workflow.py"
+      - ".github/workflows/database-bootstrap-gcp-preview.yml"
+      - ".github/workflows/terraform-validate.yml"
+      - "GCP_PREVIEW_DATABASE.md"
+  push:
+    branches: [main]
+    paths:
+      - "docs/infra/firebase-gcp/terraform/**"
+      - ".github/scripts/check-gcp-backend-production-gate.py"
+      - ".github/scripts/collect-database-maintenance-evidence.sql"
+      - ".github/scripts/run-gcp-database-maintenance.sh"
+      - ".github/scripts/validate-gcp-preview-database-workflow.py"
+      - ".github/workflows/database-bootstrap-gcp-preview.yml"
+      - ".github/workflows/terraform-validate.yml"
+      - "GCP_PREVIEW_DATABASE.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: docs/infra/firebase-gcp/terraform
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate isolated Preview database workflow policy
+        run: python3 .github/scripts/validate-gcp-preview-database-workflow.py
+        working-directory: .
+
+      - name: Install Terraform 1.9.8
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Check canonical formatting
+        run: terraform fmt -check -recursive -diff
+
+      - name: Initialize providers without remote state
+        run: terraform init -backend=false -input=false
+
+      - name: Validate configuration
+        run: terraform validate -no-color

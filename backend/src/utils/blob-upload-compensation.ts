@@ -1,4 +1,5 @@
 import { blobStorageService } from '../services/blob-storage.service.js';
+import { requireImmutableObjectGeneration } from '../storage/locator.js';
 import { createLogger } from './logger.js';
 
 const log = createLogger('BlobUploadCompensation');
@@ -11,9 +12,13 @@ const log = createLogger('BlobUploadCompensation');
 export async function deleteRequestCreatedBlob(
     blobUrl: string | null | undefined,
     context: Record<string, unknown>,
+    objectGeneration?: string | null,
 ): Promise<void> {
     if (!blobUrl) return;
-    const deleted = await blobStorageService.deleteFile(blobUrl);
+    const generation = requireImmutableObjectGeneration(blobUrl, objectGeneration);
+    const deleted = generation
+        ? await blobStorageService.deleteFileGeneration(blobUrl, generation)
+        : await blobStorageService.deleteFile(blobUrl);
     if (!deleted) {
         log.error({ ...context, blobUrl }, 'Failed to compensate request-created Blob; reconciliation required');
     }

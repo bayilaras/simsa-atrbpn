@@ -13,9 +13,23 @@ export const users = pgTable('users', {
     nip: varchar('nip', { length: 30 }),           // Nomor Induk Pegawai
     isActive: boolean('is_active').default(true).notNull(),
     emailVerified: boolean('email_verified').default(false),
+    // Firebase UID is an external identity reference, never the domain/user PK.
+    // Keeping the UUID stable preserves every audit and foreign-key reference.
+    firebaseUid: varchar('firebase_uid', { length: 128 }),
+    identityProvider: varchar('identity_provider', { length: 24 }).default('better_auth').notNull(),
+    authMigratedAt: timestamp('auth_migrated_at', { withTimezone: true }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
+    uniqueIndex('users_firebase_uid_unique').on(table.firebaseUid),
+    check(
+        'users_identity_provider_check',
+        sql`${table.identityProvider} in ('better_auth', 'firebase', 'hybrid')`,
+    ),
+    check(
+        'users_firebase_identity_check',
+        sql`${table.firebaseUid} is null or length(${table.firebaseUid}) between 1 and 128`,
+    ),
     check('users_role_unit_mandate_check', sql`
         CASE ${table.role}
             WHEN 'super_admin' THEN ${table.unitKerjaId} IS NULL

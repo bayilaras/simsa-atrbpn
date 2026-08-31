@@ -17,23 +17,21 @@ function relative(file: string): string {
 }
 
 describe('mutation audit architecture policy', () => {
-    it('keeps best-effort audit calls limited to non-mutating view/download evidence', () => {
+    it('keeps best-effort audit calls out of protected routes', () => {
         const occurrences = tsFiles(path.join(sourceRoot, 'routes'))
             .filter((file) => fs.readFileSync(file, 'utf8').includes('auditLogService.logAction('))
             .map(relative)
             .sort();
 
-        expect(occurrences).toEqual([
+        expect(occurrences).toEqual([]);
+
+        for (const file of [
             'routes/file-access.routes.ts',
             'routes/regulatory-rule-set.routes.ts',
-        ]);
-
-        for (const file of occurrences) {
+        ]) {
             const source = fs.readFileSync(path.join(sourceRoot, file), 'utf8');
             expect(source).toContain("action: download ? 'download' : 'view'");
-            expect(source).not.toMatch(
-                /auditLogService\.logAction\(\{[\s\S]*?action:\s*'(create|update|delete|archive|status_change|distribute)'/,
-            );
+            expect(source).toContain('auditLogService.logActionOrThrow(');
         }
     });
 

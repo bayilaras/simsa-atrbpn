@@ -144,6 +144,25 @@ describe('backend application profile', () => {
         }));
     });
 
+    it('allows the required Firebase App Check header in a trusted CORS preflight', async () => {
+        const previousAdditionalOrigins = env.ADDITIONAL_TRUSTED_ORIGINS;
+        const alternateOrigin = 'https://firebase.simsa.example.go.id';
+        env.ADDITIONAL_TRUSTED_ORIGINS = alternateOrigin;
+        try {
+            const response = await request(app)
+                .options('/api/health')
+                .set('Origin', alternateOrigin)
+                .set('Access-Control-Request-Method', 'GET')
+                .set('Access-Control-Request-Headers', 'X-Firebase-AppCheck')
+                .expect(204);
+
+            expect(response.headers['access-control-allow-headers'])
+                .toContain('X-Firebase-AppCheck');
+        } finally {
+            env.ADDITIONAL_TRUSTED_ORIGINS = previousAdditionalOrigins;
+        }
+    });
+
     it('keeps Vercel routing free of a second static CORS authority', () => {
         const vercelConfig = JSON.parse(readFileSync(
             new URL('../../vercel.json', import.meta.url),

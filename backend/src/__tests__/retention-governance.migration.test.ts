@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { afterEach, describe, expect, it } from 'vitest';
+import { enterTestMigratorRole } from './helpers/database-role-fixture.js';
 
 type JournalEntry = { tag: string };
 const migrationsDir = fileURLToPath(new URL('../db/migrations/', import.meta.url));
@@ -23,6 +24,7 @@ async function migratedDatabase(): Promise<PGlite> {
     const database = new PGlite({ extensions: { pgcrypto } });
     databases.push(database);
     await database.waitReady;
+    await enterTestMigratorRole(database);
     for (const entry of journal.entries) {
         for (const statement of statements(entry.tag)) await database.exec(statement);
     }
@@ -33,6 +35,7 @@ async function databaseBeforeMigration(tag: string): Promise<PGlite> {
     const database = new PGlite({ extensions: { pgcrypto } });
     databases.push(database);
     await database.waitReady;
+    await enterTestMigratorRole(database);
     for (const entry of journal.entries) {
         if (entry.tag === tag) break;
         for (const statement of statements(entry.tag)) await database.exec(statement);

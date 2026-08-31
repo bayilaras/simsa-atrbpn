@@ -19,6 +19,7 @@ import {
     type ClaimClientBlobUpload,
     type ClientBlobPurpose,
 } from './client-blob-upload.service.js';
+import { requireImmutableObjectGeneration } from '../storage/locator.js';
 
 export const ATTACHMENT_PREFLIGHT_MAX_BYTES = 10 * 1024 * 1024;
 export const ATTACHMENT_PREFLIGHT_TIMEOUT_MS = 30_000;
@@ -42,6 +43,7 @@ export interface RegisterExistingAttachmentData {
     mimeType?: string;
     buffer?: Buffer;
     uploadedById?: string;
+    objectGeneration?: string | null;
 }
 
 export type PrepareExistingAttachmentData = Omit<
@@ -56,6 +58,7 @@ export interface PreparedExistingAttachmentData {
     sizeBytes: number;
     sha256: string;
     uploadedById?: string;
+    objectGeneration: string | null;
 }
 
 export interface PrepareExistingAttachmentOptions {
@@ -105,6 +108,7 @@ export class FileAttachmentService {
 
         let mimeType = data.mimeType || 'application/octet-stream';
         let sizeBytes = data.buffer?.length || 0;
+        let objectGeneration: string | null;
         const digest = crypto.createHash('sha256');
 
         if (data.buffer) {
@@ -114,6 +118,7 @@ export class FileAttachmentService {
             if (sizeBytes > maxBytes) {
                 throw new PayloadTooLargeError('Lampiran melebihi batas 10 MiB.');
             }
+            objectGeneration = requireImmutableObjectGeneration(locator, data.objectGeneration);
             digest.update(data.buffer);
         } else {
             const claim = options.clientBlobClaim;
@@ -128,11 +133,15 @@ export class FileAttachmentService {
                 throw new ConflictError('Lease unggahan Blob tidak sesuai dengan lampiran yang diregistrasi.');
             }
 
-            await clientBlobUploadService.preAuthorizeClaim(
+            const lease = await clientBlobUploadService.preAuthorizeClaim(
                 claim,
                 timeoutMs + ATTACHMENT_FINALIZATION_MARGIN_MS,
                 options.now,
             );
+            objectGeneration = requireImmutableObjectGeneration(locator, lease.objectGeneration);
+            if (data.objectGeneration && data.objectGeneration !== objectGeneration) {
+                throw new ConflictError('Generasi object tidak sesuai dengan lease unggahan Blob.');
+            }
 
             const controller = new AbortController();
             let stream: Readable | undefined;
@@ -154,6 +163,7 @@ export class FileAttachmentService {
                 const downloadPromise = blobStorageService.downloadFile(locator, {
                     abortSignal: controller.signal,
                     throwOnError: true,
+                    generation: objectGeneration || undefined,
                 }).then((download) => {
                     if (timedOut) download?.stream.destroy();
                     return download;
@@ -197,6 +207,7 @@ export class FileAttachmentService {
             sizeBytes,
             sha256: digest.digest('hex'),
             uploadedById: data.uploadedById,
+            objectGeneration,
         };
     }
 
@@ -210,6 +221,7 @@ export class FileAttachmentService {
             entityType: data.entityType,
             fileName: data.fileName,
             fileUrl: data.locator,
+            objectGeneration: data.objectGeneration,
             mimeType: data.mimeType,
             sizeBytes: data.sizeBytes,
             sha256: data.sha256,
@@ -244,12 +256,17 @@ export class FileAttachmentService {
         // Calculate hash
         const hash = crypto.createHash('sha256').update(data.buffer).digest('hex');
 
-        // Upload to Vercel Blob
-        const blobFile = await blobStorageService.uploadFile({
+        // All server-received bytes enter quarantine on GCS. The Vercel Blob
+        // compatibility provider remains immutable and unchanged.
+        const blobFile = await blobStorageService.uploadUntrustedFile({
             fileName: data.fileName,
             mimeType: data.mimeType,
             buffer: data.buffer,
         });
+        const objectGeneration = requireImmutableObjectGeneration(
+            blobFile.url,
+            blobFile.generation,
+        );
 
         try {
             return await db.transaction(async (tx) => {
@@ -262,6 +279,7 @@ export class FileAttachmentService {
                         mimeType: data.mimeType,
                         sizeBytes: data.buffer.length,
                         fileUrl: blobFile.url,
+                        objectGeneration,
                         sha256: hash,
                         storageAccess: 'private',
                         uploadedBy: data.uploadedById || null,
@@ -296,7 +314,7 @@ export class FileAttachmentService {
                 operation: 'file_attachment_create',
                 entityType: data.suratType,
                 entityId: data.suratId,
-            });
+            }, objectGeneration);
             throw error;
         }
     }
@@ -345,7 +363,13 @@ export class FileAttachmentService {
         const locator = attachment.fileUrl || attachment.driveFileId;
         if (!locator) return null;
 
-        const download = await blobStorageService.downloadFile(locator);
+        const objectGeneration = requireImmutableObjectGeneration(
+            locator,
+            attachment.objectGeneration,
+        );
+        const download = await blobStorageService.downloadFile(locator, {
+            generation: objectGeneration || undefined,
+        });
         if (!download) return null;
 
         const digest = crypto.createHash('sha256');
@@ -384,7 +408,16 @@ export class FileAttachmentService {
         // Delete from Vercel Blob
         const locator = attachment.fileUrl || attachment.driveFileId;
         if (locator) {
-            await blobStorageService.deleteFile(locator);
+            const objectGeneration = requireImmutableObjectGeneration(
+                locator,
+                attachment.objectGeneration,
+            );
+            const deleted = objectGeneration
+                ? await blobStorageService.deleteFileGeneration(locator, objectGeneration)
+                : await blobStorageService.deleteFile(locator);
+            // Retain the database provenance when storage cannot prove the
+            // exact object was removed; a later retry remains possible.
+            if (!deleted) return false;
         }
 
         // Delete database record

@@ -17,9 +17,37 @@ function validateClientApiTarget(command, mode) {
   throw new Error('Deployment builds must leave VITE_API_URL unset and use a same-origin API proxy; cross-origin client API URLs break cookie-authenticated uploads.')
 }
 
+function validateFirebaseBuildTarget(command, mode) {
+  if (command !== 'build') return
+
+  const loadedEnvironment = loadEnv(mode, currentDirectory, '')
+  const value = (name) => (process.env[name] ?? loadedEnvironment[name] ?? '').trim()
+  if ((value('VITE_AUTH_PROVIDER') || 'better-auth').toLowerCase() !== 'firebase') return
+
+  const required = [
+    'VITE_FIREBASE_API_KEY',
+    'VITE_FIREBASE_AUTH_DOMAIN',
+    'VITE_FIREBASE_PROJECT_ID',
+    'VITE_FIREBASE_APP_ID',
+    'VITE_FIREBASE_APP_CHECK_SITE_KEY',
+  ]
+  const missing = required.filter((name) => !value(name))
+  if (missing.length) {
+    throw new Error(`Firebase deployment build is missing public configuration: ${missing.join(', ')}.`)
+  }
+  if (!/^[A-Za-z0-9.-]+$/.test(value('VITE_FIREBASE_AUTH_DOMAIN'))
+      || value('VITE_FIREBASE_AUTH_DOMAIN').includes('..')) {
+    throw new Error('VITE_FIREBASE_AUTH_DOMAIN must be one canonical hostname.')
+  }
+  if (value('VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN')) {
+    throw new Error('Firebase App Check debug tokens are forbidden in deployment builds.')
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   validateClientApiTarget(command, mode)
+  validateFirebaseBuildTarget(command, mode)
 
   return {
   plugins: [

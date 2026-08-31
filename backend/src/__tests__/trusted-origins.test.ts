@@ -80,4 +80,15 @@ describe('trusted origins', () => {
         expect(isTrustedOrigin('https://simsa-frontend-git-attacker-acme.vercel.app')).toBe(false);
         expect(isTrustedOrigin('https://unrelated-project.vercel.app')).toBe(false);
     });
+
+    it('does not trust localhost on Cloud Run when NODE_ENV is stale', async () => {
+        const { isTrustedOrigin } = await loadWith({
+            NODE_ENV: 'development',
+            K_SERVICE: 'simsa-api',
+        });
+
+        expect(isTrustedOrigin('http://localhost:3000')).toBe(false);
+        expect(isTrustedOrigin('http://localhost:3001')).toBe(false);
+        expect(isTrustedOrigin('http://localhost:5173')).toBe(false);
+    });
 });

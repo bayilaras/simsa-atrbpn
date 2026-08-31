@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { upload } from '@vercel/blob/client';
 import {
     AlertTriangle,
     CalendarDays,
@@ -53,6 +52,7 @@ import { PageHeader, StatTile } from '@/components/PageHeader';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import regulatoryRuleSetService from '@/services/regulatory-rule-set.service';
+import { uploadFileToBlob } from '@/services/blob-upload.service';
 
 const INSTRUMENTS = {
     klasifikasi: {
@@ -542,12 +542,11 @@ export default function RegulatoryRuleSets() {
             let response;
             let blob = null;
             try {
-                blob = await upload(`regulatory-sources/${sourceRuleSet.id}/${sourceFile.name}`, sourceFile, {
-                    access: 'private',
-                    handleUploadUrl: '/api/client-upload',
-                    multipart: sourceFile.size > MULTIPART_FALLBACK_MAX_BYTES,
-                    clientPayload: JSON.stringify({ purpose: 'regulatory-source', ruleSetId: sourceRuleSet.id }),
-                    onUploadProgress: ({ percentage }) => setSourceUploadProgress(Math.round(percentage)),
+                blob = await uploadFileToBlob(sourceFile, {
+                    folder: 'regulatory-sources',
+                    purpose: 'regulatory_source',
+                    ruleSetId: sourceRuleSet.id,
+                    onProgress: ({ percentage }) => setSourceUploadProgress(Math.round(percentage)),
                 });
             } catch (directUploadError) {
                 if (sourceFile.size > MULTIPART_FALLBACK_MAX_BYTES) throw directUploadError;

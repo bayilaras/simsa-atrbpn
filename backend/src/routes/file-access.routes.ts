@@ -9,6 +9,10 @@ import { blobStorageService } from '../services/blob-storage.service';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
 import { isFileReleased } from '../services/file-release-policy.js';
 import { createLogger } from '../utils/logger';
+import {
+    normalizeStoredObjectLocator,
+    requireImmutableObjectGeneration,
+} from '../storage/locator.js';
 
 const log = createLogger('FileAccessRoutes');
 const router = Router();
@@ -17,20 +21,7 @@ router.use(authMiddleware);
 router.use('/:entityType/:entityId', validateIdParam('entityId'));
 
 function normalizeBlobLocator(value: string | null | undefined): string | null {
-    if (!value) return null;
-    const locator = value.startsWith('blob:') ? value.slice('blob:'.length) : value;
-    try {
-        const parsed = new URL(locator);
-        if (
-            parsed.protocol === 'https:' &&
-            parsed.hostname.endsWith('.blob.vercel-storage.com')
-        ) {
-            return parsed.toString();
-        }
-    } catch {
-        // Legacy local/Drive references are deliberately not treated as object URLs.
-    }
-    return null;
+    return normalizeStoredObjectLocator(value);
 }
 
 function safeFileName(value: string | null | undefined, fallback: string): string {
@@ -42,6 +33,7 @@ async function streamAuthorizedFile(
     res: Response,
     details: {
         locator: string;
+        objectGeneration?: string | null;
         fileName: string;
         auditEntityType: 'surat_masuk' | 'surat_keluar' | 'file_attachment';
         auditEntityId: string;
@@ -72,7 +64,13 @@ async function streamAuthorizedFile(
         }
     }
 
-    const stored = await blobStorageService.downloadFile(details.locator);
+    const objectGeneration = requireImmutableObjectGeneration(
+        details.locator,
+        details.objectGeneration,
+    );
+    const stored = await blobStorageService.downloadFile(details.locator, {
+        generation: objectGeneration || undefined,
+    });
     if (!stored) {
         return res.status(404).json({ error: 'File not found' });
     }
@@ -86,28 +84,36 @@ async function streamAuthorizedFile(
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
-    await auditLogService.logAction({
-        userId: req.user?.id,
-        userEmail: req.user?.email,
-        action: download ? 'download' : 'view',
-        entityType: details.auditEntityType,
-        entityId: details.auditEntityId,
-        changes: {
-            ...(details.parentType && details.parentId
-                ? { parentType: details.parentType, parentId: details.parentId }
-                : {}),
-            ...(details.grantId
-                ? {
-                    grantId: details.grantId,
-                    approvedPurpose: details.accessPurpose,
-                    accessMode: details.grantAccessMode,
-                    grantExpiresAt: details.grantExpiresAt,
-                    classification: details.classification,
-                }
-                : {}),
-        },
-        ipAddress: req.ip,
-    });
+    try {
+        await auditLogService.logActionOrThrow({
+            userId: req.user?.id,
+            userEmail: req.user?.email,
+            action: download ? 'download' : 'view',
+            entityType: details.auditEntityType,
+            entityId: details.auditEntityId,
+            changes: {
+                ...(details.parentType && details.parentId
+                    ? { parentType: details.parentType, parentId: details.parentId }
+                    : {}),
+                ...(details.grantId
+                    ? {
+                        grantId: details.grantId,
+                        approvedPurpose: details.accessPurpose,
+                        accessMode: details.grantAccessMode,
+                        grantExpiresAt: details.grantExpiresAt,
+                        classification: details.classification,
+                    }
+                    : {}),
+            },
+            ipAddress: req.ip,
+        });
+    } catch (error) {
+        // The storage stream may already hold a provider connection. Close it
+        // before failing the request so an unavailable audit trail cannot leak
+        // either protected bytes or transport resources.
+        stored.stream.destroy();
+        throw error;
+    }
 
     stored.stream.on('error', (error) => {
         log.error({ err: error, entityId: details.auditEntityId }, 'Blob stream failed');
@@ -151,6 +157,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
 
             return streamAuthorizedFile(req, res, {
                 locator,
+                objectGeneration: attachment.objectGeneration,
                 fileName: attachment.fileName || 'lampiran',
                 auditEntityType: 'file_attachment',
                 auditEntityId: attachment.id,
@@ -207,6 +214,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
 
         return streamAuthorizedFile(req, res, {
             locator,
+            objectGeneration: releasedRegistration.objectGeneration,
             fileName: record?.fileName || 'dokumen',
             auditEntityType: entityType as 'surat_masuk' | 'surat_keluar',
             auditEntityId: entityId,

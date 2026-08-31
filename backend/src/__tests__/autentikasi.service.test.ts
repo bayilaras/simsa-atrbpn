@@ -5,8 +5,13 @@ import { Readable } from 'node:stream';
 const externalMocks = vi.hoisted(() => ({
     uploadFile: vi.fn(),
     deleteFile: vi.fn(),
+    deleteFileGeneration: vi.fn(),
     downloadFile: vi.fn(),
+    updateSet: vi.fn(),
     logActionOrThrow: vi.fn(),
+    durableUpload: vi.fn(),
+    markReferenced: vi.fn(),
+    compensate: vi.fn(),
 }));
 
 // ─── Chainable DB Mock ───
@@ -18,6 +23,12 @@ const mockChain: any = new Proxy({}, {
         if (prop === 'then') {
             const val = resultQueue.shift() ?? [];
             return (resolve: any) => resolve(val);
+        }
+        if (prop === 'set') {
+            return (value: unknown) => {
+                externalMocks.updateSet(value);
+                return mockChain;
+            };
         }
         return (..._args: any[]) => mockChain;
     },
@@ -45,11 +56,19 @@ vi.mock('../services/blob-storage.service.js', () => ({
     blobStorageService: {
         uploadFile: externalMocks.uploadFile,
         deleteFile: externalMocks.deleteFile,
+        deleteFileGeneration: externalMocks.deleteFileGeneration,
         downloadFile: externalMocks.downloadFile,
     },
 }));
 vi.mock('../services/audit-log.service.js', () => ({
     auditLogService: { logActionOrThrow: externalMocks.logActionOrThrow },
+}));
+vi.mock('../services/durable-final-object.service.js', () => ({
+    durableFinalObjectService: {
+        upload: externalMocks.durableUpload,
+        markReferenced: externalMocks.markReferenced,
+        compensate: externalMocks.compensate,
+    },
 }));
 
 const { autentikasiService } = await import('../services/autentikasi.service');
@@ -62,7 +81,25 @@ describe('AutentikasiService', () => {
             url: 'https://test.private.blob.vercel-storage.com/autentikasi/ba.pdf',
         });
         externalMocks.deleteFile.mockResolvedValue(true);
+        externalMocks.deleteFileGeneration.mockResolvedValue(true);
         externalMocks.logActionOrThrow.mockResolvedValue(undefined);
+        externalMocks.durableUpload.mockImplementation(async (_ownerId: string, options: unknown) => {
+            const stored = await externalMocks.uploadFile(options);
+            return {
+                stored,
+                candidate: String(stored.url).startsWith('gs://') ? {
+                    provider: 'gcs',
+                    ownerId: '30000000-0000-4000-8000-000000000001',
+                    cleanupToken: '40000000-0000-4000-8000-000000000001',
+                    locator: stored.url,
+                    generation: stored.generation,
+                } : null,
+            };
+        });
+        externalMocks.markReferenced.mockResolvedValue(undefined);
+        externalMocks.compensate.mockImplementation(async (write: any) => {
+            if (write && !write.candidate) await externalMocks.deleteFile(write.stored.url);
+        });
     });
 
     describe('create', () => {
@@ -97,16 +134,20 @@ describe('AutentikasiService', () => {
 
             const result = await autentikasiService.create(input, auditContext);
 
-            expect(externalMocks.uploadFile).toHaveBeenCalledWith(expect.objectContaining({
+            expect(externalMocks.durableUpload).toHaveBeenCalledWith(
+                '30000000-0000-4000-8000-000000000001',
+                expect.objectContaining({
                 buffer: pdf,
                 mimeType: 'application/pdf',
                 folder: 'autentikasi',
-            }));
+                }),
+            );
             expect(result).toMatchObject({
                 id: '30000000-0000-4000-8000-000000000001',
                 hasPdf: true,
             });
             expect(result).not.toHaveProperty('fileLampiran');
+            expect(result).not.toHaveProperty('fileLampiranObjectGeneration');
             expect(externalMocks.logActionOrThrow).toHaveBeenCalledWith(
                 expect.objectContaining({
                     action: 'create',
@@ -114,6 +155,10 @@ describe('AutentikasiService', () => {
                     entityId: '30000000-0000-4000-8000-000000000001',
                 }),
                 mockDb,
+            );
+            expect(externalMocks.markReferenced).toHaveBeenCalledWith(
+                mockDb,
+                expect.objectContaining({ stored: expect.any(Object) }),
             );
         });
 
@@ -136,6 +181,43 @@ describe('AutentikasiService', () => {
             expect(externalMocks.deleteFile).toHaveBeenCalledWith(
                 'https://test.private.blob.vercel-storage.com/autentikasi/ba.pdf',
             );
+        });
+
+        it('leaves the exact GCS generation in the durable queue when audit persistence fails', async () => {
+            const locator = 'gs://simsa-final/autentikasi/ba.pdf';
+            const generation = '1735689600999999';
+            vi.spyOn(autentikasiService, 'generateBeritaAcaraPdfBuffer')
+                .mockResolvedValueOnce(Buffer.from('%PDF-private'));
+            externalMocks.uploadFile.mockResolvedValueOnce({
+                url: locator,
+                generation,
+            });
+            enqueue(
+                [{ id: '30000000-0000-4000-8000-000000000001', nomorBeritaAcara: input.nomorBeritaAcara }],
+                [{ id: input.itemArsipIds[0] }],
+                [{ id: input.itemArsipIds[0] }],
+                [{
+                    id: '30000000-0000-4000-8000-000000000001',
+                    fileLampiran: locator,
+                    fileLampiranObjectGeneration: generation,
+                }],
+            );
+            externalMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(autentikasiService.create(input, auditContext))
+                .rejects.toThrow('audit unavailable');
+            expect(externalMocks.compensate).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    candidate: expect.objectContaining({ locator, generation }),
+                }),
+                expect.any(Error),
+            );
+            expect(externalMocks.deleteFileGeneration).not.toHaveBeenCalled();
+            expect(externalMocks.deleteFile).not.toHaveBeenCalled();
+            expect(externalMocks.updateSet).toHaveBeenCalledWith(expect.objectContaining({
+                fileLampiran: locator,
+                fileLampiranObjectGeneration: generation,
+            }));
         });
 
         it('rejects a record that is not server-side eligible before generating a PDF', async () => {
@@ -214,6 +296,30 @@ describe('AutentikasiService', () => {
                 '30000000-0000-4000-8000-000000000001',
                 { userId: '20000000-0000-4000-8000-000000000001' },
             )).rejects.toThrow('audit unavailable');
+        });
+
+        it('pins a GCS PDF read to its persisted immutable generation', async () => {
+            const locator = 'gs://simsa-final/autentikasi/ba.pdf';
+            const generation = '1735689600999999';
+            const bytes = Buffer.from('%PDF-controlled');
+            enqueue([{
+                locator,
+                objectGeneration: generation,
+                expectedSha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+                expectedSizeBytes: bytes.length,
+                nomorBeritaAcara: 'BA/2026/001',
+            }]);
+            externalMocks.downloadFile.mockResolvedValueOnce({
+                stream: Readable.from([bytes]),
+                mimeType: 'application/pdf',
+                fileName: 'opaque.pdf',
+            });
+
+            await expect(autentikasiService.getPdfStream(
+                '30000000-0000-4000-8000-000000000001',
+                { userId: '20000000-0000-4000-8000-000000000001' },
+            )).resolves.toMatchObject({ mimeType: 'application/pdf' });
+            expect(externalMocks.downloadFile).toHaveBeenCalledWith(locator, { generation });
         });
     });
 

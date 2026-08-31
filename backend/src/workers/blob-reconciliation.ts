@@ -1,5 +1,10 @@
 import { assertValidBlobStorageEnvironment } from '../config/blob-storage.js';
-import { pool } from '../config/database.js';
+import {
+    assertGcpIamDatabaseRuntimeEnvironment,
+    assertValidCloudPlatformEnvironment,
+    buildCloudPlatformConfig,
+} from '../config/cloud-platform.js';
+import { buildDatabasePoolConfig, pool } from '../config/database.js';
 import { clientBlobClaimTtlMs, clientBlobUploadService } from '../services/client-blob-upload.service.js';
 import { bulkUploadService } from '../services/bulk-upload.service.js';
 import { createLogger } from '../utils/logger.js';
@@ -9,15 +14,19 @@ import { pathToFileURL } from 'node:url';
 const log = createLogger('ClientBlobReconciliationWorker');
 
 export async function runBlobReconciliation() {
-    if (!process.env.DATABASE_URL?.trim()) {
-        throw new Error('DATABASE_URL is required for Blob reconciliation');
+    buildDatabasePoolConfig(process.env);
+    const cloud = buildCloudPlatformConfig(process.env);
+    if (cloud.storageProvider === 'gcs') {
+        const validated = assertValidCloudPlatformEnvironment(process.env, { requireAuth: false });
+        assertGcpIamDatabaseRuntimeEnvironment(process.env, validated.projectId);
+    } else {
+        assertValidBlobStorageEnvironment({
+            ...process.env,
+            // This one-shot worker always needs storage even outside an API
+            // production profile, so require the dependency explicitly.
+            NODE_ENV: 'production',
+        }, { requireCallbackUrl: false });
     }
-    assertValidBlobStorageEnvironment({
-        ...process.env,
-        // This one-shot worker always needs Blob even outside an API production
-        // profile, so make the canonical dependency required explicitly.
-        NODE_ENV: 'production',
-    }, { requireCallbackUrl: false });
     clientBlobClaimTtlMs(process.env);
 
     const batchSize = Number(process.env.CLIENT_BLOB_RECONCILE_BATCH_SIZE || 100);

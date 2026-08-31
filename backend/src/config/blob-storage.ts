@@ -125,3 +125,23 @@ export function getBlobStorageConfigurationStatus(
         validationErrors: [...config.validationErrors],
     };
 }
+
+export function getObjectStorageConfigurationStatus(source: NodeJS.ProcessEnv = process.env) {
+    const cloud = buildCloudPlatformConfig(source);
+    if (cloud.storageProvider === 'vercel-blob') {
+        return getBlobStorageConfigurationStatus(buildBlobStorageConfig(source));
+    }
+    const errors = cloud.validationErrors.filter(error =>
+        error.includes('GCS_') || error.includes('GOOGLE_CLOUD_PROJECT'),
+    );
+    return {
+        provider: 'google-cloud-storage-private' as const,
+        required: source.NODE_ENV === 'production' || cloud.platform === 'gcp',
+        configured: Boolean(cloud.projectId && cloud.gcsBucket),
+        callbackRequired: false,
+        callbackConfigured: true,
+        ready: Boolean(cloud.projectId && cloud.gcsBucket) && errors.length === 0,
+        validationErrors: errors,
+    };
+}
+import { buildCloudPlatformConfig } from './cloud-platform.js';

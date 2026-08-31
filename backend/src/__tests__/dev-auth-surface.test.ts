@@ -2,6 +2,10 @@ import request from 'supertest';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
 vi.stubEnv('NODE_ENV', 'development');
+// The application now validates the PostgreSQL authority while modules load.
+// These route-surface checks never issue a query, so a non-routable test URL
+// keeps the import deterministic without depending on a developer database.
+vi.stubEnv('DATABASE_URL', 'postgresql://unit-test.invalid/simsa');
 const { default: app } = await import('../app.js');
 
 afterAll(() => {

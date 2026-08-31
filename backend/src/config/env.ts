@@ -3,11 +3,18 @@ import { loadAppProfile, validateAppProfileEnvironment } from './app-profile.js'
 import { assertValidSrikandiEnvironment, buildSrikandiConfig } from './srikandi.js';
 import { loadMalwareScanConfig, validateMalwareScanConfig } from './malware-scanner.js';
 import { assertValidBlobStorageEnvironment } from './blob-storage.js';
+import {
+    assertGcpIamDatabaseRuntimeEnvironment,
+    assertValidCloudPlatformEnvironment,
+    buildCloudPlatformConfig,
+} from './cloud-platform.js';
+import { loadFinalObjectRetentionPolicy } from './final-object-retention.js';
 
 dotenv.config();
 
 export const malwareScanConfig = loadMalwareScanConfig();
 const appProfile = loadAppProfile();
+export const cloudPlatformConfig = buildCloudPlatformConfig();
 
 export const env = {
     NODE_ENV: process.env.NODE_ENV || 'development',
@@ -61,8 +68,51 @@ function validateFrontendUrl(source: NodeJS.ProcessEnv): void {
     ) {
         throw new Error('FRONTEND_URL must be an HTTP(S) origin without credentials, path, query, or fragment');
     }
-    if (source.NODE_ENV === 'production' && parsed.protocol !== 'https:') {
-        throw new Error('FRONTEND_URL must use HTTPS in production');
+    if (
+        (source.NODE_ENV === 'production' || source.K_SERVICE || source.VERCEL)
+        && parsed.protocol !== 'https:'
+    ) {
+        throw new Error('FRONTEND_URL must use HTTPS in a deployed runtime');
+    }
+
+    const additionalRaw = source.ADDITIONAL_TRUSTED_ORIGINS?.trim();
+    if (!additionalRaw) return;
+
+    const entries = additionalRaw.split(',').map(value => value.trim());
+    if (entries.length > 20 || entries.some(value => !value)) {
+        throw new Error(
+            'ADDITIONAL_TRUSTED_ORIGINS must contain between 1 and 20 non-empty comma-separated origins',
+        );
+    }
+    const secureRuntime = source.NODE_ENV === 'production'
+        || Boolean(source.K_SERVICE)
+        || Boolean(source.VERCEL);
+    const canonical = new Set<string>();
+    for (const entry of entries) {
+        let origin: URL;
+        try {
+            origin = new URL(entry);
+        } catch {
+            throw new Error('ADDITIONAL_TRUSTED_ORIGINS contains an invalid absolute origin');
+        }
+        if (
+            !['http:', 'https:'].includes(origin.protocol)
+            || (secureRuntime && origin.protocol !== 'https:')
+            || origin.username
+            || origin.password
+            || origin.pathname !== '/'
+            || origin.search
+            || origin.hash
+            || entry !== origin.origin
+        ) {
+            throw new Error(
+                'ADDITIONAL_TRUSTED_ORIGINS must contain canonical HTTP(S) origins only; deployed origins must use HTTPS',
+            );
+        }
+        if (canonical.has(origin.origin)) {
+            throw new Error('ADDITIONAL_TRUSTED_ORIGINS must not contain duplicate origins');
+        }
+        canonical.add(origin.origin);
     }
 }
 
@@ -70,9 +120,37 @@ export function validateRuntimeEnv(
     runtime: SimsaRuntime,
     source: NodeJS.ProcessEnv = process.env,
 ) {
-    const required = runtime === 'api'
-        ? ['DATABASE_URL', 'BETTER_AUTH_SECRET']
-        : ['DATABASE_URL'];
+    const cloudConfig = buildCloudPlatformConfig(source);
+    const deployedRuntime = source.NODE_ENV === 'production'
+        || Boolean(source.K_SERVICE)
+        || Boolean(source.VERCEL);
+    // Enforce deployment-wide invariants (currently the Auth Emulator guard)
+    // even for workers that deliberately do not require auth or object storage.
+    assertValidCloudPlatformEnvironment(source, {
+        requireAuth: false,
+        requireStorage: false,
+    });
+    const databaseConfigured = Boolean(
+        source.DATABASE_URL?.trim()
+        || (
+            (source.CLOUD_SQL_UNIX_SOCKET?.trim() || source.DB_HOST?.trim())
+            && source.DB_USER?.trim()
+            && source.DB_NAME?.trim()
+            && source.DB_PASSWORD !== undefined
+        )
+    );
+    if (!databaseConfigured) {
+        throw new Error(
+            'Missing database configuration: DATABASE_URL or Cloud SQL/DB host variables are required',
+        );
+    }
+    if (cloudConfig.platform === 'gcp') {
+        assertGcpIamDatabaseRuntimeEnvironment(source, cloudConfig.projectId);
+    }
+
+    const required = runtime === 'api' && cloudConfig.authProvider === 'better-auth'
+        ? ['BETTER_AUTH_SECRET']
+        : [];
     const missing = required.filter(key => !source[key]?.trim());
 
     if (missing.length > 0) {
@@ -81,7 +159,7 @@ export function validateRuntimeEnv(
 
     // Enforce minimum length for auth secret (cryptographic requirement)
     const secret = source.BETTER_AUTH_SECRET || '';
-    if (runtime === 'api' && secret.length < 32) {
+    if (runtime === 'api' && cloudConfig.authProvider === 'better-auth' && secret.length < 32) {
         throw new Error(
             `BETTER_AUTH_SECRET must be at least 32 characters long (current: ${secret.length}). ` +
             `Generate one with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
@@ -89,9 +167,12 @@ export function validateRuntimeEnv(
     }
 
     // Production safety checks
-    if (runtime === 'api' && source.NODE_ENV === 'production') {
-        // Google OAuth is required for authentication in production
-        const oauthRequired = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'];
+    if (runtime === 'api' && deployedRuntime) {
+        // Better Auth owns OAuth credentials. Firebase Authentication instead
+        // obtains its provider configuration from the Firebase control plane.
+        const oauthRequired = cloudConfig.authProvider === 'better-auth'
+            ? ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET']
+            : [];
         const oauthMissing = oauthRequired.filter(key => !source[key]);
 
         if (oauthMissing.length > 0) {
@@ -104,14 +185,17 @@ export function validateRuntimeEnv(
             process.stderr.write('WARNING: DATABASE_URL points to localhost in production environment!\n');
         }
 
-        // Warn if BETTER_AUTH_URL is still default
+        // Warn if BETTER_AUTH_URL is still default while that provider is active.
         const authUrl = source.BETTER_AUTH_URL || '';
-        if (authUrl.includes('localhost')) {
+        if (cloudConfig.authProvider === 'better-auth' && authUrl.includes('localhost')) {
             process.stderr.write('WARNING: BETTER_AUTH_URL points to localhost in production environment!\n');
         }
     }
 
-    if (runtime === 'api') validateFrontendUrl(source);
+    if (runtime === 'api') {
+        validateFrontendUrl(source);
+        assertValidCloudPlatformEnvironment(source);
+    }
 
     const runtimeProfile = loadAppProfile(source);
     if (runtime !== 'malware-worker') {
@@ -135,8 +219,15 @@ export function validateRuntimeEnv(
     // scanner configuration never constitutes a successful scan.
     validateMalwareScanConfig(
         runtimeMalwareConfig,
-        source.NODE_ENV === 'production' || source.VERCEL ? 'production' : (source.NODE_ENV || 'development'),
+        deployedRuntime ? 'production' : (source.NODE_ENV || 'development'),
         source,
+        {
+            // An API configured for an external worker only evaluates the
+            // durable heartbeat. It never opens a plaintext clamd connection;
+            // the dedicated worker must still validate that connection.
+            requireScannerConnection: runtime === 'malware-worker'
+                || runtimeMalwareConfig.worker.runtime === 'embedded',
+        },
     );
 
     if (runtime === 'malware-worker') {
@@ -151,14 +242,21 @@ export function validateRuntimeEnv(
                 'The dedicated worker requires MALWARE_SCANNER_MODE=clamav and MALWARE_SCAN_WORKER_ENABLED=true',
             );
         }
-        assertValidBlobStorageEnvironment(source, { requireCallbackUrl: false });
+        if (cloudConfig.storageProvider === 'vercel-blob') {
+            assertValidBlobStorageEnvironment(source, { requireCallbackUrl: false });
+        } else {
+            assertValidCloudPlatformEnvironment(source, { requireAuth: false });
+            loadFinalObjectRetentionPolicy(source, {
+                requireExplicit: deployedRuntime,
+            });
+        }
         return;
     }
 
     if (
         runtimeProfile === 'internal'
         && runtimeMalwareConfig.mode === 'disabled'
-        && (source.NODE_ENV === 'production' || source.VERCEL)
+        && deployedRuntime
     ) {
         process.stderr.write(
             'WARNING: Malware scanner is disabled; every uploaded bitstream remains quarantined and unavailable until a clean scan is recorded.\n',
@@ -172,7 +270,11 @@ export function validateRuntimeEnv(
 
     // Private Blob is the canonical bitstream store. Production must fail at
     // startup rather than accepting records whose evidence cannot be stored.
-    assertValidBlobStorageEnvironment(source);
+    if (cloudConfig.storageProvider === 'vercel-blob') {
+        assertValidBlobStorageEnvironment(source);
+    } else {
+        assertValidCloudPlatformEnvironment(source);
+    }
 }
 
 // Backwards-compatible API/server validation entry point.

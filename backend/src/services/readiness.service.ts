@@ -1,8 +1,10 @@
 import { pool } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { malwareScanConfig } from '../config/env.js';
-import { getBlobStorageConfigurationStatus } from '../config/blob-storage.js';
+import { getObjectStorageConfigurationStatus } from '../config/blob-storage.js';
+import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
 import { getEmailConfigurationStatus } from '../config/email.js';
+import { getFirebaseAdminAuth } from '../config/firebase-admin.js';
 import { getSrikandiConfigurationStatus, srikandiConfig } from '../config/srikandi.js';
 import type { OperationalWorker } from '../db/schema/operational-heartbeats.js';
 import { blobStorageService } from './blob-storage.service.js';
@@ -10,19 +12,17 @@ import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('ReadinessService');
 
-// Drizzle records the journal timestamp of the latest applied migration in
-// drizzle.__drizzle_migrations. 0029 adds the explicit outgoing-record security
-// classification consumed by list, detail, approval, and access-control flows.
-const MINIMUM_DATABASE_MIGRATION_CREATED_AT = 1_787_972_400_000;
-
-const DATABASE_SCHEMA_READINESS_SQL = `
-    WITH required_columns(table_name, column_name) AS (
+export const DATABASE_SCHEMA_READINESS_SQL = `
+    WITH RECURSIVE required_columns(table_name, column_name) AS (
         VALUES
             ('users', 'role'),
             ('users', 'unit_kerja_id'),
             ('users', 'is_active'),
             ('users', 'jabatan'),
             ('users', 'nip'),
+            ('users', 'firebase_uid'),
+            ('users', 'identity_provider'),
+            ('users', 'auth_migrated_at'),
             ('surat_keluar', 'klasifikasi_keamanan'),
             ('accounts', 'account_id'),
             ('accounts', 'provider_id'),
@@ -30,6 +30,7 @@ const DATABASE_SCHEMA_READINESS_SQL = `
             ('sessions', 'token'),
             ('sessions', 'expires_at'),
             ('file_attachments', 'file_url'),
+            ('file_attachments', 'object_generation'),
             ('file_attachments', 'size_bytes'),
             ('file_attachments', 'sha256'),
             ('file_attachments', 'storage_access'),
@@ -44,7 +45,18 @@ const DATABASE_SCHEMA_READINESS_SQL = `
             ('client_blob_uploads', 'claimed_at'),
             ('client_blob_uploads', 'claimed_entity_type'),
             ('client_blob_uploads', 'claimed_entity_id'),
+            ('client_blob_uploads', 'provider'),
+            ('client_blob_uploads', 'bucket'),
+            ('client_blob_uploads', 'object_generation'),
+            ('client_blob_uploads', 'event_id'),
+            ('client_blob_uploads', 'expected_size_bytes'),
+            ('client_blob_uploads', 'expected_content_type'),
+            ('client_blob_uploads', 'authorized_at'),
+            ('client_blob_uploads', 'finalized_at'),
+            ('client_blob_uploads', 'cleanup_previous_status'),
+            ('regulatory_rule_sets', 'source_document_object_generation'),
             ('autentikasi', 'file_lampiran'),
+            ('autentikasi', 'file_lampiran_object_generation'),
             ('autentikasi', 'file_lampiran_sha256'),
             ('autentikasi', 'file_lampiran_size_bytes'),
             ('bulk_upload_batches', 'created_by'),
@@ -53,6 +65,7 @@ const DATABASE_SCHEMA_READINESS_SQL = `
             ('bulk_upload_batches', 'expires_at'),
             ('bulk_upload_items', 'batch_id'),
             ('bulk_upload_items', 'blob_url'),
+            ('bulk_upload_items', 'object_generation'),
             ('bulk_upload_items', 'sha256'),
             ('bulk_upload_items', 'status'),
             ('operational_heartbeats', 'worker'),
@@ -65,11 +78,17 @@ const DATABASE_SCHEMA_READINESS_SQL = `
             ('ocr_capacity_control', 'retry_after_seconds'),
             ('ocr_processing_leases', 'token'),
             ('ocr_processing_leases', 'item_id'),
-            ('ocr_processing_leases', 'lease_expires_at')
-    ),
-    migration_state AS (
-        SELECT COALESCE(MAX(created_at), 0::bigint) >= $1::bigint AS ready
-        FROM drizzle.__drizzle_migrations
+            ('ocr_processing_leases', 'lease_expires_at'),
+            ('final_object_orphans', 'attachment_id'),
+            ('final_object_orphans', 'candidate_kind'),
+            ('final_object_orphans', 'cleanup_token'),
+            ('final_object_orphans', 'final_locator'),
+            ('final_object_orphans', 'final_object_generation'),
+            ('final_object_orphans', 'source_locator'),
+            ('final_object_orphans', 'source_object_generation'),
+            ('final_object_orphans', 'status'),
+            ('final_object_orphans', 'not_before'),
+            ('final_object_orphans', 'attempts')
     ),
     column_state AS (
         SELECT NOT EXISTS (
@@ -77,17 +96,39 @@ const DATABASE_SCHEMA_READINESS_SQL = `
             FROM required_columns AS required
             WHERE NOT EXISTS (
                 SELECT 1
-                FROM information_schema.columns AS actual
-                WHERE actual.table_schema = 'public'
-                  AND actual.table_name = required.table_name
-                  AND actual.column_name = required.column_name
+                FROM pg_catalog.pg_attribute AS attribute
+                JOIN pg_catalog.pg_class AS relation
+                    ON relation.oid = attribute.attrelid
+                JOIN pg_catalog.pg_namespace AS namespace
+                    ON namespace.oid = relation.relnamespace
+                WHERE namespace.nspname = 'public'
+                  AND relation.relname = required.table_name
+                  AND attribute.attname = required.column_name
+                  AND attribute.attnum > 0
+                  AND NOT attribute.attisdropped
             )
         ) AS ready
     ),
     required_constraints(table_name, constraint_name) AS (
         VALUES
             ('users', 'users_role_unit_mandate_check'),
-            ('surat_keluar', 'surat_keluar_klasifikasi_keamanan_check')
+            ('users', 'users_identity_provider_check'),
+            ('users', 'users_firebase_identity_check'),
+            ('client_blob_uploads', 'client_blob_uploads_status_check'),
+            ('client_blob_uploads', 'client_blob_uploads_provider_check'),
+            ('client_blob_uploads', 'client_blob_uploads_gcs_metadata_check'),
+            ('client_blob_uploads', 'client_blob_uploads_cleanup_previous_status_check'),
+            ('file_attachments', 'file_attachments_object_generation_check'),
+            ('bulk_upload_items', 'bulk_upload_items_object_generation_check'),
+            ('autentikasi', 'autentikasi_file_lampiran_generation_check'),
+            ('regulatory_rule_sets', 'regulatory_rule_sets_source_generation_check'),
+            ('surat_keluar', 'surat_keluar_klasifikasi_keamanan_check'),
+            ('final_object_orphans', 'final_object_orphans_locator_check'),
+            ('final_object_orphans', 'final_object_orphans_generation_check'),
+            ('final_object_orphans', 'final_object_orphans_candidate_kind_check'),
+            ('final_object_orphans', 'final_object_orphans_identity_check'),
+            ('final_object_orphans', 'final_object_orphans_status_check'),
+            ('final_object_orphans', 'final_object_orphans_attempts_check')
     ),
     constraint_state AS (
         SELECT NOT EXISTS (
@@ -106,11 +147,87 @@ const DATABASE_SCHEMA_READINESS_SQL = `
                   AND constraint_record.convalidated
             )
         ) AS ready
+    ),
+    runtime_membership_closure(role_name) AS (
+        SELECT parent.rolname
+        FROM pg_catalog.pg_roles member
+        JOIN pg_catalog.pg_auth_members membership ON membership.member = member.oid
+        JOIN pg_catalog.pg_roles parent ON parent.oid = membership.roleid
+        WHERE member.rolname = current_user
+        UNION
+        SELECT parent.rolname
+        FROM runtime_membership_closure closure
+        JOIN pg_catalog.pg_roles member ON member.rolname = closure.role_name
+        JOIN pg_catalog.pg_auth_members membership ON membership.member = member.oid
+        JOIN pg_catalog.pg_roles parent ON parent.oid = membership.roleid
+    ),
+    membership_state AS (
+        SELECT
+            EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_roles member
+                JOIN pg_catalog.pg_auth_members membership ON membership.member = member.oid
+                JOIN pg_catalog.pg_roles parent ON parent.oid = membership.roleid
+                WHERE member.rolname = current_user
+                  AND parent.rolname = 'simsa_api_runtime'
+                  AND NOT membership.admin_option
+                  AND membership.inherit_option
+                  AND NOT membership.set_option
+            )
+            AND (SELECT count(*) FROM runtime_membership_closure) = 1
+            AND NOT EXISTS (
+                SELECT 1 FROM runtime_membership_closure
+                WHERE role_name <> 'simsa_api_runtime'
+            )
+            AND NOT pg_catalog.pg_has_role(current_user, 'simsa_migrator', 'MEMBER')
+            AS ready
+    ),
+    privilege_state AS (
+        SELECT
+            has_schema_privilege(current_user, 'public', 'USAGE')
+            AND NOT has_schema_privilege(current_user, 'public', 'CREATE')
+            AND has_table_privilege(current_user, 'public.users', 'SELECT')
+            AND has_table_privilege(current_user, 'public.users', 'INSERT')
+            AND has_table_privilege(current_user, 'public.users', 'UPDATE')
+            AND has_table_privilege(current_user, 'public.users', 'DELETE')
+            AND has_table_privilege(current_user, 'public.audit_log', 'INSERT')
+            AND NOT has_table_privilege(current_user, 'public.audit_log', 'UPDATE')
+            AND NOT has_table_privilege(current_user, 'public.audit_log', 'DELETE')
+            AND NOT has_table_privilege(current_user, 'public.final_object_orphans', 'SELECT')
+            AND NOT has_table_privilege(current_user, 'public.final_object_orphans', 'UPDATE')
+            AND NOT has_table_privilege(current_user, 'public.final_object_orphans', 'DELETE')
+            AND NOT has_function_privilege(
+                current_user,
+                to_regprocedure(
+                    'public.simsa_mark_final_object_reference_candidate(uuid,text,text,text,text,timestamp with time zone)'
+                ),
+                'EXECUTE'
+            )
+            AND has_function_privilege(
+                current_user,
+                to_regprocedure(
+                    'public.simsa_reserve_api_final_object_candidate(uuid,text,uuid,timestamp with time zone)'
+                ),
+                'EXECUTE'
+            )
+            AND has_function_privilege(
+                current_user,
+                to_regprocedure(
+                    'public.simsa_record_api_final_object_candidate(uuid,text,text,timestamp with time zone)'
+                ),
+                'EXECUTE'
+            )
+            AND has_function_privilege(
+                current_user,
+                to_regprocedure('public.simsa_mark_api_final_object_referenced(uuid,text,text)'),
+                'EXECUTE'
+            ) AS ready
     )
-    SELECT migration_state.ready
-        AND column_state.ready
-        AND constraint_state.ready AS schema_ready
-    FROM migration_state, column_state, constraint_state
+    SELECT column_state.ready
+        AND constraint_state.ready
+        AND membership_state.ready
+        AND privilege_state.ready AS schema_ready
+    FROM column_state, constraint_state, membership_state, privilege_state
 `;
 
 type RuntimeState = 'ready' | 'not_ready' | 'disabled';
@@ -125,6 +242,7 @@ export interface HeartbeatRow {
 export interface ReadinessDependencies {
     probeDatabase(signal: AbortSignal): Promise<void>;
     probeBlob(signal: AbortSignal): Promise<void>;
+    probeFirebaseIdentity?(signal: AbortSignal): Promise<void>;
     probeEmbeddedScanner?(signal: AbortSignal): Promise<void>;
     readHeartbeats(signal: AbortSignal): Promise<HeartbeatRow[]>;
     now(): number;
@@ -162,9 +280,11 @@ async function withAbortableDatabaseClient<T>(
 const defaultDependencies: ReadinessDependencies = {
     async probeDatabase(signal) {
         const schemaReady = await withAbortableDatabaseClient(signal, async (client) => {
+            // The runtime login intentionally cannot read the migration journal.
+            // Validate the complete migration-0033 schema/constraint contract
+            // instead of weakening least privilege for a timestamp probe.
             const result = await client.query<{ schema_ready: boolean }>(
                 DATABASE_SCHEMA_READINESS_SQL,
-                [MINIMUM_DATABASE_MIGRATION_CREATED_AT],
             );
             return result.rows[0]?.schema_ready === true;
         });
@@ -173,7 +293,22 @@ const defaultDependencies: ReadinessDependencies = {
         if (!schemaReady) throw new Error('database schema readiness contract failed');
     },
     async probeBlob(signal) {
-        await blobStorageService.listFiles('__simsa_readiness_probe__/', { abortSignal: signal });
+        await blobStorageService.probeConnectivity({ abortSignal: signal });
+    },
+    async probeFirebaseIdentity(signal) {
+        if (signal.aborted) throw new Error('Firebase identity readiness operation aborted');
+        const request = getFirebaseAdminAuth().projectConfigManager().getProjectConfig();
+        let onAbort: (() => void) | undefined;
+        const aborted = new Promise<never>((_resolve, reject) => {
+            onAbort = () => reject(new Error('Firebase identity readiness operation aborted'));
+            signal.addEventListener('abort', onAbort, { once: true });
+            if (signal.aborted) onAbort();
+        });
+        try {
+            await Promise.race([request, aborted]);
+        } finally {
+            if (onAbort) signal.removeEventListener('abort', onAbort);
+        }
     },
     async probeEmbeddedScanner() {
         const { malwareScanWorker } = await import('./malware-scan.worker.js');
@@ -193,7 +328,7 @@ const defaultDependencies: ReadinessDependencies = {
 };
 
 async function timedProbe(
-    dependency: 'database' | 'blob_storage' | 'malware_scanner' | 'worker_heartbeats',
+    dependency: 'database' | 'blob_storage' | 'firebase_identity' | 'malware_scanner' | 'worker_heartbeats',
     probe: (signal: AbortSignal) => Promise<void>,
     timeoutMs = 5_000,
 ) {
@@ -265,15 +400,16 @@ export function evaluateWorkerReadiness(
 export async function collectReadiness(
     dependencies: ReadinessDependencies = defaultDependencies,
 ) {
-    const blobConfiguration = getBlobStorageConfigurationStatus();
+    const blobConfiguration = getObjectStorageConfigurationStatus();
     const emailConfiguration = getEmailConfigurationStatus();
     const srikandiConfiguration = getSrikandiConfigurationStatus();
+    const firebaseIdentityRequired = buildCloudPlatformConfig().authProvider === 'firebase';
 
     const embeddedScannerRequired = malwareScanConfig.mode === 'clamav'
         && malwareScanConfig.workerEnabled
         && malwareScanConfig.worker.runtime === 'embedded';
     let heartbeatRows: HeartbeatRow[] = [];
-    const [database, blobStorage, embeddedScanner, heartbeatRuntime] = await Promise.all([
+    const [database, blobStorage, firebaseIdentity, embeddedScanner, heartbeatRuntime] = await Promise.all([
         timedProbe('database', dependencies.probeDatabase),
         blobConfiguration.configured && blobConfiguration.ready
             ? timedProbe('blob_storage', dependencies.probeBlob)
@@ -284,6 +420,13 @@ export async function collectReadiness(
                     ? { reason: 'configuration_invalid' }
                     : {}),
             }),
+        firebaseIdentityRequired
+            ? timedProbe(
+                'firebase_identity',
+                dependencies.probeFirebaseIdentity
+                    || defaultDependencies.probeFirebaseIdentity!,
+            )
+            : Promise.resolve({ ready: true, skipped: true }),
         embeddedScannerRequired
             ? timedProbe(
                 'malware_scanner',
@@ -327,6 +470,7 @@ export async function collectReadiness(
     const requiredReady = database.ready
         && (!blobConfiguration.required || blobConfiguration.ready)
         && blobStorage.ready
+        && firebaseIdentity.ready
         && embeddedScanner.ready
         && malwareWorker.state !== 'not_ready'
         && srikandiWorker.state !== 'not_ready';
@@ -339,6 +483,10 @@ export async function collectReadiness(
         dependencies: {
             database,
             blobStorage: { ...blobConfiguration, runtime: blobStorage },
+            firebaseIdentity: {
+                required: firebaseIdentityRequired,
+                runtime: firebaseIdentity,
+            },
             malwareScanner: malwareScanConfig.mode === 'disabled'
                 ? { state: 'disabled', runtime: embeddedScanner }
                 : malwareScanConfig.worker.runtime === 'external'

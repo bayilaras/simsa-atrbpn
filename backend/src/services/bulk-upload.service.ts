@@ -21,6 +21,7 @@ import {
     type OcrCapacityCoordinator,
     type OcrCapacityLease,
 } from './ocr-capacity.service.js';
+import { requireImmutableObjectGeneration } from '../storage/locator.js';
 
 const log = createLogger('BulkUploadService');
 
@@ -225,6 +226,7 @@ export class BulkUploadService {
             id: string;
             file: BulkUploadFile;
             blobUrl: string;
+            objectGeneration: string | null;
             sha256: string;
         }> = [];
 
@@ -233,7 +235,7 @@ export class BulkUploadService {
             // subsequently recoverable from Blob even if this process exits.
             for (const file of files) {
                 const itemId = uuidv4();
-                const stored = await blobStorageService.uploadFile({
+                const stored = await blobStorageService.uploadUntrustedFile({
                     fileName: `${itemId}-${safeBlobFileName(file.fileName)}`,
                     mimeType: file.mimeType,
                     buffer: file.buffer,
@@ -243,6 +245,10 @@ export class BulkUploadService {
                     id: itemId,
                     file,
                     blobUrl: stored.url,
+                    objectGeneration: requireImmutableObjectGeneration(
+                        stored.url,
+                        stored.generation,
+                    ),
                     sha256: crypto.createHash('sha256').update(file.buffer).digest('hex'),
                 });
             }
@@ -259,7 +265,13 @@ export class BulkUploadService {
                     createdAt,
                     updatedAt: createdAt,
                 });
-                await tx.insert(bulkUploadItems).values(storedItems.map(({ id, file, blobUrl, sha256 }) => ({
+                await tx.insert(bulkUploadItems).values(storedItems.map(({
+                    id,
+                    file,
+                    blobUrl,
+                    objectGeneration,
+                    sha256,
+                }) => ({
                     id,
                     batchId,
                     fileName: file.fileName,
@@ -267,6 +279,7 @@ export class BulkUploadService {
                     sizeBytes: file.buffer.length,
                     sha256,
                     blobUrl,
+                    objectGeneration,
                     status: 'pending' as const,
                     progress: 0,
                     createdAt,
@@ -274,7 +287,10 @@ export class BulkUploadService {
                 })));
             });
         } catch (error) {
-            await this.compensateBlobs(storedItems.map(({ blobUrl }) => blobUrl), 'batch creation');
+            await this.compensateBlobs(storedItems.map(({ blobUrl, objectGeneration }) => ({
+                locator: blobUrl,
+                objectGeneration,
+            })), 'batch creation');
             if (isActiveBatchUniqueConflict(error)) {
                 const active = await this.getLatestActiveBatch(createdBy, unitKerjaId);
                 throw new BulkUploadError(
@@ -587,7 +603,13 @@ export class BulkUploadService {
             if (item.status !== 'completed' || item.arsipId) {
                 throw new BulkUploadError(`Item ${item.id} belum siap atau sudah dikonfirmasi`, 409);
             }
-            const stored = await blobStorageService.getFile(item.blobUrl);
+            const objectGeneration = requireImmutableObjectGeneration(
+                item.blobUrl,
+                item.objectGeneration,
+            );
+            const stored = await blobStorageService.getFile(item.blobUrl, {
+                generation: objectGeneration || undefined,
+            });
             if (!stored || stored.size !== item.sizeBytes) {
                 throw new BulkUploadError(`Bitstream ${item.fileName} tidak tersedia atau berubah`, 409);
             }
@@ -656,6 +678,7 @@ export class BulkUploadService {
                     entityType: 'arsip',
                     fileName: item.fileName,
                     fileUrl: item.blobUrl,
+                    objectGeneration: item.objectGeneration,
                     mimeType: item.mimeType,
                     sizeBytes: item.sizeBytes,
                     sha256: item.sha256,
@@ -816,7 +839,14 @@ export class BulkUploadService {
                 continue;
             }
             if (item.blobDeletedAt) continue;
-            if (await blobStorageService.deleteFile(locator)) {
+            const objectGeneration = requireImmutableObjectGeneration(
+                locator,
+                item.objectGeneration,
+            );
+            const deleted = objectGeneration
+                ? await blobStorageService.deleteFileGeneration(locator, objectGeneration)
+                : await blobStorageService.deleteFile(locator);
+            if (deleted) {
                 result.blobsDeleted++;
                 await db.update(bulkUploadItems)
                     .set({ blobDeletedAt: new Date(), updatedAt: new Date() })
@@ -973,7 +1003,13 @@ export class BulkUploadService {
         timeout.unref?.();
 
         try {
-            const downloadPromise = blobStorageService.downloadFile(item.blobUrl).then((download) => {
+            const objectGeneration = requireImmutableObjectGeneration(
+                item.blobUrl,
+                item.objectGeneration,
+            );
+            const downloadPromise = blobStorageService.downloadFile(item.blobUrl, {
+                generation: objectGeneration || undefined,
+            }).then((download) => {
                 if (aborted) download?.stream.destroy();
                 return download;
             });
@@ -1034,9 +1070,15 @@ export class BulkUploadService {
         };
     }
 
-    private async compensateBlobs(locators: string[], context: string): Promise<void> {
-        for (const locator of locators) {
-            const deleted = await blobStorageService.deleteFile(locator);
+    private async compensateBlobs(
+        objects: Array<{ locator: string; objectGeneration: string | null }>,
+        context: string,
+    ): Promise<void> {
+        for (const { locator, objectGeneration: candidateGeneration } of objects) {
+            const objectGeneration = requireImmutableObjectGeneration(locator, candidateGeneration);
+            const deleted = objectGeneration
+                ? await blobStorageService.deleteFileGeneration(locator, objectGeneration)
+                : await blobStorageService.deleteFile(locator);
             if (!deleted) {
                 log.error({ locator, context }, 'Blob compensation failed; manual cleanup required');
             }

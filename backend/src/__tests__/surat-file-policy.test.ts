@@ -78,6 +78,17 @@ describe('surat payload and private Blob policy', () => {
         }).success).toBe(true);
     });
 
+    it('accepts canonical GCS quarantine locators only in the matching namespace', () => {
+        expect(createSuratKeluarSchema.safeParse({
+            ...baseSuratKeluar,
+            filePath: 'gs://simsa-preview-upload/surat-keluar/550e8400-e29b-41d4-a716-446655440000/upload-document.pdf',
+        }).success).toBe(true);
+        expect(createSuratMasukSchema.safeParse({
+            ...baseSuratMasuk,
+            filePath: 'gs://simsa-preview-upload/surat-masuk/550e8400-e29b-41d4-a716-446655440000/upload-document.pdf',
+        }).success).toBe(true);
+    });
+
     it.each([
         'https://store.blob.vercel-storage.com/surat-keluar/public.pdf',
         'https://store.private.blob.vercel-storage.com/surat-masuk/wrong-prefix.pdf',
@@ -85,6 +96,9 @@ describe('surat payload and private Blob policy', () => {
         'https://store.private.blob.vercel-storage.com/surat-keluar/%2e%2e/surat-masuk/document.pdf',
         '/api/files/surat_keluar/550e8400-e29b-41d4-a716-446655440000',
         'blob:https://store.private.blob.vercel-storage.com/surat-keluar/document.pdf',
+        'gs://simsa-preview-upload/surat-masuk/wrong-prefix.pdf',
+        'gs://simsa-preview-upload/surat-keluar/%2E%2E/surat-masuk/document.pdf',
+        'gs://SIMSA-preview-upload/surat-keluar/document.pdf',
     ])('rejects an untrusted outgoing locator: %s', (filePath) => {
         expect(updateSuratKeluarSchema.safeParse({ filePath }).success).toBe(false);
     });

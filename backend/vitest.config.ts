@@ -5,6 +5,13 @@ export default defineConfig({
     test: {
         globals: true,
         environment: 'node',
+        // Some route-policy tests intentionally import the application graph
+        // without executing a database query. Give node-postgres an inert test
+        // authority so module construction stays side-effect free; production
+        // startup still validates the real database configuration in env.ts.
+        env: {
+            DATABASE_URL: 'postgresql://simsa_test:simsa_test@127.0.0.1:1/simsa_test',
+        },
         include: ['src/**/*.{test,spec}.{js,ts}'],
         alias: {
             '@': path.resolve(__dirname, './src'),

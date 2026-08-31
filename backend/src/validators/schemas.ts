@@ -5,6 +5,7 @@ import {
     MAX_NOTIFICATION_READ_IDS,
     NOTIFICATION_ID_PATTERN,
 } from '../utils/notification-id.js';
+import { parseGcsLocator } from '../storage/locator.js';
 
 // Common schemas
 export const uuidSchema = z.string().uuid('Invalid UUID format');
@@ -25,11 +26,27 @@ export const timestampSchema = z.string().datetime({ offset: true }).or(z.string
 
 export type SuratBlobFolder = 'surat-masuk' | 'surat-keluar';
 
-/** Accept only private Vercel Blob locators created for the expected record type. */
-export function privateVercelBlobUrlSchema(folder: SuratBlobFolder) {
+/** Accept only canonical private object locators created for the expected record type. */
+export function privateObjectLocatorSchema(folder: SuratBlobFolder) {
     return z.string()
         .max(2048, 'File URL is too long')
         .superRefine((value, ctx) => {
+            if (value.startsWith('gs://')) {
+                try {
+                    const { objectName } = parseGcsLocator(value);
+                    const expectedPrefix = `${folder}/`;
+                    if (!objectName.startsWith(expectedPrefix) || objectName.length <= expectedPrefix.length) {
+                        throw new Error('Unexpected object namespace');
+                    }
+                    return;
+                } catch {
+                    ctx.addIssue({
+                        code: 'custom',
+                        message: `filePath must be a canonical private object under ${folder}/`,
+                    });
+                    return;
+                }
+            }
             try {
                 const url = new URL(value);
                 const decodedPath = decodeURIComponent(url.pathname);
@@ -53,17 +70,20 @@ export function privateVercelBlobUrlSchema(folder: SuratBlobFolder) {
                 ) {
                     ctx.addIssue({
                         code: 'custom',
-                        message: `filePath must be a private Vercel Blob URL under ${folder}/`,
+                        message: `filePath must be a canonical private object under ${folder}/`,
                     });
                 }
             } catch {
                 ctx.addIssue({
                     code: 'custom',
-                    message: `filePath must be a private Vercel Blob URL under ${folder}/`,
+                    message: `filePath must be a canonical private object under ${folder}/`,
                 });
             }
         });
 }
+
+/** @deprecated Use privateObjectLocatorSchema; retained for extension compatibility. */
+export const privateVercelBlobUrlSchema = privateObjectLocatorSchema;
 
 // Pagination query schema
 export const paginationSchema = z.object({
@@ -101,8 +121,8 @@ export const createSuratMasukSchema = z.object({
         .optional(),
     keterangan: z.string().max(2000).optional(),
     linkDokumen: z.string().url().optional().or(z.literal('')),
-    // File attachment fields (set by client-side Vercel Blob upload)
-    filePath: privateVercelBlobUrlSchema('surat-masuk').optional(),
+    // File attachment fields (set by a provider-authorized direct upload)
+    filePath: privateObjectLocatorSchema('surat-masuk').optional(),
     fileOriginalName: z.string().max(255).optional(),
     klasifikasiKode: z.string().max(50).optional(),
     klasifikasiUraian: z.string().max(1000).optional(),
@@ -144,7 +164,7 @@ const suratKeluarBaseSchema = z.object({
     klasifikasiSubstantifKode: z.string().max(50).optional(),
     klasifikasiSubstantif: z.string().max(2000).optional(),
     klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional(),
-    filePath: privateVercelBlobUrlSchema('surat-keluar').optional(),
+    filePath: privateObjectLocatorSchema('surat-keluar').optional(),
     fileOriginalName: z.string().max(255).optional(),
 });
 

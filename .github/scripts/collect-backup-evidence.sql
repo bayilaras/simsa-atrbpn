@@ -50,7 +50,8 @@ DECLARE
     1787706000000, 1787965200000, 1787965800000, 1787966400000,
     1787967000000, 1787967600000, 1787968200000, 1787968800000,
     1787969400000, 1787970000000, 1787970600000, 1787971200000,
-    1787971800000, 1787972400000
+    1787971800000, 1787972400000, 1788058800000, 1788059400000,
+    1788060000000, 1788060600000
   ]::bigint[];
   expected_code_manifest jsonb := current_setting('simsa.expected_migrations_json')::jsonb;
   checkout_migration_indices integer[];
@@ -61,8 +62,8 @@ BEGIN
   END IF;
 
   IF jsonb_typeof(expected_code_manifest) <> 'array'
-     OR jsonb_array_length(expected_code_manifest) <> 30 THEN
-    RAISE EXCEPTION 'checkout migration manifest must contain exactly 30 entries';
+     OR jsonb_array_length(expected_code_manifest) <> 34 THEN
+    RAISE EXCEPTION 'checkout migration manifest must contain exactly 34 entries';
   END IF;
   IF EXISTS (
     SELECT 1
@@ -99,9 +100,10 @@ BEGIN
   IF checkout_migration_indices IS DISTINCT FROM ARRAY[
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
     10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-    20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+    20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+    30, 31, 32, 33
   ]::integer[] OR checkout_migration_timestamps IS DISTINCT FROM post_migration_timestamps THEN
-    RAISE EXCEPTION 'checkout migration journal differs from the canonical 0000-0029 sequence';
+    RAISE EXCEPTION 'checkout migration journal differs from the canonical 0000-0033 sequence';
   END IF;
 
   SELECT string_agg(
@@ -263,6 +265,215 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'migration history contains duplicate timestamps';
   END IF;
+  IF resolved_profile = 'post_migration' THEN
+    IF (
+      SELECT count(*)
+      FROM pg_roles
+      WHERE rolname IN (
+        'simsa_api_runtime', 'simsa_event_runtime', 'simsa_worker_runtime',
+        'simsa_final_cleanup', 'simsa_maintenance', 'simsa_migrator',
+        'simsa_backup_reader'
+      )
+        AND NOT rolcanlogin
+        AND NOT rolsuper
+        AND NOT rolcreatedb
+        AND NOT rolcreaterole
+        AND NOT rolreplication
+        AND NOT rolbypassrls
+        AND rolinherit
+    ) <> 7 THEN
+      RAISE EXCEPTION 'post-migration database policy roles are missing or unsafe';
+    END IF;
+    IF NOT pg_has_role('simsa_backup_reader', 'pg_read_all_data', 'MEMBER')
+       OR pg_has_role('simsa_backup_reader', 'pg_write_all_data', 'MEMBER') THEN
+      RAISE EXCEPTION 'backup policy role is not exact read-all/no-write';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM (VALUES
+        ('simsa_api_runtime', 'users', 'SELECT', true),
+        ('simsa_api_runtime', 'audit_log', 'INSERT', true),
+        ('simsa_api_runtime', 'audit_log', 'UPDATE', false),
+        ('simsa_event_runtime', 'client_blob_uploads', 'UPDATE', true),
+        ('simsa_event_runtime', 'users', 'SELECT', false),
+        ('simsa_worker_runtime', 'operational_heartbeats', 'DELETE', true),
+        ('simsa_worker_runtime', 'srikandi_outbox', 'UPDATE', true),
+        ('simsa_worker_runtime', 'users', 'SELECT', false),
+        ('simsa_final_cleanup', 'final_object_orphans', 'UPDATE', true),
+        ('simsa_final_cleanup', 'final_object_orphans', 'INSERT', false),
+        ('simsa_maintenance', 'regulatory_rule_sets', 'UPDATE', true),
+        ('simsa_maintenance', 'users', 'SELECT', false)
+      ) AS expected(role_name, table_name, privilege_name, allowed)
+      WHERE has_table_privilege(
+        expected.role_name,
+        format('public.%I', expected.table_name),
+        expected.privilege_name
+      ) IS DISTINCT FROM expected.allowed
+    ) THEN
+      RAISE EXCEPTION 'post-migration table privilege profile is incomplete or expanded';
+    END IF;
+    IF NOT has_column_privilege(
+        'simsa_worker_runtime',
+        'public.final_object_orphans',
+        'final_locator',
+        'SELECT'
+      )
+      OR has_column_privilege(
+        'simsa_worker_runtime',
+        'public.final_object_orphans',
+        'attachment_id',
+        'SELECT'
+      ) THEN
+      RAISE EXCEPTION 'worker orphan conflict-key column privilege is incomplete or expanded';
+    END IF;
+    IF NOT has_function_privilege(
+        'simsa_worker_runtime',
+        'public.simsa_mark_final_object_reference_candidate(uuid,text,text,text,text,timestamp with time zone)',
+        'EXECUTE'
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM pg_proc AS routine
+        INNER JOIN pg_namespace AS namespace ON namespace.oid = routine.pronamespace
+        CROSS JOIN LATERAL aclexplode(
+          COALESCE(routine.proacl, acldefault('f', routine.proowner))
+        ) AS privilege
+        WHERE namespace.nspname = 'public'
+          AND routine.prosecdef
+          AND privilege.grantee = 0
+          AND privilege.privilege_type = 'EXECUTE'
+      ) THEN
+      RAISE EXCEPTION 'SECURITY DEFINER execution privilege is unsafe';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM pg_namespace AS namespace
+      CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS privilege
+      WHERE namespace.nspname IN ('public', 'drizzle')
+        AND privilege.grantee = 0
+    ) OR EXISTS (
+      SELECT 1
+      FROM (VALUES
+        ('simsa_api_runtime'),
+        ('simsa_event_runtime'),
+        ('simsa_worker_runtime'),
+        ('simsa_final_cleanup'),
+        ('simsa_maintenance'),
+        ('simsa_backup_reader')
+      ) AS runtime(role_name)
+      WHERE has_schema_privilege(runtime.role_name, 'public', 'CREATE')
+    ) THEN
+      RAISE EXCEPTION 'PUBLIC or a workload role has unsafe application schema privileges';
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_default_acl AS defaults
+      LEFT JOIN pg_namespace AS namespace ON namespace.oid = defaults.defaclnamespace
+      WHERE pg_get_userbyid(defaults.defaclrole) = 'simsa_migrator'
+        AND defaults.defaclnamespace = 0
+        AND defaults.defaclobjtype = 'f'
+    ) THEN
+      RAISE EXCEPTION 'migrator function default ACL is missing';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM pg_default_acl AS defaults
+      LEFT JOIN pg_namespace AS namespace ON namespace.oid = defaults.defaclnamespace
+      CROSS JOIN LATERAL aclexplode(defaults.defaclacl) AS privilege
+      WHERE pg_get_userbyid(defaults.defaclrole) = 'simsa_migrator'
+        AND defaults.defaclnamespace = 0
+        AND defaults.defaclobjtype = 'f'
+        AND privilege.grantee = 0
+        AND privilege.privilege_type = 'EXECUTE'
+    ) THEN
+      RAISE EXCEPTION 'new migrator functions would be executable by PUBLIC';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM (
+        SELECT privilege.grantee, database_record.datdba AS owner_oid, 'database'::text AS kind
+        FROM pg_database AS database_record
+        CROSS JOIN LATERAL aclexplode(database_record.datacl) AS privilege
+        WHERE database_record.datname = current_database()
+          AND privilege.grantee <> database_record.datdba
+
+        UNION ALL
+
+        SELECT privilege.grantee, namespace.nspowner, 'schema'
+        FROM pg_namespace AS namespace
+        CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS privilege
+        WHERE namespace.nspname IN ('public', 'drizzle')
+          AND privilege.grantee <> namespace.nspowner
+
+        UNION ALL
+
+        SELECT privilege.grantee, relation.relowner, 'relation'
+        FROM pg_class AS relation
+        INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+        CROSS JOIN LATERAL aclexplode(relation.relacl) AS privilege
+        WHERE namespace.nspname IN ('public', 'drizzle')
+          AND relation.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
+          AND privilege.grantee <> relation.relowner
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_depend AS dependency
+            WHERE dependency.classid = 'pg_class'::regclass
+              AND dependency.objid = relation.oid
+              AND dependency.deptype = 'e'
+          )
+
+        UNION ALL
+
+        SELECT privilege.grantee, relation.relowner, 'column'
+        FROM pg_attribute AS attribute
+        INNER JOIN pg_class AS relation ON relation.oid = attribute.attrelid
+        INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+        CROSS JOIN LATERAL aclexplode(attribute.attacl) AS privilege
+        WHERE namespace.nspname IN ('public', 'drizzle')
+          AND attribute.attnum > 0
+          AND NOT attribute.attisdropped
+          AND privilege.grantee <> relation.relowner
+
+        UNION ALL
+
+        SELECT privilege.grantee, routine.proowner, 'routine'
+        FROM pg_proc AS routine
+        INNER JOIN pg_namespace AS namespace ON namespace.oid = routine.pronamespace
+        CROSS JOIN LATERAL aclexplode(
+          COALESCE(routine.proacl, acldefault('f', routine.proowner))
+        ) AS privilege
+        WHERE namespace.nspname IN ('public', 'drizzle')
+          AND privilege.grantee <> routine.proowner
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_depend AS dependency
+            WHERE dependency.classid = 'pg_proc'::regclass
+              AND dependency.objid = routine.oid
+              AND dependency.deptype = 'e'
+          )
+
+        UNION ALL
+
+        SELECT privilege.grantee, defaults.defaclrole, 'default_acl'
+        FROM pg_default_acl AS defaults
+        LEFT JOIN pg_namespace AS namespace ON namespace.oid = defaults.defaclnamespace
+        CROSS JOIN LATERAL aclexplode(defaults.defaclacl) AS privilege
+        WHERE (defaults.defaclnamespace = 0
+           OR namespace.nspname IN ('public', 'drizzle'))
+          AND privilege.grantee <> defaults.defaclrole
+      ) AS acl_grantee
+      WHERE acl_grantee.grantee = 0
+         OR pg_get_userbyid(acl_grantee.grantee) NOT IN (
+           'simsa_api_runtime', 'simsa_event_runtime', 'simsa_worker_runtime',
+           'simsa_final_cleanup', 'simsa_maintenance', 'simsa_migrator',
+           'simsa_backup_reader'
+         )
+         OR (
+           pg_get_userbyid(acl_grantee.grantee) = 'simsa_backup_reader'
+           AND acl_grantee.kind <> 'database'
+         )
+    ) THEN
+      RAISE EXCEPTION 'application ACL contains PUBLIC or an unversioned direct grantee';
+    END IF;
+  END IF;
   IF (SELECT count(*) FROM public.users) < 1 THEN
     RAISE EXCEPTION 'production backup baseline contains no user records';
   END IF;
@@ -287,7 +498,8 @@ SELECT concat_ws(
 );
 
 -- pg_dump --create and pg_restore --create must preserve database identity and
--- locale semantics across the PostgreSQL 17 source and PostgreSQL 18 drill.
+-- locale semantics across source and drill containers on the same supported
+-- PostgreSQL major.
 SELECT concat_ws(
   E'\t',
   'database_properties',
@@ -309,6 +521,17 @@ WHERE database_record.datname = current_database();
 
 SELECT concat_ws(
   E'\t',
+  'database_engine_major',
+  current_database(),
+  '1',
+  encode(sha256(convert_to(
+    (current_setting('server_version_num')::integer / 10000)::text,
+    'UTF8'
+  )), 'hex')
+);
+
+SELECT concat_ws(
+  E'\t',
   'migration_history',
   'drizzle.__drizzle_migrations',
   count(*)::text,
@@ -321,6 +544,124 @@ SELECT concat_ws(
     ), 'UTF8')), 'hex')
 )
 FROM drizzle.__drizzle_migrations;
+
+-- Disaster restore must reproduce the fixed-role ACL policy even though IAM
+-- login principals and passwords are intentionally absent from the archive.
+-- Grantors are excluded because the independent restore uses a distinct
+-- administrator; grantees, objects, privileges, and grant options must match.
+WITH policy_acl_items AS (
+  SELECT concat_ws('|',
+    'database', database_record.datname,
+    CASE WHEN privilege.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(privilege.grantee) END,
+    privilege.privilege_type, privilege.is_grantable::text
+  ) AS item
+  FROM pg_database AS database_record
+  CROSS JOIN LATERAL aclexplode(database_record.datacl) AS privilege
+  WHERE database_record.datname = current_database()
+
+  UNION ALL
+
+  SELECT concat_ws('|',
+    'schema', namespace.nspname,
+    CASE WHEN privilege.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(privilege.grantee) END,
+    privilege.privilege_type, privilege.is_grantable::text
+  )
+  FROM pg_namespace AS namespace
+  CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS privilege
+  WHERE namespace.nspname IN ('public', 'drizzle')
+
+  UNION ALL
+
+  SELECT concat_ws('|',
+    'relation', namespace.nspname, relation.relname,
+    CASE WHEN privilege.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(privilege.grantee) END,
+    privilege.privilege_type, privilege.is_grantable::text
+  )
+  FROM pg_class AS relation
+  INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+  CROSS JOIN LATERAL aclexplode(relation.relacl) AS privilege
+  WHERE namespace.nspname IN ('public', 'drizzle')
+    AND relation.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_depend AS dependency
+      WHERE dependency.classid = 'pg_class'::regclass
+        AND dependency.objid = relation.oid
+        AND dependency.deptype = 'e'
+    )
+
+  UNION ALL
+
+  SELECT concat_ws('|',
+    'column', namespace.nspname, relation.relname, attribute.attname,
+    CASE WHEN privilege.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(privilege.grantee) END,
+    privilege.privilege_type, privilege.is_grantable::text
+  )
+  FROM pg_attribute AS attribute
+  INNER JOIN pg_class AS relation ON relation.oid = attribute.attrelid
+  INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+  CROSS JOIN LATERAL aclexplode(attribute.attacl) AS privilege
+  WHERE namespace.nspname IN ('public', 'drizzle')
+    AND attribute.attnum > 0
+    AND NOT attribute.attisdropped
+
+  UNION ALL
+
+  SELECT concat_ws('|',
+    'routine', namespace.nspname, routine.proname,
+    pg_get_function_identity_arguments(routine.oid),
+    CASE WHEN privilege.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(privilege.grantee) END,
+    privilege.privilege_type, privilege.is_grantable::text
+  )
+  FROM pg_proc AS routine
+  INNER JOIN pg_namespace AS namespace ON namespace.oid = routine.pronamespace
+  CROSS JOIN LATERAL aclexplode(
+    COALESCE(routine.proacl, acldefault('f', routine.proowner))
+  ) AS privilege
+  WHERE namespace.nspname IN ('public', 'drizzle')
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_depend AS dependency
+      WHERE dependency.classid = 'pg_proc'::regclass
+        AND dependency.objid = routine.oid
+        AND dependency.deptype = 'e'
+    )
+
+  UNION ALL
+
+  SELECT concat_ws('|',
+    'default', COALESCE(namespace.nspname, '<global>'), pg_get_userbyid(defaults.defaclrole),
+    defaults.defaclobjtype,
+    CASE WHEN privilege.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(privilege.grantee) END,
+    privilege.privilege_type, privilege.is_grantable::text
+  )
+  FROM pg_default_acl AS defaults
+  LEFT JOIN pg_namespace AS namespace ON namespace.oid = defaults.defaclnamespace
+  CROSS JOIN LATERAL aclexplode(defaults.defaclacl) AS privilege
+  WHERE defaults.defaclnamespace = 0
+     OR namespace.nspname IN ('public', 'drizzle')
+), filtered_policy_acl_items AS (
+  SELECT item
+  FROM policy_acl_items
+  WHERE item ~ '(^|\\|)(PUBLIC|simsa_api_runtime|simsa_event_runtime|simsa_worker_runtime|simsa_final_cleanup|simsa_maintenance|simsa_migrator|simsa_backup_reader)(\\||$)'
+)
+SELECT concat_ws(
+  E'\t',
+  'database_role_acl',
+  current_setting('simsa.backup_profile_resolved'),
+  CASE
+    WHEN current_setting('simsa.backup_profile_resolved') = 'post_migration'
+      THEN count(*)::text
+    ELSE '0'
+  END,
+  encode(sha256(convert_to(
+    CASE
+      WHEN current_setting('simsa.backup_profile_resolved') = 'post_migration'
+        THEN COALESCE(string_agg(item, E'\n' ORDER BY item COLLATE "C"), '')
+      ELSE 'not-applicable-before-0032'
+    END,
+    'UTF8'
+  )), 'hex')
+)
+FROM filtered_policy_acl_items;
 
 -- A semantic schema fingerprint intentionally excludes owners and ACLs because
 -- the archive is created/restored with --no-owner and --no-privileges. It covers

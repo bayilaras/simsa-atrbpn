@@ -42,3 +42,4 @@ export * from './bulk-upload.js';
 export * from './client-blob-uploads.js';
 export * from './operational-heartbeats.js';
 export * from './ocr-capacity.js';
+export * from './final-object-orphans.js';

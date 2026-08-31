@@ -33,8 +33,8 @@ approved_legacy_sha256 = {
 if set(approved_legacy_sha256) != set(range(10)):
     raise SystemExit("approved legacy migration hashes must cover exactly 0000-0009")
 
-if not isinstance(entries, list) or len(entries) != 30:
-    raise SystemExit("expected exactly 30 entries in the Drizzle migration journal")
+if not isinstance(entries, list) or len(entries) != 34:
+    raise SystemExit("expected exactly 34 entries in the Drizzle migration journal")
 
 manifest: list[dict[str, int | str | list[str]]] = []
 sql_by_tag: dict[str, str] = {}
@@ -92,7 +92,7 @@ for expected_index, entry in enumerate(entries):
 def emit_fixture_sql(profile: str) -> None:
     """Emit a disposable, exact migration fixture for verifier CI tests."""
 
-    profile_lengths = {"pre_migration": 21, "post_migration": 30}
+    profile_lengths = {"pre_migration": 21, "post_migration": 34}
     selected_entries = manifest[: profile_lengths[profile]]
     print(r"\set ON_ERROR_STOP on")
     print("BEGIN;")

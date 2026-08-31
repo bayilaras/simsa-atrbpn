@@ -1,13 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const blobStatus = vi.fn();
 const emailStatus = vi.fn();
 const srikandiStatus = vi.fn();
 const poolConnect = vi.fn();
-const blobList = vi.fn();
+const blobProbe = vi.fn();
 
 vi.mock('../config/blob-storage.js', () => ({
-    getBlobStorageConfigurationStatus: () => blobStatus(),
+    getObjectStorageConfigurationStatus: () => blobStatus(),
 }));
 vi.mock('../config/email.js', () => ({
     getEmailConfigurationStatus: () => emailStatus(),
@@ -28,16 +28,20 @@ vi.mock('../config/database.js', () => ({
     pool: { connect: poolConnect },
 }));
 vi.mock('../services/blob-storage.service.js', () => ({
-    blobStorageService: { listFiles: blobList },
+    blobStorageService: { probeConnectivity: blobProbe },
 }));
 
 const { collectReadiness, evaluateWorkerReadiness } = await import('../services/readiness.service.js');
 
 describe('collectReadiness', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     beforeEach(() => {
         poolConnect.mockReset();
-        blobList.mockReset();
-        blobList.mockResolvedValue([]);
+        blobProbe.mockReset();
+        blobProbe.mockResolvedValue(undefined);
         blobStatus.mockReturnValue({
             provider: 'vercel-blob-private', required: true, configured: true,
             ready: true, validationErrors: [],
@@ -73,7 +77,28 @@ describe('collectReadiness', () => {
         expect(JSON.stringify(result)).not.toContain('database unavailable');
     });
 
-    it('requires migration 0029 and the critical schema contract in the default database probe', async () => {
+    it('fails readiness when the configured Firebase control plane or runtime IAM is unavailable', async () => {
+        vi.stubEnv('AUTH_PROVIDER', 'firebase');
+        vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-readiness-test');
+        const identityProbe = vi.fn().mockRejectedValue(new Error('permission denied'));
+        const result = await collectReadiness({
+            probeDatabase: vi.fn().mockResolvedValue(undefined),
+            probeBlob: vi.fn().mockResolvedValue(undefined),
+            probeFirebaseIdentity: identityProbe,
+            readHeartbeats: vi.fn().mockResolvedValue([]),
+            now: () => Date.parse('2026-08-28T12:00:00.000Z'),
+        });
+
+        expect(result.status).toBe('not_ready');
+        expect(result.dependencies.firebaseIdentity).toMatchObject({
+            required: true,
+            runtime: { ready: false, reason: 'probe_failed' },
+        });
+        expect(identityProbe).toHaveBeenCalledOnce();
+        expect(JSON.stringify(result)).not.toContain('permission denied');
+    });
+
+    it('requires the complete 0033 least-privilege schema contract in the default database probe', async () => {
         const databaseQuery = vi.fn().mockResolvedValue({ rows: [{ schema_ready: true }] });
         const databaseRelease = vi.fn();
         const heartbeatRelease = vi.fn();
@@ -89,15 +114,60 @@ describe('collectReadiness', () => {
         expect(result.status).toBe('ready');
         expect(result.dependencies.database.ready).toBe(true);
         expect(databaseQuery).toHaveBeenCalledOnce();
-        const [query, parameters] = databaseQuery.mock.calls[0] as [string, number[]];
-        expect(parameters).toEqual([1_787_972_400_000]);
-        expect(query).toContain('drizzle.__drizzle_migrations');
+        const [query, parameters] = databaseQuery.mock.calls[0] as [string, undefined?];
+        expect(parameters).toBeUndefined();
+        // Runtime identities deliberately cannot read the Drizzle journal.
+        // Readiness proves the resulting 0033 contract from public catalogs.
+        expect(query).not.toContain('drizzle.__drizzle_migrations');
+        expect(query).toContain('pg_catalog.pg_attribute');
+        expect(query).toContain('FROM pg_constraint AS constraint_record');
         expect(query).toContain("('users', 'jabatan')");
         expect(query).toContain("('users', 'nip')");
+        expect(query).toContain("('users', 'firebase_uid')");
+        expect(query).toContain("('client_blob_uploads', 'object_generation')");
+        expect(query).toContain("('file_attachments', 'object_generation')");
+        expect(query).toContain("('bulk_upload_items', 'object_generation')");
+        expect(query).toContain("('autentikasi', 'file_lampiran_object_generation')");
+        expect(query).toContain("('regulatory_rule_sets', 'source_document_object_generation')");
         expect(query).toContain("('surat_keluar', 'klasifikasi_keamanan')");
+        expect(query).toContain("('final_object_orphans', 'final_object_generation')");
+        expect(query).toContain("('final_object_orphans', 'candidate_kind')");
+        expect(query).toContain("('final_object_orphans', 'cleanup_token')");
+        expect(query).toContain("('final_object_orphans', 'source_object_generation')");
         expect(query).toContain('users_role_unit_mandate_check');
+        expect(query).toContain('client_blob_uploads_gcs_metadata_check');
+        expect(query).toContain('file_attachments_object_generation_check');
+        expect(query).toContain('bulk_upload_items_object_generation_check');
+        expect(query).toContain('autentikasi_file_lampiran_generation_check');
+        expect(query).toContain('regulatory_rule_sets_source_generation_check');
         expect(query).toContain('surat_keluar_klasifikasi_keamanan_check');
+        expect(query).toContain('final_object_orphans_status_check');
+        expect(query).toContain('final_object_orphans_generation_check');
+        expect(query).toContain('final_object_orphans_identity_check');
+        expect(query).toContain("has_schema_privilege(current_user, 'public', 'USAGE')");
+        expect(query).toContain("has_table_privilege(current_user, 'public.users', 'SELECT')");
+        expect(query).toContain("has_table_privilege(current_user, 'public.audit_log', 'INSERT')");
+        expect(query).toContain(
+            "NOT has_table_privilege(current_user, 'public.final_object_orphans', 'SELECT')",
+        );
+        expect(query).toContain('NOT has_function_privilege(');
+        expect(query).toContain('simsa_mark_final_object_reference_candidate');
+        expect(query).toContain('simsa_reserve_api_final_object_candidate');
+        expect(query).toContain('simsa_record_api_final_object_candidate');
+        expect(query).toContain('simsa_mark_api_final_object_referenced');
+        expect(query).toContain('runtime_membership_closure(role_name)');
+        expect(query).toContain("parent.rolname = 'simsa_api_runtime'");
+        expect(query).toContain('AND NOT membership.admin_option');
+        expect(query).toContain('AND membership.inherit_option');
+        expect(query).toContain('AND NOT membership.set_option');
+        expect(query).toContain('(SELECT count(*) FROM runtime_membership_closure) = 1');
+        expect(query).toContain("role_name <> 'simsa_api_runtime'");
+        expect(query).toContain(
+            "NOT pg_catalog.pg_has_role(current_user, 'simsa_migrator', 'MEMBER')",
+        );
         expect(databaseRelease).toHaveBeenCalledWith(false);
+        expect(blobProbe).toHaveBeenCalledOnce();
+        expect(blobProbe.mock.calls[0]?.[0]?.abortSignal).toBeInstanceOf(AbortSignal);
     });
 
     it('fails closed without leaking schema details when the database contract is incomplete', async () => {

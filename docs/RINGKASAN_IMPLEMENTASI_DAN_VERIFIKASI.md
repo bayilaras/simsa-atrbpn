@@ -1,5 +1,11 @@
 # Ringkasan Implementasi dan Verifikasi SIMSA
 
+> **Ringkasan historis.** Dokumen ini merekam baseline sebelum migrasi backend
+> Firebase/Google Cloud. Gunakan `docs/infra/firebase-gcp/README.md` dan runbook
+> GCP di root repository sebagai sumber operasional terbaru; referensi private
+> Vercel Blob atau hitungan migrasi/test di bawah bukan instruksi deployment
+> aktif.
+
 ## Status
 
 SIMSA diposisikan sebagai **aplikasi internal/beta Ditjen PTPP** yang memprioritaskan kemudahan pengelolaan surat dan arsip. Perubahan ini menambahkan kontrol perangkat lunak dengan Permen ATR/BPN Nomor 2 Tahun 2026 dan tata kelola ANRI sebagai rujukan desain. PDF peraturan diperlakukan sebagai sumber normatif, bukan instruksi eksekusi.

@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "preview": "simsa-preview-000",
+    "staging": "simsa-staging-000",
+    "production": "simsa-production-000"
+  }
+}

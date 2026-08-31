@@ -2,25 +2,31 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Readable } from 'node:stream';
 
 const mocks = vi.hoisted(() => ({
-    uploadFile: vi.fn(),
+    uploadUntrustedFile: vi.fn(),
     downloadFile: vi.fn(),
     deleteFile: vi.fn(),
+    deleteFileGeneration: vi.fn(),
     insert: vi.fn(),
+    select: vi.fn(),
+    deleteRow: vi.fn(),
     audit: vi.fn(),
 }));
 
 vi.mock('../config/database', () => ({
     db: {
         insert: mocks.insert,
+        select: mocks.select,
+        delete: mocks.deleteRow,
         transaction: async (callback: any) => callback({ insert: mocks.insert }),
     },
 }));
 
 vi.mock('../services/blob-storage.service.js', () => ({
     blobStorageService: {
-        uploadFile: mocks.uploadFile,
+        uploadUntrustedFile: mocks.uploadUntrustedFile,
         downloadFile: mocks.downloadFile,
         deleteFile: mocks.deleteFile,
+        deleteFileGeneration: mocks.deleteFileGeneration,
     },
 }));
 
@@ -50,10 +56,11 @@ const directAttachment = {
 describe('FileAttachmentService Blob compensation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.uploadFile.mockResolvedValue({
+        mocks.uploadUntrustedFile.mockResolvedValue({
             url: 'https://store.private.blob.vercel-storage.com/uploads/request-created.pdf',
         });
         mocks.deleteFile.mockResolvedValue(true);
+        mocks.deleteFileGeneration.mockResolvedValue(true);
         mocks.audit.mockResolvedValue(undefined);
     });
 
@@ -127,6 +134,34 @@ describe('FileAttachmentService Blob compensation', () => {
         expect(mocks.deleteFile).toHaveBeenCalledWith(
             'https://store.private.blob.vercel-storage.com/uploads/request-created.pdf',
         );
+    });
+
+    it('compensates only the exact GCS generation when persistence fails', async () => {
+        mocks.uploadUntrustedFile.mockResolvedValueOnce({
+            url: 'gs://simsa-upload/uploads/request-created.pdf',
+            generation: '1735689600123456',
+        });
+        mocks.insert.mockReturnValue({
+            values: () => ({
+                returning: () => Promise.reject(new Error('database unavailable')),
+            }),
+        });
+
+        const service = new FileAttachmentService();
+        await expect(service.create({
+            suratId: '11111111-1111-4111-8111-111111111111',
+            suratType: 'masuk',
+            fileName: 'request.pdf',
+            mimeType: 'application/pdf',
+            buffer: Buffer.from('%PDF-1.7'),
+        }, { userId: '22222222-2222-4222-8222-222222222222' }))
+            .rejects.toThrow('database unavailable');
+
+        expect(mocks.deleteFileGeneration).toHaveBeenCalledWith(
+            'gs://simsa-upload/uploads/request-created.pdf',
+            '1735689600123456',
+        );
+        expect(mocks.deleteFile).not.toHaveBeenCalled();
     });
 });
 
@@ -230,5 +265,60 @@ describe('FileAttachmentService direct Blob preflight', () => {
             clientBlobClaim: directClaim,
             expectedPurpose: 'surat_masuk',
         })).rejects.toMatchObject({ statusCode: 503 });
+    });
+
+    it('pins a direct GCS preflight to the generation owned by its lease', async () => {
+        const locator = 'gs://simsa-upload/surat-masuk/user/upload.pdf';
+        vi.spyOn(clientBlobUploadService, 'preAuthorizeClaim').mockResolvedValueOnce({
+            objectGeneration: '1735689600123456',
+        } as any);
+        mocks.downloadFile.mockResolvedValueOnce({
+            stream: Readable.from([Buffer.from('%PDF-1.7')]),
+            mimeType: 'application/pdf',
+            fileName: 'direct.pdf',
+        });
+        const service = new FileAttachmentService();
+
+        await expect(service.prepareExisting({
+            ...directAttachment,
+            locator,
+        }, {
+            clientBlobClaim: { ...directClaim, blobUrl: locator },
+            expectedPurpose: 'surat_masuk',
+        })).resolves.toMatchObject({ objectGeneration: '1735689600123456' });
+
+        expect(mocks.downloadFile).toHaveBeenCalledWith(locator, expect.objectContaining({
+            generation: '1735689600123456',
+        }));
+    });
+});
+
+describe('FileAttachmentService exact-generation deletion', () => {
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        vi.clearAllMocks();
+    });
+
+    it('retains metadata when GCS deletion cannot prove success', async () => {
+        const attachment = {
+            id: 'attachment-1',
+            fileUrl: 'gs://simsa-final/released/attachment.pdf',
+            driveFileId: null,
+            objectGeneration: '1735689600123456',
+        };
+        mocks.select.mockReturnValue({
+            from: () => ({
+                where: () => ({ limit: async () => [attachment] }),
+            }),
+        });
+        mocks.deleteFileGeneration.mockResolvedValueOnce(false);
+        const service = new FileAttachmentService();
+
+        await expect(service.delete(attachment.id)).resolves.toBe(false);
+        expect(mocks.deleteFileGeneration).toHaveBeenCalledWith(
+            attachment.fileUrl,
+            attachment.objectGeneration,
+        );
+        expect(mocks.deleteRow).not.toHaveBeenCalled();
     });
 });

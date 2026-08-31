@@ -211,6 +211,34 @@
       "when": 1787972400000,
       "tag": "0029_outgoing_security_classification",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788058800000,
+      "tag": "0030_gcp_identity_bridge",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788059400000,
+      "tag": "0031_gcs_upload_intents",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788060000000,
+      "tag": "0032_versioned_runtime_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788060600000,
+      "tag": "0033_final_object_orphan_queue",
+      "breakpoints": true
     }
   ]
 }

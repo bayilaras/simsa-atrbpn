@@ -1,5 +1,12 @@
 # Status Deployment SIMSA — 29 Agustus 2026
 
+> **Arsip historis.** Laporan ini mendahului migrasi backend Firebase/Google
+> Cloud dan hanya berlaku untuk snapshot 29 Agustus 2026. Untuk keputusan
+> deployment saat ini gunakan `docs/infra/firebase-gcp/README.md`,
+> `CLOUD_SQL_BACKUP_RECOVERY.md`, `GCP_DATABASE_MAINTENANCE.md`, dan
+> `GCP_BACKEND_RELEASE.md`. Angka migrasi, test, serta langkah Vercel di bawah
+> ini tidak boleh dipakai sebagai gate promosi terbaru.
+
 ## Keputusan
 
 Status production saat verifikasi ini adalah **NO-GO**. Kode dapat dilanjutkan

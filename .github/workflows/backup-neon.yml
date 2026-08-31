@@ -10,7 +10,7 @@ on:
         description: Exact migration history expected in the source backup
         required: true
         type: choice
-        # The first Production backup must be taken before migrations 0021-0029.
+        # The first Production backup must be taken before migrations 0021-0033.
         # After that maintenance window, explicitly select post_migration.
         default: pre_migration
         options:
