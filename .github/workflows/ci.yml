@@ -61,10 +61,45 @@ jobs:
           docker build --target runtime --tag simsa-api:${{ github.sha }} --file backend/Dockerfile backend
           docker build --target maintenance --tag simsa-maintenance:${{ github.sha }} --file backend/Dockerfile backend
           docker run --rm --entrypoint node simsa-api:${{ github.sha }} --check dist/index.js
-          docker run --rm --entrypoint sh simsa-api:${{ github.sha }} -c \
-            'test ! -e src && test ! -e drizzle.config.ts && test ! -e node_modules/.bin/drizzle-kit'
-          docker run --rm --entrypoint sh simsa-maintenance:${{ github.sha }} -c \
-            'test -f drizzle.config.ts && test -f src/db/migrations/0033_final_object_orphan_queue.sql && test -f src/db/grants/0001_bootstrap_cloud_sql_roles.sql && test -f src/db/grants/0002_converge_application_grants.sql && test -f scripts/apply-database-grant-convergence.mjs && test -x node_modules/.bin/drizzle-kit && test -x node_modules/.bin/tsx && command -v psql'
+          docker run --rm --entrypoint node simsa-api:${{ github.sha }} --input-type=module -e \
+            "await import('better-auth'); await import('better-auth/adapters/drizzle'); await import('better-auth/crypto')"
+          docker run --rm --entrypoint sh simsa-api:${{ github.sha }} -c '
+            for forbidden in \
+              src drizzle.config.ts \
+              node_modules/drizzle-kit node_modules/vitest node_modules/vite node_modules/tsx \
+              node_modules/.bin/drizzle-kit node_modules/.bin/vitest node_modules/.bin/vite node_modules/.bin/tsx
+            do
+              if [ -e "$forbidden" ] || [ -L "$forbidden" ]; then
+                echo "Forbidden maintenance/test path in API image: $forbidden" >&2
+                exit 1
+              fi
+            done
+          '
+          docker run --rm --entrypoint sh simsa-maintenance:${{ github.sha }} -c '
+            for required in \
+              drizzle.config.ts \
+              src/db/migrations/0033_final_object_orphan_queue.sql \
+              src/db/grants/0001_bootstrap_cloud_sql_roles.sql \
+              src/db/grants/0002_converge_application_grants.sql \
+              scripts/apply-database-grant-convergence.mjs
+            do
+              if [ ! -f "$required" ]; then
+                echo "Required maintenance path is missing: $required" >&2
+                exit 1
+              fi
+            done
+            for executable in node_modules/.bin/drizzle-kit node_modules/.bin/tsx
+            do
+              if [ ! -x "$executable" ]; then
+                echo "Required maintenance executable is missing: $executable" >&2
+                exit 1
+              fi
+            done
+            command -v psql >/dev/null || {
+              echo "Required maintenance executable is missing: psql" >&2
+              exit 1
+            }
+          '
 
       - name: Lint frontend
         run: npm run lint

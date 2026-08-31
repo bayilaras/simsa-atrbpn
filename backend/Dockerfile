@@ -30,7 +30,23 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# better-auth declares maintenance/test CLIs as optional peers. npm retains
+# them when the root lockfile also has those tools as dev dependencies, so
+# remove the optional peer toolchain explicitly from the API image.
+RUN npm ci --omit=dev \
+    && rm -rf \
+        node_modules/drizzle-kit \
+        node_modules/vitest \
+        node_modules/@vitest \
+        node_modules/vite \
+        node_modules/vite-node \
+        node_modules/tsx \
+        node_modules/.bin/drizzle-kit \
+        node_modules/.bin/vitest \
+        node_modules/.bin/vite \
+        node_modules/.bin/vite-node \
+        node_modules/.bin/tsx \
+    && npm cache clean --force
 COPY --from=build /app/dist ./dist
 
 USER node
