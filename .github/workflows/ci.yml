@@ -66,8 +66,10 @@ jobs:
           docker run --rm --entrypoint sh simsa-api:${{ github.sha }} -c '
             for forbidden in \
               src drizzle.config.ts \
-              node_modules/drizzle-kit node_modules/vitest node_modules/vite node_modules/tsx \
-              node_modules/.bin/drizzle-kit node_modules/.bin/vitest node_modules/.bin/vite node_modules/.bin/tsx
+              node_modules/drizzle-kit node_modules/vitest node_modules/@vitest \
+              node_modules/vite node_modules/vite-node node_modules/tsx \
+              node_modules/.bin/drizzle-kit node_modules/.bin/vitest \
+              node_modules/.bin/vite node_modules/.bin/vite-node node_modules/.bin/tsx
             do
               if [ -e "$forbidden" ] || [ -L "$forbidden" ]; then
                 echo "Forbidden maintenance/test path in API image: $forbidden" >&2
