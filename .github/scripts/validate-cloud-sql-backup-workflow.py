@@ -99,6 +99,13 @@ require(
     "database_role_acl" in evidence_text and "SECURITY DEFINER execution privilege is unsafe" in evidence_text,
     "source/restore evidence does not verify the fixed-role ACL policy",
 )
+require(
+    "pg_catalog.to_jsonb(database_record)->>'datlocale'" in evidence_text
+    and "pg_catalog.to_jsonb(database_record)->>'daticulocale'" in evidence_text
+    and "database_record.datlocale" not in evidence_text
+    and "database_record.daticulocale" not in evidence_text,
+    "database locale evidence is not compatible with both PostgreSQL 16 and 17 catalogs",
+)
 require("retention-days: 14" in text, "artifact retention must remain short")
 require("cloud-sql-proxy" in text and "CLOUD_SQL_PROXY_SHA256" in text, "pinned proxy verification is missing")
 require("AGE_LINUX_AMD64_SHA256" in text, "pinned age verification is missing")

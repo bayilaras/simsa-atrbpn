@@ -511,8 +511,12 @@ SELECT concat_ws(
     database_record.datcollate,
     database_record.datctype,
     database_record.datlocprovider,
-    COALESCE(database_record.datlocale, ''),
-    COALESCE(database_record.daticurules, ''),
+    COALESCE(
+      pg_catalog.to_jsonb(database_record)->>'datlocale',
+      pg_catalog.to_jsonb(database_record)->>'daticulocale',
+      ''
+    ),
+    COALESCE(pg_catalog.to_jsonb(database_record)->>'daticurules', ''),
     COALESCE(database_record.datcollversion, '')
   ), 'UTF8')), 'hex')
 )
