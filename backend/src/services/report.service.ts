@@ -2,8 +2,24 @@ import { db } from '../config/database';
 import { suratMasuk } from '../db/schema/surat-masuk';
 import { suratKeluar } from '../db/schema/surat-keluar';
 import { arsip } from '../db/schema/arsip';
-import { archiveLending } from '../db/schema';
-import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
+import {
+    archiveLending,
+    arsipRuleSnapshots,
+    jraAppraisalCases,
+    jraAppraisalDecisions,
+    penyusutanArsip,
+    retentionTriggerEvents,
+    retentionTriggerVerifications,
+} from '../db/schema';
+import { eq, and, desc, sql, gte, lte, or, isNull, inArray } from 'drizzle-orm';
+import {
+    archiveRuleAssignmentService,
+    CURRENT_APPRAISAL_CASE_JOIN,
+    CURRENT_APPRAISAL_DECISION_JOIN,
+    CURRENT_RETENTION_TRIGGER_JOIN,
+    CURRENT_RETENTION_VERIFICATION_JOIN,
+    RETENTION_GOVERNANCE_EVIDENCE_SELECT,
+} from './archive-rule-assignment.service';
 
 // Types
 export interface ReportFilters {
@@ -15,6 +31,7 @@ export interface ReportFilters {
     tanggalSampai?: string;
     page?: number;
     limit?: number;
+    securityClassifications?: string[] | null;
 }
 
 export interface ArsipReportFilters {
@@ -25,6 +42,7 @@ export interface ArsipReportFilters {
     year?: number;
     page?: number;
     limit?: number;
+    securityClassifications?: string[] | null;
 }
 
 export interface LendingReportFilters {
@@ -37,12 +55,88 @@ export interface LendingReportFilters {
 }
 
 class ReportService {
+    private evaluateArchiveRetention(row: any) {
+        return archiveRuleAssignmentService.evaluateCanonicalRetention(
+            row.retentionTriggerDate,
+            {
+                arsipId: row.id,
+                ruleProvenanceStatus: row.ruleProvenanceStatus,
+                currentRuleSnapshotId: row.currentRuleSnapshotId,
+                jraItemId: row.jraItemId,
+                jraRuleSetId: row.jraRuleSetId,
+                retentionDecisionHash: row.retentionDecisionHash,
+                snapshotId: row.ruleSnapshotId,
+                snapshotArsipId: row.ruleSnapshotArsipId,
+                snapshotStatus: row.ruleSnapshotStatus,
+                snapshotJraItemId: row.ruleSnapshotJraItemId,
+                snapshotJraRuleSetId: row.ruleSnapshotJraRuleSetId,
+                snapshot: row.ruleSnapshot,
+                snapshotSha256: row.ruleSnapshotSha256,
+                currentRetentionTriggerEventId: row.currentRetentionTriggerEventId,
+                triggerEventRecordId: row.triggerEventRecordId,
+                triggerEventArsipId: row.triggerEventArsipId,
+                triggerEventDate: row.triggerEventDate,
+                triggerEventRevision: row.triggerEventRevision,
+                triggerEventActorId: row.triggerEventActorId,
+                triggerVerificationVerdict: row.triggerVerificationVerdict,
+                triggerVerifierId: row.triggerVerifierId,
+                latestTriggerEventRevision: row.latestTriggerEventRevision,
+                currentAppraisalDecisionId: row.currentAppraisalDecisionId,
+                appraisalDecisionRecordId: row.appraisalDecisionRecordId,
+                appraisalDecisionArsipId: row.appraisalDecisionArsipId,
+                appraisalDecisionStatus: row.appraisalDecisionStatus,
+                appraisalDecisionOutcome: row.appraisalDecisionOutcome,
+                appraisalDecisionSnapshot: row.appraisalDecisionSnapshot,
+                appraisalDecisionSha256: row.appraisalDecisionSha256,
+                appraisalCaseStatus: row.appraisalCaseStatus,
+                hasActiveAppraisalCase: row.hasActiveAppraisalCase,
+            },
+        );
+    }
+
+    private canonicalDispositionLabel(code: string | null | undefined) {
+        if (code === 'musnah') return 'Musnah';
+        if (code === 'permanen') return 'Permanen';
+        if (code === 'dinilai_kembali' || code === 'manual_review') return 'Dinilai Kembali';
+        return null;
+    }
+
+    private incomingClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        const normalized = sql<string>`CASE
+            WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+                IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+            THEN 'biasa'
+            ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+        END`;
+        return inArray(normalized, classes);
+    }
+
+    private arsipClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        return inArray(
+            sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+            classes,
+        );
+    }
+
+    private outgoingClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null || classes.includes('terbatas')) return undefined;
+        return sql`false`;
+    }
+
     // ==================== SURAT MASUK REPORTS ====================
     async getSuratMasukReport(filters: ReportFilters) {
-        const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
-        const conditions = [eq(suratMasuk.unitKerjaId, unitKerjaId)];
+        const conditions = [
+            eq(suratMasuk.unitKerjaId, unitKerjaId),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+            this.incomingClassificationCondition(securityClassifications),
+        ];
 
         if (tanggalDari) {
             conditions.push(gte(suratMasuk.tanggalSurat, tanggalDari));
@@ -81,7 +175,7 @@ class ReportService {
             .limit(limit)
             .offset(offset);
 
-        const stats = await this.getSuratMasukStats(unitKerjaId, year);
+        const stats = await this.getSuratMasukStats(unitKerjaId, year, securityClassifications);
 
         return {
             data,
@@ -95,11 +189,17 @@ class ReportService {
         };
     }
 
-    async getSuratMasukStats(unitKerjaId: string, year?: number) {
+    async getSuratMasukStats(
+        unitKerjaId: string,
+        year?: number,
+        securityClassifications?: string[] | null,
+    ) {
         const currentYear = year || new Date().getFullYear();
         const conditions = [
             eq(suratMasuk.unitKerjaId, unitKerjaId),
             eq(suratMasuk.tahun, currentYear),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+            this.incomingClassificationCondition(securityClassifications),
         ];
 
         const stats = await db
@@ -136,10 +236,14 @@ class ReportService {
 
     // ==================== SURAT KELUAR REPORTS ====================
     async getSuratKeluarReport(filters: ReportFilters) {
-        const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, year, tanggalDari, tanggalSampai, page = 1, limit = 50, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
-        const conditions = [eq(suratKeluar.unitKerjaId, unitKerjaId)];
+        const conditions = [
+            eq(suratKeluar.unitKerjaId, unitKerjaId),
+            or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+            this.outgoingClassificationCondition(securityClassifications),
+        ];
 
         if (tanggalDari) {
             conditions.push(gte(suratKeluar.tanggalSurat, tanggalDari));
@@ -175,7 +279,7 @@ class ReportService {
             .limit(limit)
             .offset(offset);
 
-        const stats = await this.getSuratKeluarStats(unitKerjaId, year);
+        const stats = await this.getSuratKeluarStats(unitKerjaId, year, securityClassifications);
 
         return {
             data,
@@ -189,11 +293,17 @@ class ReportService {
         };
     }
 
-    async getSuratKeluarStats(unitKerjaId: string, year?: number) {
+    async getSuratKeluarStats(
+        unitKerjaId: string,
+        year?: number,
+        securityClassifications?: string[] | null,
+    ) {
         const currentYear = year || new Date().getFullYear();
         const conditions = [
             eq(suratKeluar.unitKerjaId, unitKerjaId),
             eq(suratKeluar.tahun, currentYear),
+            or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+            this.outgoingClassificationCondition(securityClassifications),
         ];
 
         const stats = await db
@@ -228,23 +338,30 @@ class ReportService {
 
     // ==================== ARSIP REPORTS ====================
     async getArsipReport(filters: ArsipReportFilters) {
-        const { unitKerjaId, type = 'all', mediaType, daysAhead = 30, year, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, type = 'all', mediaType, daysAhead = 30, year, page = 1, limit = 50, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
-        const conditions = [eq(arsip.unitKerjaId, unitKerjaId)];
+        const conditions = [
+            eq(arsip.unitKerjaId, unitKerjaId),
+            this.arsipClassificationCondition(securityClassifications),
+        ];
 
         const now = new Date();
         const futureDate = new Date();
         futureDate.setDate(now.getDate() + daysAhead);
 
-        if (type === 'expiring') {
-            // Archives expiring within daysAhead days
-            conditions.push(gte(arsip.tanggalKadaluarsa, now.toISOString().split('T')[0]));
-            conditions.push(lte(arsip.tanggalKadaluarsa, futureDate.toISOString().split('T')[0]));
-        } else if (type === 'permanent') {
-            conditions.push(eq(arsip.retensiInaktif, 'Permanen'));
-        } else if (type === 'destroyed') {
-            conditions.push(eq(arsip.hasilAkhir, 'Musnah'));
+        if (type === 'destroyed') {
+            // An executed status is shared by pemindahan, penyerahan permanen,
+            // alih media, and pemusnahan. A destruction report must be backed by
+            // the exact executed pemusnahan batch, not merely that shared cache.
+            conditions.push(eq(arsip.disposalStatus, 'executed'));
+            conditions.push(sql`exists (
+                select 1
+                from ${penyusutanArsip}
+                where ${penyusutanArsip.id} = ${arsip.disposalBatchId}
+                  and ${penyusutanArsip.jenisPenyusutan} = 'pemusnahan'
+                  and ${penyusutanArsip.status} = 'executed'
+            )`);
         }
 
         if (mediaType && mediaType !== 'all') {
@@ -255,13 +372,7 @@ class ReportService {
             conditions.push(eq(arsip.tahun, year));
         }
 
-        const countResult = await db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(arsip)
-            .where(and(...conditions));
-        const total = countResult?.[0]?.count ?? 0;
-
-        const data = await db
+        const rows = await db
             .select({
                 id: arsip.id,
                 kodeKlasifikasi: arsip.kodeKlasifikasi,
@@ -274,19 +385,112 @@ class ReportService {
                 retensiAktif: arsip.retensiAktif,
                 retensiInaktif: arsip.retensiInaktif,
                 tanggalKadaluarsa: arsip.tanggalKadaluarsa,
+                retentionTriggerDate: arsip.retentionTriggerDate,
+                legalHold: arsip.legalHold,
                 hasilAkhir: arsip.hasilAkhir,
+                disposalStatus: arsip.disposalStatus,
+                ruleProvenanceStatus: arsip.ruleProvenanceStatus,
+                currentRuleSnapshotId: arsip.currentRuleSnapshotId,
+                currentRetentionTriggerEventId: arsip.currentRetentionTriggerEventId,
+                currentAppraisalDecisionId: arsip.currentAppraisalDecisionId,
+                jraItemId: arsip.jraItemId,
+                jraRuleSetId: arsip.jraRuleSetId,
+                retentionDecisionHash: arsip.retentionDecisionHash,
+                ruleSnapshotId: arsipRuleSnapshots.id,
+                ruleSnapshotArsipId: arsipRuleSnapshots.arsipId,
+                ruleSnapshotStatus: arsipRuleSnapshots.status,
+                ruleSnapshotJraItemId: arsipRuleSnapshots.jraItemId,
+                ruleSnapshotJraRuleSetId: arsipRuleSnapshots.jraRuleSetId,
+                ruleSnapshot: arsipRuleSnapshots.snapshot,
+                ruleSnapshotSha256: arsipRuleSnapshots.snapshotSha256,
+                ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
                 createdAt: arsip.createdAt,
             })
             .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
-            .orderBy(desc(arsip.createdAt))
-            .limit(limit)
-            .offset(offset);
+            .orderBy(desc(arsip.createdAt));
 
-        const stats = await this.getArsipStats(unitKerjaId, year);
+        const todayIso = now.toISOString().slice(0, 10);
+        const futureIso = futureDate.toISOString().slice(0, 10);
+        const canonicalRows = rows.flatMap((row) => {
+            const evaluation = this.evaluateArchiveRetention(row);
+            const expiry = evaluation.dates.tanggalKadaluarsa;
+            const dispositionCode = evaluation.effectiveDispositionCode;
+            const {
+                ruleSnapshotId: _ruleSnapshotId,
+                ruleSnapshotArsipId: _ruleSnapshotArsipId,
+                ruleSnapshotStatus: _ruleSnapshotStatus,
+                ruleSnapshotJraItemId: _ruleSnapshotJraItemId,
+                ruleSnapshotJraRuleSetId: _ruleSnapshotJraRuleSetId,
+                ruleSnapshot: _ruleSnapshot,
+                ruleSnapshotSha256: _ruleSnapshotSha256,
+                triggerEventRecordId: _triggerEventRecordId,
+                triggerEventArsipId: _triggerEventArsipId,
+                triggerEventType: _triggerEventType,
+                triggerEventLabel: _triggerEventLabel,
+                triggerEventDate: _triggerEventDate,
+                triggerEventEvidenceUri: _triggerEventEvidenceUri,
+                triggerEventRevision: _triggerEventRevision,
+                triggerEventActorId: _triggerEventActorId,
+                triggerVerificationVerdict: _triggerVerificationVerdict,
+                triggerVerifierId: _triggerVerifierId,
+                latestTriggerEventRevision: _latestTriggerEventRevision,
+                appraisalDecisionRecordId: _appraisalDecisionRecordId,
+                appraisalDecisionArsipId: _appraisalDecisionArsipId,
+                appraisalDecisionStatus: _appraisalDecisionStatus,
+                appraisalDecisionOutcome: _appraisalDecisionOutcome,
+                appraisalDecisionSnapshot: _appraisalDecisionSnapshot,
+                appraisalDecisionSha256: _appraisalDecisionSha256,
+                appraisalCaseStatus: _appraisalCaseStatus,
+                hasActiveAppraisalCase: _hasActiveAppraisalCase,
+                ...archiveRow
+            } = row;
+            const canonical = {
+                ...archiveRow,
+                retentionTriggerType: evaluation.verified ? row.triggerEventType : null,
+                retentionTriggerLabel: evaluation.verified ? row.triggerEventLabel : null,
+                retentionTriggerDate: evaluation.verified ? row.triggerEventDate : null,
+                retentionTriggerEvidence: evaluation.verified
+                    ? row.triggerEventEvidenceUri
+                    : null,
+                tanggalKadaluarsa: evaluation.verified ? expiry : null,
+                hasilAkhir: evaluation.verified
+                    ? this.canonicalDispositionLabel(dispositionCode)
+                    : null,
+                retentionEvaluationStatus: evaluation.verified
+                    ? (evaluation.effectiveDispositionCode ? 'effective' : 'appraisal_required')
+                    : 'blocked',
+                retentionBlockReason: evaluation.blockReason
+                    || evaluation.dispositionBlockReason
+                    || evaluation.calculationBlockReason,
+                canonicalRetention: evaluation,
+            };
+
+            if (type === 'expiring') {
+                if (row.legalHold || !evaluation.verified
+                    || !evaluation.calculationEligible || !expiry
+                    || expiry < todayIso || expiry > futureIso) return [];
+            } else if (type === 'permanent') {
+                if (!evaluation.verified || dispositionCode !== 'permanen') return [];
+            }
+            return [canonical];
+        });
+
+        const total = canonicalRows.length;
+        const filteredData = canonicalRows.slice(offset, offset + limit);
+
+        const stats = await this.getArsipStats(unitKerjaId, year, securityClassifications);
 
         return {
-            data,
+            data: filteredData,
             stats,
             pagination: {
                 page,
@@ -297,8 +501,15 @@ class ReportService {
         };
     }
 
-    async getArsipStats(unitKerjaId: string, year?: number) {
-        const conditions = [eq(arsip.unitKerjaId, unitKerjaId)];
+    async getArsipStats(
+        unitKerjaId: string,
+        year?: number,
+        securityClassifications?: string[] | null,
+    ) {
+        const conditions = [
+            eq(arsip.unitKerjaId, unitKerjaId),
+            this.arsipClassificationCondition(securityClassifications),
+        ];
         if (year) {
             conditions.push(eq(arsip.tahun, year));
         }
@@ -312,10 +523,45 @@ class ReportService {
                 total: sql<number>`count(*)::int`,
                 masuk: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'masuk')::int`,
                 keluar: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'keluar')::int`,
-                permanen: sql<number>`count(*) filter (where ${arsip.retensiInaktif} = 'Permanen')::int`,
             })
             .from(arsip)
             .where(and(...conditions));
+
+        const retentionRows = await db
+            .select({
+                id: arsip.id,
+                retentionTriggerDate: arsip.retentionTriggerDate,
+                ruleProvenanceStatus: arsip.ruleProvenanceStatus,
+                currentRuleSnapshotId: arsip.currentRuleSnapshotId,
+                currentRetentionTriggerEventId: arsip.currentRetentionTriggerEventId,
+                currentAppraisalDecisionId: arsip.currentAppraisalDecisionId,
+                jraItemId: arsip.jraItemId,
+                jraRuleSetId: arsip.jraRuleSetId,
+                retentionDecisionHash: arsip.retentionDecisionHash,
+                ruleSnapshotId: arsipRuleSnapshots.id,
+                ruleSnapshotArsipId: arsipRuleSnapshots.arsipId,
+                ruleSnapshotStatus: arsipRuleSnapshots.status,
+                ruleSnapshotJraItemId: arsipRuleSnapshots.jraItemId,
+                ruleSnapshotJraRuleSetId: arsipRuleSnapshots.jraRuleSetId,
+                ruleSnapshot: arsipRuleSnapshots.snapshot,
+                ruleSnapshotSha256: arsipRuleSnapshots.snapshotSha256,
+                ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
+            })
+            .from(arsip)
+            .leftJoin(arsipRuleSnapshots, and(
+                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
+                eq(arsipRuleSnapshots.arsipId, arsip.id),
+            ))
+            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
+            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
+            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
+            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
+            .where(and(...conditions));
+        const permanentCount = retentionRows.filter((row) => {
+            const evaluation = this.evaluateArchiveRetention(row);
+            return evaluation.verified
+                && evaluation.effectiveDispositionCode === 'permanen';
+        }).length;
 
         // By classification type
         const byClassification = await db
@@ -341,19 +587,34 @@ class ReportService {
             .orderBy(desc(sql`count(*)`));
 
         return {
-            summary: stats[0] || { total: 0, masuk: 0, keluar: 0, permanen: 0 },
+            summary: { ...(stats[0] || { total: 0, masuk: 0, keluar: 0 }), permanen: permanentCount },
             byClassification,
             byMediaType,
         };
     }
 
     // ==================== LENDING REPORTS ====================
+    // archive_lending has no unit column: an entry belongs to a unit through the
+    // arsip it borrows, or through the storage location for per-box lending.
+    private lendingUnitCondition(unitKerjaId?: string) {
+        if (!unitKerjaId) return undefined;
+
+        return or(
+            sql`${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`,
+            sql`${archiveLending.storageLocationId} IN (SELECT id FROM storage_locations WHERE unit_kerja_id = ${unitKerjaId})`
+        );
+    }
+
     async getLendingReport(filters: LendingReportFilters) {
-        const { status = 'all', tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, status = 'all', tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
         const offset = (page - 1) * limit;
 
         const conditions: any[] = [];
 
+        const unitCondition = this.lendingUnitCondition(unitKerjaId);
+        if (unitCondition) {
+            conditions.push(unitCondition);
+        }
         if (status !== 'all') {
             conditions.push(eq(archiveLending.status, status));
         }
@@ -390,7 +651,7 @@ class ReportService {
             .limit(limit)
             .offset(offset);
 
-        const stats = await this.getLendingStats();
+        const stats = await this.getLendingStats(unitKerjaId);
 
         return {
             data,
@@ -404,8 +665,9 @@ class ReportService {
         };
     }
 
-    async getLendingStats() {
+    async getLendingStats(unitKerjaId?: string) {
         const now = new Date().toISOString().split('T')[0];
+        const unitCondition = this.lendingUnitCondition(unitKerjaId);
 
         const stats = await db
             .select({
@@ -414,7 +676,8 @@ class ReportService {
                 returned: sql<number>`count(*) filter (where ${archiveLending.status} = 'returned')::int`,
                 overdue: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed' and ${archiveLending.dueDate} < ${now})::int`,
             })
-            .from(archiveLending);
+            .from(archiveLending)
+            .where(unitCondition);
 
         // Recent lending activity by month
         const currentYear = new Date().getFullYear();
@@ -424,7 +687,10 @@ class ReportService {
                 count: sql<number>`count(*)::int`,
             })
             .from(archiveLending)
-            .where(sql`extract(year from ${archiveLending.borrowDate}) = ${currentYear}`)
+            .where(and(
+                sql`extract(year from ${archiveLending.borrowDate}) = ${currentYear}`,
+                unitCondition
+            ))
             .groupBy(sql`extract(month from ${archiveLending.borrowDate})`)
             .orderBy(sql`extract(month from ${archiveLending.borrowDate})`);
 
@@ -441,13 +707,17 @@ class ReportService {
     }
 
     // ==================== SUMMARY REPORTS ====================
-    async getSummaryReport(unitKerjaId: string, year?: number) {
+    async getSummaryReport(
+        unitKerjaId: string,
+        year?: number,
+        securityClassifications?: string[] | null,
+    ) {
         const currentYear = year || new Date().getFullYear();
 
-        const suratMasukStats = await this.getSuratMasukStats(unitKerjaId, currentYear);
-        const suratKeluarStats = await this.getSuratKeluarStats(unitKerjaId, currentYear);
-        const arsipStats = await this.getArsipStats(unitKerjaId, currentYear);
-        const lendingStats = await this.getLendingStats();
+        const suratMasukStats = await this.getSuratMasukStats(unitKerjaId, currentYear, securityClassifications);
+        const suratKeluarStats = await this.getSuratKeluarStats(unitKerjaId, currentYear, securityClassifications);
+        const arsipStats = await this.getArsipStats(unitKerjaId, currentYear, securityClassifications);
+        const lendingStats = await this.getLendingStats(unitKerjaId);
 
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
         const combinedMonthly = monthNames.map((month, index) => ({

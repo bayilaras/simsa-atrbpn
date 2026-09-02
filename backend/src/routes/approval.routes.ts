@@ -1,108 +1,146 @@
-import express, { Response, NextFunction } from 'express';
-import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
-import { approvalService } from '../services/approval.service.js';
-import { signatureService } from '../services/signature.service.js';
+import express, { type NextFunction, type Response } from 'express';
 import { z } from 'zod';
-import { validateBody } from '../middlewares/validate.middleware.js';
+import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware.js';
+import { canWriteMiddleware } from '../middlewares/role.middleware.js';
+import { validateBody, validateIdParam } from '../middlewares/validate.middleware.js';
+import { approvalService, type ApprovalActor } from '../services/approval.service.js';
+import { signatureService } from '../services/signature.service.js';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
 
 const router = express.Router();
 
-// Schemas
 const submitSchema = z.object({
     suratId: z.string().uuid(),
     nextApproverId: z.string().uuid(),
-    notes: z.string().optional(),
+    notes: z.string().max(2000).optional(),
 });
 
 const actionSchema = z.object({
     suratId: z.string().uuid(),
-    notes: z.string().optional(),
-    nextApproverId: z.string().uuid().optional(), // Optional for final approval
+    notes: z.string().max(2000).optional(),
+    nextApproverId: z.string().uuid().optional(),
 });
 
 const rejectSchema = z.object({
     suratId: z.string().uuid(),
-    notes: z.string().min(1, "Alasan penolakan wajib diisi"),
+    notes: z.string().min(1, 'Alasan penolakan wajib diisi').max(2000),
 });
 
 const signSchema = z.object({
     suratId: z.string().uuid(),
-    passphrase: z.string().min(1, "Passphrase wajib diisi"),
+    passphrase: z.string().min(1, 'Passphrase wajib diisi').max(1024),
 });
 
-// Routes
+function actorFrom(req: AuthRequest): ApprovalActor {
+    return {
+        id: req.user!.id,
+        role: req.user!.role,
+        unitKerjaId: req.user!.unitKerjaId,
+    };
+}
 
-// GET /api/approval/pending — List pending approvals for current user
-router.get('/pending', authMiddleware, async (req: any, res: Response, next: NextFunction) => {
+// Approval records change evidentiary state. Authentication and the global
+// read-only-role guard therefore apply to every endpoint, including history.
+router.use(authMiddleware, canWriteMiddleware());
+
+router.get('/pending', async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-        const authReq = req as AuthRequest;
-        const userId = authReq.user?.id;
-        if (!userId) {
-            return res.status(401).json({ error: 'Unauthorized' });
+        const pending = await approvalService.getPending(actorFrom(req));
+        res.json({ success: true, data: pending });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.get(
+    '/approvers/:suratId',
+    validateIdParam('suratId'),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+        try {
+            const approvers = await approvalService.listEligibleApprovers(
+                req.params.suratId as string,
+                actorFrom(req),
+                resolveRecordUnitScope(req),
+            );
+            res.json({ success: true, data: approvers });
+        } catch (error) {
+            next(error);
         }
-        // Return pending approvals — for now returns empty array as placeholder
-        // TODO: implement approvalService.getPending(userId) when approval workflow is fully used
-        res.json({ success: true, data: [] });
-    } catch (error) {
-        next(error);
-    }
-});
+    },
+);
 
-// 1. Submit for Approval
-router.post('/submit', authMiddleware, validateBody(submitSchema), async (req: any, res: Response, next: NextFunction) => {
+router.post('/submit', validateBody(submitSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-        // Cast to AuthRequest to access user property safely
-        const authReq = req as AuthRequest;
         const { suratId, nextApproverId, notes } = req.body;
-        const result = await approvalService.submit(suratId, authReq.user!.id, nextApproverId, notes);
+        const result = await approvalService.submit(
+            suratId,
+            actorFrom(req),
+            nextApproverId,
+            resolveRecordUnitScope(req),
+            notes,
+        );
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);
     }
 });
 
-// 2. Approve
-router.post('/approve', authMiddleware, validateBody(actionSchema), async (req: any, res: Response, next: NextFunction) => {
+router.post('/approve', validateBody(actionSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-        const authReq = req as AuthRequest;
         const { suratId, notes, nextApproverId } = req.body;
-        // User must be current approver (checked in service, but we pass user id)
-        const result = await approvalService.approve(suratId, authReq.user!.id, notes, nextApproverId);
+        const result = await approvalService.approve(
+            suratId,
+            actorFrom(req),
+            resolveRecordUnitScope(req),
+            notes,
+            nextApproverId,
+        );
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);
     }
 });
 
-// 3. Reject
-router.post('/reject', authMiddleware, validateBody(rejectSchema), async (req: any, res: Response, next: NextFunction) => {
+router.post('/reject', validateBody(rejectSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-        const authReq = req as AuthRequest;
         const { suratId, notes } = req.body;
-        const result = await approvalService.reject(suratId, authReq.user!.id, notes);
+        const result = await approvalService.reject(
+            suratId,
+            actorFrom(req),
+            resolveRecordUnitScope(req),
+            notes,
+        );
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);
     }
 });
 
-// 4. Get History
-router.get('/history/:suratId', authMiddleware, async (req: any, res: Response, next: NextFunction) => {
-    try {
-        const { suratId } = req.params;
-        const history = await approvalService.getHistory(suratId);
-        res.json({ success: true, data: history });
-    } catch (error) {
-        next(error);
-    }
-});
+router.get(
+    '/history/:suratId',
+    validateIdParam('suratId'),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+        try {
+            const history = await approvalService.getHistory(
+                req.params.suratId as string,
+                resolveRecordUnitScope(req),
+            );
+            res.json({ success: true, data: history });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
 
-// 5. Digital Sign (Final Step often)
-router.post('/sign', authMiddleware, validateBody(signSchema), async (req: any, res: Response, next: NextFunction) => {
+router.post('/sign', validateBody(signSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-        const authReq = req as AuthRequest;
         const { suratId, passphrase } = req.body;
-        const result = await signatureService.sign(suratId, authReq.user!.id, passphrase);
+        const result = await signatureService.sign(
+            suratId,
+            actorFrom(req),
+            resolveRecordUnitScope(req),
+            passphrase,
+        );
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);

@@ -2,9 +2,17 @@ name: SIMSA CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, 'codex/**']
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simsa-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-typecheck:
@@ -13,16 +21,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
+            docs-site/package-lock.json
 
       - name: Install backend dependencies
         run: npm ci
@@ -32,27 +41,239 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      - name: Install documentation dependencies
+        run: npm ci
+        working-directory: docs-site
+
       - name: TypeScript check (backend)
         run: npx tsc --noEmit
         working-directory: backend
+
+      - name: Build backend
+        run: npm run build
+        working-directory: backend
+
+      - name: Build isolated API and maintenance container targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --check --file backend/Dockerfile backend
+          docker build --target runtime --tag simsa-api:${{ github.sha }} --file backend/Dockerfile backend
+          docker build --target maintenance --tag simsa-maintenance:${{ github.sha }} --file backend/Dockerfile backend
+          docker run --rm --entrypoint node simsa-api:${{ github.sha }} --check dist/index.js
+          docker run --rm --entrypoint node simsa-api:${{ github.sha }} --input-type=module -e \
+            "await import('better-auth'); await import('better-auth/adapters/drizzle'); await import('better-auth/crypto')"
+          docker run --rm --entrypoint sh simsa-api:${{ github.sha }} -c '
+            for forbidden in \
+              src drizzle.config.ts \
+              node_modules/drizzle-kit node_modules/vitest node_modules/@vitest \
+              node_modules/vite node_modules/vite-node node_modules/tsx \
+              node_modules/.bin/drizzle-kit node_modules/.bin/vitest \
+              node_modules/.bin/vite node_modules/.bin/vite-node node_modules/.bin/tsx
+            do
+              if [ -e "$forbidden" ] || [ -L "$forbidden" ]; then
+                echo "Forbidden maintenance/test path in API image: $forbidden" >&2
+                exit 1
+              fi
+            done
+          '
+          docker run --rm --entrypoint sh simsa-maintenance:${{ github.sha }} -c '
+            for required in \
+              drizzle.config.ts \
+              src/db/migrations/0033_final_object_orphan_queue.sql \
+              src/db/grants/0001_bootstrap_cloud_sql_roles.sql \
+              src/db/grants/0002_converge_application_grants.sql \
+              scripts/apply-database-grant-convergence.mjs
+            do
+              if [ ! -f "$required" ]; then
+                echo "Required maintenance path is missing: $required" >&2
+                exit 1
+              fi
+            done
+            for executable in node_modules/.bin/drizzle-kit node_modules/.bin/tsx
+            do
+              if [ ! -x "$executable" ]; then
+                echo "Required maintenance executable is missing: $executable" >&2
+                exit 1
+              fi
+            done
+            command -v psql >/dev/null || {
+              echo "Required maintenance executable is missing: psql" >&2
+              exit 1
+            }
+          '
+
+      - name: Lint frontend
+        run: npm run lint
+        working-directory: frontend
 
       - name: Build frontend
         run: npx vite build
         working-directory: frontend
 
-  test:
-    name: Backend Tests
+      - name: Build Firebase and Cloud Storage frontend profile
+        run: npx vite build
+        working-directory: frontend
+        env:
+          VITE_AUTH_PROVIDER: firebase
+          VITE_STORAGE_PROVIDER: gcs
+          # Public Firebase Web identifiers are compile-time configuration,
+          # not credentials. CI uses inert values so the provider-specific
+          # modules and environment guards are compiled on every change.
+          VITE_FIREBASE_API_KEY: ci-public-api-key
+          VITE_FIREBASE_AUTH_DOMAIN: simsa-ci.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: simsa-ci
+          VITE_FIREBASE_APP_ID: 1:123456789:web:ci
+          VITE_FIREBASE_APP_CHECK_SITE_KEY: ci-public-site-key
+
+      - name: Validate worker Compose definitions
+        run: |
+          docker compose --env-file .env.example -f compose.yml --profile '*' config --quiet
+          docker compose --env-file .env.example -f compose.yml -f compose.local.yml --profile '*' config --quiet
+        working-directory: deploy/workers
+
+      - name: Validate production worker image preflight
+        run: |
+          digest=$(printf 'a%.0s' {1..64})
+          SIMSA_WORKER_IMAGE="ghcr.io/example/simsa-worker@sha256:${digest}" \
+            sh ./preflight-worker-image.sh --format-only
+          if SIMSA_WORKER_IMAGE="ghcr.io/example/simsa-worker:latest" \
+            sh ./preflight-worker-image.sh --format-only; then
+            echo "::error::Worker preflight unexpectedly accepted a mutable tag."
+            exit 1
+          fi
+        working-directory: deploy/workers
+
+      - name: Build and inspect worker image
+        run: |
+          docker build --check --file backend/Dockerfile.worker backend
+          docker build --file backend/Dockerfile.worker --tag simsa-worker:${{ github.sha }} backend
+          docker run --rm --entrypoint node simsa-worker:${{ github.sha }} --check dist/workers/malware-scan.js
+
+      - name: Verify production uses the same-origin API proxy
+        run: |
+          if VITE_API_URL=https://simsa-backend.vercel.app npm run build > api-proxy-guard.log 2>&1; then
+            echo "::error::Production build unexpectedly accepted a cross-origin client API."
+            exit 1
+          fi
+          grep -q "must leave VITE_API_URL unset" api-proxy-guard.log
+          if VITE_API_URL=https://simsa-backend.vercel.app npm run build -- --mode staging > api-proxy-guard-staging.log 2>&1; then
+            echo "::error::Staging-mode deployment build unexpectedly accepted a cross-origin client API."
+            exit 1
+          fi
+          grep -q "must leave VITE_API_URL unset" api-proxy-guard-staging.log
+          rm -f api-proxy-guard.log
+          rm -f api-proxy-guard-staging.log
+        working-directory: frontend
+
+      - name: Build documentation
+        run: npm run build
+        working-directory: docs-site
+
+  clamav-smoke:
+    name: ClamAV Clean, EICAR & Restart Smoke
     runs-on: ubuntu-latest
-    needs: lint-and-typecheck
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate GCP release and Cloud SQL backup safety gates
+        run: |
+          python3 .github/scripts/validate-gcp-backend-release-workflow.py
+          python3 .github/scripts/validate-gcp-database-maintenance-workflow.py
+          python3 .github/scripts/validate-cloud-sql-backup-workflow.py
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Scan clean and EICAR samples before and after restart
+        shell: bash
+        env:
+          CLAMAV_HOST: 127.0.0.1
+          CLAMAV_PORT: '3310'
+          CLAMAV_SMOKE_WAIT_MS: '360000'
+          CLAMAV_SMOKE_POLL_MS: '2000'
+        run: |
+          set -Eeuo pipefail
+          container="simsa-clamav-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            status=$?
+            trap - EXIT
+            if [ "$status" -ne 0 ]; then
+              docker logs --tail 200 "$container" || true
+            fi
+            docker rm --force "$container" >/dev/null 2>&1 || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          clamav_image=$(docker compose \
+            --env-file deploy/workers/.env.example \
+            -f deploy/workers/compose.yml \
+            config --images | awk '/^clamav\/clamav:/{ print; exit }')
+          if [ -z "$clamav_image" ]; then
+            echo "::error::Could not resolve the pinned ClamAV image from Compose."
+            exit 1
+          fi
+
+          docker run --detach \
+            --name "$container" \
+            --publish 127.0.0.1:3310:3310 \
+            --env CLAMD_CONF_StreamMaxLength=52428800 \
+            "$clamav_image"
+
+          npm --prefix backend run smoke:clamav
+          docker restart --time 30 "$container"
+          npm --prefix backend run smoke:clamav
+
+  test:
+    name: Backend Tests (PostgreSQL ${{ matrix.postgres_major }})
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - postgres_major: 16
+            postgres_image: postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825
+          - postgres_major: 17
+            postgres_image: postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+    env:
+      POSTGRES_IMAGE: ${{ matrix.postgres_image }}
+
+    services:
+      postgres:
+        image: ${{ matrix.postgres_image }}
+        env:
+          POSTGRES_USER: simsa_test
+          POSTGRES_PASSWORD: simsa_test_password
+          POSTGRES_DB: simsa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U simsa_test -d simsa_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
@@ -64,23 +285,492 @@ jobs:
         run: npx vitest run --reporter=verbose
         working-directory: backend
 
+      - name: Bootstrap least-privilege roles, migrate, and prove seed idempotency
+        run: |
+          set -euo pipefail
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on <<'SQL'
+          CREATE ROLE "simsa-api-runtime@simsa-ci-db.iam" LOGIN PASSWORD 'simsa_test_password';
+          CREATE ROLE "simsa-event-runtime@simsa-ci-db.iam" LOGIN PASSWORD 'simsa_test_password';
+          CREATE ROLE "simsa-malware-worker@simsa-ci-db.iam" LOGIN PASSWORD 'simsa_test_password';
+          CREATE ROLE "simsa-final-cleanup@simsa-ci-db.iam" LOGIN PASSWORD 'simsa_test_password';
+          CREATE ROLE simsa_ci_maintenance LOGIN PASSWORD 'simsa_test_password';
+          CREATE ROLE simsa_ci_migrator LOGIN PASSWORD 'simsa_test_password';
+          CREATE ROLE simsa_ci_backup LOGIN PASSWORD 'simsa_test_password';
+          SQL
+          docker run --rm --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/backend/src/db/grants:/grants:ro" \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on \
+              --set database_name=simsa_test \
+              --set expected_owner=simsa_test \
+              --set identity_project_id=simsa-ci-db \
+              --set api_service_account=simsa-api-runtime@simsa-ci-db.iam.gserviceaccount.com \
+              --set event_service_account=simsa-event-runtime@simsa-ci-db.iam.gserviceaccount.com \
+              --set worker_service_account=simsa-malware-worker@simsa-ci-db.iam.gserviceaccount.com \
+              --set final_cleanup_service_account=simsa-final-cleanup@simsa-ci-db.iam.gserviceaccount.com \
+              --set api_principal=simsa-api-runtime@simsa-ci-db.iam \
+              --set event_principal=simsa-event-runtime@simsa-ci-db.iam \
+              --set worker_principal=simsa-malware-worker@simsa-ci-db.iam \
+              --set final_cleanup_principal=simsa-final-cleanup@simsa-ci-db.iam \
+              --set maintenance_principal=simsa_ci_maintenance \
+              --set migrator_principal=simsa_ci_migrator \
+              --set backup_principal=simsa_ci_backup \
+              --file /grants/0001_bootstrap_cloud_sql_roles.sql
+
+          MIGRATOR_DATABASE_URL='postgresql://simsa_ci_migrator:simsa_test_password@127.0.0.1:5432/simsa_test'
+          MAINTENANCE_DATABASE_URL='postgresql://simsa_ci_maintenance:simsa_test_password@127.0.0.1:5432/simsa_test'
+          DATABASE_URL="$MIGRATOR_DATABASE_URL" npm run db:migrate
+          # Fault injection: a rotated IAM-style login receives membership
+          # options plus direct database/schema/table/column/function ACLs.
+          # The post-migration bootstrap must remove every path, and DROP ROLE
+          # below proves that no ACL dependency survived.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on <<'SQL'
+          CREATE ROLE simsa_ci_stale LOGIN;
+          GRANT simsa_api_runtime TO simsa_ci_stale
+            WITH ADMIN TRUE, INHERIT TRUE, SET TRUE;
+          GRANT CONNECT, CREATE, TEMPORARY ON DATABASE simsa_test TO simsa_ci_stale;
+          SET ROLE simsa_migrator;
+          GRANT ALL ON SCHEMA public TO simsa_ci_stale;
+          GRANT ALL ON TABLE public.users TO simsa_ci_stale;
+          GRANT SELECT (email) ON TABLE public.users TO simsa_ci_stale;
+          GRANT EXECUTE ON FUNCTION public.prevent_srikandi_outbox_audit_mutation()
+            TO simsa_ci_stale;
+          RESET ROLE;
+          SQL
+          # A post-migration grant-admin rerun removes drizzle-kit's temporary
+          # database CREATE privilege and any direct/stale IAM ACL path.
+          docker run --rm --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/backend/src/db/grants:/grants:ro" \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on \
+              --set database_name=simsa_test \
+              --set expected_owner=simsa_test \
+              --set identity_project_id=simsa-ci-db \
+              --set api_service_account=simsa-api-runtime@simsa-ci-db.iam.gserviceaccount.com \
+              --set event_service_account=simsa-event-runtime@simsa-ci-db.iam.gserviceaccount.com \
+              --set worker_service_account=simsa-malware-worker@simsa-ci-db.iam.gserviceaccount.com \
+              --set final_cleanup_service_account=simsa-final-cleanup@simsa-ci-db.iam.gserviceaccount.com \
+              --set api_principal=simsa-api-runtime@simsa-ci-db.iam \
+              --set event_principal=simsa-event-runtime@simsa-ci-db.iam \
+              --set worker_principal=simsa-malware-worker@simsa-ci-db.iam \
+              --set final_cleanup_principal=simsa-final-cleanup@simsa-ci-db.iam \
+              --set maintenance_principal=simsa_ci_maintenance \
+              --set migrator_principal=simsa_ci_migrator \
+              --set backup_principal=simsa_ci_backup \
+              --file /grants/0001_bootstrap_cloud_sql_roles.sql
+          EXPECTED_MIGRATIONS_JSON="$(python3 ../.github/scripts/build-migration-manifest.py)"
+          export DB_IDENTITY_PROJECT_ID=simsa-ci-db
+          export DB_API_SERVICE_ACCOUNT=simsa-api-runtime@simsa-ci-db.iam.gserviceaccount.com
+          export DB_EVENT_SERVICE_ACCOUNT=simsa-event-runtime@simsa-ci-db.iam.gserviceaccount.com
+          export DB_WORKER_SERVICE_ACCOUNT=simsa-malware-worker@simsa-ci-db.iam.gserviceaccount.com
+          export DB_FINAL_CLEANUP_SERVICE_ACCOUNT=simsa-final-cleanup@simsa-ci-db.iam.gserviceaccount.com
+          export DB_API_PRINCIPAL=simsa-api-runtime@simsa-ci-db.iam
+          export DB_EVENT_PRINCIPAL=simsa-event-runtime@simsa-ci-db.iam
+          export DB_WORKER_PRINCIPAL=simsa-malware-worker@simsa-ci-db.iam
+          export DB_FINAL_CLEANUP_PRINCIPAL=simsa-final-cleanup@simsa-ci-db.iam
+          export DB_MAINTENANCE_PRINCIPAL=simsa_ci_maintenance
+          export DB_MIGRATOR_PRINCIPAL=simsa_ci_migrator
+          export DB_BACKUP_PRINCIPAL=simsa_ci_backup
+
+          # Fault injection: an out-of-band privileged SET ROLE grant to the
+          # API login must be rejected by bootstrap and grant convergence.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on <<'SQL'
+          CREATE ROLE simsa_ci_grant_admin_login LOGIN CREATEROLE;
+          GRANT simsa_ci_grant_admin_login TO "simsa-api-runtime@simsa-ci-db.iam"
+            WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
+          SQL
+          if PGHOST=127.0.0.1 PGDATABASE=simsa_test PGUSER=simsa_test \
+              PGPASSWORD=simsa_test_password DB_NAME=simsa_test \
+              DB_EXPECTED_CURRENT_OWNER=simsa_test npm run db:roles:bootstrap; then
+            echo '::error::Role bootstrap accepted a privileged API SET ROLE path.'
+            exit 1
+          fi
+          if PGHOST=127.0.0.1 PGDATABASE=simsa_test PGUSER=simsa_ci_migrator \
+              PGPASSWORD=simsa_test_password DB_NAME=simsa_test \
+              EXPECTED_MIGRATIONS_JSON="$EXPECTED_MIGRATIONS_JSON" \
+              npm run db:grants:converge; then
+            echo '::error::Grant convergence accepted a privileged API SET ROLE path.'
+            exit 1
+          fi
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on <<'SQL'
+          REVOKE simsa_ci_grant_admin_login FROM "simsa-api-runtime@simsa-ci-db.iam";
+          DROP ROLE simsa_ci_grant_admin_login;
+          SQL
+
+          # Fault injection at the NOLOGIN policy layer: a privileged parent
+          # would be inherited by the API login even though its direct
+          # membership still looks canonical. Both gates must reject it.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on <<'SQL'
+          CREATE ROLE simsa_ci_policy_escalation LOGIN CREATEROLE;
+          GRANT simsa_ci_policy_escalation TO simsa_api_runtime
+            WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
+          SQL
+          if PGHOST=127.0.0.1 PGDATABASE=simsa_test PGUSER=simsa_test \
+              PGPASSWORD=simsa_test_password DB_NAME=simsa_test \
+              DB_EXPECTED_CURRENT_OWNER=simsa_test npm run db:roles:bootstrap; then
+            echo '::error::Role bootstrap accepted a privileged API policy-role parent.'
+            exit 1
+          fi
+          if PGHOST=127.0.0.1 PGDATABASE=simsa_test PGUSER=simsa_ci_migrator \
+              PGPASSWORD=simsa_test_password DB_NAME=simsa_test \
+              EXPECTED_MIGRATIONS_JSON="$EXPECTED_MIGRATIONS_JSON" \
+              npm run db:grants:converge; then
+            echo '::error::Grant convergence accepted a privileged API policy-role parent.'
+            exit 1
+          fi
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on <<'SQL'
+          REVOKE simsa_ci_policy_escalation FROM simsa_api_runtime;
+          DROP ROLE simsa_ci_policy_escalation;
+          SQL
+
+          PGHOST=127.0.0.1 PGDATABASE=simsa_test PGUSER=simsa_ci_migrator \
+            PGPASSWORD=simsa_test_password DB_NAME=simsa_test \
+            DB_IDENTITY_PROJECT_ID=simsa-ci-db \
+            DB_API_SERVICE_ACCOUNT=simsa-api-runtime@simsa-ci-db.iam.gserviceaccount.com \
+            DB_EVENT_SERVICE_ACCOUNT=simsa-event-runtime@simsa-ci-db.iam.gserviceaccount.com \
+            DB_WORKER_SERVICE_ACCOUNT=simsa-malware-worker@simsa-ci-db.iam.gserviceaccount.com \
+            DB_FINAL_CLEANUP_SERVICE_ACCOUNT=simsa-final-cleanup@simsa-ci-db.iam.gserviceaccount.com \
+            DB_API_PRINCIPAL=simsa-api-runtime@simsa-ci-db.iam \
+            DB_EVENT_PRINCIPAL=simsa-event-runtime@simsa-ci-db.iam \
+            DB_WORKER_PRINCIPAL=simsa-malware-worker@simsa-ci-db.iam \
+            DB_FINAL_CLEANUP_PRINCIPAL=simsa-final-cleanup@simsa-ci-db.iam \
+            DB_MAINTENANCE_PRINCIPAL=simsa_ci_maintenance \
+            DB_MIGRATOR_PRINCIPAL=simsa_ci_migrator \
+            DB_BACKUP_PRINCIPAL=simsa_ci_backup \
+            EXPECTED_MIGRATIONS_JSON="$EXPECTED_MIGRATIONS_JSON" \
+            npm run db:grants:converge
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on <<'SQL'
+          DO $proof$
+          BEGIN
+            IF pg_has_role('simsa_ci_stale', 'simsa_api_runtime', 'MEMBER')
+               OR has_database_privilege('simsa_ci_stale', current_database(), 'CONNECT')
+               OR has_database_privilege('simsa_ci_stale', current_database(), 'CREATE')
+               OR has_database_privilege('simsa_ci_stale', current_database(), 'TEMPORARY')
+               OR has_schema_privilege('simsa_ci_stale', 'public', 'USAGE')
+               OR has_table_privilege('simsa_ci_stale', 'public.users', 'SELECT')
+               OR has_column_privilege('simsa_ci_stale', 'public.users', 'email', 'SELECT')
+               OR has_function_privilege(
+                    'simsa_ci_stale',
+                    'public.prevent_srikandi_outbox_audit_mutation()',
+                    'EXECUTE'
+               ) THEN
+              RAISE EXCEPTION 'stale IAM principal retained a database privilege path';
+            END IF;
+          END
+          $proof$;
+          DROP ROLE simsa_ci_stale;
+          SQL
+          DATABASE_URL="$MAINTENANCE_DATABASE_URL" npm run seed:all &
+          first_seed=$!
+          DATABASE_URL="$MAINTENANCE_DATABASE_URL" npm run seed:all &
+          second_seed=$!
+          wait "$first_seed"
+          wait "$second_seed"
+          DATABASE_URL="$MAINTENANCE_DATABASE_URL" npm run seed:all
+        working-directory: backend
+        env:
+          PGPASSWORD: simsa_test_password
+
+      - name: Validate exact backup schema profiles
+        env:
+          PGPASSWORD: simsa_test_password
+        run: |
+          set -euo pipefail
+          EXPECTED_MIGRATIONS_JSON=$(python3 \
+            "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py")
+          PROFILE_ERROR_LOG="$RUNNER_TEMP/simsa-backup-pre-profile-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+          POST_AUTO_EVIDENCE="$RUNNER_TEMP/simsa-backup-post-auto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.evidence"
+          PRE_AUTO_EVIDENCE="$RUNNER_TEMP/simsa-backup-pre-auto-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.evidence"
+          PRE_PROFILE_DATABASE='simsa_backup_pre_profile'
+          cleanup_backup_profile_tests() {
+            status=$?
+            trap - EXIT
+            docker run --rm --network host \
+              --env PGPASSWORD \
+              "$POSTGRES_IMAGE" \
+              dropdb \
+                --host 127.0.0.1 \
+                --username simsa_test \
+                --if-exists \
+                --force \
+                "$PRE_PROFILE_DATABASE" >/dev/null 2>&1 || true
+            rm -f -- "$PROFILE_ERROR_LOG" "$POST_AUTO_EVIDENCE" "$PRE_AUTO_EVIDENCE"
+            exit "$status"
+          }
+          trap cleanup_backup_profile_tests EXIT
+
+          # The fully migrated CI database must compile and pass the exact
+          # 0000-0033 post-migration profile. Verifier output contains only
+          # counts/digests and is discarded here; no application rows are logged.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname simsa_test \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=post_migration \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > /dev/null <<'SQL'
+          INSERT INTO public.users (email)
+          VALUES ('backup-verifier@ci.invalid')
+          ON CONFLICT (email) DO NOTHING;
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+
+          # Scheduled mode may resolve only one of the exact histories. On the
+          # current 34-migration DB it must resolve to post_migration.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname simsa_test \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=auto \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > "$POST_AUTO_EVIDENCE" <<'SQL'
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+          grep -Fq $'schema_profile\tpost_migration\t1\t' "$POST_AUTO_EVIDENCE"
+
+          # A 34-migration database must fail closed when the operator chooses
+          # the pre-migration (0000-0020) profile.
+          if docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname simsa_test \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=pre_migration \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > "$PROFILE_ERROR_LOG" 2>&1 <<'SQL'
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+          then
+            echo "::error::pre_migration profile unexpectedly accepted migration 0021-0033."
+            exit 1
+          fi
+          grep -Fq 'migration history does not exactly match the pre_migration profile' \
+            "$PROFILE_ERROR_LOG"
+
+          # Build an independent database from the real 0000-0020 migration SQL
+          # and hashes. Deleting later history rows from the 0033 schema would
+          # not exercise the schema that the first Production backup will use.
+          docker run --rm --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            dropdb \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --if-exists \
+              --force \
+              "$PRE_PROFILE_DATABASE"
+          docker run --rm --network host \
+            --env PGPASSWORD \
+            "$POSTGRES_IMAGE" \
+            createdb \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --template template0 \
+              "$PRE_PROFILE_DATABASE"
+          python3 "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py" \
+              --emit-profile-sql pre_migration | \
+            docker run --rm --interactive --network host \
+              --env PGPASSWORD \
+              "$POSTGRES_IMAGE" \
+              psql \
+                --host 127.0.0.1 \
+                --username simsa_test \
+                --dbname "$PRE_PROFILE_DATABASE" \
+                --no-psqlrc \
+                --set ON_ERROR_STOP=on \
+                --quiet
+
+          # Explicit pre_migration must pass on the actual 0020 schema.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname "$PRE_PROFILE_DATABASE" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=pre_migration \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > /dev/null <<'SQL'
+          INSERT INTO public.users (email)
+          VALUES ('backup-verifier-pre@ci.invalid')
+          ON CONFLICT (email) DO NOTHING;
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+
+          # Scheduled auto mode must resolve the exact same 0020 fixture to the
+          # pre_migration profile, never merely accept a numeric threshold.
+          docker run --rm --interactive --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
+            "$POSTGRES_IMAGE" \
+            psql \
+              --host 127.0.0.1 \
+              --username simsa_test \
+              --dbname "$PRE_PROFILE_DATABASE" \
+              --no-psqlrc \
+              --set ON_ERROR_STOP=on \
+              --set backup_profile=auto \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              > "$PRE_AUTO_EVIDENCE" <<'SQL'
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \i /verifier/collect-backup-evidence.sql
+          ROLLBACK;
+          SQL
+          grep -Fq $'schema_profile\tpre_migration\t1\t' "$PRE_AUTO_EVIDENCE"
+
+      - name: Run PostgreSQL concurrency tests
+        run: npm run test:postgres-locks
+        working-directory: backend
+        env:
+          TEST_POSTGRES_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
+          TEST_DB_API_PRINCIPAL: simsa-api-runtime@simsa-ci-db.iam
+          TEST_DB_EVENT_PRINCIPAL: simsa-event-runtime@simsa-ci-db.iam
+          TEST_DB_WORKER_PRINCIPAL: simsa-malware-worker@simsa-ci-db.iam
+          TEST_DB_FINAL_CLEANUP_PRINCIPAL: simsa-final-cleanup@simsa-ci-db.iam
+          TEST_DB_MAINTENANCE_PRINCIPAL: simsa_ci_maintenance
+          TEST_DB_MIGRATOR_PRINCIPAL: simsa_ci_migrator
+          TEST_DB_BACKUP_PRINCIPAL: simsa_ci_backup
+          TEST_DB_GRANT_ADMIN_PRINCIPAL: simsa_test
+
+  backend-tests-required:
+    name: Backend Tests
+    if: ${{ always() }}
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every PostgreSQL backend test
+        shell: bash
+        env:
+          BACKEND_TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          set -euo pipefail
+          if [ "$BACKEND_TEST_RESULT" != "success" ]; then
+            echo "::error::Backend test matrix result was $BACKEND_TEST_RESULT, expected success."
+            exit 1
+          fi
+
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Run tests
+        run: npx vitest run --reporter=verbose
+        working-directory: frontend
+
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Audit backend
-        run: npm audit --audit-level=high || true
+        run: npm audit --audit-level=high
         working-directory: backend
 
       - name: Audit frontend
-        run: npm audit --audit-level=high || true
+        run: npm audit --audit-level=high
         working-directory: frontend
+
+      # Docusaurus currently has a no-fix high advisory in its trusted local-image
+      # build pipeline. Block critical regressions until upstream ships a patch.
+      - name: Audit documentation
+        run: npm audit --audit-level=critical
+        working-directory: docs-site

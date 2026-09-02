@@ -11,8 +11,15 @@ node_modules/
 
 # Build output
 dist/
-!backend/dist/
 build/
+
+# Terraform working data and local state (provider lock files stay tracked)
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
 
 # Logs
 *.log
@@ -36,6 +43,7 @@ server*.log
 debug-seed.log
 
 # Test output
+output/
 test-output*.txt
 tsc_errors*.txt
 reproduction_error*.txt
@@ -64,3 +72,7 @@ uploads/
 coverage/
 .vercel
 .env*.local
+
+# Generated Python bytecode from local workflow validators
+__pycache__/
+*.py[cod]

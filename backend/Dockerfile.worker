@@ -1,0 +1,25 @@
+ARG NODE_IMAGE=node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e
+FROM ${NODE_IMAGE} AS build
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
+
+FROM ${NODE_IMAGE} AS runtime
+
+ENV NODE_ENV=production
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=build /app/dist ./dist
+
+USER node
+
+# Compose or the target runtime may override this with another worker entrypoint.
+# Run Node directly so it receives termination signals without an npm wrapper.
+CMD ["node", "dist/workers/malware-scan.js"]

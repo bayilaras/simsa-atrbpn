@@ -34,6 +34,17 @@ vi.mock('../../db/schema', () => ({
     SuratMasuk: {},
 }));
 
+vi.mock('../settings.service.js', () => ({
+    settingsService: {
+        lockSuratTemplates: vi.fn().mockResolvedValue({
+            masukFormat: '{noUrut}/SM/{tahun}',
+            keluarFormat: '{noUrut}/SK/{tahun}',
+        }),
+        generateSuratNumber: vi.fn((_format: string, context: any) =>
+            `${String(context.noUrut).padStart(3, '0')}/SM/${context.tahun}`),
+    },
+}));
+
 describe('SuratMasukService', () => {
     let service: SuratMasukService;
     const mockDb = db as any;
@@ -127,7 +138,7 @@ describe('SuratMasukService', () => {
             };
             mockDb.select.mockReturnValue(mockChain);
 
-            const result = await service.findById('123');
+            const result = await service.findById('123', 'ditjen');
             expect(result).toEqual(mockSurat);
         });
 
@@ -139,7 +150,7 @@ describe('SuratMasukService', () => {
             };
             mockDb.select.mockReturnValue(mockChain);
 
-            const result = await service.findById('999');
+            const result = await service.findById('999', 'ditjen');
             expect(result).toBeNull();
         });
     });

@@ -56,4 +56,4 @@ SIMSA **tidak menyediakan pendaftaran publik**. Jika belum punya akun:
 
 ---
 
-[⬅️ Sebelumnya: Selamat Datang](../README.md) | [Selanjutnya: Login dengan Email & Password ➡️](login-email-password.md)
+[⬅️ Sebelumnya: Selamat Datang](../index.md) | [Selanjutnya: Login dengan Email & Password ➡️](login-email-password.md)

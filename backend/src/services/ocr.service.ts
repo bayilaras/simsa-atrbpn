@@ -1,24 +1,150 @@
 import Tesseract from 'tesseract.js';
+import { tmpdir } from 'node:os';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('OcrService');
 
-// pdfjs-dist is problematic in Node.js environments
-// Using a lazy import approach to avoid crashes at module load time
+// Native PDF rendering is loaded lazily. Text-layer extraction must remain
+// available even when a deployment is missing the optional native canvas
+// binary; scanned PDFs then fail closed instead of crashing the application.
 let pdfjs: any = null;
+let canvasModule: typeof import('@napi-rs/canvas') | null = null;
+
+export const OCR_LIMITS = Object.freeze({
+    maxPdfBytes: 50 * 1024 * 1024,
+    maxPdfPages: 100,
+    maxOcrPages: 10,
+    maxExtractedTextChars: 50_000,
+    minMeaningfulTextChars: 50,
+    renderScale: 2,
+    maxPagePixels: 12_000_000,
+    maxTotalRenderPixels: 60_000_000,
+    maxRenderedImageBytes: 20 * 1024 * 1024,
+    pdfTextTimeoutMs: 30_000,
+    pdfLoadTimeoutMs: 15_000,
+    pageRenderTimeoutMs: 20_000,
+    workerStartTimeoutMs: 45_000,
+    pageOcrTimeoutMs: 60_000,
+    totalOcrTimeoutMs: 180_000,
+});
+
+class OCRProcessingError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'OCRProcessingError';
+    }
+}
+
+function abortReason(signal: AbortSignal): Error {
+    return signal.reason instanceof Error
+        ? signal.reason
+        : new OCRProcessingError('Pemrosesan OCR dibatalkan');
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) throw abortReason(signal);
+}
+
+function assertPdfInput(buffer: Buffer): void {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 5) {
+        throw new OCRProcessingError('Dokumen PDF kosong atau tidak valid');
+    }
+    if (buffer.length > OCR_LIMITS.maxPdfBytes) {
+        throw new OCRProcessingError('Ukuran PDF melebihi batas OCR 50 MB');
+    }
+    if (!buffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+        throw new OCRProcessingError('Signature dokumen PDF tidak valid');
+    }
+}
+
+async function withTimeout<T>(
+    operation: Promise<T>,
+    timeoutMs: number,
+    message: string,
+    onCancel?: () => unknown | Promise<unknown>,
+    signal?: AbortSignal,
+): Promise<T> {
+    let cancellationPromise: Promise<void> | null = null;
+    const cancelOperation = () => {
+        if (!onCancel) return Promise.resolve();
+        if (cancellationPromise) return cancellationPromise;
+        try {
+            cancellationPromise = Promise.resolve(onCancel())
+                .then(() => undefined)
+                .catch(() => undefined);
+        } catch {
+            // The original timeout/abort remains authoritative.
+            cancellationPromise = Promise.resolve();
+        }
+        return cancellationPromise;
+    };
+
+    if (signal?.aborted) {
+        cancelOperation();
+        void operation.catch(() => undefined);
+        throw abortReason(signal);
+    }
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+        cancelOperation();
+        void operation.catch(() => undefined);
+        throw new OCRProcessingError(message);
+    }
+
+    let timer: NodeJS.Timeout | undefined;
+    let onAbort: (() => void) | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+            cancelOperation();
+            reject(new OCRProcessingError(message));
+        }, timeoutMs);
+        timer.unref?.();
+    });
+    const abort = signal ? new Promise<never>((_resolve, reject) => {
+        onAbort = () => {
+            const reason = abortReason(signal);
+            void cancelOperation().finally(() => reject(reason));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+    }) : null;
+
+    try {
+        return await Promise.race(abort ? [operation, timeout, abort] : [operation, timeout]);
+    } finally {
+        if (timer) clearTimeout(timer);
+        if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+    }
+}
+
+function remainingMs(deadline: number, stepLimitMs: number): number {
+    return Math.min(stepLimitMs, deadline - Date.now());
+}
+
+function hasMeaningfulText(text: string): boolean {
+    return text.trim().length >= OCR_LIMITS.minMeaningfulTextChars;
+}
 
 async function loadPdfJs() {
     if (!pdfjs) {
         try {
-            // Try legacy build first for Node.js compatibility
+            // The legacy build is the supported Node-compatible entry point.
             pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-            pdfjs.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
         } catch (e) {
-            log.warn('Failed to load pdfjs-dist legacy build, PDF extraction disabled');
+            log.warn({ err: e }, 'Failed to load the PDF parser');
             pdfjs = null;
         }
     }
     return pdfjs;
+}
+
+async function loadCanvasModule(): Promise<typeof import('@napi-rs/canvas')> {
+    if (canvasModule) return canvasModule;
+    try {
+        canvasModule = await import('@napi-rs/canvas');
+        return canvasModule;
+    } catch (error) {
+        log.error({ err: error }, 'Native PDF renderer is unavailable');
+        throw new OCRProcessingError('Mesin render OCR PDF tidak tersedia');
+    }
 }
 
 // Enhanced metadata interface with additional fields
@@ -48,6 +174,24 @@ export interface OCRResult {
     error?: string;
 }
 
+function emptyMetadata(): ExtractedMetadata {
+    return {
+        nomorSurat: null,
+        perihal: null,
+        tanggalSurat: null,
+        pengirim: null,
+        extractedText: '',
+        penerima: null,
+        tembusan: [],
+        lampiran: null,
+        sifatSurat: null,
+        klasifikasiKeamanan: null,
+        jenisSurat: null,
+        keywords: [],
+        summary: null,
+    };
+}
+
 // Common Indonesian stopwords to filter out from keywords
 const STOPWORDS = new Set([
     'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'dengan', 'pada', 'ini', 'itu',
@@ -59,52 +203,336 @@ const STOPWORDS = new Set([
     'hormat', 'menteri', 'direktur', 'kepala', 'sekretaris', 'tempat', 'yth'
 ]);
 
-class OCRService {
+export class OCRService {
     // Extract text from PDF buffer
-    async extractTextFromPDF(buffer: Buffer): Promise<string> {
+    async extractTextFromPDF(buffer: Buffer, signal?: AbortSignal): Promise<string> {
+        throwIfAborted(signal);
+        assertPdfInput(buffer);
+        const deadline = Date.now() + OCR_LIMITS.pdfTextTimeoutMs;
+        let loadingTask: any = null;
+        let pdfDoc: any = null;
+
         try {
-            const pdf = await loadPdfJs();
+            const pdf = await withTimeout(
+                loadPdfJs(),
+                remainingMs(deadline, OCR_LIMITS.pdfLoadTimeoutMs),
+                'Waktu pemuatan mesin PDF habis',
+                undefined,
+                signal,
+            );
             if (!pdf) {
-                return '[PDF extraction tidak tersedia]';
+                throw new OCRProcessingError('Mesin ekstraksi PDF tidak tersedia');
             }
 
-            // Load PDF document
             const pdfData = new Uint8Array(buffer);
-            const pdfDoc = await pdf.getDocument({ data: pdfData }).promise;
+            loadingTask = pdf.getDocument({
+                data: pdfData,
+                isEvalSupported: false,
+                stopAtErrors: true,
+                useSystemFonts: true,
+                maxImageSize: OCR_LIMITS.maxPagePixels,
+            });
+            pdfDoc = await withTimeout(
+                loadingTask.promise,
+                remainingMs(deadline, OCR_LIMITS.pdfLoadTimeoutMs),
+                'Waktu pemuatan PDF habis',
+                () => loadingTask?.destroy(),
+                signal,
+            );
+
+            if (!Number.isInteger(pdfDoc.numPages) || pdfDoc.numPages < 1) {
+                throw new OCRProcessingError('PDF tidak memiliki halaman yang dapat diproses');
+            }
+            if (pdfDoc.numPages > OCR_LIMITS.maxPdfPages) {
+                throw new OCRProcessingError(
+                    `PDF melebihi batas ${OCR_LIMITS.maxPdfPages} halaman`,
+                );
+            }
 
             let fullText = '';
 
-            // Extract text from each page
             for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-                const page = await pdfDoc.getPage(pageNum);
-                const textContent = await page.getTextContent();
-                const pageText = textContent.items
-                    .map((item: any) => item.str)
-                    .join(' ');
-                fullText += pageText + '\n';
+                const page: any = await withTimeout<any>(
+                    pdfDoc.getPage(pageNum),
+                    remainingMs(deadline, 5_000),
+                    'Waktu ekstraksi teks PDF habis',
+                    () => pdfDoc?.destroy(),
+                    signal,
+                );
+                try {
+                    const textContent: any = await withTimeout<any>(
+                        page.getTextContent(),
+                        remainingMs(deadline, 5_000),
+                        'Waktu ekstraksi teks PDF habis',
+                        () => pdfDoc?.destroy(),
+                        signal,
+                    );
+                    const pageText = textContent.items
+                        .map((item: any) => typeof item?.str === 'string' ? item.str : '')
+                        .join(' ')
+                        .trim();
+                    if (pageText) fullText += `${pageText}\n`;
+
+                    if (fullText.length >= OCR_LIMITS.maxExtractedTextChars) {
+                        fullText = fullText.slice(0, OCR_LIMITS.maxExtractedTextChars);
+                        break;
+                    }
+                } finally {
+                    page.cleanup?.();
+                }
             }
 
             return fullText.trim();
         } catch (error) {
-            log.error({ err: error }, 'Error extracting text from PDF:');
+            log.error({ err: error }, 'Error extracting text from PDF');
             throw error;
+        } finally {
+            try {
+                if (pdfDoc) await pdfDoc.destroy();
+                else if (loadingTask) await loadingTask.destroy();
+            } catch (error) {
+                log.warn({ err: error }, 'Failed to release PDF parser resources');
+            }
         }
     }
 
     // Perform OCR on an image buffer using Tesseract
-    async performOCR(imageBuffer: Buffer): Promise<string> {
+    async performOCR(imageBuffer: Buffer, signal?: AbortSignal): Promise<string> {
+        throwIfAborted(signal);
+        if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+            throw new OCRProcessingError('Citra OCR kosong atau tidak valid');
+        }
+        if (imageBuffer.length > OCR_LIMITS.maxRenderedImageBytes) {
+            throw new OCRProcessingError('Citra OCR melebihi batas memori');
+        }
+
+        const deadline = Date.now()
+            + OCR_LIMITS.workerStartTimeoutMs
+            + OCR_LIMITS.pageOcrTimeoutMs;
+        let worker: Awaited<ReturnType<typeof Tesseract.createWorker>> | null = null;
+
         try {
-            const { data: { text } } = await Tesseract.recognize(
+            worker = await this.createWorker(deadline, signal);
+            return await this.recognizeWithWorker(
+                worker,
                 imageBuffer,
-                'ind+eng', // Indonesian + English
-                {
-                    logger: m => log.info(`OCR Progress: ${m.status} - ${Math.round((m.progress || 0) * 100)}%`)
-                }
+                deadline,
+                undefined,
+                signal,
             );
-            return text;
         } catch (error) {
-            log.error({ err: error }, 'OCR Error:');
+            if (signal?.aborted) throw abortReason(signal);
+            log.error({ err: error }, 'Image OCR failed');
             throw error;
+        } finally {
+            await this.terminateWorker(worker);
+        }
+    }
+
+    /**
+     * Render a scanned PDF page-by-page and recognize it with one bounded
+     * Tesseract worker. This method is public so the processing boundary can be
+     * isolated in unit tests without starting a native worker.
+     */
+    async extractTextFromScannedPDF(buffer: Buffer, signal?: AbortSignal): Promise<string> {
+        throwIfAborted(signal);
+        assertPdfInput(buffer);
+        const deadline = Date.now() + OCR_LIMITS.totalOcrTimeoutMs;
+        let loadingTask: any = null;
+        let pdfDoc: any = null;
+        let worker: Awaited<ReturnType<typeof Tesseract.createWorker>> | null = null;
+
+        try {
+            const [pdf, canvas] = await withTimeout(
+                Promise.all([loadPdfJs(), loadCanvasModule()]),
+                remainingMs(deadline, OCR_LIMITS.pdfLoadTimeoutMs),
+                'Waktu pemuatan mesin OCR habis',
+                undefined,
+                signal,
+            );
+            if (!pdf) throw new OCRProcessingError('Mesin ekstraksi PDF tidak tersedia');
+
+            loadingTask = pdf.getDocument({
+                data: new Uint8Array(buffer),
+                isEvalSupported: false,
+                stopAtErrors: true,
+                useSystemFonts: true,
+                maxImageSize: OCR_LIMITS.maxPagePixels,
+            });
+            pdfDoc = await withTimeout(
+                loadingTask.promise,
+                remainingMs(deadline, OCR_LIMITS.pdfLoadTimeoutMs),
+                'Waktu pemuatan PDF scan habis',
+                () => loadingTask?.destroy(),
+                signal,
+            );
+
+            if (!Number.isInteger(pdfDoc.numPages) || pdfDoc.numPages < 1) {
+                throw new OCRProcessingError('PDF scan tidak memiliki halaman yang dapat diproses');
+            }
+            if (pdfDoc.numPages > OCR_LIMITS.maxOcrPages) {
+                throw new OCRProcessingError(
+                    `OCR PDF scan dibatasi ${OCR_LIMITS.maxOcrPages} halaman`,
+                );
+            }
+
+            worker = await this.createWorker(deadline, signal);
+            let totalPixels = 0;
+            const pageTexts: string[] = [];
+
+            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                const page: any = await withTimeout<any>(
+                    pdfDoc.getPage(pageNum),
+                    remainingMs(deadline, 5_000),
+                    'Waktu pemrosesan PDF scan habis',
+                    () => pdfDoc?.destroy(),
+                    signal,
+                );
+                try {
+                    const viewport = page.getViewport({ scale: OCR_LIMITS.renderScale });
+                    const width = Math.ceil(viewport.width);
+                    const height = Math.ceil(viewport.height);
+                    const pixels = width * height;
+
+                    if (
+                        !Number.isSafeInteger(width)
+                        || !Number.isSafeInteger(height)
+                        || width < 1
+                        || height < 1
+                        || !Number.isSafeInteger(pixels)
+                        || pixels > OCR_LIMITS.maxPagePixels
+                    ) {
+                        throw new OCRProcessingError(
+                            `Dimensi halaman ${pageNum} melebihi batas render OCR`,
+                        );
+                    }
+                    totalPixels += pixels;
+                    if (totalPixels > OCR_LIMITS.maxTotalRenderPixels) {
+                        throw new OCRProcessingError('Total piksel PDF melebihi batas OCR');
+                    }
+
+                    const pageCanvas = canvas.createCanvas(width, height);
+                    const canvasContext = pageCanvas.getContext('2d');
+                    const renderTask = page.render({
+                        canvas: pageCanvas,
+                        canvasContext,
+                        viewport,
+                        background: 'rgb(255,255,255)',
+                    });
+                    await withTimeout(
+                        renderTask.promise,
+                        remainingMs(deadline, OCR_LIMITS.pageRenderTimeoutMs),
+                        `Waktu render halaman ${pageNum} habis`,
+                        () => renderTask.cancel(),
+                        signal,
+                    );
+
+                    const png = pageCanvas.toBuffer('image/png');
+                    if (png.length > OCR_LIMITS.maxRenderedImageBytes) {
+                        throw new OCRProcessingError(
+                            `Hasil render halaman ${pageNum} melebihi batas memori OCR`,
+                        );
+                    }
+                    const pageText = await this.recognizeWithWorker(
+                        worker,
+                        png,
+                        deadline,
+                        pageNum,
+                        signal,
+                    );
+                    if (pageText.trim()) pageTexts.push(pageText.trim());
+
+                    if (pageTexts.join('\n').length >= OCR_LIMITS.maxExtractedTextChars) {
+                        break;
+                    }
+                } finally {
+                    page.cleanup?.();
+                }
+            }
+
+            const text = pageTexts.join('\n').slice(0, OCR_LIMITS.maxExtractedTextChars).trim();
+            if (!hasMeaningfulText(text)) {
+                throw new OCRProcessingError('OCR tidak menemukan teks yang cukup pada PDF scan');
+            }
+            return text;
+        } finally {
+            await this.terminateWorker(worker);
+            try {
+                if (pdfDoc) await pdfDoc.destroy();
+                else if (loadingTask) await loadingTask.destroy();
+            } catch (error) {
+                log.warn({ err: error }, 'Failed to release scanned PDF resources');
+            }
+        }
+    }
+
+    private async createWorker(
+        deadline: number,
+        signal?: AbortSignal,
+    ): Promise<Awaited<ReturnType<typeof Tesseract.createWorker>>> {
+        throwIfAborted(signal);
+        const configuredLangPath = process.env.OCR_TESSDATA_PATH?.trim();
+        if (process.env.NODE_ENV === 'production' && !configuredLangPath) {
+            throw new OCRProcessingError(
+                'Data bahasa OCR belum dikonfigurasi pada server',
+            );
+        }
+        const cachePath = process.env.OCR_CACHE_PATH?.trim() || tmpdir();
+        const workerPromise = Tesseract.createWorker('ind+eng', undefined, {
+            ...(configuredLangPath ? { langPath: configuredLangPath } : {}),
+            cachePath,
+            logger: message => {
+                if (message.progress === 0 || message.progress === 1) {
+                    log.debug({
+                        status: message.status,
+                        progress: Math.round((message.progress || 0) * 100),
+                    }, 'OCR worker progress');
+                }
+            },
+        });
+        return withTimeout(
+            workerPromise,
+            remainingMs(deadline, OCR_LIMITS.workerStartTimeoutMs),
+            'Waktu inisialisasi mesin OCR habis',
+            () => workerPromise
+                .then(initializedWorker => initializedWorker.terminate())
+                .catch(() => undefined),
+            signal,
+        );
+    }
+
+    private async recognizeWithWorker(
+        worker: Awaited<ReturnType<typeof Tesseract.createWorker>>,
+        imageBuffer: Buffer,
+        deadline: number,
+        pageNum?: number,
+        signal?: AbortSignal,
+    ): Promise<string> {
+        throwIfAborted(signal);
+        const result = await withTimeout(
+            worker.recognize(imageBuffer),
+            remainingMs(deadline, OCR_LIMITS.pageOcrTimeoutMs),
+            pageNum
+                ? `Waktu OCR halaman ${pageNum} habis`
+                : 'Waktu OCR citra habis',
+            () => worker.terminate(),
+            signal,
+        );
+        return result.data.text;
+    }
+
+    private async terminateWorker(
+        worker: Awaited<ReturnType<typeof Tesseract.createWorker>> | null,
+    ): Promise<void> {
+        if (!worker) return;
+        try {
+            await withTimeout(
+                worker.terminate(),
+                5_000,
+                'Waktu penghentian mesin OCR habis',
+            );
+        } catch (error) {
+            log.warn({ err: error }, 'Failed to terminate OCR worker cleanly');
         }
     }
 
@@ -336,17 +764,19 @@ class OCRService {
     }
 
     // Process a PDF file - try text extraction first, then OCR if needed
-    async processPDF(buffer: Buffer): Promise<OCRResult> {
+    async processPDF(buffer: Buffer, signal?: AbortSignal): Promise<OCRResult> {
         try {
-            // First try to extract text directly from PDF
-            let extractedText = await this.extractTextFromPDF(buffer);
+            throwIfAborted(signal);
+            let extractedText = await this.extractTextFromPDF(buffer, signal);
 
-            // If extracted text is too short, the PDF might be scanned/image-based
-            if (extractedText.length < 50) {
-                log.info('PDF text extraction yielded little text, attempting OCR...');
-                // For scanned PDFs, we would need to render pages as images first
-                // This is a simplified version - in production, you'd convert PDF pages to images
-                extractedText = '[OCR diperlukan untuk dokumen scan - fitur dalam pengembangan]';
+            if (!hasMeaningfulText(extractedText)) {
+                log.info('PDF text layer is empty or too short; starting bounded scan OCR');
+                extractedText = await this.extractTextFromScannedPDF(buffer, signal);
+            }
+
+            throwIfAborted(signal);
+            if (!hasMeaningfulText(extractedText)) {
+                throw new OCRProcessingError('Dokumen tidak menghasilkan teks yang cukup');
             }
 
             const metadata = this.extractMetadata(extractedText);
@@ -357,26 +787,15 @@ class OCRService {
                 metadata
             };
         } catch (error: any) {
-            log.error({ err: error }, 'PDF processing error:');
+            if (signal?.aborted) throw abortReason(signal);
+            log.error({ err: error }, 'PDF processing failed');
             return {
                 success: false,
                 text: '',
-                metadata: {
-                    nomorSurat: null,
-                    perihal: null,
-                    tanggalSurat: null,
-                    pengirim: null,
-                    extractedText: '',
-                    penerima: null,
-                    tembusan: [],
-                    lampiran: null,
-                    sifatSurat: null,
-                    klasifikasiKeamanan: null,
-                    jenisSurat: null,
-                    keywords: [],
-                    summary: null
-                },
-                error: error.message || 'Failed to process PDF'
+                metadata: emptyMetadata(),
+                error: error instanceof OCRProcessingError
+                    ? error.message
+                    : 'Dokumen PDF tidak dapat diproses dengan aman',
             };
         }
     }

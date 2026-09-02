@@ -7,7 +7,7 @@ import { suratMasukService } from '../../services/surat-masuk.service';
 // Mock Middlewares
 vi.mock('../../middlewares/auth.middleware', () => ({
     authMiddleware: (req: any, res: any, next: any) => {
-        req.user = { id: 'user-1', email: 'test@example.com', role: 'admin', unitKerjaId: 'ditjen' };
+        req.user = { id: 'user-1', email: 'test@example.com', role: 'admin_dirjen', unitKerjaId: 'ditjen' };
         next();
     },
 }));
@@ -33,6 +33,24 @@ vi.mock('../../services/surat-masuk.service', () => ({
         findById: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
+    },
+}));
+
+vi.mock('../../services/record-access.service', () => ({
+    allowedSecurityClassifications: vi.fn(() => ['biasa', 'terbatas']),
+    isAllowedForClassification: vi.fn(() => true),
+    recordAccessService: {
+        check: vi.fn(async () => ({
+            exists: true,
+            allowed: true,
+            mutable: true,
+            unitKerjaId: 'ditjen',
+            classification: 'biasa',
+            grantId: null,
+            accessPurpose: null,
+            grantAccessMode: null,
+            grantExpiresAt: null,
+        })),
     },
 }));
 
@@ -74,13 +92,17 @@ describe('SuratMasukRoutes', () => {
 
     describe('GET /api/surat-masuk/:id', () => {
         it('should return surat detail', async () => {
-            const mockSurat = { id: '123', perihal: 'Detail' };
+            const mockSurat = { id: '123', perihal: 'Detail', sifatSurat: 'biasa' };
             (suratMasukService.findById as any).mockResolvedValue(mockSurat);
 
             const res = await request(app).get('/api/surat-masuk/123');
 
             expect(res.status).toBe(200);
-            expect(res.body.data).toEqual(mockSurat);
+            expect(res.body.data).toEqual({
+                ...mockSurat,
+                hasFile: false,
+                filePath: null,
+            });
         });
 
         it('should return 404 if not found', async () => {

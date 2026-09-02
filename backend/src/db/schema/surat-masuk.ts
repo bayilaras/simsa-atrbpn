@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, date, boolean, integer, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, date, boolean, integer, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { unitKerja } from './unit-kerja';
 import { relations } from 'drizzle-orm';
@@ -32,7 +32,10 @@ export const suratMasuk = pgTable('surat_masuk', {
     createdBy: uuid('created_by').references(() => users.id),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+    unitYearSequenceUnique: uniqueIndex('surat_masuk_unit_year_sequence_uidx')
+        .on(table.unitKerjaId, table.tahun, table.noUrut),
+}));
 
 export const suratMasukRelations = relations(suratMasuk, ({ one, many }) => ({
     unitKerja: one(unitKerja, {

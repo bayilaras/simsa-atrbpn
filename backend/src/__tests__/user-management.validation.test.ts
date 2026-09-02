@@ -200,8 +200,8 @@ describe('createUserSchema', () => {
         expect(result.success).toBe(false);
     });
 
-    it('accepts all valid roles including staff', () => {
-        for (const role of ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'user']) {
+    it('accepts all valid roles including unit-scoped auditor', () => {
+        for (const role of ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user']) {
             const result = createUserSchema.safeParse({ ...validUser, role });
             expect(result.success).toBe(true);
         }

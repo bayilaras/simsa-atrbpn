@@ -1,10 +1,30 @@
 import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
-import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull } from 'drizzle-orm';
-import { DatabaseError } from '../utils/errors';
+import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, inArray } from 'drizzle-orm';
+import { ConflictError, DatabaseError } from '../utils/errors';
+import {
+    scopedRecordByIdWhere,
+    type RecordUnitScope,
+} from '../utils/record-unit-scope.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
+import { srikandiBusinessProducer } from './srikandi-producer.service.js';
+import {
+    clientBlobUploadService,
+    normalizeBlobLocator,
+    type ClaimClientBlobUpload,
+} from './client-blob-upload.service.js';
+import fileAttachmentService, {
+    type RegisterSuratAttachmentData,
+} from './file-attachment.service.js';
+import { settingsService } from './settings.service.js';
+import {
+    resolveSuratCalendar,
+    type SuratNumberContext,
+    type SuratNumberPreview,
+} from '../utils/surat-numbering.js';
 
 export interface SuratMasukFilters {
-    unitKerjaId: string;
+    unitKerjaId?: string | null;
     tahun?: number;
     tanggalDari?: string;
     tanggalSampai?: string;
@@ -15,11 +35,26 @@ export interface SuratMasukFilters {
     search?: string;
     page?: number;
     limit?: number;
+    /** null means all classes (super_admin); [] fails closed. */
+    securityClassifications?: string[] | null;
+}
+
+function securityClassificationCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+
+    const normalized = sql<string>`CASE
+        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+        THEN 'biasa'
+        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+    END`;
+    return inArray(normalized, classes);
 }
 
 export class SuratMasukService {
     async findAll(filters: SuratMasukFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, search, page = 1, limit = 20 } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, search, page = 1, limit = 20, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
         // Build where conditions
@@ -28,9 +63,11 @@ export class SuratMasukService {
         ];
 
         // Only filter by unitKerjaId when provided (super_admin sees all)
-        if (unitKerjaId) {
+        if (unitKerjaId !== null && unitKerjaId !== undefined) {
             conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
         }
+        const classificationCondition = securityClassificationCondition(securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
 
         if (tahun) {
             conditions.push(eq(suratMasuk.tahun, tahun));
@@ -94,23 +131,61 @@ export class SuratMasukService {
         };
     }
 
-    async findById(id: string) {
+    async findById(id: string, unitScope: RecordUnitScope) {
+        const conditions = [
+            scopedRecordByIdWhere(
+                suratMasuk.id,
+                id,
+                suratMasuk.unitKerjaId,
+                unitScope,
+            ),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Exclude soft-deleted records (NULL-safe)
+        ];
+
         const [result] = await db
             .select()
             .from(suratMasuk)
-            .where(eq(suratMasuk.id, id))
+            .where(and(...conditions))
             .limit(1);
 
         return result || null;
     }
 
-    async create(data: NewSuratMasuk) {
-        // Use transaction with row locking to prevent duplicate noUrut
-        const tahun = data.tahun || new Date().getFullYear();
+    async create(
+        data: NewSuratMasuk,
+        auditContext?: CriticalAuditContext,
+        clientBlobClaim?: ClaimClientBlobUpload,
+        attachment?: RegisterSuratAttachmentData,
+    ) {
+        const calendar = resolveSuratCalendar({
+            tahun: data.tahun,
+            tanggalSurat: data.tanggalSurat,
+        });
+        const tahun = calendar.tahun;
+        if (
+            attachment
+            && (
+                !data.filePath
+                || normalizeBlobLocator(data.filePath) !== normalizeBlobLocator(attachment.locator)
+            )
+        ) {
+            throw new DatabaseError('Registrasi lampiran tidak sesuai dengan bitstream surat masuk.');
+        }
+        if (clientBlobClaim && !attachment) {
+            throw new ConflictError('Lease unggahan Blob harus disertai registrasi lampiran.');
+        }
+        const preparedAttachment = attachment
+            ? await fileAttachmentService.prepareExisting(attachment, {
+                clientBlobClaim,
+                expectedPurpose: 'surat_masuk',
+            })
+            : undefined;
 
         try {
             const result = await db.transaction(async (tx: any) => {
-                // Lock rows for this unit+year to prevent concurrent inserts getting same noUrut
+                // The unit template row is the numbering mutex. Unlike locking
+                // the last surat row, this also serializes an empty sequence.
+                const templates = await settingsService.lockSuratTemplates(tx, data.unitKerjaId);
                 const [lastSurat] = await tx
                     .select({ noUrut: suratMasuk.noUrut })
                     .from(suratMasuk)
@@ -123,11 +198,67 @@ export class SuratMasukService {
                     .for('update');
 
                 const noUrut = (lastSurat?.noUrut || 0) + 1;
+                const generatedNomorSurat = settingsService.generateSuratNumber(
+                    templates.masukFormat,
+                    {
+                        noUrut,
+                        tahun,
+                        bulan: calendar.bulan,
+                        unitKerja: data.unitKerjaId,
+                    },
+                );
+                // Incoming letters usually carry an external identifier. Keep
+                // an explicit number; the configured template is the durable
+                // fallback for numberless registrations/imports.
+                const nomorSurat = data.nomorSurat?.trim() || generatedNomorSurat;
 
                 const [inserted] = await tx
                     .insert(suratMasuk)
-                    .values({ ...data, noUrut, tahun })
+                    .values({ ...data, nomorSurat, noUrut, tahun })
                     .returning();
+
+                if (clientBlobClaim) {
+                    await clientBlobUploadService.claimWithExecutor(
+                        tx,
+                        clientBlobClaim,
+                        'surat_masuk',
+                        inserted.id,
+                    );
+                }
+
+                if (preparedAttachment) {
+                    await fileAttachmentService.insertPrepared({
+                        ...preparedAttachment,
+                        entityId: inserted.id,
+                        entityType: 'surat_masuk',
+                    }, tx);
+                }
+
+                if (auditContext) {
+                    await auditLogService.logActionOrThrow({
+                        ...auditContext,
+                        action: 'create',
+                        entityType: 'surat_masuk',
+                        entityId: inserted.id,
+                        changes: {
+                            after: {
+                                nomorSurat: inserted.nomorSurat,
+                                perihal: inserted.perihal,
+                                unitKerjaId: inserted.unitKerjaId,
+                            },
+                        },
+                    }, tx);
+                }
+
+                await srikandiBusinessProducer.suratMasukCreated(tx, {
+                    id: inserted.id,
+                    unitKerjaId: inserted.unitKerjaId,
+                    nomorSurat: inserted.nomorSurat,
+                    tanggalSurat: inserted.tanggalSurat,
+                    perihal: inserted.perihal,
+                    counterpart: inserted.dari,
+                    createdAt: inserted.createdAt,
+                }, auditContext?.userId || data.createdBy || undefined);
 
                 return inserted;
             });
@@ -142,30 +273,136 @@ export class SuratMasukService {
         }
     }
 
-    async update(id: string, data: Partial<SuratMasuk>) {
-        const [result] = await db
-            .update(suratMasuk)
-            .set({ ...data, updatedAt: new Date() })
-            .where(eq(suratMasuk.id, id))
-            .returning();
+    async update(
+        id: string,
+        data: Partial<SuratMasuk>,
+        unitScope: RecordUnitScope,
+        clientBlobClaim?: ClaimClientBlobUpload,
+        auditContext?: CriticalAuditContext,
+        attachment?: RegisterSuratAttachmentData,
+    ) {
+        const conditions = [
+            scopedRecordByIdWhere(
+                suratMasuk.id,
+                id,
+                suratMasuk.unitKerjaId,
+                unitScope,
+            ),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Never mutate soft-deleted records (NULL-safe)
+            or(eq(suratMasuk.isArchived, false), isNull(suratMasuk.isArchived))!,
+        ];
+        if (
+            attachment
+            && (
+                !data.filePath
+                || normalizeBlobLocator(data.filePath) !== normalizeBlobLocator(attachment.locator)
+            )
+        ) {
+            throw new DatabaseError('Registrasi lampiran tidak sesuai dengan bitstream surat masuk.');
+        }
+        if (clientBlobClaim && !attachment) {
+            throw new ConflictError('Lease unggahan Blob harus disertai registrasi lampiran.');
+        }
+        const preparedAttachment = attachment
+            ? await fileAttachmentService.prepareExisting(attachment, {
+                clientBlobClaim,
+                expectedPurpose: 'surat_masuk',
+            })
+            : undefined;
 
-        return result;
+        return db.transaction(async (tx) => {
+            const [result] = await tx
+                .update(suratMasuk)
+                .set({ ...data, updatedAt: new Date() })
+                .where(and(...conditions))
+                .returning();
+
+            if (result && clientBlobClaim) {
+                await clientBlobUploadService.claimWithExecutor(
+                    tx,
+                    clientBlobClaim,
+                    'surat_masuk',
+                    result.id,
+                );
+            }
+            if (result && preparedAttachment) {
+                await fileAttachmentService.insertPrepared({
+                    ...preparedAttachment,
+                    entityId: result.id,
+                    entityType: 'surat_masuk',
+                }, tx);
+            }
+            if (result && auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'update',
+                    entityType: 'surat_masuk',
+                    entityId: id,
+                    changes: {
+                        after: {
+                            nomorSurat: result.nomorSurat,
+                            tanggalSurat: result.tanggalSurat,
+                            perihal: result.perihal,
+                            dari: result.dari,
+                            sifatSurat: result.sifatSurat,
+                            status: result.status,
+                            disposisi: result.disposisi,
+                            unitKerjaId: result.unitKerjaId,
+                            fileOriginalName: result.fileOriginalName,
+                            hasFile: Boolean(result.filePath),
+                        },
+                        fields: Object.keys(data),
+                    },
+                }, tx);
+            }
+            return result;
+        });
     }
 
-    async delete(id: string, deletedByUserId?: string) {
+    async delete(
+        id: string,
+        deletedByUserId: string | undefined,
+        unitScope: RecordUnitScope,
+        auditContext?: CriticalAuditContext,
+    ) {
         // Soft delete - mark as deleted instead of permanently removing
-        const [result] = await db
-            .update(suratMasuk)
-            .set({
-                isDeleted: true,
-                deletedAt: new Date(),
-                deletedBy: deletedByUserId || null,
-                updatedAt: new Date(),
-            })
-            .where(eq(suratMasuk.id, id))
-            .returning();
+        const conditions = [
+            scopedRecordByIdWhere(
+                suratMasuk.id,
+                id,
+                suratMasuk.unitKerjaId,
+                unitScope,
+            ),
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,  // Keep deletedAt/deletedBy of an already deleted record intact
+            or(eq(suratMasuk.isArchived, false), isNull(suratMasuk.isArchived))!,
+        ];
 
-        return result;
+        return db.transaction(async (tx) => {
+            const [result] = await tx
+                .update(suratMasuk)
+                .set({
+                    isDeleted: true,
+                    deletedAt: new Date(),
+                    deletedBy: deletedByUserId || null,
+                    updatedAt: new Date(),
+                })
+                .where(and(...conditions))
+                .returning();
+
+            if (result && auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'delete',
+                    entityType: 'surat_masuk',
+                    entityId: id,
+                    changes: {
+                        before: { isDeleted: false, nomorSurat: result.nomorSurat, perihal: result.perihal },
+                        after: { isDeleted: true, deletedBy: deletedByUserId || null },
+                    },
+                }, tx);
+            }
+            return result;
+        });
     }
 
     async hardDelete(id: string) {
@@ -193,37 +430,61 @@ export class SuratMasukService {
         return result;
     }
 
-    async archive(id: string) {
-        return this.update(id, { isArchived: true });
+    async archive(id: string, unitScope: RecordUnitScope) {
+        return this.update(id, { isArchived: true }, unitScope);
     }
 
-    async getNextNumber(unitKerjaId: string, tahun?: number) {
-        const year = tahun || new Date().getFullYear();
+    async getNextNumber(
+        unitKerjaId: string,
+        context: SuratNumberContext | number = {},
+    ): Promise<SuratNumberPreview> {
+        const normalized = typeof context === 'number' ? { tahun: context } : context;
+        const calendar = resolveSuratCalendar(normalized);
 
         const [lastSurat] = await db
             .select({ noUrut: suratMasuk.noUrut })
             .from(suratMasuk)
             .where(and(
                 eq(suratMasuk.unitKerjaId, unitKerjaId),
-                eq(suratMasuk.tahun, year)
+                eq(suratMasuk.tahun, calendar.tahun)
             ))
             .orderBy(desc(suratMasuk.noUrut))
             .limit(1);
 
-        return (lastSurat?.noUrut || 0) + 1;
+        const nextNumber = (lastSurat?.noUrut || 0) + 1;
+        const templates = await settingsService.getSuratTemplates(unitKerjaId);
+        return {
+            nextNumber,
+            nomorSurat: settingsService.generateSuratNumber(templates.masukFormat, {
+                noUrut: nextNumber,
+                tahun: calendar.tahun,
+                bulan: calendar.bulan,
+                unitKerja: unitKerjaId,
+            }),
+            template: templates.masukFormat,
+            tahun: calendar.tahun,
+            bulan: calendar.bulan,
+            preview: true,
+        };
     }
 
-    async getStats(unitKerjaId: string | null, tahun?: number) {
+    async getStats(
+        unitKerjaId: string | null,
+        tahun?: number,
+        securityClassifications?: string[] | null,
+    ) {
         try {
             // Mirror dashboard service pattern exactly:
             // - When unitKerjaId is null → skip WHERE clause (query all records)
             // - Use individual count queries in parallel (proven working in dashboard)
             // Dashboard shows 1721 surat masuk correctly using this approach
 
+            const classificationCondition = securityClassificationCondition(securityClassifications);
             const baseConditions = [
                 or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,
-                ...(unitKerjaId ? [eq(suratMasuk.unitKerjaId, unitKerjaId)] : []),
+                ...(unitKerjaId !== null ? [eq(suratMasuk.unitKerjaId, unitKerjaId)] : []),
                 ...(tahun ? [eq(suratMasuk.tahun, tahun)] : []),
+                ...(classificationCondition ? [classificationCondition] : []),
             ];
 
             // Run all counts in parallel (same approach as dashboard service)
@@ -263,20 +524,28 @@ export class SuratMasukService {
     }
 
     // Get surat keluar yang merupakan balasan dari surat masuk ini
-    async getBalasan(suratMasukId: string) {
+    async getBalasan(suratMasukId: string, unitKerjaId: string) {
         const { suratKeluar } = await import('../db/schema');
 
         const balasan = await db
             .select()
             .from(suratKeluar)
-            .where(eq(suratKeluar.balasanUntuk, suratMasukId))
+            .where(and(
+                eq(suratKeluar.balasanUntuk, suratMasukId),
+                eq(suratKeluar.unitKerjaId, unitKerjaId),
+                or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted))!  // Exclude soft-deleted records (NULL-safe)
+            ))
             .orderBy(desc(suratKeluar.createdAt));
 
         return balasan;
     }
 
     // Get all pending surat masuk (belum dibalas) for reply selection dropdown
-    async getPendingForReply(unitKerjaId: string) {
+    async getPendingForReply(
+        unitKerjaId: string,
+        securityClassifications?: string[] | null,
+    ) {
+        const classificationCondition = securityClassificationCondition(securityClassifications);
         const pending = await db
             .select({
                 id: suratMasuk.id,
@@ -288,7 +557,9 @@ export class SuratMasukService {
             .from(suratMasuk)
             .where(and(
                 eq(suratMasuk.unitKerjaId, unitKerjaId),
-                eq(suratMasuk.status, 'belum_dibalas')
+                ...(classificationCondition ? [classificationCondition] : []),
+                eq(suratMasuk.status, 'belum_dibalas'),
+                or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!  // Exclude soft-deleted records (NULL-safe)
             ))
             .orderBy(desc(suratMasuk.tanggalSurat));
 
@@ -296,11 +567,11 @@ export class SuratMasukService {
     }
 
     // Get full detail with linked arsip info
-    async findByIdWithLinks(id: string) {
-        const surat = await this.findById(id);
+    async findByIdWithLinks(id: string, unitScope: RecordUnitScope) {
+        const surat = await this.findById(id, unitScope);
         if (!surat) return null;
 
-        const balasan = await this.getBalasan(id);
+        const balasan = await this.getBalasan(id, surat.unitKerjaId);
 
         // Check if this surat is archived
         const { arsip } = await import('../db/schema');
@@ -309,7 +580,8 @@ export class SuratMasukService {
             .from(arsip)
             .where(and(
                 eq(arsip.sourceSuratId, id),
-                eq(arsip.jenisArsip, 'masuk')
+                eq(arsip.jenisArsip, 'masuk'),
+                eq(arsip.unitKerjaId, surat.unitKerjaId)
             ))
             .limit(1);
 

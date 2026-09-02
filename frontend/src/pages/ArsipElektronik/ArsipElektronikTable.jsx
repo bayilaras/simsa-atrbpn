@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/table'
 import { RefreshCw, Eye, Trash2, ChevronUp } from 'lucide-react'
 import { STATUS_CONFIG, FORMAT_OPTIONS, MEDIA_OPTIONS, formatFileSize } from './constants'
+import { useAuth } from '@/context/AuthContext'
 
 export default function ArsipElektronikTable({
     data, loading, page, totalPages, total,
@@ -16,6 +17,7 @@ export default function ArsipElektronikTable({
     onFilterFormatChange, onFilterStatusChange, onFilterMediaChange,
     onPageChange, onOpenVerify, onDelete
 }) {
+    const { user } = useAuth()
     return (
         <>
             {/* Filters */}
@@ -23,14 +25,14 @@ export default function ArsipElektronikTable({
                 <CardContent className="pt-6">
                     <div className="flex flex-wrap gap-4">
                         <Select value={filterFormat} onValueChange={(v) => { onFilterFormatChange(v); }}>
-                            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Format" /></SelectTrigger>
+                            <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Format" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Semua Format</SelectItem>
                                 {FORMAT_OPTIONS.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                             </SelectContent>
                         </Select>
                         <Select value={filterStatus} onValueChange={(v) => { onFilterStatusChange(v); }}>
-                            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                            <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Semua Status</SelectItem>
                                 <SelectItem value="pending">Menunggu</SelectItem>
@@ -39,7 +41,7 @@ export default function ArsipElektronikTable({
                             </SelectContent>
                         </Select>
                         <Select value={filterMedia} onValueChange={(v) => { onFilterMediaChange(v); }}>
-                            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Media" /></SelectTrigger>
+                            <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Media" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Semua Media</SelectItem>
                                 {MEDIA_OPTIONS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
@@ -53,10 +55,11 @@ export default function ArsipElektronikTable({
             {/* Table */}
             <Card>
                 <CardContent className="pt-6">
-                    <Table>
+                    <Table responsive>
                         <TableHeader>
                             <TableRow>
                                 <TableHead className="w-[50px]">No.</TableHead>
+                                <TableHead>Kode Registrasi</TableHead>
                                 <TableHead>Format</TableHead>
                                 <TableHead>Ukuran</TableHead>
                                 <TableHead>Resolusi</TableHead>
@@ -64,6 +67,7 @@ export default function ArsipElektronikTable({
                                 <TableHead>Hash SHA-256</TableHead>
                                 <TableHead>Versi</TableHead>
                                 <TableHead>Status</TableHead>
+                                <TableHead>QC</TableHead>
                                 <TableHead>Tanggal</TableHead>
                                 <TableHead className="w-[80px]">Aksi</TableHead>
                             </TableRow>
@@ -71,14 +75,14 @@ export default function ArsipElektronikTable({
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={10} className="text-center py-8">
+                                    <TableCell colSpan={12} className="text-center py-8">
                                         <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />
                                         Memuat...
                                     </TableCell>
                                 </TableRow>
                             ) : data.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                                         Tidak ada data arsip elektronik
                                     </TableCell>
                                 </TableRow>
@@ -86,32 +90,40 @@ export default function ArsipElektronikTable({
                                 const status = STATUS_CONFIG[item.statusVerifikasi] || STATUS_CONFIG.pending
                                 return (
                                     <TableRow key={item.id}>
-                                        <TableCell>{(page - 1) * 20 + index + 1}</TableCell>
-                                        <TableCell><Badge variant="outline">{item.formatFile}</Badge></TableCell>
-                                        <TableCell className="text-xs">{formatFileSize(item.ukuranFile)}</TableCell>
-                                        <TableCell className="text-xs">{item.resolusiDPI ? `${item.resolusiDPI} DPI` : '-'}</TableCell>
-                                        <TableCell className="text-xs">{item.mediaAsal}</TableCell>
-                                        <TableCell className="font-mono text-xs max-w-[120px] truncate" title={item.hashSHA256}>
+                                        <TableCell data-label="No.">{(page - 1) * 20 + index + 1}</TableCell>
+                                        <TableCell data-label="Kode Registrasi" className="font-mono text-xs">{item.registrationCode || 'LEGACY'}</TableCell>
+                                        <TableCell data-label="Format"><Badge variant="outline">{item.formatFile}</Badge></TableCell>
+                                        <TableCell data-label="Ukuran" className="text-xs">{formatFileSize(item.ukuranFile)}</TableCell>
+                                        <TableCell data-label="Resolusi" className="text-xs">{item.resolusiDPI ? `${item.resolusiDPI} DPI` : '-'}</TableCell>
+                                        <TableCell data-label="Media Asal" className="text-xs">{item.mediaAsal}</TableCell>
+                                        <TableCell data-label="Hash SHA-256" className="font-mono text-xs max-w-[120px] truncate" title={item.hashSHA256}>
                                             {item.hashSHA256 ? item.hashSHA256.substring(0, 12) + '...' : '-'}
                                         </TableCell>
-                                        <TableCell>v{item.versiDokumen}</TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Versi">v{item.versiDokumen}</TableCell>
+                                        <TableCell data-label="Status">
                                             <Badge variant={status.variant} className="gap-1">
                                                 <status.icon className="h-3 w-3" />
                                                 {status.label}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-xs">
+                                        <TableCell data-label="QC">
+                                            <Badge variant={item.qcStatus === 'passed' ? 'default' : 'destructive'}>
+                                                {item.qcStatus === 'passed' ? 'Lulus' : item.qcStatus === 'failed' ? 'Gagal' : 'Pending'}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell data-label="Tanggal" className="text-xs">
                                             {item.tanggalDigitalisasi || new Date(item.createdAt).toLocaleDateString('id-ID')}
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Aksi">
                                             <div className="flex gap-1">
                                                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onOpenVerify(item)}>
                                                     <Eye className="h-3.5 w-3.5" />
                                                 </Button>
-                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(item.id)}>
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </Button>
+                                                {user?.role === 'super_admin' && !item.immutable && (
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(item.id)}>
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                )}
                                             </div>
                                         </TableCell>
                                     </TableRow>

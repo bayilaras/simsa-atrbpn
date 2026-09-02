@@ -73,8 +73,8 @@ export function ArchiveLifecycleWidget({ className = "" }) {
             title: 'Akan Kadaluarsa',
             icon: Clock,
             count: summary.willExpire,
-            color: 'text-orange-600',
-            bgColor: 'bg-orange-50',
+            color: 'text-orange-600 dark:text-orange-400',
+            bgColor: 'bg-orange-50 dark:bg-orange-500/15',
             items: willExpire,
             badge: 'outline',
             description: '30 hari lagi'
@@ -84,8 +84,8 @@ export function ArchiveLifecycleWidget({ className = "" }) {
             title: 'Inaktif',
             icon: Archive,
             count: summary.alreadyInactive,
-            color: 'text-blue-600',
-            bgColor: 'bg-blue-50',
+            color: 'text-blue-600 dark:text-blue-400',
+            bgColor: 'bg-blue-50 dark:bg-blue-500/15',
             items: alreadyInactive,
             badge: 'secondary',
             description: 'Masa aktif berakhir'
@@ -95,8 +95,8 @@ export function ArchiveLifecycleWidget({ className = "" }) {
             title: 'Akan Inaktif',
             icon: FileWarning,
             count: summary.willBeInactive,
-            color: 'text-yellow-600',
-            bgColor: 'bg-yellow-50',
+            color: 'text-yellow-600 dark:text-yellow-400',
+            bgColor: 'bg-yellow-50 dark:bg-yellow-500/15',
             items: willBeInactive,
             badge: 'outline',
             description: '30 hari lagi'

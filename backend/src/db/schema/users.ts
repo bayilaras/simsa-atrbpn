@@ -1,5 +1,5 @@
-import { pgTable, uuid, varchar, text, timestamp, boolean } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, text, timestamp, boolean, uniqueIndex, check } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { unitKerja } from './unit-kerja';
 
 export const users = pgTable('users', {
@@ -13,9 +13,32 @@ export const users = pgTable('users', {
     nip: varchar('nip', { length: 30 }),           // Nomor Induk Pegawai
     isActive: boolean('is_active').default(true).notNull(),
     emailVerified: boolean('email_verified').default(false),
+    // Firebase UID is an external identity reference, never the domain/user PK.
+    // Keeping the UUID stable preserves every audit and foreign-key reference.
+    firebaseUid: varchar('firebase_uid', { length: 128 }),
+    identityProvider: varchar('identity_provider', { length: 24 }).default('better_auth').notNull(),
+    authMigratedAt: timestamp('auth_migrated_at', { withTimezone: true }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => [
+    uniqueIndex('users_firebase_uid_unique').on(table.firebaseUid),
+    check(
+        'users_identity_provider_check',
+        sql`${table.identityProvider} in ('better_auth', 'firebase', 'hybrid')`,
+    ),
+    check(
+        'users_firebase_identity_check',
+        sql`${table.firebaseUid} is null or length(${table.firebaseUid}) between 1 and 128`,
+    ),
+    check('users_role_unit_mandate_check', sql`
+        CASE ${table.role}
+            WHEN 'super_admin' THEN ${table.unitKerjaId} IS NULL
+            WHEN 'admin_dirjen' THEN ${table.unitKerjaId} IS NOT DISTINCT FROM 'ditjen'
+            WHEN 'admin_sesditjen' THEN ${table.unitKerjaId} IS NOT DISTINCT FROM 'sesditjen'
+            ELSE true
+        END
+    `),
+]);
 
 // Better Auth required tables
 export const sessions = pgTable('sessions', {
@@ -32,6 +55,7 @@ export const sessions = pgTable('sessions', {
 export const accounts = pgTable('accounts', {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull().references(() => users.id),
+    issuer: text('issuer').notNull(),
     accountId: text('account_id').notNull(),
     providerId: text('provider_id').notNull(),
     accessToken: text('access_token'),
@@ -43,12 +67,16 @@ export const accounts = pgTable('accounts', {
     password: text('password'), // Add password to accounts
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => [
+    uniqueIndex('accounts_issuer_account_id_unique').on(table.issuer, table.accountId),
+]);
 
 export const verifications = pgTable('verifications', {
     id: uuid('id').primaryKey().defaultRandom(),
-    identifier: varchar('identifier', { length: 255 }).notNull(),
-    value: varchar('value', { length: 255 }).notNull(),
+    // Better Auth stores a JSON blob here for social sign-in (PKCE codeVerifier,
+    // callbackURL, expiry) that routinely exceeds 255 chars — must be text.
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
     expiresAt: timestamp('expires_at').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Download, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react';
+import { API_BASE_URL } from '@/lib/api-url';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = API_BASE_URL;
 
 /**
  * ExportButton - dropdown for exporting data in Excel/PDF
@@ -10,12 +11,10 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 const ExportButton = ({ type, filters = {} }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
-    const [showArsipSubMenu, setShowArsipSubMenu] = useState(false);
 
     const handleExport = async (format, formulirType = null) => {
         setIsExporting(true);
         setShowDropdown(false);
-        setShowArsipSubMenu(false);
 
         try {
             const queryParams = new URLSearchParams();
@@ -74,7 +73,7 @@ const ExportButton = ({ type, filters = {} }) => {
             <button
                 onClick={() => setShowDropdown(!showDropdown)}
                 disabled={isExporting}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm"
             >
                 {isExporting ? (
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -86,41 +85,41 @@ const ExportButton = ({ type, filters = {} }) => {
             </button>
 
             {showDropdown && (
-                <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-xl z-50 overflow-hidden">
                     {isArsip ? (
                         <>
                             {/* Arsip: sub-menu for Formulir type */}
-                            <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase border-b bg-gray-50">
+                            <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase border-b bg-muted/50">
                                 Formulir 4 — Arsip Aktif
                             </div>
                             <button
                                 onClick={() => handleExport('excel', 'formulir4')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
                             >
-                                <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                                <FileSpreadsheet className="w-4 h-4 text-green-600 dark:text-green-400" />
                                 Excel (.xlsx)
                             </button>
                             <button
                                 onClick={() => handleExport('pdf', 'formulir4')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-red-50 dark:hover:bg-red-500/15 hover:text-red-700 dark:hover:text-red-300 transition-colors"
                             >
                                 <FileText className="w-4 h-4 text-red-600" />
                                 PDF
                             </button>
 
-                            <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase border-t border-b bg-gray-50">
+                            <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase border-t border-b bg-muted/50">
                                 Formulir 6 — Arsip Inaktif
                             </div>
                             <button
                                 onClick={() => handleExport('excel', 'formulir6')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
                             >
-                                <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                                <FileSpreadsheet className="w-4 h-4 text-green-600 dark:text-green-400" />
                                 Excel (.xlsx)
                             </button>
                             <button
                                 onClick={() => handleExport('pdf', 'formulir6')}
-                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-foreground hover:bg-red-50 dark:hover:bg-red-500/15 hover:text-red-700 dark:hover:text-red-300 transition-colors"
                             >
                                 <FileText className="w-4 h-4 text-red-600" />
                                 PDF
@@ -131,14 +130,14 @@ const ExportButton = ({ type, filters = {} }) => {
                             {/* Surat Masuk / Surat Keluar */}
                             <button
                                 onClick={() => handleExport('excel')}
-                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-foreground hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
                             >
-                                <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                                <FileSpreadsheet className="w-4 h-4 text-green-600 dark:text-green-400" />
                                 Export Excel (.xlsx)
                             </button>
                             <button
                                 onClick={() => handleExport('pdf')}
-                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors border-t"
+                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-foreground hover:bg-red-50 dark:hover:bg-red-500/15 hover:text-red-700 dark:hover:text-red-300 transition-colors border-t"
                             >
                                 <FileText className="w-4 h-4 text-red-600" />
                                 Export PDF
@@ -152,10 +151,7 @@ const ExportButton = ({ type, filters = {} }) => {
             {showDropdown && (
                 <div
                     className="fixed inset-0 z-40"
-                    onClick={() => {
-                        setShowDropdown(false);
-                        setShowArsipSubMenu(false);
-                    }}
+                    onClick={() => setShowDropdown(false)}
                 />
             )}
         </div>

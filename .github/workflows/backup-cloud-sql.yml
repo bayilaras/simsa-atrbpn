@@ -1,0 +1,745 @@
+name: Cloud SQL PostgreSQL Backup and Restore Drill
+
+on:
+  schedule:
+    # Daily at 01:20 UTC (08:20 WIB), deliberately separate from the Neon rollback backup.
+    - cron: '20 1 * * *'
+  workflow_dispatch:
+    inputs:
+      schema_profile:
+        description: Exact migration history expected in the Cloud SQL source
+        required: true
+        type: choice
+        default: post_migration
+        options:
+          - pre_migration
+          - post_migration
+
+# Backup access is federated for this run only. There is no service-account key
+# JSON, repository write, migration, or deployment permission in this workflow.
+permissions:
+  contents: read
+
+env:
+  POSTGRES_IMAGE: ${{ vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '16' && 'postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825' || vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '17' && 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' || 'invalid-postgres-major' }}
+  EXPECTED_POSTGRES_MAJOR: ${{ vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR }}
+  CLOUD_SQL_PROXY_VERSION: '2.24.1'
+  CLOUD_SQL_PROXY_SHA256: fae2766aac9d614a2bdef2f2a7778f3d054f3acd5ff07a81a9e300bd471512eb
+  AGE_VERSION: '1.3.2'
+  AGE_LINUX_AMD64_SHA256: cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10
+
+concurrency:
+  group: cloud-sql-production-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: WIF, read-only dump, and age encryption
+    # The Terraform target has no public database address. Use a dedicated,
+    # ephemeral-or-scrubbed runner attached to the environment VPC; never
+    # expose Cloud SQL merely so a GitHub-hosted runner can reach it.
+    runs-on: [self-hosted, linux, x64, simsa-gcp-backup]
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    # Configure this Environment with required reviewers (for dispatch) and a
+    # deployment-branch rule that permits only the repository default branch.
+    environment: gcp-production-backup
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BACKUP_SCHEMA_PROFILE: ${{ github.event_name == 'schedule' && 'auto' || inputs.schema_profile }}
+      EXPECTED_PROJECT_ID: ${{ vars.CLOUD_SQL_BACKUP_PROJECT_ID }}
+      EXPECTED_REGION: ${{ vars.CLOUD_SQL_BACKUP_REGION }}
+      EXPECTED_INSTANCE: ${{ vars.CLOUD_SQL_BACKUP_INSTANCE }}
+      EXPECTED_DATABASE: ${{ vars.CLOUD_SQL_BACKUP_DATABASE }}
+      EXPECTED_DATABASE_USER: ${{ vars.CLOUD_SQL_BACKUP_DATABASE_USER }}
+    outputs:
+      artifact_name: ${{ steps.create.outputs.artifact_name }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+      archive_name: ${{ steps.create.outputs.archive_name }}
+      archive_sha256: ${{ steps.create.outputs.archive_sha256 }}
+      evidence_name: ${{ steps.create.outputs.evidence_name }}
+      evidence_sha256: ${{ steps.create.outputs.evidence_sha256 }}
+      manifest_name: ${{ steps.create.outputs.manifest_name }}
+      manifest_sha256: ${{ steps.create.outputs.manifest_sha256 }}
+      schema_profile: ${{ steps.create.outputs.schema_profile }}
+      database_name: ${{ steps.create.outputs.database_name }}
+      source_identity_sha256: ${{ steps.create.outputs.source_identity_sha256 }}
+
+    steps:
+      - name: Checkout trusted default-branch verifier
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate exact target and install checksum-pinned tools
+        env:
+          WIF_PROVIDER: ${{ vars.CLOUD_SQL_BACKUP_WIF_PROVIDER }}
+          WIF_SERVICE_ACCOUNT: ${{ vars.CLOUD_SQL_BACKUP_SERVICE_ACCOUNT }}
+          AGE_RECIPIENT: ${{ secrets.CLOUD_SQL_BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          python3 - <<'PY'
+          import os
+          import re
+
+          def require(name: str, pattern: str) -> str:
+              value = os.environ.get(name, '').strip()
+              if not re.fullmatch(pattern, value):
+                  print(f'::error::{name} is missing or is not an exact supported identifier.')
+                  raise SystemExit(1)
+              return value
+
+          project = require('EXPECTED_PROJECT_ID', r'[a-z][a-z0-9-]{4,28}[a-z0-9]')
+          require('EXPECTED_REGION', r'[a-z]+(?:-[a-z0-9]+)+[0-9]')
+          require('EXPECTED_INSTANCE', r'[a-z][a-z0-9-]{0,96}[a-z0-9]')
+          database = require('EXPECTED_DATABASE', r'[A-Za-z_][A-Za-z0-9_-]{0,62}')
+          database_user = require('EXPECTED_DATABASE_USER', r'[A-Za-z0-9_.@-]{1,63}')
+          require('EXPECTED_POSTGRES_MAJOR', r'(?:16|17)')
+          require('WIF_PROVIDER', r'projects/[0-9]+/locations/global/workloadIdentityPools/[A-Za-z0-9_-]+/providers/[A-Za-z0-9_-]+')
+          service_account = require(
+              'WIF_SERVICE_ACCOUNT',
+              r'[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9][.]iam[.]gserviceaccount[.]com',
+          )
+          if not service_account.endswith(f'@{project}.iam.gserviceaccount.com'):
+              print('::error::The WIF service account is not in the approved Cloud SQL project.')
+              raise SystemExit(1)
+          if database_user != service_account.removesuffix('.gserviceaccount.com'):
+              print('::error::The Cloud SQL login is not the exact Terraform backup service account principal.')
+              raise SystemExit(1)
+          if database.lower() in {'postgres', 'template0', 'template1'}:
+              print('::error::The application database must not be a maintenance database.')
+              raise SystemExit(1)
+          recipient = os.environ.get('AGE_RECIPIENT', '').strip()
+          if not re.fullmatch(r'age1[0-9a-z]{58}', recipient):
+              print('::error::CLOUD_SQL_BACKUP_AGE_RECIPIENT must contain exactly one age X25519 recipient.')
+              raise SystemExit(1)
+          PY
+
+          TOOL_DIR="$RUNNER_TEMP/simsa-cloud-sql-tools"
+          install -d -m 700 "$TOOL_DIR"
+
+          PROXY_URL="https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v${CLOUD_SQL_PROXY_VERSION}/cloud-sql-proxy.linux.amd64"
+          curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 \
+            "$PROXY_URL" --output "$TOOL_DIR/cloud-sql-proxy"
+          printf '%s  %s\n' "$CLOUD_SQL_PROXY_SHA256" "$TOOL_DIR/cloud-sql-proxy" \
+            | sha256sum --check --status -
+          chmod 0500 "$TOOL_DIR/cloud-sql-proxy"
+
+          AGE_ARCHIVE="$RUNNER_TEMP/age-v${AGE_VERSION}-linux-amd64.tar.gz"
+          curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 \
+            "https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-linux-amd64.tar.gz" \
+            --output "$AGE_ARCHIVE"
+          printf '%s  %s\n' "$AGE_LINUX_AMD64_SHA256" "$AGE_ARCHIVE" \
+            | sha256sum --check --status -
+          tar --extract --gzip --file "$AGE_ARCHIVE" --directory "$TOOL_DIR"
+          install -m 0500 "$TOOL_DIR/age/age" "$TOOL_DIR/age-bin"
+          install -m 0500 "$TOOL_DIR/age/age-keygen" "$TOOL_DIR/age-keygen-bin"
+          rm -rf -- "$TOOL_DIR/age" "$AGE_ARCHIVE"
+          echo "$TOOL_DIR" >> "$GITHUB_PATH"
+
+      - name: Authenticate to Google Cloud through WIF and ADC
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ vars.CLOUD_SQL_BACKUP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.CLOUD_SQL_BACKUP_WIF_PROVIDER }}
+          service_account: ${{ vars.CLOUD_SQL_BACKUP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+          cleanup_credentials: true
+
+      - name: Validate read-only role and stream one snapshot into encryption
+        id: create
+        env:
+          AGE_RECIPIENT: ${{ secrets.CLOUD_SQL_BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          case "$BACKUP_SCHEMA_PROFILE" in
+            auto|pre_migration|post_migration) ;;
+            *) echo '::error::Unsupported backup schema profile.'; exit 1 ;;
+          esac
+
+          CONNECTION_NAME="${EXPECTED_PROJECT_ID}:${EXPECTED_REGION}:${EXPECTED_INSTANCE}"
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ && "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] \
+            || { echo '::error::Invalid GitHub run identity for proxy port isolation.'; exit 1; }
+          PROXY_PORT=$((20000 + ((GITHUB_RUN_ID * 17 + GITHUB_RUN_ATTEMPT) % 10000)))
+          if [ "$PROXY_PORT" -lt 1024 ] || [ "$PROXY_PORT" -gt 65535 ]; then
+            echo '::error::Derived Cloud SQL proxy port is outside the safe TCP range.'
+            exit 1
+          fi
+          python3 - "$PROXY_PORT" <<'PY'
+          import socket
+          import sys
+
+          with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as candidate:
+              candidate.bind(('127.0.0.1', int(sys.argv[1])))
+          PY
+          PROXY_LOG="$RUNNER_TEMP/cloud-sql-proxy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+          cloud-sql-proxy \
+            --address 127.0.0.1 \
+            --port "$PROXY_PORT" \
+            --private-ip \
+            --auto-iam-authn \
+            --exit-zero-on-sigterm \
+            "$CONNECTION_NAME" >"$PROXY_LOG" 2>&1 &
+          PROXY_PID=$!
+
+          EVIDENCE_DIR="$RUNNER_TEMP/cloud-sql-source-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          OUTPUT_DIR="$RUNNER_TEMP/cloud-sql-encrypted-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          install -d -m 700 "$EVIDENCE_DIR" "$OUTPUT_DIR"
+          SOURCE_SESSION_PID=''
+          SNAPSHOT_CONTAINER="simsa-cloud-sql-snapshot-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup_source() {
+            status=$?
+            trap - EXIT
+            if [ -n "$SOURCE_SESSION_PID" ] && kill -0 "$SOURCE_SESSION_PID" 2>/dev/null; then
+              docker rm --force "$SNAPSHOT_CONTAINER" >/dev/null 2>&1 || true
+              wait "$SOURCE_SESSION_PID" 2>/dev/null || true
+            fi
+            kill "$PROXY_PID" 2>/dev/null || true
+            wait "$PROXY_PID" 2>/dev/null || true
+            rm -rf -- "$EVIDENCE_DIR"
+            if [ "$status" -ne 0 ]; then rm -rf -- "$OUTPUT_DIR"; fi
+            exit "$status"
+          }
+          trap cleanup_source EXIT
+
+          for attempt in $(seq 1 60); do
+            if docker run --rm --network host \
+                --env PGHOST=127.0.0.1 --env PGPORT="$PROXY_PORT" \
+                --env PGUSER="$EXPECTED_DATABASE_USER" --env PGDATABASE="$EXPECTED_DATABASE" \
+                --env PGPASSWORD='' --env PGSSLMODE=disable \
+                "$POSTGRES_IMAGE" pg_isready --quiet; then
+              break
+            fi
+            if ! kill -0 "$PROXY_PID" 2>/dev/null; then
+              echo '::error::Cloud SQL Auth Proxy exited before becoming ready.'
+              sed -n '1,40p' "$PROXY_LOG"
+              exit 1
+            fi
+            sleep 1
+          done
+          if ! docker run --rm --network host \
+              --env PGHOST=127.0.0.1 --env PGPORT="$PROXY_PORT" \
+              --env PGUSER="$EXPECTED_DATABASE_USER" --env PGDATABASE="$EXPECTED_DATABASE" \
+              --env PGPASSWORD='' --env PGSSLMODE=disable \
+              "$POSTGRES_IMAGE" pg_isready --quiet; then
+            echo '::error::Timed out connecting to the exact Cloud SQL instance.'
+            exit 1
+          fi
+
+          ROLE_IS_SAFE=$(docker run --rm --interactive --network host \
+            --env PGHOST=127.0.0.1 --env PGPORT="$PROXY_PORT" \
+            --env PGUSER="$EXPECTED_DATABASE_USER" --env PGDATABASE="$EXPECTED_DATABASE" \
+            --env PGPASSWORD='' --env PGSSLMODE=disable \
+            --env PGOPTIONS='-c default_transaction_read_only=on' \
+            "$POSTGRES_IMAGE" psql --no-psqlrc --set ON_ERROR_STOP=on \
+              --set expected_database="$EXPECTED_DATABASE" \
+              --set expected_user="$EXPECTED_DATABASE_USER" \
+              --set expected_postgres_major="$EXPECTED_POSTGRES_MAJOR" \
+              --quiet --tuples-only --no-align <<'SQL'
+          WITH RECURSIVE role_state AS (
+            SELECT oid, rolinherit, rolsuper, rolcreatedb, rolcreaterole,
+                   rolreplication, rolbypassrls
+            FROM pg_roles WHERE rolname = current_user
+          ), role_membership_closure(role_oid, role_name) AS (
+            SELECT parent.oid, parent.rolname
+            FROM role_state
+            JOIN pg_auth_members AS membership ON membership.member = role_state.oid
+            JOIN pg_roles AS parent ON parent.oid = membership.roleid
+            UNION
+            SELECT parent.oid, parent.rolname
+            FROM role_membership_closure AS closure
+            JOIN pg_auth_members AS membership ON membership.member = closure.role_oid
+            JOIN pg_roles AS parent ON parent.oid = membership.roleid
+          ), direct_backup_membership AS (
+            SELECT count(*) = 1 AND bool_and(
+              parent.rolname = 'simsa_backup_reader'
+              AND NOT membership.admin_option
+              AND membership.inherit_option
+              AND NOT membership.set_option
+            ) AS valid
+            FROM role_state
+            LEFT JOIN pg_auth_members AS membership ON membership.member = role_state.oid
+            LEFT JOIN pg_roles AS parent ON parent.oid = membership.roleid
+          ), backup_policy_membership AS (
+            SELECT count(*) = 1 AND bool_and(
+              parent.rolname = 'pg_read_all_data'
+              AND NOT membership.admin_option
+              AND membership.inherit_option
+              AND NOT membership.set_option
+            ) AS valid
+            FROM pg_roles AS policy
+            LEFT JOIN pg_auth_members AS membership ON membership.member = policy.oid
+            LEFT JOIN pg_roles AS parent ON parent.oid = membership.roleid
+            WHERE policy.rolname = 'simsa_backup_reader'
+          ), membership_closure_state AS (
+            SELECT count(*) = 2
+              AND bool_and(role_name IN ('simsa_backup_reader', 'pg_read_all_data')) AS valid
+            FROM role_membership_closure
+          ), application_relations AS (
+            SELECT relation.oid
+            FROM pg_class AS relation
+            INNER JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+            WHERE namespace.nspname IN ('public', 'drizzle')
+              AND relation.relkind IN ('r', 'p', 'v', 'm', 'f')
+          )
+          SELECT current_database() = :'expected_database'
+            AND current_user = :'expected_user'
+            AND current_setting('transaction_read_only') = 'on'
+            AND current_setting('server_version_num')::integer / 10000
+                  = :'expected_postgres_major'::integer
+            AND role_state.rolinherit
+            AND NOT role_state.rolsuper
+            AND NOT role_state.rolcreatedb
+            AND NOT role_state.rolcreaterole
+            AND NOT role_state.rolreplication
+            AND NOT role_state.rolbypassrls
+            AND direct_backup_membership.valid
+            AND backup_policy_membership.valid
+            AND membership_closure_state.valid
+            AND pg_has_role(current_user, 'pg_read_all_data', 'member')
+            AND NOT pg_has_role(current_user, 'pg_write_all_data', 'member')
+            AND NOT has_database_privilege(current_user, current_database(), 'CREATE')
+            AND NOT has_schema_privilege(current_user, 'public', 'CREATE')
+            AND NOT has_schema_privilege(current_user, 'drizzle', 'CREATE')
+            AND NOT pg_is_in_recovery()
+            AND EXISTS (SELECT 1 FROM application_relations)
+            AND (SELECT bool_and(
+              has_table_privilege(current_user, oid, 'SELECT')
+              AND NOT has_table_privilege(current_user, oid, 'INSERT')
+              AND NOT has_table_privilege(current_user, oid, 'UPDATE')
+              AND NOT has_table_privilege(current_user, oid, 'DELETE')
+              AND NOT has_table_privilege(current_user, oid, 'TRUNCATE')
+              AND NOT has_table_privilege(current_user, oid, 'TRIGGER')
+            ) FROM application_relations)
+          FROM role_state
+          CROSS JOIN direct_backup_membership
+          CROSS JOIN backup_policy_membership
+          CROSS JOIN membership_closure_state;
+          SQL
+          )
+          ROLE_IS_SAFE=$(printf '%s' "$ROLE_IS_SAFE" | tr -d '[:space:]')
+          if [ "$ROLE_IS_SAFE" != 't' ]; then
+            echo '::error::Cloud SQL backup role is not an exact read-only pg_read_all_data role.'
+            exit 1
+          fi
+
+          EXPECTED_MIGRATIONS_JSON=$(python3 "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py")
+          if [ -z "$EXPECTED_MIGRATIONS_JSON" ]; then
+            echo '::error::The checked-out migration manifest is empty.'
+            exit 1
+          fi
+          install -m 0600 "$GITHUB_WORKSPACE/.github/scripts/collect-backup-evidence.sql" \
+            "$EVIDENCE_DIR/collect-backup-evidence.sql"
+          mkfifo "$EVIDENCE_DIR/release.pipe"
+          cat > "$EVIDENCE_DIR/source-session.sql" <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE;
+          SELECT pg_export_snapshot() \g /evidence/snapshot.id
+          \o /evidence/source.evidence
+          \i /evidence/collect-backup-evidence.sql
+          \o
+          \! touch /evidence/source.ready
+          \! cat /evidence/release.pipe > /dev/null
+          COMMIT;
+          SQL
+
+          docker run --rm --name "$SNAPSHOT_CONTAINER" --network host \
+            --env PGHOST=127.0.0.1 --env PGPORT="$PROXY_PORT" \
+            --env PGUSER="$EXPECTED_DATABASE_USER" --env PGDATABASE="$EXPECTED_DATABASE" \
+            --env PGPASSWORD='' --env PGSSLMODE=disable \
+            --env PGOPTIONS='-c default_transaction_read_only=on' \
+            --volume "$EVIDENCE_DIR:/evidence" \
+            "$POSTGRES_IMAGE" psql --no-psqlrc --set ON_ERROR_STOP=on \
+              --set backup_profile="$BACKUP_SCHEMA_PROFILE" \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet --tuples-only --no-align --file /evidence/source-session.sql \
+            >"$EVIDENCE_DIR/source-session.log" 2>&1 &
+          SOURCE_SESSION_PID=$!
+
+          for attempt in $(seq 1 1200); do
+            if [ -f "$EVIDENCE_DIR/source.ready" ]; then break; fi
+            if ! kill -0 "$SOURCE_SESSION_PID" 2>/dev/null; then
+              wait "$SOURCE_SESSION_PID" || true
+              SOURCE_SESSION_PID=''
+              echo '::error::Source evidence session exited before exporting a snapshot.'
+              sed -n '1,40p' "$EVIDENCE_DIR/source-session.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ ! -f "$EVIDENCE_DIR/source.ready" ]; then
+            echo '::error::Timed out collecting Cloud SQL source evidence.'
+            exit 1
+          fi
+
+          SOURCE_SNAPSHOT=$(tr -d '\r\n[:space:]' < "$EVIDENCE_DIR/snapshot.id")
+          if [[ ! "$SOURCE_SNAPSHOT" =~ ^[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9]+$ ]]; then
+            echo '::error::Cloud SQL returned an invalid exported snapshot identifier.'
+            exit 1
+          fi
+          RESOLVED_SCHEMA_PROFILE=$(awk -F '\t' '$1 == "schema_profile" { print $2 }' \
+            "$EVIDENCE_DIR/source.evidence")
+          case "$RESOLVED_SCHEMA_PROFILE" in
+            pre_migration|post_migration) ;;
+            *) echo '::error::Source evidence did not resolve a supported schema profile.'; exit 1 ;;
+          esac
+          if [ "$BACKUP_SCHEMA_PROFILE" != auto ] && \
+             [ "$BACKUP_SCHEMA_PROFILE" != "$RESOLVED_SCHEMA_PROFILE" ]; then
+            echo '::error::Resolved source profile differs from the manual selection.'
+            exit 1
+          fi
+
+          STEM="simsa-cloud-sql-$(date -u +%Y-%m-%d)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ARCHIVE_NAME="$STEM.dump.age"
+          EVIDENCE_NAME="$STEM.evidence.age"
+          MANIFEST_NAME="$STEM.manifest.txt"
+          ARCHIVE_FILE="$OUTPUT_DIR/$ARCHIVE_NAME"
+          EVIDENCE_FILE="$OUTPUT_DIR/$EVIDENCE_NAME"
+          MANIFEST_FILE="$OUTPUT_DIR/$MANIFEST_NAME"
+
+          docker run --rm --network host \
+            --env PGHOST=127.0.0.1 --env PGPORT="$PROXY_PORT" \
+            --env PGUSER="$EXPECTED_DATABASE_USER" --env PGDATABASE="$EXPECTED_DATABASE" \
+            --env PGPASSWORD='' --env PGSSLMODE=disable \
+            --env PGOPTIONS='-c default_transaction_read_only=on' \
+            --env SOURCE_SNAPSHOT="$SOURCE_SNAPSHOT" \
+            "$POSTGRES_IMAGE" sh -eu -c 'exec pg_dump \
+              --format=custom --create --compress=9 --no-owner --no-privileges \
+              --snapshot="$SOURCE_SNAPSHOT" --lock-wait-timeout=60000' \
+            | age-bin --recipient "$AGE_RECIPIENT" --output "$ARCHIVE_FILE"
+
+          printf 'release\n' > "$EVIDENCE_DIR/release.pipe"
+          if ! wait "$SOURCE_SESSION_PID"; then
+            SOURCE_SESSION_PID=''
+            echo '::error::The source snapshot did not close cleanly.'
+            exit 1
+          fi
+          SOURCE_SESSION_PID=''
+
+          age-bin --recipient "$AGE_RECIPIENT" --output "$EVIDENCE_FILE" \
+            "$EVIDENCE_DIR/source.evidence"
+          ARCHIVE_SHA256=$(sha256sum "$ARCHIVE_FILE" | awk '{print $1}')
+          EVIDENCE_SHA256=$(sha256sum "$EVIDENCE_FILE" | awk '{print $1}')
+          SOURCE_IDENTITY_SHA256=$(printf '%s' "$CONNECTION_NAME/$EXPECTED_DATABASE/$EXPECTED_DATABASE_USER" \
+            | sha256sum | awk '{print $1}')
+          {
+            echo 'format=simsa-cloud-sql-age-v1'
+            echo "schema_profile=$RESOLVED_SCHEMA_PROFILE"
+            echo "source_identity_sha256=$SOURCE_IDENTITY_SHA256"
+            echo 'backup_role_membership_closure=exact'
+            echo "archive_name=$ARCHIVE_NAME"
+            echo "archive_sha256=$ARCHIVE_SHA256"
+            echo "evidence_name=$EVIDENCE_NAME"
+            echo "evidence_sha256=$EVIDENCE_SHA256"
+            echo "repository_commit=$GITHUB_SHA"
+            echo "workflow_run=${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          } > "$MANIFEST_FILE"
+          MANIFEST_SHA256=$(sha256sum "$MANIFEST_FILE" | awk '{print $1}')
+
+          if [ "$(stat -c%s "$ARCHIVE_FILE")" -lt 4096 ] || \
+             [ "$(stat -c%s "$EVIDENCE_FILE")" -lt 256 ]; then
+            echo '::error::Encrypted backup or evidence is suspiciously small.'
+            exit 1
+          fi
+          if [ "$(find "$OUTPUT_DIR" -maxdepth 1 -type f | wc -l)" -ne 3 ]; then
+            echo '::error::Output contains unexpected files.'
+            exit 1
+          fi
+
+          echo "artifact_name=cloud-sql-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "archive_name=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
+          echo "archive_sha256=$ARCHIVE_SHA256" >> "$GITHUB_OUTPUT"
+          echo "evidence_name=$EVIDENCE_NAME" >> "$GITHUB_OUTPUT"
+          echo "evidence_sha256=$EVIDENCE_SHA256" >> "$GITHUB_OUTPUT"
+          echo "manifest_name=$MANIFEST_NAME" >> "$GITHUB_OUTPUT"
+          echo "manifest_sha256=$MANIFEST_SHA256" >> "$GITHUB_OUTPUT"
+          echo "schema_profile=$RESOLVED_SCHEMA_PROFILE" >> "$GITHUB_OUTPUT"
+          echo "database_name=$EXPECTED_DATABASE" >> "$GITHUB_OUTPUT"
+          echo "source_identity_sha256=$SOURCE_IDENTITY_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload encrypted dump, encrypted evidence, and hash manifest
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.create.outputs.artifact_name }}
+          path: ${{ runner.temp }}/cloud-sql-encrypted-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  independent-restore-drill:
+    name: Fresh-runner download and independent restore
+    needs: backup
+    runs-on: ubuntu-latest
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: gcp-production-restore-drill
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    services:
+      restore-db:
+        image: ${{ vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '16' && 'postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825' || vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '17' && 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' || 'invalid-postgres-major' }}
+        env:
+          POSTGRES_USER: simsa_restore
+          POSTGRES_PASSWORD: restore-only-ephemeral
+          POSTGRES_DB: postgres
+        ports:
+          - '127.0.0.1:5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U simsa_restore -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout trusted default-branch verifier
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download encrypted artifact on a fresh runner
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.backup.outputs.artifact_name }}
+          path: ${{ runner.temp }}/downloaded-cloud-sql-backup
+
+      - name: Install checksum-pinned age and validate recovery identity
+        env:
+          AGE_RECIPIENT: ${{ secrets.CLOUD_SQL_BACKUP_AGE_RECIPIENT }}
+          AGE_IDENTITIES: ${{ secrets.CLOUD_SQL_BACKUP_AGE_IDENTITY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          TOOL_DIR="$RUNNER_TEMP/simsa-age-tools"
+          install -d -m 700 "$TOOL_DIR"
+          AGE_ARCHIVE="$RUNNER_TEMP/age-v${AGE_VERSION}-linux-amd64.tar.gz"
+          curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 \
+            "https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-linux-amd64.tar.gz" \
+            --output "$AGE_ARCHIVE"
+          printf '%s  %s\n' "$AGE_LINUX_AMD64_SHA256" "$AGE_ARCHIVE" \
+            | sha256sum --check --status -
+          tar --extract --gzip --file "$AGE_ARCHIVE" --directory "$TOOL_DIR"
+          install -m 0500 "$TOOL_DIR/age/age" "$TOOL_DIR/age-bin"
+          install -m 0500 "$TOOL_DIR/age/age-keygen" "$TOOL_DIR/age-keygen-bin"
+          rm -rf -- "$TOOL_DIR/age" "$AGE_ARCHIVE"
+
+          IDENTITY_FILE="$RUNNER_TEMP/cloud-sql-backup-identities.txt"
+          printf '%s\n' "$AGE_IDENTITIES" > "$IDENTITY_FILE"
+          chmod 0400 "$IDENTITY_FILE"
+          if [ ! -s "$IDENTITY_FILE" ] || ! [[ "$AGE_RECIPIENT" =~ ^age1[0-9a-z]{58}$ ]]; then
+            echo '::error::Cloud SQL recovery age secrets are missing or invalid.'
+            exit 1
+          fi
+          DERIVED_RECIPIENTS="$RUNNER_TEMP/derived-age-recipients.txt"
+          : > "$DERIVED_RECIPIENTS"
+          while IFS= read -r identity; do
+            case "$identity" in
+              AGE-SECRET-KEY-*)
+                ONE_IDENTITY="$RUNNER_TEMP/one-age-identity.txt"
+                printf '%s\n' "$identity" > "$ONE_IDENTITY"
+                "$TOOL_DIR/age-keygen-bin" -y "$ONE_IDENTITY" >> "$DERIVED_RECIPIENTS"
+                rm -f -- "$ONE_IDENTITY"
+                ;;
+            esac
+          done < "$IDENTITY_FILE"
+          if ! grep --fixed-strings --line-regexp --quiet "$AGE_RECIPIENT" "$DERIVED_RECIPIENTS"; then
+            echo '::error::CLOUD_SQL_BACKUP_AGE_IDENTITY cannot decrypt backups for the configured recipient.'
+            exit 1
+          fi
+          rm -f -- "$DERIVED_RECIPIENTS"
+          echo "$TOOL_DIR" >> "$GITHUB_PATH"
+          echo "CLOUD_SQL_AGE_IDENTITY_FILE=$IDENTITY_FILE" >> "$GITHUB_ENV"
+
+      - name: Verify hashes, stream restore, and compare independent evidence
+        env:
+          ARCHIVE_NAME: ${{ needs.backup.outputs.archive_name }}
+          ARCHIVE_SHA256: ${{ needs.backup.outputs.archive_sha256 }}
+          EVIDENCE_NAME: ${{ needs.backup.outputs.evidence_name }}
+          EVIDENCE_SHA256: ${{ needs.backup.outputs.evidence_sha256 }}
+          MANIFEST_NAME: ${{ needs.backup.outputs.manifest_name }}
+          MANIFEST_SHA256: ${{ needs.backup.outputs.manifest_sha256 }}
+          ARTIFACT_DIGEST: ${{ needs.backup.outputs.artifact_digest }}
+          SCHEMA_PROFILE: ${{ needs.backup.outputs.schema_profile }}
+          RESTORED_DATABASE: ${{ needs.backup.outputs.database_name }}
+          SOURCE_IDENTITY_SHA256: ${{ needs.backup.outputs.source_identity_sha256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          DOWNLOAD_DIR="$RUNNER_TEMP/downloaded-cloud-sql-backup"
+          ARCHIVE_FILE="$DOWNLOAD_DIR/$ARCHIVE_NAME"
+          EVIDENCE_FILE="$DOWNLOAD_DIR/$EVIDENCE_NAME"
+          MANIFEST_FILE="$DOWNLOAD_DIR/$MANIFEST_NAME"
+          SOURCE_EVIDENCE="$RUNNER_TEMP/cloud-sql-source.evidence"
+          RESTORE_EVIDENCE="$RUNNER_TEMP/cloud-sql-restore.evidence"
+          cleanup_drill() {
+            status=$?
+            trap - EXIT
+            rm -f -- "$SOURCE_EVIDENCE" "$RESTORE_EVIDENCE" \
+              "$RUNNER_TEMP/cloud-sql-restore-session.sql" \
+              "$RUNNER_TEMP/collect-backup-evidence.sql" \
+              "$CLOUD_SQL_AGE_IDENTITY_FILE"
+            exit "$status"
+          }
+          trap cleanup_drill EXIT
+
+          if [ "$(find "$DOWNLOAD_DIR" -maxdepth 1 -type f | wc -l)" -ne 3 ]; then
+            echo '::error::Downloaded artifact contains unexpected files.'
+            exit 1
+          fi
+          for file in "$ARCHIVE_FILE" "$EVIDENCE_FILE" "$MANIFEST_FILE"; do
+            if [ ! -s "$file" ]; then echo '::error::Downloaded artifact is incomplete.'; exit 1; fi
+          done
+          if [[ ! "$ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo '::error::Upload action did not return a valid artifact digest.'
+            exit 1
+          fi
+          if [[ ! "$SOURCE_IDENTITY_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo '::error::Backup source target identity hash is missing.'
+            exit 1
+          fi
+          printf '%s  %s\n' "$ARCHIVE_SHA256" "$ARCHIVE_FILE" | sha256sum --check --status -
+          printf '%s  %s\n' "$EVIDENCE_SHA256" "$EVIDENCE_FILE" | sha256sum --check --status -
+          printf '%s  %s\n' "$MANIFEST_SHA256" "$MANIFEST_FILE" | sha256sum --check --status -
+          grep --fixed-strings --line-regexp --quiet "archive_sha256=$ARCHIVE_SHA256" "$MANIFEST_FILE"
+          grep --fixed-strings --line-regexp --quiet "evidence_sha256=$EVIDENCE_SHA256" "$MANIFEST_FILE"
+          grep --fixed-strings --line-regexp --quiet "schema_profile=$SCHEMA_PROFILE" "$MANIFEST_FILE"
+          grep --fixed-strings --line-regexp --quiet "source_identity_sha256=$SOURCE_IDENTITY_SHA256" "$MANIFEST_FILE"
+          grep --fixed-strings --line-regexp --quiet 'backup_role_membership_closure=exact' "$MANIFEST_FILE"
+
+          EXPECTED_MIGRATIONS_JSON=$(python3 "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py")
+          case "$SCHEMA_PROFILE" in
+            pre_migration|post_migration) ;;
+            *) echo '::error::Invalid source schema profile.'; exit 1 ;;
+          esac
+          if [[ ! "$RESTORED_DATABASE" =~ ^[a-z][a-z0-9_]{2,62}$ ]]; then
+            echo '::error::Unsafe restored database name.'
+            exit 1
+          fi
+
+          # The portable archive excludes environment-specific IAM ACLs. These
+          # disposable passwordless login roles exist only so the production
+          # bootstrap can exercise the same principal mapping after restore.
+          docker run --rm --interactive --network host \
+            --env PGHOST=127.0.0.1 --env PGPORT=5432 \
+            --env PGUSER=simsa_restore --env PGPASSWORD=restore-only-ephemeral \
+            --env PGDATABASE=postgres \
+            "$POSTGRES_IMAGE" psql --no-psqlrc --set ON_ERROR_STOP=on <<'SQL'
+          CREATE ROLE "simsa-api-runtime@simsa-restore-drill.iam" LOGIN;
+          CREATE ROLE "simsa-event-runtime@simsa-restore-drill.iam" LOGIN;
+          CREATE ROLE "simsa-malware-worker@simsa-restore-drill.iam" LOGIN;
+          CREATE ROLE "simsa-final-cleanup@simsa-restore-drill.iam" LOGIN;
+          CREATE ROLE simsa_restore_maintenance LOGIN;
+          CREATE ROLE simsa_restore_migrator LOGIN PASSWORD 'restore-only-ephemeral';
+          CREATE ROLE simsa_restore_backup LOGIN;
+          SQL
+
+          # Let pg_restore --create reproduce the archive's encoding, locale,
+          # collation provider, and database properties instead of silently
+          # accepting the service container defaults.
+          age-bin --decrypt --identity "$CLOUD_SQL_AGE_IDENTITY_FILE" "$ARCHIVE_FILE" \
+            | docker run --rm --interactive --network host \
+                --env PGHOST=127.0.0.1 --env PGPORT=5432 \
+                --env PGUSER=simsa_restore --env PGPASSWORD=restore-only-ephemeral \
+                --env PGDATABASE=postgres \
+                "$POSTGRES_IMAGE" pg_restore --exit-on-error --create \
+                  --no-owner --no-privileges --dbname postgres
+
+          # pg_restore made the disposable grant administrator the owner. The
+          # same bootstrap used in Cloud SQL now excludes extension members,
+          # hands application objects to simsa_migrator, converges membership,
+          # and removes all direct IAM ACLs.
+          docker run --rm --network host \
+            --env PGHOST=127.0.0.1 --env PGPORT=5432 \
+            --env PGUSER=simsa_restore --env PGPASSWORD=restore-only-ephemeral \
+            --env PGDATABASE="$RESTORED_DATABASE" \
+            --volume "$GITHUB_WORKSPACE/backend/src/db/grants:/grants:ro" \
+            "$POSTGRES_IMAGE" psql --no-psqlrc --set ON_ERROR_STOP=on \
+              --set database_name="$RESTORED_DATABASE" \
+              --set expected_owner=simsa_restore \
+              --set identity_project_id=simsa-restore-drill \
+              --set api_service_account=simsa-api-runtime@simsa-restore-drill.iam.gserviceaccount.com \
+              --set event_service_account=simsa-event-runtime@simsa-restore-drill.iam.gserviceaccount.com \
+              --set worker_service_account=simsa-malware-worker@simsa-restore-drill.iam.gserviceaccount.com \
+              --set final_cleanup_service_account=simsa-final-cleanup@simsa-restore-drill.iam.gserviceaccount.com \
+              --set api_principal=simsa-api-runtime@simsa-restore-drill.iam \
+              --set event_principal=simsa-event-runtime@simsa-restore-drill.iam \
+              --set worker_principal=simsa-malware-worker@simsa-restore-drill.iam \
+              --set final_cleanup_principal=simsa-final-cleanup@simsa-restore-drill.iam \
+              --set maintenance_principal=simsa_restore_maintenance \
+              --set migrator_principal=simsa_restore_migrator \
+              --set backup_principal=simsa_restore_backup \
+              --file /grants/0001_bootstrap_cloud_sql_roles.sql
+
+          if [ "$SCHEMA_PROFILE" = post_migration ]; then
+            docker run --rm --interactive --network host \
+              --env PGHOST=127.0.0.1 --env PGPORT=5432 \
+              --env PGUSER=simsa_restore_migrator --env PGPASSWORD=restore-only-ephemeral \
+              --env PGDATABASE="$RESTORED_DATABASE" \
+              --volume "$GITHUB_WORKSPACE/backend/src/db/grants:/grants:ro" \
+              "$POSTGRES_IMAGE" psql --no-psqlrc --set ON_ERROR_STOP=on \
+                --set identity_project_id=simsa-restore-drill \
+                --set api_service_account=simsa-api-runtime@simsa-restore-drill.iam.gserviceaccount.com \
+                --set event_service_account=simsa-event-runtime@simsa-restore-drill.iam.gserviceaccount.com \
+                --set worker_service_account=simsa-malware-worker@simsa-restore-drill.iam.gserviceaccount.com \
+                --set final_cleanup_service_account=simsa-final-cleanup@simsa-restore-drill.iam.gserviceaccount.com \
+                --set api_principal=simsa-api-runtime@simsa-restore-drill.iam \
+                --set event_principal=simsa-event-runtime@simsa-restore-drill.iam \
+                --set worker_principal=simsa-malware-worker@simsa-restore-drill.iam \
+                --set final_cleanup_principal=simsa-final-cleanup@simsa-restore-drill.iam \
+                --set maintenance_principal=simsa_restore_maintenance \
+                --set migrator_principal=simsa_restore_migrator \
+                --set backup_principal=simsa_restore_backup \
+                --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+                --file /grants/0002_converge_application_grants.sql
+          fi
+
+          age-bin --decrypt --identity "$CLOUD_SQL_AGE_IDENTITY_FILE" \
+            --output "$SOURCE_EVIDENCE" "$EVIDENCE_FILE"
+          install -m 0600 "$GITHUB_WORKSPACE/.github/scripts/collect-backup-evidence.sql" \
+            "$RUNNER_TEMP/collect-backup-evidence.sql"
+          cat > "$RUNNER_TEMP/cloud-sql-restore-session.sql" <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          \o /evidence/cloud-sql-restore.evidence
+          \i /evidence/collect-backup-evidence.sql
+          \o
+          COMMIT;
+          SQL
+          docker run --rm --network host \
+            --env PGHOST=127.0.0.1 --env PGPORT=5432 \
+            --env PGUSER=simsa_restore --env PGPASSWORD=restore-only-ephemeral \
+            --env PGDATABASE="$RESTORED_DATABASE" \
+            --volume "$RUNNER_TEMP:/evidence" \
+            "$POSTGRES_IMAGE" psql --no-psqlrc --set ON_ERROR_STOP=on \
+              --set backup_profile="$SCHEMA_PROFILE" \
+              --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+              --quiet --tuples-only --no-align \
+              --file /evidence/cloud-sql-restore-session.sql
+
+          if ! cmp --silent "$SOURCE_EVIDENCE" "$RESTORE_EVIDENCE"; then
+            echo '::error::Independent restore differs in migrations, schema, counts, or critical-row fixity.'
+            exit 1
+          fi
+          {
+            echo '### Cloud SQL encrypted backup and independent restore passed'
+            echo
+            echo "- Artifact: \`${{ needs.backup.outputs.artifact_name }}\`"
+            echo "- Artifact digest: \`$ARTIFACT_DIGEST\`"
+            echo "- Encrypted archive SHA-256: \`$ARCHIVE_SHA256\`"
+            echo "- Encrypted evidence SHA-256: \`$EVIDENCE_SHA256\`"
+            echo "- Exact migration profile: \`$SCHEMA_PROFILE\`"
+            echo "- Production target identity SHA-256: \`$SOURCE_IDENTITY_SHA256\`"
+            echo "- Source commit: \`$GITHUB_SHA\`"
+            echo '- Drill: fresh runner, independently restored PostgreSQL, exact evidence match'
+          } >> "$GITHUB_STEP_SUMMARY"

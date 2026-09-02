@@ -38,6 +38,7 @@ describe('AuditLogService', () => {
             expect(auditLogService.getActionLabel('create')).toBe('Membuat');
             expect(auditLogService.getActionLabel('update')).toBe('Mengubah');
             expect(auditLogService.getActionLabel('delete')).toBe('Menghapus');
+            expect(auditLogService.getActionLabel('cancel')).toBe('Membatalkan');
             expect(auditLogService.getActionLabel('archive')).toBe('Mengarsipkan');
             expect(auditLogService.getActionLabel('restore')).toBe('Memulihkan');
             expect(auditLogService.getActionLabel('status_change')).toBe('Mengubah Status');

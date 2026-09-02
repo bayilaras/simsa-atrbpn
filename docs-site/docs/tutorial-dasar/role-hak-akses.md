@@ -28,24 +28,25 @@ SIMSA menggunakan sistem **Role-Based Access Control (RBAC)** untuk mengatur sia
 | Jadwal Retensi | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Manajemen Retensi | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Penyusutan | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Layanan Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Layanan Arsip | Ajukan/lihat sendiri | Proses unit | Proses unit | ✅ | 👁️ Lihat unit |
 | Peminjaman | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Lokasi Simpan | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Arsip Vital | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Arsip Terjaga | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Arsip Elektronik | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Autentikasi Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Autentikasi Arsip | ❌ | ❌ | ❌ | ✅ | ❌ |
 | Tunjuk Silang | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Klasifikasi Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Laporan | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Audit Log | ❌ | ✅ | ✅ | ✅ | ✅ |
 | User Management | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Settings (sidebar) | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Pengaturan: profil & preferensi | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Pengaturan: unit & template nomor | ❌ | ✅ (unit sendiri) | ✅ (unit sendiri) | ✅ | ❌ |
 | Tab Pengawasan (Dashboard) | ❌ | ❌ | ❌ | ✅ | ❌ |
 
 > 💡 **Keterangan:**
 > - 👁️ **Lihat** = Staff hanya bisa **melihat** data (read-only), **tidak bisa** menambah, mengedit, atau menghapus.
-> - Semua pengguna dapat mengakses **Profil** melalui dropdown user di header.
+> - Semua akun yang sudah diprovisi dapat mengelola **Profil** dan **Preferensi**. Tab unit kerja serta template nomor hanya tampil untuk admin sesuai cakupan unitnya.
 
 ---
 

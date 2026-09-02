@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { Send, Loader2 } from 'lucide-react'
 import {
     Dialog,
@@ -38,20 +38,11 @@ export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, 
     const [targetUnitId, setTargetUnitId] = useState('')
     const [instruction, setInstruction] = useState('')
 
-    // Load distributable units when dialog opens
-    useEffect(() => {
-        if (open) {
-            loadUnits()
-        }
-    }, [open, sourceUnitId])
-
-    const loadUnits = async () => {
+    const loadUnits = useCallback(async () => {
         setLoadingUnits(true)
         try {
             const response = await distributionService.getDistributableUnits(sourceUnitId)
-            if (response.success) {
-                setUnits(response.data)
-            }
+            setUnits(Array.isArray(response) ? response : [])
         } catch (error) {
             console.error('Error loading units:', error)
             toast({
@@ -62,9 +53,24 @@ export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, 
         } finally {
             setLoadingUnits(false)
         }
-    }
+    }, [sourceUnitId, toast])
+
+    // Load distributable units when dialog opens.
+    useEffect(() => {
+        if (open && sourceUnitId) {
+            void loadUnits()
+        }
+    }, [loadUnits, open, sourceUnitId])
 
     const handleSubmit = async () => {
+        if (!sourceUnitId) {
+            toast({
+                title: 'Unit kerja belum dipilih',
+                description: 'Distribusi memerlukan unit sumber yang konkret.',
+                variant: 'destructive',
+            })
+            return
+        }
         if (!targetUnitId) {
             toast({
                 title: 'Validasi',
@@ -182,7 +188,7 @@ export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, 
                     <Button variant="outline" onClick={handleClose} disabled={loading}>
                         Batal
                     </Button>
-                    <Button onClick={handleSubmit} disabled={loading || !targetUnitId}>
+                    <Button onClick={handleSubmit} disabled={loading || !sourceUnitId || !targetUnitId}>
                         {loading ? (
                             <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -1,20 +1,23 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, FolderTree, Loader2, Book, Building2, Folder, FileText } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, FolderTree, Book, Building2, Folder, GitBranch, LockKeyhole } from 'lucide-react'
 import { api } from '@/services/api'
+import regulatoryRuleSetService from '@/services/regulatory-rule-set.service'
+import { useAuth } from '@/context/AuthContext'
 import { Skeleton } from "@/components/ui/skeleton"
 
 // Tree Node Component
-function TreeNode({ node, level = 0, onEdit, onDelete }) {
+function TreeNode({ node, level = 0, onEdit, onDelete, editable }) {
     const [isOpen, setIsOpen] = useState(level < 1) // Auto-expand first level
     const hasChildren = node.children && node.children.length > 0
 
@@ -56,25 +59,28 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
                     </span>
                 )}
 
-                <div className="flex gap-1 shrink-0 ml-2">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 hover:text-blue-600" onClick={() => onEdit(node)}>
-                        <Edit2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                </div>
+                {editable && (
+                    <div className="flex gap-1 shrink-0 ml-2">
+                        <Button variant="ghost" size="icon" aria-label={`Edit ${node.kode}`} className="h-7 w-7 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400" onClick={() => onEdit(node)}>
+                            <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" aria-label={`Nonaktifkan ${node.kode}`} className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {hasChildren && isOpen && (
                 <div>
                     {node.children.map((child) => (
                         <TreeNode
-                            key={child.kode}
+                            key={child.id || child.sourceRecordKey || child.kode}
                             node={child}
                             level={level + 1}
                             onEdit={onEdit}
                             onDelete={onDelete}
+                            editable={editable}
                         />
                     ))}
                 </div>
@@ -83,29 +89,67 @@ function TreeNode({ node, level = 0, onEdit, onDelete }) {
     )
 }
 
+function filterKlasifikasiTree(nodes, query) {
+    if (!query) return nodes
+    const lowerQuery = query.toLowerCase()
+
+    return nodes.reduce((acc, node) => {
+        const matches = node.kode.toLowerCase().includes(lowerQuery) ||
+            node.jenis.toLowerCase().includes(lowerQuery)
+        const filteredChildren = node.children
+            ? filterKlasifikasiTree(node.children, query)
+            : []
+
+        if (matches || filteredChildren.length > 0) {
+            acc.push({ ...node, children: filteredChildren })
+        }
+        return acc
+    }, [])
+}
+
+function flattenTree(nodes, result = []) {
+    for (const node of nodes || []) {
+        result.push(node)
+        flattenTree(node.children, result)
+    }
+    return result
+}
+
 // Main Page Component
 export default function KlasifikasiArsip() {
+    const { user } = useAuth()
+    const [searchParams] = useSearchParams()
+    const ruleSetId = searchParams.get('ruleSetId') || ''
+    const requestedDraftMode = searchParams.get('mode') === 'draft'
     const [activeTab, setActiveTab] = useState('fasilitatif')
+    const [scopeFilter, setScopeFilter] = useState('kementerian')
     const [searchQuery, setSearchQuery] = useState('')
     const [treeData, setTreeData] = useState([])
     const [loading, setLoading] = useState(true)
     const [stats, setStats] = useState(null)
+    const [ruleSet, setRuleSet] = useState(null)
     const [dialogOpen, setDialogOpen] = useState(false)
     const [editMode, setEditMode] = useState(false)
     const [currentItem, setCurrentItem] = useState(null)
     const [formData, setFormData] = useState({
         kode: '',
+        sourceCode: '',
+        sourceRecordKey: '',
         jenis: '',
         keterangan: '',
         parentKode: '',
+        parentItemId: '__root__',
         kategori: '',
+        organizationalScope: 'kementerian',
+        sourcePage: '',
+        isSelectable: true,
     })
 
     // Fetch tree data
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         setLoading(true)
         try {
-            const response = await api.get(`/api/klasifikasi`, { format: 'tree', tipe: activeTab })
+            const response = await api.get(`/api/klasifikasi`, { format: 'tree', tipe: activeTab, ruleSetId, scope: scopeFilter })
             if (response.success) {
                 setTreeData(response.data)
             }
@@ -114,63 +158,76 @@ export default function KlasifikasiArsip() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [activeTab, ruleSetId, scopeFilter])
 
     // Fetch stats
-    const fetchStats = async () => {
+    const fetchStats = useCallback(async () => {
         try {
-            const response = await api.get('/api/klasifikasi/stats')
+            const response = await api.get('/api/klasifikasi/stats', { ruleSetId })
             if (response.success) {
                 setStats(response.data)
             }
         } catch (error) {
             console.error('Error fetching stats:', error)
         }
-    }
+    }, [ruleSetId])
 
     useEffect(() => {
         fetchData()
-    }, [activeTab])
+    }, [fetchData])
 
     useEffect(() => {
         fetchStats()
-    }, [])
+    }, [fetchStats])
 
-    // Filter tree based on search
-    const filterTree = (nodes, query) => {
-        if (!query) return nodes
-        const lowerQuery = query.toLowerCase()
-
-        return nodes.reduce((acc, node) => {
-            const matches = node.kode.toLowerCase().includes(lowerQuery) ||
-                node.jenis.toLowerCase().includes(lowerQuery)
-
-            const filteredChildren = node.children ? filterTree(node.children, query) : []
-
-            if (matches || filteredChildren.length > 0) {
-                acc.push({
-                    ...node,
-                    children: filteredChildren
-                })
+    useEffect(() => {
+        let cancelled = false
+        const loadRuleSet = async () => {
+            try {
+                const response = ruleSetId
+                    ? await regulatoryRuleSetService.getById(ruleSetId)
+                    : await regulatoryRuleSetService.getActive('klasifikasi')
+                if (!cancelled) setRuleSet(response.data || null)
+            } catch (error) {
+                console.error('Gagal memuat versi klasifikasi:', error)
+                if (!cancelled) setRuleSet(null)
             }
+        }
+        loadRuleSet()
+        return () => { cancelled = true }
+    }, [ruleSetId])
 
-            return acc
-        }, [])
-    }
+    const editable = Boolean(user?.role === 'super_admin' && ruleSetId && requestedDraftMode && ruleSet?.status === 'draft')
 
     const filteredData = useMemo(() => {
-        return filterTree(treeData, searchQuery)
+        return filterKlasifikasiTree(treeData, searchQuery)
     }, [treeData, searchQuery])
+
+    const parentOptions = useMemo(
+        () => flattenTree(treeData, []).filter((node) => !currentItem || node.id !== currentItem.id),
+        [treeData, currentItem],
+    )
+
+    const selectedParent = useMemo(
+        () => parentOptions.find((node) => String(node.id) === formData.parentItemId),
+        [parentOptions, formData.parentItemId],
+    )
 
     // Handle create/edit
     const handleSave = async () => {
         try {
             if (editMode && currentItem) {
                 // Update
-                const response = await api.put(`/api/klasifikasi/${currentItem.kode}`, {
+                const response = await api.put(`/api/klasifikasi/items/${currentItem.id}`, {
                     jenis: formData.jenis,
                     keterangan: formData.keterangan,
                     kategori: formData.kategori,
+                    sourceCode: formData.sourceCode || formData.kode,
+                    sourceRecordKey: formData.sourceRecordKey || undefined,
+                    organizationalScope: formData.organizationalScope,
+                    sourcePage: formData.sourcePage ? Number(formData.sourcePage) : null,
+                    isSelectable: formData.isSelectable,
+                    ruleSetId,
                 })
                 if (response.success) {
                     // alert('Klasifikasi berhasil diperbarui')
@@ -180,8 +237,14 @@ export default function KlasifikasiArsip() {
                 // Create
                 const response = await api.post('/api/klasifikasi', {
                     ...formData,
+                    parentItemId: undefined,
+                    parentKode: selectedParent?.kode || null,
+                    sourceCode: formData.sourceCode || formData.kode,
+                    sourceRecordKey: formData.sourceRecordKey || undefined,
+                    sourcePage: formData.sourcePage ? Number(formData.sourcePage) : null,
+                    ruleSetId,
                     tipe: activeTab,
-                    level: formData.parentKode ? 1 : 0,
+                    level: selectedParent ? Number(selectedParent.level || 0) + 1 : 0,
                 })
                 if (response.success) {
                     // alert('Klasifikasi berhasil ditambahkan')
@@ -202,10 +265,16 @@ export default function KlasifikasiArsip() {
         setCurrentItem(node)
         setFormData({
             kode: node.kode,
+            sourceCode: node.sourceCode || node.kode,
+            sourceRecordKey: node.sourceRecordKey || '',
             jenis: node.jenis,
             keterangan: node.keterangan || '',
             parentKode: node.parentKode || '',
+            parentItemId: '__root__',
             kategori: node.kategori || '',
+            organizationalScope: node.organizationalScope || 'kementerian',
+            sourcePage: node.sourcePage || '',
+            isSelectable: node.isSelectable !== false,
         })
         setDialogOpen(true)
     }
@@ -214,7 +283,7 @@ export default function KlasifikasiArsip() {
         if (!confirm(`Hapus klasifikasi "${node.kode} - ${node.jenis}"?`)) return
 
         try {
-            const response = await api.delete(`/api/klasifikasi/${node.kode}`)
+            const response = await api.delete(`/api/klasifikasi/items/${node.id}?ruleSetId=${encodeURIComponent(ruleSetId)}`)
             if (response.success) {
                 // alert('Klasifikasi berhasil dihapus')
                 fetchData()
@@ -229,10 +298,16 @@ export default function KlasifikasiArsip() {
     const resetForm = () => {
         setFormData({
             kode: '',
+            sourceCode: '',
+            sourceRecordKey: '',
             jenis: '',
             keterangan: '',
             parentKode: '',
+            parentItemId: '__root__',
             kategori: '',
+            organizationalScope: scopeFilter,
+            sourcePage: '',
+            isSelectable: true,
         })
         setEditMode(false)
         setCurrentItem(null)
@@ -240,6 +315,7 @@ export default function KlasifikasiArsip() {
 
     const handleAddNew = () => {
         resetForm()
+        setFormData((current) => ({ ...current, organizationalScope: scopeFilter }))
         setDialogOpen(true)
     }
 
@@ -249,57 +325,74 @@ export default function KlasifikasiArsip() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <FolderTree className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <FolderTree className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         Klasifikasi Arsip
                     </h1>
                     <p className="text-muted-foreground">
-                        Master data klasifikasi arsip sesuai Permen ATR/BPN No. 10 Tahun 2018
+                        Master data klasifikasi arsip sesuai {ruleSet?.regulationNumber || 'versi aturan yang aktif'}
                     </p>
                 </div>
-                <Button onClick={handleAddNew} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Tambah Klasifikasi
-                </Button>
+                {editable && (
+                    <Button onClick={handleAddNew} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Tambah Klasifikasi
+                    </Button>
+                )}
             </div>
+
+            <Alert>
+                {editable ? <GitBranch className="h-4 w-4" /> : <LockKeyhole className="h-4 w-4" />}
+                <AlertTitle>
+                    {editable ? `Mengedit draft ${ruleSet?.version || ''}` : `Versi ${ruleSet?.version || 'aktif'} hanya-baca`}
+                </AlertTitle>
+                <AlertDescription className="gap-2 sm:flex sm:items-center sm:justify-between">
+                    <span>{editable
+                        ? 'Perubahan hanya memengaruhi draft ini. Jalankan validasi sebelum mengaktifkannya.'
+                        : 'Versi yang telah diterbitkan tidak dapat diubah. Buat draft revisi melalui halaman Versi Aturan.'}</span>
+                    <Button variant="outline" size="sm" asChild>
+                        <Link to="/master/regulatory-rules?instrument=klasifikasi">Kelola versi aturan</Link>
+                    </Button>
+                </AlertDescription>
+            </Alert>
 
             {/* Stats Cards */}
             {stats && (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                     <Card className="shadow-sm border-l-4 border-l-slate-400">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Total Klasifikasi</CardTitle>
-                            <div className="p-1.5 bg-slate-100 rounded-full">
-                                <Folder className="h-3.5 w-3.5 text-slate-600" />
+                            <div className="p-1.5 bg-muted rounded-full">
+                                <Folder className="h-3.5 w-3.5 text-muted-foreground" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-slate-700">{stats.total}</div>
+                            <div className="text-2xl font-bold text-foreground">{stats.total}</div>
                             <p className="text-xs text-muted-foreground mt-1">Total seluruh kode</p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-blue-400">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Fasilitatif</CardTitle>
-                            <div className="p-1.5 bg-blue-100 rounded-full">
-                                <Book className="h-3.5 w-3.5 text-blue-600" />
+                            <div className="p-1.5 bg-blue-100 dark:bg-blue-500/15 rounded-full">
+                                <Book className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-blue-600">{stats.fasilitatif}</div>
+                            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.fasilitatif}</div>
                             <p className="text-xs text-muted-foreground mt-1">{stats.rootFasilitatif} kategori utama</p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-emerald-400">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Substantif</CardTitle>
-                            <div className="p-1.5 bg-emerald-100 rounded-full">
-                                <Building2 className="h-3.5 w-3.5 text-emerald-600" />
+                            <div className="p-1.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-full">
+                                <Building2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-emerald-600">{stats.substantif}</div>
+                            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.substantif}</div>
                             <p className="text-xs text-muted-foreground mt-1">{stats.rootSubstantif} kategori utama</p>
                         </CardContent>
                     </Card>
@@ -309,7 +402,7 @@ export default function KlasifikasiArsip() {
             {/* Main Content */}
             <Card className="shadow-sm border-border/60">
                 <CardHeader className="pb-4 bg-muted/20">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between gap-4">
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
                             <TabsList className="bg-muted/50 p-1">
                                 <TabsTrigger value="fasilitatif" className="gap-2">
@@ -323,7 +416,18 @@ export default function KlasifikasiArsip() {
                             </TabsList>
                         </Tabs>
 
-                        <div className="relative w-full sm:w-72">
+                        <Select value={scopeFilter} onValueChange={setScopeFilter}>
+                            <SelectTrigger className="w-full sm:w-48" aria-label="Lingkup organisasi">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="kementerian">Kementerian</SelectItem>
+                                <SelectItem value="kanwil">Kantor Wilayah</SelectItem>
+                                <SelectItem value="kantah">Kantor Pertanahan</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        <div className="relative w-full sm:w-72 sm:max-w-full">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                                 placeholder="Cari kode atau jenis..."
@@ -354,10 +458,11 @@ export default function KlasifikasiArsip() {
                         <div className="divide-y divide-border/50">
                             {filteredData.map((node) => (
                                 <TreeNode
-                                    key={node.kode}
+                                    key={node.id || node.sourceRecordKey || node.kode}
                                     node={node}
                                     onEdit={handleEdit}
                                     onDelete={handleDelete}
+                                    editable={editable}
                                 />
                             ))}
                         </div>
@@ -367,7 +472,7 @@ export default function KlasifikasiArsip() {
 
             {/* Create/Edit Dialog */}
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="sm:max-w-[500px]">
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-xl">
                             <div className="p-1.5 bg-primary/10 rounded-md">
@@ -408,15 +513,49 @@ export default function KlasifikasiArsip() {
                         </div>
 
                         <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="parentKode" className="text-right font-medium">Parent</Label>
+                            <Label htmlFor="sourceCode" className="text-right font-medium">Kode sumber</Label>
                             <Input
-                                id="parentKode"
-                                value={formData.parentKode}
-                                onChange={(e) => setFormData({ ...formData, parentKode: e.target.value })}
+                                id="sourceCode"
+                                value={formData.sourceCode}
+                                onChange={(e) => setFormData({ ...formData, sourceCode: e.target.value })}
                                 className="col-span-3 font-mono"
-                                placeholder="Kode parent (kosong jika root)"
-                                disabled={editMode}
+                                placeholder="Kode sebagaimana tercetak pada sumber"
                             />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="sourceRecordKey" className="text-right font-medium">Identitas baris</Label>
+                            <Input
+                                id="sourceRecordKey"
+                                value={formData.sourceRecordKey}
+                                onChange={(e) => setFormData({ ...formData, sourceRecordKey: e.target.value })}
+                                className="col-span-3 font-mono text-xs"
+                                placeholder="Unik dalam versi; kosongkan untuk dibuat server"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="parentKode" className="text-right font-medium">Parent</Label>
+                            {editMode ? (
+                                <Input value={formData.parentKode || 'Root'} className="col-span-3 font-mono" disabled />
+                            ) : (
+                                <Select
+                                    value={formData.parentItemId}
+                                    onValueChange={(value) => setFormData({ ...formData, parentItemId: value })}
+                                >
+                                    <SelectTrigger id="parentKode" className="col-span-3">
+                                        <SelectValue placeholder="Pilih parent" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__root__">Root / tanpa parent</SelectItem>
+                                        {parentOptions.map((parent) => (
+                                            <SelectItem key={parent.id || parent.sourceRecordKey} value={String(parent.id)}>
+                                                {parent.kode} — {parent.jenis}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-4 items-center gap-4">
@@ -428,6 +567,48 @@ export default function KlasifikasiArsip() {
                                 className="col-span-3"
                                 placeholder="Kategori utama (opsional)"
                             />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="organizationalScope" className="text-right font-medium">Lingkup</Label>
+                            <Select
+                                value={formData.organizationalScope}
+                                onValueChange={(value) => setFormData({ ...formData, organizationalScope: value })}
+                            >
+                                <SelectTrigger id="organizationalScope" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="kementerian">Kementerian</SelectItem>
+                                    <SelectItem value="kanwil">Kantor Wilayah</SelectItem>
+                                    <SelectItem value="kantah">Kantor Pertanahan</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="sourcePage" className="text-right font-medium">Halaman sumber</Label>
+                            <Input
+                                id="sourcePage"
+                                type="number"
+                                min="1"
+                                value={formData.sourcePage}
+                                onChange={(e) => setFormData({ ...formData, sourcePage: e.target.value })}
+                                className="col-span-3"
+                                placeholder="Nomor halaman PDF resmi"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="isSelectable" className="text-right font-medium">Dapat dipilih</Label>
+                            <Select
+                                value={formData.isSelectable ? 'yes' : 'no'}
+                                onValueChange={(value) => setFormData({ ...formData, isSelectable: value === 'yes' })}
+                            >
+                                <SelectTrigger id="isSelectable" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="yes">Ya, butir arsip</SelectItem>
+                                    <SelectItem value="no">Tidak, hanya simpul hierarki</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         <div className="grid grid-cols-4 items-start gap-4">

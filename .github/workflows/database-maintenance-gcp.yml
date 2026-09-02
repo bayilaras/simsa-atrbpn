@@ -1,0 +1,831 @@
+name: GCP Production Database Maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Isolated database environment (currently Production only)
+        required: true
+        type: choice
+        options:
+          - production
+      commit_sha:
+        description: Exact reviewed 40-character merge commit to maintain and release
+        required: true
+        type: string
+      backup_run_id:
+        description: Successful manual Cloud SQL backup/independent-restore workflow run ID
+        required: true
+        type: string
+      backup_artifact_id:
+        description: Immutable encrypted backup artifact ID from that run
+        required: true
+        type: string
+      backup_artifact_digest:
+        description: GitHub artifact digest (sha256:...)
+        required: true
+        type: string
+      production_confirmation:
+        description: Enter MAINTAIN_PRODUCTION
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simsa-gcp-production-database-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    name: Controlled bootstrap, migrate, grants, and seed
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - simsa-gcp-private
+      - simsa-gcp-maintenance
+    timeout-minutes: 60
+    environment:
+      name: gcp-production-database-maintenance
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      id-token: write
+      pull-requests: read
+      statuses: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+      artifact_name: ${{ steps.context.outputs.artifact_name }}
+      maintenance_image_digest: ${{ steps.image.outputs.maintenance_image_digest }}
+
+    steps:
+      - name: Bind the loaded Production workflow definition to the requested commit
+        id: request
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ inputs.commit_sha }}
+          REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -Eeuo pipefail
+          requested="${REQUESTED_SHA,,}"
+          [ "$REQUESTED_ENVIRONMENT" = production ] || { echo '::error::Only Production maintenance is supported.'; exit 1; }
+          [[ "$requested" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::commit_sha must be a full hexadecimal SHA.'; exit 1; }
+          [ "${GITHUB_SHA,,}" = "$requested" ] || {
+            echo '::error::The loaded Production workflow definition does not match the requested commit.'
+            exit 1
+          }
+          echo "commit_sha=$requested" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the exact maintenance commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.request.outputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate immutable request and initialize evidence
+        id: context
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ steps.request.outputs.commit_sha }}
+          CONFIRMATION: ${{ inputs.production_confirmation }}
+          BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+          BACKUP_ARTIFACT_ID: ${{ inputs.backup_artifact_id }}
+          BACKUP_ARTIFACT_DIGEST: ${{ inputs.backup_artifact_digest }}
+        run: |
+          set -Eeuo pipefail
+          requested="${REQUESTED_SHA,,}"
+          [ "$CONFIRMATION" = 'MAINTAIN_PRODUCTION' ] || { echo '::error::Enter MAINTAIN_PRODUCTION exactly.'; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$requested" ] || { echo '::error::Checkout does not equal commit_sha.'; exit 1; }
+          [[ "$BACKUP_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo '::error::Invalid backup run ID.'; exit 1; }
+          [[ "$BACKUP_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || { echo '::error::Invalid backup artifact ID.'; exit 1; }
+          [[ "${BACKUP_ARTIFACT_DIGEST,,}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo '::error::Invalid backup artifact digest.'; exit 1; }
+          mkdir -p maintenance-evidence
+          artifact_name="gcp-database-maintenance-production-${requested}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-evidence"
+          {
+            echo "commit_sha=$requested"
+            echo "artifact_name=$artifact_name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate maintenance policy and gate self-tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/validate-gcp-database-maintenance-workflow.py
+          python3 .github/scripts/check-gcp-maintenance-gate.py --self-test
+          bash -n .github/scripts/run-gcp-database-maintenance.sh
+
+      - name: Require final merge review and required checks before database mutation
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ steps.context.outputs.commit_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-backend-production-gate.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --commit-sha "$RELEASE_SHA" \
+            --evidence maintenance-evidence/production-source-gate.json
+
+      - name: Resolve exact Production backup target binding before the backup gate
+        id: backup_target
+        shell: bash
+        env:
+          PROJECT_ID: ${{ vars.GCP_DB_PROJECT_ID }}
+          REGION: ${{ vars.GCP_DB_REGION }}
+          INSTANCE: ${{ vars.GCP_DB_INSTANCE }}
+          DATABASE: ${{ vars.GCP_DB_DATABASE }}
+          UPLOAD_BUCKET: ${{ vars.GCP_UPLOAD_BUCKET }}
+          FINAL_BUCKET: ${{ vars.GCP_FINAL_BUCKET }}
+          CLOUD_SQL_PROXY_IMAGE: ${{ vars.GCP_CLOUD_SQL_PROXY_IMAGE }}
+          FIREBASE_APP_CHECK_APP_IDS: ${{ vars.GCP_FIREBASE_APP_CHECK_APP_IDS }}
+          FRONTEND_URL: ${{ vars.GCP_FRONTEND_URL }}
+          ADDITIONAL_TRUSTED_ORIGINS: ${{ vars.GCP_ADDITIONAL_TRUSTED_ORIGINS }}
+          EVENTARC_INVOKER_SA: ${{ vars.GCP_EVENTARC_INVOKER_SERVICE_ACCOUNT }}
+          BACKUP_SA: ${{ vars.GCP_DB_BACKUP_SERVICE_ACCOUNT }}
+          BACKUP_PRINCIPAL: ${{ vars.GCP_DB_BACKUP_PRINCIPAL }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import re
+          from urllib.parse import urlsplit
+
+          patterns = {
+              'PROJECT_ID': r'[a-z][a-z0-9-]{4,28}[a-z0-9]',
+              'REGION': r'[a-z]+-[a-z0-9]+[0-9]',
+              'INSTANCE': r'[a-z][a-z0-9-]{0,96}[a-z0-9]',
+              'DATABASE': r'[a-z][a-z0-9_]{2,62}',
+              'UPLOAD_BUCKET': r'[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]',
+              'FINAL_BUCKET': r'[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]',
+              'CLOUD_SQL_PROXY_IMAGE': r'(?:[a-z0-9.-]+(?::[0-9]+)?/)+[a-z0-9._/-]+@sha256:[0-9a-f]{64}',
+              'BACKUP_SA': r'[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9][.]iam[.]gserviceaccount[.]com',
+              'BACKUP_PRINCIPAL': r'[A-Za-z0-9][A-Za-z0-9._@-]{2,62}',
+          }
+          values = {}
+          for name, pattern in patterns.items():
+              value = os.environ.get(name, '').strip()
+              if re.fullmatch(pattern, value) is None:
+                  raise SystemExit(f'::error::{name} is missing or invalid before the backup gate.')
+              values[name] = value
+          if values['UPLOAD_BUCKET'] == values['FINAL_BUCKET']:
+              raise SystemExit('::error::Production upload and final buckets must be distinct.')
+          app_ids = os.environ.get('FIREBASE_APP_CHECK_APP_IDS', '').split(',')
+          if (not app_ids or any(re.fullmatch(r'1:[0-9]{6,}:web:[0-9a-f]{8,}', value) is None for value in app_ids)
+                  or app_ids != sorted(set(app_ids))):
+              raise SystemExit('::error::FIREBASE_APP_CHECK_APP_IDS must be a sorted canonical unique list.')
+          frontend = os.environ.get('FRONTEND_URL', '')
+          additional = os.environ.get('ADDITIONAL_TRUSTED_ORIGINS', '')
+          def canonical_origin(value):
+              parsed = urlsplit(value)
+              return (parsed.scheme == 'https' and parsed.netloc and not parsed.username and not parsed.password
+                      and parsed.path == '' and not parsed.query and not parsed.fragment
+                      and value == f'https://{parsed.netloc}')
+          if not canonical_origin(frontend):
+              raise SystemExit('::error::FRONTEND_URL must be one canonical HTTPS origin.')
+          origins = additional.split(',') if additional else []
+          if len(origins) > 20 or origins != sorted(set(origins)) or any(not canonical_origin(value) for value in origins):
+              raise SystemExit('::error::ADDITIONAL_TRUSTED_ORIGINS must be an empty or sorted canonical unique HTTPS-origin list.')
+          if frontend in origins:
+              raise SystemExit('::error::FRONTEND_URL must not be duplicated in ADDITIONAL_TRUSTED_ORIGINS.')
+          if values['UPLOAD_BUCKET'] == values['FINAL_BUCKET']:
+              raise SystemExit('::error::Production upload and final buckets must be distinct.')
+          if not values['BACKUP_SA'].endswith(
+              f"@{values['PROJECT_ID']}.iam.gserviceaccount.com"
+          ):
+              raise SystemExit('::error::BACKUP_SA belongs to another project.')
+          if values['BACKUP_PRINCIPAL'] != values['BACKUP_SA'].removesuffix(
+              '.gserviceaccount.com'
+          ):
+              raise SystemExit('::error::BACKUP_PRINCIPAL does not match BACKUP_SA.')
+          canonical = (
+              f"{values['PROJECT_ID']}:{values['REGION']}:{values['INSTANCE']}/"
+              f"{values['DATABASE']}/{values['BACKUP_PRINCIPAL']}"
+          )
+          source_identity_sha256 = hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'source_identity_sha256={source_identity_sha256}\n')
+          PY
+
+      - name: Verify successful encrypted backup and independent restore evidence
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind backup \
+            --repository "$GITHUB_REPOSITORY" \
+            --environment production \
+            --commit-sha '${{ steps.context.outputs.commit_sha }}' \
+            --run-id '${{ inputs.backup_run_id }}' \
+            --artifact-id '${{ inputs.backup_artifact_id }}' \
+            --artifact-digest '${{ inputs.backup_artifact_digest }}' \
+            --expected-source-identity-sha256 '${{ steps.backup_target.outputs.source_identity_sha256 }}' \
+            --evidence maintenance-evidence/backup-gate.json
+
+      - name: Download the exact encrypted backup artifact without decrypting it
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ inputs.backup_artifact_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.backup_run_id }}
+          path: ${{ runner.temp }}/maintenance-backup-evidence
+          merge-multiple: true
+
+      - name: Verify pre-migration backup manifest, commit, run, names, and encrypted hashes
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind backup \
+            --repository "$GITHUB_REPOSITORY" \
+            --environment production \
+            --commit-sha '${{ steps.context.outputs.commit_sha }}' \
+            --run-id '${{ inputs.backup_run_id }}' \
+            --artifact-id '${{ inputs.backup_artifact_id }}' \
+            --artifact-digest '${{ inputs.backup_artifact_digest }}' \
+            --expected-source-identity-sha256 '${{ steps.backup_target.outputs.source_identity_sha256 }}' \
+            --evidence-dir "$RUNNER_TEMP/maintenance-backup-evidence" \
+            --evidence maintenance-evidence/backup-gate.json
+
+      - name: Resolve protected database identities and target
+        id: config
+        shell: bash
+        env:
+          PROJECT_ID: ${{ vars.GCP_DB_PROJECT_ID }}
+          REGION: ${{ vars.GCP_DB_REGION }}
+          INSTANCE: ${{ vars.GCP_DB_INSTANCE }}
+          DATABASE: ${{ vars.GCP_DB_DATABASE }}
+          UPLOAD_BUCKET: ${{ vars.GCP_UPLOAD_BUCKET }}
+          FINAL_BUCKET: ${{ vars.GCP_FINAL_BUCKET }}
+          CLOUD_SQL_PROXY_IMAGE: ${{ vars.GCP_CLOUD_SQL_PROXY_IMAGE }}
+          FIREBASE_APP_CHECK_APP_IDS: ${{ vars.GCP_FIREBASE_APP_CHECK_APP_IDS }}
+          FRONTEND_URL: ${{ vars.GCP_FRONTEND_URL }}
+          ADDITIONAL_TRUSTED_ORIGINS: ${{ vars.GCP_ADDITIONAL_TRUSTED_ORIGINS }}
+          EVENTARC_INVOKER_SA: ${{ vars.GCP_EVENTARC_INVOKER_SERVICE_ACCOUNT }}
+          WIF_PROVIDER: ${{ vars.GCP_DB_WIF_PROVIDER }}
+          GRANT_ADMIN_SA: ${{ vars.GCP_DB_GRANT_ADMIN_SERVICE_ACCOUNT }}
+          API_SA: ${{ vars.GCP_DB_API_SERVICE_ACCOUNT }}
+          EVENT_SA: ${{ vars.GCP_DB_EVENT_SERVICE_ACCOUNT }}
+          WORKER_SA: ${{ vars.GCP_DB_WORKER_SERVICE_ACCOUNT }}
+          FINAL_CLEANUP_SA: ${{ vars.GCP_DB_FINAL_CLEANUP_SERVICE_ACCOUNT }}
+          MIGRATOR_SA: ${{ vars.GCP_DB_MIGRATOR_SERVICE_ACCOUNT }}
+          MAINTENANCE_SA: ${{ vars.GCP_DB_MAINTENANCE_SERVICE_ACCOUNT }}
+          BACKUP_SA: ${{ vars.GCP_DB_BACKUP_SERVICE_ACCOUNT }}
+          GRANT_ADMIN_PRINCIPAL: ${{ vars.GCP_DB_GRANT_ADMIN_PRINCIPAL }}
+          API_PRINCIPAL: ${{ vars.GCP_DB_API_PRINCIPAL }}
+          EVENT_PRINCIPAL: ${{ vars.GCP_DB_EVENT_PRINCIPAL }}
+          WORKER_PRINCIPAL: ${{ vars.GCP_DB_WORKER_PRINCIPAL }}
+          FINAL_CLEANUP_PRINCIPAL: ${{ vars.GCP_DB_FINAL_CLEANUP_PRINCIPAL }}
+          MIGRATOR_PRINCIPAL: ${{ vars.GCP_DB_MIGRATOR_PRINCIPAL }}
+          MAINTENANCE_PRINCIPAL: ${{ vars.GCP_DB_MAINTENANCE_PRINCIPAL }}
+          BACKUP_PRINCIPAL: ${{ vars.GCP_DB_BACKUP_PRINCIPAL }}
+          EXPECTED_SOURCE_IDENTITY_SHA256: ${{ steps.backup_target.outputs.source_identity_sha256 }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          from urllib.parse import urlsplit
+
+          patterns = {
+              'PROJECT_ID': r'[a-z][a-z0-9-]{4,28}[a-z0-9]',
+              'REGION': r'[a-z]+-[a-z0-9]+[0-9]',
+              'INSTANCE': r'[a-z][a-z0-9-]{0,96}[a-z0-9]',
+              'DATABASE': r'[a-z][a-z0-9_]{2,62}',
+              'UPLOAD_BUCKET': r'[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]',
+              'FINAL_BUCKET': r'[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]',
+              'CLOUD_SQL_PROXY_IMAGE': r'(?:[a-z0-9.-]+(?::[0-9]+)?/)+[a-z0-9._/-]+@sha256:[0-9a-f]{64}',
+              'WIF_PROVIDER': r'projects/[0-9]+/locations/global/workloadIdentityPools/[A-Za-z0-9_-]+/providers/[A-Za-z0-9_-]+',
+          }
+          values = {}
+          for name, pattern in patterns.items():
+              value = os.environ.get(name, '').strip()
+              if re.fullmatch(pattern, value) is None:
+                  raise SystemExit(f'::error::{name} is missing or invalid.')
+              values[name] = value
+          if values['UPLOAD_BUCKET'] == values['FINAL_BUCKET']:
+              raise SystemExit('::error::Production upload and final buckets must be distinct.')
+          app_ids = os.environ.get('FIREBASE_APP_CHECK_APP_IDS', '').split(',')
+          if (not app_ids or any(re.fullmatch(r'1:[0-9]{6,}:web:[0-9a-f]{8,}', value) is None for value in app_ids)
+                  or app_ids != sorted(set(app_ids))):
+              raise SystemExit('::error::FIREBASE_APP_CHECK_APP_IDS must be a sorted canonical unique list.')
+          frontend = os.environ.get('FRONTEND_URL', '')
+          additional = os.environ.get('ADDITIONAL_TRUSTED_ORIGINS', '')
+          def canonical_origin(value):
+              parsed = urlsplit(value)
+              return (parsed.scheme == 'https' and parsed.netloc and not parsed.username and not parsed.password
+                      and parsed.path == '' and not parsed.query and not parsed.fragment
+                      and value == f'https://{parsed.netloc}')
+          if not canonical_origin(frontend):
+              raise SystemExit('::error::FRONTEND_URL must be one canonical HTTPS origin.')
+          origins = additional.split(',') if additional else []
+          if len(origins) > 20 or origins != sorted(set(origins)) or any(not canonical_origin(value) for value in origins):
+              raise SystemExit('::error::ADDITIONAL_TRUSTED_ORIGINS must be an empty or sorted canonical unique HTTPS-origin list.')
+          if frontend in origins:
+              raise SystemExit('::error::FRONTEND_URL must not be duplicated in ADDITIONAL_TRUSTED_ORIGINS.')
+          canonical_account_ids = {
+              'GRANT_ADMIN_SA': 'simsa-db-grant-admin',
+              'API_SA': 'simsa-api-runtime',
+              'EVENT_SA': 'simsa-event-runtime',
+              'WORKER_SA': 'simsa-malware-worker',
+              'FINAL_CLEANUP_SA': 'simsa-final-cleanup',
+              'MIGRATOR_SA': 'simsa-db-migrator',
+              'MAINTENANCE_SA': 'simsa-db-maintenance',
+              'BACKUP_SA': 'simsa-db-backup',
+          }
+          service_accounts = {}
+          for name, account_id in canonical_account_ids.items():
+              value = os.environ.get(name, '').strip()
+              if re.fullmatch(r'[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9][.]iam[.]gserviceaccount[.]com', value) is None:
+                  raise SystemExit(f'::error::{name} is missing or invalid.')
+              expected = f"{account_id}@{values['PROJECT_ID']}.iam.gserviceaccount.com"
+              if value != expected:
+                  raise SystemExit(f'::error::{name} is not the canonical Terraform identity {expected}.')
+              service_accounts[name] = value
+          if len(set(service_accounts.values())) != len(service_accounts):
+              raise SystemExit('::error::Every Terraform database service account must be distinct.')
+          expected_eventarc = f"simsa-eventarc-invoker@{values['PROJECT_ID']}.iam.gserviceaccount.com"
+          if os.environ.get('EVENTARC_INVOKER_SA', '').strip() != expected_eventarc:
+              raise SystemExit(f'::error::EVENTARC_INVOKER_SA must equal {expected_eventarc}.')
+          principals = {}
+          for name in (
+              'GRANT_ADMIN_PRINCIPAL', 'API_PRINCIPAL', 'EVENT_PRINCIPAL',
+              'WORKER_PRINCIPAL', 'FINAL_CLEANUP_PRINCIPAL',
+              'MIGRATOR_PRINCIPAL', 'MAINTENANCE_PRINCIPAL',
+              'BACKUP_PRINCIPAL',
+          ):
+              value = os.environ.get(name, '').strip()
+              if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._@-]{2,62}', value) is None:
+                  raise SystemExit(f'::error::{name} is missing or invalid.')
+              principals[name] = value
+          if len(set(principals.values())) != len(principals):
+              raise SystemExit('::error::Every database login principal must be distinct.')
+          expected_pairs = (
+              ('GRANT_ADMIN_SA', 'GRANT_ADMIN_PRINCIPAL'),
+              ('API_SA', 'API_PRINCIPAL'),
+              ('EVENT_SA', 'EVENT_PRINCIPAL'),
+              ('WORKER_SA', 'WORKER_PRINCIPAL'),
+              ('FINAL_CLEANUP_SA', 'FINAL_CLEANUP_PRINCIPAL'),
+              ('MIGRATOR_SA', 'MIGRATOR_PRINCIPAL'),
+              ('MAINTENANCE_SA', 'MAINTENANCE_PRINCIPAL'),
+              ('BACKUP_SA', 'BACKUP_PRINCIPAL'),
+          )
+          for service_account_name, principal_name in expected_pairs:
+              expected = service_accounts[service_account_name].removesuffix('.gserviceaccount.com')
+              if principals[principal_name] != expected:
+                  raise SystemExit(f'::error::{principal_name} does not match {service_account_name}.')
+          PY
+          connection_name="${PROJECT_ID}:${REGION}:${INSTANCE}"
+          runtime_identity_binding_sha256=$(printf '%s' \
+            "$PROJECT_ID/$API_SA/$API_PRINCIPAL/$EVENT_SA/$EVENT_PRINCIPAL/$WORKER_SA/$WORKER_PRINCIPAL/$FINAL_CLEANUP_SA/$FINAL_CLEANUP_PRINCIPAL" \
+            | sha256sum | awk '{print $1}')
+          source_identity_sha256=$(printf '%s' "$connection_name/$DATABASE/$BACKUP_PRINCIPAL" \
+            | sha256sum | awk '{print $1}')
+          [ "$source_identity_sha256" = "$EXPECTED_SOURCE_IDENTITY_SHA256" ] || {
+            echo '::error::Resolved mutation target changed after the backup evidence gate.'
+            exit 1
+          }
+          {
+            echo "project_id=$PROJECT_ID"
+            echo "region=$REGION"
+            echo "instance=$INSTANCE"
+            echo "connection_name=$connection_name"
+            echo "database=$DATABASE"
+            echo "upload_bucket=$UPLOAD_BUCKET"
+            echo "final_bucket=$FINAL_BUCKET"
+            echo "cloud_sql_proxy_image=$CLOUD_SQL_PROXY_IMAGE"
+            echo "firebase_app_check_app_ids=$FIREBASE_APP_CHECK_APP_IDS"
+            echo "frontend_url=$FRONTEND_URL"
+            echo "additional_trusted_origins=$ADDITIONAL_TRUSTED_ORIGINS"
+            echo "eventarc_invoker_sa=$EVENTARC_INVOKER_SA"
+            echo "wif_provider=$WIF_PROVIDER"
+            echo "grant_admin_sa=$GRANT_ADMIN_SA"
+            echo "api_sa=$API_SA"
+            echo "event_sa=$EVENT_SA"
+            echo "worker_sa=$WORKER_SA"
+            echo "final_cleanup_sa=$FINAL_CLEANUP_SA"
+            echo "migrator_sa=$MIGRATOR_SA"
+            echo "maintenance_sa=$MAINTENANCE_SA"
+            echo "backup_sa=$BACKUP_SA"
+            echo "grant_admin_principal=$GRANT_ADMIN_PRINCIPAL"
+            echo "api_principal=$API_PRINCIPAL"
+            echo "event_principal=$EVENT_PRINCIPAL"
+            echo "worker_principal=$WORKER_PRINCIPAL"
+            echo "final_cleanup_principal=$FINAL_CLEANUP_PRINCIPAL"
+            echo "migrator_principal=$MIGRATOR_PRINCIPAL"
+            echo "maintenance_principal=$MAINTENANCE_PRINCIPAL"
+            echo "backup_principal=$BACKUP_PRINCIPAL"
+            echo "source_identity_sha256=$source_identity_sha256"
+            echo "runtime_identity_binding_sha256=$runtime_identity_binding_sha256"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "EVIDENCE_DIR=maintenance-evidence"
+            echo "CLOUD_SQL_CONNECTION_NAME=$connection_name"
+            echo "DB_NAME=$DATABASE"
+            echo "DB_IDENTITY_PROJECT_ID=$PROJECT_ID"
+            echo "DB_EXPECTED_CURRENT_OWNER=$GRANT_ADMIN_PRINCIPAL"
+            echo "DB_API_SERVICE_ACCOUNT=$API_SA"
+            echo "DB_EVENT_SERVICE_ACCOUNT=$EVENT_SA"
+            echo "DB_WORKER_SERVICE_ACCOUNT=$WORKER_SA"
+            echo "DB_FINAL_CLEANUP_SERVICE_ACCOUNT=$FINAL_CLEANUP_SA"
+            echo "DB_API_PRINCIPAL=$API_PRINCIPAL"
+            echo "DB_EVENT_PRINCIPAL=$EVENT_PRINCIPAL"
+            echo "DB_WORKER_PRINCIPAL=$WORKER_PRINCIPAL"
+            echo "DB_FINAL_CLEANUP_PRINCIPAL=$FINAL_CLEANUP_PRINCIPAL"
+            echo "DB_MAINTENANCE_PRINCIPAL=$MAINTENANCE_PRINCIPAL"
+            echo "DB_MIGRATOR_PRINCIPAL=$MIGRATOR_PRINCIPAL"
+            echo "DB_BACKUP_PRINCIPAL=$BACKUP_PRINCIPAL"
+          } >> "$GITHUB_ENV"
+
+      - name: Install checksum-pinned Cloud SQL Auth Proxy
+        shell: bash
+        env:
+          CLOUD_SQL_PROXY_VERSION: '2.24.1'
+          CLOUD_SQL_PROXY_SHA256: fae2766aac9d614a2bdef2f2a7778f3d054f3acd5ff07a81a9e300bd471512eb
+        run: |
+          set -Eeuo pipefail
+          tool_dir="$RUNNER_TEMP/simsa-maintenance-tools"
+          install -d -m 700 "$tool_dir"
+          proxy="$tool_dir/cloud-sql-proxy"
+          curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 \
+            "https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v${CLOUD_SQL_PROXY_VERSION}/cloud-sql-proxy.linux.amd64" \
+            --output "$proxy"
+          printf '%s  %s\n' "$CLOUD_SQL_PROXY_SHA256" "$proxy" | sha256sum --check --status -
+          chmod 0500 "$proxy"
+          echo "CLOUD_SQL_PROXY_BIN=$proxy" >> "$GITHUB_ENV"
+
+      - name: Build the reviewed maintenance image once
+        id: image
+        shell: bash
+        env:
+          COMMIT_SHA: ${{ steps.context.outputs.commit_sha }}
+        run: |
+          set -Eeuo pipefail
+          image="simsa-maintenance:${COMMIT_SHA}"
+          iid_file="$RUNNER_TEMP/simsa-maintenance.iid"
+          docker build --pull --target maintenance \
+            --label "org.opencontainers.image.revision=${COMMIT_SHA}" \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --iidfile "$iid_file" --tag "$image" backend \
+            >maintenance-evidence/docker-build.log 2>&1
+          image_digest="$(cat "$iid_file")"
+          [[ "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo '::error::Docker did not return a content-addressed image ID.'; exit 1; }
+          docker image inspect "$image" | jq --arg revision "$COMMIT_SHA" --arg source "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" '
+            .[0] | {
+              maintenance_image_digest: .Id,
+              revision: .Config.Labels["org.opencontainers.image.revision"],
+              source: .Config.Labels["org.opencontainers.image.source"]
+            }
+            | select(.maintenance_image_digest | test("^sha256:[0-9a-f]{64}$"))
+            | select(.revision == $revision and .source == $source)
+          ' >maintenance-evidence/maintenance-image.json
+          test -s maintenance-evidence/maintenance-image.json
+          {
+            sha256sum backend/Dockerfile
+            sha256sum backend/package-lock.json
+          } >maintenance-evidence/reviewed-source.sha256
+          {
+            echo "maintenance_image=$image"
+            echo "maintenance_image_digest=$image_digest"
+          } >> "$GITHUB_OUTPUT"
+          echo "MAINTENANCE_IMAGE=$image" >> "$GITHUB_ENV"
+
+      - name: Authenticate grant administrator through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ steps.config.outputs.project_id }}
+          workload_identity_provider: ${{ steps.config.outputs.wif_provider }}
+          service_account: ${{ steps.config.outputs.grant_admin_sa }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install gcloud for Production storage-boundary verification
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Prove exact private Production storage targets are Terraform-managed
+        shell: bash
+        env:
+          PROJECT_ID: ${{ steps.config.outputs.project_id }}
+          REGION: ${{ steps.config.outputs.region }}
+          UPLOAD_BUCKET: ${{ steps.config.outputs.upload_bucket }}
+          FINAL_BUCKET: ${{ steps.config.outputs.final_bucket }}
+        run: |
+          set -Eeuo pipefail
+          project_number="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+          [[ "$project_number" =~ ^[0-9]+$ ]] || { echo '::error::Could not resolve Production project number.'; exit 1; }
+          gcloud storage buckets describe "gs://$UPLOAD_BUCKET" --format=json >maintenance-evidence/upload-bucket.json
+          gcloud storage buckets describe "gs://$FINAL_BUCKET" --format=json >maintenance-evidence/final-bucket.json
+          jq -n \
+            --arg project_id "$PROJECT_ID" --arg project_number "$project_number" \
+            --arg region "${REGION,,}" --arg upload "$UPLOAD_BUCKET" --arg final "$FINAL_BUCKET" \
+            --slurpfile upload_raw maintenance-evidence/upload-bucket.json \
+            --slurpfile final_raw maintenance-evidence/final-bucket.json '
+            def normalized($raw; $name; $purpose):
+              $raw[0]
+              | select(.name == $name)
+              | select((.projectNumber | tostring) == $project_number)
+              | select((.location | ascii_downcase) == $region)
+              | select((.iamConfiguration.uniformBucketLevelAccess.enabled // .uniformBucketLevelAccess.enabled) == true)
+              | select((.iamConfiguration.publicAccessPrevention // .publicAccessPrevention) == "enforced")
+              | select(.labels.application == "simsa" and .labels.environment == "production" and
+                       .labels.managed_by == "terraform" and .labels.purpose == $purpose)
+              | {name: .name, location: (.location | ascii_downcase), project_number: (.projectNumber | tostring),
+                 uniform_bucket_level_access: true, public_access_prevention: "enforced",
+                 labels: {application: .labels.application, environment: .labels.environment,
+                          managed_by: .labels.managed_by, purpose: .labels.purpose}};
+            {project_id: $project_id, project_number: $project_number, region: $region,
+             upload: normalized($upload_raw; $upload; "quarantine"),
+             final: normalized($final_raw; $final; "final")}
+            | select(.upload != null and .final != null and .upload.name != .final.name)
+          ' >maintenance-evidence/storage-target.json
+          test -s maintenance-evidence/storage-target.json
+
+      - name: Bootstrap policy roles and converge ownership as grant administrator
+        shell: bash
+        env:
+          DATABASE_PRINCIPAL: ${{ steps.config.outputs.grant_admin_principal }}
+          MAINTENANCE_PHASE: bootstrap-initial
+        run: bash .github/scripts/run-gcp-database-maintenance.sh bootstrap
+
+      - name: Authenticate migrator through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ steps.config.outputs.project_id }}
+          workload_identity_provider: ${{ steps.config.outputs.wif_provider }}
+          service_account: ${{ steps.config.outputs.migrator_sa }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Apply reviewed Drizzle migrations as migrator
+        shell: bash
+        env:
+          DATABASE_PRINCIPAL: ${{ steps.config.outputs.migrator_principal }}
+          MAINTENANCE_PHASE: migrate
+        run: bash .github/scripts/run-gcp-database-maintenance.sh migrate
+
+      - name: Re-authenticate grant administrator after migrations
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ steps.config.outputs.project_id }}
+          workload_identity_provider: ${{ steps.config.outputs.wif_provider }}
+          service_account: ${{ steps.config.outputs.grant_admin_sa }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Re-run bootstrap to revoke migrator CREATE and converge new-object ownership
+        shell: bash
+        env:
+          DATABASE_PRINCIPAL: ${{ steps.config.outputs.grant_admin_principal }}
+          MAINTENANCE_PHASE: bootstrap-final
+        run: bash .github/scripts/run-gcp-database-maintenance.sh bootstrap
+
+      - name: Re-authenticate migrator for versioned grant convergence
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ steps.config.outputs.project_id }}
+          workload_identity_provider: ${{ steps.config.outputs.wif_provider }}
+          service_account: ${{ steps.config.outputs.migrator_sa }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Converge versioned grants as migrator
+        shell: bash
+        env:
+          DATABASE_PRINCIPAL: ${{ steps.config.outputs.migrator_principal }}
+          MAINTENANCE_PHASE: converge
+        run: |
+          set -Eeuo pipefail
+          export EXPECTED_MIGRATIONS_JSON="$(python3 .github/scripts/build-migration-manifest.py)"
+          bash .github/scripts/run-gcp-database-maintenance.sh converge
+
+      - name: Authenticate seed maintenance identity through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ steps.config.outputs.project_id }}
+          workload_identity_provider: ${{ steps.config.outputs.wif_provider }}
+          service_account: ${{ steps.config.outputs.maintenance_sa }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Converge canonical seed data as maintenance identity
+        shell: bash
+        env:
+          DATABASE_PRINCIPAL: ${{ steps.config.outputs.maintenance_principal }}
+          MAINTENANCE_PHASE: seed
+        run: bash .github/scripts/run-gcp-database-maintenance.sh seed
+
+      - name: Re-authenticate migrator for read-only evidence
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ steps.config.outputs.project_id }}
+          workload_identity_provider: ${{ steps.config.outputs.wif_provider }}
+          service_account: ${{ steps.config.outputs.migrator_sa }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Capture exact journal, ownership, ACL, principal, and seed evidence
+        shell: bash
+        env:
+          DATABASE_PRINCIPAL: ${{ steps.config.outputs.migrator_principal }}
+          MAINTENANCE_PHASE: evidence
+        run: |
+          set -Eeuo pipefail
+          export EXPECTED_MIGRATIONS_JSON="$(python3 .github/scripts/build-migration-manifest.py)"
+          bash .github/scripts/run-gcp-database-maintenance.sh evidence
+
+      - name: Seal release-bound maintenance evidence
+        shell: bash
+        env:
+          COMMIT_SHA: ${{ steps.context.outputs.commit_sha }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.maintenance_image_digest }}
+          BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+          BACKUP_ARTIFACT_ID: ${{ inputs.backup_artifact_id }}
+          BACKUP_ARTIFACT_DIGEST: ${{ inputs.backup_artifact_digest }}
+          SOURCE_IDENTITY_SHA256: ${{ steps.config.outputs.source_identity_sha256 }}
+          TARGET_PROJECT_ID: ${{ steps.config.outputs.project_id }}
+          TARGET_REGION: ${{ steps.config.outputs.region }}
+          TARGET_INSTANCE: ${{ steps.config.outputs.instance }}
+          TARGET_CONNECTION_NAME: ${{ steps.config.outputs.connection_name }}
+          TARGET_DATABASE: ${{ steps.config.outputs.database }}
+          TARGET_API_SA: ${{ steps.config.outputs.api_sa }}
+          TARGET_EVENT_SA: ${{ steps.config.outputs.event_sa }}
+          TARGET_WORKER_SA: ${{ steps.config.outputs.worker_sa }}
+          TARGET_FINAL_CLEANUP_SA: ${{ steps.config.outputs.final_cleanup_sa }}
+          TARGET_API_PRINCIPAL: ${{ steps.config.outputs.api_principal }}
+          TARGET_EVENT_PRINCIPAL: ${{ steps.config.outputs.event_principal }}
+          TARGET_WORKER_PRINCIPAL: ${{ steps.config.outputs.worker_principal }}
+          TARGET_FINAL_CLEANUP_PRINCIPAL: ${{ steps.config.outputs.final_cleanup_principal }}
+          TARGET_BACKUP_PRINCIPAL: ${{ steps.config.outputs.backup_principal }}
+          RUNTIME_IDENTITY_BINDING_SHA256: ${{ steps.config.outputs.runtime_identity_binding_sha256 }}
+          TARGET_CLOUD_SQL_PROXY_IMAGE: ${{ steps.config.outputs.cloud_sql_proxy_image }}
+          TARGET_EVENTARC_INVOKER_SA: ${{ steps.config.outputs.eventarc_invoker_sa }}
+          TARGET_FIREBASE_APP_CHECK_APP_IDS: ${{ steps.config.outputs.firebase_app_check_app_ids }}
+          TARGET_FRONTEND_URL: ${{ steps.config.outputs.frontend_url }}
+          TARGET_ADDITIONAL_TRUSTED_ORIGINS: ${{ steps.config.outputs.additional_trusted_origins }}
+        run: |
+          set -Eeuo pipefail
+          dockerfile_sha="$(sha256sum backend/Dockerfile | awk '{print $1}')"
+          lock_sha="$(sha256sum backend/package-lock.json | awk '{print $1}')"
+          migration_manifest_sha="$(python3 .github/scripts/build-migration-manifest.py | sha256sum | awk '{print $1}')"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg repository_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --arg environment production \
+            --arg commit_sha "$COMMIT_SHA" \
+            --arg image_digest "$IMAGE_DIGEST" \
+            --arg dockerfile_sha "$dockerfile_sha" \
+            --arg lock_sha "$lock_sha" \
+            --arg migration_manifest_sha "$migration_manifest_sha" \
+            --arg backup_digest "${BACKUP_ARTIFACT_DIGEST,,}" \
+            --arg source_identity_sha256 "$SOURCE_IDENTITY_SHA256" \
+            --arg target_project_id "$TARGET_PROJECT_ID" \
+            --arg target_region "$TARGET_REGION" \
+            --arg target_instance "$TARGET_INSTANCE" \
+            --arg target_connection_name "$TARGET_CONNECTION_NAME" \
+            --arg target_database "$TARGET_DATABASE" \
+            --arg target_api_sa "$TARGET_API_SA" \
+            --arg target_event_sa "$TARGET_EVENT_SA" \
+            --arg target_worker_sa "$TARGET_WORKER_SA" \
+            --arg target_final_cleanup_sa "$TARGET_FINAL_CLEANUP_SA" \
+            --arg target_api_principal "$TARGET_API_PRINCIPAL" \
+            --arg target_event_principal "$TARGET_EVENT_PRINCIPAL" \
+            --arg target_worker_principal "$TARGET_WORKER_PRINCIPAL" \
+            --arg target_final_cleanup_principal "$TARGET_FINAL_CLEANUP_PRINCIPAL" \
+            --arg target_backup_principal "$TARGET_BACKUP_PRINCIPAL" \
+            --arg runtime_identity_binding_sha256 "$RUNTIME_IDENTITY_BINDING_SHA256" \
+            --arg target_cloud_sql_proxy_image "$TARGET_CLOUD_SQL_PROXY_IMAGE" \
+            --arg target_eventarc_invoker_sa "$TARGET_EVENTARC_INVOKER_SA" \
+            --arg target_firebase_app_check_app_ids "$TARGET_FIREBASE_APP_CHECK_APP_IDS" \
+            --arg target_frontend_url "$TARGET_FRONTEND_URL" \
+            --arg target_additional_trusted_origins "$TARGET_ADDITIONAL_TRUSTED_ORIGINS" \
+            --argjson workflow_run_id "$GITHUB_RUN_ID" \
+            --argjson workflow_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --argjson backup_run_id "$BACKUP_RUN_ID" \
+            --argjson backup_artifact_id "$BACKUP_ARTIFACT_ID" \
+            --slurpfile storage maintenance-evidence/storage-target.json \
+            --slurpfile database maintenance-evidence/database-evidence.json \
+            '{
+              gate_version: "simsa-gcp-database-maintenance/v1",
+              repository: $repository,
+              environment: $environment,
+              commit_sha: $commit_sha,
+              workflow_run_id: $workflow_run_id,
+              workflow_run_attempt: $workflow_run_attempt,
+              maintenance_image_digest: $image_digest,
+              reviewed_source: {
+                revision: $commit_sha,
+                repository_url: $repository_url,
+                dockerfile_sha256: $dockerfile_sha,
+                package_lock_sha256: $lock_sha,
+                production_merge_review_and_checks: "passed"
+              },
+              backup: {
+                workflow_run_id: $backup_run_id,
+                artifact_id: $backup_artifact_id,
+                artifact_digest: $backup_digest,
+                source_identity_sha256: $source_identity_sha256,
+                independent_restore: "passed"
+              },
+              database_target: {
+                project_id: $target_project_id,
+                region: $target_region,
+                instance: $target_instance,
+                connection_name: $target_connection_name,
+                database: $target_database,
+                cloud_sql_proxy_image: $target_cloud_sql_proxy_image,
+                eventarc_invoker_service_account: $target_eventarc_invoker_sa,
+                runtime_identities: {
+                  api: {service_account: $target_api_sa, database_principal: $target_api_principal},
+                  events: {service_account: $target_event_sa, database_principal: $target_event_principal},
+                  worker: {service_account: $target_worker_sa, database_principal: $target_worker_principal},
+                  final_cleanup: {service_account: $target_final_cleanup_sa, database_principal: $target_final_cleanup_principal},
+                  binding_sha256: $runtime_identity_binding_sha256
+                },
+                api_principal: $target_api_principal,
+                event_principal: $target_event_principal,
+                worker_principal: $target_worker_principal,
+                final_cleanup_principal: $target_final_cleanup_principal,
+                backup_principal: $target_backup_principal,
+                source_identity_sha256: $source_identity_sha256
+              },
+              storage_target: $storage[0],
+              runtime_security: {
+                node_env: "production", app_profile: "internal", simsa_cloud_platform: "gcp",
+                auth_provider: "firebase", object_storage_provider: "gcs",
+                firebase_project_id: $target_project_id,
+                firebase_session_max_age_hours: "24", firebase_check_revoked: "true",
+                firebase_app_check_required: "true",
+                firebase_app_check_app_ids: $target_firebase_app_check_app_ids,
+                frontend_url: $target_frontend_url,
+                additional_trusted_origins: $target_additional_trusted_origins,
+                db_host: "127.0.0.1", db_port: "5432", db_password: "", db_ssl: "false"
+              },
+              database_journal: $database[0].journal,
+              migration_manifest_sha256: $migration_manifest_sha,
+              migration_manifest_verified: $database[0].migration_manifest_verified,
+              acl_fingerprint_md5: $database[0].acl_fingerprint_md5,
+              ownership_violations: $database[0].ownership_violations,
+              migrator_database_create: $database[0].migrator_database_create,
+              principal_memberships_verified: $database[0].principal_memberships_verified,
+              role_membership_closure_verified: $database[0].role_membership_closure_verified,
+              runtime_identity_bindings: $database[0].runtime_identity_bindings,
+              grant_convergence: "passed",
+              seed: $database[0].seed,
+              ordered_operations: [
+                "db:roles:bootstrap-initial", "db:migrate",
+                "db:roles:bootstrap-final", "db:grants:converge", "seed:all"
+              ]
+            }' >maintenance-evidence/maintenance-summary.json
+          jq -e '.database_journal.count == 34 and .database_journal.latest_created_at == 1788060600000 and (.migrator_database_create == false) and .principal_memberships_verified and .role_membership_closure_verified and .runtime_identity_bindings.verified and .seed.verified' \
+            maintenance-evidence/maintenance-summary.json >/dev/null
+          (
+            cd maintenance-evidence
+            while IFS= read -r evidence_file; do
+              digest="$(sha256sum "$evidence_file" | awk '{print $1}')"
+              printf '%s  %s\n' "$digest" "$evidence_file"
+            done < <(find . -maxdepth 1 -type f ! -name evidence-manifest.sha256 -printf '%P\n' | LC_ALL=C sort)
+          ) >maintenance-evidence/evidence-manifest.sha256
+          test -s maintenance-evidence/evidence-manifest.sha256
+
+      - name: Upload immutable maintenance evidence
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.context.outputs.artifact_name }}
+          path: maintenance-evidence
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+      - name: Record immutable artifact identity
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || { echo '::error::Artifact ID is missing.'; exit 1; }
+          [[ "$ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo '::error::Artifact digest is missing.'; exit 1; }
+          {
+            echo '### Production database maintenance passed'
+            echo
+            echo "- Commit: \`${{ steps.context.outputs.commit_sha }}\`"
+            echo "- Maintenance image content digest: \`${{ steps.image.outputs.maintenance_image_digest }}\`"
+            echo "- Evidence artifact: \`${{ steps.context.outputs.artifact_name }}\`"
+            echo "- Artifact ID: \`$ARTIFACT_ID\`"
+            echo "- Artifact digest: \`$ARTIFACT_DIGEST\`"
+            echo "- Backup run/artifact: \`${{ inputs.backup_run_id }}\` / \`${{ inputs.backup_artifact_id }}\`"
+            echo '- Sequence: bootstrap roles/ownership, migrate, grant convergence, seed, evidence'
+          } >> "$GITHUB_STEP_SUMMARY"

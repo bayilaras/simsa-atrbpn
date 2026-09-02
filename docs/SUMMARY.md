@@ -1,6 +1,7 @@
 # Table of contents
 
 * [👋 Selamat Datang](README.md)
+* [Profil Aplikasi Internal](PROFIL_APLIKASI_INTERNAL.md)
 
 ## Akses SIMSA
 
@@ -50,4 +51,13 @@
 * [📝 Audit Log](administrasi/audit-log.md)
 * [👥 User Management](administrasi/user-management.md)
 * [📂 Master Data](administrasi/master-data.md)
+* [Versi Aturan Klasifikasi dan JRA](administrasi/versi-aturan.md)
 * [⚙️ Settings](administrasi/settings.md)
+
+## Tata Kelola Internal
+
+* [Status Deployment 29 Agustus 2026](DEPLOYMENT_STATUS_2026-08-29.md)
+* [Ringkasan Implementasi dan Verifikasi](RINGKASAN_IMPLEMENTASI_DAN_VERIFIKASI.md)
+* [Checklist Deployment Arsip Digital](DEPLOYMENT_CHECKLIST_ARSIP_DIGITAL.md)
+* [Peta Rujukan Desain Permen 2/2026 dan ANRI](KEPATUHAN_PERMEN_2_2026_DAN_ANRI.md)
+* [Fondasi Integrasi SRIKANDI](INTEGRASI_SRIKANDI.md)

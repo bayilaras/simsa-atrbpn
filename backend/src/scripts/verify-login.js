@@ -1,8 +1,16 @@
 
-const http = require('http');
+import http from 'node:http';
 
-const email = 'tester@simsa.atrbpn.go.id';
-const password = 'password123';
+function requiredEnv(name) {
+    const value = process.env[name];
+    if (!value || !value.trim()) {
+        throw new Error(`Required environment variable ${name} is not set. Refusing to use a default credential.`);
+    }
+    return value;
+}
+
+const email = requiredEnv('SIMSA_TEST_EMAIL');
+const password = requiredEnv('SIMSA_TEST_PASSWORD');
 const postData = JSON.stringify({
     email,
     password

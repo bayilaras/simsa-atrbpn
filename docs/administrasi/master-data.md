@@ -2,7 +2,7 @@
 
 Panduan mengelola data master di SIMSA.
 
-> 🔒 **Hanya Admin** yang bisa mengelola Master Data.
+> 🔒 Master aktif dapat dibaca pengguna berwenang. **Hanya Super Admin** yang dapat mengubah draft dan menerbitkan versi baru.
 
 ---
 
@@ -29,11 +29,9 @@ Daftar kode klasifikasi yang digunakan untuk **mengelompokkan arsip** berdasarka
 | Masa Aktif | Lama penyimpanan masa aktif (tahun) |
 | Masa Inaktif | Lama penyimpanan masa inaktif (tahun) |
 
-### Menambah Klasifikasi Baru
+### Mengubah Klasifikasi
 
-1. Klik **"+ Tambah Klasifikasi"**.
-2. Isi kode, nama, deskripsi, masa aktif, dan masa inaktif.
-3. Klik **"Simpan"**.
+Versi aktif tidak dapat diedit atau dihapus. Buka **Versi Aturan**, buat draft dari versi aktif, lalu ubah butir pada draft. Setelah validasi dan review, aktifkan draft pada tanggal berlakunya. Lihat [Versi Aturan Klasifikasi dan JRA](versi-aturan.md).
 
 ---
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -8,16 +8,25 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { settingsService } from '@/services/settings.service';
-import { User, Building2, FileText, Save, Loader2, Settings2 } from 'lucide-react';
+import { useTheme } from '@/context/theme-context';
+import { User, Building2, FileText, Save, Loader2, Settings2, Palette } from 'lucide-react';
+import { PageHeader } from '@/components/PageHeader';
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 
 export default function Settings() {
     const { user, canWrite } = useAuth();
     const { toast } = useToast();
+    const { setTheme } = useTheme();
     const isAdmin = canWrite();
+    const templateUnitScope = useRequiredUnitKerjaScope(user);
+    const templateUnitKerjaId = templateUnitScope.unitKerjaId;
 
     const [activeTab, setActiveTab] = useState('profile');
     const [loading, setLoading] = useState(false);
@@ -36,8 +45,6 @@ export default function Settings() {
     const [unitKerjaForm, setUnitKerjaForm] = useState({
         name: '',
         description: '',
-        driveFolderId: '',
-        driveUploadFolderId: '',
     });
 
     // Surat Templates state
@@ -46,10 +53,49 @@ export default function Settings() {
         keluarFormat: '{noUrut}/{naskahDinas}/{bulan}/{tahun}',
     });
 
+    const [preferences, setPreferences] = useState({
+        theme: 'light',
+        language: 'id',
+        notificationsEnabled: true,
+        emailNotifications: false,
+    });
+
+    const loadTabData = useCallback(async () => {
+        setLoading(true);
+        try {
+            switch (activeTab) {
+                case 'unit-kerja': {
+                    // The general unit directory is intentionally shared by
+                    // distribution and notification pickers. Settings asks the
+                    // API for the narrower set this admin may actually edit.
+                    const units = await settingsService.getAllUnitKerja({ editable: true });
+                    setUnitKerjaList(units);
+                    break;
+                }
+                case 'templates': {
+                    if (!templateUnitKerjaId) break;
+                    const tmpl = await settingsService.getSuratTemplates(templateUnitKerjaId);
+                    setTemplates(tmpl);
+                    break;
+                }
+                case 'preferences': {
+                    const prefs = await settingsService.getPreferences();
+                    setPreferences(prefs);
+                    setTheme(prefs.theme);
+                    break;
+                }
+            }
+        } catch (error) {
+            console.error('Error loading settings:', error);
+        } finally {
+            setLoading(false);
+        }
+    }, [activeTab, setTheme, templateUnitKerjaId]);
+
     // Load data based on tab
     useEffect(() => {
         loadTabData();
-    }, [activeTab]);
+    }, [loadTabData]);
 
     // Initialize with user data
     useEffect(() => {
@@ -61,26 +107,6 @@ export default function Settings() {
             });
         }
     }, [user]);
-
-    const loadTabData = async () => {
-        setLoading(true);
-        try {
-            switch (activeTab) {
-                case 'unit-kerja':
-                    const units = await settingsService.getAllUnitKerja();
-                    setUnitKerjaList(units);
-                    break;
-                case 'templates':
-                    const tmpl = await settingsService.getSuratTemplates();
-                    setTemplates(tmpl);
-                    break;
-            }
-        } catch (error) {
-            console.error('Error loading settings:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleSaveProfile = async () => {
         setSaving(true);
@@ -110,8 +136,6 @@ export default function Settings() {
         setUnitKerjaForm({
             name: unit.name || '',
             description: unit.description || '',
-            driveFolderId: unit.driveFolderId || '',
-            driveUploadFolderId: unit.driveUploadFolderId || '',
         });
     };
 
@@ -137,9 +161,17 @@ export default function Settings() {
     };
 
     const handleSaveTemplates = async () => {
+        if (!templateUnitKerjaId) {
+            toast({
+                title: 'Pilih unit kerja',
+                description: 'Template hanya dapat dimuat dan disimpan untuk satu unit kerja.',
+                variant: 'destructive',
+            });
+            return;
+        }
         setSaving(true);
         try {
-            await settingsService.updateSuratTemplates(templates);
+            await settingsService.updateSuratTemplates(templateUnitKerjaId, templates);
             toast({
                 title: 'Berhasil',
                 description: 'Template surat berhasil diperbarui',
@@ -155,51 +187,64 @@ export default function Settings() {
         }
     };
 
+    const handleSavePreferences = async () => {
+        setSaving(true);
+        try {
+            const updated = await settingsService.updatePreferences(preferences);
+            setPreferences(updated);
+            setTheme(updated.theme);
+            toast({ title: 'Berhasil', description: 'Preferensi pengguna berhasil disimpan' });
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description: error?.message || 'Gagal menyimpan preferensi',
+                variant: 'destructive',
+            });
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const getInitials = (name) => {
         return name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U';
     };
 
     return (
         <div className="space-y-6">
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 text-white shadow-xl">
-                <div className="absolute top-0 right-0 -mr-20 -mt-20 h-96 w-96 rounded-full bg-indigo-500/30 blur-3xl"></div>
-                <div className="absolute bottom-0 left-0 -ml-20 -mb-20 h-64 w-64 rounded-full bg-blue-500/20 blur-3xl"></div>
-                <div className="relative p-8">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-inner">
-                            <Settings2 className="h-8 w-8 text-white" />
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight text-white mb-1">Pengaturan</h1>
-                            <p className="text-blue-100/80 text-lg">
-                                Kelola profil, unit kerja, dan template surat
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <PageHeader
+                icon={Settings2}
+                title="Pengaturan"
+                description="Kelola profil, preferensi, unit kerja, dan template surat"
+            />
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className={`bg-white/50 backdrop-blur-sm border border-slate-200/60 p-1 h-auto rounded-xl shadow-sm grid w-full gap-1 ${isAdmin ? 'grid-cols-3' : 'grid-cols-1'}`}>
+                <TabsList className={`bg-card/50 backdrop-blur-sm border border-border/60 p-1 h-auto rounded-xl shadow-sm grid w-full gap-1 ${isAdmin ? 'grid-cols-4' : 'grid-cols-2'}`}>
                     <TabsTrigger
                         value="profile"
-                        className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
+                        className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
                     >
                         <User className="h-4 w-4 mr-2" />
                         <span>Profil</span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                        value="preferences"
+                        className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
+                    >
+                        <Palette className="h-4 w-4 mr-2" />
+                        <span>Preferensi</span>
                     </TabsTrigger>
                     {isAdmin && (
                         <>
                             <TabsTrigger
                                 value="unit-kerja"
-                                className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
+                                className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
                             >
                                 <Building2 className="h-4 w-4 mr-2" />
                                 <span>Unit Kerja</span>
                             </TabsTrigger>
                             <TabsTrigger
                                 value="templates"
-                                className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
+                                className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
                             >
                                 <FileText className="h-4 w-4 mr-2" />
                                 <span>Template</span>
@@ -210,10 +255,10 @@ export default function Settings() {
 
                 {/* Profile Tab */}
                 <TabsContent value="profile" className="mt-0">
-                    <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
-                        <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
-                            <CardTitle className="text-xl text-slate-800">Profil Pengguna</CardTitle>
-                            <CardDescription className="text-slate-500">
+                    <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
+                        <CardHeader className="bg-muted/50 border-b border-border pb-4">
+                            <CardTitle className="text-xl text-foreground">Profil Pengguna</CardTitle>
+                            <CardDescription className="text-muted-foreground">
                                 Kelola informasi profil dan foto Anda
                             </CardDescription>
                         </CardHeader>
@@ -275,14 +320,93 @@ export default function Settings() {
                     </Card>
                 </TabsContent>
 
+                <TabsContent value="preferences" className="mt-0">
+                    <Card className="border-border/60 shadow-sm">
+                        <CardHeader className="bg-muted/50 border-b border-border pb-4">
+                            <CardTitle className="text-xl text-foreground">Preferensi Pengguna</CardTitle>
+                            <CardDescription>
+                                Preferensi tersimpan pada akun dan digunakan kembali saat Anda masuk dari perangkat lain.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6 pt-6">
+                            {loading ? (
+                                <div className="space-y-4">
+                                    <Skeleton className="h-20 rounded-xl" />
+                                    <Skeleton className="h-20 rounded-xl" />
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid gap-6 md:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="preference-theme">Tema</Label>
+                                            <Select
+                                                value={preferences.theme}
+                                                onValueChange={(theme) => setPreferences(current => ({ ...current, theme }))}
+                                            >
+                                                <SelectTrigger id="preference-theme">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="light">Terang</SelectItem>
+                                                    <SelectItem value="dark">Gelap</SelectItem>
+                                                    <SelectItem value="system">Ikuti perangkat</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Bahasa antarmuka</Label>
+                                            <Input value="Bahasa Indonesia" disabled />
+                                            <p className="text-xs text-muted-foreground">Antarmuka regulasi saat ini tersedia dalam Bahasa Indonesia.</p>
+                                        </div>
+                                    </div>
+
+                                    <Separator />
+
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                                            <div>
+                                                <p className="font-medium">Notifikasi dalam aplikasi</p>
+                                                <p className="text-sm text-muted-foreground">Tampilkan dan perbarui antrean notifikasi pada header aplikasi.</p>
+                                            </div>
+                                            <Switch
+                                                checked={preferences.notificationsEnabled}
+                                                onCheckedChange={(checked) => setPreferences(current => ({ ...current, notificationsEnabled: checked }))}
+                                                aria-label="Aktifkan notifikasi dalam aplikasi"
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                                            <div>
+                                                <p className="font-medium">Notifikasi email</p>
+                                                <p className="text-sm text-muted-foreground">Izinkan email pemberitahuan ketika layanan email sistem tersedia.</p>
+                                            </div>
+                                            <Switch
+                                                checked={preferences.emailNotifications}
+                                                onCheckedChange={(checked) => setPreferences(current => ({ ...current, emailNotifications: checked }))}
+                                                aria-label="Aktifkan notifikasi email"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end">
+                                        <Button onClick={handleSavePreferences} disabled={saving}>
+                                            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                                            Simpan Preferensi
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
                 {/* Unit Kerja Tab (Admin Only) */}
                 {isAdmin && (
                     <TabsContent value="unit-kerja" className="mt-0">
-                        <div className="grid gap-6 md:grid-cols-3">
+                        <div className="grid gap-6 lg:grid-cols-3">
                             {/* Unit List */}
-                            <Card className="md:col-span-1 border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200 h-fit">
-                                <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
-                                    <CardTitle className="text-lg text-slate-800">Daftar Unit Kerja</CardTitle>
+                            <Card className="md:col-span-1 border-border/60 shadow-sm hover:shadow-md transition-all duration-200 h-fit">
+                                <CardHeader className="bg-muted/50 border-b border-border pb-4">
+                                    <CardTitle className="text-lg text-foreground">Daftar Unit Kerja</CardTitle>
                                 </CardHeader>
                                 <CardContent className="p-2">
                                     {loading ? (
@@ -298,8 +422,8 @@ export default function Settings() {
                                                     key={unit.id}
                                                     onClick={() => handleSelectUnitKerja(unit)}
                                                     className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 flex items-center justify-between group ${selectedUnitKerja?.id === unit.id
-                                                        ? 'bg-blue-50 text-blue-700 font-medium'
-                                                        : 'hover:bg-slate-50 text-slate-600'
+                                                        ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 font-medium'
+                                                        : 'hover:bg-muted/50 text-muted-foreground'
                                                         }`}
                                                 >
                                                     <span className="truncate">{unit.name}</span>
@@ -307,8 +431,8 @@ export default function Settings() {
                                                         <Badge
                                                             variant="outline"
                                                             className={`text-[10px] px-1.5 py-0.5 h-auto ${selectedUnitKerja?.id === unit.id
-                                                                ? 'border-blue-200 bg-blue-100 text-blue-700'
-                                                                : 'text-slate-500 border-slate-200 group-hover:border-slate-300'
+                                                                ? 'border-blue-200 bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300'
+                                                                : 'text-muted-foreground border-border group-hover:border-border'
                                                                 }`}
                                                         >
                                                             {unit.unitType}
@@ -322,12 +446,12 @@ export default function Settings() {
                             </Card>
 
                             {/* Unit Details */}
-                            <Card className="md:col-span-2 border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200">
-                                <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
-                                    <div className="flex items-center justify-between">
+                            <Card className="md:col-span-2 border-border/60 shadow-sm hover:shadow-md transition-all duration-200">
+                                <CardHeader className="bg-muted/50 border-b border-border pb-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div>
-                                            <CardTitle className="text-lg text-slate-800">Detail Unit Kerja</CardTitle>
-                                            <CardDescription className="text-slate-500">
+                                            <CardTitle className="text-lg text-foreground">Detail Unit Kerja</CardTitle>
+                                            <CardDescription className="text-muted-foreground">
                                                 {selectedUnitKerja
                                                     ? `Mengedit unit: ${selectedUnitKerja.name}`
                                                     : 'Pilih unit kerja untuk mengedit'}
@@ -344,66 +468,32 @@ export default function Settings() {
                                     {selectedUnitKerja ? (
                                         <div className="space-y-6">
                                             <div className="space-y-2">
-                                                <Label className="text-slate-700">Nama Unit</Label>
+                                                <Label className="text-foreground">Nama Unit</Label>
                                                 <Input
                                                     value={unitKerjaForm.name}
                                                     onChange={(e) =>
                                                         setUnitKerjaForm({ ...unitKerjaForm, name: e.target.value })
                                                     }
-                                                    className="border-slate-200 focus:border-blue-400 focus:ring-blue-400/20"
+                                                    className="border-border focus:border-blue-400 focus:ring-ring/20"
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <Label className="text-slate-700">Deskripsi</Label>
+                                                <Label className="text-foreground">Deskripsi</Label>
                                                 <Textarea
                                                     value={unitKerjaForm.description}
                                                     onChange={(e) =>
                                                         setUnitKerjaForm({ ...unitKerjaForm, description: e.target.value })
                                                     }
                                                     rows={3}
-                                                    className="border-slate-200 focus:border-blue-400 focus:ring-blue-400/20 resize-none"
+                                                    className="border-border focus:border-blue-400 focus:ring-ring/20 resize-none"
                                                 />
-                                            </div>
-
-                                            <div className="space-y-4 rounded-xl bg-slate-50 p-4 border border-slate-100">
-                                                <h4 className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                                                    <div className="h-1.5 w-1.5 rounded-full bg-blue-500"></div>
-                                                    Konfigurasi Google Drive
-                                                </h4>
-                                                <div className="grid gap-4">
-                                                    <div className="space-y-2">
-                                                        <Label className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Folder ID (Arsip)</Label>
-                                                        <Input
-                                                            value={unitKerjaForm.driveFolderId}
-                                                            onChange={(e) =>
-                                                                setUnitKerjaForm({ ...unitKerjaForm, driveFolderId: e.target.value })
-                                                            }
-                                                            placeholder="ID folder untuk penyimpanan arsip"
-                                                            className="font-mono text-sm bg-white border-slate-200"
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <Label className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Upload Folder ID</Label>
-                                                        <Input
-                                                            value={unitKerjaForm.driveUploadFolderId}
-                                                            onChange={(e) =>
-                                                                setUnitKerjaForm({
-                                                                    ...unitKerjaForm,
-                                                                    driveUploadFolderId: e.target.value,
-                                                                })
-                                                            }
-                                                            placeholder="ID folder untuk upload sementara"
-                                                            className="font-mono text-sm bg-white border-slate-200"
-                                                        />
-                                                    </div>
-                                                </div>
                                             </div>
 
                                             <div className="flex justify-end pt-2">
                                                 <Button
                                                     onClick={handleSaveUnitKerja}
                                                     disabled={saving}
-                                                    className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow transition-all"
+                                                    className="bg-primary hover:bg-primary text-white shadow-sm hover:shadow transition-all"
                                                 >
                                                     {saving ? (
                                                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -415,7 +505,7 @@ export default function Settings() {
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="flex flex-col items-center justify-center h-64 text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                                        <div className="flex flex-col items-center justify-center h-64 text-muted-foreground bg-muted/50 rounded-xl border border-dashed border-border">
                                             <Building2 className="h-12 w-12 mb-3 text-slate-300" />
                                             <p>Pilih unit kerja dari daftar di sebelah kiri</p>
                                         </div>
@@ -429,14 +519,15 @@ export default function Settings() {
                 {/* Templates Tab (Admin Only) */}
                 {isAdmin && (
                     <TabsContent value="templates" className="mt-0">
-                        <Card className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200">
-                            <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
-                                <CardTitle className="text-xl text-slate-800">Template Nomor Surat</CardTitle>
-                                <CardDescription className="text-slate-500">
+                        <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200">
+                            <CardHeader className="bg-muted/50 border-b border-border pb-4">
+                                <CardTitle className="text-xl text-foreground">Template Nomor Surat</CardTitle>
+                                <CardDescription className="text-muted-foreground">
                                     Konfigurasi format penomoran surat otomatis
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-8 pt-6">
+                                <RequiredUnitKerjaScope scope={templateUnitScope} disabled={saving} />
                                 {loading ? (
                                     <div className="space-y-6">
                                         <Skeleton className="h-24 rounded-xl" />
@@ -445,59 +536,64 @@ export default function Settings() {
                                 ) : (
                                     <>
                                         <div className="grid gap-8 md:grid-cols-2">
-                                            <div className="space-y-4 p-5 rounded-xl border border-slate-100 bg-slate-50/50">
+                                            <div className="space-y-4 p-5 rounded-xl border border-border bg-muted/50">
                                                 <div className="space-y-2">
-                                                    <Label className="text-slate-700 font-medium">Format Nomor Surat Masuk</Label>
+                                                    <Label className="text-foreground font-medium">Format Nomor Surat Masuk</Label>
                                                     <Input
                                                         value={templates.masukFormat}
                                                         onChange={(e) =>
                                                             setTemplates({ ...templates, masukFormat: e.target.value })
                                                         }
                                                         placeholder="{noUrut}/SM/{tahun}"
-                                                        className="font-mono bg-white border-slate-200 focus:border-blue-400 focus:ring-blue-400/20"
+                                                        className="font-mono bg-card border-border focus:border-blue-400 focus:ring-ring/20"
                                                     />
-                                                    <p className="text-xs text-slate-500 flex items-center gap-2 mt-2">
-                                                        <span className="font-semibold text-slate-600">Preview:</span>
-                                                        <span className="bg-slate-100 px-2 py-0.5 rounded font-mono text-slate-700">001/SM/2026</span>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-2 mt-2">
+                                                        <span className="font-semibold text-muted-foreground">Preview:</span>
+                                                        <span className="bg-muted px-2 py-0.5 rounded font-mono text-foreground">001/SM/2026</span>
                                                     </p>
                                                 </div>
                                             </div>
 
-                                            <div className="space-y-4 p-5 rounded-xl border border-slate-100 bg-slate-50/50">
+                                            <div className="space-y-4 p-5 rounded-xl border border-border bg-muted/50">
                                                 <div className="space-y-2">
-                                                    <Label className="text-slate-700 font-medium">Format Nomor Surat Keluar</Label>
+                                                    <Label className="text-foreground font-medium">Format Nomor Surat Keluar</Label>
                                                     <Input
                                                         value={templates.keluarFormat}
                                                         onChange={(e) =>
                                                             setTemplates({ ...templates, keluarFormat: e.target.value })
                                                         }
                                                         placeholder="{noUrut}/{naskahDinas}/{bulan}/{tahun}"
-                                                        className="font-mono bg-white border-slate-200 focus:border-blue-400 focus:ring-blue-400/20"
+                                                        className="font-mono bg-card border-border focus:border-blue-400 focus:ring-ring/20"
                                                     />
-                                                    <p className="text-xs text-slate-500 flex items-center gap-2 mt-2">
-                                                        <span className="font-semibold text-slate-600">Preview:</span>
-                                                        <span className="bg-slate-100 px-2 py-0.5 rounded font-mono text-slate-700">001/ND/02/2026</span>
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-2 mt-2">
+                                                        <span className="font-semibold text-muted-foreground">Preview:</span>
+                                                        <span className="bg-muted px-2 py-0.5 rounded font-mono text-foreground">001/ND/02/2026</span>
                                                     </p>
                                                 </div>
                                             </div>
                                         </div>
 
                                         <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
-                                            <h4 className="text-sm font-semibold text-blue-800 mb-2">Variabel yang Tersedia</h4>
+                                            <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-2">Variabel yang Tersedia</h4>
                                             <div className="flex flex-wrap gap-2">
                                                 {['{noUrut}', '{tahun}', '{bulan}', '{unitKerja}', '{naskahDinas}'].map((v) => (
-                                                    <Badge key={v} variant="secondary" className="bg-blue-100/50 text-blue-700 border-blue-200 hover:bg-blue-100 font-mono">
+                                                    <Badge key={v} variant="secondary" className="bg-blue-100/50 text-blue-700 dark:text-blue-300 border-blue-200 hover:bg-blue-100 dark:hover:bg-blue-500/15 font-mono">
                                                         {v}
                                                     </Badge>
                                                 ))}
+                                            </div>
+                                            <div className="mt-3 space-y-1 text-xs text-blue-900/80 dark:text-blue-200/80">
+                                                <p><code>{'{noUrut}'}</code> (3 digit) dan <code>{'{tahun}'}</code> wajib ada.</p>
+                                                <p><code>{'{bulan}'}</code> memakai bulan tanggal surat; <code>{'{unitKerja}'}</code> memakai ID unit; <code>{'{naskahDinas}'}</code> memakai jenis naskah keluar.</p>
+                                                <p>Variabel opsional yang kosong dirapikan dari pemisah ganda. Nomor manual dipertahankan; template menjadi fallback bila nomor dikosongkan.</p>
                                             </div>
                                         </div>
 
                                         <div className="flex justify-end pt-4">
                                             <Button
                                                 onClick={handleSaveTemplates}
-                                                disabled={saving}
-                                                className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow transition-all"
+                                                disabled={saving || !templateUnitKerjaId}
+                                                className="bg-primary hover:bg-primary text-white shadow-sm hover:shadow transition-all"
                                             >
                                                 {saving ? (
                                                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />

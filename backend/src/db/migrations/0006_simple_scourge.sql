@@ -71,8 +71,8 @@ ALTER TABLE "surat_keluar" ADD COLUMN "current_approver_id" uuid;--> statement-b
 ALTER TABLE "surat_keluar" ADD COLUMN "is_signed" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "surat_keluar" ADD COLUMN "signed_at" timestamp;--> statement-breakpoint
 ALTER TABLE "arsip" ADD COLUMN "media_type" varchar(50) DEFAULT 'kertas';--> statement-breakpoint
-ALTER TABLE "arsip" ADD COLUMN "person_in_charge" varchar(255);--> statement-breakpoint
-ALTER TABLE "arsip" ADD COLUMN "unit_pengolah" varchar(255);--> statement-breakpoint
+ALTER TABLE "arsip" ADD COLUMN IF NOT EXISTS "person_in_charge" varchar(255);--> statement-breakpoint
+ALTER TABLE "arsip" ADD COLUMN IF NOT EXISTS "unit_pengolah" varchar(255);--> statement-breakpoint
 ALTER TABLE "preservasi_track" ADD CONSTRAINT "preservasi_track_arsip_elektronik_id_arsip_elektronik_id_fk" FOREIGN KEY ("arsip_elektronik_id") REFERENCES "public"."arsip_elektronik"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "preservasi_track" ADD CONSTRAINT "preservasi_track_performed_by_users_id_fk" FOREIGN KEY ("performed_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "approval_history" ADD CONSTRAINT "approval_history_request_id_approval_requests_id_fk" FOREIGN KEY ("request_id") REFERENCES "public"."approval_requests"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

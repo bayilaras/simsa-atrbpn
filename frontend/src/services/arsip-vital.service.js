@@ -24,13 +24,8 @@ export const arsipVitalService = {
         return response.data
     },
 
-    async printDaftar() {
-        // api.get does not support responseType, use api.request instead
-        const response = await api.request('/api/arsip-vital/print/daftar', {
-            method: 'GET',
-            responseType: 'blob'
-        })
-        return response
+    async printDaftar(unitKerjaId) {
+        return api.get('/api/arsip-vital/print/daftar', { unitKerjaId }, { responseType: 'blob' })
     },
 
     // Create / designate

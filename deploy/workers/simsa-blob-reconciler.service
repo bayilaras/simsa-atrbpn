@@ -1,0 +1,13 @@
+[Unit]
+Description=SIMSA exact-generation quarantine lease reconciliation
+After=simsa-workers-bootstrap.service
+Requires=simsa-workers-bootstrap.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker compose --env-file /run/simsa-workers/worker.env -f /opt/simsa-workers/compose.yml -f /opt/simsa-workers/compose.gcp.yml --profile gcp --profile maintenance run --rm --pull never blob-reconciler
+TimeoutStartSec=15min
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

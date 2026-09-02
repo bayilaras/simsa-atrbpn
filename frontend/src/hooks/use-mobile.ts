@@ -1,9 +1,13 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
+// Keep the persistent rail for laptop/desktop widths. Tablet portrait and
+// landscape use the off-canvas drawer so the content never loses 16rem.
+const MOBILE_BREAKPOINT = 1024
 
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
+  const [isMobile, setIsMobile] = React.useState(() =>
+    typeof window === "undefined" ? true : window.innerWidth < MOBILE_BREAKPOINT
+  )
 
   React.useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
@@ -15,5 +19,5 @@ export function useIsMobile() {
     return () => mql.removeEventListener("change", onChange)
   }, [])
 
-  return !!isMobile
+  return isMobile
 }

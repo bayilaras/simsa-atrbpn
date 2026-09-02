@@ -13,6 +13,8 @@ export interface FullTextSearchParams {
     fuzzy?: boolean;           // Enable fuzzy matching
     searchFields?: string[];   // Specific fields to search
     sortBy?: 'relevance' | 'date' | 'nomor';
+    /** null means all classes (super_admin); [] fails closed. */
+    securityClassifications?: string[] | null;
 }
 
 export interface FullTextSearchResult {
@@ -39,6 +41,15 @@ const STOPWORDS = new Set([
 ]);
 
 class FullTextSearchService {
+    private classificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        return inArray(
+            sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+            classes,
+        );
+    }
+
     // Extract and clean search terms from query
     private extractSearchTerms(query: string): string[] {
         return query
@@ -101,6 +112,8 @@ class FullTextSearchService {
             eq(arsip.unitKerjaId, unitKerjaId),
             searchConditions
         ];
+        const classificationCondition = this.classificationCondition(params.securityClassifications);
+        if (classificationCondition) filterConditions.push(classificationCondition);
 
         if (jenisArsip) {
             filterConditions.push(eq(arsip.jenisArsip, jenisArsip));
@@ -314,15 +327,24 @@ class FullTextSearchService {
     private highlightTerms(text: string, terms: string[]): string {
         let highlighted = text;
         terms.forEach(term => {
-            const regex = new RegExp(`(${term})`, 'gi');
+            if (!term) return;
+            // Terms come straight from the user query, so regex metacharacters must be literal
+            const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escapedTerm})`, 'gi');
             highlighted = highlighted.replace(regex, '**$1**');
         });
         return highlighted;
     }
 
     // Get suggestions for autocomplete
-    async getSuggestions(query: string, unitKerjaId: string, limit: number = 10): Promise<string[]> {
+    async getSuggestions(
+        query: string,
+        unitKerjaId: string,
+        limit: number = 10,
+        securityClassifications?: string[] | null,
+    ): Promise<string[]> {
         const searchPattern = `%${query}%`;
+        const classificationCondition = this.classificationCondition(securityClassifications);
 
         // Get distinct matching values from various fields
         const nomorResults = await db
@@ -330,6 +352,7 @@ class FullTextSearchService {
             .from(arsip)
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
+                ...(classificationCondition ? [classificationCondition] : []),
                 ilike(arsip.nomorSuratOriginal, searchPattern)
             ))
             .limit(limit);
@@ -339,6 +362,7 @@ class FullTextSearchService {
             .from(arsip)
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
+                ...(classificationCondition ? [classificationCondition] : []),
                 ilike(arsip.perihalOriginal, searchPattern)
             ))
             .limit(limit);
@@ -362,7 +386,11 @@ class FullTextSearchService {
     async searchByKeywords(
         keywords: string[],
         unitKerjaId: string,
-        options?: { limit?: number; offset?: number }
+        options?: {
+            limit?: number;
+            offset?: number;
+            securityClassifications?: string[] | null;
+        }
     ): Promise<{ data: any[]; total: number }> {
         const { limit = 20, offset = 0 } = options || {};
 
@@ -375,6 +403,8 @@ class FullTextSearchService {
             eq(arsip.unitKerjaId, unitKerjaId),
             or(...keywordConditions)
         ];
+        const classificationCondition = this.classificationCondition(options?.securityClassifications);
+        if (classificationCondition) filterConditions.push(classificationCondition);
 
         const countResult = await db
             .select({ count: sql<number>`count(*)::int` })
@@ -408,13 +438,19 @@ class FullTextSearchService {
     async getRelatedDocuments(
         arsipId: string,
         unitKerjaId: string,
-        limit: number = 5
+        limit: number = 5,
+        securityClassifications?: string[] | null,
     ): Promise<any[]> {
+        const classificationCondition = this.classificationCondition(securityClassifications);
         // First get the source document's text
         const sourceDoc = await db
             .select({ extractedText: arsip.extractedText })
             .from(arsip)
-            .where(eq(arsip.id, arsipId))
+            .where(and(
+                eq(arsip.id, arsipId),
+                eq(arsip.unitKerjaId, unitKerjaId),
+                ...(classificationCondition ? [classificationCondition] : []),
+            ))
             .limit(1);
 
         if (!sourceDoc.length || !sourceDoc[0].extractedText) {
@@ -444,6 +480,7 @@ class FullTextSearchService {
             .from(arsip)
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
+                ...(classificationCondition ? [classificationCondition] : []),
                 sql`${arsip.id} != ${arsipId}`, // Exclude source document
                 or(...keywordConditions)
             ))

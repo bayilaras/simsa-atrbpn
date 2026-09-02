@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratMasuk, suratKeluar, arsip, dosir } from '../db/schema';
-import { sql, or, ilike, desc, and, eq } from 'drizzle-orm';
+import { sql, or, ilike, desc, and, eq, isNull, inArray } from 'drizzle-orm';
 
 export interface GlobalSearchParams {
     query: string;
@@ -9,6 +9,8 @@ export interface GlobalSearchParams {
     tahun?: number;
     limit?: number;
     page?: number;
+    /** null means all classes (super_admin); [] fails closed. */
+    securityClassifications?: string[] | null;
 }
 
 export interface GlobalSearchResult {
@@ -38,9 +40,37 @@ export interface GlobalSearchResponse {
     };
 }
 
+interface ModuleSearchResult {
+    items: GlobalSearchResult[];
+    total: number;
+}
+
 class GlobalSearchService {
     private readonly DEFAULT_LIMIT = 20;
     private readonly MAX_LIMIT = 100;
+    // Upper bound on rows pulled per module before merging; caps the cost of deep paging
+    private readonly MAX_SCAN = 1000;
+
+    private arsipClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        return inArray(
+            sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+            classes,
+        );
+    }
+
+    private suratMasukClassificationCondition(classes: string[] | null | undefined) {
+        if (classes === undefined || classes === null) return undefined;
+        if (classes.length === 0) return sql`false`;
+        const normalized = sql<string>`CASE
+            WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+                IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+            THEN 'biasa'
+            ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+        END`;
+        return inArray(normalized, classes);
+    }
 
     /**
      * Search across all modules
@@ -52,7 +82,8 @@ class GlobalSearchService {
             modules = ['surat_masuk', 'surat_keluar', 'arsip', 'dosir'],
             tahun,
             limit = this.DEFAULT_LIMIT,
-            page = 1
+            page = 1,
+            securityClassifications,
         } = params;
 
         if (!query || query.trim().length < 2) {
@@ -63,13 +94,18 @@ class GlobalSearchService {
         const results: GlobalSearchResult[] = [];
         const counts = { surat_masuk: 0, surat_keluar: 0, arsip: 0, dosir: 0, total: 0 };
 
+        const effectiveLimit = Math.min(Math.max(Math.trunc(limit) || this.DEFAULT_LIMIT, 1), this.MAX_LIMIT);
+        const effectivePage = Math.max(Math.trunc(page) || 1, 1);
+        // Every module must contribute enough rows to cover the requested page after merging
+        const fetchLimit = Math.min(effectivePage * effectiveLimit, this.MAX_SCAN);
+
         // Search each module in parallel
         const searchPromises: Promise<void>[] = [];
 
         if (modules.includes('surat_masuk')) {
             searchPromises.push(
-                this.searchSuratMasuk(searchTerms, unitKerjaId, tahun).then(items => {
-                    counts.surat_masuk = items.length;
+                this.searchSuratMasuk(searchTerms, unitKerjaId, tahun, fetchLimit, securityClassifications).then(({ items, total }) => {
+                    counts.surat_masuk = total;
                     results.push(...items);
                 })
             );
@@ -77,8 +113,8 @@ class GlobalSearchService {
 
         if (modules.includes('surat_keluar')) {
             searchPromises.push(
-                this.searchSuratKeluar(searchTerms, unitKerjaId, tahun).then(items => {
-                    counts.surat_keluar = items.length;
+                this.searchSuratKeluar(searchTerms, unitKerjaId, tahun, fetchLimit, securityClassifications).then(({ items, total }) => {
+                    counts.surat_keluar = total;
                     results.push(...items);
                 })
             );
@@ -86,8 +122,8 @@ class GlobalSearchService {
 
         if (modules.includes('arsip')) {
             searchPromises.push(
-                this.searchArsip(searchTerms, unitKerjaId).then(items => {
-                    counts.arsip = items.length;
+                this.searchArsip(searchTerms, unitKerjaId, fetchLimit, securityClassifications).then(({ items, total }) => {
+                    counts.arsip = total;
                     results.push(...items);
                 })
             );
@@ -95,8 +131,8 @@ class GlobalSearchService {
 
         if (modules.includes('dosir')) {
             searchPromises.push(
-                this.searchDosir(searchTerms, unitKerjaId).then(items => {
-                    counts.dosir = items.length;
+                this.searchDosir(searchTerms, unitKerjaId, fetchLimit).then(({ items, total }) => {
+                    counts.dosir = total;
                     results.push(...items);
                 })
             );
@@ -107,18 +143,18 @@ class GlobalSearchService {
         // Sort by relevance (most recent first for now)
         results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        counts.total = results.length;
+        counts.total = counts.surat_masuk + counts.surat_keluar + counts.arsip + counts.dosir;
 
         // Paginate
-        const offset = (page - 1) * Math.min(limit, this.MAX_LIMIT);
-        const paginatedResults = results.slice(offset, offset + limit);
+        const offset = (effectivePage - 1) * effectiveLimit;
+        const paginatedResults = results.slice(offset, offset + effectiveLimit);
 
         return {
             results: paginatedResults,
             counts,
             pagination: {
-                page,
-                limit,
+                page: effectivePage,
+                limit: effectiveLimit,
                 total: counts.total
             }
         };
@@ -127,7 +163,11 @@ class GlobalSearchService {
     /**
      * Search in file content (OCR extracted text)
      */
-    async searchByContent(query: string, unitKerjaId?: string): Promise<GlobalSearchResult[]> {
+    async searchByContent(
+        query: string,
+        unitKerjaId?: string,
+        securityClassifications?: string[] | null,
+    ): Promise<GlobalSearchResult[]> {
         const searchTerms = this.extractSearchTerms(query);
         if (searchTerms.length === 0) return [];
 
@@ -138,7 +178,8 @@ class GlobalSearchService {
             .from(arsip)
             .where(and(
                 ilike(arsip.extractedText, likePattern),
-                unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined
+                unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
+                this.arsipClassificationCondition(securityClassifications),
             ))
             .limit(50);
 
@@ -162,10 +203,14 @@ class GlobalSearchService {
      */
     private async searchSuratMasuk(
         terms: string[],
-        unitKerjaId?: string,
-        tahun?: number
-    ): Promise<GlobalSearchResult[]> {
-        const conditions = [];
+        unitKerjaId: string | undefined,
+        tahun: number | undefined,
+        fetchLimit: number,
+        securityClassifications?: string[] | null,
+    ): Promise<ModuleSearchResult> {
+        const conditions: any[] = [
+            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted)),  // Exclude soft-deleted records (NULL-safe)
+        ];
 
         // Build search conditions
         for (const term of terms) {
@@ -183,18 +228,28 @@ class GlobalSearchService {
         if (unitKerjaId) {
             conditions.push(eq(suratMasuk.unitKerjaId, unitKerjaId));
         }
+        const classificationCondition = this.suratMasukClassificationCondition(securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
         if (tahun) {
             conditions.push(eq(suratMasuk.tahun, tahun));
         }
 
-        const rows = await db
-            .select()
-            .from(suratMasuk)
-            .where(and(...conditions))
-            .orderBy(desc(suratMasuk.createdAt))
-            .limit(50);
+        const whereClause = and(...conditions);
 
-        return rows.map(row => {
+        const [countResult, rows] = await Promise.all([
+            db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(suratMasuk)
+                .where(whereClause),
+            db
+                .select()
+                .from(suratMasuk)
+                .where(whereClause)
+                .orderBy(desc(suratMasuk.createdAt))
+                .limit(fetchLimit),
+        ]);
+
+        const items = rows.map(row => {
             const matchedIn: string[] = [];
             const searchText = terms.join(' ').toLowerCase();
 
@@ -217,6 +272,8 @@ class GlobalSearchService {
                 }
             };
         });
+
+        return { items, total: countResult[0]?.count ?? 0 };
     }
 
     /**
@@ -224,10 +281,22 @@ class GlobalSearchService {
      */
     private async searchSuratKeluar(
         terms: string[],
-        unitKerjaId?: string,
-        tahun?: number
-    ): Promise<GlobalSearchResult[]> {
-        const conditions = [];
+        unitKerjaId: string | undefined,
+        tahun: number | undefined,
+        fetchLimit: number,
+        securityClassifications?: string[] | null,
+    ): Promise<ModuleSearchResult> {
+        const conditions: any[] = [
+            or(eq(suratKeluar.isDeleted, false), isNull(suratKeluar.isDeleted)),  // Exclude soft-deleted records (NULL-safe)
+        ];
+        if (securityClassifications !== undefined && securityClassifications !== null) {
+            conditions.push(securityClassifications.length > 0
+                ? inArray(
+                    sql<string>`lower(coalesce(${suratKeluar.klasifikasiKeamanan}, 'terbatas'))`,
+                    securityClassifications,
+                )
+                : sql`false`);
+        }
 
         for (const term of terms) {
             conditions.push(
@@ -246,14 +315,22 @@ class GlobalSearchService {
             conditions.push(eq(suratKeluar.tahun, tahun));
         }
 
-        const rows = await db
-            .select()
-            .from(suratKeluar)
-            .where(and(...conditions))
-            .orderBy(desc(suratKeluar.createdAt))
-            .limit(50);
+        const whereClause = and(...conditions);
 
-        return rows.map(row => ({
+        const [countResult, rows] = await Promise.all([
+            db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(suratKeluar)
+                .where(whereClause),
+            db
+                .select()
+                .from(suratKeluar)
+                .where(whereClause)
+                .orderBy(desc(suratKeluar.createdAt))
+                .limit(fetchLimit),
+        ]);
+
+        const items = rows.map(row => ({
             type: 'surat_keluar' as const,
             id: row.id,
             title: row.nomorSurat || `SK-${row.noUrut}/${row.tahun}`,
@@ -266,6 +343,8 @@ class GlobalSearchService {
                 naskahDinas: row.naskahDinas
             }
         }));
+
+        return { items, total: countResult[0]?.count ?? 0 };
     }
 
     /**
@@ -273,8 +352,10 @@ class GlobalSearchService {
      */
     private async searchArsip(
         terms: string[],
-        unitKerjaId?: string
-    ): Promise<GlobalSearchResult[]> {
+        unitKerjaId: string | undefined,
+        fetchLimit: number,
+        securityClassifications?: string[] | null,
+    ): Promise<ModuleSearchResult> {
         const conditions = [];
 
         for (const term of terms) {
@@ -292,15 +373,25 @@ class GlobalSearchService {
         if (unitKerjaId) {
             conditions.push(eq(arsip.unitKerjaId, unitKerjaId));
         }
+        const classificationCondition = this.arsipClassificationCondition(securityClassifications);
+        if (classificationCondition) conditions.push(classificationCondition);
 
-        const rows = await db
-            .select()
-            .from(arsip)
-            .where(and(...conditions))
-            .orderBy(desc(arsip.createdAt))
-            .limit(50);
+        const whereClause = and(...conditions);
 
-        return rows.map(row => ({
+        const [countResult, rows] = await Promise.all([
+            db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(arsip)
+                .where(whereClause),
+            db
+                .select()
+                .from(arsip)
+                .where(whereClause)
+                .orderBy(desc(arsip.createdAt))
+                .limit(fetchLimit),
+        ]);
+
+        const items = rows.map(row => ({
             type: 'arsip' as const,
             id: row.id,
             title: row.nomorSuratOriginal || row.kodeKlasifikasi || 'Arsip',
@@ -313,6 +404,8 @@ class GlobalSearchService {
                 tingkatPerkembangan: row.tingkatPerkembangan,
             }
         }));
+
+        return { items, total: countResult[0]?.count ?? 0 };
     }
 
     /**
@@ -320,8 +413,9 @@ class GlobalSearchService {
      */
     private async searchDosir(
         terms: string[],
-        unitKerjaId?: string
-    ): Promise<GlobalSearchResult[]> {
+        unitKerjaId: string | undefined,
+        fetchLimit: number
+    ): Promise<ModuleSearchResult> {
         const conditions = [];
 
         for (const term of terms) {
@@ -338,14 +432,22 @@ class GlobalSearchService {
             conditions.push(eq(dosir.unitKerjaId, unitKerjaId));
         }
 
-        const rows = await db
-            .select()
-            .from(dosir)
-            .where(and(...conditions))
-            .orderBy(desc(dosir.createdAt))
-            .limit(50);
+        const whereClause = and(...conditions);
 
-        return rows.map(row => ({
+        const [countResult, rows] = await Promise.all([
+            db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(dosir)
+                .where(whereClause),
+            db
+                .select()
+                .from(dosir)
+                .where(whereClause)
+                .orderBy(desc(dosir.createdAt))
+                .limit(fetchLimit),
+        ]);
+
+        const items = rows.map(row => ({
             type: 'dosir' as const,
             id: row.id,
             title: row.judul,
@@ -358,6 +460,8 @@ class GlobalSearchService {
                 status: row.status
             }
         }));
+
+        return { items, total: countResult[0]?.count ?? 0 };
     }
 
     /**

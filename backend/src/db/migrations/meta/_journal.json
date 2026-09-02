@@ -57,6 +57,188 @@
       "when": 1771074259749,
       "tag": "0007_light_lila_cheney",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1771074300000,
+      "tag": "0008_widen_kepada_dari_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1771074400000,
+      "tag": "0009_fix_password_and_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787619600000,
+      "tag": "0010_retention_trigger_legal_hold",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787620200000,
+      "tag": "0011_private_bitstream_fixity",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787620800000,
+      "tag": "0012_traceable_cross_reference_cancellation",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787621400000,
+      "tag": "0013_srikandi_durable_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787622000000,
+      "tag": "0014_purpose_bound_record_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1787622600000,
+      "tag": "0015_better_auth_account_issuer",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1787706000000,
+      "tag": "0016_versioned_regulatory_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787965200000,
+      "tag": "0017_retention_appraisal_governance",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787965800000,
+      "tag": "0018_regulatory_maker_checker",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787966400000,
+      "tag": "0019_authoritative_retention_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787967000000,
+      "tag": "0020_permanent_transfer_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787967600000,
+      "tag": "0021_archive_source_domain_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787968200000,
+      "tag": "0022_operational_integrations",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787968800000,
+      "tag": "0023_client_blob_upload_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787969400000,
+      "tag": "0024_durable_bulk_and_autentikasi_blob",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787970000000,
+      "tag": "0025_worker_readiness_heartbeats",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787970600000,
+      "tag": "0026_global_ocr_capacity",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1787971200000,
+      "tag": "0027_canonical_user_unit_mandates",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1787971800000,
+      "tag": "0028_user_profile_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787972400000,
+      "tag": "0029_outgoing_security_classification",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788058800000,
+      "tag": "0030_gcp_identity_bridge",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788059400000,
+      "tag": "0031_gcs_upload_intents",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788060000000,
+      "tag": "0032_versioned_runtime_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788060600000,
+      "tag": "0033_final_object_orphan_queue",
+      "breakpoints": true
     }
   ]
 }

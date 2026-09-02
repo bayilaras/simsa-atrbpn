@@ -1,13 +1,10 @@
-import { Router, Request, Response } from 'express';
-import { auth } from '../config/auth';
-import { db } from '../config/database';
-import { users } from '../db/schema';
-import { eq } from 'drizzle-orm';
-import userManagementService, { ADMIN_ROLES } from '../services/user-management.service';
+import { Router, Request, Response, NextFunction } from 'express';
+import userManagementService from '../services/user-management.service';
 import { listUsersSchema, updateUserSchema, userIdParamSchema, createUserSchema } from '../validations/user-management.validation';
-import auditLogService from '../services/audit-log.service';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
+import { AppError } from '../utils/errors.js';
 
 const log = createLogger('UserManagementRoutes');
 
@@ -16,39 +13,26 @@ const router = Router();
 // Apply rate limiting to user management operations
 router.use(sensitiveLimiter);
 
-// Middleware to check if user is admin
-async function requireAdmin(req: Request, res: Response, next: any) {
-    try {
-        const session = await auth.api.getSession({
-            headers: req.headers as any,
+// Authentication is deliberately centralized. Besides validating the Better Auth
+// session, authMiddleware rejects deactivated and not-yet-provisioned `user`
+// accounts before this module evaluates authorization.
+router.use(authMiddleware);
+
+function requireSuperAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+    if (req.user?.role !== 'super_admin') {
+        return res.status(403).json({
+            error: 'Access denied',
+            message: 'Super admin access required'
         });
-
-        if (!session) {
-            return res.status(401).json({ error: 'Not authenticated' });
-        }
-
-        // Get user role
-        const [currentUser] = await db
-            .select({ role: users.role })
-            .from(users)
-            .where(eq(users.id, session.user.id))
-            .limit(1);
-
-        if (!currentUser || !ADMIN_ROLES.includes(currentUser.role as any)) {
-            return res.status(403).json({
-                error: 'Access denied',
-                message: 'Super admin access required'
-            });
-        }
-
-        // Attach user to request
-        (req as any).currentUser = { id: session.user.id, role: currentUser.role };
-        next();
-    } catch (error) {
-        log.error({ err: error }, 'Auth check error:');
-        res.status(500).json({ error: 'Internal server error' });
     }
+
+    // Preserve the existing handler contract while sourcing identity only from the
+    // centralized middleware, never from a second session/database implementation.
+    (req as any).currentUser = req.user;
+    next();
 }
+
+router.use(requireSuperAdmin);
 
 /**
  * @swagger
@@ -91,7 +75,7 @@ async function requireAdmin(req: Request, res: Response, next: any) {
  *       200:
  *         description: List of users with pagination
  */
-router.get('/', requireAdmin, async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
     try {
         const parseResult = listUsersSchema.safeParse(req.query);
         if (!parseResult.success) {
@@ -141,13 +125,22 @@ router.get('/', requireAdmin, async (req: Request, res: Response) => {
  *               nip:
  *                 type: string
  *                 nullable: true
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *                 description: Required for Firebase mode; forwarded transiently to Firebase Admin and never stored by SIMSA
  *     responses:
  *       201:
  *         description: User created successfully
  *       400:
- *         description: Validation error or email already exists
+ *         description: Validation error
+ *       409:
+ *         description: The identity is already in use
+ *       503:
+ *         description: External identity reconciliation must be retried
  */
-router.post('/', requireAdmin, async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
     try {
         const bodyResult = createUserSchema.safeParse(req.body);
         if (!bodyResult.success) {
@@ -157,32 +150,22 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
             });
         }
 
-        const newUser = await userManagementService.createUser(bodyResult.data);
-
-        // Log audit
         const currentUser = (req as any).currentUser;
-        await auditLogService.logAction({
+        const newUser = await userManagementService.createUser(bodyResult.data, {
             userId: currentUser.id,
             userEmail: currentUser.email || '',
-            action: 'create',
-            entityType: 'user',
-            entityId: newUser?.id || '',
-            changes: {
-                after: {
-                    email: bodyResult.data.email,
-                    name: bodyResult.data.name,
-                    role: bodyResult.data.role,
-                }
-            },
             ipAddress: req.ip,
         });
 
         res.status(201).json({ success: true, data: newUser });
     } catch (error: any) {
-        log.error({ err: error }, 'Create user error:');
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ error: error.message });
+        }
         if (error.message?.includes('Email sudah terdaftar') || error.message?.includes('Invalid')) {
             return res.status(400).json({ error: error.message });
         }
+        log.error({ err: error }, 'Create user error:');
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -199,7 +182,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
  *       200:
  *         description: List of available roles
  */
-router.get('/roles', requireAdmin, async (req: Request, res: Response) => {
+router.get('/roles', async (req: Request, res: Response) => {
     try {
         const roles = userManagementService.getRoles();
         res.json({ success: true, data: roles });
@@ -221,7 +204,7 @@ router.get('/roles', requireAdmin, async (req: Request, res: Response) => {
  *       200:
  *         description: List of unit kerja
  */
-router.get('/unit-kerja', requireAdmin, async (req: Request, res: Response) => {
+router.get('/unit-kerja', async (req: Request, res: Response) => {
     try {
         const unitKerjaList = await userManagementService.listUnitKerja();
         res.json({ success: true, data: unitKerjaList });
@@ -252,7 +235,7 @@ router.get('/unit-kerja', requireAdmin, async (req: Request, res: Response) => {
  *       404:
  *         description: User not found
  */
-router.get('/:userId', requireAdmin, async (req: Request, res: Response) => {
+router.get('/:userId', async (req: Request, res: Response) => {
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);
         if (!parseResult.success) {
@@ -317,7 +300,7 @@ router.get('/:userId', requireAdmin, async (req: Request, res: Response) => {
  *       200:
  *         description: User updated successfully
  */
-router.put('/:userId', requireAdmin, async (req: Request, res: Response) => {
+router.put('/:userId', async (req: Request, res: Response) => {
     try {
         const paramResult = userIdParamSchema.safeParse(req.params);
         if (!paramResult.success) {
@@ -335,45 +318,41 @@ router.put('/:userId', requireAdmin, async (req: Request, res: Response) => {
             });
         }
 
-        // Prevent self-demotion from super_admin
+        // Keep the current administrator capable of completing this request.
+        // The service repeats these checks transactionally as defense in depth.
         const currentUser = (req as any).currentUser;
-        if (paramResult.data.userId === currentUser.id && bodyResult.data.role !== 'super_admin') {
-            return res.status(400).json({
-                error: 'Cannot change your own role'
-            });
+        if (paramResult.data.userId === currentUser.id) {
+            if (bodyResult.data.isActive === false) {
+                return res.status(400).json({
+                    error: 'Anda tidak dapat menonaktifkan akun sendiri.'
+                });
+            }
+            if (bodyResult.data.role !== undefined && bodyResult.data.role !== currentUser.role) {
+                return res.status(400).json({
+                    error: 'Anda tidak dapat mengubah peran akun sendiri.'
+                });
+            }
         }
 
-        const existingUser = await userManagementService.getUserById(paramResult.data.userId);
         const updatedUser = await userManagementService.updateUser(
             paramResult.data.userId,
-            bodyResult.data
+            bodyResult.data,
+            { userId: currentUser.id, userEmail: currentUser.email, ipAddress: req.ip },
         );
 
         if (!updatedUser) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Log audit
-        await auditLogService.logAction({
-            userId: currentUser.id,
-            userEmail: currentUser.email,
-            action: 'update',
-            entityType: 'user',
-            entityId: paramResult.data.userId,
-            changes: {
-                before: { role: existingUser?.role, unitKerjaId: existingUser?.unitKerjaId, isActive: existingUser?.isActive },
-                after: { role: updatedUser.role, unitKerjaId: updatedUser.unitKerjaId, isActive: updatedUser.isActive },
-                fields: Object.keys(bodyResult.data)
-            },
-            ipAddress: req.ip,
-        });
-
         res.json({ success: true, data: updatedUser });
     } catch (error: any) {
-        log.error({ err: error }, 'Update user error:');
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ error: error.message });
+        }
         if (error.message?.includes('Invalid')) {
             return res.status(400).json({ error: error.message });
         }
+        log.error({ err: error }, 'Update user error:');
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -397,7 +376,7 @@ router.put('/:userId', requireAdmin, async (req: Request, res: Response) => {
  *       200:
  *         description: User deactivated successfully
  */
-router.delete('/:userId', requireAdmin, async (req: Request, res: Response) => {
+router.delete('/:userId', async (req: Request, res: Response) => {
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);
         if (!parseResult.success) {
@@ -415,24 +394,19 @@ router.delete('/:userId', requireAdmin, async (req: Request, res: Response) => {
             });
         }
 
-        const deactivatedUser = await userManagementService.deactivateUser(parseResult.data.userId);
+        const deactivatedUser = await userManagementService.deactivateUser(
+            parseResult.data.userId,
+            { userId: currentUser.id, userEmail: currentUser.email, ipAddress: req.ip },
+        );
         if (!deactivatedUser) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Log audit
-        await auditLogService.logAction({
-            userId: currentUser.id,
-            userEmail: currentUser.email,
-            action: 'update',
-            entityType: 'user',
-            entityId: parseResult.data.userId,
-            changes: { after: { isActive: false } },
-            ipAddress: req.ip,
-        });
-
         res.json({ success: true, data: deactivatedUser, message: 'User deactivated' });
     } catch (error) {
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ error: error.message });
+        }
         log.error({ err: error }, 'Deactivate user error:');
         res.status(500).json({ error: 'Internal server error' });
     }

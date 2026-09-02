@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Valid roles
-const roles = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'user'] as const;
+const roles = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user'] as const;
 
 // Query params for listing users
 export const listUsersSchema = z.object({

@@ -4,7 +4,7 @@ import { isOnline, onConnectivityChange } from '@/lib/offline-storage';
 
 /**
  * Offline Indicator Component
- * Shows connection status and cached data info
+ * Shows connection status. Sensitive archival data is never cached offline.
  */
 export function OfflineIndicator() {
     const [online, setOnline] = useState(isOnline());
@@ -52,7 +52,7 @@ export function OfflineIndicator() {
             ) : (
                 <>
                     <WifiOff className="h-4 w-4" />
-                    <span>Mode offline - menggunakan data tersimpan</span>
+                    <span>Mode offline - data arsip tidak disimpan di perangkat</span>
                 </>
             )}
         </div>
@@ -72,7 +72,7 @@ export function OfflineBadge() {
 
     if (online) {
         return (
-            <div className="flex items-center gap-1 text-xs text-green-600">
+            <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <Wifi className="h-3 w-3" />
                 <span className="hidden md:inline">Online</span>
             </div>
@@ -80,7 +80,7 @@ export function OfflineBadge() {
     }
 
     return (
-        <div className="flex items-center gap-1 text-xs text-amber-600">
+        <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
             <WifiOff className="h-3 w-3" />
             <span className="hidden md:inline">Offline</span>
         </div>

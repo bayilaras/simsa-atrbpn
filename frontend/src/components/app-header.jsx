@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { Bell, Building2, Users, ChevronDown, LogOut, User, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw, BookOpen, ExternalLink } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Bell, Building2, Users, ChevronDown, LogOut, Settings, AlertCircle, Clock, FileText, Archive, Loader2, Moon, Sun, Search, CheckCircle2, RefreshCw, BookOpen, Check, Monitor, Type, ListChecks } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,28 +20,35 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useNotifications } from '@/hooks/useNotifications'
-import { useTheme } from '@/components/theme-provider'
-import { GlobalSearch, useGlobalSearchShortcut } from '@/components/GlobalSearch'
+import { useTheme } from '@/context/theme-context'
+import { GlobalSearch } from '@/components/GlobalSearch'
+import { useGlobalSearchShortcut } from '@/hooks/use-global-search-shortcut'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import appConfig from '@/lib/app-config'
+import settingsService from '@/services/settings.service'
+import { notificationRoute } from '@/lib/notification-routing'
+import { useNotificationUnitScope } from '@/hooks/use-notification-unit-scope'
 
 // Role label mapping for display in Indonesian
 const ROLE_LABELS = {
     super_admin: 'Super Admin',
     admin_dirjen: 'Admin Dirjen',
     admin_sesditjen: 'Admin Sesditjen',
+    staff: 'Staf',
+    auditor: 'Auditor',
     user: 'Pengguna',
 }
 
-// Unit kerja options for super admin notification filter
-const UNIT_KERJA_OPTIONS = [
-    { id: 'ditjen', label: 'Ditjen PTPP' },
-    { id: 'sesditjen', label: 'Sesditjen' },
-    { id: 'dir_bppt', label: 'Dir. BPPT' },
-    { id: 'dir_ptep', label: 'Dir. PTEP' },
-    { id: 'dir_ktpp', label: 'Dir. KTPP' },
-    { id: 'dir_plp', label: 'Dir. PLP' },
-]
+const NOTIFICATION_CATEGORY_LABELS = {
+    'surat-masuk': 'Surat',
+    'arsip-retensi': 'Retensi',
+    distribusi: 'Distribusi',
+    'verifikasi-retensi': 'Verifikasi',
+    appraisal: 'Appraisal',
+    penyusutan: 'Penyusutan',
+    'penyerahan-permanen': 'Penyerahan',
+}
 
 export function AppHeader() {
     const { user: authUser, signOut } = useAuth()
@@ -49,34 +56,45 @@ export function AppHeader() {
 
     const [searchOpen, setSearchOpen] = useState(false)
     const [activeTab, setActiveTab] = useState('all') // 'all', 'surat-masuk', 'arsip-retensi'
-    const { setTheme } = useTheme()
+    const { theme, setTheme, textSize, setTextSize } = useTheme()
 
     // Super admin can switch unit kerja for notifications
-    const isSuperAdmin = authUser?.role === 'super_admin'
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(authUser?.unitKerjaId || 'ditjen')
-    const notifUnitKerjaId = isSuperAdmin ? selectedUnitKerja : authUser?.unitKerjaId
+    const notificationUnitScope = useNotificationUnitScope(authUser)
+    const isSuperAdmin = notificationUnitScope.isSuperAdmin
+    const notifUnitKerjaId = notificationUnitScope.unitKerjaId
 
-    const { notifications, counts, loading, hasUrgent, refresh, markAsRead, markAllAsRead, getByCategory, suratCount, arsipCount } = useNotifications({
+    const { counts, loading, hasUrgent, refresh, markAsRead, markAllAsRead, getByCategory, suratCount, arsipCount, workflowCount } = useNotifications({
         unitKerjaId: notifUnitKerjaId,
         limit: 20,
         refreshInterval: 60000, // Refresh every minute
     })
 
-    // Get label for selected unit kerja
-    const selectedUnitLabel = useMemo(() => {
-        return UNIT_KERJA_OPTIONS.find(u => u.id === selectedUnitKerja)?.label || selectedUnitKerja
-    }, [selectedUnitKerja])
-
     const filteredNotifications = getByCategory(activeTab)
+
+    useEffect(() => {
+        if (!authUser?.id) return
+        let active = true
+        settingsService.getPreferences()
+            .then(preferences => {
+                if (active && ['light', 'dark', 'system'].includes(preferences.theme)) {
+                    setTheme(preferences.theme)
+                }
+            })
+            .catch(() => { /* local theme remains the safe fallback */ })
+        return () => { active = false }
+    }, [authUser?.id, setTheme])
+
+    const handleThemeChange = (nextTheme) => {
+        setTheme(nextTheme)
+        settingsService.updatePreferences({ theme: nextTheme }).catch(() => {
+            // Theme remains usable locally when preference persistence is unavailable.
+        })
+    }
 
     const handleNotificationClick = (notif) => {
         markAsRead(notif.id)
 
-        if (notif.category === 'surat-masuk') {
-            navigate(`/surat/masuk/${notif.referenceId}`)
-        } else if (notif.category === 'arsip-retensi') {
-            navigate(`/arsip`)
-        }
+        navigate(notificationRoute(notif))
     }
 
     const handleMarkAllAsRead = () => {
@@ -89,9 +107,9 @@ export function AppHeader() {
 
     // Get user display data from authenticated user
     const user = {
-        name: authUser?.name || 'Guest',
+        name: authUser?.name || 'Pengguna',
         email: authUser?.email || '',
-        role: ROLE_LABELS[authUser?.role] || authUser?.role || 'User',
+        role: ROLE_LABELS[authUser?.role] || authUser?.role || 'Pengguna',
         image: authUser?.image || null,
         initials: authUser?.name ? authUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'G',
     }
@@ -101,13 +119,20 @@ export function AppHeader() {
 
     return (
         <>
-            <header className="sticky top-0 z-50 flex h-16 items-center gap-4 border-b border-border/40 bg-background/80 backdrop-blur-md px-6 shadow-sm transition-all duration-300">
-                <SidebarTrigger className="hover:bg-accent/50 hover:text-accent-foreground transition-colors" />
-                <Separator orientation="vertical" className="h-6 opacity-50" />
+            <header className="sticky top-0 z-50 flex h-14 items-center gap-2 border-b border-border bg-background px-4 sm:h-16 sm:gap-3 sm:px-6">
+                <SidebarTrigger className="-ml-1" />
+                <Separator orientation="vertical" className="hidden h-5 sm:block" />
 
-                {/* Unit Kerja Label */}
+                <div className="hidden items-center gap-2 xl:flex">
+                    <span className="text-sm font-semibold tracking-tight">{appConfig.shortName}</span>
+                    <Badge variant="outline" className="text-[10px] font-medium">
+                        {appConfig.usageBadge}
+                    </Badge>
+                </div>
+
+                {/* Unit kerja — context, not a control; it yields space first on narrow screens */}
                 {authUser?.unitKerjaId && (
-                    <div className="flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
+                    <div className="hidden items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground md:flex">
                         <Building2 className="h-3.5 w-3.5" />
                         <span>
                             {authUser.unitKerjaId === 'dirjen' ? 'Dirjen PTPP' : authUser.unitKerjaId === 'sesditjen' ? 'Sesditjen' : authUser.unitKerjaId}
@@ -115,40 +140,66 @@ export function AppHeader() {
                     </div>
                 )}
 
-                {/* Global Search Button */}
+                {/* Search: a field on desktop, an icon button once space runs out */}
                 <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 w-64 justify-start text-muted-foreground bg-muted/30 border-input/50 focus-within:ring-2 focus-within:ring-primary/20 hover:bg-muted/50 transition-all ml-2"
+                    className="ml-auto hidden h-9 w-56 justify-start gap-2 px-3 font-normal text-muted-foreground lg:flex xl:w-72"
                     onClick={() => setSearchOpen(true)}
                 >
-                    <Search className="mr-2 h-4 w-4 opacity-50" />
-                    <span className="text-xs">Cari surat, arsip...</span>
-                    <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-background px-1.5 font-mono text-[10px] font-medium text-muted-foreground shadow-sm">
-                        <span className="text-xs">⌘</span>K
+                    <Search className="h-4 w-4 shrink-0" />
+                    <span className="truncate text-xs">Cari surat, arsip...</span>
+                    <kbd className="ml-auto hidden shrink-0 select-none items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium xl:inline-flex">
+                        Ctrl K
                     </kbd>
                 </Button>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="ml-auto h-9 w-9 lg:hidden"
+                    onClick={() => setSearchOpen(true)}
+                >
+                    <Search className="h-4 w-4" />
+                    <span className="sr-only">Cari surat, arsip</span>
+                </Button>
 
-                <div className="flex-1" />
-
-                {/* Theme Toggle */}
+                {/* Theme and text-size preferences */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full hover:bg-accent/50">
+                        <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Atur tampilan">
                             <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                             <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                            <span className="sr-only">Toggle theme</span>
+                            <span className="sr-only">Atur tampilan</span>
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setTheme("light")}>
-                            Light
+                    <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuLabel>Tema</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={() => handleThemeChange('light')}>
+                            <Sun className="mr-2 h-4 w-4" />
+                            Terang
+                            {theme === 'light' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setTheme("dark")}>
-                            Dark
+                        <DropdownMenuItem onSelect={() => handleThemeChange('dark')}>
+                            <Moon className="mr-2 h-4 w-4" />
+                            Gelap
+                            {theme === 'dark' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setTheme("system")}>
-                            System
+                        <DropdownMenuItem onSelect={() => handleThemeChange('system')}>
+                            <Monitor className="mr-2 h-4 w-4" />
+                            Ikuti perangkat
+                            {theme === 'system' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel>Ukuran teks</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={() => setTextSize('standard')}>
+                            <Type className="mr-2 h-4 w-4" />
+                            Standar
+                            {textSize === 'standard' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setTextSize('large')}>
+                            <Type className="mr-2 h-5 w-5" />
+                            Besar
+                            {textSize === 'large' && <><span className="sr-only">aktif</span><Check aria-hidden="true" className="ml-auto h-4 w-4" /></>}
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
@@ -156,20 +207,25 @@ export function AppHeader() {
                 {/* Notifications */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-full hover:bg-accent/50">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="relative h-9 w-9"
+                            aria-label={counts.total > 0 ? `Notifikasi, ${counts.total} belum dibaca` : 'Notifikasi'}
+                        >
                             {loading ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                                 <Bell className={`h-4 w-4 transition-colors ${hasUrgent ? 'text-destructive animate-pulse' : ''}`} />
                             )}
                             {counts.total > 0 && (
-                                <span className={`absolute top-0 right-0 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-bold text-white shadow-sm ring-2 ring-background ${hasUrgent ? 'bg-destructive' : 'bg-primary'}`}>
+                                <span className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white shadow-sm ring-2 ring-background ${hasUrgent ? 'bg-destructive' : 'bg-primary'}`}>
                                     {counts.total > 9 ? '9+' : counts.total}
                                 </span>
                             )}
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[400px] p-0">
+                    <DropdownMenuContent align="end" className="w-[min(24rem,calc(100vw-2rem))] p-0">
                         <div className="flex items-center justify-between p-4 pb-2">
                             <div className="flex items-center gap-2">
                                 <div className="p-1.5 rounded-full bg-primary/10 text-primary">
@@ -189,12 +245,15 @@ export function AppHeader() {
                                                     e.preventDefault();
                                                     handleMarkAllAsRead();
                                                 }}
+                                                aria-label="Tandai semua notifikasi sebagai sudah dibaca"
                                             >
                                                 <CheckCircle2 className="h-4 w-4" />
                                             </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                            {activeTab === 'all' ? 'Tandai semua sudah dibaca' : `Tandai semua ${activeTab === 'surat-masuk' ? 'surat' : 'arsip'} sudah dibaca`}
+                                            {activeTab === 'all'
+                                                ? 'Tandai semua sudah dibaca'
+                                                : `Tandai semua ${activeTab === 'surat-masuk' ? 'surat' : activeTab === 'workflow' ? 'alur kerja' : 'arsip'} sudah dibaca`}
                                         </TooltipContent>
                                     </Tooltip>
                                 </TooltipProvider>
@@ -207,11 +266,18 @@ export function AppHeader() {
                                 <div className="flex items-center gap-2">
                                     <Building2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                                     <select
-                                        value={selectedUnitKerja}
-                                        onChange={(e) => setSelectedUnitKerja(e.target.value)}
+                                        aria-label="Filter notifikasi berdasarkan unit kerja"
+                                        value={notificationUnitScope.selectedUnitKerjaId}
+                                        onChange={(e) => notificationUnitScope.setSelectedUnitKerjaId(e.target.value)}
+                                        disabled={notificationUnitScope.loading || notificationUnitScope.unitKerjaList.length === 0}
                                         className="flex-1 text-xs font-medium rounded-md border border-input bg-background px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors cursor-pointer hover:bg-accent/50"
                                     >
-                                        {UNIT_KERJA_OPTIONS.map(unit => (
+                                        {notificationUnitScope.unitKerjaList.length === 0 && (
+                                            <option value="">
+                                                {notificationUnitScope.loading ? 'Memuat unit...' : 'Unit tidak tersedia'}
+                                            </option>
+                                        )}
+                                        {notificationUnitScope.unitKerjaList.map(unit => (
                                             <option key={unit.id} value={unit.id}>{unit.label}</option>
                                         ))}
                                     </select>
@@ -223,7 +289,9 @@ export function AppHeader() {
                         <div className="px-4 pb-2">
                             <div className="flex rounded-lg bg-muted/50 p-1 gap-1">
                                 <button
-                                    className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${activeTab === 'surat-masuk'
+                                    type="button"
+                                    aria-pressed={activeTab === 'surat-masuk'}
+                                    className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${activeTab === 'surat-masuk'
                                         ? 'bg-background shadow-sm text-foreground'
                                         : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
                                         }`}
@@ -232,13 +300,15 @@ export function AppHeader() {
                                     <FileText className="h-3 w-3" />
                                     <span>Surat</span>
                                     {suratCount > 0 && (
-                                        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 text-[10px] font-semibold px-1">
+                                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-100 px-1 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
                                             {suratCount}
                                         </span>
                                     )}
                                 </button>
                                 <button
-                                    className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${activeTab === 'arsip-retensi'
+                                    type="button"
+                                    aria-pressed={activeTab === 'arsip-retensi'}
+                                    className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${activeTab === 'arsip-retensi'
                                         ? 'bg-background shadow-sm text-foreground'
                                         : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
                                         }`}
@@ -247,13 +317,32 @@ export function AppHeader() {
                                     <Archive className="h-3 w-3" />
                                     <span>Arsip</span>
                                     {arsipCount > 0 && (
-                                        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300 text-[10px] font-semibold px-1">
+                                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
                                             {arsipCount}
                                         </span>
                                     )}
                                 </button>
                                 <button
-                                    className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${activeTab === 'all'
+                                    type="button"
+                                    aria-pressed={activeTab === 'workflow'}
+                                    className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${activeTab === 'workflow'
+                                        ? 'bg-background shadow-sm text-foreground'
+                                        : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
+                                        }`}
+                                    onClick={(e) => { e.preventDefault(); setActiveTab('workflow'); }}
+                                >
+                                    <ListChecks className="h-3 w-3" />
+                                    <span>Alur</span>
+                                    {workflowCount > 0 && (
+                                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-100 px-1 text-[10px] font-semibold text-violet-700 dark:bg-violet-900/50 dark:text-violet-300">
+                                            {workflowCount}
+                                        </span>
+                                    )}
+                                </button>
+                                <button
+                                    type="button"
+                                    aria-pressed={activeTab === 'all'}
+                                    className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${activeTab === 'all'
                                         ? 'bg-background shadow-sm text-foreground'
                                         : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'
                                         }`}
@@ -262,7 +351,7 @@ export function AppHeader() {
                                     <Bell className="h-3 w-3" />
                                     <span>Semua</span>
                                     {counts.total > 0 && (
-                                        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted text-muted-foreground text-[10px] font-semibold px-1">
+                                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold text-muted-foreground">
                                             {counts.total}
                                         </span>
                                     )}
@@ -283,6 +372,8 @@ export function AppHeader() {
                                         <FileText className="h-6 w-6 opacity-50" />
                                     ) : activeTab === 'arsip-retensi' ? (
                                         <Archive className="h-6 w-6 opacity-50" />
+                                    ) : activeTab === 'workflow' ? (
+                                        <ListChecks className="h-6 w-6 opacity-50" />
                                     ) : (
                                         <CheckCircle2 className="h-6 w-6 opacity-50" />
                                     )}
@@ -290,11 +381,13 @@ export function AppHeader() {
                                 <p className="text-sm font-medium">
                                     {activeTab === 'surat-masuk' ? 'Semua surat sudah diproses!' :
                                         activeTab === 'arsip-retensi' ? 'Tidak ada arsip mendekati kadaluarsa' :
+                                            activeTab === 'workflow' ? 'Tidak ada tindakan alur kerja' :
                                             'Semua sudah dibaca!'}
                                 </p>
                                 <p className="text-xs mt-1">
                                     {activeTab === 'surat-masuk' ? 'Tidak ada surat masuk yang perlu ditindaklanjuti.' :
                                         activeTab === 'arsip-retensi' ? 'Jadwal retensi arsip aman untuk saat ini.' :
+                                            activeTab === 'workflow' ? 'Distribusi, verifikasi, appraisal, penyusutan, dan penyerahan tidak memerlukan tindakan.' :
                                             'Tidak ada notifikasi baru saat ini.'}
                                 </p>
                             </div>
@@ -337,7 +430,7 @@ export function AppHeader() {
                                                     ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400'
                                                     : 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400'
                                                     }`}>
-                                                    {notif.category === 'surat-masuk' ? 'Surat' : 'Retensi'}
+                                                    {NOTIFICATION_CATEGORY_LABELS[notif.category] || 'Sistem'}
                                                 </span>
                                             </div>
                                         </div>
@@ -350,7 +443,7 @@ export function AppHeader() {
                         <div className="p-2 bg-muted/20">
                             <DropdownMenuItem className="justify-center text-primary cursor-pointer font-medium text-xs rounded-md hover:bg-primary/5 hover:text-primary transition-colors h-8" onClick={refresh}>
                                 <RefreshCw className="mr-2 h-3 w-3" />
-                                Refresh Notifikasi
+                                Perbarui notifikasi
                             </DropdownMenuItem>
                         </div>
                     </DropdownMenuContent>
@@ -359,18 +452,19 @@ export function AppHeader() {
                 {/* User Menu */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="gap-3 pl-2 h-10 rounded-full hover:bg-accent/50 pr-4">
-                            <Avatar className="h-8 w-8 ring-2 ring-background shadow-sm transition-transform hover:scale-105">
+                        <Button variant="ghost" className="h-10 gap-2 px-2" aria-label={`Buka menu akun ${user.name}`}>
+                            <Avatar className="h-8 w-8">
                                 {user.image && (
                                     <AvatarImage src={user.image} alt={user.name} referrerPolicy="no-referrer" />
                                 )}
-                                <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground text-xs font-bold">{user.initials}</AvatarFallback>
+                                <AvatarFallback className="bg-primary text-xs font-semibold text-primary-foreground">{user.initials}</AvatarFallback>
                             </Avatar>
-                            <div className="hidden flex-col items-start md:flex gap-0.5">
-                                <span className="text-sm font-semibold leading-none">{user.name}</span>
-                                <Badge variant="secondary" className="h-4 px-1.5 text-[9px] font-medium bg-secondary/20 text-secondary-foreground shadow-none">{user.role}</Badge>
+                            {/* Long Indonesian names must not push the header wider than the viewport */}
+                            <div className="hidden min-w-0 flex-col items-start lg:flex">
+                                <span className="max-w-[12rem] truncate text-sm font-medium leading-tight">{user.name}</span>
+                                <span className="text-[11px] leading-tight text-muted-foreground">{user.role}</span>
                             </div>
-                            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground opacity-50" />
+                            <ChevronDown className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground lg:block" />
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56 p-2">
@@ -381,24 +475,15 @@ export function AppHeader() {
                             </div>
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild className="cursor-pointer rounded-md">
-                            <a href="/settings" className="flex items-center">
-                                <User className="mr-2 h-4 w-4 text-muted-foreground" />
-                                Profil Saya
-                            </a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild className="cursor-pointer rounded-md">
-                            <a href="/settings" className="flex items-center">
+                        {isSuperAdmin && (
+                            <DropdownMenuItem onSelect={() => navigate('/settings')} className="cursor-pointer rounded-md">
                                 <Settings className="mr-2 h-4 w-4 text-muted-foreground" />
                                 Pengaturan
-                            </a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild className="cursor-pointer rounded-md">
-                            <a href="https://panduan-simsa.vercel.app" target="_blank" rel="noopener noreferrer" className="flex items-center">
-                                <BookOpen className="mr-2 h-4 w-4 text-muted-foreground" />
-                                Panduan Pengguna
-                                <ExternalLink className="ml-auto h-3 w-3 opacity-50" />
-                            </a>
+                            </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onSelect={() => navigate('/panduan')} className="cursor-pointer rounded-md">
+                            <BookOpen className="mr-2 h-4 w-4 text-muted-foreground" />
+                            Panduan Pengguna
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={signOut} className="text-destructive focus:text-destructive cursor-pointer rounded-md bg-destructive/5 focus:bg-destructive/10">

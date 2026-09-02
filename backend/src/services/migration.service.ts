@@ -1,13 +1,19 @@
 import { parse } from 'csv-parse/sync';
-import { db } from '../config/database';
-import { suratMasuk as suratMasukTable } from '../db/schema/surat-masuk';
-import { suratKeluar as suratKeluarTable } from '../db/schema/surat-keluar';
-import { arsip as arsipTable } from '../db/schema/arsip';
+import { and, eq } from 'drizzle-orm';
+import { db } from '../config/database.js';
+import { suratMasuk as suratMasukTable } from '../db/schema/surat-masuk.js';
+import { suratKeluar as suratKeluarTable } from '../db/schema/surat-keluar.js';
+import { arsip as arsipTable } from '../db/schema/arsip.js';
+import { suratMasukService } from './surat-masuk.service.js';
+import { suratKeluarService } from './surat-keluar.service.js';
+import { arsipService } from './arsip.service.js';
+import type { CriticalAuditContext } from './audit-log.service.js';
 
 interface ImportResult {
     success: boolean;
     imported: number;
     skipped: number;
+    duplicates: number;
     errors: string[];
 }
 
@@ -63,11 +69,16 @@ export const migrationService = {
      * Headers from Manajemen Surat Dirjen: ID, No, Jenis Surat, Sifat Surat, Nomor Surat, 
      *                   Tanggal Surat, Perihal, Dari, Kepada, Status, Disposisi, Timestamp
      */
-    async importSuratMasuk(csvContent: string, unitKerjaId: string, createdBy?: string): Promise<ImportResult> {
+    async importSuratMasuk(
+        csvContent: string,
+        unitKerjaId: string,
+        auditContext: CriticalAuditContext,
+    ): Promise<ImportResult> {
         const result: ImportResult = {
             success: true,
             imported: 0,
             skipped: 0,
+            duplicates: 0,
             errors: [],
         };
 
@@ -98,8 +109,42 @@ export const migrationService = {
                     const tanggalSurat = parseDate(row['Tanggal Surat']);
                     const noUrut = parseInt(noStr || '0') || result.imported + 1;
                     const tahun = tanggalSurat ? parseInt(tanggalSurat.substring(0, 4)) : getCurrentYear();
+                    const dari = row['Dari'] || '';
+                    const hasOfficialNumber = Boolean(nomorSurat && nomorSurat !== '-');
+                    let duplicate: Array<{ id: string }>;
+                    if (hasOfficialNumber) {
+                        duplicate = await db.select({ id: suratMasukTable.id })
+                            .from(suratMasukTable)
+                            .where(and(
+                                eq(suratMasukTable.unitKerjaId, unitKerjaId),
+                                eq(suratMasukTable.tahun, tahun),
+                                eq(suratMasukTable.nomorSurat, nomorSurat!),
+                            ))
+                            .limit(1);
+                    } else {
+                        if (!tanggalSurat || !perihal || !dari) {
+                            result.errors.push(
+                                `Row ${i + 1}: nomor surat kosong memerlukan tanggal, perihal, dan pengirim untuk identitas impor yang stabil`,
+                            );
+                            result.skipped++;
+                            continue;
+                        }
+                        duplicate = await db.select({ id: suratMasukTable.id })
+                            .from(suratMasukTable)
+                            .where(and(
+                                eq(suratMasukTable.unitKerjaId, unitKerjaId),
+                                eq(suratMasukTable.tanggalSurat, tanggalSurat),
+                                eq(suratMasukTable.perihal, perihal),
+                                eq(suratMasukTable.dari, dari),
+                            ))
+                            .limit(1);
+                    }
+                    if (duplicate.length > 0) {
+                        result.duplicates++;
+                        continue;
+                    }
 
-                    await db.insert(suratMasukTable).values({
+                    await suratMasukService.create({
                         unitKerjaId,
                         noUrut,
                         tahun,
@@ -108,16 +153,17 @@ export const migrationService = {
                         nomorSurat: nomorSurat || '',
                         tanggalSurat: tanggalSurat || getToday(),
                         perihal,
-                        dari: row['Dari'] || '',
+                        dari,
                         kepada: row['Kepada'] || '',
                         status: row['Status'] || 'belum_dibalas',
                         disposisi: row['Disposisi'] ? [row['Disposisi']] : [],
-                        createdBy,
-                    });
+                        createdBy: auditContext.userId,
+                    }, auditContext);
 
                     result.imported++;
                 } catch (rowError: any) {
                     result.errors.push(`Row ${i + 1}: ${rowError.message}`);
+                    result.skipped++;
                 }
             }
         } catch (error: any) {
@@ -125,17 +171,23 @@ export const migrationService = {
             result.errors.push(`Parse error: ${error.message}`);
         }
 
+        result.success = result.errors.length === 0;
         return result;
     },
 
     /**
      * Import Surat Keluar from CSV content
      */
-    async importSuratKeluar(csvContent: string, unitKerjaId: string, createdBy?: string): Promise<ImportResult> {
+    async importSuratKeluar(
+        csvContent: string,
+        unitKerjaId: string,
+        auditContext: CriticalAuditContext,
+    ): Promise<ImportResult> {
         const result: ImportResult = {
             success: true,
             imported: 0,
             skipped: 0,
+            duplicates: 0,
             errors: [],
         };
 
@@ -163,24 +215,58 @@ export const migrationService = {
                     }
 
                     const tanggalSurat = parseDate(row['Tanggal Surat']);
-                    const noUrut = parseInt(noStr || '0') || result.imported + 1;
                     const tahun = tanggalSurat ? parseInt(tanggalSurat.substring(0, 4)) : getCurrentYear();
+                    const kepada = row['Kepada'] || row['Tujuan'] || '';
+                    const hasOfficialNumber = Boolean(nomorSurat && nomorSurat !== '-');
+                    let duplicate: Array<{ id: string }>;
+                    if (hasOfficialNumber) {
+                        duplicate = await db.select({ id: suratKeluarTable.id })
+                            .from(suratKeluarTable)
+                            .where(and(
+                                eq(suratKeluarTable.unitKerjaId, unitKerjaId),
+                                eq(suratKeluarTable.tahun, tahun),
+                                eq(suratKeluarTable.nomorSurat, nomorSurat!),
+                            ))
+                            .limit(1);
+                    } else {
+                        if (!tanggalSurat || !perihal || !kepada) {
+                            result.errors.push(
+                                `Row ${i + 1}: nomor surat kosong memerlukan tanggal, perihal, dan tujuan untuk identitas impor yang stabil`,
+                            );
+                            result.skipped++;
+                            continue;
+                        }
+                        duplicate = await db.select({ id: suratKeluarTable.id })
+                            .from(suratKeluarTable)
+                            .where(and(
+                                eq(suratKeluarTable.unitKerjaId, unitKerjaId),
+                                eq(suratKeluarTable.tanggalSurat, tanggalSurat),
+                                eq(suratKeluarTable.perihal, perihal),
+                                eq(suratKeluarTable.kepada, kepada),
+                            ))
+                            .limit(1);
+                    }
+                    if (duplicate.length > 0) {
+                        result.duplicates++;
+                        continue;
+                    }
 
-                    await db.insert(suratKeluarTable).values({
+                    await suratKeluarService.create({
                         unitKerjaId,
-                        noUrut,
                         tahun,
                         naskahDinas: row['Naskah Dinas'] || row['Jenis Surat'] || 'Surat Dinas',
-                        nomorSurat: nomorSurat || '',
+                        numberingMode: hasOfficialNumber ? 'manual' : 'auto',
+                        nomorSurat: nomorSurat || undefined,
                         tanggalSurat: tanggalSurat || getToday(),
                         perihal,
-                        kepada: row['Kepada'] || row['Tujuan'] || '',
-                        createdBy,
-                    });
+                        kepada,
+                        createdBy: auditContext.userId,
+                    }, auditContext);
 
                     result.imported++;
                 } catch (rowError: any) {
                     result.errors.push(`Row ${i + 1}: ${rowError.message}`);
+                    result.skipped++;
                 }
             }
         } catch (error: any) {
@@ -188,17 +274,23 @@ export const migrationService = {
             result.errors.push(`Parse error: ${error.message}`);
         }
 
+        result.success = result.errors.length === 0;
         return result;
     },
 
     /**
      * Import Arsip from CSV content
      */
-    async importArsip(csvContent: string, unitKerjaId: string, createdBy?: string): Promise<ImportResult> {
+    async importArsip(
+        csvContent: string,
+        unitKerjaId: string,
+        auditContext: CriticalAuditContext,
+    ): Promise<ImportResult> {
         const result: ImportResult = {
             success: true,
             imported: 0,
             skipped: 0,
+            duplicates: 0,
             errors: [],
         };
 
@@ -224,25 +316,71 @@ export const migrationService = {
 
                     const tanggal = parseDate(row['Tanggal'] || row['Tanggal Arsip']);
                     const tahun = tanggal ? parseInt(tanggal.substring(0, 4)) : getCurrentYear();
+                    const jenisArsip = row['Jenis Arsip'] || row['Jenis'] || 'masuk';
+                    const nomorBerkas = row['Nomor Berkas'] || row['No'] || '';
+                    let duplicate: Array<{ id: string }>;
+                    if (nomorBerkas && nomorBerkas !== '-') {
+                        duplicate = await db.select({ id: arsipTable.id })
+                            .from(arsipTable)
+                            .where(and(
+                                eq(arsipTable.unitKerjaId, unitKerjaId),
+                                eq(arsipTable.tahun, tahun),
+                                eq(arsipTable.nomorBerkas, nomorBerkas),
+                            ))
+                            .limit(1);
+                    } else {
+                        if (!tanggal || !uraian || !jenisArsip) {
+                            result.errors.push(
+                                `Row ${i + 1}: nomor berkas kosong memerlukan tanggal, uraian, dan jenis arsip untuk identitas impor yang stabil`,
+                            );
+                            result.skipped++;
+                            continue;
+                        }
+                        duplicate = await db.select({ id: arsipTable.id })
+                            .from(arsipTable)
+                            .where(and(
+                                eq(arsipTable.unitKerjaId, unitKerjaId),
+                                eq(arsipTable.tanggalArsip, tanggal),
+                                eq(arsipTable.uraianBerkas, uraian),
+                                eq(arsipTable.jenisArsip, jenisArsip),
+                            ))
+                            .limit(1);
+                    }
+                    if (duplicate.length > 0) {
+                        result.duplicates++;
+                        continue;
+                    }
 
-                    await db.insert(arsipTable).values({
+                    const legacyClassificationCode = row['Kode Klasifikasi'] || row['Kode'] || '';
+                    const legacyNotes = [
+                        row['Keterangan'] || '',
+                        legacyClassificationCode
+                            ? `Kode klasifikasi sumber (belum diverifikasi): ${legacyClassificationCode}`
+                            : '',
+                    ].filter(Boolean).join('\n');
+
+                    // Imported archives remain explicitly non-actionable until
+                    // an archivist reconciles them against an active rule set.
+                    // Never copy a legacy display code into authoritative rule
+                    // assignment columns without a canonical snapshot.
+                    await arsipService.create({
                         unitKerjaId,
-                        jenisArsip: row['Jenis Arsip'] || row['Jenis'] || 'masuk',
+                        jenisArsip,
                         tahun,
-                        nomorBerkas: row['Nomor Berkas'] || row['No'] || '',
-                        kodeKlasifikasi: row['Kode Klasifikasi'] || row['Kode'] || '',
+                        nomorBerkas,
                         uraianBerkas: uraian,
                         tingkatPerkembangan: row['Tingkat Perkembangan'] || '',
                         tanggalArsip: tanggal || getToday(),
                         kurunWaktu: row['Kurun'] || row['Kurun Waktu'] || '',
                         jumlah: parseInt(row['Jumlah'] || '1') || 1,
-                        keterangan: row['Keterangan'] || '',
-                        createdBy,
-                    });
+                        keterangan: legacyNotes,
+                        createdBy: auditContext.userId,
+                    }, auditContext);
 
                     result.imported++;
                 } catch (rowError: any) {
                     result.errors.push(`Row ${i + 1}: ${rowError.message}`);
+                    result.skipped++;
                 }
             }
         } catch (error: any) {
@@ -250,6 +388,7 @@ export const migrationService = {
             result.errors.push(`Parse error: ${error.message}`);
         }
 
+        result.success = result.errors.length === 0;
         return result;
     },
 };

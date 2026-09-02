@@ -2,6 +2,8 @@
 const sidebars = {
   panduanSidebar: [
     'index',
+    'profil-aplikasi-internal',
+    'panduan-pengguna',
     {
       type: 'category',
       label: '🔐 Akses SIMSA',
@@ -68,8 +70,11 @@ const sidebars = {
       items: [
         'administrasi/laporan',
         'administrasi/audit-log',
+        'administrasi/persetujuan-akses',
+        'administrasi/integrasi-srikandi',
         'administrasi/user-management',
         'administrasi/master-data',
+        'administrasi/versi-aturan',
         'administrasi/settings',
       ],
     },

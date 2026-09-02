@@ -3,23 +3,40 @@ import { archiveLendingService } from '../services/archive-lending.service';
 import { storageLocationService } from '../services/storage-location.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
-import auditLogService from '../services/audit-log.service';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { borrowArchiveSchema, extendLendingSchema } from '../validators/schemas';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
+import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
+import { isAllowedForClassification } from '../services/record-access.service.js';
 
 const router = Router();
 
-// Helper to get IP as string
-const getIpAddress = (req: AuthRequest): string | undefined => {
-    const ip = req.ip;
-    return Array.isArray(ip) ? ip[0] : ip;
-};
-
 router.use(authMiddleware);
+
+function requestedUnit(req: AuthRequest): string | undefined {
+    const value = req.query.unitKerjaId;
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function readUnitScope(req: AuthRequest): string | null {
+    const assignedScope = resolveRecordUnitScope(req);
+    return assignedScope === null ? requestedUnit(req) || null : assignedScope || null;
+}
+
+function writeUnitScope(req: AuthRequest, createUnit?: unknown): string | null {
+    const assignedScope = resolveRecordUnitScope(req);
+    if (assignedScope !== null) return assignedScope || null;
+
+    const explicitUnit = typeof createUnit === 'string' && createUnit.trim()
+        ? createUnit.trim()
+        : requestedUnit(req);
+    return explicitUnit || null;
+}
 
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);
+router.param('arsipId', uuidParamValidator);
+router.param('locationId', uuidParamValidator);
 
 /**
  * @swagger
@@ -31,9 +48,13 @@ router.param('id', uuidParamValidator);
 router.get('/', async (req: AuthRequest, res, next) => {
     try {
         const { status, lendingType, borrowerId, arsipId, storageLocationId, page, limit } = req.query as any;
+        const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat peminjaman.' });
+        }
 
         const result = await archiveLendingService.findAll({
-            unitKerjaId: req.user?.unitKerjaId,
+            unitKerjaId,
             status,
             lendingType,
             borrowerId,
@@ -58,7 +79,11 @@ router.get('/', async (req: AuthRequest, res, next) => {
  */
 router.get('/overdue', async (req: AuthRequest, res, next) => {
     try {
-        const data = await archiveLendingService.getOverdue(req.user?.unitKerjaId);
+        const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat peminjaman.' });
+        }
+        const data = await archiveLendingService.getOverdue(unitKerjaId);
         res.json({ success: true, data });
     } catch (error) {
         next(error);
@@ -74,7 +99,11 @@ router.get('/overdue', async (req: AuthRequest, res, next) => {
  */
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
-        const stats = await archiveLendingService.getStats(req.user?.unitKerjaId);
+        const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat statistik peminjaman.' });
+        }
+        const stats = await archiveLendingService.getStats(unitKerjaId);
         res.json({ success: true, data: stats });
     } catch (error) {
         next(error);
@@ -91,7 +120,14 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 router.get('/arsip/:arsipId', async (req: AuthRequest, res, next) => {
     try {
         const { arsipId } = req.params;
-        const data = await archiveLendingService.getHistoryByArsipId(arsipId as string);
+        const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat riwayat peminjaman.' });
+        }
+        const data = await archiveLendingService.getHistoryByArsipId(
+            arsipId as string,
+            unitKerjaId,
+        );
         res.json({ success: true, data });
     } catch (error) {
         next(error);
@@ -108,7 +144,14 @@ router.get('/arsip/:arsipId', async (req: AuthRequest, res, next) => {
 router.get('/location/:locationId', async (req: AuthRequest, res, next) => {
     try {
         const { locationId } = req.params;
-        const data = await archiveLendingService.getHistoryByLocationId(locationId as string);
+        const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat riwayat peminjaman.' });
+        }
+        const data = await archiveLendingService.getHistoryByLocationId(
+            locationId as string,
+            unitKerjaId,
+        );
         res.json({ success: true, data });
     } catch (error) {
         next(error);
@@ -125,7 +168,11 @@ router.get('/location/:locationId', async (req: AuthRequest, res, next) => {
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const result = await archiveLendingService.findById(id as string);
+        const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat peminjaman.' });
+        }
+        const result = await archiveLendingService.findById(id as string, unitKerjaId);
 
         if (!result) {
             return res.status(404).json({ error: 'Lending record not found' });
@@ -146,7 +193,12 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
  */
 router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borrowArchiveSchema), async (req: AuthRequest, res, next) => {
     try {
-        const { lendingType, arsipId, storageLocationId, borrowerName, departmentUnit, dueDate, purpose } = req.body;
+        const { unitKerjaId: requestedCreateUnit, lendingType, arsipId, storageLocationId, borrowerName, departmentUnit, dueDate, purpose } = req.body;
+        const unitKerjaId = writeUnitScope(req, requestedCreateUnit);
+
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk membuat peminjaman.' });
+        }
 
         if (!lendingType || !['arsip', 'box'].includes(lendingType)) {
             return res.status(400).json({ error: 'lendingType must be "arsip" or "box"' });
@@ -157,8 +209,8 @@ router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borr
 
         const result = await archiveLendingService.borrow({
             lendingType,
-            arsipId,
-            storageLocationId,
+            arsipId: lendingType === 'arsip' ? arsipId : undefined,
+            storageLocationId: lendingType === 'box' ? storageLocationId : undefined,
             borrowerId: req.user!.id,
             borrowerName,
             departmentUnit,
@@ -166,22 +218,22 @@ router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borr
             purpose,
             approvedBy: req.user?.id,
             createdBy: req.user?.id,
-        });
-
-        await auditLogService.logAction({
+        }, unitKerjaId, {
             userId: req.user?.id,
             userEmail: req.user?.email,
-            action: 'create',
-            entityType: 'archive_lending',
-            entityId: result.id,
-            changes: { after: { lendingType, borrowerName, dueDate } },
-            ipAddress: getIpAddress(req),
+            ipAddress: req.ip,
         });
 
         res.status(201).json({ success: true, data: result });
     } catch (error: any) {
-        if (error.message.includes('required') || error.message.includes('already borrowed') || error.message.includes('not found')) {
+        if (error.message.includes('not found')) {
+            return res.status(404).json({ error: error.message });
+        }
+        if (error.message.includes('required')) {
             return res.status(400).json({ error: error.message });
+        }
+        if (error.message.includes('already borrowed')) {
+            return res.status(409).json({ error: error.message });
         }
         next(error);
     }
@@ -198,23 +250,25 @@ router.put('/:id/return', canWriteMiddleware(), async (req: AuthRequest, res, ne
     try {
         const { id } = req.params;
         const { notes } = req.body;
+        const unitKerjaId = writeUnitScope(req);
 
-        const result = await archiveLendingService.return(id as string, notes);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk pengembalian.' });
+        }
 
-        await auditLogService.logAction({
+        const result = await archiveLendingService.return(id as string, unitKerjaId, notes, {
             userId: req.user?.id,
             userEmail: req.user?.email,
-            action: 'update',
-            entityType: 'archive_lending',
-            entityId: id as string,
-            changes: { after: { status: 'returned', returnDate: result.returnDate } },
-            ipAddress: getIpAddress(req),
+            ipAddress: req.ip,
         });
 
         res.json({ success: true, data: result });
     } catch (error: any) {
-        if (error.message.includes('not found') || error.message.includes('Already returned')) {
-            return res.status(400).json({ error: error.message });
+        if (error.message.includes('not found')) {
+            return res.status(404).json({ error: error.message });
+        }
+        if (error.message.includes('Already returned') || error.message.includes('changed')) {
+            return res.status(409).json({ error: error.message });
         }
         next(error);
     }
@@ -231,27 +285,29 @@ router.put('/:id/extend', canWriteMiddleware(), validateBody(extendLendingSchema
     try {
         const { id } = req.params;
         const { newDueDate } = req.body;
+        const unitKerjaId = writeUnitScope(req);
+
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk perpanjangan.' });
+        }
 
         if (!newDueDate) {
             return res.status(400).json({ error: 'newDueDate is required' });
         }
 
-        const result = await archiveLendingService.extend(id as string, newDueDate);
-
-        await auditLogService.logAction({
+        const result = await archiveLendingService.extend(id as string, unitKerjaId, newDueDate, {
             userId: req.user?.id,
             userEmail: req.user?.email,
-            action: 'update',
-            entityType: 'archive_lending',
-            entityId: id as string,
-            changes: { after: { newDueDate } },
-            ipAddress: getIpAddress(req),
+            ipAddress: req.ip,
         });
 
         res.json({ success: true, data: result });
     } catch (error: any) {
-        if (error.message.includes('not found') || error.message.includes('Cannot extend')) {
-            return res.status(400).json({ error: error.message });
+        if (error.message.includes('not found')) {
+            return res.status(404).json({ error: error.message });
+        }
+        if (error.message.includes('Cannot extend') || error.message.includes('changed')) {
+            return res.status(409).json({ error: error.message });
         }
         next(error);
     }
@@ -269,8 +325,19 @@ router.get('/qr/arsip/:arsipId', async (req: AuthRequest, res, next) => {
         const { arsipId } = req.params;
         const host = req.get('host') || 'localhost';
         const baseUrl = `${req.protocol}://${host}`;
+        const unitKerjaId = readUnitScope(req);
+        if (!unitKerjaId) {
+            return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk membuat QR arsip.' });
+        }
 
-        const result = await storageLocationService.generateArsipQRCode(arsipId as string, baseUrl);
+        const result = await storageLocationService.generateArsipQRCode(
+            arsipId as string,
+            baseUrl,
+            unitKerjaId,
+        );
+        if (!result.arsip || !isAllowedForClassification(req.user, result.arsip.klasifikasiKeamanan)) {
+            return res.status(404).json({ error: 'Arsip not found' });
+        }
         res.json({ success: true, data: result });
     } catch (error: any) {
         if (error.message.includes('not found')) {

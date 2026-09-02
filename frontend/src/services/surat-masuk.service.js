@@ -3,12 +3,29 @@ import { uploadFileToBlob } from './blob-upload.service';
 
 export const suratMasukService = {
     // List surat masuk with pagination and filters
-    async getAll({ unitKerjaId, tahun, status, search, page = 1, limit = 20 } = {}) {
+    async getAll({
+        unitKerjaId,
+        tahun,
+        status,
+        search,
+        jenisSurat,
+        sifatSurat,
+        disposisi,
+        tanggalDari,
+        tanggalSampai,
+        page = 1,
+        limit = 20,
+    } = {}) {
         const response = await api.get('/api/surat-masuk', {
             unitKerjaId,
             tahun,
             status,
             search,
+            jenisSurat,
+            sifatSurat,
+            disposisi,
+            tanggalDari,
+            tanggalSampai,
             page,
             limit,
         });
@@ -28,8 +45,12 @@ export const suratMasukService = {
     },
 
     // Get next number
-    async getNextNumber({ unitKerjaId, tahun } = {}) {
-        const response = await api.get('/api/surat-masuk/next-number', { unitKerjaId, tahun });
+    async getNextNumber({ unitKerjaId, tahun, tanggalSurat } = {}) {
+        const response = await api.get('/api/surat-masuk/next-number', {
+            unitKerjaId,
+            tahun,
+            tanggalSurat,
+        });
         return response.data;
     },
 

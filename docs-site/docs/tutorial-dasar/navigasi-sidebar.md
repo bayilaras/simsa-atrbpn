@@ -40,7 +40,7 @@ Sidebar menampilkan menu navigasi yang dikelompokkan sebagai berikut:
 - 📝 Audit Log
 - 👥 User Management 🔒
 - 📂 Master Data 🔒 → Klasifikasi Arsip, Template Surat
-- ⚙️ Settings 🔒
+- ⚙️ Pengaturan
 
 *Menu dengan 🔒 hanya tersedia untuk role tertentu.*
 :::
@@ -74,7 +74,8 @@ Menu yang ditandai 🔒 **hanya tersedia** untuk pengguna dengan role tertentu:
 | Arsip Terjaga | Admin Dirjen, Admin Sesditjen, Super Admin |
 | User Management | Super Admin saja |
 | Master Data | Admin Dirjen, Admin Sesditjen, Super Admin |
-| Settings | Super Admin saja |
+| Pengaturan profil/preferensi | Semua akun yang sudah diprovisi |
+| Pengaturan unit/template | Admin Dirjen, Admin Sesditjen, Super Admin |
 
 > 💡 Jika kamu tidak melihat menu tertentu di sidebar, artinya role kamu tidak memiliki akses ke menu tersebut.
 

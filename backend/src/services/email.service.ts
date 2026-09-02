@@ -1,67 +1,126 @@
 import nodemailer from 'nodemailer';
 import { createLogger } from '../utils/logger';
+import {
+    buildEmailConfig,
+    getEmailConfigurationStatus,
+    type EmailConfig,
+} from '../config/email.js';
 
 const log = createLogger('EmailService');
 
-interface EmailOptions {
+const HTML_ENTITIES: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+};
+
+export function escapeEmailHtml(value: string): string {
+    return value.replace(/[&<>"']/g, character => HTML_ENTITIES[character]);
+}
+
+function assertSafeEmailLink(value: string): string {
+    let parsed: URL;
+    try {
+        parsed = new URL(value);
+    } catch {
+        throw new Error('Email action link must be an absolute URL');
+    }
+    if (
+        !['http:', 'https:'].includes(parsed.protocol)
+        || parsed.username
+        || parsed.password
+    ) {
+        throw new Error('Email action link must use HTTP(S) without embedded credentials');
+    }
+    return parsed.toString();
+}
+
+export interface EmailOptions {
     to: string;
     subject: string;
     text: string;
     html?: string;
 }
 
-class EmailService {
+export type EmailDeliveryResult =
+    | { sent: true; status: 'sent'; messageId?: string }
+    | { sent: false; status: 'not_configured' | 'failed'; error: string };
+
+export class EmailService {
     private transporter: nodemailer.Transporter | null = null;
 
-    constructor() {
-        // Initialize transporter if env vars are present, otherwise use stub
-        if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+    constructor(private readonly config: EmailConfig = buildEmailConfig()) {
+        if (config.ready) {
             this.transporter = nodemailer.createTransport({
-                host: process.env.SMTP_HOST,
-                port: Number(process.env.SMTP_PORT) || 587,
-                secure: process.env.SMTP_SECURE === 'true',
+                host: config.host,
+                port: config.port,
+                secure: config.secure,
                 auth: {
-                    user: process.env.SMTP_USER,
-                    pass: process.env.SMTP_PASS,
+                    user: config.user,
+                    pass: config.password,
                 },
+                connectionTimeout: config.timeoutMs,
+                greetingTimeout: config.timeoutMs,
+                socketTimeout: config.timeoutMs,
             });
         } else {
-            log.info('SMTP not configured, using stub mode');
+            log.info({
+                status: getEmailConfigurationStatus(config),
+            }, 'SMTP unavailable; email delivery is disabled');
         }
     }
 
-    async sendEmail(options: EmailOptions): Promise<boolean> {
+    getConfigurationStatus() {
+        return getEmailConfigurationStatus(this.config);
+    }
+
+    async sendEmail(options: EmailOptions): Promise<EmailDeliveryResult> {
         if (!this.transporter) {
-            log.debug({ to: options.to, subject: options.subject }, 'Email stub: message not sent (no SMTP)');
-            return true;
+            log.warn({ to: options.to, subject: options.subject }, 'Email not sent: SMTP is not configured');
+            return {
+                sent: false,
+                status: 'not_configured',
+                error: this.config.validationErrors[0] || 'SMTP is not configured',
+            };
         }
 
         try {
-            await this.transporter.sendMail({
-                from: process.env.SMTP_FROM || 'noreply@simsa.atrbpn.go.id',
+            const info = await this.transporter.sendMail({
+                from: this.config.from,
                 to: options.to,
                 subject: options.subject,
                 text: options.text,
                 html: options.html,
             });
-            return true;
+            return { sent: true, status: 'sent', messageId: info.messageId };
         } catch (error) {
             log.error({ err: error }, 'Failed to send email');
-            return false;
+            return {
+                sent: false,
+                status: 'failed',
+                error: error instanceof Error ? error.message : 'Email delivery failed',
+            };
         }
     }
 
     async sendApprovalNotification(to: string, suratNomor: string, requesterName: string, link: string) {
+        const safeLink = assertSafeEmailLink(link);
+        const safeRequesterName = escapeEmailHtml(requesterName);
+        const safeSuratNomor = escapeEmailHtml(suratNomor);
+        const safeLinkHtml = escapeEmailHtml(safeLink);
+        const safeSubjectNomor = suratNomor.replace(/[\r\n]+/g, ' ').trim();
         return this.sendEmail({
             to,
-            subject: `[SIMSA] Permohonan Review Surat: ${suratNomor}`,
-            text: `Halo,\n\n${requesterName} telah mengajukan surat dengan nomor ${suratNomor} untuk Anda review.\n\nSilakan klik link berikut untuk melihat detail:\n${link}\n\nTerima kasih.`,
+            subject: `[SIMSA] Permohonan Review Surat: ${safeSubjectNomor}`,
+            text: `Halo,\n\n${requesterName} telah mengajukan surat dengan nomor ${suratNomor} untuk Anda review.\n\nSilakan klik link berikut untuk melihat detail:\n${safeLink}\n\nTerima kasih.`,
             html: `
                 <h3>Permohonan Review Surat</h3>
                 <p>Halo,</p>
-                <p><strong>${requesterName}</strong> telah mengajukan surat dengan nomor <strong>${suratNomor}</strong> untuk Anda review.</p>
+                <p><strong>${safeRequesterName}</strong> telah mengajukan surat dengan nomor <strong>${safeSuratNomor}</strong> untuk Anda review.</p>
                 <p>Silakan klik tombol di bawah ini untuk melihat detail:</p>
-                <a href="${link}" style="background-color: #059669; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Review Surat</a>
+                <a href="${safeLinkHtml}" style="background-color: #059669; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Review Surat</a>
                 <br><br>
                 <p>Terima kasih.</p>
             `

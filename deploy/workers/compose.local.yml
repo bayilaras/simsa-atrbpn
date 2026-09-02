@@ -1,0 +1,16 @@
+x-worker-build: &worker-build
+  context: ../../backend
+  dockerfile: Dockerfile.worker
+
+services:
+  malware-worker:
+    pull_policy: build
+    build: *worker-build
+
+  srikandi-worker:
+    pull_policy: build
+    build: *worker-build
+
+  blob-reconciler:
+    pull_policy: build
+    build: *worker-build

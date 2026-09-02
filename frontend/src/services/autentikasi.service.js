@@ -16,7 +16,5 @@ export const autentikasiService = {
         return response.data;
     },
 
-    getPdfUrl: (id) => {
-        return `${import.meta.env.VITE_API_URL}/api/autentikasi/${id}/pdf`;
-    }
+    getPdf: (id) => api.get(`/api/autentikasi/${id}/pdf`, {}, { responseType: 'blob' }),
 };

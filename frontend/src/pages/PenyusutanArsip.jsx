@@ -8,27 +8,30 @@ import { useToast } from '@/hooks/use-toast'
 import {
     FileText, Download, Plus, Trash2, CheckCircle, ChevronRight,
     ArrowRightLeft, Flame, Send, RefreshCw, Printer, Eye, X, Repeat,
-    Archive, History, FileCheck, AlertCircle, ChevronDown
+    Archive, History, FileCheck, AlertCircle, ChevronDown, Loader2
 } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
+import { Link } from 'react-router-dom'
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 const STATUS_CONFIG = {
-    draft: { label: 'Draft', color: 'bg-slate-100 text-slate-700 border-slate-200', icon: FileText },
-    proposed: { label: 'Diusulkan', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Send },
-    reviewed: { label: 'Ditinjau', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: Eye },
-    approved: { label: 'Disetujui', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle },
-    executed: { label: 'Dilaksanakan', color: 'bg-purple-100 text-purple-700 border-purple-200', icon: FileCheck },
+    draft: { label: 'Draft', color: 'bg-muted text-foreground border-border', icon: FileText },
+    proposed: { label: 'Diusulkan', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200', icon: Send },
+    reviewed: { label: 'Ditinjau', color: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200', icon: Eye },
+    approved: { label: 'Disetujui', color: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200', icon: CheckCircle },
+    executed: { label: 'Dilaksanakan', color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-200', icon: FileCheck },
 }
 
 const JENIS_CONFIG = {
-    pemindahan: { label: 'Pemindahan', icon: ArrowRightLeft, desc: 'Transfer arsip dari Unit Pengolah ke Unit Kearsipan', color: 'text-blue-600', bg: 'bg-blue-100', border: 'border-blue-200' },
-    pemusnahan: { label: 'Pemusnahan', icon: Flame, desc: 'Pemusnahan arsip yang telah melewati masa retensi (JRA: Musnah)', color: 'text-red-600', bg: 'bg-red-100', border: 'border-red-200' },
-    alih_media: { label: 'Alih Media', icon: Repeat, desc: 'Alih media arsip dari bentuk fisik ke digital atau sebaliknya', color: 'text-indigo-600', bg: 'bg-indigo-100', border: 'border-indigo-200' },
-    penyerahan: { label: 'Penyerahan', icon: Archive, desc: 'Penyerahan arsip statis ke Lembaga Kearsipan Nasional', color: 'text-amber-600', bg: 'bg-amber-100', border: 'border-amber-200' },
+    pemindahan: { label: 'Pemindahan', icon: ArrowRightLeft, desc: 'Transfer arsip dari Unit Pengolah ke Unit Kearsipan', color: 'text-blue-600', bg: 'bg-blue-100 dark:bg-blue-500/15', border: 'border-blue-200' },
+    pemusnahan: { label: 'Pemusnahan', icon: Flame, desc: 'Pemusnahan arsip yang telah melewati masa retensi (JRA: Musnah)', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-500/15', border: 'border-red-200' },
+    alih_media: { label: 'Alih Media', icon: Repeat, desc: 'Alih media arsip dari bentuk fisik ke digital atau sebaliknya', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-100 dark:bg-indigo-500/15', border: 'border-indigo-200' },
+    penyerahan: { label: 'Penyerahan (Riwayat)', icon: Archive, desc: 'Riwayat batch penyerahan lama tersedia dalam mode baca dan cetak', color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-500/15', border: 'border-amber-200' },
 }
 
 const NEXT_ACTION_LABEL = {
@@ -41,7 +44,8 @@ const NEXT_ACTION_LABEL = {
 export default function PenyusutanArsip() {
     const { user } = useAuth()
     const { toast } = useToast()
-    const unitKerjaId = user?.unitKerjaId || ''
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
 
     const [activeTab, setActiveTab] = useState('pemindahan')
     const [batches, setBatches] = useState([])
@@ -51,6 +55,7 @@ export default function PenyusutanArsip() {
     const [showCreate, setShowCreate] = useState(false)
     const [selectedCandidates, setSelectedCandidates] = useState([])
     const [createKeterangan, setCreateKeterangan] = useState('')
+    const [creating, setCreating] = useState(false)
 
     // Load batches for active tab
     const loadBatches = useCallback(async () => {
@@ -61,7 +66,7 @@ export default function PenyusutanArsip() {
                 unitKerjaId,
                 jenisPenyusutan: activeTab,
             })
-            setBatches(result.data || [])
+            setBatches(result || [])
         } catch (err) {
             console.error('Error loading batches:', err)
         } finally {
@@ -72,9 +77,13 @@ export default function PenyusutanArsip() {
     // Load candidates
     const loadCandidates = useCallback(async () => {
         if (!unitKerjaId) return
+        if (activeTab === 'penyerahan') {
+            setCandidates([])
+            return
+        }
         try {
             const result = await penyusutanService.getCandidates(unitKerjaId, activeTab)
-            setCandidates(result.data || [])
+            setCandidates(result || [])
         } catch (err) {
             console.error('Error loading candidates:', err)
             setCandidates([])
@@ -82,29 +91,42 @@ export default function PenyusutanArsip() {
     }, [unitKerjaId, activeTab])
 
     useEffect(() => {
+        if (!unitKerjaId) {
+            setBatches([])
+            setCandidates([])
+            setSelectedBatch(null)
+            setShowCreate(false)
+            setSelectedCandidates([])
+            return
+        }
         loadBatches()
         loadCandidates()
         setSelectedBatch(null)
         setShowCreate(false)
         setSelectedCandidates([])
-    }, [activeTab, loadBatches, loadCandidates])
+    }, [activeTab, loadBatches, loadCandidates, unitKerjaId])
 
     // Load batch detail
     const loadBatchDetail = async (id) => {
+        if (!unitKerjaId) return
         try {
-            const result = await penyusutanService.findById(id)
-            setSelectedBatch(result.data)
+            const result = await penyusutanService.findById(id, unitKerjaId)
+            setSelectedBatch(result)
         } catch (err) {
-            toast({ title: 'Error', description: 'Gagal memuat detail batch', variant: 'destructive' })
+            toast({ title: 'Error', description: err.message || 'Gagal memuat detail batch', variant: 'destructive' })
         }
     }
 
     // Create batch
     const handleCreate = async () => {
+        if (!unitKerjaId) return
+        if (creating) return
+        if (activeTab === 'penyerahan') return
         if (selectedCandidates.length === 0) {
             toast({ title: 'Peringatan', description: 'Pilih minimal 1 arsip', variant: 'destructive' })
             return
         }
+        setCreating(true)
         try {
             await penyusutanService.create({
                 unitKerjaId,
@@ -119,43 +141,48 @@ export default function PenyusutanArsip() {
             loadBatches()
             loadCandidates()
         } catch (err) {
-            toast({ title: 'Error', description: 'Gagal membuat usulan', variant: 'destructive' })
+            toast({ title: 'Error', description: err.message || 'Gagal membuat usulan', variant: 'destructive' })
+        } finally {
+            setCreating(false)
         }
     }
 
     // Advance status
     const handleAdvanceStatus = async (id) => {
+        if (!unitKerjaId) return
         try {
-            await penyusutanService.updateStatus(id)
+            await penyusutanService.updateStatus(id, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Status berhasil dimajukan' })
             loadBatches()
             if (selectedBatch?.id === id) loadBatchDetail(id)
         } catch (err) {
-            toast({ title: 'Error', description: err.response?.data?.error || 'Gagal mengubah status', variant: 'destructive' })
+            toast({ title: 'Error', description: err.message || 'Gagal mengubah status', variant: 'destructive' })
         }
     }
 
     // Delete batch
     const handleDelete = async (id) => {
+        if (!unitKerjaId) return
         if (!confirm('Yakin hapus usulan ini?')) return
         try {
-            await penyusutanService.deleteBatch(id)
+            await penyusutanService.deleteBatch(id, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Usulan berhasil dihapus' })
             setSelectedBatch(null)
             loadBatches()
             loadCandidates()
         } catch (err) {
-            toast({ title: 'Error', description: err.response?.data?.error || 'Gagal menghapus', variant: 'destructive' })
+            toast({ title: 'Error', description: err.message || 'Gagal menghapus', variant: 'destructive' })
         }
     }
 
     // Print
     const handlePrint = (type, batchId) => {
+        if (!unitKerjaId) return
         let url = ''
         if (type === 'daftar-arsip-aktif' || type === 'daftar-arsip-inaktif') {
             url = penyusutanService.getPrintUrl(type, { unitKerjaId })
         } else {
-            url = penyusutanService.getBatchPrintUrl(batchId, type)
+            url = penyusutanService.getBatchPrintUrl(batchId, type, unitKerjaId)
         }
         if (url) window.open(url, '_blank')
     }
@@ -175,6 +202,24 @@ export default function PenyusutanArsip() {
     }
 
     const JenisConf = JENIS_CONFIG[activeTab]
+    const legacyTransferReadOnly = activeTab === 'penyerahan'
+
+    if (!unitKerjaId) {
+        return (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                        <div className="p-2 bg-rose-100 dark:bg-rose-500/15 rounded-lg">
+                            <History className="h-6 w-6 text-rose-600 dark:text-rose-400" />
+                        </div>
+                        Penyusutan Arsip
+                    </h1>
+                    <p className="text-muted-foreground">Kelola daur hidup arsip: Pemindahan, Pemusnahan, dan Penyerahan</p>
+                </div>
+                <RequiredUnitKerjaScope scope={unitScope} disabled={unitScope.loading} />
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -182,8 +227,8 @@ export default function PenyusutanArsip() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-rose-100 rounded-lg">
-                            <History className="h-6 w-6 text-rose-600" />
+                        <div className="p-2 bg-rose-100 dark:bg-rose-500/15 rounded-lg">
+                            <History className="h-6 w-6 text-rose-600 dark:text-rose-400" />
                         </div>
                         Penyusutan Arsip
                     </h1>
@@ -191,7 +236,7 @@ export default function PenyusutanArsip() {
                         Kelola daur hidup arsip: Pemindahan, Pemusnahan, dan Penyerahan
                     </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" onClick={() => handlePrint('daftar-arsip-aktif')}>
                         <Printer className="mr-1.5 h-4 w-4" /> Daftar Arsip Aktif
                     </Button>
@@ -200,6 +245,8 @@ export default function PenyusutanArsip() {
                     </Button>
                 </div>
             </div>
+
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || creating} />
 
             {/* Navigation Tabs */}
             <Card className="border-border/60 shadow-sm">
@@ -225,23 +272,44 @@ export default function PenyusutanArsip() {
                 </div>
             </Card>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[600px]">
+            {legacyTransferReadOnly && (
+                <Card className="border-amber-300 bg-amber-50/60 dark:bg-amber-500/10">
+                    <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-start gap-3">
+                            <Archive className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
+                            <div>
+                                <p className="font-semibold text-amber-950 dark:text-amber-100">Penyerahan lama hanya untuk riwayat</p>
+                                <p className="text-sm text-amber-900/80 dark:text-amber-100/80">
+                                    Batch lama tetap dapat dibaca dan dicetak, tetapi tidak dapat dibuat, diubah, atau dilanjutkan. Gunakan manifest penyerahan permanen dengan pemeriksaan bukti dan maker-checker.
+                                </p>
+                            </div>
+                        </div>
+                        <Button asChild className="shrink-0">
+                            <Link to="/retention-governance">Buka Tata Kelola Retensi</Link>
+                        </Button>
+                    </CardContent>
+                </Card>
+            )}
+
+            <div className="grid grid-cols-1 gap-6 lg:h-[calc(100vh-250px)] lg:min-h-[600px] lg:grid-cols-12">
                 {/* Left column: Batches list */}
-                <Card className="lg:col-span-4 h-full flex flex-col border-border/60 shadow-sm overflow-hidden">
+                <Card className="flex min-h-[24rem] flex-col overflow-hidden border-border/60 shadow-sm lg:col-span-4 lg:h-full lg:min-h-0">
                     <CardHeader className="pb-3 border-b bg-muted/30">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                             <CardTitle className="text-base font-semibold">Riwayat Usulan</CardTitle>
                             <div className="flex gap-1">
                                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { loadBatches(); loadCandidates(); }}>
                                     <RefreshCw className="h-4 w-4" />
                                 </Button>
-                                <Button size="icon" className="h-8 w-8" onClick={() => setShowCreate(true)}>
-                                    <Plus className="h-4 w-4" />
-                                </Button>
+                                {!legacyTransferReadOnly && (
+                                    <Button size="icon" className="h-8 w-8" onClick={() => setShowCreate(true)}>
+                                        <Plus className="h-4 w-4" />
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     </CardHeader>
-                    <CardContent className="p-0 flex-1 overflow-hidden relative">
+                    <CardContent className="relative min-h-[20rem] flex-1 overflow-hidden p-0 lg:min-h-0">
                         {loading ? (
                             <div className="p-4 space-y-3">
                                 {[1, 2, 3].map(i => (
@@ -259,11 +327,13 @@ export default function PenyusutanArsip() {
                                 <div className="p-4 bg-muted/50 rounded-full mb-4">
                                     <FileText className="h-8 w-8 text-muted-foreground/50" />
                                 </div>
-                                <h3 className="font-medium mb-1">Belum ada usulan</h3>
-                                <p className="text-sm text-muted-foreground mb-4">Mulai dengan membuat usulan baru</p>
-                                <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
-                                    <Plus className="mr-1.5 h-3.5 w-3.5" /> Buat Usulan
-                                </Button>
+                                <h3 className="font-medium mb-1">{legacyTransferReadOnly ? 'Belum ada riwayat penyerahan' : 'Belum ada usulan'}</h3>
+                                <p className="text-sm text-muted-foreground mb-4">{legacyTransferReadOnly ? 'Manifest baru dikelola melalui Tata Kelola Retensi.' : 'Mulai dengan membuat usulan baru'}</p>
+                                {!legacyTransferReadOnly && (
+                                    <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
+                                        <Plus className="mr-1.5 h-3.5 w-3.5" /> Buat Usulan
+                                    </Button>
+                                )}
                             </div>
                         ) : (
                             <ScrollArea className="h-full">
@@ -272,9 +342,10 @@ export default function PenyusutanArsip() {
                                         const st = STATUS_CONFIG[batch.status] || STATUS_CONFIG.draft
                                         const StatusIcon = st.icon
                                         return (
-                                            <div
+                                            <button
+                                                type="button"
                                                 key={batch.id}
-                                                className={`p-4 cursor-pointer transition-all hover:bg-muted/50 ${selectedBatch?.id === batch.id ? 'bg-primary/5 border-l-4 border-l-primary pl-[13px]' : 'border-l-4 border-l-transparent'}`}
+                                                className={`w-full p-4 text-left transition-all hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${selectedBatch?.id === batch.id ? 'bg-primary/5 border-l-4 border-l-primary pl-[13px]' : 'border-l-4 border-l-transparent'}`}
                                                 onClick={() => loadBatchDetail(batch.id)}
                                             >
                                                 <div className="flex justify-between items-start mb-2">
@@ -294,7 +365,7 @@ export default function PenyusutanArsip() {
                                                         {batch.createdAt ? new Date(batch.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : '-'}
                                                     </span>
                                                 </div>
-                                            </div>
+                                            </button>
                                         )
                                     })}
                                 </div>
@@ -304,24 +375,24 @@ export default function PenyusutanArsip() {
                 </Card>
 
                 {/* Right column: Main Content Area */}
-                <div className="lg:col-span-8 h-full flex flex-col gap-6 overflow-hidden">
-                    {showCreate ? (
-                        <Card className="h-full flex flex-col border-emerald-200 bg-emerald-50/10 shadow-sm overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className="flex flex-col gap-6 lg:col-span-8 lg:h-full lg:overflow-hidden">
+                    {showCreate && !legacyTransferReadOnly ? (
+                        <Card className="flex flex-col overflow-hidden border-emerald-200 bg-emerald-50/10 shadow-sm animate-in fade-in slide-in-from-right-4 duration-300 lg:h-full">
                             <CardHeader className="pb-3 border-b bg-emerald-50/50">
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div className="flex items-center gap-2">
-                                        <div className="p-1.5 bg-emerald-100 rounded-md text-emerald-700">
+                                        <div className="p-1.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-md text-emerald-700 dark:text-emerald-300">
                                             <Plus className="h-4 w-4" />
                                         </div>
                                         <CardTitle className="text-base text-emerald-950">Buat Usulan {JenisConf.label} Baru</CardTitle>
                                     </div>
-                                    <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>
+                                    <Button type="button" variant="ghost" size="sm" aria-label="Tutup formulir usulan" disabled={creating} onClick={() => setShowCreate(false)}>
                                         <X className="h-4 w-4" />
                                     </Button>
                                 </div>
                                 <CardDescription>Pilih arsip yang memenuhi syarat untuk di-{activeTab}kan</CardDescription>
                             </CardHeader>
-                            <CardContent className="flex-1 overflow-hidden p-0 flex flex-col">
+                            <CardContent className="flex flex-1 flex-col p-0 lg:overflow-hidden">
                                 {candidates.length === 0 ? (
                                     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
                                         <AlertCircle className="h-10 w-10 text-muted-foreground/40 mb-3" />
@@ -334,7 +405,7 @@ export default function PenyusutanArsip() {
                                     <>
                                         <div className="p-4 border-b bg-background/50 flex items-center justify-between sticky top-0 z-10">
                                             <span className="text-sm font-medium">{selectedCandidates.length} arsip dipilih</span>
-                                            <Button variant="outline" size="sm" onClick={selectAllCandidates} className="h-8 text-xs">
+                                            <Button type="button" variant="outline" size="sm" disabled={creating} onClick={selectAllCandidates} className="h-8 text-xs">
                                                 {selectedCandidates.length === candidates.length ? 'Hapus Semua' : 'Pilih Semua'}
                                             </Button>
                                         </div>
@@ -343,13 +414,14 @@ export default function PenyusutanArsip() {
                                                 {candidates.map(c => (
                                                     <label
                                                         key={c.id}
-                                                        className={`flex items-start gap-3 p-3 rounded-md border transition-all cursor-pointer ${selectedCandidates.includes(c.id) ? 'bg-emerald-50 border-emerald-200 shadow-sm' : 'hover:bg-muted/50 border-border'}`}
+                                                        className={`flex items-start gap-3 p-3 rounded-md border transition-all cursor-pointer ${selectedCandidates.includes(c.id) ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 shadow-sm' : 'hover:bg-muted/50 border-border'}`}
                                                     >
                                                         <input
                                                             type="checkbox"
+                                                            disabled={creating}
                                                             checked={selectedCandidates.includes(c.id)}
                                                             onChange={() => toggleCandidate(c.id)}
-                                                            className="mt-1 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                                            className="mt-1 rounded border-border text-emerald-600 focus:ring-emerald-500"
                                                         />
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex justify-between gap-2">
@@ -368,16 +440,17 @@ export default function PenyusutanArsip() {
                                             <label className="text-sm font-medium mb-1.5 block">Keterangan (opsional)</label>
                                             <Textarea
                                                 className="resize-none text-sm mb-4"
+                                                disabled={creating}
                                                 rows={2}
                                                 value={createKeterangan}
                                                 onChange={e => setCreateKeterangan(e.target.value)}
                                                 placeholder="Tambahkan catatan untuk usulan ini..."
                                             />
                                             <div className="flex gap-2 justify-end">
-                                                <Button variant="outline" onClick={() => setShowCreate(false)}>Batal</Button>
-                                                <Button onClick={handleCreate} disabled={selectedCandidates.length === 0} className="bg-emerald-600 hover:bg-emerald-700">
-                                                    <Plus className="mr-1.5 h-4 w-4" />
-                                                    Buat Usulan ({selectedCandidates.length})
+                                                <Button type="button" variant="outline" disabled={creating} onClick={() => setShowCreate(false)}>Batal</Button>
+                                                <Button type="button" onClick={handleCreate} disabled={creating || selectedCandidates.length === 0} className="bg-emerald-600 hover:bg-emerald-700">
+                                                    {creating ? <Loader2 aria-hidden="true" className="mr-1.5 h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="mr-1.5 h-4 w-4" />}
+                                                    {creating ? 'Menyimpan…' : `Buat Usulan (${selectedCandidates.length})`}
                                                 </Button>
                                             </div>
                                         </div>
@@ -386,7 +459,7 @@ export default function PenyusutanArsip() {
                             </CardContent>
                         </Card>
                     ) : selectedBatch ? (
-                        <Card className="h-full flex flex-col border-border/60 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        <Card className="flex flex-col overflow-hidden border-border/60 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 lg:h-full">
                             <CardHeader className="pb-4 border-b bg-muted/20">
                                 <div className="flex items-start justify-between">
                                     <div className="space-y-1">
@@ -434,9 +507,21 @@ export default function PenyusutanArsip() {
                                                     <Download className="mr-1.5 h-3 w-3" /> Daftar Musnah
                                                 </Button>
                                             )}
-                                            <Button variant="outline" size="sm" onClick={() => handlePrint('berita-acara', selectedBatch.id)} className="h-8 text-xs" disabled={selectedBatch.status === 'draft'}>
-                                                <Printer className="mr-1.5 h-3 w-3" /> Berita Acara
-                                            </Button>
+                                            {activeTab === 'penyerahan' && (
+                                                <>
+                                                    <Button variant="outline" size="sm" onClick={() => handlePrint('usul-serah', selectedBatch.id)} className="h-8 text-xs">
+                                                        <Download className="mr-1.5 h-3 w-3" /> Daftar Usul Lama
+                                                    </Button>
+                                                    <Button variant="outline" size="sm" onClick={() => handlePrint('berita-acara-penyerahan', selectedBatch.id)} className="h-8 text-xs">
+                                                        <Printer className="mr-1.5 h-3 w-3" /> Berita Acara Lama
+                                                    </Button>
+                                                </>
+                                            )}
+                                            {activeTab !== 'penyerahan' && (
+                                                <Button variant="outline" size="sm" onClick={() => handlePrint('berita-acara', selectedBatch.id)} className="h-8 text-xs" disabled={selectedBatch.status === 'draft'}>
+                                                    <Printer className="mr-1.5 h-3 w-3" /> Berita Acara
+                                                </Button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -444,7 +529,7 @@ export default function PenyusutanArsip() {
                                 <Separator className="my-6" />
 
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <h4 className="font-semibold flex items-center gap-2">
                                             <FileText className="h-4 w-4 text-primary" />
                                             Daftar Arsip
@@ -474,14 +559,14 @@ export default function PenyusutanArsip() {
                             </CardContent>
 
                             <CardFooter className="border-t bg-muted/10 p-4 flex justify-between gap-4">
-                                {selectedBatch.status === 'draft' && (
+                                {!legacyTransferReadOnly && selectedBatch.status === 'draft' && (
                                     <Button variant="destructive" size="sm" onClick={() => handleDelete(selectedBatch.id)}>
                                         <Trash2 className="mr-1.5 h-4 w-4" /> Hapus Draft
                                     </Button>
                                 )}
 
                                 <div className="flex gap-2 ml-auto">
-                                    {NEXT_ACTION_LABEL[selectedBatch.status] && (
+                                    {!legacyTransferReadOnly && NEXT_ACTION_LABEL[selectedBatch.status] && (
                                         <Button onClick={() => handleAdvanceStatus(selectedBatch.id)} className="bg-primary hover:bg-primary/90">
                                             <CheckCircle className="mr-1.5 h-4 w-4" />
                                             {NEXT_ACTION_LABEL[selectedBatch.status]}
@@ -491,12 +576,12 @@ export default function PenyusutanArsip() {
                             </CardFooter>
                         </Card>
                     ) : (
-                        <Card className="h-full border-border/60 shadow-sm border-dashed flex flex-col items-center justify-center text-center p-8 bg-muted/10">
+                        <Card className="flex min-h-[20rem] flex-col items-center justify-center border-dashed border-border/60 bg-muted/10 p-8 text-center shadow-sm lg:h-full">
                             <div className="p-6 bg-background rounded-full shadow-sm mb-4">
                                 <Eye className="h-10 w-10 text-primary/30" />
                             </div>
                             <h3 className="text-lg font-semibold text-foreground">Detail Usulan</h3>
-                            <p className="text-muted-foreground max-w-xs mt-2">Pilih salah satu usulan dari daftar di sebelah kiri untuk melihat detail arsip dan melakukan tindakan.</p>
+                            <p className="text-muted-foreground max-w-xs mt-2">{legacyTransferReadOnly ? 'Pilih riwayat penyerahan untuk membaca detail dan mencetak dokumen lama.' : 'Pilih salah satu usulan dari daftar di sebelah kiri untuk melihat detail arsip dan melakukan tindakan.'}</p>
                         </Card>
                     )}
                 </div>

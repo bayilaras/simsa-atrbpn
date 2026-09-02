@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
-    ArrowLeft, Send, Calendar, Building, User, FileText,
+    ArrowLeft, Send, Calendar, Building, FileText,
     Download, ExternalLink, Edit, Archive, MailOpen, Clock,
     CheckCircle, AlertCircle, Loader2, Eye, MoreHorizontal,
     Link2, Sparkles
@@ -10,6 +10,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -19,6 +29,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import suratKeluarService from '@/services/surat-keluar.service'
+import approvalService from '@/services/approval.service'
 import { API_BASE_URL } from '@/services/api'
 import { format, formatDistanceToNow } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
@@ -28,18 +39,20 @@ export default function SuratKeluarDetail() {
     const { id } = useParams()
     const navigate = useNavigate()
     const { toast } = useToast()
-    const { canWrite } = useAuth()
+    const { canWrite, user } = useAuth()
     const isAdmin = canWrite()
 
     const [surat, setSurat] = useState(null)
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+    const [approvalHistory, setApprovalHistory] = useState([])
+    const [approvers, setApprovers] = useState([])
+    const [approvalAction, setApprovalAction] = useState(null)
+    const [approvalNotes, setApprovalNotes] = useState('')
+    const [selectedApproverId, setSelectedApproverId] = useState('')
+    const [approvalBusy, setApprovalBusy] = useState(false)
 
-    useEffect(() => {
-        fetchSurat()
-    }, [id])
-
-    const fetchSurat = async () => {
+    const fetchSurat = useCallback(async () => {
         setLoading(true)
         try {
             const data = await suratKeluarService.getById(id)
@@ -54,7 +67,40 @@ export default function SuratKeluarDetail() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [id, toast])
+
+    useEffect(() => {
+        fetchSurat()
+    }, [fetchSurat])
+
+    useEffect(() => {
+        let cancelled = false
+        if (!isAdmin || !surat?.id) {
+            setApprovalHistory([])
+            setApprovers([])
+            return () => { cancelled = true }
+        }
+
+        const loadApproval = async () => {
+            const historyPromise = approvalService.getHistory(surat.id)
+            const approverPromise = (
+                ['draft', 'rejected'].includes(surat.approvalStatus)
+                && surat.createdBy === user?.id
+            )
+                ? approvalService.getEligibleApprovers(surat.id)
+                : Promise.resolve([])
+            const [historyResult, approverResult] = await Promise.allSettled([
+                historyPromise,
+                approverPromise,
+            ])
+            if (cancelled) return
+            setApprovalHistory(historyResult.status === 'fulfilled' ? historyResult.value : [])
+            setApprovers(approverResult.status === 'fulfilled' ? approverResult.value : [])
+        }
+
+        loadApproval()
+        return () => { cancelled = true }
+    }, [isAdmin, surat?.id, surat?.approvalStatus, surat?.createdBy, user?.id])
 
     const formatDate = (dateString) => {
         if (!dateString) return '-'
@@ -72,23 +118,6 @@ export default function SuratKeluarDetail() {
         } catch {
             return ''
         }
-    }
-
-    const getFileUrl = (filePath) => {
-        if (!filePath) return null
-        if (filePath.startsWith('http')) return filePath
-        // Vercel Blob files stored as "blob:{url}" — use URL directly (public access)
-        if (filePath.startsWith('blob:')) {
-            return filePath.replace('blob:', '')
-        }
-        // Legacy Google Drive files stored as "gdrive:{fileId}" — route through proxy
-        if (filePath.startsWith('gdrive:')) {
-            const fileId = filePath.replace('gdrive:', '')
-            return `/api/drive-file/${fileId}`
-        }
-        // Legacy: local uploads go through Vercel proxy rewrite
-        if (filePath.startsWith('/uploads')) return filePath
-        return `${API_BASE_URL}${filePath}`
     }
 
     const getFileExtension = (filename) => {
@@ -119,6 +148,62 @@ export default function SuratKeluarDetail() {
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             })
+            throw error
+        }
+    }
+
+    const openApprovalDialog = (action) => {
+        setApprovalAction(action)
+        setApprovalNotes('')
+        setSelectedApproverId('')
+    }
+
+    const handleApprovalAction = async () => {
+        if (!approvalAction || !surat) return
+        if (approvalAction === 'submit' && !selectedApproverId) {
+            toast({
+                title: 'Penyetuju wajib dipilih',
+                description: 'Pilih administrator aktif yang akan menelaah surat.',
+                variant: 'destructive',
+            })
+            return
+        }
+        if (approvalAction === 'reject' && !approvalNotes.trim()) {
+            toast({
+                title: 'Alasan wajib diisi',
+                description: 'Tuliskan alasan penolakan agar pembuat dapat memperbaiki surat.',
+                variant: 'destructive',
+            })
+            return
+        }
+
+        setApprovalBusy(true)
+        try {
+            if (approvalAction === 'submit') {
+                await approvalService.submit(surat.id, selectedApproverId, approvalNotes)
+            } else if (approvalAction === 'approve') {
+                await approvalService.approve(surat.id, approvalNotes)
+            } else {
+                await approvalService.reject(surat.id, approvalNotes)
+            }
+            toast({
+                title: 'Alur persetujuan diperbarui',
+                description: approvalAction === 'submit'
+                    ? 'Surat telah dikirim ke penyetuju.'
+                    : approvalAction === 'approve'
+                        ? 'Surat telah memperoleh persetujuan final.'
+                        : 'Surat dikembalikan kepada pembuat untuk diperbaiki.',
+            })
+            setApprovalAction(null)
+            await fetchSurat()
+        } catch (error) {
+            toast({
+                title: 'Gagal memperbarui persetujuan',
+                description: error.message,
+                variant: 'destructive',
+            })
+        } finally {
+            setApprovalBusy(false)
         }
     }
 
@@ -161,8 +246,24 @@ export default function SuratKeluarDetail() {
         )
     }
 
-    const fileUrl = getFileUrl(surat.filePath)
+    const fileUrl = surat.filePath
+        ? `${API_BASE_URL}/api/files/surat_keluar/${encodeURIComponent(surat.id)}`
+        : null
+    const downloadUrl = fileUrl ? `${fileUrl}?download=1` : null
     const fileName = surat.fileOriginalName || surat.filePath?.split('/').pop()
+    const approvalStatus = surat.approvalStatus || 'draft'
+    const approvalStatusLabel = {
+        draft: 'Draft',
+        pending: 'Menunggu Persetujuan',
+        approved: 'Disetujui',
+        rejected: 'Ditolak / Perlu Perbaikan',
+    }[approvalStatus] || approvalStatus
+    const canEdit = isAdmin && !surat.isArchived && ['draft', 'rejected'].includes(approvalStatus)
+    const canArchive = isAdmin && !surat.isArchived && approvalStatus === 'approved'
+    const canSubmitApproval = canEdit && surat.createdBy === user?.id
+    const isCurrentApprover = isAdmin
+        && approvalStatus === 'pending'
+        && surat.currentApproverId === user?.id
 
     return (
         <div className="space-y-6">
@@ -179,8 +280,8 @@ export default function SuratKeluarDetail() {
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 p-6 md:p-8 text-white shadow-xl">
                 {/* Background Pattern */}
                 <div className="absolute inset-0 opacity-10">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
-                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-card rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-card rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2" />
                 </div>
 
                 <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -188,28 +289,21 @@ export default function SuratKeluarDetail() {
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="text-white/80 hover:text-white hover:bg-white/10 shrink-0"
+                            className="text-white/80 hover:text-white hover:bg-card/10 shrink-0"
                             onClick={() => navigate(-1)}
                         >
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                         <div className="flex items-center gap-4">
-                            <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm shrink-0 hidden sm:flex">
+                            <div className="bg-card/20 p-3 rounded-xl backdrop-blur-sm shrink-0 hidden sm:flex">
                                 <Send className="h-8 w-8" />
                             </div>
                             <div className="min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
                                     <h1 className="text-xl md:text-2xl font-bold">Detail Surat Keluar</h1>
-                                    {surat.sifatSurat === 'sangat_segera' && (
-                                        <Badge className="bg-red-500/90 hover:bg-red-500 text-white border-0">
-                                            Sangat Segera
-                                        </Badge>
-                                    )}
-                                    {surat.sifatSurat === 'segera' && (
-                                        <Badge className="bg-orange-500/90 hover:bg-orange-500 text-white border-0">
-                                            Segera
-                                        </Badge>
-                                    )}
+                                    <Badge className="border-0 bg-card/20 text-white hover:bg-card/20">
+                                        {approvalStatusLabel}
+                                    </Badge>
                                 </div>
                                 <p className="font-mono text-white/90 text-sm md:text-base truncate">{surat.nomorSurat}</p>
                             </div>
@@ -219,17 +313,19 @@ export default function SuratKeluarDetail() {
                     {/* Desktop Actions */}
                     {isAdmin && (
                         <div className="hidden md:flex gap-2">
-                            <Button
-                                variant="secondary"
-                                className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm"
-                                onClick={() => navigate(`/surat/keluar/edit/${surat.id}`)}
-                            >
-                                <Edit className="mr-2 h-4 w-4" />
-                                Edit
-                            </Button>
-                            {!surat.isArchived && (
+                            {canEdit && (
                                 <Button
-                                    className="bg-white text-blue-700 hover:bg-white/90"
+                                    variant="secondary"
+                                    className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
+                                    onClick={() => navigate(`/surat/keluar/edit/${surat.id}`)}
+                                >
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                </Button>
+                            )}
+                            {canArchive && (
+                                <Button
+                                    className="bg-card text-blue-700 hover:bg-card/90"
                                     onClick={() => setArchiveDialogOpen(true)}
                                 >
                                     <Archive className="mr-2 h-4 w-4" />
@@ -240,24 +336,26 @@ export default function SuratKeluarDetail() {
                     )}
 
                     {/* Mobile Actions */}
-                    {isAdmin && (
+                    {isAdmin && (canEdit || canArchive) && (
                         <div className="md:hidden flex gap-2">
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                className="bg-white/20 hover:bg-white/30 text-white border-0 flex-1"
-                                onClick={() => navigate(`/surat/keluar/edit/${surat.id}`)}
-                            >
-                                <Edit className="mr-2 h-4 w-4" />
-                                Edit
-                            </Button>
-                            {!surat.isArchived && (
+                            {canEdit && (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="bg-card/20 hover:bg-card/30 text-white border-0 flex-1"
+                                    onClick={() => navigate(`/surat/keluar/edit/${surat.id}`)}
+                                >
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                </Button>
+                            )}
+                            {canArchive && (
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                         <Button
                                             variant="secondary"
                                             size="icon"
-                                            className="bg-white/20 hover:bg-white/30 text-white border-0"
+                                            className="bg-card/20 hover:bg-card/30 text-white border-0"
                                         >
                                             <MoreHorizontal className="h-4 w-4" />
                                         </Button>
@@ -293,7 +391,7 @@ export default function SuratKeluarDetail() {
                                     <Sparkles className="h-3 w-3" />
                                     Perihal
                                 </label>
-                                <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1 leading-relaxed">
+                                <p className="text-lg font-semibold text-foreground dark:text-white mt-1 leading-relaxed">
                                     {surat.perihal}
                                 </p>
                             </div>
@@ -312,22 +410,22 @@ export default function SuratKeluarDetail() {
                                     </p>
                                 </div>
                                 <div className="space-y-1 p-3 bg-muted/30 rounded-lg">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tanggal Kirim</label>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tahun Register</label>
                                     <p className="flex items-center gap-2 text-sm">
-                                        <Clock className="h-4 w-4 text-indigo-600" />
-                                        {formatDate(surat.tanggalKirim)}
+                                        <Clock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                                        {surat.tahun || '-'}
                                     </p>
                                 </div>
                                 <div className="space-y-1 p-3 bg-muted/30 rounded-lg">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">No. Agenda</label>
-                                    <p className="text-sm">{surat.noAgenda || <span className="text-muted-foreground italic">Belum ada</span>}</p>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Unit Kerja</label>
+                                    <p className="text-sm font-medium">{surat.unitKerjaId || '-'}</p>
                                 </div>
                             </div>
 
                             <Separator />
 
                             {/* Recipient/Signer */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4">
                                 <div className="space-y-2 p-4 border rounded-xl bg-gradient-to-br from-violet-50/50 to-purple-50/50 dark:from-violet-950/20 dark:to-purple-950/20">
                                     <label className="text-xs font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1">
                                         <Building className="h-3 w-3" />
@@ -335,46 +433,43 @@ export default function SuratKeluarDetail() {
                                     </label>
                                     <p className="font-medium">{surat.kepada}</p>
                                 </div>
-                                <div className="space-y-2 p-4 border rounded-xl bg-gradient-to-br from-rose-50/50 to-pink-50/50 dark:from-rose-950/20 dark:to-pink-950/20">
-                                    <label className="text-xs font-semibold text-rose-700 dark:text-rose-400 uppercase tracking-wide flex items-center gap-1">
-                                        <User className="h-3 w-3" />
-                                        Penandatangan
-                                    </label>
-                                    <p className="font-medium">{surat.penandatangan || <span className="text-muted-foreground italic">-</span>}</p>
-                                </div>
                             </div>
 
                             {/* Type & Classification */}
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Jenis Surat</label>
-                                    <p className="text-sm font-medium">{surat.jenisSurat || '-'}</p>
+                                    <p className="text-sm font-medium">{surat.naskahDinas || '-'}</p>
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sifat Surat</label>
-                                    <Badge
-                                        variant={surat.sifatSurat === 'sangat_segera' ? 'destructive' : surat.sifatSurat === 'segera' ? 'default' : 'secondary'}
-                                        className="mt-1"
-                                    >
-                                        {surat.sifatSurat === 'sangat_segera' ? 'Sangat Segera' :
-                                            surat.sifatSurat === 'segera' ? 'Segera' : 'Biasa'}
-                                    </Badge>
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Fasilitatif</label>
+                                    <p className="text-sm font-medium">
+                                        {surat.klasifikasiFasilitatifKode || surat.klasifikasiFasilitatif || '-'}
+                                    </p>
                                 </div>
-                                <div className="space-y-1 col-span-2 sm:col-span-1">
-                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi</label>
-                                    <p className="text-sm font-medium">{surat.klasifikasi || '-'}</p>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Substantif</label>
+                                    <p className="text-sm font-medium">
+                                        {surat.klasifikasiSubstantifKode || surat.klasifikasiSubstantif || '-'}
+                                    </p>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Keamanan</label>
+                                    <Badge variant="outline" className="capitalize">
+                                        {(surat.klasifikasiKeamanan || 'terbatas').replaceAll('_', ' ')}
+                                    </Badge>
                                 </div>
                             </div>
 
                             {/* Balasan dari Surat Masuk */}
-                            {surat.balasanDariId && (
+                            {surat.balasanUntuk && (
                                 <>
                                     <Separator />
                                     <div className="space-y-2">
                                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Balasan dari Surat Masuk</label>
                                         <Button variant="outline" size="sm" asChild className="group">
-                                            <Link to={`/surat/masuk/${surat.balasanDariId}`}>
-                                                <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 transition-colors" />
+                                            <Link to={`/surat/masuk/${surat.balasanUntuk}`}>
+                                                <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
                                                 Lihat Surat Masuk
                                             </Link>
                                         </Button>
@@ -406,18 +501,6 @@ export default function SuratKeluarDetail() {
                                 </>
                             )}
 
-                            {/* Catatan */}
-                            {surat.catatan && (
-                                <>
-                                    <Separator />
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Catatan</label>
-                                        <div className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg border border-amber-100 dark:border-amber-900/50">
-                                            <p className="text-sm leading-relaxed">{surat.catatan}</p>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
                         </CardContent>
                     </Card>
 
@@ -426,7 +509,7 @@ export default function SuratKeluarDetail() {
                         <Card className="shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden">
                             <CardHeader className="pb-3">
                                 <CardTitle className="flex items-center gap-2">
-                                    <FileText className="h-5 w-5 text-indigo-600" />
+                                    <FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                                     Dokumen Lampiran
                                 </CardTitle>
                                 <CardDescription className="flex items-center gap-2">
@@ -462,7 +545,7 @@ export default function SuratKeluarDetail() {
 
                                 <div className="flex gap-2 p-4 border-t bg-muted/10">
                                     <Button variant="outline" className="flex-1" asChild>
-                                        <a href={fileUrl} download={fileName}>
+                                        <a href={downloadUrl}>
                                             <Download className="mr-2 h-4 w-4" />
                                             Download
                                         </a>
@@ -487,50 +570,52 @@ export default function SuratKeluarDetail() {
                             <CardTitle className="text-base">Status</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3 pt-0">
-                            {/* Send Status */}
-                            <div className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${surat.status === 'terkirim'
+                            {/* Approval Status */}
+                            <div className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${approvalStatus === 'approved'
                                 ? 'bg-green-50 dark:bg-green-950/30 border border-green-100 dark:border-green-900/50'
-                                : 'bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50'
+                                : approvalStatus === 'rejected'
+                                    ? 'bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50'
+                                    : 'bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50'
                                 }`}>
-                                <div className={`p-2 rounded-full ${surat.status === 'terkirim'
+                                <div className={`p-2 rounded-full ${approvalStatus === 'approved'
                                     ? 'bg-green-100 dark:bg-green-900/50'
                                     : 'bg-amber-100 dark:bg-amber-900/50'
                                     }`}>
-                                    {surat.status === 'terkirim' ? (
+                                    {approvalStatus === 'approved' ? (
                                         <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
                                     ) : (
                                         <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                                     )}
                                 </div>
                                 <div>
-                                    <p className={`font-medium text-sm ${surat.status === 'terkirim'
+                                    <p className={`font-medium text-sm ${approvalStatus === 'approved'
                                         ? 'text-green-700 dark:text-green-300'
                                         : 'text-amber-700 dark:text-amber-300'
                                         }`}>
-                                        {surat.status === 'terkirim' ? 'Sudah Dikirim' : 'Draft'}
+                                        {approvalStatusLabel}
                                     </p>
-                                    <p className="text-xs text-muted-foreground">Status pengiriman</p>
+                                    <p className="text-xs text-muted-foreground">Status persetujuan surat</p>
                                 </div>
                             </div>
 
                             {/* Archive Status */}
                             <div className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${surat.isArchived
                                 ? 'bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50'
-                                : 'bg-gray-50 dark:bg-gray-900/30 border border-gray-100 dark:border-gray-800'
+                                : 'bg-muted/50 dark:bg-foreground/30 border border-border dark:border-gray-800'
                                 }`}>
                                 <div className={`p-2 rounded-full ${surat.isArchived
                                     ? 'bg-blue-100 dark:bg-blue-900/50'
-                                    : 'bg-gray-100 dark:bg-gray-800'
+                                    : 'bg-muted dark:bg-foreground'
                                     }`}>
                                     <Archive className={`h-4 w-4 ${surat.isArchived
                                         ? 'text-blue-600 dark:text-blue-400'
-                                        : 'text-gray-500'
+                                        : 'text-muted-foreground'
                                         }`} />
                                 </div>
                                 <div>
                                     <p className={`font-medium text-sm ${surat.isArchived
                                         ? 'text-blue-700 dark:text-blue-300'
-                                        : 'text-gray-600 dark:text-gray-400'
+                                        : 'text-muted-foreground dark:text-muted-foreground'
                                         }`}>
                                         {surat.isArchived ? 'Sudah Diarsipkan' : 'Belum Diarsipkan'}
                                     </p>
@@ -582,25 +667,91 @@ export default function SuratKeluarDetail() {
                         </CardContent>
                     </Card>
 
-                    {/* Quick Actions Card - Admin only */}
+                    {/* Approval Workflow */}
                     {isAdmin && (
+                        <Card className="shadow-sm">
+                            <CardHeader className="pb-3">
+                                <CardTitle className="text-base">Alur Persetujuan</CardTitle>
+                                <CardDescription>
+                                    Persetujuan internal ini tidak menggunakan tanda tangan elektronik BSrE/PSrE.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-3 pt-0">
+                                {canSubmitApproval && (
+                                    <Button
+                                        className="w-full"
+                                        disabled={approvers.length === 0}
+                                        onClick={() => openApprovalDialog('submit')}
+                                    >
+                                        <Send className="mr-2 h-4 w-4" />
+                                        Ajukan Persetujuan
+                                    </Button>
+                                )}
+                                {canSubmitApproval && approvers.length === 0 && (
+                                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                                        Belum ada administrator aktif lain yang dapat menjadi penyetuju pada unit ini.
+                                    </p>
+                                )}
+                                {isCurrentApprover && (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <Button onClick={() => openApprovalDialog('approve')}>
+                                            <CheckCircle className="mr-2 h-4 w-4" /> Setujui
+                                        </Button>
+                                        <Button variant="destructive" onClick={() => openApprovalDialog('reject')}>
+                                            <AlertCircle className="mr-2 h-4 w-4" /> Tolak
+                                        </Button>
+                                    </div>
+                                )}
+                                {approvalStatus === 'pending' && !isCurrentApprover && (
+                                    <p className="text-sm text-muted-foreground">
+                                        Surat sedang menunggu keputusan penyetuju yang ditunjuk.
+                                    </p>
+                                )}
+                                {approvalStatus === 'approved' && !surat.isArchived && (
+                                    <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                                        Persetujuan final selesai. Surat sudah dapat diregistrasikan ke modul Arsip.
+                                    </p>
+                                )}
+                                {approvalHistory.length > 0 && (
+                                    <div className="space-y-2 border-t pt-3">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Riwayat</p>
+                                        {approvalHistory.map((item, index) => (
+                                            <div key={`${item.createdAt}-${index}`} className="rounded-md border p-2 text-xs">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="font-semibold">{item.action}</span>
+                                                    <span className="text-muted-foreground">{formatDate(item.createdAt)}</span>
+                                                </div>
+                                                <p>{item.userName || item.userRole || '-'}</p>
+                                                {item.notes && <p className="mt-1 text-muted-foreground">{item.notes}</p>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Quick Actions Card - Admin only */}
+                    {isAdmin && (canEdit || canArchive) && (
                         <Card className="shadow-sm">
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base">Aksi Cepat</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-2 pt-0">
-                                <Button
-                                    variant="outline"
-                                    className="w-full justify-start hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 dark:hover:bg-blue-950/30 dark:hover:text-blue-300 transition-colors"
-                                    onClick={() => navigate(`/surat/keluar/edit/${surat.id}`)}
-                                >
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    Edit Surat
-                                </Button>
-                                {!surat.isArchived && (
+                                {canEdit && (
                                     <Button
                                         variant="outline"
-                                        className="w-full justify-start hover:bg-purple-50 hover:text-purple-700 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
+                                        className="w-full justify-start hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 dark:hover:bg-blue-950/30 dark:hover:text-blue-300 transition-colors"
+                                        onClick={() => navigate(`/surat/keluar/edit/${surat.id}`)}
+                                    >
+                                        <Edit className="mr-2 h-4 w-4" />
+                                        Edit Surat
+                                    </Button>
+                                )}
+                                {canArchive && (
+                                    <Button
+                                        variant="outline"
+                                        className="w-full justify-start hover:bg-purple-50 dark:hover:bg-purple-500/15 hover:text-purple-700 dark:hover:text-purple-300 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"
                                         onClick={() => setArchiveDialogOpen(true)}
                                     >
                                         <Archive className="mr-2 h-4 w-4" />
@@ -626,6 +777,88 @@ export default function SuratKeluarDetail() {
                 }}
                 onArchive={handleArchive}
             />
+
+            <Dialog
+                open={Boolean(approvalAction)}
+                onOpenChange={(open) => {
+                    if (!open && !approvalBusy) setApprovalAction(null)
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>
+                            {approvalAction === 'submit'
+                                ? 'Ajukan Persetujuan'
+                                : approvalAction === 'approve'
+                                    ? 'Setujui Surat'
+                                    : 'Tolak Surat'}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Keputusan dan catatan akan disimpan sebagai riwayat alur surat.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        {approvalAction === 'submit' && (
+                            <div className="space-y-2">
+                                <Label htmlFor="approval-approver">Penyetuju</Label>
+                                <select
+                                    id="approval-approver"
+                                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                                    value={selectedApproverId}
+                                    onChange={(event) => setSelectedApproverId(event.target.value)}
+                                    disabled={approvalBusy}
+                                >
+                                    <option value="">Pilih administrator aktif</option>
+                                    {approvers.map(approver => (
+                                        <option key={approver.id} value={approver.id}>
+                                            {approver.name} ({approver.role})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+                        <div className="space-y-2">
+                            <Label htmlFor="approval-notes">
+                                {approvalAction === 'reject' ? 'Alasan penolakan' : 'Catatan (opsional)'}
+                            </Label>
+                            <Textarea
+                                id="approval-notes"
+                                rows={4}
+                                maxLength={2000}
+                                value={approvalNotes}
+                                onChange={(event) => setApprovalNotes(event.target.value)}
+                                disabled={approvalBusy}
+                                placeholder={approvalAction === 'reject'
+                                    ? 'Jelaskan bagian yang harus diperbaiki.'
+                                    : 'Tambahkan catatan telaah bila diperlukan.'}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={approvalBusy}
+                            onClick={() => setApprovalAction(null)}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            type="button"
+                            variant={approvalAction === 'reject' ? 'destructive' : 'default'}
+                            disabled={
+                                approvalBusy
+                                || (approvalAction === 'submit' && !selectedApproverId)
+                                || (approvalAction === 'reject' && !approvalNotes.trim())
+                            }
+                            onClick={handleApprovalAction}
+                        >
+                            {approvalBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Simpan
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

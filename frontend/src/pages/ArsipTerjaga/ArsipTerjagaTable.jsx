@@ -33,7 +33,7 @@ export default function ArsipTerjagaTable({
                     />
                 </div>
                 <Select value={filterKategori} onValueChange={v => onFilterKategoriChange(v === 'all' ? '' : v)}>
-                    <SelectTrigger className="w-[200px]"><SelectValue placeholder="Semua Kategori" /></SelectTrigger>
+                    <SelectTrigger className="w-full sm:w-[200px]"><SelectValue placeholder="Semua Kategori" /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">Semua Kategori</SelectItem>
                         {Object.entries(KATEGORI_CONFIG).map(([k, v]) => (
@@ -42,7 +42,7 @@ export default function ArsipTerjagaTable({
                     </SelectContent>
                 </Select>
                 <Select value={filterPelaporan} onValueChange={v => onFilterPelaporanChange(v === 'all' ? '' : v)}>
-                    <SelectTrigger className="w-[200px]"><SelectValue placeholder="Semua Status" /></SelectTrigger>
+                    <SelectTrigger className="w-full sm:w-[200px]"><SelectValue placeholder="Semua Status" /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">Semua Status</SelectItem>
                         {Object.entries(STATUS_PELAPORAN_CONFIG).map(([k, v]) => (
@@ -56,8 +56,8 @@ export default function ArsipTerjagaTable({
             </div>
 
             {/* Table */}
-            <div className="rounded-md border bg-card">
-                <Table>
+            <div className="min-w-0 rounded-md border bg-card">
+                <Table responsive>
                     <TableHeader>
                         <TableRow>
                             <TableHead className="w-12 text-center">No</TableHead>
@@ -96,42 +96,42 @@ export default function ArsipTerjagaTable({
                             const sk = STATUS_KEPATUHAN_CONFIG[item.statusKepatuhan] || {}
                             return (
                                 <TableRow key={item.id} className="hover:bg-muted/50">
-                                    <TableCell className="text-center">{(page - 1) * 10 + idx + 1}</TableCell>
-                                    <TableCell>
-                                        <div className="font-medium text-purple-700">{item.nomorBerkas || '-'}</div>
+                                    <TableCell data-label="No" className="text-center">{(page - 1) * 10 + idx + 1}</TableCell>
+                                    <TableCell data-label="Nomor & Uraian Berkas">
+                                        <div className="font-medium text-purple-700 dark:text-purple-300">{item.nomorBerkas || '-'}</div>
                                         <div className="text-sm text-muted-foreground max-w-[300px] truncate" title={item.uraianBerkas || item.perihalOriginal}>
                                             {item.uraianBerkas || item.perihalOriginal || '-'}
                                         </div>
                                     </TableCell>
-                                    <TableCell>
+                                    <TableCell data-label="Kategori">
                                         <Badge variant="outline" className={`font-normal ${kat.color}`}>
                                             {kat.label || item.kategoriTerjaga}
                                         </Badge>
                                     </TableCell>
-                                    <TableCell>
+                                    <TableCell data-label="Status Pelaporan">
                                         <Badge variant="outline" className={`font-normal ${sp.color}`}>
                                             {sp.label || item.statusPelaporan}
                                         </Badge>
                                     </TableCell>
-                                    <TableCell className="text-sm font-mono text-muted-foreground">
+                                    <TableCell data-label="No. Laporan ANRI" className="text-sm font-mono text-muted-foreground">
                                         {item.nomorLaporanANRI || '-'}
                                     </TableCell>
-                                    <TableCell>
+                                    <TableCell data-label="Kepatuhan">
                                         <Badge variant="outline" className={`font-normal ${sk.color}`}>
                                             {sk.label || item.statusKepatuhan}
                                         </Badge>
                                     </TableCell>
-                                    <TableCell className="text-right">
+                                    <TableCell data-label="Aksi" className="text-right">
                                         <div className="flex justify-end gap-1">
                                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onOpenDetail(item)}>
                                                 <Eye className="h-4 w-4" />
                                             </Button>
                                             {item.statusPelaporan === 'belum_dilaporkan' && (
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => onOpenReport(item)}>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-500/15" onClick={() => onOpenReport(item)}>
                                                     <Send className="h-4 w-4" />
                                                 </Button>
                                             )}
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => onDelete(item.id)}>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/15" onClick={() => onDelete(item.id)}>
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
                                         </div>

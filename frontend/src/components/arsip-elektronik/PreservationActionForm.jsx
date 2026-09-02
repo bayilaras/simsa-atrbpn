@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -48,7 +48,7 @@ export default function PreservationActionForm({ arsipId, onSuccess }) {
         setLoading(true);
 
         try {
-            await api.post(`/arsip-elektronik/${arsipId}/preservasi`, formData);
+            await api.post(`/api/arsip-elektronik/${arsipId}/preservasi`, formData);
 
             toast({
                 title: 'Berhasil',
@@ -95,7 +95,9 @@ export default function PreservationActionForm({ arsipId, onSuccess }) {
                             <SelectContent>
                                 <SelectItem value="migration">Migrasi (Migration)</SelectItem>
                                 <SelectItem value="conversion">Konversi (Conversion)</SelectItem>
+                                <SelectItem value="encapsulation">Enkapsulasi (Encapsulation)</SelectItem>
                                 <SelectItem value="emulation">Emulasi (Emulation)</SelectItem>
+                                <SelectItem value="replication">Replikasi (Replication)</SelectItem>
                                 <SelectItem value="refreshing">Penyegaran (Refreshing)</SelectItem>
                                 <SelectItem value="backup">Backup Berkala</SelectItem>
                                 <SelectItem value="integrity_check">Cek Integritas (Fixity Check)</SelectItem>

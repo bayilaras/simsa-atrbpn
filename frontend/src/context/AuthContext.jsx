@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { authService } from '../services/auth.service';
+import { clearOfflineStorage } from '../lib/offline-storage';
+import { normalizeAuthenticatedUserUnitScope } from '../lib/unit-kerja-scope';
 
 const AuthContext = createContext(null);
 
@@ -21,8 +23,10 @@ export function AuthProvider({ children }) {
     // Reset idle timers when user activity is detected
     const resetIdleTimer = useCallback(() => {
         const now = Date.now();
-        // Throttle: only reset if enough time has passed since last reset
-        if (now - lastActivityRef.current < ACTIVITY_THROTTLE_MS) return;
+        // Throttle: only reset if enough time has passed since last reset.
+        // Never throttle while no timer is armed, otherwise the initializing call
+        // right after login is swallowed and the timers are never created.
+        if (idleTimerRef.current && now - lastActivityRef.current < ACTIVITY_THROTTLE_MS) return;
         lastActivityRef.current = now;
 
         setIdleWarning(false);
@@ -56,6 +60,8 @@ export function AuthProvider({ children }) {
             events.forEach(event => window.removeEventListener(event, resetIdleTimer));
             if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
             if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+            warningTimerRef.current = null;
+            idleTimerRef.current = null;
         };
     }, [user, resetIdleTimer]);
 
@@ -70,12 +76,14 @@ export function AuthProvider({ children }) {
             const session = await authService.getSession();
 
             if (session?.user) {
-                setUser(session.user);
+                setUser(normalizeAuthenticatedUserUnitScope(session.user));
             } else {
+                await clearOfflineStorage();
                 setUser(null);
             }
         } catch (err) {
             console.error('Auth check failed:', err);
+            await clearOfflineStorage();
             setUser(null);
         } finally {
             setLoading(false);
@@ -86,8 +94,13 @@ export function AuthProvider({ children }) {
         try {
             setLoading(true);
             setError(null);
-            await authService.signInWithGoogle();
-            // The SDK will handle redirect
+            const session = await authService.signInWithGoogle();
+            if (session?.user) {
+                // Firebase popup flow exchanges the ID token immediately. The
+                // legacy Better Auth flow returns no user and keeps redirecting.
+                setUser(normalizeAuthenticatedUserUnitScope(session.user));
+                setLoading(false);
+            }
         } catch (err) {
             console.error('Sign in failed:', err);
             setError(err.message || 'Login failed');
@@ -129,6 +142,8 @@ export function AuthProvider({ children }) {
         try {
             if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
             if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+            warningTimerRef.current = null;
+            idleTimerRef.current = null;
             setIdleWarning(false);
             setUser(null);
             await authService.signOut();
@@ -136,6 +151,12 @@ export function AuthProvider({ children }) {
             console.error('Sign out failed:', err);
             setUser(null); // Force clear user even on error
         }
+    }
+
+    async function revokeSessions() {
+        await authService.revokeSessions();
+        setUser(null);
+        setIdleWarning(false);
     }
 
     // Dismiss the idle warning and reset timer
@@ -167,6 +188,7 @@ export function AuthProvider({ children }) {
         signInWithEmail,
         signUp,
         signOut,
+        revokeSessions,
         checkAuth,
         hasRole,
         canWrite,
@@ -180,6 +202,8 @@ export function AuthProvider({ children }) {
     );
 }
 
+// Context hooks intentionally live beside their provider for the existing API.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
     const context = useContext(AuthContext);
     if (!context) {

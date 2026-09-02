@@ -1,19 +1,21 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import path from 'path';
 import * as helmetModule from 'helmet';
 const helmet = (helmetModule as any).default || helmetModule;
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
-import { toNodeHandler } from 'better-auth/node';
-import { env } from './config/env';
-import { auth } from './config/auth';
+import { env, validateEnv, cloudPlatformConfig } from './config/env';
+import { getPublicAppMetadata } from './config/app-profile.js';
+import { srikandiConfig } from './config/srikandi.js';
+import { isTrustedOrigin } from './config/trusted-origins';
 import { generalLimiter, authLimiter } from './middlewares/rate-limiter.middleware';
 import { authMiddleware } from './middlewares/auth.middleware';
+import { roleMiddleware } from './middlewares/role.middleware';
 import { csrfCookieSetter, csrfProtection } from './middlewares/csrf.middleware';
+import { firebaseAppCheckMiddleware } from './middlewares/firebase-app-check.middleware.js';
 import { sanitizeInput } from './middlewares/sanitize.middleware';
 import { setupSwagger } from './config/swagger';
-import { AppError } from './utils/errors';
+import { AppError, ForbiddenError } from './utils/errors';
 import { logger } from './utils/logger';
 
 // Import routes
@@ -40,7 +42,6 @@ import distributionRoutes from './routes/distribution.routes';
 import { reportRoutes } from './routes/report.routes';
 import { settingsRoutes } from './routes/settings.routes';
 import searchRoutes from './routes/search.routes';
-import devAuthRoutes from './routes/dev-auth.routes';
 import penyusutanRoutes from './routes/penyusutan.routes';
 import arsipVitalRoutes from './routes/arsip-vital.routes';
 import arsipTerjagaRoutes from './routes/arsip-terjaga.routes';
@@ -54,9 +55,27 @@ import approvalRoutes from './routes/approval.routes';
 import securityRoutes from './routes/security.routes';
 import googleDriveImportRoutes from './routes/google-drive-import.routes';
 import clientUploadRoutes from './routes/client-upload.routes';
+import fileAccessRoutes from './routes/file-access.routes';
+import srikandiRoutes from './routes/srikandi.routes';
+import recordAccessGrantRoutes from './routes/record-access-grant.routes';
+import regulatoryRuleSetRoutes from './routes/regulatory-rule-set.routes';
+import retentionGovernanceRoutes from './routes/retention-governance.routes';
+import firebaseAuthRoutes from './routes/firebase-auth.routes.js';
+import gcsUploadRoutes from './routes/gcs-upload.routes.js';
+import { getReadiness } from './services/readiness.service.js';
 
+// Vercel imports app.ts directly and never executes index.ts. Validate the
+// production environment during module cold-start as well, while unit tests
+// and local development retain their existing lightweight import behavior.
+const deployedRuntime = env.NODE_ENV === 'production'
+    || Boolean(process.env.K_SERVICE)
+    || Boolean(process.env.VERCEL);
+if (deployedRuntime) {
+    validateEnv();
+}
 
 const app = express();
+const publicAppMetadata = getPublicAppMetadata(env.APP_PROFILE, srikandiConfig.enabled);
 
 // Trust first proxy (Vercel's load balancer) for X-Forwarded-For headers
 // Required for express-rate-limit to correctly identify users behind a proxy
@@ -68,20 +87,22 @@ app.use(cors({
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
 
-        const allowedOrigin = env.FRONTEND_URL.replace(/\/$/, "");
-        if (origin === allowedOrigin || origin === allowedOrigin + '/') {
+        if (isTrustedOrigin(origin)) {
             return callback(null, true);
         }
 
-        // During development, allow localhost variations
-        if (env.NODE_ENV !== 'production' && origin.match(/^http:\/\/localhost:\d+$/)) {
-            return callback(null, true);
-        }
-
-        return callback(new Error('Not allowed by CORS'));
+        return callback(new ForbiddenError('Origin tidak diizinkan oleh kebijakan CORS.'));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-CSRF-Token'],
+    allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'Accept',
+        'X-CSRF-Token',
+        'X-Firebase-AppCheck',
+    ],
+    exposedHeaders: ['Retry-After'],
     credentials: true,
 }));
 
@@ -138,18 +159,29 @@ app.use(cookieParser());
 // CSRF cookie setter — set token cookie on all /api responses (must be before route handlers)
 app.use('/api', csrfCookieSetter);
 
-// Health check (no body parsing needed) — for uptime monitoring & load balancers
-app.get('/health', (req: Request, res: Response) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-app.get('/api/health', (req: Request, res: Response) => {
-    res.json({
-        status: 'ok',
+// Liveness deliberately answers only whether this process can serve HTTP. It
+// must not be coupled to a dependency outage or the orchestrator would restart
+// a healthy API in a loop. Readiness below performs live dependency probes.
+app.get('/health', (_req: Request, res: Response) => {
+    res.status(200).json({
+        status: 'alive',
         timestamp: new Date().toISOString(),
+        application: publicAppMetadata,
+    });
+});
+
+async function readinessHandler(_req: Request, res: Response) {
+    const readiness = await getReadiness();
+    res.status(readiness.status === 'not_ready' ? 503 : 200).json({
+        ...readiness,
+        application: publicAppMetadata,
         version: process.env.npm_package_version || '1.0.0',
         uptime: Math.floor(process.uptime()),
     });
-});
+}
+
+app.get('/ready', readinessHandler);
+app.get('/api/health', readinessHandler);
 
 // Apply rate limiting to auth endpoints BEFORE Better Auth handler
 // This protects against brute force login attempts
@@ -160,13 +192,14 @@ app.use('/api/auth', authLimiter);
 // This ensures CORS headers are always returned for OPTIONS requests to /api/auth/*
 app.options('/api/auth/*splat', (req: Request, res: Response) => {
     const origin = req.headers.origin;
-    const allowedOrigin = env.FRONTEND_URL.replace(/\/$/, '');
-    if (origin === allowedOrigin || origin === allowedOrigin + '/' ||
-        (env.NODE_ENV !== 'production' && origin?.match(/^http:\/\/localhost:\d+$/))) {
+    if (isTrustedOrigin(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin!);
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, X-CSRF-Token');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, X-Requested-With, Accept, X-CSRF-Token, X-Firebase-AppCheck',
+    );
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Max-Age', '86400');
     res.status(204).end();
@@ -176,32 +209,45 @@ app.options('/api/auth/*splat', (req: Request, res: Response) => {
 // MUST be before express.json()
 // Documentation: https://www.better-auth.com/docs/integrations/express
 // Handle both patterns for compatibility
-const authHandler = toNodeHandler(auth);
+let betterAuthHandlerPromise: Promise<(req: Request, res: Response) => Promise<void>> | null = null;
+async function getBetterAuthHandler() {
+    if (!betterAuthHandlerPromise) {
+        betterAuthHandlerPromise = Promise.all([
+            import('better-auth/node'),
+            import('./config/auth.js'),
+        ]).then(([betterAuthNode, authConfig]) => betterAuthNode.toNodeHandler(authConfig.auth));
+    }
+    return betterAuthHandlerPromise;
+}
 const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunction) => {
     // Ensure CORS headers are set for auth responses since toNodeHandler may bypass Express cors()
     const origin = req.headers.origin;
-    const allowedOrigin = env.FRONTEND_URL.replace(/\/$/, '');
-    if (!origin || origin === allowedOrigin || origin === allowedOrigin + '/' ||
-        (env.NODE_ENV !== 'production' && origin?.match(/^http:\/\/localhost:\d+$/))) {
-        res.setHeader('Access-Control-Allow-Origin', origin || allowedOrigin);
+    const defaultOrigin = env.FRONTEND_URL.replace(/\/$/, '');
+    if (!origin || isTrustedOrigin(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin || defaultOrigin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
     try {
+        const authHandler = await getBetterAuthHandler();
         await authHandler(req, res);
     } catch (error: any) {
         console.error(`Auth handler error on ${req.method} ${req.path}:`, error.message, error.stack);
         res.status(500).json({
             error: 'Authentication Error',
-            message: env.NODE_ENV === 'production'
+            message: deployedRuntime
                 ? 'Terjadi kesalahan pada proses autentikasi.'
                 : `Auth error: ${error.message}`,
         });
     }
 };
 
-app.all('/api/auth/*splat', wrappedAuthHandler);
-app.all('/api/auth/:path', wrappedAuthHandler);
-app.all('/api/auth/:path/:subpath', wrappedAuthHandler);
+if (cloudPlatformConfig.authProvider === 'firebase') {
+    app.use('/api/auth', firebaseAuthRoutes);
+} else {
+    app.all('/api/auth/*splat', wrappedAuthHandler);
+    app.all('/api/auth/:path', wrappedAuthHandler);
+    app.all('/api/auth/:path/:subpath', wrappedAuthHandler);
+}
 
 // Body parsing - AFTER Better Auth handler
 app.use(express.json({ limit: '10mb' }));  // Limit body size to prevent DoS
@@ -215,6 +261,10 @@ app.use(sanitizeInput);
 // Note: cookieParser and csrfCookieSetter are applied earlier (before health check)
 app.use('/api', csrfProtection);
 
+// In Firebase mode, reject forged/non-app clients before they reach domain
+// handlers. This is an anti-abuse signal, never an authorization substitute.
+app.use('/api', firebaseAppCheckMiddleware);
+
 // Response compression - compress all responses
 app.use(compression({
     filter: (req: Request, res: Response) => {
@@ -226,54 +276,35 @@ app.use(compression({
     level: 6 // Compression level (0-9, 6 is default balance)
 }));
 
-// Blob file proxy — redirects to public Vercel Blob URL
-// Kept for backwards compatibility with older gdrive: and blob: references
-app.get('/api/drive-file/:fileId', authMiddleware as any, async (req: Request, res: Response) => {
-    try {
-        const { fileId } = req.params;
-        if (!fileId) {
-            return res.status(400).json({ error: 'Invalid file ID' });
-        }
-
-        // For blob: URLs, the fileId IS the URL — just redirect
-        // Decode the fileId in case it was URL-encoded
-        const decodedUrl = decodeURIComponent(fileId as string);
-        if (decodedUrl.startsWith('http')) {
-            return res.redirect(decodedUrl);
-        }
-
-        return res.status(404).json({ error: 'File not found' });
-    } catch (error: any) {
-        logger.error({ err: error, fileId: req.params.fileId }, 'File proxy error');
-        res.status(500).json({ error: 'Failed to retrieve file' });
-    }
+// The legacy endpoint used to redirect callers to a public object URL, bypassing
+// record-level authorization and download auditing. It is intentionally retired;
+// clients must use the unit-scoped /api/files routes below.
+app.get('/api/drive-file/:fileId', authMiddleware as any, (_req: Request, res: Response) => {
+    res.status(410).json({
+        error: 'Legacy file proxy retired',
+        message: 'Gunakan endpoint akses berkas terkendali.',
+    });
 });
 
 // Blob storage diagnostic — test connectivity
 import { blobStorageService } from './services/blob-storage.service';
-app.get('/api/blob-test', authMiddleware as any, async (req: Request, res: Response) => {
+app.get('/api/blob-test', authMiddleware as any, roleMiddleware(['super_admin']) as any, async (req: Request, res: Response) => {
     try {
-        const files = await blobStorageService.listFiles();
+        await blobStorageService.probeConnectivity();
         res.json({
             success: true,
-            message: 'Vercel Blob storage OK',
-            filesCount: files.length,
-            hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+            message: 'Private object storage is reachable',
+            provider: cloudPlatformConfig.storageProvider,
         });
     } catch (error: any) {
         logger.error({ err: error }, 'Blob storage test failed');
-        res.status(500).json({
+        res.status(503).json({
             success: false,
-            error: error.message,
-            hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+            error: 'Private object storage is unavailable',
+            provider: cloudPlatformConfig.storageProvider,
         });
     }
 });
-
-// Static file serving for uploads — PROTECTED with authentication
-// Files in backend/uploads require a valid session to access (legacy support)
-const uploadsPath = path.join(process.cwd(), 'uploads');
-app.use('/uploads', authMiddleware as any, express.static(uploadsPath));
 
 // Apply general rate limiting to all API routes
 app.use('/api', generalLimiter);
@@ -294,6 +325,8 @@ app.use('/api/users', userManagementRoutes);
 app.use('/api/audit-log', auditLogRoutes);
 app.use('/api/klasifikasi', klasifikasiRoutes);
 app.use('/api/jra', jraRoutes);
+app.use('/api/regulatory-rule-sets', regulatoryRuleSetRoutes);
+app.use('/api/retention-governance', retentionGovernanceRoutes);
 app.use('/api/arsip-picker', arsipPickerRoutes);
 app.use('/api/storage-locations', storageLocationRoutes);
 app.use('/api/archive-lending', archiveLendingRoutes);
@@ -314,13 +347,15 @@ app.use('/api/layanan-arsip', layananArsipRoutes);
 app.use('/api/supervision', supervisionRoutes);
 app.use('/api/mapping', mappingRoutes);
 app.use('/api/security', securityRoutes); // Security utilities (password check, etc.)
-app.use('/api/import', googleDriveImportRoutes); // Google Drive import
-app.use('/api/client-upload', clientUploadRoutes); // Client-side Vercel Blob uploads (bypasses 4.5MB limit)
-
-// Dev auth routes - ONLY available in development mode
-if (env.NODE_ENV === 'development') {
-    app.use('/api/dev', devAuthRoutes);
+app.use('/api/import', googleDriveImportRoutes); // Public Google Sheets metadata import
+if (cloudPlatformConfig.storageProvider === 'gcs') {
+    app.use('/api/object-uploads', gcsUploadRoutes);
+} else {
+    app.use('/api/client-upload', clientUploadRoutes); // Compatibility path during Vercel Blob migration
 }
+app.use('/api/files', fileAccessRoutes); // Authenticated, unit-scoped private file streaming
+app.use('/api/integrations/srikandi', srikandiRoutes);
+app.use('/api/record-access-grants', recordAccessGrantRoutes); // Purpose-bound, time-limited need-to-know workflow
 
 // Setup Swagger API documentation - available at /api/docs
 setupSwagger(app);
@@ -331,7 +366,8 @@ app.use((req: Request, res: Response) => {
 });
 
 // Global error handler — handles custom AppError instances and unexpected errors
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+export function globalErrorHandler(err: Error, req: Request, res: Response, next: NextFunction) {
+    void next;
     // Custom application errors carry their own status code
     if (err instanceof AppError) {
         res.status(err.statusCode).json({
@@ -350,6 +386,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
         error: 'Internal Server Error',
         message: env.NODE_ENV === 'development' ? err.message : 'Terjadi kesalahan pada server.',
     });
-});
+}
+
+app.use(globalErrorHandler);
 
 export default app;

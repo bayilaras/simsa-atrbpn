@@ -79,7 +79,7 @@ describe('authMiddleware', () => {
 
         // Assert
         expect(mockNext).toHaveBeenCalled();
-        expect(req.user).toEqual(mockUser);
+        expect(req.user).toEqual({ ...mockUser, unitKerjaId: 'ditjen' });
     });
 
     it('should return 401 when no session exists', async () => {
@@ -134,6 +134,66 @@ describe('authMiddleware', () => {
         expect(res.status).toHaveBeenCalledWith(500);
         expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
     });
+
+    it('should deny an unprovisioned default user', async () => {
+        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (db.select as any).mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([{ ...mockUser, role: 'user', unitKerjaId: null }]),
+                }),
+            }),
+        });
+
+        const req = createMockReq();
+        const res = createMockRes();
+
+        await authMiddleware(req, res, mockNext);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Access pending' }));
+        expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('should fail closed for an unknown database role', async () => {
+        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (db.select as any).mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([{ ...mockUser, role: 'legacy_admin' }]),
+                }),
+            }),
+        });
+
+        const req = createMockReq();
+        const res = createMockRes();
+
+        await authMiddleware(req, res, mockNext);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Access pending' }));
+        expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('should deny staff without an assigned unit kerja', async () => {
+        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (db.select as any).mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([{ ...mockUser, role: 'staff', unitKerjaId: null }]),
+                }),
+            }),
+        });
+
+        const req = createMockReq();
+        const res = createMockRes();
+
+        await authMiddleware(req, res, mockNext);
+
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Unit kerja required' }));
+        expect(mockNext).not.toHaveBeenCalled();
+    });
 });
 
 describe('optionalAuthMiddleware', () => {
@@ -160,7 +220,7 @@ describe('optionalAuthMiddleware', () => {
 
         // Assert
         expect(mockNext).toHaveBeenCalled();
-        expect(req.user).toEqual(mockUser);
+        expect(req.user).toEqual({ ...mockUser, unitKerjaId: 'ditjen' });
     });
 
     it('should call next() without user when no session exists', async () => {
@@ -175,6 +235,28 @@ describe('optionalAuthMiddleware', () => {
 
         // Assert
         expect(mockNext).toHaveBeenCalled();
+        expect(req.user).toBeUndefined();
+    });
+
+    it('does not attach an incomplete archival role through optional auth', async () => {
+        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (db.select as any).mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([{
+                        ...mockUser,
+                        role: 'auditor',
+                        unitKerjaId: null,
+                    }]),
+                }),
+            }),
+        });
+
+        const req = createMockReq();
+        const res = createMockRes();
+        await optionalAuthMiddleware(req, res, mockNext);
+
+        expect(mockNext).toHaveBeenCalledOnce();
         expect(req.user).toBeUndefined();
     });
 

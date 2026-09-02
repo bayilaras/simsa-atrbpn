@@ -1,0 +1,19 @@
+[Unit]
+Description=SIMSA persistent malware worker bootstrap
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+ConditionPathExists=/opt/simsa-workers/bootstrap-gcp.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/simsa-workers/bootstrap-gcp.sh
+ExecStop=/usr/bin/docker compose --env-file /run/simsa-workers/worker.env -f /opt/simsa-workers/compose.yml -f /opt/simsa-workers/compose.gcp.yml --profile gcp stop -t 60 malware-worker clamav cloud-sql-proxy
+TimeoutStartSec=20min
+TimeoutStopSec=2min
+Restart=on-failure
+RestartSec=30s
+
+[Install]
+WantedBy=multi-user.target

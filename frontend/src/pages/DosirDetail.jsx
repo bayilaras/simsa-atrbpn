@@ -27,8 +27,8 @@ import { format, parseISO, formatDistanceToNow } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 
 const STATUS_OPTIONS = [
-    { value: 'open', label: 'Aktif', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-    { value: 'closed', label: 'Selesai', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+    { value: 'open', label: 'Aktif', color: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-200' },
+    { value: 'closed', label: 'Selesai', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-200' },
     { value: 'archived', label: 'Diarsipkan', color: 'bg-stone-100 text-stone-800 border-stone-200' },
 ]
 
@@ -58,11 +58,11 @@ function TimelineItem({ item, isLast }) {
         <div className="relative pl-8 pb-8 last:pb-0">
             {/* Connector line */}
             {!isLast && (
-                <div className="absolute left-[11px] top-8 bottom-0 w-0.5 bg-slate-200" />
+                <div className="absolute left-[11px] top-8 bottom-0 w-0.5 bg-muted" />
             )}
 
             {/* Icon */}
-            <div className={`absolute left-0 top-1 p-1.5 rounded-full ring-4 ring-white ${isMasuk ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'
+            <div className={`absolute left-0 top-1 p-1.5 rounded-full ring-4 ring-white ${isMasuk ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600' : 'bg-blue-100 dark:bg-blue-500/15 text-blue-600'
                 }`}>
                 {isMasuk ? <MailPlus className="h-4 w-4" /> : <MailMinus className="h-4 w-4" />}
             </div>
@@ -72,7 +72,7 @@ function TimelineItem({ item, isLast }) {
                     <div className="flex flex-col sm:flex-row gap-4 justify-between items-start">
                         <div className="space-y-1">
                             <div className="flex items-center gap-2 mb-1">
-                                <Badge variant={isMasuk ? 'default' : 'secondary'} className={isMasuk ? 'bg-emerald-600' : 'bg-blue-600 text-white'}>
+                                <Badge variant={isMasuk ? 'default' : 'secondary'} className={isMasuk ? 'bg-emerald-600' : 'bg-primary text-white'}>
                                     {isMasuk ? 'Surat Masuk' : 'Surat Keluar'}
                                 </Badge>
                                 <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -81,11 +81,11 @@ function TimelineItem({ item, isLast }) {
                                 </span>
                             </div>
                             <h4 className="font-semibold text-base">{item.perihal || 'Tanpa Perihal'}</h4>
-                            <p className="text-sm text-slate-600 font-mono bg-slate-50 px-2 py-0.5 rounded inline-block">
+                            <p className="text-sm text-muted-foreground font-mono bg-muted/50 px-2 py-0.5 rounded inline-block">
                                 {item.nomorSurat || 'Tanpa Nomor'}
                             </p>
                             <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                                <span className={isMasuk ? 'text-emerald-700' : 'text-blue-700'}>
+                                <span className={isMasuk ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}>
                                     {isMasuk ? `Dari: ${item.dari}` : `Kepada: ${item.kepada}`}
                                 </span>
                             </div>
@@ -105,11 +105,11 @@ function TimelineItem({ item, isLast }) {
 
 function EmptyState({ icon: Icon, title, description, action }) {
     return (
-        <div className="flex flex-col items-center justify-center py-12 text-center rounded-xl border-2 border-dashed bg-slate-50/50">
-            <div className="bg-white p-3 rounded-full shadow-sm mb-4">
+        <div className="flex flex-col items-center justify-center py-12 text-center rounded-xl border-2 border-dashed bg-muted/50">
+            <div className="bg-card p-3 rounded-full shadow-sm mb-4">
                 <Icon className="h-8 w-8 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-medium text-slate-900">{title}</h3>
+            <h3 className="text-lg font-medium text-foreground">{title}</h3>
             <p className="text-sm text-muted-foreground max-w-sm mt-1 mb-6">{description}</p>
             {action}
         </div>
@@ -136,15 +136,15 @@ export default function DosirDetail() {
                 dosirService.getById(id),
                 dosirService.getTimeline(id),
             ])
-            setDosir(dosirRes.data)
-            setTimeline(timelineRes.data || [])
+            setDosir(dosirRes)
+            setTimeline(timelineRes || [])
             setEditForm({
-                judul: dosirRes.data?.judul || '',
-                deskripsi: dosirRes.data?.deskripsi || '',
-                status: dosirRes.data?.status || 'open',
-                kategori: dosirRes.data?.kategori || '',
-                tanggalMulai: dosirRes.data?.tanggalMulai ? dosirRes.data.tanggalMulai.split('T')[0] : '', // Format for date input
-                tanggalSelesai: dosirRes.data?.tanggalSelesai ? dosirRes.data.tanggalSelesai.split('T')[0] : '',
+                judul: dosirRes?.judul || '',
+                deskripsi: dosirRes?.deskripsi || '',
+                status: dosirRes?.status || 'open',
+                kategori: dosirRes?.kategori || '',
+                tanggalMulai: dosirRes?.tanggalMulai ? dosirRes.tanggalMulai.split('T')[0] : '', // Format for date input
+                tanggalSelesai: dosirRes?.tanggalSelesai ? dosirRes.tanggalSelesai.split('T')[0] : '',
             })
         } catch (error) {
             console.error('Error fetching dosir:', error)
@@ -218,23 +218,23 @@ export default function DosirDetail() {
             <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 text-white shadow-xl">
                 {/* Background Pattern */}
                 <div className="absolute inset-0 opacity-10">
-                    <div className="absolute top-0 right-0 w-96 h-96 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
-                    <div className="absolute bottom-0 left-1/4 w-64 h-64 bg-white rounded-full blur-3xl opacity-50" />
+                    <div className="absolute top-0 right-0 w-96 h-96 bg-card rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2" />
+                    <div className="absolute bottom-0 left-1/4 w-64 h-64 bg-card rounded-full blur-3xl opacity-50" />
                 </div>
 
                 <div className="relative p-6 md:p-8">
                     <div className="flex flex-col md:flex-row gap-6 md:gap-0 justify-between items-start md:items-center mb-6">
                         <Button
                             variant="ghost"
-                            className="text-white/80 hover:text-white hover:bg-white/10 -ml-2"
+                            className="text-white/80 hover:text-white hover:bg-card/10 -ml-2"
                             onClick={() => navigate('/dosir')}
                         >
                             <ArrowLeft className="mr-2 h-4 w-4" />
                             Kembali ke Daftar
                         </Button>
 
-                        <div className="flex gap-2">
-                            <Badge className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-md px-3 py-1">
+                        <div className="flex flex-wrap gap-2">
+                            <Badge className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-md px-3 py-1">
                                 {dosir.kategori || 'Umum'}
                             </Badge>
                             <Badge className={`border-0 backdrop-blur-md px-3 py-1 ${dosir.status === 'open' ? 'bg-emerald-500/80 text-white' :
@@ -247,7 +247,7 @@ export default function DosirDetail() {
                     </div>
 
                     <div className="flex flex-col md:flex-row gap-6 items-start">
-                        <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-sm shadow-inner shrink-0 hidden md:block">
+                        <div className="bg-card/20 p-4 rounded-2xl backdrop-blur-sm shadow-inner shrink-0 hidden md:block">
                             <FolderOpen className="h-10 w-10 text-white" />
                         </div>
 
@@ -277,7 +277,7 @@ export default function DosirDetail() {
                         <div className="flex flex-row md:flex-col gap-3 w-full md:w-auto shrink-0">
                             <Dialog open={editing} onOpenChange={setEditing}>
                                 <DialogTrigger asChild>
-                                    <Button className="bg-white text-indigo-700 hover:bg-emerald-50 w-full md:w-auto shadow-lg hover:shadow-xl transition-all">
+                                    <Button className="bg-card text-indigo-700 dark:text-indigo-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 w-full md:w-auto shadow-lg hover:shadow-xl transition-all">
                                         <Edit2 className="mr-2 h-4 w-4" />
                                         Edit Dosir
                                     </Button>
@@ -398,20 +398,20 @@ export default function DosirDetail() {
                 {/* Left Column: Timeline & Lists */}
                 <div className="lg:col-span-2 space-y-6">
                     <Tabs defaultValue="timeline" className="w-full">
-                        <TabsList className="w-full justify-start bg-slate-100 p-1 rounded-xl mb-6">
-                            <TabsTrigger value="timeline" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm">
+                        <TabsList className="w-full justify-start bg-muted p-1 rounded-xl mb-6">
+                            <TabsTrigger value="timeline" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-card data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm">
                                 <Clock className="mr-2 h-4 w-4" />
                                 Kronologi
                             </TabsTrigger>
-                            <TabsTrigger value="masuk" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-white data-[state=active]:text-emerald-600 data-[state=active]:shadow-sm">
+                            <TabsTrigger value="masuk" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-card data-[state=active]:text-emerald-600 data-[state=active]:shadow-sm">
                                 <MailPlus className="mr-2 h-4 w-4" />
                                 Surat Masuk
-                                <Badge variant="secondary" className="ml-2 bg-emerald-100 text-emerald-700 h-5 px-1.5">{dosir.suratMasuk?.length || 0}</Badge>
+                                <Badge variant="secondary" className="ml-2 bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 h-5 px-1.5">{dosir.suratMasuk?.length || 0}</Badge>
                             </TabsTrigger>
-                            <TabsTrigger value="keluar" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm">
+                            <TabsTrigger value="keluar" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-card data-[state=active]:text-blue-600 data-[state=active]:shadow-sm">
                                 <MailMinus className="mr-2 h-4 w-4" />
                                 Surat Keluar
-                                <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-700 h-5 px-1.5">{dosir.suratKeluar?.length || 0}</Badge>
+                                <Badge variant="secondary" className="ml-2 bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 h-5 px-1.5">{dosir.suratKeluar?.length || 0}</Badge>
                             </TabsTrigger>
                         </TabsList>
 
@@ -445,7 +445,7 @@ export default function DosirDetail() {
                         <TabsContent value="masuk">
                             <Card>
                                 <CardHeader>
-                                    <CardTitle className="text-emerald-700 flex items-center gap-2">
+                                    <CardTitle className="text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
                                         <MailPlus className="h-5 w-5" />
                                         Daftar Surat Masuk
                                     </CardTitle>
@@ -453,21 +453,21 @@ export default function DosirDetail() {
                                 <CardContent className="space-y-4">
                                     {dosir.suratMasuk?.length > 0 ? (
                                         dosir.suratMasuk.map(sm => (
-                                            <div key={sm.id} className="flex items-start justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-emerald-200 transition-colors">
+                                            <div key={sm.id} className="flex items-start justify-between p-4 bg-muted/50 rounded-xl border border-border hover:border-emerald-200 transition-colors">
                                                 <div>
-                                                    <p className="font-semibold text-slate-800">{sm.perihal}</p>
-                                                    <p className="text-sm text-slate-500 mt-1">
+                                                    <p className="font-semibold text-foreground">{sm.perihal}</p>
+                                                    <p className="text-sm text-muted-foreground mt-1">
                                                         No: {sm.nomorSurat} • Dari: {sm.dari}
                                                     </p>
-                                                    <p className="text-xs text-slate-400 mt-2">
+                                                    <p className="text-xs text-muted-foreground mt-2">
                                                         {format(parseISO(sm.createdAt), 'dd MMM yyyy')}
                                                     </p>
                                                 </div>
-                                                <div className="flex gap-2">
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-emerald-600" onClick={() => navigate(`/surat/masuk/${sm.id}`)}>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-emerald-600" onClick={() => navigate(`/surat/masuk/${sm.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600" onClick={() => handleRemoveSurat('masuk', sm.id)}>
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('masuk', sm.id)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </div>
@@ -483,7 +483,7 @@ export default function DosirDetail() {
                         <TabsContent value="keluar">
                             <Card>
                                 <CardHeader>
-                                    <CardTitle className="text-blue-700 flex items-center gap-2">
+                                    <CardTitle className="text-blue-700 dark:text-blue-300 flex items-center gap-2">
                                         <MailMinus className="h-5 w-5" />
                                         Daftar Surat Keluar
                                     </CardTitle>
@@ -491,21 +491,21 @@ export default function DosirDetail() {
                                 <CardContent className="space-y-4">
                                     {dosir.suratKeluar?.length > 0 ? (
                                         dosir.suratKeluar.map(sk => (
-                                            <div key={sk.id} className="flex items-start justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
+                                            <div key={sk.id} className="flex items-start justify-between p-4 bg-muted/50 rounded-xl border border-border hover:border-blue-200 transition-colors">
                                                 <div>
-                                                    <p className="font-semibold text-slate-800">{sk.perihal}</p>
-                                                    <p className="text-sm text-slate-500 mt-1">
+                                                    <p className="font-semibold text-foreground">{sk.perihal}</p>
+                                                    <p className="text-sm text-muted-foreground mt-1">
                                                         No: {sk.nomorSurat} • Kepada: {sk.kepada}
                                                     </p>
-                                                    <p className="text-xs text-slate-400 mt-2">
+                                                    <p className="text-xs text-muted-foreground mt-2">
                                                         {format(parseISO(sk.createdAt), 'dd MMM yyyy')}
                                                     </p>
                                                 </div>
-                                                <div className="flex gap-2">
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-blue-600" onClick={() => navigate(`/surat/keluar/${sk.id}`)}>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-blue-600" onClick={() => navigate(`/surat/keluar/${sk.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-red-600" onClick={() => handleRemoveSurat('keluar', sk.id)}>
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('keluar', sk.id)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </div>
@@ -532,7 +532,7 @@ export default function DosirDetail() {
                         </CardHeader>
                         <CardContent className="space-y-4 pt-0">
                             <div className="space-y-1">
-                                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Status</p>
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</p>
                                 <Badge variant="outline" className={`${statusConf.color} border px-3 py-1`}>
                                     {statusConf.label}
                                 </Badge>
@@ -542,13 +542,13 @@ export default function DosirDetail() {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
-                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Tanggal Mulai</p>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tanggal Mulai</p>
                                     <p className="text-sm font-medium">
                                         {dosir.tanggalMulai ? format(parseISO(dosir.tanggalMulai), 'dd MMM yyyy', { locale: idLocale }) : '-'}
                                     </p>
                                 </div>
                                 <div className="space-y-1">
-                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Tanggal Selesai</p>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tanggal Selesai</p>
                                     <p className="text-sm font-medium">
                                         {dosir.tanggalSelesai ? format(parseISO(dosir.tanggalSelesai), 'dd MMM yyyy', { locale: idLocale }) : '-'}
                                     </p>
@@ -558,8 +558,8 @@ export default function DosirDetail() {
                             <Separator />
 
                             <div className="space-y-1">
-                                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">ID Dosir</p>
-                                <div className="bg-slate-100 rounded px-2 py-1.5 font-mono text-xs text-slate-600 truncate select-all">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">ID Dosir</p>
+                                <div className="bg-muted rounded px-2 py-1.5 font-mono text-xs text-muted-foreground truncate select-all">
                                     {dosir.id}
                                 </div>
                             </div>
@@ -571,15 +571,15 @@ export default function DosirDetail() {
                             <CardTitle className="text-base">Statistik Cepat</CardTitle>
                         </CardHeader>
                         <CardContent className="grid grid-cols-2 gap-3 pt-0">
-                            <div className="bg-white p-3 rounded-xl border shadow-sm text-center">
-                                <p className="text-2xl font-bold text-slate-800">{timeline.length}</p>
-                                <p className="text-xs text-slate-500">Total Aktivitas</p>
+                            <div className="bg-card p-3 rounded-xl border shadow-sm text-center">
+                                <p className="text-2xl font-bold text-foreground">{timeline.length}</p>
+                                <p className="text-xs text-muted-foreground">Total Aktivitas</p>
                             </div>
-                            <div className="bg-white p-3 rounded-xl border shadow-sm text-center">
-                                <p className="text-2xl font-bold text-slate-800">
+                            <div className="bg-card p-3 rounded-xl border shadow-sm text-center">
+                                <p className="text-2xl font-bold text-foreground">
                                     {dosir.suratMasuk?.length + dosir.suratKeluar?.length}
                                 </p>
-                                <p className="text-xs text-slate-500">Total Surat</p>
+                                <p className="text-xs text-muted-foreground">Total Surat</p>
                             </div>
                         </CardContent>
                     </Card>

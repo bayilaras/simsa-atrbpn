@@ -1,3 +1,6 @@
+import React from 'react';
+
+/* eslint-disable react-refresh/only-export-components -- this module intentionally exposes the paired dialog hook */
 import {
     AlertDialog,
     AlertDialogAction,
@@ -64,18 +67,22 @@ export function useConfirmDialog() {
 
     const handleConfirm = () => {
         resolveRef.current?.(true);
+        resolveRef.current = null;
         setIsOpen(false);
     };
 
-    const handleCancel = () => {
-        resolveRef.current?.(false);
-        setIsOpen(false);
+    const handleOpenChange = (nextOpen) => {
+        if (!nextOpen) {
+            resolveRef.current?.(false);
+            resolveRef.current = null;
+        }
+        setIsOpen(nextOpen);
     };
 
     const ConfirmDialogComponent = () => (
         <ConfirmDialog
             open={isOpen}
-            onOpenChange={setIsOpen}
+            onOpenChange={handleOpenChange}
             onConfirm={handleConfirm}
             {...config}
         />

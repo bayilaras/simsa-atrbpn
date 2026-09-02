@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard,
@@ -7,7 +8,6 @@ import {
     Archive,
     FileBarChart,
     ClipboardList,
-    Settings,
     ChevronDown,
     Users,
     FolderTree,
@@ -21,7 +21,11 @@ import {
     HardDrive,
     Link2,
     BookOpen,
-    ExternalLink,
+    FileKey2,
+    CloudCog,
+    GitBranch,
+    Scale,
+    Settings2,
 } from 'lucide-react'
 
 import {
@@ -38,6 +42,7 @@ import {
     SidebarMenuSub,
     SidebarMenuSubItem,
     SidebarMenuSubButton,
+    useSidebar,
 } from '@/components/ui/sidebar'
 import {
     Collapsible,
@@ -45,11 +50,14 @@ import {
     CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Badge } from '@/components/ui/badge'
+import appConfig from '@/lib/app-config'
+import { PROVISIONED_ROLES } from '@/lib/provisioning-access'
+import { useAppConfig } from '@/context/app-config-context'
 
 // Role constants for menu access
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen']
-const STAFF_AND_ABOVE = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff']
 const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor']
+const ALL_PROVISIONED_ROLES = PROVISIONED_ROLES
 
 // Menu items grouped by section
 // allowedRoles: if set, only users with these roles can see the menu item
@@ -71,7 +79,7 @@ const menuGroups = [
             {
                 title: 'Surat',
                 icon: Mail,
-                allowedRoles: STAFF_AND_ABOVE,
+                allowedRoles: ALL_PROVISIONED_ROLES,
                 subItems: [
                     { title: 'Surat Masuk', url: '/surat/masuk', icon: MailOpen },
                     { title: 'Surat Keluar', url: '/surat/keluar', icon: Send },
@@ -92,7 +100,7 @@ const menuGroups = [
                 title: 'Arsip Aktif',
                 icon: Archive,
                 url: '/arsip',
-                allowedRoles: STAFF_AND_ABOVE,
+                allowedRoles: ALL_PROVISIONED_ROLES,
                 subItems: [
                     { title: 'Arsip Surat Masuk', url: '/arsip/masuk' },
                     { title: 'Arsip Surat Keluar', url: '/arsip/keluar' },
@@ -117,6 +125,12 @@ const menuGroups = [
                 allowedRoles: ADMIN_ROLES,
             },
             {
+                title: 'Tata Kelola Retensi',
+                url: '/retention-governance',
+                icon: Scale,
+                allowedRoles: ADMIN_AND_AUDITOR,
+            },
+            {
                 title: 'Penyusutan',
                 url: '/penyusutan',
                 icon: Scissors,
@@ -126,13 +140,13 @@ const menuGroups = [
     },
     {
         label: 'Layanan & Fisik',
-        allowedRoles: ADMIN_ROLES,
+        allowedRoles: ALL_PROVISIONED_ROLES,
         items: [
             {
                 title: 'Layanan Arsip',
                 url: '/layanan-arsip',
                 icon: ClipboardList,
-                allowedRoles: ADMIN_ROLES,
+                allowedRoles: ALL_PROVISIONED_ROLES,
             },
             {
                 title: 'Peminjaman',
@@ -174,7 +188,7 @@ const menuGroups = [
                 title: 'Autentikasi',
                 url: '/autentikasi',
                 icon: ShieldAlert,
-                allowedRoles: ADMIN_ROLES,
+                allowedRoles: ['super_admin'],
             },
             {
                 title: 'Tunjuk Silang',
@@ -191,16 +205,37 @@ const menuGroups = [
                 title: 'Laporan',
                 url: '/laporan',
                 icon: FileBarChart,
-                allowedRoles: STAFF_AND_ABOVE,
+                allowedRoles: ALL_PROVISIONED_ROLES,
             },
             {
                 title: 'Audit Log',
                 url: '/audit-log',
                 icon: ClipboardList,
-                allowedRoles: ADMIN_AND_AUDITOR,
+                // Backend intentionally limits global audit rows to super admin
+                // until every row carries an enforceable unit dimension.
+                allowedRoles: ['super_admin'],
             },
             {
-                title: 'User Management',
+                title: 'Persetujuan Akses',
+                url: '/record-access-grants',
+                icon: FileKey2,
+                allowedRoles: ALL_PROVISIONED_ROLES,
+            },
+            {
+                title: 'Pengaturan',
+                url: '/settings',
+                icon: Settings2,
+                allowedRoles: ALL_PROVISIONED_ROLES,
+            },
+            {
+                title: 'Integrasi SRIKANDI',
+                url: '/integrations/srikandi',
+                icon: CloudCog,
+                allowedRoles: ADMIN_ROLES,
+                feature: 'srikandi',
+            },
+            {
+                title: 'Manajemen Pengguna',
                 url: '/users',
                 icon: Users,
                 allowedRoles: ['super_admin'],
@@ -208,10 +243,10 @@ const menuGroups = [
             {
                 title: 'Master Data',
                 icon: FolderTree,
-                allowedRoles: ADMIN_ROLES,
+                allowedRoles: ADMIN_AND_AUDITOR,
                 subItems: [
-                    { title: 'Klasifikasi Arsip', url: '/master/klasifikasi' },
-                    { title: 'Template Surat', url: '/settings' },
+                    { title: 'Versi Aturan', url: '/master/regulatory-rules', icon: GitBranch, allowedRoles: ADMIN_AND_AUDITOR },
+                    { title: 'Klasifikasi Arsip', url: '/master/klasifikasi', allowedRoles: ADMIN_ROLES },
                 ],
             },
         ]
@@ -220,23 +255,27 @@ const menuGroups = [
 
 import { useAuth } from '@/context/AuthContext'
 
-// URL for the documentation/user guide
-const DOCS_URL = 'https://panduan-simsa.vercel.app'
-
 export function AppSidebar() {
+    const { features } = useAppConfig()
     const location = useLocation()
+    const { setOpenMobile } = useSidebar()
     const { user } = useAuth()
     const userRole = user?.role || 'user'
 
+    useEffect(() => {
+        setOpenMobile(false)
+    }, [location.pathname, setOpenMobile])
+
     // Check if a menu item is visible to the current user
     const isAllowed = (item) => {
+        if (item.feature && !features[item.feature]) return false
         if (!item.allowedRoles) return true
         return item.allowedRoles.includes(userRole)
     }
 
     const isActive = (url) => {
         if (url === '/') return location.pathname === '/'
-        return location.pathname.startsWith(url)
+        return location.pathname === url || location.pathname.startsWith(`${url}/`)
     }
 
     const isParentActive = (item) => {
@@ -248,32 +287,35 @@ export function AppSidebar() {
 
     return (
         <Sidebar collapsible="icon">
-            <SidebarHeader className="border-b border-sidebar-border/50 bg-gradient-to-r from-sidebar-primary/10 to-transparent">
-                <div className="flex items-center gap-3 px-2 py-3">
-                    <div className="relative">
-                        <div className="absolute inset-0 bg-sidebar-primary/20 blur-md rounded-full"></div>
-                        <img
-                            src="/logo-simsa.png"
-                            alt="Logo"
-                            className="relative h-9 w-9 rounded-lg bg-white p-1 shadow-sm transition-transform hover:scale-105"
-                        />
-                    </div>
-                    <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-                        <span className="font-bold text-lg leading-none tracking-tight">SIMSA</span>
-                        <span className="text-[10px] uppercase tracking-wider text-sidebar-primary font-medium">ATR/BPN</span>
+            <SidebarHeader className="border-b border-sidebar-border">
+                <div className="flex items-center gap-2.5 px-2 py-2.5">
+                    <img
+                        src="/logo-simsa.png"
+                        alt=""
+                        className="h-8 w-8 shrink-0 rounded-md bg-card p-1 ring-1 ring-sidebar-border"
+                    />
+                    <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
+                        <span className="truncate text-sm font-semibold leading-none tracking-tight">{appConfig.shortName}</span>
+                        <span className="mt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Ditjen PTPP</span>
                     </div>
                 </div>
             </SidebarHeader>
 
             <SidebarContent>
+                <nav aria-label="Navigasi utama" className="flex min-h-0 flex-1 flex-col">
                 {menuGroups
                     .filter(group => !group.allowedRoles || group.allowedRoles.includes(userRole))
                     .map((group, groupIndex) => {
-                        const visibleItems = group.items.filter(isAllowed)
+                        const visibleItems = group.items
+                            .filter(isAllowed)
+                            .map((item) => item.subItems
+                                ? { ...item, subItems: item.subItems.filter(isAllowed) }
+                                : item)
+                            .filter((item) => !item.subItems || item.subItems.length > 0)
                         if (visibleItems.length === 0) return null
                         return (
                             <SidebarGroup key={group.label} className={groupIndex === 0 ? '' : 'mt-2'}>
-                                <SidebarGroupLabel className="text-[10px] uppercase tracking-widest font-semibold text-sidebar-foreground/50">{group.label}</SidebarGroupLabel>
+                                <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</SidebarGroupLabel>
                                 <SidebarGroupContent>
                                     <SidebarMenu>
                                         {visibleItems.map((item) => (
@@ -281,7 +323,7 @@ export function AppSidebar() {
                                                 <Collapsible key={item.title} defaultOpen={isParentActive(item)} className="group/collapsible">
                                                     <SidebarMenuItem>
                                                         <CollapsibleTrigger asChild>
-                                                            <SidebarMenuButton tooltip={item.title} isActive={isParentActive(item)} className="transition-all duration-200">
+                                                            <SidebarMenuButton tooltip={item.title} isActive={isParentActive(item)}>
                                                                 <item.icon className="h-4 w-4" />
                                                                 <span className="font-medium">{item.title}</span>
                                                                 <ChevronDown className="ml-auto h-3 w-3 transition-transform group-data-[state=open]/collapsible:rotate-180 opacity-70" />
@@ -292,7 +334,7 @@ export function AppSidebar() {
                                                                 {item.subItems.map((subItem) => (
                                                                     <SidebarMenuSubItem key={subItem.title}>
                                                                         <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
-                                                                            <Link to={subItem.url}>{subItem.title}</Link>
+                                                                            <Link to={subItem.url} aria-current={isActive(subItem.url) ? 'page' : undefined}>{subItem.title}</Link>
                                                                         </SidebarMenuSubButton>
                                                                     </SidebarMenuSubItem>
                                                                 ))}
@@ -302,14 +344,10 @@ export function AppSidebar() {
                                                 </Collapsible>
                                             ) : (
                                                 <SidebarMenuItem key={item.title}>
-                                                    <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)} className="transition-all duration-200">
-                                                        <Link to={item.url}>
+                                                    <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)}>
+                                                        <Link to={item.url} aria-current={isActive(item.url) ? 'page' : undefined}>
                                                             <item.icon className="h-4 w-4" />
                                                             <span className="font-medium">{item.title}</span>
-                                                            {/* Badge simulation for Surat Masuk */}
-                                                            {(item.title === 'Surat Masuk' || item.title === 'Distribusi') && !isActive(item.url) && (
-                                                                <div className="ml-auto h-1.5 w-1.5 rounded-full bg-sidebar-primary animate-pulse" />
-                                                            )}
                                                         </Link>
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
@@ -324,34 +362,26 @@ export function AppSidebar() {
                 <SidebarGroup className="mt-auto">
                     <SidebarGroupContent>
                         <SidebarMenu>
-                            {userRole === 'super_admin' && (
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton asChild tooltip="Settings" isActive={isActive('/settings')}>
-                                        <Link to="/settings">
-                                            <Settings className="h-4 w-4" />
-                                            <span>Settings</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
-                            )}
                             <SidebarMenuItem>
-                                <SidebarMenuButton asChild tooltip="Panduan Pengguna">
-                                    <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+                                <SidebarMenuButton asChild tooltip="Panduan Pengguna" isActive={isActive('/panduan')}>
+                                    <Link to="/panduan" aria-current={isActive('/panduan') ? 'page' : undefined}>
                                         <BookOpen className="h-4 w-4" />
                                         <span>Panduan</span>
-                                        <ExternalLink className="ml-auto h-3 w-3 opacity-50" />
-                                    </a>
+                                    </Link>
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
                         </SidebarMenu>
                     </SidebarGroupContent>
                 </SidebarGroup>
+                </nav>
             </SidebarContent>
 
             <SidebarFooter className="border-t border-sidebar-border/50 p-4">
-                <div className="flex items-center justify-between group-data-[collapsible=icon]:hidden">
-                    <div className="text-[10px] text-sidebar-foreground/50 font-medium">SIMSA v1.0.0</div>
-                    <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-sidebar-border/50 text-sidebar-foreground/50">BETA</Badge>
+                <div className="flex flex-col items-start gap-1.5 group-data-[collapsible=icon]:hidden">
+                    <div className="text-xs font-medium text-sidebar-foreground/60">{appConfig.name} v1.0.0</div>
+                    <Badge variant="outline" className="h-6 px-2 text-[11px] text-sidebar-foreground/75">
+                        {appConfig.usageBadge}
+                    </Badge>
                 </div>
             </SidebarFooter>
         </Sidebar>

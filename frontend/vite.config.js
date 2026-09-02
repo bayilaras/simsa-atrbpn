@@ -1,11 +1,55 @@
 import path from "path"
+import process from "node:process"
+import { fileURLToPath } from "node:url"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { defineConfig, loadEnv } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
 
+const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
+
+function validateClientApiTarget(command, mode) {
+  const loadedEnvironment = loadEnv(mode, currentDirectory, '')
+  const configuredApiUrl = (process.env.VITE_API_URL ?? loadedEnvironment.VITE_API_URL ?? '').trim()
+
+  if (command !== 'build' || !configuredApiUrl) return
+
+  throw new Error('Deployment builds must leave VITE_API_URL unset and use a same-origin API proxy; cross-origin client API URLs break cookie-authenticated uploads.')
+}
+
+function validateFirebaseBuildTarget(command, mode) {
+  if (command !== 'build') return
+
+  const loadedEnvironment = loadEnv(mode, currentDirectory, '')
+  const value = (name) => (process.env[name] ?? loadedEnvironment[name] ?? '').trim()
+  if ((value('VITE_AUTH_PROVIDER') || 'better-auth').toLowerCase() !== 'firebase') return
+
+  const required = [
+    'VITE_FIREBASE_API_KEY',
+    'VITE_FIREBASE_AUTH_DOMAIN',
+    'VITE_FIREBASE_PROJECT_ID',
+    'VITE_FIREBASE_APP_ID',
+    'VITE_FIREBASE_APP_CHECK_SITE_KEY',
+  ]
+  const missing = required.filter((name) => !value(name))
+  if (missing.length) {
+    throw new Error(`Firebase deployment build is missing public configuration: ${missing.join(', ')}.`)
+  }
+  if (!/^[A-Za-z0-9.-]+$/.test(value('VITE_FIREBASE_AUTH_DOMAIN'))
+      || value('VITE_FIREBASE_AUTH_DOMAIN').includes('..')) {
+    throw new Error('VITE_FIREBASE_AUTH_DOMAIN must be one canonical hostname.')
+  }
+  if (value('VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN')) {
+    throw new Error('Firebase App Check debug tokens are forbidden in deployment builds.')
+  }
+}
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command, mode }) => {
+  validateClientApiTarget(command, mode)
+  validateFirebaseBuildTarget(command, mode)
+
+  return {
   plugins: [
     react(),
     tailwindcss(),
@@ -59,20 +103,18 @@ export default defineConfig({
             }
           },
           {
-            // Cache API responses with NetworkFirst strategy
+            // Auth/session responses must never be cached — a cached session would
+            // keep a signed-out user "authenticated" whenever the network fails.
+            // Must stay ordered before the generic /api rule (first matching route wins).
+            urlPattern: /\/api\/auth\/.*/i,
+            handler: 'NetworkOnly'
+          },
+          {
+            // Records, audit logs, reports and document metadata are authenticated
+            // and may be classified. Never persist API responses in a service-worker
+            // cache on a shared workstation.
             urlPattern: /\/api\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 // 1 hour
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              },
-              networkTimeoutSeconds: 10
-            }
+            handler: 'NetworkOnly'
           },
           {
             // Cache images
@@ -87,8 +129,8 @@ export default defineConfig({
             }
           }
         ],
-        // Don't cache the auth endpoints
-        navigateFallbackDenylist: [/^\/api\/auth/],
+        // API URLs are never navigation fallbacks or precache candidates.
+        navigateFallbackDenylist: [/^\/api\//],
         // Precache important static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}']
       },
@@ -100,7 +142,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(currentDirectory, "./src"),
     },
   },
   server: {
@@ -109,10 +151,6 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
-      '/uploads': {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
@@ -144,4 +182,5 @@ export default defineConfig({
     // Increase chunk size warning — Radix bundle is naturally larger
     chunkSizeWarningLimit: 600,
   },
+  }
 })

@@ -1,7 +1,7 @@
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, XCircle, Printer, Stamp, FileText, User, Calendar, MessageSquare } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, Printer, Stamp, FileText, User, Calendar, MessageSquare, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,11 +20,15 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
+import { useAuth } from '@/context/AuthContext';
+import { layananUserInitial, layananUserName } from './layanan-display';
 
 export default function LayananArsipDetail() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { toast } = useToast();
+    const { user } = useAuth();
+    const canManage = ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [processing, setProcessing] = useState(false);
@@ -34,22 +38,22 @@ export default function LayananArsipDetail() {
     const [actionType, setActionType] = useState(null); // 'approve' | 'reject' | 'complete'
     const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-    useEffect(() => {
-        fetchDetail();
-    }, [id]);
-
-    const fetchDetail = async () => {
+    const fetchDetail = useCallback(async () => {
         setLoading(true);
         try {
             const result = await layananArsipService.getById(id);
-            setData(result.data);
+            setData(result);
         } catch (error) {
             console.error(error);
-            toast({ title: "Error", description: "Gagal memuat detail", variant: "destructive" });
+            toast({ title: "Error", description: error.message || "Gagal memuat detail", variant: "destructive" });
         } finally {
             setLoading(false);
         }
-    };
+    }, [id, toast]);
+
+    useEffect(() => {
+        fetchDetail();
+    }, [fetchDetail]);
 
     const handleAction = async () => {
         if (!actionType) return;
@@ -66,7 +70,7 @@ export default function LayananArsipDetail() {
             toast({ title: "Sukses", description: "Status berhasil diperbarui" });
             fetchDetail();
             setIsDialogOpen(false);
-        } catch (error) {
+        } catch {
             toast({ title: "Error", description: "Gagal memperbarui status", variant: "destructive" });
         } finally {
             setProcessing(false);
@@ -99,7 +103,7 @@ export default function LayananArsipDetail() {
                 </div>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid lg:grid-cols-3 gap-6">
                 <div className="md:col-span-2 space-y-6">
                     <Card>
                         <CardHeader>
@@ -169,16 +173,16 @@ export default function LayananArsipDetail() {
                                         <User className="h-5 w-5 text-muted-foreground" />
                                     </div>
                                     <div>
-                                        <div className="font-medium">Diproses oleh: {data.penyetuju?.nama || 'Sistem'}</div>
+                                        <div className="font-medium">Diproses oleh: {layananUserName(data.penyetuju, 'Sistem')}</div>
                                         <div className="text-sm text-muted-foreground">
                                             {data.tanggalPersetujuan && format(new Date(data.tanggalPersetujuan), 'dd MMM yyyy HH:mm', { locale: idLocale })}
                                         </div>
                                     </div>
                                 </div>
                                 {data.catatanPersetujuan && (
-                                    <div className="flex items-start gap-4 p-3 bg-yellow-50 rounded-md">
+                                    <div className="flex items-start gap-4 p-3 bg-yellow-50 dark:bg-yellow-500/15 rounded-md">
                                         <MessageSquare className="h-5 w-5 text-yellow-600 mt-0.5" />
-                                        <p className="text-sm text-yellow-800">{data.catatanPersetujuan}</p>
+                                        <p className="text-sm text-yellow-800 dark:text-yellow-300">{data.catatanPersetujuan}</p>
                                     </div>
                                 )}
                             </CardContent>
@@ -194,10 +198,10 @@ export default function LayananArsipDetail() {
                         <CardContent>
                             <div className="flex items-center gap-3">
                                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-                                    {data.pemohon?.nama?.charAt(0)}
+                                    {layananUserInitial(data.pemohon)}
                                 </div>
                                 <div>
-                                    <div className="font-medium">{data.pemohon?.nama}</div>
+                                    <div className="font-medium">{layananUserName(data.pemohon)}</div>
                                     <div className="text-xs text-muted-foreground">NIP. {data.pemohon?.nip || '-'}</div>
                                 </div>
                             </div>
@@ -209,7 +213,7 @@ export default function LayananArsipDetail() {
                             <CardTitle>Tindakan</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            {data.status === 'diajukan' && (
+                            {canManage && data.status === 'diajukan' && (
                                 <>
                                     <Button className="w-full" onClick={() => openDialog('approve')}>
                                         <CheckCircle className="mr-2 h-4 w-4" />
@@ -222,7 +226,7 @@ export default function LayananArsipDetail() {
                                 </>
                             )}
 
-                            {data.status === 'diproses' && (
+                            {canManage && data.status === 'diproses' && (
                                 <Button className="w-full" variant="default" onClick={() => openDialog('complete')}>
                                     <CheckCircle className="mr-2 h-4 w-4" />
                                     Selesaikan Layanan
@@ -230,14 +234,20 @@ export default function LayananArsipDetail() {
                             )}
 
                             {data.status === 'selesai' && (
-                                <div className="bg-green-50 p-3 rounded text-green-700 text-center text-sm font-medium">
+                                <div className="bg-green-50 dark:bg-green-500/15 p-3 rounded text-green-700 dark:text-green-300 text-center text-sm font-medium">
                                     Layanan Selesai
                                 </div>
                             )}
 
                             {data.status === 'ditolak' && (
-                                <div className="bg-red-50 p-3 rounded text-red-700 text-center text-sm font-medium">
+                                <div className="bg-red-50 dark:bg-red-500/15 p-3 rounded text-red-700 dark:text-red-300 text-center text-sm font-medium">
                                     Permohonan Ditolak
+                                </div>
+                            )}
+
+                            {!canManage && ['diajukan', 'diproses'].includes(data.status) && (
+                                <div className="rounded bg-muted p-3 text-center text-sm text-muted-foreground">
+                                    Status permohonan hanya dapat diubah oleh pengelola arsip.
                                 </div>
                             )}
                         </CardContent>
@@ -245,7 +255,7 @@ export default function LayananArsipDetail() {
                 </div>
             </div>
 
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog open={canManage && isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>

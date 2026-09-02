@@ -18,6 +18,18 @@ const badgeVariants = cva(
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
+        // Status pills: tinted rather than solid, so a table full of them stays
+        // readable and no single row shouts louder than the data.
+        success:
+          "border-success/25 bg-success/10 text-success [a&]:hover:bg-success/15",
+        warning:
+          "border-warning/30 bg-warning/15 text-warning-foreground dark:text-warning [a&]:hover:bg-warning/20",
+        danger:
+          "border-destructive/25 bg-destructive/10 text-destructive [a&]:hover:bg-destructive/15",
+        info:
+          "border-info/25 bg-info/10 text-info [a&]:hover:bg-info/15",
+        muted:
+          "border-border bg-muted text-muted-foreground [a&]:hover:bg-muted/80",
       },
     },
     defaultVariants: {

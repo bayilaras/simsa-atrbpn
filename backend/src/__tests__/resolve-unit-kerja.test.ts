@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja';
+import { resolveEffectiveUnitKerjaId, resolveUnitKerjaId } from '../utils/resolve-unit-kerja';
 import type { AuthRequest } from '../middlewares/auth.middleware';
 
 function createMockReq(overrides: {
@@ -22,6 +22,17 @@ function createMockReq(overrides: {
 }
 
 describe('resolveUnitKerjaId', () => {
+    it.each([
+        ['admin_dirjen', null, 'unit-client', 'ditjen'],
+        ['admin_sesditjen', 'stale-unit', 'unit-client', 'sesditjen'],
+        ['staff', 'unit-assigned', 'unit-client', 'unit-assigned'],
+        ['super_admin', null, 'unit-client', 'unit-client'],
+    ])('resolves the effective %s mandate independently of stored/requested drift', (
+        role, assigned, requested, expected,
+    ) => {
+        expect(resolveEffectiveUnitKerjaId(role as any, assigned, requested)).toBe(expected);
+    });
+
     describe('super_admin', () => {
         it('should return the requested unitKerjaId if provided via query', () => {
             const req = createMockReq({ role: 'super_admin', queryUnitKerjaId: 'ditjen' });
@@ -81,14 +92,14 @@ describe('resolveUnitKerjaId', () => {
     });
 
     describe('auditor', () => {
-        it('should return null when no query param (can see all data)', () => {
-            const req = createMockReq({ role: 'auditor' });
-            expect(resolveUnitKerjaId(req)).toBeNull();
+        it('should use the assigned audit-mandate unit', () => {
+            const req = createMockReq({ role: 'auditor', unitKerjaId: 'sesditjen' });
+            expect(resolveUnitKerjaId(req)).toBe('sesditjen');
         });
 
-        it('should return the requested unitKerjaId if provided', () => {
-            const req = createMockReq({ role: 'auditor', queryUnitKerjaId: 'ditjen' });
-            expect(resolveUnitKerjaId(req)).toBe('ditjen');
+        it('should ignore a requested unit outside that mandate', () => {
+            const req = createMockReq({ role: 'auditor', unitKerjaId: 'sesditjen', queryUnitKerjaId: 'ditjen' });
+            expect(resolveUnitKerjaId(req)).toBe('sesditjen');
         });
     });
 

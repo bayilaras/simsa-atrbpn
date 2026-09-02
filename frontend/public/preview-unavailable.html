@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Preview SIMSA belum tersedia</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #eef5f4; color: #173f42; }
+    main { width: min(36rem, calc(100% - 2rem)); box-sizing: border-box; padding: 2rem; border: 1px solid #bdd4d1; border-radius: 1rem; background: #fff; box-shadow: 0 1rem 3rem rgba(23, 102, 107, .12); }
+    h1 { margin-top: 0; font-size: clamp(1.5rem, 4vw, 2.25rem); }
+    p { line-height: 1.65; }
+    code { padding: .15rem .35rem; border-radius: .25rem; background: #e3efed; }
+    .status { display: inline-block; padding: .35rem .65rem; border-radius: 999px; background: #fff1cc; color: #704d00; font-weight: 700; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #102829; color: #dcebea; }
+      main { border-color: #315b5d; background: #173637; }
+      code { background: #244a4c; }
+      .status { background: #5b430b; color: #ffdf8a; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <span class="status">503 · belum siap</span>
+    <h1>Preview SIMSA belum diprovisikan</h1>
+    <p>
+      Deployment ini sengaja tidak terhubung ke data Production. Administrator
+      perlu menyediakan database, Blob, autentikasi, callback upload, dan
+      backend Preview yang terisolasi sebelum aplikasi dapat digunakan.
+    </p>
+    <p>Alasan operasional: <code>preview_not_provisioned</code>.</p>
+  </main>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {})
+    }
+  </script>
+</body>
+</html>

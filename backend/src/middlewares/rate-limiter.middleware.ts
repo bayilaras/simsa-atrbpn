@@ -1,6 +1,7 @@
 import * as rateLimitModule from 'express-rate-limit';
 const rateLimit = (rateLimitModule as any).default || rateLimitModule;
 import { env } from '../config/env';
+import type { AuthRequest } from './auth.middleware';
 
 /**
  * Rate Limiter Configuration
@@ -82,10 +83,16 @@ export const uploadLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// OCR rate limiter - 3 requests per minute (CPU-intensive operation)
+export const OCR_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+export const OCR_RATE_LIMIT_MAX = 3;
+
+// OCR rate limiter - 3 requests per minute (CPU-intensive operation). The
+// route authenticates before this middleware, so quota is isolated per user
+// rather than shared by every workstation behind the same office NAT.
 export const ocrLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 3,
+    windowMs: OCR_RATE_LIMIT_WINDOW_MS,
+    max: OCR_RATE_LIMIT_MAX,
+    keyGenerator: (req: AuthRequest) => req.user?.id || 'unauthenticated',
     message: {
         error: 'Too Many OCR Requests',
         message: 'Terlalu banyak permintaan OCR. Coba lagi setelah 1 menit.',

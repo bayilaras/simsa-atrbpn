@@ -27,8 +27,17 @@ const mockDb = {
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/arsip.service', () => ({
+    arsipService: {
+        getExpiring: async () => resultQueue.shift() ?? [],
+    },
+}));
 
 const { notificationService } = await import('../services/notification.service');
+const UUID_1 = '550e8400-e29b-41d4-a716-446655440001';
+const UUID_2 = '550e8400-e29b-41d4-a716-446655440002';
+const NOTIFICATION_1 = `distribusi:${UUID_1}:awaiting_receipt:urgent`;
+const NOTIFICATION_2 = `distribusi:${UUID_2}:awaiting_processing:warning`;
 
 describe('NotificationService', () => {
     beforeEach(() => {
@@ -70,10 +79,11 @@ describe('NotificationService', () => {
             enqueue([
                 {
                     id: 'arsip-1',
-                    noSurat: 'AR/001',
-                    perihal: 'Arsip Test',
-                    retensiAktif: 5,
-                    retensiInaktif: 10,
+                    nomorBerkas: 'AR/001',
+                    uraianBerkas: 'Arsip Test',
+                    tanggalKadaluarsa: '2090-01-01',
+                    retentionTriggerDate: '2085-01-01',
+                    legalHold: false,
                     createdAt: new Date('2020-01-01'),
                 },
             ]);
@@ -83,12 +93,72 @@ describe('NotificationService', () => {
             expect(Array.isArray(result)).toBe(true);
         });
 
+        it('should exclude held and missing-trigger archive notifications', async () => {
+            enqueue([
+                { id: 'eligible', tanggalKadaluarsa: '2090-01-01', retentionTriggerDate: '2085-01-01', legalHold: false, createdAt: new Date() },
+                { id: 'held', tanggalKadaluarsa: '2090-01-01', retentionTriggerDate: '2085-01-01', legalHold: true, createdAt: new Date() },
+                { id: 'missing-trigger', tanggalKadaluarsa: '2090-01-01', retentionTriggerDate: null, legalHold: false, createdAt: new Date() },
+            ]);
+            enqueue([]);
+
+            const result = await notificationService.getExpiringArchives('ditjen', 'user-1');
+            expect(result.map(item => item.referenceId)).toEqual(['eligible']);
+        });
+
         it('should accept custom daysAhead parameter', async () => {
             enqueue([]);
             enqueue([]);
 
             const result = await notificationService.getExpiringArchives('ditjen', 'user-1', 180);
             expect(Array.isArray(result)).toBe(true);
+        });
+    });
+
+    describe('operational workflow notifications', () => {
+        it('uses state and recalculated urgency in distribution notification IDs', async () => {
+            enqueue([{
+                id: UUID_1,
+                status: 'sent',
+                instruction: 'Mohon tindak lanjut',
+                nomorSurat: 'SM-1',
+                sentAt: new Date(Date.now() - 10 * 86_400_000),
+                updatedAt: new Date(Date.now() - 10 * 86_400_000),
+            }]);
+
+            const result = await notificationService.getDistributionNotifications(
+                'ditjen',
+                'user-1',
+                null,
+                new Set(),
+                'admin_dirjen',
+            );
+            expect(result).toHaveLength(1);
+            expect(result[0]).toMatchObject({
+                type: 'urgent',
+                state: 'awaiting_receipt',
+                category: 'distribusi',
+            });
+            expect(result[0].id).toContain(':awaiting_receipt:urgent');
+        });
+
+        it('does not emit workflow deep-links to a role that cannot open them', async () => {
+            expect(await notificationService.getDistributionNotifications(
+                'ditjen', 'staff-1', null, new Set(), 'staff',
+            )).toEqual([]);
+            expect(await notificationService.getRetentionVerificationNotifications(
+                'ditjen', 'staff-1', null, new Set(), 'staff',
+            )).toEqual([]);
+            expect(await notificationService.getAppraisalNotifications(
+                'ditjen', 'staff-1', 'staff', null, new Set(),
+            )).toEqual([]);
+        });
+
+        it('honors the persisted application-notification opt-out', async () => {
+            enqueue([], [{ notificationsEnabled: false }]);
+
+            const result = await notificationService.getAllNotifications('ditjen', 'user-1');
+            expect(result.notifications).toEqual([]);
+            expect(result.counts.total).toBe(0);
         });
     });
 
@@ -154,19 +224,44 @@ describe('NotificationService', () => {
             enqueue(undefined);
 
             await expect(
-                notificationService.markAsRead('user-1', 'notif-1')
+                notificationService.markAsRead('user-1', NOTIFICATION_1)
             ).resolves.not.toThrow();
+        });
+
+        it('rejects malformed notification IDs before persistence', async () => {
+            await expect(notificationService.markAsRead('user-1', 'arbitrary-key'))
+                .rejects.toThrow('Format ID notifikasi');
         });
     });
 
     describe('markAllAsRead', () => {
         it('should not throw when marking multiple as read', async () => {
             enqueue(undefined);
-            enqueue(undefined);
 
             await expect(
-                notificationService.markAllAsRead('user-1', ['notif-1', 'notif-2'])
+                notificationService.markAllAsRead('user-1', [NOTIFICATION_1, NOTIFICATION_2])
             ).resolves.not.toThrow();
+        });
+
+        it('rejects a well-formed ID that is not emitted by the current producer state', async () => {
+            enqueue([]); // no existing acknowledgement
+            const allSpy = vi.spyOn(notificationService, 'getAllNotifications')
+                .mockResolvedValueOnce({
+                    notifications: [],
+                    counts: {
+                        total: 0, urgent: 0, warning: 0, info: 0,
+                        suratMasuk: 0, arsipRetensi: 0, distribusi: 0,
+                        verifikasiRetensi: 0, appraisal: 0, penyusutan: 0,
+                        penyerahanPermanen: 0,
+                    },
+                });
+
+            await expect(notificationService.markCurrentAsRead({
+                unitKerjaId: 'ditjen',
+                userId: 'user-1',
+                userRole: 'admin_dirjen',
+            }, [NOTIFICATION_1])).rejects.toThrow('tidak tersedia');
+            allSpy.mockRestore();
         });
 
         it('should handle empty array gracefully', async () => {

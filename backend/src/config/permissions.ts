@@ -7,7 +7,7 @@
  * - admin_dirjen: Full access scoped to 'ditjen' unit kerja
  * - admin_sesditjen: Full access scoped to 'sesditjen' unit kerja
  * - staff: Read-only access scoped to their own unit kerja (assigned by super_admin)
- * - auditor: Read-only + export across all units
+ * - auditor: Read-only + export within an explicitly assigned unit
  * - user: NO access (default for new Google logins, awaiting role assignment)
  */
 
@@ -130,9 +130,9 @@ export const ROLE_HIERARCHY: Record<Role, number> = {
 export const UNIT_KERJA_ACCESS: Record<Role, string[] | '*'> = {
     'super_admin': '*', // Access to all units
     'admin_dirjen': ['ditjen'], // Dirjen unit only
-    'admin_sesditjen': ['sesditjen', 'bagian_keuangan', 'bagian_kepegawaian', 'bagian_umum'], // Sesditjen + sub-bagian
+    'admin_sesditjen': ['sesditjen'], // Fixed Sesditjen mandate
     'staff': [], // Determined by user's unitKerjaId at runtime
-    'auditor': '*', // Read access to all (but restricted to read-only by permissions)
+    'auditor': [], // Assigned unit only; cross-unit audit needs an explicit mandate
     'user': [], // No access at all
 };
 
@@ -155,14 +155,15 @@ export function hasPermission(role: Role, module: Module, action: Action): boole
 export function canAccessUnit(role: Role, userUnitKerjaId: string | null, targetUnitKerjaId: string): boolean {
     const accessConfig = UNIT_KERJA_ACCESS[role];
 
-    // Wildcard access (super_admin, auditor)
+    // Wildcard access (super_admin only)
     if (accessConfig === '*') return true;
 
     // user role has no access at all
     if (role === 'user') return false;
 
-    // staff can only access their own assigned unit
-    if (role === 'staff') {
+    // Staff and auditors can only access their explicitly assigned unit. A
+    // cross-unit auditor mandate must be modelled and approved, never inferred.
+    if (role === 'staff' || role === 'auditor') {
         return userUnitKerjaId === targetUnitKerjaId;
     }
 

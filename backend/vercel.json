@@ -1,34 +1,12 @@
 {
     "version": 2,
-    "buildCommand": "npm run build",
-    "installCommand": "npm install --include=dev",
-    "headers": [
-        {
-            "source": "/(.*)",
-            "headers": [
-                {
-                    "key": "Access-Control-Allow-Credentials",
-                    "value": "true"
-                },
-                {
-                    "key": "Access-Control-Allow-Origin",
-                    "value": "https://simsa-frontend.vercel.app"
-                },
-                {
-                    "key": "Access-Control-Allow-Methods",
-                    "value": "GET,POST,PUT,DELETE,PATCH,OPTIONS"
-                },
-                {
-                    "key": "Access-Control-Allow-Headers",
-                    "value": "Content-Type, Authorization, X-Requested-With, Accept, X-CSRF-Token"
-                },
-                {
-                    "key": "Access-Control-Max-Age",
-                    "value": "86400"
-                }
-            ]
+    "git": {
+        "deploymentEnabled": {
+            "main": false
         }
-    ],
+    },
+    "buildCommand": "npm run build",
+    "installCommand": "npm ci --include=dev",
     "rewrites": [
         {
             "source": "/(.*)",

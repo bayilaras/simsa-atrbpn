@@ -6,30 +6,37 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, AlertTriangle, FileText, Download, Archive, Clock, CheckCircle2, XCircle, Calendar, Trash2, Eye, Filter, Printer, Scale, History } from 'lucide-react'
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Loader2, AlertTriangle, FileText, Download, Archive, Clock, CheckCircle2, XCircle, Calendar, Trash2, Eye, Filter, Printer, Scale, History, Lock, Unlock } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { useToast } from '@/hooks/use-toast'
 import retentionService from '@/services/retention.service'
 import { format, parseISO } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 const STATUS_LABELS = {
-    kadaluarsa: { label: 'Kadaluarsa', variant: 'destructive', icon: XCircle, className: 'bg-red-100 text-red-700 border-red-200' },
-    akan_kadaluarsa: { label: 'Akan Kadaluarsa', variant: 'warning', icon: AlertTriangle, className: 'bg-orange-100 text-orange-700 border-orange-200' },
-    inaktif: { label: 'Inaktif', variant: 'secondary', icon: Clock, className: 'bg-slate-100 text-slate-700 border-slate-200' },
-    akan_inaktif: { label: 'Akan Inaktif', variant: 'outline', icon: Clock, className: 'bg-blue-100 text-blue-700 border-blue-200' },
-    aktif: { label: 'Aktif', variant: 'default', icon: CheckCircle2, className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+    kadaluarsa: { label: 'Kadaluarsa', variant: 'destructive', icon: XCircle, className: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
+    akan_kadaluarsa: { label: 'Akan Kadaluarsa', variant: 'warning', icon: AlertTriangle, className: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-200' },
+    inaktif: { label: 'Inaktif', variant: 'secondary', icon: Clock, className: 'bg-muted text-foreground border-border' },
+    akan_inaktif: { label: 'Akan Inaktif', variant: 'outline', icon: Clock, className: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200' },
+    aktif: { label: 'Aktif', variant: 'default', icon: CheckCircle2, className: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200' },
 }
 
 const HASIL_AKHIR_OPTIONS = {
-    'Musnah': { label: 'Musnah', color: 'bg-red-500', badgeClass: 'bg-red-100 text-red-700 border-red-200' },
-    'Permanen': { label: 'Permanen', color: 'bg-blue-500', badgeClass: 'bg-blue-100 text-blue-700 border-blue-200' },
-    'Dinilai Kembali': { label: 'Dinilai Kembali', color: 'bg-yellow-500', badgeClass: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+    'Musnah': { label: 'Musnah', color: 'bg-red-500', badgeClass: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
+    'Permanen': { label: 'Permanen', color: 'bg-blue-500', badgeClass: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200' },
+    'Dinilai Kembali': { label: 'Dinilai Kembali', color: 'bg-yellow-500', badgeClass: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200' },
 }
 
 export default function RetentionManagement() {
     const { user } = useAuth()
-    const unitKerjaId = user?.unitKerjaId || 'ditjen'
+    const { toast } = useToast()
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
 
     const [summary, setSummary] = useState(null)
     const [candidates, setCandidates] = useState({ data: [], summary: {}, pagination: {} })
@@ -44,9 +51,16 @@ export default function RetentionManagement() {
     const [reportDialogOpen, setReportDialogOpen] = useState(false)
     const [reportData, setReportData] = useState(null)
     const [generatingReport, setGeneratingReport] = useState(false)
+    const [holds, setHolds] = useState([])
+    const [holdDialogOpen, setHoldDialogOpen] = useState(false)
+    const [holdTarget, setHoldTarget] = useState(null)
+    const [holdMode, setHoldMode] = useState('hold')
+    const [holdReason, setHoldReason] = useState('')
+    const [holdSaving, setHoldSaving] = useState(false)
 
     // Fetch summary
     const fetchSummary = useCallback(async () => {
+        if (!unitKerjaId) return
         try {
             const res = await retentionService.getSummary(unitKerjaId)
             setSummary(res.data)
@@ -57,6 +71,7 @@ export default function RetentionManagement() {
 
     // Fetch candidates
     const fetchCandidates = useCallback(async () => {
+        if (!unitKerjaId) return
         try {
             setCandidatesLoading(true)
             const filters = { page, limit: 20 }
@@ -72,14 +87,32 @@ export default function RetentionManagement() {
         }
     }, [unitKerjaId, statusFilter, hasilAkhirFilter, page])
 
+    const fetchHolds = useCallback(async () => {
+        if (!unitKerjaId) return
+        try {
+            const res = await retentionService.getHolds(unitKerjaId)
+            setHolds(res.data || [])
+        } catch (error) {
+            console.error('Error fetching legal holds:', error)
+        }
+    }, [unitKerjaId])
+
     useEffect(() => {
+        if (!unitKerjaId) {
+            setSummary(null)
+            setCandidates({ data: [], summary: {}, pagination: {} })
+            setHolds([])
+            setSelectedArchives([])
+            setLoading(false)
+            return
+        }
         const init = async () => {
             setLoading(true)
-            await Promise.all([fetchSummary(), fetchCandidates()])
+            await Promise.all([fetchSummary(), fetchCandidates(), fetchHolds()])
             setLoading(false)
         }
         init()
-    }, [fetchSummary, fetchCandidates])
+    }, [fetchSummary, fetchCandidates, fetchHolds, unitKerjaId])
 
     const handleSelectArchive = (id, checked) => {
         if (checked) {
@@ -98,6 +131,7 @@ export default function RetentionManagement() {
     }
 
     const handleGenerateReport = async () => {
+        if (!unitKerjaId) return
         try {
             setGeneratingReport(true)
             const res = await retentionService.generateDisposalReport(
@@ -108,8 +142,48 @@ export default function RetentionManagement() {
             setReportDialogOpen(true)
         } catch (error) {
             console.error('Error generating report:', error)
+            toast({ title: 'Gagal membuat berita acara', description: error.message, variant: 'destructive' })
         } finally {
             setGeneratingReport(false)
+        }
+    }
+
+    const openHoldDialog = (archiveRecord, mode) => {
+        setHoldTarget(archiveRecord)
+        setHoldMode(mode)
+        setHoldReason('')
+        setHoldDialogOpen(true)
+    }
+
+    const handleHoldAction = async () => {
+        if (!unitKerjaId) return
+        if (!holdTarget || holdReason.trim().length < 10) {
+            toast({
+                title: 'Alasan belum lengkap',
+                description: 'Alasan legal hold atau pelepasan minimal 10 karakter.',
+                variant: 'destructive',
+            })
+            return
+        }
+
+        try {
+            setHoldSaving(true)
+            if (holdMode === 'hold') {
+                await retentionService.placeLegalHold(holdTarget.id, unitKerjaId, holdReason.trim())
+            } else {
+                await retentionService.releaseLegalHold(holdTarget.id, unitKerjaId, holdReason.trim())
+            }
+            setHoldDialogOpen(false)
+            setSelectedArchives(prev => prev.filter(id => id !== holdTarget.id))
+            await Promise.all([fetchSummary(), fetchCandidates(), fetchHolds()])
+            toast({
+                title: holdMode === 'hold' ? 'Legal hold diterapkan' : 'Legal hold dilepas',
+                description: 'Status dan alasannya telah dicatat pada jejak audit.',
+            })
+        } catch (error) {
+            toast({ title: 'Perubahan legal hold gagal', description: error.message, variant: 'destructive' })
+        } finally {
+            setHoldSaving(false)
         }
     }
 
@@ -158,6 +232,9 @@ export default function RetentionManagement() {
                             <th>Jumlah</th>
                             <th>Retensi Aktif</th>
                             <th>Retensi Inaktif</th>
+                            <th>Pemicu Retensi</th>
+                            <th>Bukti Pemicu</th>
+                            <th>Versi/Referensi JRA</th>
                             <th>Hasil Akhir</th>
                             <th>Keterangan</th>
                         </tr>
@@ -173,6 +250,9 @@ export default function RetentionManagement() {
                                 <td>${a.jumlah}</td>
                                 <td>${a.retensiAktif}</td>
                                 <td>${a.retensiInaktif}</td>
+                                <td>${a.retentionTriggerLabel} (${a.retentionTriggerDate})</td>
+                                <td>${a.retentionTriggerEvidence}</td>
+                                <td>${a.jraVersion} / ${a.jraReference}</td>
                                 <td>${a.hasilAkhir}</td>
                                 <td>${a.keterangan}</td>
                             </tr>
@@ -218,6 +298,23 @@ export default function RetentionManagement() {
         }
     }
 
+    if (!unitKerjaId) {
+        return (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                        <div className="p-2 bg-orange-100 dark:bg-orange-500/15 rounded-lg">
+                            <Scale className="h-6 w-6 text-orange-600" />
+                        </div>
+                        Manajemen Retensi Arsip (JRA)
+                    </h1>
+                    <p className="text-muted-foreground">Monitoring masa retensi dan pengelolaan penyusutan arsip</p>
+                </div>
+                <RequiredUnitKerjaScope scope={unitScope} disabled={unitScope.loading} />
+            </div>
+        )
+    }
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-300">
@@ -237,7 +334,7 @@ export default function RetentionManagement() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-orange-100 rounded-lg">
+                        <div className="p-2 bg-orange-100 dark:bg-orange-500/15 rounded-lg">
                             <Scale className="h-6 w-6 text-orange-600" />
                         </div>
                         Manajemen Retensi Arsip (JRA)
@@ -248,12 +345,12 @@ export default function RetentionManagement() {
                 </div>
 
                 {summary && summary.alertLevel !== 'none' && (
-                    <div className={`px-4 py-2 rounded-lg border flex items-center gap-3 ${summary.alertLevel === 'high' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
-                        <div className={`p-1.5 rounded-full ${summary.alertLevel === 'high' ? 'bg-red-100' : 'bg-yellow-100'}`}>
+                    <div className={`px-4 py-2 rounded-lg border flex items-center gap-3 ${summary.alertLevel === 'high' ? 'bg-red-50 dark:bg-red-500/15 border-red-200' : 'bg-yellow-50 dark:bg-yellow-500/15 border-yellow-200'}`}>
+                        <div className={`p-1.5 rounded-full ${summary.alertLevel === 'high' ? 'bg-red-100 dark:bg-red-500/15' : 'bg-yellow-100 dark:bg-yellow-500/15'}`}>
                             <AlertTriangle className={`h-4 w-4 ${summary.alertLevel === 'high' ? 'text-red-600' : 'text-yellow-600'}`} />
                         </div>
                         <div>
-                            <p className={`text-sm font-semibold ${summary.alertLevel === 'high' ? 'text-red-700' : 'text-yellow-700'}`}>
+                            <p className={`text-sm font-semibold ${summary.alertLevel === 'high' ? 'text-red-700 dark:text-red-300' : 'text-yellow-700 dark:text-yellow-300'}`}>
                                 Notifikasi Penyusutan
                             </p>
                             <p className={`text-xs ${summary.alertLevel === 'high' ? 'text-red-600' : 'text-yellow-600'}`}>
@@ -264,8 +361,10 @@ export default function RetentionManagement() {
                 )}
             </div>
 
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || candidatesLoading || holdSaving || generatingReport} />
+
             {/* Summary Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-4">
                 <Card className="shadow-sm border-l-4 border-l-yellow-400">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Akan Inaktif</CardTitle>
@@ -326,12 +425,12 @@ export default function RetentionManagement() {
 
             {/* Expired Breakdown */}
             {summary?.expiredByHasilAkhir && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     {Object.entries(summary.expiredByHasilAkhir).map(([key, count]) => {
-                        let conf = { label: key, icon: FileText, color: 'bg-gray-100 text-gray-700' };
-                        if (key === 'musnah') conf = { label: 'Musnah', icon: Trash2, color: 'bg-red-100 text-red-700' };
-                        if (key === 'permanen') conf = { label: 'Permanen', icon: Archive, color: 'bg-blue-100 text-blue-700' };
-                        if (key === 'dinilaiKembali') conf = { label: 'Dinilai Kembali', icon: History, color: 'bg-yellow-100 text-yellow-700' };
+                        let conf = { label: key, icon: FileText, color: 'bg-muted text-foreground' };
+                        if (key === 'musnah') conf = { label: 'Musnah', icon: Trash2, color: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300' };
+                        if (key === 'permanen') conf = { label: 'Permanen', icon: Archive, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300' };
+                        if (key === 'dinilaiKembali') conf = { label: 'Dinilai Kembali', icon: History, color: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' };
 
                         const Icon = conf.icon;
 
@@ -349,6 +448,65 @@ export default function RetentionManagement() {
                     })}
                 </div>
             )}
+
+            {(summary?.summary?.missingTrigger > 0 || summary?.summary?.held > 0) && (
+                <Alert className="border-amber-200 bg-amber-50/60 dark:bg-amber-500/10">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertTitle>Kontrol retensi aman</AlertTitle>
+                    <AlertDescription>
+                        {summary?.summary?.missingTrigger || 0} arsip belum memiliki pemicu retensi dan {summary?.summary?.held || 0} arsip sedang legal hold. Keduanya dikeluarkan dari kandidat penyusutan.
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            <Card className="border-amber-200/70 shadow-sm">
+                <CardHeader className="pb-3 bg-amber-50/40 dark:bg-amber-500/10">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="text-base font-semibold flex items-center gap-2">
+                                <Lock className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                                Legal Hold Aktif
+                            </CardTitle>
+                            <CardDescription className="text-xs mt-1">
+                                Arsip di bawah sengketa, audit, pemeriksaan, atau kewajiban hukum ditangguhkan dari penyusutan.
+                            </CardDescription>
+                        </div>
+                        <Badge variant="outline" className="bg-card">{holds.length} arsip</Badge>
+                    </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                    {holds.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-8">Tidak ada legal hold aktif.</p>
+                    ) : (
+                        <Table responsive>
+                            <TableHeader className="bg-muted/40">
+                                <TableRow>
+                                    <TableHead>Nomor Berkas</TableHead>
+                                    <TableHead>Uraian</TableHead>
+                                    <TableHead>Alasan Hold</TableHead>
+                                    <TableHead>Diterapkan</TableHead>
+                                    <TableHead className="text-right">Aksi</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {holds.map(arch => (
+                                    <TableRow key={arch.id}>
+                                        <TableCell data-label="Nomor Berkas" className="font-mono text-xs">{arch.nomorBerkas || '-'}</TableCell>
+                                        <TableCell data-label="Uraian" className="max-w-xs truncate text-sm">{arch.uraianBerkas || arch.uraianItem || '-'}</TableCell>
+                                        <TableCell data-label="Alasan Hold" className="max-w-sm text-xs">{arch.legalHoldReason || '-'}</TableCell>
+                                        <TableCell data-label="Diterapkan" className="text-xs text-muted-foreground">{formatDate(arch.legalHoldPlacedAt)}</TableCell>
+                                        <TableCell data-label="Aksi" className="text-right">
+                                            <Button variant="outline" size="sm" onClick={() => openHoldDialog(arch, 'release')}>
+                                                <Unlock className="h-3.5 w-3.5 mr-1.5" /> Lepas Hold
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
 
             {/* Candidates Table */}
             <Card className="border-border/60 shadow-sm">
@@ -387,7 +545,7 @@ export default function RetentionManagement() {
 
                     <div className="flex flex-wrap items-center gap-3 mt-4">
                         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-                            <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
+                            <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
                                 <SelectValue placeholder="Filter Status" />
                             </SelectTrigger>
                             <SelectContent>
@@ -398,7 +556,7 @@ export default function RetentionManagement() {
                             </SelectContent>
                         </Select>
                         <Select value={hasilAkhirFilter} onValueChange={(v) => { setHasilAkhirFilter(v); setPage(1); }}>
-                            <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
+                            <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
                                 <SelectValue placeholder="Filter Hasil Akhir" />
                             </SelectTrigger>
                             <SelectContent>
@@ -432,7 +590,7 @@ export default function RetentionManagement() {
                             <p className="text-sm opacity-80">Tidak ada arsip yang sesuai filter saat ini</p>
                         </div>
                     ) : (
-                        <Table>
+                        <Table responsive>
                             <TableHeader className="bg-muted/50">
                                 <TableRow>
                                     <TableHead className="w-10">
@@ -444,9 +602,10 @@ export default function RetentionManagement() {
                                     <TableHead className="w-[150px]">Nomor Berkas</TableHead>
                                     <TableHead className="w-[100px]">Kode</TableHead>
                                     <TableHead>Uraian</TableHead>
+                                    <TableHead className="w-[180px]">Pemicu Retensi</TableHead>
                                     <TableHead className="w-[150px]">Tgl Kadaluarsa</TableHead>
                                     <TableHead className="w-[120px]">Hasil Akhir</TableHead>
-                                    <TableHead className="w-[200px]">Keterangan</TableHead>
+                                    <TableHead className="w-[110px] text-right">Aksi</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -458,21 +617,25 @@ export default function RetentionManagement() {
                                                 onCheckedChange={(checked) => handleSelectArchive(arch.id, checked)}
                                             />
                                         </TableCell>
-                                        <TableCell className="font-medium font-mono text-xs">{arch.nomorBerkas || '-'}</TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Nomor Berkas" className="font-medium font-mono text-xs">{arch.nomorBerkas || '-'}</TableCell>
+                                        <TableCell data-label="Kode">
                                             <Badge variant="outline" className="font-mono text-[10px]">{arch.kodeKlasifikasi || '-'}</Badge>
                                         </TableCell>
-                                        <TableCell className="max-w-xs truncate text-sm" title={arch.uraianBerkas}>
+                                        <TableCell data-label="Uraian" className="max-w-xs truncate text-sm" title={arch.uraianBerkas}>
                                             {arch.uraianBerkas || arch.uraianItem || '-'}
                                         </TableCell>
-                                        <TableCell className="text-xs text-muted-foreground">
+                                        <TableCell data-label="Pemicu Retensi" className="text-xs">
+                                            <p className="font-medium truncate max-w-[170px]" title={arch.retentionTriggerLabel}>{arch.retentionTriggerLabel || '-'}</p>
+                                            <p className="text-muted-foreground">{formatDate(arch.retentionTriggerDate)}</p>
+                                        </TableCell>
+                                        <TableCell data-label="Tgl Kadaluarsa" className="text-xs text-muted-foreground">
                                             {formatDate(arch.tanggalKadaluarsa)}
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Hasil Akhir">
                                             {arch.hasilAkhir ? (
                                                 <Badge
                                                     variant="outline"
-                                                    className={`text-[10px] shadow-none ${HASIL_AKHIR_OPTIONS[arch.hasilAkhir]?.badgeClass || 'bg-gray-100 text-gray-700'}`}
+                                                    className={`text-[10px] shadow-none ${HASIL_AKHIR_OPTIONS[arch.hasilAkhir]?.badgeClass || 'bg-muted text-foreground'}`}
                                                 >
                                                     {arch.hasilAkhir}
                                                 </Badge>
@@ -480,7 +643,16 @@ export default function RetentionManagement() {
                                                 <span className="text-muted-foreground text-xs">-</span>
                                             )}
                                         </TableCell>
-                                        <TableCell className="max-w-xs truncate text-xs text-muted-foreground">{arch.keterangan || '-'}</TableCell>
+                                        <TableCell data-label="Aksi" className="text-right">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => openHoldDialog(arch, 'hold')}
+                                                title="Terapkan legal hold"
+                                            >
+                                                <Lock className="h-3.5 w-3.5 mr-1.5" /> Hold
+                                            </Button>
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -494,7 +666,7 @@ export default function RetentionManagement() {
                         <p className="text-xs text-muted-foreground">
                             Halaman <span className="font-medium text-foreground">{candidates.pagination.page}</span> dari <span className="font-medium text-foreground">{candidates.pagination.totalPages}</span> ({candidates.pagination.total} arsip)
                         </p>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -518,6 +690,55 @@ export default function RetentionManagement() {
                 )}
             </Card>
 
+            <Dialog open={holdDialogOpen} onOpenChange={setHoldDialogOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            {holdMode === 'hold' ? <Lock className="h-5 w-5 text-amber-600" /> : <Unlock className="h-5 w-5 text-emerald-600" />}
+                            {holdMode === 'hold' ? 'Terapkan Legal Hold' : 'Lepas Legal Hold'}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {holdMode === 'hold'
+                                ? 'Legal hold menghentikan arsip ini dari seluruh kandidat dan workflow penyusutan.'
+                                : 'Pelepasan mengaktifkan kembali evaluasi retensi. Alasan pelepasan akan diaudit.'}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2">
+                        <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                            <p className="font-medium">{holdTarget?.nomorBerkas || 'Arsip'}</p>
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                {holdTarget?.uraianBerkas || holdTarget?.uraianItem || '-'}
+                            </p>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="legal-hold-reason">
+                                {holdMode === 'hold' ? 'Alasan legal hold' : 'Alasan pelepasan'} <span className="text-red-500">*</span>
+                            </Label>
+                            <Textarea
+                                id="legal-hold-reason"
+                                value={holdReason}
+                                onChange={(event) => setHoldReason(event.target.value)}
+                                placeholder={holdMode === 'hold'
+                                    ? 'Contoh: Dokumen diperlukan untuk pemeriksaan yang masih berlangsung...'
+                                    : 'Contoh: Pemeriksaan telah selesai berdasarkan surat...'}
+                                className="min-h-[110px]"
+                                maxLength={2000}
+                            />
+                            <p className="text-xs text-muted-foreground">Minimal 10 karakter; identitas pengguna, waktu, dan alasan dicatat dalam audit.</p>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setHoldDialogOpen(false)} disabled={holdSaving}>Batal</Button>
+                        <Button onClick={handleHoldAction} disabled={holdSaving || holdReason.trim().length < 10}>
+                            {holdSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            {holdMode === 'hold' ? 'Terapkan Hold' : 'Lepas Hold'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* Report Preview Dialog */}
             <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
                 <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
@@ -533,7 +754,7 @@ export default function RetentionManagement() {
 
                     <div className="flex-1 overflow-y-auto p-6 bg-muted/10">
                         {reportData && (
-                            <div className="bg-white p-8 shadow-sm border rounded-lg min-h-[600px] max-w-[800px] mx-auto text-sm">
+                            <div className="bg-card p-8 shadow-sm border rounded-lg min-h-[600px] max-w-[800px] mx-auto text-sm">
                                 {/* Letterhead Simulation */}
                                 <div className="text-center mb-8 border-b-2 border-black pb-4">
                                     <h3 className="font-bold text-lg uppercase tracking-wide mb-1">KEMENTERIAN AGRARIA DAN TATA RUANG/BADAN PERTANAHAN NASIONAL</h3>
@@ -550,24 +771,28 @@ export default function RetentionManagement() {
                                 </div>
 
                                 <div className="border rounded mb-6">
-                                    <Table className="text-xs">
+                                    <Table responsive className="text-xs">
                                         <TableHeader>
-                                            <TableRow className="bg-gray-50 hover:bg-gray-50">
+                                            <TableRow className="bg-muted/50 hover:bg-muted/50">
                                                 <TableHead className="w-10 text-black font-bold border-r">No</TableHead>
                                                 <TableHead className="text-black font-bold border-r">Nomor Berkas</TableHead>
                                                 <TableHead className="text-black font-bold border-r">Kode</TableHead>
                                                 <TableHead className="text-black font-bold border-r">Uraian</TableHead>
+                                                <TableHead className="text-black font-bold border-r">Pemicu Retensi</TableHead>
+                                                <TableHead className="text-black font-bold border-r">Referensi JRA</TableHead>
                                                 <TableHead className="text-black font-bold">Hasil Akhir</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {reportData.daftarArsip.map((a) => (
                                                 <TableRow key={a.no} className="border-t hover:bg-transparent">
-                                                    <TableCell className="border-r py-2">{a.no}</TableCell>
-                                                    <TableCell className="border-r py-2">{a.nomorBerkas}</TableCell>
-                                                    <TableCell className="border-r py-2">{a.kodeKlasifikasi}</TableCell>
-                                                    <TableCell className="border-r py-2 max-w-xs truncate">{a.uraian}</TableCell>
-                                                    <TableCell className="py-2">{a.hasilAkhir}</TableCell>
+                                                    <TableCell data-label="No" className="border-r py-2">{a.no}</TableCell>
+                                                    <TableCell data-label="Nomor Berkas" className="border-r py-2">{a.nomorBerkas}</TableCell>
+                                                    <TableCell data-label="Kode" className="border-r py-2">{a.kodeKlasifikasi}</TableCell>
+                                                    <TableCell data-label="Uraian" className="border-r py-2 max-w-xs truncate">{a.uraian}</TableCell>
+                                                    <TableCell data-label="Pemicu Retensi" className="border-r py-2">{a.retentionTriggerLabel}<br />{a.retentionTriggerDate}</TableCell>
+                                                    <TableCell data-label="Referensi JRA" className="border-r py-2">{a.jraVersion}<br />{a.jraReference}</TableCell>
+                                                    <TableCell data-label="Hasil Akhir" className="py-2">{a.hasilAkhir}</TableCell>
                                                 </TableRow>
                                             ))}
                                         </TableBody>

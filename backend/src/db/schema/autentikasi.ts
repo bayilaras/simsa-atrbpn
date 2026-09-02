@@ -1,5 +1,5 @@
-import { pgTable, uuid, varchar, text, integer, timestamp, date } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, text, integer, timestamp, date, bigint, check } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { users } from './users.js';
 import { arsipElektronik } from './arsip-elektronik.js';
 
@@ -24,12 +24,41 @@ export const autentikasi = pgTable('autentikasi', {
     jumlahArsip: integer('jumlah_arsip').notNull(),
 
     // Dokumen Hasil (PDF)
-    fileLampiran: varchar('file_lampiran', { length: 255 }), // Path to generated PDF
+    // Internal private-Blob locator. It is never returned as an access URL;
+    // authenticated routes proxy the object stream instead.
+    fileLampiran: text('file_lampiran'),
+    fileLampiranObjectGeneration: varchar('file_lampiran_object_generation', { length: 32 }),
+    fileLampiranSha256: varchar('file_lampiran_sha256', { length: 64 }),
+    fileLampiranSizeBytes: bigint('file_lampiran_size_bytes', { mode: 'number' }),
 
     // Metadata
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => [
+    check(
+        'autentikasi_file_lampiran_sha256_check',
+        sql`${table.fileLampiranSha256} is null or ${table.fileLampiranSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+        'autentikasi_file_lampiran_metadata_check',
+        sql`(${table.fileLampiran} is null and ${table.fileLampiranSha256} is null and ${table.fileLampiranSizeBytes} is null)
+            or (${table.fileLampiran} is not null and ${table.fileLampiranSha256} is not null and ${table.fileLampiranSizeBytes} > 0)`,
+    ),
+    check(
+        'autentikasi_file_lampiran_generation_check',
+        sql`(
+                ${table.fileLampiran} is null
+                and ${table.fileLampiranObjectGeneration} is null
+            ) or (
+                ${table.fileLampiran} like 'gs://%'
+                and ${table.fileLampiranObjectGeneration} is not null
+                and ${table.fileLampiranObjectGeneration} ~ '^[0-9]+$'
+            ) or (
+                ${table.fileLampiran} like 'https://%'
+                and ${table.fileLampiranObjectGeneration} is null
+            )`,
+    ),
+]);
 
 export const autentikasiRelations = relations(autentikasi, ({ one, many }) => ({
     petugas: one(users, {

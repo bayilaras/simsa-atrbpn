@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, MoreHorizontal, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +38,9 @@ import { DashboardSkeleton } from '@/components/skeletons'
 import { useAuth } from '@/context/AuthContext'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import DashboardPengawasan from '@/components/dashboard/DashboardPengawasan'
+import { PageHeader } from '@/components/PageHeader';
+import appConfig from '@/lib/app-config';
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 
 ChartJS.register(
     CategoryScale,
@@ -97,7 +100,6 @@ export default function Dashboard() {
     const location = useLocation();
     const { user, canWrite } = useAuth();
     const isAdmin = canWrite();
-    const isUserRole = user?.role === 'user';
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [stats, setStats] = useState(null);
@@ -108,37 +110,97 @@ export default function Dashboard() {
     const [unitKerjaList, setUnitKerjaList] = useState([]);
     const [selectedUnitKerja, setSelectedUnitKerja] = useState(undefined); // undefined = uninitialized
     const isInitializedRef = useRef(false);
+    const lastLocationKeyRef = useRef(location.key);
 
     const isSuperAdmin = user?.role === 'super_admin';
+    const effectiveUserUnitKerjaId = resolveEffectiveUnitKerjaId(user);
 
-    // Load unit kerja list for super admin
-    useEffect(() => {
-        if (user) {
-            if (isSuperAdmin) {
-                loadUnitKerjaList();
-            } else {
-                // Regular user: lock to their unit (use 'none' if no unitKerjaId)
-                setSelectedUnitKerja(user.unitKerjaId || 'none');
-            }
+    const loadUnitKerjaList = useCallback(async () => {
+        try {
+            const result = await settingsService.getAllUnitKerja();
+            const list = result.data || result || [];
+            setUnitKerjaList(list);
+            // Default to "Semua Unit Kerja"
+            setSelectedUnitKerja('all');
+        } catch (err) {
+            console.error('Failed to load unit kerja list:', err);
+            setSelectedUnitKerja('all');
         }
-    }, [user?.id]);
+    }, []);
 
-    // Load dashboard data when selectedUnitKerja is set
-    useEffect(() => {
-        if (user && selectedUnitKerja !== undefined) {
-            loadDashboardData();
-            isInitializedRef.current = true;
-        }
+    // Shared data fetching logic
+    const fetchDashboardData = useCallback(async () => {
+        const unitKerjaId = (selectedUnitKerja === 'all' || selectedUnitKerja === 'none') ? null : selectedUnitKerja;
+
+        const [statsResult, expiringResult, comparisonResult, recentResult, widgetResult] = await Promise.all([
+            dashboardService.getStats(unitKerjaId),
+            dashboardService.getExpiringArchives(unitKerjaId, 90),
+            dashboardService.getUnitKerjaComparison(unitKerjaId),
+            dashboardService.getRecentActivity(unitKerjaId, 8),
+            dashboardService.getWidgetData(unitKerjaId).catch(() => null),
+        ]);
+
+        setStats(statsResult);
+        setExpiring(expiringResult);
+        setUnitKerjaStats(comparisonResult || []);
+        setRecentActivity(recentResult || []);
+        setWidgetData(widgetResult);
     }, [selectedUnitKerja]);
 
-    // Re-fetch data when navigating back to dashboard (real-time updates)
+    // Full load with loading spinner (initial load or unit change)
+    const loadDashboardData = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            await fetchDashboardData();
+        } catch (err) {
+            console.error('Failed to load dashboard data:', err);
+            setError('Gagal memuat data dashboard');
+        } finally {
+            setLoading(false);
+        }
+    }, [fetchDashboardData]);
+
+    // Silent refresh without loading spinner (navigation back, focus, etc)
+    const refreshData = useCallback(async () => {
+        try {
+            await fetchDashboardData();
+        } catch (err) {
+            console.error('Failed to refresh dashboard data:', err);
+        }
+    }, [fetchDashboardData]);
+
+    // Load unit kerja list for super admin.
     useEffect(() => {
+        if (!user) return;
+
+        if (isSuperAdmin) {
+            loadUnitKerjaList();
+        } else {
+            // Regular user: lock to their unit (use 'none' if no unitKerjaId)
+            setSelectedUnitKerja(effectiveUserUnitKerjaId || 'none');
+        }
+    }, [user, isSuperAdmin, effectiveUserUnitKerjaId, loadUnitKerjaList]);
+
+    // Load dashboard data when selectedUnitKerja is set.
+    useEffect(() => {
+        if (user && selectedUnitKerja !== undefined) {
+            isInitializedRef.current = true;
+            loadDashboardData();
+        }
+    }, [user, selectedUnitKerja, loadDashboardData]);
+
+    // Re-fetch data only when a navigation creates a new location entry.
+    useEffect(() => {
+        if (lastLocationKeyRef.current === location.key) return;
+        lastLocationKeyRef.current = location.key;
+
         if (isInitializedRef.current && user && selectedUnitKerja !== undefined) {
             refreshData();
         }
-    }, [location.key]);
+    }, [location.key, user, selectedUnitKerja, refreshData]);
 
-    // Re-fetch data when window regains focus (e.g. user switches tabs back)
+    // Re-fetch data when window regains focus (e.g. user switches tabs back).
     useEffect(() => {
         const handleFocus = () => {
             if (isInitializedRef.current && user && selectedUnitKerja !== undefined) {
@@ -159,62 +221,7 @@ export default function Dashboard() {
             window.removeEventListener('focus', handleFocus);
             document.removeEventListener('visibilitychange', handleVisibility);
         };
-    }, [user, selectedUnitKerja]);
-
-    const loadUnitKerjaList = async () => {
-        try {
-            const result = await settingsService.getAllUnitKerja();
-            const list = result.data || result || [];
-            setUnitKerjaList(list);
-            // Default to "Semua Unit Kerja"
-            setSelectedUnitKerja('all');
-        } catch (err) {
-            console.error('Failed to load unit kerja list:', err);
-            setSelectedUnitKerja('all');
-        }
-    };
-
-    // Full load with loading spinner (initial load or unit change)
-    const loadDashboardData = async () => {
-        try {
-            setLoading(true);
-            setError(null);
-            await fetchDashboardData();
-        } catch (err) {
-            console.error('Failed to load dashboard data:', err);
-            setError('Gagal memuat data dashboard');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Silent refresh without loading spinner (navigation back, focus, etc)
-    const refreshData = async () => {
-        try {
-            await fetchDashboardData();
-        } catch (err) {
-            console.error('Failed to refresh dashboard data:', err);
-        }
-    };
-
-    // Shared data fetching logic
-    const fetchDashboardData = async () => {
-        const unitKerjaId = (selectedUnitKerja === 'all' || selectedUnitKerja === 'none') ? null : selectedUnitKerja;
-
-        const [statsResult, expiringResult, comparisonResult, recentResult, widgetResult] = await Promise.all([
-            dashboardService.getStats(unitKerjaId),
-            dashboardService.getExpiringArchives(unitKerjaId, 90),
-            dashboardService.getUnitKerjaComparison(unitKerjaId),
-            dashboardService.getRecentActivity(unitKerjaId, 8),
-            dashboardService.getWidgetData(unitKerjaId).catch(() => null),
-        ]);
-
-        setStats(statsResult);
-        setExpiring(expiringResult);
-        setUnitKerjaStats(comparisonResult || []);
-        setRecentActivity(recentResult || []);
-        setWidgetData(widgetResult);
-    };
+    }, [user, selectedUnitKerja, refreshData]);
 
     // Categorize expiring archives by urgency
     const expiringByUrgency = {
@@ -279,9 +286,9 @@ export default function Dashboard() {
     const statCards = stats ? [
         { label: 'Surat Masuk', value: stats.totalMasuk, change: stats.masukBulanIni, icon: MailOpen, color: 'text-emerald-600', bg: 'bg-emerald-100/50', trend: 'up' },
         { label: 'Surat Keluar', value: stats.totalKeluar, change: stats.keluarBulanIni, icon: Send, color: 'text-yellow-600', bg: 'bg-yellow-100/50', trend: 'up' },
-        { label: 'Total Arsip', value: stats.totalArsip, change: null, icon: Archive, color: 'text-blue-600', bg: 'bg-blue-100/50', trend: 'neutral' },
-        { label: 'Arsip Masuk', value: stats.arsipMasuk || 0, change: null, icon: Inbox, color: 'text-teal-600', bg: 'bg-teal-100/50', trend: 'neutral' },
-        { label: 'Arsip Keluar', value: stats.arsipKeluar || 0, change: null, icon: ArrowUpRight, color: 'text-indigo-600', bg: 'bg-indigo-100/50', trend: 'neutral' },
+        { label: 'Total Arsip', value: stats.totalArsip, change: null, icon: Archive, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100/50', trend: 'neutral' },
+        { label: 'Arsip Masuk', value: stats.arsipMasuk || 0, change: null, icon: Inbox, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-100/50', trend: 'neutral' },
+        { label: 'Arsip Keluar', value: stats.arsipKeluar || 0, change: null, icon: ArrowUpRight, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-100/50', trend: 'neutral' },
         { label: 'Segera Musnah', value: expiringByUrgency.critical.length, change: null, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-100/50', trend: 'neutral' },
     ] : [];
 
@@ -292,7 +299,7 @@ export default function Dashboard() {
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[400px] gap-6 animate-in fade-in zoom-in duration-500">
-                <div className="p-4 bg-red-50 rounded-full">
+                <div className="p-4 bg-red-50 dark:bg-red-500/15 rounded-full">
                     <AlertTriangle className="h-12 w-12 text-red-500" />
                 </div>
                 <div className="text-center space-y-2">
@@ -308,75 +315,44 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
-            {/* Hero Section - Responsive */}
-            <div className="bg-gradient-to-r from-primary/90 to-primary/70 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 lg:p-10 text-white shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-40 sm:w-64 h-40 sm:h-64 bg-white/10 rounded-full blur-3xl -mr-10 sm:-mr-16 -mt-10 sm:-mt-16 animate-pulse"></div>
-                <div className="absolute bottom-0 left-0 w-32 sm:w-48 h-32 sm:h-48 bg-black/10 rounded-full blur-3xl -ml-6 sm:-ml-10 -mb-6 sm:-mb-10"></div>
-
-                <div className="relative z-10 flex flex-col gap-4 sm:gap-6">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6">
-                        <div className="space-y-1 sm:space-y-2 min-w-0 flex-1">
-                            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight break-words">Halo, {user?.name.split(' ')[0]}! 👋</h1>
-                            <p className="text-primary-foreground/90 text-sm sm:text-base md:text-lg leading-relaxed">
-                                Selamat datang kembali di Dashboard SIMSA.
-                            </p>
+            <PageHeader
+                title={`Halo, ${user?.name?.split(' ')[0] || 'Pengguna'}`}
+                description={`${appConfig.name} — ringkasan surat dan arsip unit kerja Anda hari ini.`}
+                actions={
+                    <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
+                        <Badge variant="outline" className="w-fit self-start sm:self-end">
+                            {appConfig.usageBadge}
+                        </Badge>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <CalendarClock className="h-4 w-4 shrink-0" />
+                            <span>{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
                         </div>
-                        <div className="flex flex-col gap-2 w-full sm:w-auto sm:min-w-[200px] backdrop-blur-sm bg-white/10 p-2.5 sm:p-3 rounded-xl border border-white/20 shadow-sm shrink-0">
-                            <div className="flex items-center gap-2 text-xs sm:text-sm font-medium">
-                                <CalendarClock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
-                                <span className="truncate">{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
-                            </div>
-                            {selectedUnitKerja !== 'all' && user?.unitKerjaId && (
-                                <div className="flex items-center gap-2 text-xs bg-white/20 px-2 py-1 rounded-md w-fit">
-                                    <Building2 className="h-3 w-3 shrink-0" />
-                                    <span className="uppercase truncate">{user.unitKerjaId}</span>
-                                </div>
-                            )}
-                        </div>
+                        {isSuperAdmin && unitKerjaList.length > 0 && (
+                            <Select value={selectedUnitKerja} onValueChange={setSelectedUnitKerja}>
+                                <SelectTrigger className="h-9 w-full sm:w-[260px]">
+                                    <SelectValue placeholder="Pilih Unit Kerja" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Semua Unit Kerja</SelectItem>
+                                    {unitKerjaList.map(uk => (
+                                        <SelectItem key={uk.id} value={uk.id}>
+                                            {uk.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
+                        {!isSuperAdmin && selectedUnitKerja !== 'all' && effectiveUserUnitKerjaId && (
+                            <Badge variant="muted" className="w-fit gap-1.5 self-start sm:self-end">
+                                <Building2 className="h-3 w-3" />
+                                <span className="uppercase">{effectiveUserUnitKerjaId}</span>
+                            </Badge>
+                        )}
                     </div>
-
-                    {/* Unit Kerja Selector for Super Admin */}
-                    {isSuperAdmin && unitKerjaList.length > 0 && (
-                        <div className="pt-4 sm:pt-6 border-t border-white/20">
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
-                                <span className="text-xs sm:text-sm font-medium opacity-90">Tampilkan Data:</span>
-                                <Select value={selectedUnitKerja} onValueChange={setSelectedUnitKerja}>
-                                    <SelectTrigger className="w-full sm:w-[260px] h-9 bg-white/10 border-white/30 text-white placeholder:text-white/70 focus:ring-0 focus:ring-offset-0 focus:border-white/50">
-                                        <SelectValue placeholder="Pilih Unit Kerja" className="placeholder:text-white/70" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
-                                        {unitKerjaList.map(uk => (
-                                            <SelectItem key={uk.id} value={uk.id}>
-                                                {uk.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
+                }
+            />
 
             <Tabs defaultValue="overview" className="space-y-6">
-
-                {/* Activation Banner for 'user' role */}
-                {isUserRole && (
-                    <Card className="border-amber-200 bg-amber-50/50 shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className="p-3 bg-amber-100 rounded-full">
-                                <Clock className="h-6 w-6 text-amber-600" />
-                            </div>
-                            <div className="flex-1">
-                                <h3 className="font-semibold text-amber-900">Menunggu Aktivasi Role</h3>
-                                <p className="text-sm text-amber-700 mt-1">
-                                    Akun Anda belum memiliki akses ke data surat dan arsip. Silakan hubungi Admin untuk penetapan role dan unit kerja.
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
 
                 <TabsList className="bg-muted/50 p-1 rounded-xl">
                     <TabsTrigger value="overview" className="rounded-lg">Ringkasan</TabsTrigger>
@@ -394,7 +370,7 @@ export default function Dashboard() {
                                             <stat.icon className={`h-4 w-4 sm:h-5 sm:w-5 ${stat.color}`} />
                                         </div>
                                         {stat.change !== null && (
-                                            <Badge variant="outline" className={`font-normal text-[10px] sm:text-xs ${typeof stat.change === 'number' && stat.change > 0 ? 'text-green-600 bg-green-50 border-green-200' : 'text-gray-500'}`}>
+                                            <Badge variant="outline" className={`font-normal text-[10px] sm:text-xs ${typeof stat.change === 'number' && stat.change > 0 ? 'text-green-600 bg-green-50 dark:bg-green-500/15 border-green-200' : 'text-muted-foreground'}`}>
                                                 {typeof stat.change === 'number' && stat.change > 0 ? '+' : ''}{stat.change} bln ini
                                             </Badge>
                                         )}
@@ -415,16 +391,20 @@ export default function Dashboard() {
                             <Card className="shadow-sm border-border/60">
                                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                                     <div>
-                                        <CardTitle className="text-lg">Analisis Trend Surat</CardTitle>
+                                        <CardTitle className="text-lg">Analisis Tren Surat</CardTitle>
                                         <CardDescription>Perbandingan surat masuk dan keluar 12 bulan terakhir</CardDescription>
                                     </div>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                                        <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
                                 </CardHeader>
                                 <CardContent>
                                     <div className="h-[250px] sm:h-[300px] w-full mt-4">
-                                        {chartData && <Line data={chartData} options={chartOptions} />}
+                                        {chartData && (
+                                            <Line
+                                                role="img"
+                                                aria-label="Grafik perbandingan jumlah surat masuk dan surat keluar selama 12 bulan terakhir"
+                                                data={chartData}
+                                                options={chartOptions}
+                                            />
+                                        )}
                                     </div>
                                 </CardContent>
                             </Card>
@@ -438,6 +418,8 @@ export default function Dashboard() {
                                 <CardContent>
                                     <div style={{ height: Math.max(200, (unitKerjaStats?.length || 3) * 60) + 'px' }}>
                                         <Bar
+                                            role="img"
+                                            aria-label="Grafik volume surat per unit kerja pada bulan ini"
                                             data={unitKerjaChartData}
                                             options={{
                                                 ...chartOptions,
@@ -510,7 +492,7 @@ export default function Dashboard() {
                             {/* Expiring Archives */}
                             <Card className="shadow-sm border-border/60 overflow-hidden flex flex-col min-h-[300px] lg:min-h-[400px]">
                                 <CardHeader className="bg-amber-50/50 dark:bg-amber-950/10 border-b border-amber-100 dark:border-amber-900/50 pb-4">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div className="flex items-center gap-2 text-amber-700 dark:text-amber-500">
                                             <AlertTriangle className="h-4 w-4" />
                                             <CardTitle className="text-base">Masa Retensi</CardTitle>
@@ -523,16 +505,21 @@ export default function Dashboard() {
                                     {expiring.length > 0 ? (
                                         <div className="divide-y divide-border/50">
                                             {expiring.map((item) => (
-                                                <div key={item.id} className="p-4 hover:bg-muted/50 transition-colors cursor-pointer group" onClick={() => navigate(`/arsip/detail/${item.id}`)}>
+                                                <button
+                                                    key={item.id}
+                                                    type="button"
+                                                    className="group w-full p-4 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                                    onClick={() => navigate(`/arsip/detail/${item.id}`)}
+                                                >
                                                     <div className="flex items-start gap-3">
                                                         <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${item.daysLeft <= 15 ? 'bg-red-500 ring-2 ring-red-100' :
                                                             item.daysLeft <= 30 ? 'bg-amber-500 ring-2 ring-amber-100' : 'bg-blue-500 ring-2 ring-blue-100'
                                                             }`} />
                                                         <div className="flex-1 min-w-0 space-y-1">
-                                                            <div className="flex items-center justify-between">
+                                                            <div className="flex flex-wrap items-center justify-between gap-3">
                                                                 <p className="text-sm font-medium truncate">{item.kodeKlasifikasi}</p>
-                                                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${item.daysLeft <= 15 ? 'bg-red-50 text-red-600' :
-                                                                    item.daysLeft <= 30 ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
+                                                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${item.daysLeft <= 15 ? 'bg-red-50 dark:bg-red-500/15 text-red-600' :
+                                                                    item.daysLeft <= 30 ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
                                                                     }`}>
                                                                     {item.daysLeft} hari
                                                                 </span>
@@ -543,7 +530,7 @@ export default function Dashboard() {
                                                         </div>
                                                         <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 -ml-2 group-hover:opacity-100 group-hover:ml-0 transition-all" />
                                                     </div>
-                                                </div>
+                                                </button>
                                             ))}
                                         </div>
                                     ) : (
@@ -576,8 +563,12 @@ export default function Dashboard() {
                             <CardContent>
                                 <div className="divide-y divide-border/50">
                                     {recentActivity.map((item) => (
-                                        <div key={item.id} className="flex items-center gap-4 py-3 hover:bg-muted/50 rounded-lg px-2 transition-colors cursor-pointer group"
-                                            onClick={() => navigate(item.type === 'masuk' ? `/surat/masuk/detail/${item.id}` : `/surat/keluar/detail/${item.id}`)}>
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            className="group flex w-full items-center gap-4 rounded-lg px-2 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            onClick={() => navigate(item.type === 'masuk' ? `/surat/masuk/${item.id}` : `/surat/keluar/${item.id}`)}
+                                        >
                                             <div className={`p-2 rounded-lg ${item.type === 'masuk' ? 'bg-emerald-100/50' : 'bg-yellow-100/50'}`}>
                                                 {item.type === 'masuk'
                                                     ? <MailOpen className="h-4 w-4 text-emerald-600" />
@@ -588,7 +579,7 @@ export default function Dashboard() {
                                                 <p className="text-xs text-muted-foreground truncate">{item.perihal || '-'}</p>
                                             </div>
                                             <div className="text-right">
-                                                <Badge variant="outline" className={`text-[10px] ${item.type === 'masuk' ? 'border-emerald-200 text-emerald-700 bg-emerald-50' : 'border-yellow-200 text-yellow-700 bg-yellow-50'}`}>
+                                                <Badge variant="outline" className={`text-[10px] ${item.type === 'masuk' ? 'border-emerald-200 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15' : 'border-yellow-200 text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-500/15'}`}>
                                                     {item.type === 'masuk' ? 'Masuk' : 'Keluar'}
                                                 </Badge>
                                                 <p className="text-[10px] text-muted-foreground mt-1">
@@ -596,7 +587,7 @@ export default function Dashboard() {
                                                 </p>
                                             </div>
                                             <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        </div>
+                                        </button>
                                     ))}
                                 </div>
                             </CardContent>
@@ -607,13 +598,13 @@ export default function Dashboard() {
                     {widgetData && (
                         <>
                             {/* Row 1: Archive Lifecycle + Media Breakdown + Peminjaman */}
-                            <div className="grid gap-6 md:grid-cols-3">
+                            <div className="grid gap-6 lg:grid-cols-3">
                                 {/* Archive Lifecycle Donut */}
                                 <Card className="shadow-sm border-border/60">
                                     <CardHeader className="pb-2">
                                         <div className="flex items-center gap-2">
                                             <div className="p-2 bg-violet-100/50 rounded-xl">
-                                                <Archive className="h-4 w-4 text-violet-600" />
+                                                <Archive className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                                             </div>
                                             <div>
                                                 <CardTitle className="text-base">Status Siklus Arsip</CardTitle>
@@ -624,6 +615,8 @@ export default function Dashboard() {
                                     <CardContent>
                                         <div className="h-[200px] flex items-center justify-center">
                                             <Doughnut
+                                                role="img"
+                                                aria-label="Grafik komposisi format arsip elektronik"
                                                 data={{
                                                     labels: ['Aktif', 'Inaktif', 'Kadaluarsa', 'Belum Ditentukan'],
                                                     datasets: [{
@@ -703,10 +696,10 @@ export default function Dashboard() {
                                                     };
                                                     const mediaColors = {
                                                         'kertas': 'text-amber-600 bg-amber-100/50',
-                                                        'foto': 'text-pink-600 bg-pink-100/50',
-                                                        'video': 'text-purple-600 bg-purple-100/50',
-                                                        'audio': 'text-teal-600 bg-teal-100/50',
-                                                        'elektronik': 'text-blue-600 bg-blue-100/50',
+                                                        'foto': 'text-pink-600 dark:text-pink-400 bg-pink-100/50',
+                                                        'video': 'text-purple-600 dark:text-purple-400 bg-purple-100/50',
+                                                        'audio': 'text-teal-600 dark:text-teal-400 bg-teal-100/50',
+                                                        'elektronik': 'text-blue-600 dark:text-blue-400 bg-blue-100/50',
                                                     };
                                                     const barColors = {
                                                         'kertas': 'bg-amber-500',
@@ -716,11 +709,11 @@ export default function Dashboard() {
                                                         'elektronik': 'bg-blue-500',
                                                     };
                                                     const IconComp = mediaIcons[media.type?.toLowerCase()] || File;
-                                                    const colorClass = mediaColors[media.type?.toLowerCase()] || 'text-gray-600 bg-gray-100/50';
+                                                    const colorClass = mediaColors[media.type?.toLowerCase()] || 'text-muted-foreground bg-muted/50';
                                                     const barColor = barColors[media.type?.toLowerCase()] || 'bg-gray-500';
                                                     return (
                                                         <div key={media.type} className="space-y-1.5">
-                                                            <div className="flex items-center justify-between">
+                                                            <div className="flex flex-wrap items-center justify-between gap-3">
                                                                 <div className="flex items-center gap-2">
                                                                     <div className={`p-1.5 rounded-lg ${colorClass}`}>
                                                                         <IconComp className="h-3.5 w-3.5" />
@@ -760,20 +753,20 @@ export default function Dashboard() {
                                     </CardHeader>
                                     <CardContent className="space-y-4">
                                         <div className="flex items-center gap-4 p-4 rounded-xl bg-orange-50/50 border border-orange-100">
-                                            <div className="p-3 bg-orange-100 rounded-full">
+                                            <div className="p-3 bg-orange-100 dark:bg-orange-500/15 rounded-full">
                                                 <BookOpen className="h-6 w-6 text-orange-600" />
                                             </div>
                                             <div>
-                                                <p className="text-2xl font-bold text-orange-700">{widgetData.lendingOverview.borrowed}</p>
+                                                <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">{widgetData.lendingOverview.borrowed}</p>
                                                 <p className="text-xs text-orange-600/80">Sedang Dipinjam</p>
                                             </div>
                                         </div>
                                         <div className={`flex items-center gap-4 p-4 rounded-xl border ${widgetData.lendingOverview.overdue > 0 ? 'bg-red-50/50 border-red-100' : 'bg-green-50/50 border-green-100'}`}>
-                                            <div className={`p-3 rounded-full ${widgetData.lendingOverview.overdue > 0 ? 'bg-red-100' : 'bg-green-100'}`}>
+                                            <div className={`p-3 rounded-full ${widgetData.lendingOverview.overdue > 0 ? 'bg-red-100 dark:bg-red-500/15' : 'bg-green-100 dark:bg-green-500/15'}`}>
                                                 <BookX className={`h-6 w-6 ${widgetData.lendingOverview.overdue > 0 ? 'text-red-600' : 'text-green-600'}`} />
                                             </div>
                                             <div>
-                                                <p className={`text-2xl font-bold ${widgetData.lendingOverview.overdue > 0 ? 'text-red-700' : 'text-green-700'}`}>{widgetData.lendingOverview.overdue}</p>
+                                                <p className={`text-2xl font-bold ${widgetData.lendingOverview.overdue > 0 ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'}`}>{widgetData.lendingOverview.overdue}</p>
                                                 <p className={`text-xs ${widgetData.lendingOverview.overdue > 0 ? 'text-red-600/80' : 'text-green-600/80'}`}>
                                                     {widgetData.lendingOverview.overdue > 0 ? 'Terlambat Dikembalikan!' : 'Tidak Ada yang Terlambat'}
                                                 </p>
@@ -788,7 +781,7 @@ export default function Dashboard() {
                                 <CardHeader className="pb-3">
                                     <div className="flex items-center gap-2">
                                         <div className="p-2 bg-indigo-100/50 rounded-xl">
-                                            <ClipboardCheck className="h-4 w-4 text-indigo-600" />
+                                            <ClipboardCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                                         </div>
                                         <div>
                                             <CardTitle className="text-base">Pipeline Penyusutan Arsip</CardTitle>
@@ -800,11 +793,11 @@ export default function Dashboard() {
                                     <div className="flex flex-col sm:flex-row items-stretch gap-3">
                                         {widgetData.penyusutanOverview.map((stage, idx) => {
                                             const stageConfig = {
-                                                draft: { label: 'Draft', icon: FileText, color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-200', ring: 'ring-slate-300' },
-                                                proposed: { label: 'Diusulkan', icon: ArrowRightCircle, color: 'text-blue-600', bg: 'bg-blue-100', border: 'border-blue-200', ring: 'ring-blue-300' },
+                                                draft: { label: 'Draft', icon: FileText, color: 'text-muted-foreground', bg: 'bg-muted', border: 'border-border', ring: 'ring-slate-300' },
+                                                proposed: { label: 'Diusulkan', icon: ArrowRightCircle, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-500/15', border: 'border-blue-200', ring: 'ring-blue-300' },
                                                 reviewed: { label: 'Ditinjau', icon: Eye, color: 'text-amber-600', bg: 'bg-amber-100', border: 'border-amber-200', ring: 'ring-amber-300' },
-                                                approved: { label: 'Disetujui', icon: Stamp, color: 'text-emerald-600', bg: 'bg-emerald-100', border: 'border-emerald-200', ring: 'ring-emerald-300' },
-                                                executed: { label: 'Dilaksanakan', icon: Play, color: 'text-violet-600', bg: 'bg-violet-100', border: 'border-violet-200', ring: 'ring-violet-300' },
+                                                approved: { label: 'Disetujui', icon: Stamp, color: 'text-emerald-600', bg: 'bg-emerald-100 dark:bg-emerald-500/15', border: 'border-emerald-200', ring: 'ring-emerald-300' },
+                                                executed: { label: 'Dilaksanakan', icon: Play, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-100 dark:bg-violet-500/15', border: 'border-violet-200', ring: 'ring-violet-300' },
                                             };
                                             const config = stageConfig[stage.status] || stageConfig.draft;
                                             const StageIcon = config.icon;
@@ -834,7 +827,7 @@ export default function Dashboard() {
                                     <CardHeader className="pb-3">
                                         <div className="flex items-center gap-2">
                                             <div className="p-2 bg-teal-100/50 rounded-xl">
-                                                <Building2 className="h-4 w-4 text-teal-600" />
+                                                <Building2 className="h-4 w-4 text-teal-600 dark:text-teal-400" />
                                             </div>
                                             <div>
                                                 <CardTitle className="text-base">Kapasitas Penyimpanan Fisik</CardTitle>
@@ -847,7 +840,7 @@ export default function Dashboard() {
                                             <div className="space-y-4">
                                                 {widgetData.storageCapacity.map((loc) => (
                                                     <div key={loc.id} className="space-y-2">
-                                                        <div className="flex items-center justify-between">
+                                                        <div className="flex flex-wrap items-center justify-between gap-3">
                                                             <div className="flex items-center gap-2">
                                                                 <Building2 className="h-4 w-4 text-muted-foreground" />
                                                                 <span className="text-sm font-medium">{loc.name}</span>
@@ -878,7 +871,7 @@ export default function Dashboard() {
                                         )}
                                     </CardContent>
                                     <CardFooter className="p-3 border-t bg-muted/20">
-                                        <Button variant="ghost" size="sm" className="w-full text-xs h-8" onClick={() => navigate('/storage')}>
+                                        <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/storage-locations')}>
                                             Kelola Penyimpanan <ArrowRight className="ml-1 h-3 w-3" />
                                         </Button>
                                     </CardFooter>
@@ -889,7 +882,7 @@ export default function Dashboard() {
                                     <CardHeader className="pb-3">
                                         <div className="flex items-center gap-2">
                                             <div className="p-2 bg-rose-100/50 rounded-xl">
-                                                <Shield className="h-4 w-4 text-rose-600" />
+                                                <Shield className="h-4 w-4 text-rose-600 dark:text-rose-400" />
                                             </div>
                                             <div>
                                                 <CardTitle className="text-base">Arsip Vital & Terjaga</CardTitle>
@@ -904,7 +897,7 @@ export default function Dashboard() {
                                                 : 'bg-emerald-50/50 border-emerald-200'
                                             }`}>
                                             <div className="flex items-center gap-3">
-                                                <div className={`p-2.5 rounded-full ${widgetData.vitalTerjagaAlerts.vitalUnprotected > 0 ? 'bg-red-100' : 'bg-emerald-100'
+                                                <div className={`p-2.5 rounded-full ${widgetData.vitalTerjagaAlerts.vitalUnprotected > 0 ? 'bg-red-100 dark:bg-red-500/15' : 'bg-emerald-100 dark:bg-emerald-500/15'
                                                     }`}>
                                                     <ShieldAlert className={`h-5 w-5 ${widgetData.vitalTerjagaAlerts.vitalUnprotected > 0 ? 'text-red-600' : 'text-emerald-600'
                                                         }`} />
@@ -930,7 +923,7 @@ export default function Dashboard() {
                                                 : 'bg-emerald-50/50 border-emerald-200'
                                             }`}>
                                             <div className="flex items-center gap-3">
-                                                <div className={`p-2.5 rounded-full ${widgetData.vitalTerjagaAlerts.terjagaUnreported > 0 ? 'bg-amber-100' : 'bg-emerald-100'
+                                                <div className={`p-2.5 rounded-full ${widgetData.vitalTerjagaAlerts.terjagaUnreported > 0 ? 'bg-amber-100' : 'bg-emerald-100 dark:bg-emerald-500/15'
                                                     }`}>
                                                     <FileArchive className={`h-5 w-5 ${widgetData.vitalTerjagaAlerts.terjagaUnreported > 0 ? 'text-amber-600' : 'text-emerald-600'
                                                         }`} />

@@ -1,33 +1,20 @@
 import { Router, Request, Response } from 'express';
-import { auth } from '../config/auth';
-import { db } from '../config/database';
-import { users } from '../db/schema';
-import { eq } from 'drizzle-orm';
 import auditLogService from '../services/audit-log.service';
+import { authMiddleware } from '../middlewares/auth.middleware';
+import { roleMiddleware } from '../middlewares/role.middleware';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('AuditLogRoutes');
 
 const router = Router();
 
-// Middleware to check authentication
-async function requireAuth(req: Request, res: Response, next: any) {
-    try {
-        const session = await auth.api.getSession({
-            headers: req.headers as any,
-        });
-
-        if (!session) {
-            return res.status(401).json({ error: 'Not authenticated' });
-        }
-
-        (req as any).currentUser = { id: session.user.id };
-        next();
-    } catch (error) {
-        log.error({ err: error }, 'Auth check error:');
-        res.status(500).json({ error: 'Internal server error' });
-    }
-}
+// Always run the centralized account-state checks before evaluating permissions.
+// This prevents deactivated/default users with a newly issued Better Auth session
+// from bypassing authMiddleware through a route-specific authentication path.
+router.use(authMiddleware);
+// Audit rows do not yet carry a mandatory unit dimension. Until that migration
+// exists, exposing them to unit admins/auditors would leak cross-unit activity.
+router.use(roleMiddleware(['super_admin']));
 
 /**
  * @swagger
@@ -80,7 +67,7 @@ async function requireAuth(req: Request, res: Response, next: any) {
  *       200:
  *         description: List of audit logs with pagination
  */
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
     try {
         const { entityType, entityId, action, userId, search, startDate, endDate, page, limit } = req.query;
 
@@ -127,7 +114,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
  *       200:
  *         description: Entity audit history
  */
-router.get('/:entityType/:entityId', requireAuth, async (req: Request, res: Response) => {
+router.get('/:entityType/:entityId', async (req: Request, res: Response) => {
     try {
         const entityType = req.params.entityType as string;
         const entityId = req.params.entityId as string;

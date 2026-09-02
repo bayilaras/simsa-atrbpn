@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { layananArsipService } from '@/services/layanan-arsip.service';
 import { arsipService } from '@/services/arsip.service';
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import {
     Dialog,
     DialogContent,
@@ -48,19 +49,13 @@ export default function LayananArsipCreate() {
     const [searchArsip, setSearchArsip] = useState('');
     const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-    useEffect(() => {
-        if (isDialogOpen) {
-            fetchArsip();
-        }
-    }, [isDialogOpen, searchArsip]);
-
-    const fetchArsip = async () => {
+    const fetchArsip = useCallback(async () => {
         setLoadingArsip(true);
         try {
             const result = await arsipService.getAll({
                 search: searchArsip,
                 limit: 10,
-                unitKerjaId: user?.unitKerjaId,
+                unitKerjaId: resolveEffectiveUnitKerjaId(user) || undefined,
             });
             setArsipList(result.data || []);
         } catch (error) {
@@ -68,7 +63,13 @@ export default function LayananArsipCreate() {
         } finally {
             setLoadingArsip(false);
         }
-    };
+    }, [searchArsip, user]);
+
+    useEffect(() => {
+        if (isDialogOpen) {
+            fetchArsip();
+        }
+    }, [fetchArsip, isDialogOpen]);
 
     const handleSelectArsip = (arsip) => {
         setSelectedArsip(arsip);
@@ -145,7 +146,7 @@ export default function LayananArsipCreate() {
 
                         <div className="space-y-2">
                             <Label>Pilih Arsip</Label>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                                 <div className="flex-1 p-3 border rounded-md bg-muted/20">
                                     {selectedArsip ? (
                                         <div>
@@ -173,15 +174,16 @@ export default function LayananArsipCreate() {
                                             />
                                             <div className="max-h-[300px] overflow-y-auto border rounded-md">
                                                 {loadingArsip ? (
-                                                    <div className="p-4 text-center">Loading...</div>
+                                                    <div role="status" className="p-4 text-center">Memuat arsip…</div>
                                                 ) : arsipList.length === 0 ? (
                                                     <div className="p-4 text-center text-muted-foreground">Tidak ditemukan</div>
                                                 ) : (
                                                     <div className="divide-y">
                                                         {arsipList.map(arsip => (
-                                                            <div
+                                                            <button
+                                                                type="button"
                                                                 key={arsip.id}
-                                                                className="p-3 hover:bg-muted cursor-pointer transition-colors"
+                                                                className="w-full p-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                                                 onClick={() => handleSelectArsip(arsip)}
                                                             >
                                                                 <div className="font-medium">{arsip.nomorBerkas}</div>
@@ -189,9 +191,9 @@ export default function LayananArsipCreate() {
                                                                 <div className="text-xs text-muted-foreground flex gap-2 mt-1">
                                                                     <span>Tahun: {arsip.tahun}</span>
                                                                     <span>•</span>
-                                                                    <span>Unit: {arsip.unitKerja?.nama}</span>
+                                                                    <span>Unit: {arsip.unitKerja?.name || arsip.unitKerja?.nama || arsip.unitKerjaId || '-'}</span>
                                                                 </div>
-                                                            </div>
+                                                            </button>
                                                         ))}
                                                     </div>
                                                 )}

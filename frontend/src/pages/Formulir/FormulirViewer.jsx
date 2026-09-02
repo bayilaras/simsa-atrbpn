@@ -31,11 +31,13 @@ import Formulir30 from '@/components/formulir/Formulir30';
 import Formulir31 from '@/components/formulir/Formulir31';
 import Formulir32 from '@/components/formulir/Formulir32';
 import Formulir33 from '@/components/formulir/Formulir33';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import { getFormulirMetadata } from './formulir-metadata';
 
 const FormulirViewer = () => {
     const { id } = useParams();
     const formId = parseInt(id);
+    const metadata = getFormulirMetadata(formId);
 
     // Map IDs to components
     const renderForm = () => {
@@ -117,18 +119,32 @@ const FormulirViewer = () => {
 
     return (
         <div className="form-viewer relative min-h-screen">
-            <div className="fixed top-4 right-4 z-50 print:hidden">
+            <div className="fixed left-4 right-4 top-4 z-50 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/95 p-3 shadow-lg backdrop-blur print:hidden">
+                <div>
+                    <p className="font-semibold">Template Referensi Kosong</p>
+                    <p className="text-xs text-muted-foreground">Pratinjau ini tidak terisi dari data aplikasi.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {metadata && (
+                        <Link
+                            to={metadata.path}
+                            className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted"
+                        >
+                            {metadata.label}
+                        </Link>
+                    )}
                 <button
                     onClick={handlePrint}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-md hover:bg-slate-800 transition-colors shadow-lg"
+                    className="flex items-center gap-2 px-4 py-2 bg-foreground text-white rounded-md hover:bg-foreground transition-colors shadow-lg"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="6 9 6 2 18 2 18 9"></polyline>
                         <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
                         <rect x="6" y="14" width="12" height="8"></rect>
                     </svg>
-                    Cetak Formulir
+                    Cetak Template Kosong
                 </button>
+                </div>
             </div>
             {renderForm()}
         </div>

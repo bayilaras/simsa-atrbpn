@@ -1,9 +1,9 @@
 {
-    "name": "SIMSA ATR/BPN",
-    "short_name": "SIMSA",
-    "description": "Sistem Manajemen Surat dan Arsip Kementerian ATR/BPN",
-    "theme_color": "#0066b3",
-    "background_color": "#ffffff",
+    "name": "SIMSA Internal Ditjen PTPP",
+    "short_name": "SIMSA Internal",
+    "description": "Sistem Informasi Manajemen Surat dan Arsip untuk penggunaan internal Ditjen PTPP",
+    "theme_color": "#17666b",
+    "background_color": "#f6f8f8",
     "display": "standalone",
     "orientation": "portrait-primary",
     "scope": "/",
@@ -20,12 +20,6 @@
             "sizes": "any",
             "type": "image/svg+xml",
             "purpose": "any maskable"
-        },
-        {
-            "src": "/vite.svg",
-            "sizes": "any",
-            "type": "image/svg+xml",
-            "purpose": "any"
         }
     ],
     "screenshots": [],

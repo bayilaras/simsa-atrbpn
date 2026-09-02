@@ -1,6 +1,7 @@
 import app from './app';
-import { env, validateEnv } from './config/env';
+import { env, malwareScanConfig, validateEnv } from './config/env';
 import { logger } from './utils/logger';
+import { malwareScanWorker } from './services/malware-scan.worker.js';
 
 // Validate environment variables
 try {
@@ -21,11 +22,23 @@ const server = app.listen(PORT, () => {
     }, `SIMSA Backend running at http://localhost:${PORT}`);
 });
 
+// The worker uses atomic database claims, so multiple persistent application
+// instances may run it safely. Disabled/test environments keep every file in
+// quarantine because only an actual clean verdict changes release state.
+if (malwareScanConfig.worker.runtime === 'embedded') {
+    malwareScanWorker.start();
+} else {
+    logger.info('Malware scanning is assigned to the external persistent worker');
+}
+
 // Graceful shutdown handler
 function gracefulShutdown(signal: string) {
     logger.info({ signal }, 'Graceful shutdown initiated');
 
-    server.close(() => {
+    const workerStopped = malwareScanWorker.stop();
+
+    server.close(async () => {
+        await workerStopped;
         logger.info('HTTP server closed');
         process.exit(0);
     });

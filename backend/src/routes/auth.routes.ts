@@ -5,6 +5,8 @@ import { db } from '../config/database';
 import { users } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { createLogger } from '../utils/logger';
+import userManagementService from '../services/user-management.service.js';
+import { AppError } from '../utils/errors.js';
 
 const log = createLogger('AuthRoutes');
 
@@ -126,11 +128,15 @@ router.put('/users/:userId/role', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Invalid role' });
         }
 
-        const [updatedUser] = await db
-            .update(users)
-            .set({ role, updatedAt: new Date() })
-            .where(eq(users.id, userId))
-            .returning();
+        const updatedUser = await userManagementService.updateUser(
+            userId,
+            { role },
+            {
+                userId: session.user.id,
+                userEmail: session.user.email,
+                ipAddress: req.ip,
+            },
+        );
 
         if (!updatedUser) {
             return res.status(404).json({ error: 'User not found' });
@@ -138,6 +144,9 @@ router.put('/users/:userId/role', async (req: Request, res: Response) => {
 
         res.json({ success: true, data: updatedUser });
     } catch (error) {
+        if (error instanceof AppError) {
+            return res.status(error.statusCode).json({ error: error.message });
+        }
         log.error({ err: error }, 'Update role error:');
         res.status(500).json({ error: 'Internal server error' });
     }

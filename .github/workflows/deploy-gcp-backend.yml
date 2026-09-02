@@ -1,0 +1,1208 @@
+name: Deploy GCP Backend (Manual, Staged)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Isolated GCP environment to release
+        required: true
+        type: choice
+        options:
+          - preview
+          - production
+      commit_sha:
+        description: Full immutable 40-character commit SHA to release
+        required: true
+        type: string
+      preview_database_run_id:
+        description: Exact successful Preview database-bootstrap workflow run ID
+        required: false
+        type: string
+      preview_database_artifact_id:
+        description: Exact immutable Preview database-bootstrap artifact ID
+        required: false
+        type: string
+      preview_database_artifact_digest:
+        description: Exact Preview database-bootstrap artifact digest (sha256:...)
+        required: false
+        type: string
+      maintenance_run_id:
+        description: Successful GCP Production database-maintenance workflow run ID
+        required: false
+        type: string
+      maintenance_artifact_id:
+        description: Immutable database-maintenance evidence artifact ID
+        required: false
+        type: string
+      maintenance_artifact_digest:
+        description: Database-maintenance GitHub artifact digest (sha256:...)
+        required: false
+        type: string
+      deploy_event_receiver:
+        description: Update and privately probe the storage-event receiver with the same digest
+        required: true
+        default: true
+        type: boolean
+      production_confirmation:
+        description: For Production only, enter PROMOTE_PRODUCTION
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simsa-gcp-backend-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate immutable release request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      checks: read
+      statuses: read
+      pull-requests: read
+    outputs:
+      commit_sha: ${{ steps.source.outputs.commit_sha }}
+      database_project_id: ${{ steps.database_binding.outputs.project_id }}
+      database_region: ${{ steps.database_binding.outputs.region }}
+      database_instance: ${{ steps.database_binding.outputs.instance }}
+      database_name: ${{ steps.database_binding.outputs.database }}
+      database_api_principal: ${{ steps.database_binding.outputs.api_principal }}
+      database_event_principal: ${{ steps.database_binding.outputs.event_principal }}
+      gcs_upload_bucket: ${{ steps.database_binding.outputs.gcs_upload_bucket }}
+      gcs_final_bucket: ${{ steps.database_binding.outputs.gcs_final_bucket }}
+      storage_target_json: ${{ steps.database_binding.outputs.storage_target_json }}
+      cloud_sql_proxy_image: ${{ steps.database_binding.outputs.cloud_sql_proxy_image }}
+      eventarc_invoker_service_account: ${{ steps.database_binding.outputs.eventarc_invoker_service_account }}
+      runtime_security_json: ${{ steps.database_binding.outputs.runtime_security_json }}
+
+    steps:
+      - name: Bind the loaded workflow definition to the requested commit
+        id: request
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ inputs.commit_sha }}
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -Eeuo pipefail
+          requested="${REQUESTED_SHA,,}"
+          [[ "$DEPLOYMENT_ENVIRONMENT" =~ ^(preview|production)$ ]] || {
+            echo '::error::Only Preview and Production are supported; Staging requires an equivalent immutable database bootstrap gate.'
+            exit 1
+          }
+          [[ "$requested" =~ ^[0-9a-f]{40}$ ]] || {
+            echo '::error::commit_sha must contain exactly 40 hexadecimal characters.'
+            exit 1
+          }
+          [ "${GITHUB_SHA,,}" = "$requested" ] || {
+            echo '::error::The workflow definition ref must be the exact requested release commit.'
+            exit 1
+          }
+          echo "commit_sha=$requested" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the exact requested commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.request.outputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require an exact detached commit
+        id: source
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ steps.request.outputs.commit_sha }}
+        run: |
+          set -Eeuo pipefail
+          requested="${REQUESTED_SHA,,}"
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$requested" ]; then
+            echo "::error::Checkout resolved ${actual}, not requested immutable SHA ${requested}."
+            exit 1
+          fi
+          git cat-file -e "${requested}^{commit}"
+          echo "commit_sha=${requested}" >> "$GITHUB_OUTPUT"
+          mkdir -p release-gate-evidence
+          jq -n \
+            --arg environment '${{ inputs.environment }}' \
+            --arg commit_sha "$requested" \
+            --arg workflow_run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{environment: $environment, commit_sha: $commit_sha, workflow_run: $workflow_run}' \
+            >release-gate-evidence/request.json
+
+      - name: Validate release policy, gate tests, and shell syntax
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/validate-gcp-backend-release-workflow.py
+          python3 .github/scripts/validate-gcp-database-maintenance-workflow.py
+          python3 .github/scripts/validate-gcp-preview-database-workflow.py
+          python3 .github/scripts/check-gcp-maintenance-gate.py --self-test
+          python3 .github/scripts/check-gcp-cloud-run-database-binding.py --self-test
+          bash -n .github/scripts/release-gcp-backend.sh
+
+      - name: Require explicit Production confirmation
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.production_confirmation }}
+        run: |
+          set -Eeuo pipefail
+          if [ "$CONFIRMATION" != 'PROMOTE_PRODUCTION' ]; then
+            echo '::error::Production requires the exact confirmation PROMOTE_PRODUCTION.'
+            exit 1
+          fi
+
+      - name: Require coordinated API and event release
+        if: ${{ !inputs.deploy_event_receiver }}
+        shell: bash
+        run: |
+          echo '::error::Preview and Production require API and event receiver to release the same digest together.'
+          exit 1
+
+      - name: Require immutable Production maintenance evidence identifiers
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          MAINTENANCE_RUN_ID: ${{ inputs.maintenance_run_id }}
+          MAINTENANCE_ARTIFACT_ID: ${{ inputs.maintenance_artifact_id }}
+          MAINTENANCE_ARTIFACT_DIGEST: ${{ inputs.maintenance_artifact_digest }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$MAINTENANCE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo '::error::Production requires a valid maintenance run ID.'; exit 1; }
+          [[ "$MAINTENANCE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || { echo '::error::Production requires a valid maintenance artifact ID.'; exit 1; }
+          [[ "${MAINTENANCE_ARTIFACT_DIGEST,,}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo '::error::Production requires a valid maintenance artifact digest.'; exit 1; }
+
+      - name: Require exact Preview bootstrap evidence and reject cross-environment gates
+        shell: bash
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          PREVIEW_RUN_ID: ${{ inputs.preview_database_run_id }}
+          PREVIEW_ARTIFACT_ID: ${{ inputs.preview_database_artifact_id }}
+          PREVIEW_ARTIFACT_DIGEST: ${{ inputs.preview_database_artifact_digest }}
+          MAINTENANCE_RUN_ID: ${{ inputs.maintenance_run_id }}
+          MAINTENANCE_ARTIFACT_ID: ${{ inputs.maintenance_artifact_id }}
+          MAINTENANCE_ARTIFACT_DIGEST: ${{ inputs.maintenance_artifact_digest }}
+        run: |
+          set -Eeuo pipefail
+          if [ "$ENVIRONMENT" = preview ]; then
+            [[ "$PREVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo '::error::Preview requires a valid database bootstrap run ID.'; exit 1; }
+            [[ "$PREVIEW_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || { echo '::error::Preview requires a valid database bootstrap artifact ID.'; exit 1; }
+            [[ "${PREVIEW_ARTIFACT_DIGEST,,}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo '::error::Preview requires a valid database bootstrap artifact digest.'; exit 1; }
+            [ -z "$MAINTENANCE_RUN_ID$MAINTENANCE_ARTIFACT_ID$MAINTENANCE_ARTIFACT_DIGEST" ] || { echo '::error::Preview must not accept Production maintenance evidence.'; exit 1; }
+          elif [ "$ENVIRONMENT" = production ]; then
+            [ -z "$PREVIEW_RUN_ID$PREVIEW_ARTIFACT_ID$PREVIEW_ARTIFACT_DIGEST" ] || { echo '::error::Production must not accept Preview bootstrap evidence.'; exit 1; }
+          fi
+
+      - name: Verify Preview database-bootstrap run and artifact metadata
+        if: inputs.environment == 'preview'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind preview-bootstrap --repository "$GITHUB_REPOSITORY" --environment preview \
+            --commit-sha '${{ steps.source.outputs.commit_sha }}' \
+            --run-id '${{ inputs.preview_database_run_id }}' \
+            --artifact-id '${{ inputs.preview_database_artifact_id }}' \
+            --artifact-digest '${{ inputs.preview_database_artifact_digest }}' \
+            --evidence release-gate-evidence/preview-bootstrap-api-gate.json
+
+      - name: Download exact Preview database-bootstrap evidence
+        if: inputs.environment == 'preview'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ inputs.preview_database_artifact_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.preview_database_run_id }}
+          path: ${{ runner.temp }}/preview-database-evidence
+          merge-multiple: true
+
+      - name: Verify Preview bootstrap manifest and exact database binding
+        if: inputs.environment == 'preview'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind preview-bootstrap --repository "$GITHUB_REPOSITORY" --environment preview \
+            --commit-sha '${{ steps.source.outputs.commit_sha }}' \
+            --run-id '${{ inputs.preview_database_run_id }}' \
+            --artifact-id '${{ inputs.preview_database_artifact_id }}' \
+            --artifact-digest '${{ inputs.preview_database_artifact_digest }}' \
+            --evidence-dir "$RUNNER_TEMP/preview-database-evidence" \
+            --evidence release-gate-evidence/preview-bootstrap-api-gate.json
+
+      - name: Verify Production HEAD, merge PR, and required checks through GitHub API
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ steps.source.outputs.commit_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-backend-production-gate.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --commit-sha "$RELEASE_SHA" \
+            --evidence release-gate-evidence/production-gate.json
+
+      - name: Verify Production database-maintenance run and artifact metadata
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind maintenance \
+            --repository "$GITHUB_REPOSITORY" \
+            --environment production \
+            --commit-sha '${{ steps.source.outputs.commit_sha }}' \
+            --run-id '${{ inputs.maintenance_run_id }}' \
+            --artifact-id '${{ inputs.maintenance_artifact_id }}' \
+            --artifact-digest '${{ inputs.maintenance_artifact_digest }}' \
+            --evidence release-gate-evidence/maintenance-api-gate.json
+
+      - name: Download exact Production maintenance evidence
+        if: inputs.environment == 'production'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ inputs.maintenance_artifact_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.maintenance_run_id }}
+          path: ${{ runner.temp }}/database-maintenance-evidence
+          merge-multiple: true
+
+      - name: Verify Production maintenance evidence manifest and release binding
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind maintenance \
+            --repository "$GITHUB_REPOSITORY" \
+            --environment production \
+            --commit-sha '${{ steps.source.outputs.commit_sha }}' \
+            --run-id '${{ inputs.maintenance_run_id }}' \
+            --artifact-id '${{ inputs.maintenance_artifact_id }}' \
+            --artifact-digest '${{ inputs.maintenance_artifact_digest }}' \
+            --evidence-dir "$RUNNER_TEMP/database-maintenance-evidence" \
+            --evidence release-gate-evidence/maintenance-api-gate.json
+          jq -e '.database_target | type == "object"' release-gate-evidence/maintenance-api-gate.json >/dev/null
+
+      - name: Export the exact verified database target and runtime principals
+        id: database_binding
+        shell: bash
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -Eeuo pipefail
+          if [ "$ENVIRONMENT" = preview ]; then
+            gate=release-gate-evidence/preview-bootstrap-api-gate.json
+          else
+            gate=release-gate-evidence/maintenance-api-gate.json
+          fi
+          jq -e '.database_target | type == "object"' "$gate" >/dev/null
+          {
+            echo "project_id=$(jq -r '.database_target.project_id' "$gate")"
+            echo "region=$(jq -r '.database_target.region' "$gate")"
+            echo "instance=$(jq -r '.database_target.instance' "$gate")"
+            echo "database=$(jq -r '.database_target.database' "$gate")"
+            echo "api_principal=$(jq -r '.database_target.api_principal' "$gate")"
+            echo "event_principal=$(jq -r '.database_target.event_principal' "$gate")"
+            echo "gcs_upload_bucket=$(jq -r '.storage_target.upload.name' "$gate")"
+            echo "gcs_final_bucket=$(jq -r '.storage_target.final.name' "$gate")"
+            echo "storage_target_json=$(jq -c '.storage_target' "$gate")"
+            echo "cloud_sql_proxy_image=$(jq -r '.database_target.cloud_sql_proxy_image' "$gate")"
+            echo "eventarc_invoker_service_account=$(jq -r '.database_target.eventarc_invoker_service_account' "$gate")"
+            echo "runtime_security_json=$(jq -c '.runtime_security' "$gate")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Record non-Production gate result
+        if: inputs.environment != 'production'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          jq -n \
+            --arg environment '${{ inputs.environment }}' \
+            --arg commit_sha '${{ steps.source.outputs.commit_sha }}' \
+            '{gate: "passed", environment: $environment, commit_sha: $commit_sha,
+              production_branch_and_checks_gate: "not_applicable"}' \
+            >release-gate-evidence/non-production-gate.json
+
+      - name: Upload immutable gate evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gcp-backend-${{ inputs.environment }}-${{ inputs.commit_sha }}-${{ github.run_id }}-gate
+          path: release-gate-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  candidate:
+    name: Build once, deploy API candidate, and probe
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: gcp-${{ inputs.environment }}-backend-candidate
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      project_id: ${{ steps.config.outputs.project_id }}
+      region: ${{ steps.config.outputs.region }}
+      api_service: ${{ steps.config.outputs.api_service }}
+      event_service: ${{ steps.config.outputs.event_service }}
+      wif_provider: ${{ steps.config.outputs.wif_provider }}
+      deploy_service_account: ${{ steps.config.outputs.deploy_service_account }}
+      image_ref: ${{ steps.release.outputs.image_ref }}
+      image_digest: ${{ steps.release.outputs.image_digest }}
+      candidate_revision: ${{ steps.release.outputs.candidate_revision }}
+      previous_revision: ${{ steps.release.outputs.previous_revision }}
+      previous_image: ${{ steps.release.outputs.previous_image }}
+      previous_digest: ${{ steps.release.outputs.previous_digest }}
+      service_uri: ${{ steps.release.outputs.service_uri }}
+
+    steps:
+      - name: Check out release source by immutable SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize candidate evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p release-evidence
+          printf 'commit_sha=%s\nenvironment=%s\n' \
+            '${{ needs.validate.outputs.commit_sha }}' '${{ inputs.environment }}' \
+            >release-evidence/request.txt
+
+      - name: Resolve protected environment configuration
+        id: config
+        shell: bash
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+          IMAGE_NAME: ${{ vars.GCP_BACKEND_IMAGE_NAME }}
+          API_SERVICE: ${{ vars.GCP_BACKEND_API_SERVICE }}
+          EVENT_SERVICE: ${{ vars.GCP_BACKEND_EVENT_SERVICE }}
+          WIF_PROVIDER: ${{ vars.GCP_BACKEND_DEPLOY_WIF_PROVIDER }}
+          DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_BACKEND_DEPLOY_SERVICE_ACCOUNT }}
+          DATABASE_PROJECT_ID: ${{ needs.validate.outputs.database_project_id }}
+          DATABASE_REGION: ${{ needs.validate.outputs.database_region }}
+        run: |
+          set -Eeuo pipefail
+          for required in PROJECT_ID REGION ARTIFACT_REPOSITORY IMAGE_NAME API_SERVICE EVENT_SERVICE WIF_PROVIDER DEPLOY_SERVICE_ACCOUNT; do
+            if [ -z "${!required:-}" ]; then
+              echo "::error::Protected environment variable ${required} is missing."
+              exit 1
+            fi
+          done
+          [[ "$PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo '::error::Invalid GCP_PROJECT_ID.'; exit 1; }
+          [[ "$REGION" =~ ^[a-z]+-[a-z0-9]+[0-9]$ ]] || { echo '::error::Invalid GCP_REGION.'; exit 1; }
+          [[ "$ARTIFACT_REPOSITORY" =~ ^[a-z][a-z0-9._-]{0,62}$ ]] || { echo '::error::Invalid GCP_ARTIFACT_REPOSITORY.'; exit 1; }
+          [[ "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]{0,126}$ ]] || { echo '::error::Invalid GCP_BACKEND_IMAGE_NAME.'; exit 1; }
+          [[ "$API_SERVICE" =~ ^[a-z][a-z0-9-]{0,62}$ ]] || { echo '::error::Invalid GCP_BACKEND_API_SERVICE.'; exit 1; }
+          [[ "$EVENT_SERVICE" =~ ^[a-z][a-z0-9-]{0,62}$ ]] || { echo '::error::Invalid GCP_BACKEND_EVENT_SERVICE.'; exit 1; }
+          [[ "$WIF_PROVIDER" =~ ^projects/[0-9]+/locations/global/workloadIdentityPools/[A-Za-z0-9_-]+/providers/[A-Za-z0-9_-]+$ ]] || { echo '::error::Invalid GCP_BACKEND_DEPLOY_WIF_PROVIDER.'; exit 1; }
+          [[ "$DEPLOY_SERVICE_ACCOUNT" =~ ^[a-z0-9][-a-z0-9.]*@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$ ]] || { echo '::error::Invalid GCP_BACKEND_DEPLOY_SERVICE_ACCOUNT.'; exit 1; }
+          [[ "$DEPLOY_SERVICE_ACCOUNT" == *"@${PROJECT_ID}.iam.gserviceaccount.com" ]] || {
+            echo '::error::The deploy service account must belong to the selected environment project.'
+            exit 1
+          }
+          [ "$PROJECT_ID" = "$DATABASE_PROJECT_ID" ] || {
+            echo '::error::Backend project differs from the exact verified database target.'
+            exit 1
+          }
+          [ "$REGION" = "$DATABASE_REGION" ] || {
+            echo '::error::Backend region differs from the exact verified database target.'
+            exit 1
+          }
+          {
+            echo "project_id=$PROJECT_ID"
+            echo "region=$REGION"
+            echo "artifact_repository=$ARTIFACT_REPOSITORY"
+            echo "image_name=$IMAGE_NAME"
+            echo "api_service=$API_SERVICE"
+            echo "event_service=$EVENT_SERVICE"
+            echo "wif_provider=$WIF_PROVIDER"
+            echo "deploy_service_account=$DEPLOY_SERVICE_ACCOUNT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ steps.config.outputs.project_id }}
+          workload_identity_provider: ${{ steps.config.outputs.wif_provider }}
+          service_account: ${{ steps.config.outputs.deploy_service_account }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ steps.config.outputs.project_id }}
+          version: ">= 500.0.0"
+
+      - name: Build runtime once, push, resolve digest, and deploy no-traffic candidate
+        id: release
+        shell: bash
+        env:
+          PROJECT_ID: ${{ steps.config.outputs.project_id }}
+          REGION: ${{ steps.config.outputs.region }}
+          ARTIFACT_REPOSITORY: ${{ steps.config.outputs.artifact_repository }}
+          IMAGE_NAME: ${{ steps.config.outputs.image_name }}
+          SERVICE: ${{ steps.config.outputs.api_service }}
+          CONTAINER: api
+          EVENT_SERVICE: ${{ steps.config.outputs.event_service }}
+          EVENT_CONTAINER: events
+          COMMIT_SHA: ${{ needs.validate.outputs.commit_sha }}
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          EVIDENCE_DIR: release-evidence
+          EXPECTED_DATABASE_PROJECT_ID: ${{ needs.validate.outputs.database_project_id }}
+          EXPECTED_DATABASE_REGION: ${{ needs.validate.outputs.database_region }}
+          EXPECTED_DATABASE_INSTANCE: ${{ needs.validate.outputs.database_instance }}
+          EXPECTED_DATABASE_NAME: ${{ needs.validate.outputs.database_name }}
+          EXPECTED_GCS_UPLOAD_BUCKET: ${{ needs.validate.outputs.gcs_upload_bucket }}
+          EXPECTED_GCS_FINAL_BUCKET: ${{ needs.validate.outputs.gcs_final_bucket }}
+          EXPECTED_STORAGE_TARGET_JSON: ${{ needs.validate.outputs.storage_target_json }}
+          EXPECTED_CLOUD_SQL_PROXY_IMAGE: ${{ needs.validate.outputs.cloud_sql_proxy_image }}
+          EXPECTED_EVENTARC_INVOKER_SERVICE_ACCOUNT: ${{ needs.validate.outputs.eventarc_invoker_service_account }}
+          EXPECTED_RUNTIME_SECURITY_JSON: ${{ needs.validate.outputs.runtime_security_json }}
+          EXPECTED_DATABASE_API_PRINCIPAL: ${{ needs.validate.outputs.database_api_principal }}
+        run: bash .github/scripts/release-gcp-backend.sh api-candidate
+
+      - name: Upload API candidate and rollback evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gcp-backend-${{ inputs.environment }}-${{ needs.validate.outputs.commit_sha }}-${{ github.run_id }}-candidate
+          path: release-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  event_candidate:
+    name: Deploy and privately probe event candidate
+    if: inputs.deploy_event_receiver
+    needs:
+      - validate
+      - candidate
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - simsa-gcp-private
+    timeout-minutes: 25
+    environment:
+      name: gcp-${{ inputs.environment }}-backend-event-candidate
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      candidate_revision: ${{ steps.release.outputs.candidate_revision }}
+      previous_revision: ${{ steps.release.outputs.previous_revision }}
+      previous_digest: ${{ steps.release.outputs.previous_digest }}
+      service_uri: ${{ steps.release.outputs.service_uri }}
+
+    steps:
+      - name: Check out release tooling by immutable SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize private candidate evidence
+        shell: bash
+        run: mkdir -p release-evidence
+
+      - name: Authenticate to Google Cloud through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          workload_identity_provider: ${{ needs.candidate.outputs.wif_provider }}
+          service_account: ${{ needs.candidate.outputs.deploy_service_account }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          version: ">= 500.0.0"
+
+      - name: Deploy same digest without traffic and probe from the private VPC runner
+        id: release
+        shell: bash
+        env:
+          PROJECT_ID: ${{ needs.candidate.outputs.project_id }}
+          REGION: ${{ needs.candidate.outputs.region }}
+          SERVICE: ${{ needs.candidate.outputs.event_service }}
+          CONTAINER: events
+          COMMIT_SHA: ${{ needs.validate.outputs.commit_sha }}
+          IMAGE_REF: ${{ needs.candidate.outputs.image_ref }}
+          IMAGE_DIGEST: ${{ needs.candidate.outputs.image_digest }}
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          EVIDENCE_DIR: release-evidence
+          EXPECTED_DATABASE_PROJECT_ID: ${{ needs.validate.outputs.database_project_id }}
+          EXPECTED_DATABASE_REGION: ${{ needs.validate.outputs.database_region }}
+          EXPECTED_DATABASE_INSTANCE: ${{ needs.validate.outputs.database_instance }}
+          EXPECTED_DATABASE_NAME: ${{ needs.validate.outputs.database_name }}
+          EXPECTED_GCS_UPLOAD_BUCKET: ${{ needs.validate.outputs.gcs_upload_bucket }}
+          EXPECTED_GCS_FINAL_BUCKET: ${{ needs.validate.outputs.gcs_final_bucket }}
+          EXPECTED_STORAGE_TARGET_JSON: ${{ needs.validate.outputs.storage_target_json }}
+          EXPECTED_CLOUD_SQL_PROXY_IMAGE: ${{ needs.validate.outputs.cloud_sql_proxy_image }}
+          EXPECTED_EVENTARC_INVOKER_SERVICE_ACCOUNT: ${{ needs.validate.outputs.eventarc_invoker_service_account }}
+          EXPECTED_RUNTIME_SECURITY_JSON: ${{ needs.validate.outputs.runtime_security_json }}
+          EXPECTED_DATABASE_EVENT_PRINCIPAL: ${{ needs.validate.outputs.database_event_principal }}
+        run: bash .github/scripts/release-gcp-backend.sh event-candidate
+
+      - name: Upload private event candidate evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gcp-backend-${{ inputs.environment }}-${{ needs.validate.outputs.commit_sha }}-${{ github.run_id }}-event-candidate
+          path: release-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  event_promote:
+    name: Promote private event receiver
+    if: inputs.deploy_event_receiver && needs.event_candidate.result == 'success'
+    needs:
+      - validate
+      - candidate
+      - event_candidate
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - simsa-gcp-private
+    timeout-minutes: 20
+    environment:
+      name: gcp-${{ inputs.environment }}-backend-event-promote
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      checks: read
+      statuses: read
+      pull-requests: read
+
+    steps:
+      - name: Check out release tooling by immutable SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize event promotion evidence
+        shell: bash
+        run: mkdir -p release-evidence
+
+      - name: Revalidate Production merge, review, HEAD, and required checks immediately before event traffic
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ needs.validate.outputs.commit_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-backend-production-gate.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --commit-sha "$RELEASE_SHA" \
+            --evidence release-evidence/production-pre-event-traffic-gate.json
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind maintenance --repository "$GITHUB_REPOSITORY" --environment production \
+            --commit-sha "$RELEASE_SHA" --run-id '${{ inputs.maintenance_run_id }}' \
+            --artifact-id '${{ inputs.maintenance_artifact_id }}' \
+            --artifact-digest '${{ inputs.maintenance_artifact_digest }}' \
+            --evidence release-evidence/production-pre-event-maintenance-gate.json
+
+      - name: Authenticate to Google Cloud through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          workload_identity_provider: ${{ needs.candidate.outputs.wif_provider }}
+          service_account: ${{ needs.candidate.outputs.deploy_service_account }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          version: ">= 500.0.0"
+
+      - name: Reverify current and candidate event database binding before event promotion
+        shell: bash
+        env:
+          PROJECT_ID: ${{ needs.candidate.outputs.project_id }}
+          REGION: ${{ needs.candidate.outputs.region }}
+          SERVICE: ${{ needs.candidate.outputs.event_service }}
+          CONTAINER: events
+          COMMIT_SHA: ${{ needs.validate.outputs.commit_sha }}
+          CANDIDATE_REVISION: ${{ needs.event_candidate.outputs.candidate_revision }}
+          PREVIOUS_REVISION: ${{ needs.event_candidate.outputs.previous_revision }}
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          EXPECTED_DATABASE_PROJECT_ID: ${{ needs.validate.outputs.database_project_id }}
+          EXPECTED_DATABASE_REGION: ${{ needs.validate.outputs.database_region }}
+          EXPECTED_DATABASE_INSTANCE: ${{ needs.validate.outputs.database_instance }}
+          EXPECTED_DATABASE_NAME: ${{ needs.validate.outputs.database_name }}
+          EXPECTED_GCS_UPLOAD_BUCKET: ${{ needs.validate.outputs.gcs_upload_bucket }}
+          EXPECTED_GCS_FINAL_BUCKET: ${{ needs.validate.outputs.gcs_final_bucket }}
+          EXPECTED_STORAGE_TARGET_JSON: ${{ needs.validate.outputs.storage_target_json }}
+          EXPECTED_CLOUD_SQL_PROXY_IMAGE: ${{ needs.validate.outputs.cloud_sql_proxy_image }}
+          EXPECTED_EVENTARC_INVOKER_SERVICE_ACCOUNT: ${{ needs.validate.outputs.eventarc_invoker_service_account }}
+          EXPECTED_RUNTIME_SECURITY_JSON: ${{ needs.validate.outputs.runtime_security_json }}
+          EXPECTED_DATABASE_EVENT_PRINCIPAL: ${{ needs.validate.outputs.database_event_principal }}
+          EVIDENCE_DIR: release-evidence
+        run: bash .github/scripts/release-gcp-backend.sh verify-database-binding
+
+      - name: Promote event receiver with automatic rollback on probe failure
+        shell: bash
+        env:
+          PROJECT_ID: ${{ needs.candidate.outputs.project_id }}
+          REGION: ${{ needs.candidate.outputs.region }}
+          SERVICE: ${{ needs.candidate.outputs.event_service }}
+          CONTAINER: events
+          COMMIT_SHA: ${{ needs.validate.outputs.commit_sha }}
+          CANDIDATE_REVISION: ${{ needs.event_candidate.outputs.candidate_revision }}
+          PREVIOUS_REVISION: ${{ needs.event_candidate.outputs.previous_revision }}
+          CANDIDATE_PERCENT: "100"
+          EXPECTED_CANDIDATE_PERCENT: "0"
+          EXPECTED_PREVIOUS_PERCENT: "100"
+          PREVIOUS_DIGEST: ${{ needs.event_candidate.outputs.previous_digest }}
+          IMAGE_DIGEST: ${{ needs.candidate.outputs.image_digest }}
+          PROBE_AUTH: identity
+          STAGE: event-100
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          EVIDENCE_DIR: release-evidence
+          EXPECTED_DATABASE_PROJECT_ID: ${{ needs.validate.outputs.database_project_id }}
+          EXPECTED_DATABASE_REGION: ${{ needs.validate.outputs.database_region }}
+          EXPECTED_DATABASE_INSTANCE: ${{ needs.validate.outputs.database_instance }}
+          EXPECTED_DATABASE_NAME: ${{ needs.validate.outputs.database_name }}
+          EXPECTED_GCS_UPLOAD_BUCKET: ${{ needs.validate.outputs.gcs_upload_bucket }}
+          EXPECTED_GCS_FINAL_BUCKET: ${{ needs.validate.outputs.gcs_final_bucket }}
+          EXPECTED_STORAGE_TARGET_JSON: ${{ needs.validate.outputs.storage_target_json }}
+          EXPECTED_CLOUD_SQL_PROXY_IMAGE: ${{ needs.validate.outputs.cloud_sql_proxy_image }}
+          EXPECTED_EVENTARC_INVOKER_SERVICE_ACCOUNT: ${{ needs.validate.outputs.eventarc_invoker_service_account }}
+          EXPECTED_RUNTIME_SECURITY_JSON: ${{ needs.validate.outputs.runtime_security_json }}
+          EXPECTED_DATABASE_EVENT_PRINCIPAL: ${{ needs.validate.outputs.database_event_principal }}
+        run: bash .github/scripts/release-gcp-backend.sh promote
+
+      - name: Upload event promotion evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gcp-backend-${{ inputs.environment }}-${{ needs.validate.outputs.commit_sha }}-${{ github.run_id }}-event-promote
+          path: release-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  canary_5:
+    name: Shift API traffic to 5 percent
+    if: >-
+      ${{ always() && needs.candidate.result == 'success' &&
+          (!inputs.deploy_event_receiver || needs.event_promote.result == 'success') }}
+    needs:
+      - validate
+      - candidate
+      - event_promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: gcp-${{ inputs.environment }}-backend-canary-5
+      url: ${{ needs.candidate.outputs.service_uri }}
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      checks: read
+      statuses: read
+      pull-requests: read
+
+    steps:
+      - name: Check out release tooling by immutable SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Initialize canary evidence
+        shell: bash
+        run: mkdir -p release-evidence
+      - name: Revalidate Production merge, review, HEAD, and required checks immediately before API traffic
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ needs.validate.outputs.commit_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-backend-production-gate.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --commit-sha "$RELEASE_SHA" \
+            --evidence release-evidence/production-pre-api-traffic-gate.json
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind maintenance --repository "$GITHUB_REPOSITORY" --environment production \
+            --commit-sha "$RELEASE_SHA" --run-id '${{ inputs.maintenance_run_id }}' \
+            --artifact-id '${{ inputs.maintenance_artifact_id }}' \
+            --artifact-digest '${{ inputs.maintenance_artifact_digest }}' \
+            --evidence release-evidence/production-pre-api-5-maintenance-gate.json
+      - name: Authenticate to Google Cloud through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          workload_identity_provider: ${{ needs.candidate.outputs.wif_provider }}
+          service_account: ${{ needs.candidate.outputs.deploy_service_account }}
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          version: ">= 500.0.0"
+      - name: Promote 5 percent and probe
+        shell: bash
+        env:
+          PROJECT_ID: ${{ needs.candidate.outputs.project_id }}
+          REGION: ${{ needs.candidate.outputs.region }}
+          SERVICE: ${{ needs.candidate.outputs.api_service }}
+          CONTAINER: api
+          COMMIT_SHA: ${{ needs.validate.outputs.commit_sha }}
+          CANDIDATE_REVISION: ${{ needs.candidate.outputs.candidate_revision }}
+          PREVIOUS_REVISION: ${{ needs.candidate.outputs.previous_revision }}
+          PREVIOUS_DIGEST: ${{ needs.candidate.outputs.previous_digest }}
+          IMAGE_DIGEST: ${{ needs.candidate.outputs.image_digest }}
+          PROBE_AUTH: public
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          EVIDENCE_DIR: release-evidence
+          CANDIDATE_PERCENT: "5"
+          EXPECTED_CANDIDATE_PERCENT: "0"
+          EXPECTED_PREVIOUS_PERCENT: "100"
+          STAGE: api-5
+          EXPECTED_DATABASE_PROJECT_ID: ${{ needs.validate.outputs.database_project_id }}
+          EXPECTED_DATABASE_REGION: ${{ needs.validate.outputs.database_region }}
+          EXPECTED_DATABASE_INSTANCE: ${{ needs.validate.outputs.database_instance }}
+          EXPECTED_DATABASE_NAME: ${{ needs.validate.outputs.database_name }}
+          EXPECTED_GCS_UPLOAD_BUCKET: ${{ needs.validate.outputs.gcs_upload_bucket }}
+          EXPECTED_GCS_FINAL_BUCKET: ${{ needs.validate.outputs.gcs_final_bucket }}
+          EXPECTED_STORAGE_TARGET_JSON: ${{ needs.validate.outputs.storage_target_json }}
+          EXPECTED_CLOUD_SQL_PROXY_IMAGE: ${{ needs.validate.outputs.cloud_sql_proxy_image }}
+          EXPECTED_EVENTARC_INVOKER_SERVICE_ACCOUNT: ${{ needs.validate.outputs.eventarc_invoker_service_account }}
+          EXPECTED_RUNTIME_SECURITY_JSON: ${{ needs.validate.outputs.runtime_security_json }}
+          EXPECTED_DATABASE_API_PRINCIPAL: ${{ needs.validate.outputs.database_api_principal }}
+        run: bash .github/scripts/release-gcp-backend.sh promote
+      - name: Upload 5 percent evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gcp-backend-${{ inputs.environment }}-${{ needs.validate.outputs.commit_sha }}-${{ github.run_id }}-api-5
+          path: release-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  canary_25:
+    name: Shift API traffic to 25 percent
+    needs:
+      - validate
+      - candidate
+      - canary_5
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: gcp-${{ inputs.environment }}-backend-canary-25
+      url: ${{ needs.candidate.outputs.service_uri }}
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      checks: read
+      statuses: read
+      pull-requests: read
+
+    steps:
+      - name: Check out release tooling by immutable SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Initialize canary evidence
+        shell: bash
+        run: mkdir -p release-evidence
+      - name: Revalidate Production merge, review, HEAD, and required checks before 25 percent traffic
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ needs.validate.outputs.commit_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-backend-production-gate.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --commit-sha "$RELEASE_SHA" \
+            --evidence release-evidence/production-pre-api-25-traffic-gate.json
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind maintenance --repository "$GITHUB_REPOSITORY" --environment production \
+            --commit-sha "$RELEASE_SHA" --run-id '${{ inputs.maintenance_run_id }}' \
+            --artifact-id '${{ inputs.maintenance_artifact_id }}' \
+            --artifact-digest '${{ inputs.maintenance_artifact_digest }}' \
+            --evidence release-evidence/production-pre-api-25-maintenance-gate.json
+      - name: Authenticate to Google Cloud through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          workload_identity_provider: ${{ needs.candidate.outputs.wif_provider }}
+          service_account: ${{ needs.candidate.outputs.deploy_service_account }}
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          version: ">= 500.0.0"
+      - name: Promote 25 percent and probe
+        shell: bash
+        env:
+          PROJECT_ID: ${{ needs.candidate.outputs.project_id }}
+          REGION: ${{ needs.candidate.outputs.region }}
+          SERVICE: ${{ needs.candidate.outputs.api_service }}
+          CONTAINER: api
+          COMMIT_SHA: ${{ needs.validate.outputs.commit_sha }}
+          CANDIDATE_REVISION: ${{ needs.candidate.outputs.candidate_revision }}
+          PREVIOUS_REVISION: ${{ needs.candidate.outputs.previous_revision }}
+          PREVIOUS_DIGEST: ${{ needs.candidate.outputs.previous_digest }}
+          IMAGE_DIGEST: ${{ needs.candidate.outputs.image_digest }}
+          PROBE_AUTH: public
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          EVIDENCE_DIR: release-evidence
+          CANDIDATE_PERCENT: "25"
+          EXPECTED_CANDIDATE_PERCENT: "5"
+          EXPECTED_PREVIOUS_PERCENT: "95"
+          STAGE: api-25
+          EXPECTED_DATABASE_PROJECT_ID: ${{ needs.validate.outputs.database_project_id }}
+          EXPECTED_DATABASE_REGION: ${{ needs.validate.outputs.database_region }}
+          EXPECTED_DATABASE_INSTANCE: ${{ needs.validate.outputs.database_instance }}
+          EXPECTED_DATABASE_NAME: ${{ needs.validate.outputs.database_name }}
+          EXPECTED_GCS_UPLOAD_BUCKET: ${{ needs.validate.outputs.gcs_upload_bucket }}
+          EXPECTED_GCS_FINAL_BUCKET: ${{ needs.validate.outputs.gcs_final_bucket }}
+          EXPECTED_STORAGE_TARGET_JSON: ${{ needs.validate.outputs.storage_target_json }}
+          EXPECTED_CLOUD_SQL_PROXY_IMAGE: ${{ needs.validate.outputs.cloud_sql_proxy_image }}
+          EXPECTED_EVENTARC_INVOKER_SERVICE_ACCOUNT: ${{ needs.validate.outputs.eventarc_invoker_service_account }}
+          EXPECTED_RUNTIME_SECURITY_JSON: ${{ needs.validate.outputs.runtime_security_json }}
+          EXPECTED_DATABASE_API_PRINCIPAL: ${{ needs.validate.outputs.database_api_principal }}
+        run: bash .github/scripts/release-gcp-backend.sh promote
+      - name: Upload 25 percent evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gcp-backend-${{ inputs.environment }}-${{ needs.validate.outputs.commit_sha }}-${{ github.run_id }}-api-25
+          path: release-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  promote_100:
+    name: Promote API to 100 percent
+    needs:
+      - validate
+      - candidate
+      - canary_25
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: gcp-${{ inputs.environment }}-backend-promote-100
+      url: ${{ needs.candidate.outputs.service_uri }}
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      checks: read
+      statuses: read
+      pull-requests: read
+
+    steps:
+      - name: Check out release tooling by immutable SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Initialize final promotion evidence
+        shell: bash
+        run: mkdir -p release-evidence
+      - name: Revalidate Production merge, review, HEAD, and required checks before 100 percent traffic
+        if: inputs.environment == 'production'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ needs.validate.outputs.commit_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-backend-production-gate.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --commit-sha "$RELEASE_SHA" \
+            --evidence release-evidence/production-pre-api-100-traffic-gate.json
+          python3 .github/scripts/check-gcp-maintenance-gate.py \
+            --kind maintenance --repository "$GITHUB_REPOSITORY" --environment production \
+            --commit-sha "$RELEASE_SHA" --run-id '${{ inputs.maintenance_run_id }}' \
+            --artifact-id '${{ inputs.maintenance_artifact_id }}' \
+            --artifact-digest '${{ inputs.maintenance_artifact_digest }}' \
+            --evidence release-evidence/production-pre-api-100-maintenance-gate.json
+      - name: Authenticate to Google Cloud through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          workload_identity_provider: ${{ needs.candidate.outputs.wif_provider }}
+          service_account: ${{ needs.candidate.outputs.deploy_service_account }}
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          version: ">= 500.0.0"
+      - name: Promote 100 percent and probe
+        shell: bash
+        env:
+          PROJECT_ID: ${{ needs.candidate.outputs.project_id }}
+          REGION: ${{ needs.candidate.outputs.region }}
+          SERVICE: ${{ needs.candidate.outputs.api_service }}
+          CONTAINER: api
+          COMMIT_SHA: ${{ needs.validate.outputs.commit_sha }}
+          CANDIDATE_REVISION: ${{ needs.candidate.outputs.candidate_revision }}
+          PREVIOUS_REVISION: ${{ needs.candidate.outputs.previous_revision }}
+          PREVIOUS_DIGEST: ${{ needs.candidate.outputs.previous_digest }}
+          IMAGE_DIGEST: ${{ needs.candidate.outputs.image_digest }}
+          PROBE_AUTH: public
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          EVIDENCE_DIR: release-evidence
+          CANDIDATE_PERCENT: "100"
+          EXPECTED_CANDIDATE_PERCENT: "25"
+          EXPECTED_PREVIOUS_PERCENT: "75"
+          STAGE: api-100
+          EXPECTED_DATABASE_PROJECT_ID: ${{ needs.validate.outputs.database_project_id }}
+          EXPECTED_DATABASE_REGION: ${{ needs.validate.outputs.database_region }}
+          EXPECTED_DATABASE_INSTANCE: ${{ needs.validate.outputs.database_instance }}
+          EXPECTED_DATABASE_NAME: ${{ needs.validate.outputs.database_name }}
+          EXPECTED_GCS_UPLOAD_BUCKET: ${{ needs.validate.outputs.gcs_upload_bucket }}
+          EXPECTED_GCS_FINAL_BUCKET: ${{ needs.validate.outputs.gcs_final_bucket }}
+          EXPECTED_STORAGE_TARGET_JSON: ${{ needs.validate.outputs.storage_target_json }}
+          EXPECTED_CLOUD_SQL_PROXY_IMAGE: ${{ needs.validate.outputs.cloud_sql_proxy_image }}
+          EXPECTED_EVENTARC_INVOKER_SERVICE_ACCOUNT: ${{ needs.validate.outputs.eventarc_invoker_service_account }}
+          EXPECTED_RUNTIME_SECURITY_JSON: ${{ needs.validate.outputs.runtime_security_json }}
+          EXPECTED_DATABASE_API_PRINCIPAL: ${{ needs.validate.outputs.database_api_principal }}
+        run: bash .github/scripts/release-gcp-backend.sh promote
+      - name: Write release summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo '### GCP backend promoted'
+            echo
+            echo '- Environment: `${{ inputs.environment }}`'
+            echo '- Commit: `${{ needs.validate.outputs.commit_sha }}`'
+            echo '- Image: `${{ needs.candidate.outputs.image_ref }}`'
+            echo '- API revision: `${{ needs.candidate.outputs.candidate_revision }}`'
+            echo '- Previous API revision: `${{ needs.candidate.outputs.previous_revision }}`'
+            echo '- Previous API digest: `${{ needs.candidate.outputs.previous_digest }}`'
+            echo
+            echo 'The final evidence artifact contains the verified rollback command.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload final promotion and rollback evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gcp-backend-${{ inputs.environment }}-${{ needs.validate.outputs.commit_sha }}-${{ github.run_id }}-api-100
+          path: release-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  coordinated_rollback:
+    name: Restore API and event receiver after an incomplete release
+    if: >-
+      ${{ always() && inputs.deploy_event_receiver &&
+          needs.event_candidate.result == 'success' &&
+          (needs.event_promote.result != 'success' ||
+           needs.canary_5.result != 'success' ||
+           needs.canary_25.result != 'success' ||
+           needs.promote_100.result != 'success') }}
+    needs:
+      - validate
+      - candidate
+      - event_candidate
+      - event_promote
+      - canary_5
+      - canary_25
+      - promote_100
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - simsa-gcp-private
+    timeout-minutes: 20
+    environment:
+      name: gcp-${{ inputs.environment }}-backend-coordinated-rollback
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out release tooling by immutable SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize coordinated rollback evidence
+        shell: bash
+        run: mkdir -p release-evidence
+
+      - name: Authenticate to Google Cloud through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          workload_identity_provider: ${{ needs.candidate.outputs.wif_provider }}
+          service_account: ${{ needs.candidate.outputs.deploy_service_account }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          version: ">= 500.0.0"
+
+      - name: Restore and verify both exact previous revisions
+        shell: bash
+        env:
+          PROJECT_ID: ${{ needs.candidate.outputs.project_id }}
+          REGION: ${{ needs.candidate.outputs.region }}
+          COMMIT_SHA: ${{ needs.validate.outputs.commit_sha }}
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          API_SERVICE: ${{ needs.candidate.outputs.api_service }}
+          API_CONTAINER: api
+          API_PREVIOUS_REVISION: ${{ needs.candidate.outputs.previous_revision }}
+          API_PREVIOUS_DIGEST: ${{ needs.candidate.outputs.previous_digest }}
+          EVENT_SERVICE: ${{ needs.candidate.outputs.event_service }}
+          EVENT_CONTAINER: events
+          EVENT_PREVIOUS_REVISION: ${{ needs.event_candidate.outputs.previous_revision }}
+          EVENT_PREVIOUS_DIGEST: ${{ needs.event_candidate.outputs.previous_digest }}
+          EXPECTED_EVENTARC_INVOKER_SERVICE_ACCOUNT: ${{ needs.validate.outputs.eventarc_invoker_service_account }}
+          ROLLBACK_EVENT: "true"
+          EVENT_PROMOTE_RESULT: ${{ needs.event_promote.result }}
+          CANARY_5_RESULT: ${{ needs.canary_5.result }}
+          CANARY_25_RESULT: ${{ needs.canary_25.result }}
+          PROMOTE_100_RESULT: ${{ needs.promote_100.result }}
+          EVIDENCE_DIR: release-evidence
+        run: bash .github/scripts/release-gcp-backend.sh coordinated-rollback
+
+      - name: Upload coordinated rollback evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gcp-backend-${{ inputs.environment }}-${{ needs.validate.outputs.commit_sha }}-${{ github.run_id }}-coordinated-rollback
+          path: release-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  api_only_rollback:
+    name: Restore API after an incomplete API-only release
+    if: >-
+      ${{ always() && !inputs.deploy_event_receiver &&
+          needs.candidate.result == 'success' &&
+          (needs.canary_5.result != 'success' ||
+           needs.canary_25.result != 'success' ||
+           needs.promote_100.result != 'success') }}
+    needs:
+      - validate
+      - candidate
+      - event_promote
+      - canary_5
+      - canary_25
+      - promote_100
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: gcp-${{ inputs.environment }}-backend-coordinated-rollback
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out release tooling by immutable SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.commit_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize API rollback evidence
+        shell: bash
+        run: mkdir -p release-evidence
+
+      - name: Authenticate to Google Cloud through keyless WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          workload_identity_provider: ${{ needs.candidate.outputs.wif_provider }}
+          service_account: ${{ needs.candidate.outputs.deploy_service_account }}
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ needs.candidate.outputs.project_id }}
+          version: ">= 500.0.0"
+
+      - name: Restore and verify the exact previous API revision
+        shell: bash
+        env:
+          PROJECT_ID: ${{ needs.candidate.outputs.project_id }}
+          REGION: ${{ needs.candidate.outputs.region }}
+          COMMIT_SHA: ${{ needs.validate.outputs.commit_sha }}
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+          API_SERVICE: ${{ needs.candidate.outputs.api_service }}
+          API_CONTAINER: api
+          API_PREVIOUS_REVISION: ${{ needs.candidate.outputs.previous_revision }}
+          API_PREVIOUS_DIGEST: ${{ needs.candidate.outputs.previous_digest }}
+          ROLLBACK_EVENT: "false"
+          EVENT_PROMOTE_RESULT: ${{ needs.event_promote.result }}
+          CANARY_5_RESULT: ${{ needs.canary_5.result }}
+          CANARY_25_RESULT: ${{ needs.canary_25.result }}
+          PROMOTE_100_RESULT: ${{ needs.promote_100.result }}
+          EVIDENCE_DIR: release-evidence
+        run: bash .github/scripts/release-gcp-backend.sh coordinated-rollback
+
+      - name: Upload API-only rollback evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gcp-backend-${{ inputs.environment }}-${{ needs.validate.outputs.commit_sha }}-${{ github.run_id }}-api-only-rollback
+          path: release-evidence
+          if-no-files-found: error
+          retention-days: 30

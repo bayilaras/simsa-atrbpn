@@ -1,6 +1,17 @@
 $ErrorActionPreference = "Stop"
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-$body = '{"email":"tester@simsa.atrbpn.go.id","password":"Password123!@#"}'
+
+function Get-RequiredTestCredential([string]$name) {
+    $value = [Environment]::GetEnvironmentVariable($name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "Required environment variable $name is not set. Refusing to run with a default credential."
+    }
+    return $value
+}
+
+$testLoginEmail = Get-RequiredTestCredential "SIMSA_TEST_EMAIL"
+$testLoginPassword = Get-RequiredTestCredential "SIMSA_TEST_PASSWORD"
+$body = @{ email = $testLoginEmail; password = $testLoginPassword } | ConvertTo-Json -Compress
 
 try {
     $loginR = Invoke-WebRequest -Uri "http://localhost:3001/api/auth/sign-in/email" -Method POST -ContentType "application/json" -Body $body -WebSession $session -UseBasicParsing

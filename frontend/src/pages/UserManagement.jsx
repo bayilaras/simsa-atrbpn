@@ -40,22 +40,31 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/context/AuthContext';
 import userManagementService from '@/services/user-management.service';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { getRoleMandatedUnitKerjaId, resolveManagedUserUnitKerjaId } from '@/lib/unit-kerja-scope';
 
 const ROLE_COLORS = {
-    'super_admin': 'bg-red-100 text-red-800 border-red-200',
-    'admin_dirjen': 'bg-blue-100 text-blue-800 border-blue-200',
-    'admin_sesditjen': 'bg-green-100 text-green-800 border-green-200',
-    'staff': 'bg-amber-100 text-amber-800 border-amber-200',
-    'user': 'bg-slate-100 text-slate-800 border-slate-200',
+    'super_admin': 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300 border-red-200',
+    'admin_dirjen': 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-200',
+    'admin_sesditjen': 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300 border-green-200',
+    'staff': 'bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-200',
+    'user': 'bg-muted text-foreground border-border',
 };
 
 const ROLE_LABELS = {
     'super_admin': 'Super Admin',
     'admin_dirjen': 'Admin Dirjen',
     'admin_sesditjen': 'Admin Sesditjen',
-    'staff': 'Staff',
-    'user': 'User',
+    'staff': 'Staf',
+    'user': 'Pengguna',
 };
+
+function applyRoleMandate(draft, role) {
+    return {
+        ...draft,
+        role,
+        unitKerjaId: resolveManagedUserUnitKerjaId(role, draft.unitKerjaId),
+    };
+}
 
 export default function UserManagement() {
     const { user: currentUser, hasRole } = useAuth();
@@ -91,23 +100,13 @@ export default function UserManagement() {
     // Check admin access
     const isAdmin = hasRole(['super_admin']);
 
-    // Load initial data
-    useEffect(() => {
-        if (isAdmin) {
-            loadDropdownData();
-            loadUsers();
-        }
-    }, [isAdmin]);
+    // Applying a filter must restart from the first page
+    const applyFilter = (setter) => (value) => {
+        setter(value);
+        setPagination(prev => ({ ...prev, page: 1 }));
+    };
 
-    // Reload when filters change
-    useEffect(() => {
-        if (isAdmin) {
-            const timer = setTimeout(() => loadUsers(), 300);
-            return () => clearTimeout(timer);
-        }
-    }, [search, roleFilter, unitKerjaFilter, pagination.page]);
-
-    const loadDropdownData = async () => {
+    const loadDropdownData = useCallback(async () => {
         try {
             const [rolesRes, unitKerjaRes] = await Promise.all([
                 userManagementService.getRoles(),
@@ -118,7 +117,7 @@ export default function UserManagement() {
         } catch (err) {
             console.error('Failed to load dropdown data:', err);
         }
-    };
+    }, []);
 
     const loadUsers = useCallback(async () => {
         try {
@@ -148,11 +147,26 @@ export default function UserManagement() {
         }
     }, [search, roleFilter, unitKerjaFilter, pagination.page, pagination.limit]);
 
+    // Load role and unit options once access is available.
+    useEffect(() => {
+        if (isAdmin) {
+            loadDropdownData();
+        }
+    }, [isAdmin, loadDropdownData]);
+
+    // Reload users after filters or pagination change.
+    useEffect(() => {
+        if (isAdmin) {
+            const timer = setTimeout(() => loadUsers(), 300);
+            return () => clearTimeout(timer);
+        }
+    }, [isAdmin, loadUsers]);
+
     const handleEdit = (user) => {
         setEditingUser(user);
         setEditData({
             role: user.role,
-            unitKerjaId: user.unitKerjaId || '',
+            unitKerjaId: resolveManagedUserUnitKerjaId(user.role, user.unitKerjaId),
             isActive: user.isActive,
             jabatan: user.jabatan || '',
             nip: user.nip || '',
@@ -239,6 +253,20 @@ export default function UserManagement() {
         }
     };
 
+    const handleActivate = async (user) => {
+        if (!window.confirm(`Yakin ingin mengaktifkan user ${user.name || user.email}?`)) {
+            return;
+        }
+
+        try {
+            await userManagementService.updateUser(user.id, { isActive: true });
+            loadUsers();
+        } catch (err) {
+            console.error('Failed to activate user:', err);
+            alert(err.response?.data?.error || 'Gagal mengaktifkan user');
+        }
+    };
+
     const getInitials = (name) => {
         if (!name) return '?';
         return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -250,6 +278,11 @@ export default function UserManagement() {
         const index = name.charCodeAt(0) % colors.length;
         return colors[index];
     };
+
+    const editMandatedUnitKerjaId = getRoleMandatedUnitKerjaId(editData.role);
+    const addMandatedUnitKerjaId = getRoleMandatedUnitKerjaId(addData.role);
+    const editUnitLocked = editData.role === 'super_admin' || Boolean(editMandatedUnitKerjaId);
+    const addUnitLocked = addData.role === 'super_admin' || Boolean(addMandatedUnitKerjaId);
 
     // Password strength calculator
     const passwordStrength = useMemo(() => {
@@ -273,7 +306,7 @@ export default function UserManagement() {
     if (!isAdmin) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-in fade-in zoom-in duration-500">
-                <div className="p-4 bg-red-100 rounded-full">
+                <div className="p-4 bg-red-100 dark:bg-red-500/15 rounded-full">
                     <Shield className="h-16 w-16 text-red-600" />
                 </div>
                 <div className="text-center space-y-2">
@@ -290,30 +323,30 @@ export default function UserManagement() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <Users className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <Users className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
-                        User Management
+                        Manajemen Pengguna
                     </h1>
                     <p className="text-muted-foreground">
-                        Kelola pengguna, penetapan role, dan akses unit kerja sistem
+                        Kelola pengguna, penetapan peran, dan akses unit kerja sistem
                     </p>
                 </div>
                 <Button className="shadow-sm bg-indigo-600 hover:bg-indigo-700" onClick={handleAddUser}>
                     <UserPlus className="mr-2 h-4 w-4" />
-                    Tambah User
+                    Tambah Pengguna
                 </Button>
             </div>
 
             {/* Stats Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card className="shadow-sm border-l-4 border-l-blue-500">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                        <CardTitle className="text-sm font-medium">Total Pengguna</CardTitle>
                         <Users className="h-4 w-4 text-blue-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-blue-700">{pagination.total}</div>
+                        <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">{pagination.total}</div>
                         <p className="text-xs text-muted-foreground mt-1">Pengguna terdaftar</p>
                     </CardContent>
                 </Card>
@@ -323,7 +356,7 @@ export default function UserManagement() {
                         <CheckCircle2 className="h-4 w-4 text-green-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-700">
+                        <div className="text-2xl font-bold text-green-700 dark:text-green-300">
                             {/* Ideally fetch from stats endpoint, simplified here */}
                             {users.filter(u => u.isActive).length}
                         </div>
@@ -333,10 +366,10 @@ export default function UserManagement() {
                 <Card className="shadow-sm border-l-4 border-l-slate-400">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Nonaktif</CardTitle>
-                        <Ban className="h-4 w-4 text-slate-500" />
+                        <Ban className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-slate-700">
+                        <div className="text-2xl font-bold text-foreground">
                             {users.filter(u => !u.isActive).length}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">Pengguna nonaktif (halaman ini)</p>
@@ -353,17 +386,17 @@ export default function UserManagement() {
                             <Input
                                 placeholder="Cari nama atau email..."
                                 value={search}
-                                onChange={(e) => setSearch(e.target.value)}
+                                onChange={(e) => applyFilter(setSearch)(e.target.value)}
                                 className="pl-9 bg-background focus:bg-background"
                             />
                         </div>
                         <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <Select value={roleFilter} onValueChange={setRoleFilter}>
+                            <Select value={roleFilter} onValueChange={applyFilter(setRoleFilter)}>
                                 <SelectTrigger className="w-full sm:w-[180px] bg-background">
-                                    <SelectValue placeholder="Filter Role" />
+                                    <SelectValue placeholder="Filter peran" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">Semua Role</SelectItem>
+                                    <SelectItem value="all">Semua peran</SelectItem>
                                     {roles.map(role => (
                                         <SelectItem key={role.value} value={role.value}>
                                             {role.label}
@@ -371,7 +404,7 @@ export default function UserManagement() {
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <Select value={unitKerjaFilter} onValueChange={setUnitKerjaFilter}>
+                            <Select value={unitKerjaFilter} onValueChange={applyFilter(setUnitKerjaFilter)}>
                                 <SelectTrigger className="w-full sm:w-[180px] bg-background">
                                     <SelectValue placeholder="Filter Unit" />
                                 </SelectTrigger>
@@ -403,11 +436,11 @@ export default function UserManagement() {
                             <Button onClick={loadUsers} variant="outline">Coba Lagi</Button>
                         </div>
                     ) : (
-                        <Table>
+                        <Table responsive>
                             <TableHeader className="bg-muted/50">
                                 <TableRow className="hover:bg-transparent">
-                                    <TableHead className="w-[300px]">User</TableHead>
-                                    <TableHead>Role</TableHead>
+                                    <TableHead className="w-[300px]">Pengguna</TableHead>
+                                    <TableHead>Peran</TableHead>
                                     <TableHead>Unit Kerja</TableHead>
                                     <TableHead>Status</TableHead>
                                     <TableHead className="text-right">Aksi</TableHead>
@@ -421,12 +454,12 @@ export default function UserManagement() {
                                                 <Users className="h-8 w-8 opacity-20" />
                                             </div>
                                             <h3 className="text-lg font-medium mb-1">Tidak ditemukan</h3>
-                                            <p className="text-sm opacity-80">Tidak ada user yang cocok dengan kriteria pencarian</p>
+                                            <p className="text-sm opacity-80">Tidak ada pengguna yang cocok dengan kriteria pencarian</p>
                                         </TableCell>
                                     </TableRow>
                                 ) : users.map((user) => (
                                     <TableRow key={user.id} className="group hover:bg-muted/50 transition-colors">
-                                        <TableCell>
+                                        <TableCell data-label="Pengguna">
                                             <div className="flex items-center gap-3">
                                                 <Avatar className="h-9 w-9 border border-border">
                                                     <AvatarImage src={user.image} />
@@ -442,12 +475,12 @@ export default function UserManagement() {
                                                 </div>
                                             </div>
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Peran">
                                             <Badge variant="outline" className={`font-medium shadow-none ${ROLE_COLORS[user.role] || ''}`}>
                                                 {ROLE_LABELS[user.role] || user.role}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Unit Kerja">
                                             {user.unitKerjaName ? (
                                                 <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                                                     <Building2 className="h-3.5 w-3.5" />
@@ -457,32 +490,32 @@ export default function UserManagement() {
                                                 <span className="text-muted-foreground text-xs italic">-</span>
                                             )}
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell data-label="Status">
                                             <Badge
                                                 variant={user.isActive ? 'default' : 'secondary'}
-                                                className={user.isActive ? "bg-green-100 text-green-700 hover:bg-green-200 border-green-200 shadow-none border" : "bg-slate-100 text-slate-600 border-slate-200 shadow-none border"}
+                                                className={user.isActive ? "bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-200 border-green-200 shadow-none border" : "bg-muted text-muted-foreground border-border shadow-none border"}
                                             >
                                                 {user.isActive ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <Ban className="w-3 h-3 mr-1" />}
                                                 {user.isActive ? 'Aktif' : 'Nonaktif'}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="text-right">
+                                        <TableCell data-label="Aksi" className="text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                                    <Button type="button" variant="ghost" size="icon" aria-label={`Buka tindakan untuk ${user.name || user.email}`} className="h-10 w-10">
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-48">
-                                                    <DropdownMenuLabel>Aksi User</DropdownMenuLabel>
+                                                    <DropdownMenuLabel>Tindakan Pengguna</DropdownMenuLabel>
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem onClick={() => handleEdit(user)}>
                                                         <Edit2 className="h-4 w-4 mr-2" />
-                                                        Edit Role/Unit
+                                                        Ubah Peran/Unit
                                                     </DropdownMenuItem>
                                                     {user.id !== currentUser?.id && (
                                                         <DropdownMenuItem
-                                                            onClick={() => handleDeactivate(user)}
+                                                            onClick={() => user.isActive ? handleDeactivate(user) : handleActivate(user)}
                                                             className={user.isActive ? "text-red-600 focus:text-red-600" : "text-green-600 focus:text-green-600"}
                                                         >
                                                             {user.isActive ? (
@@ -514,7 +547,7 @@ export default function UserManagement() {
                         <p className="text-sm text-muted-foreground">
                             Halaman <span className="font-medium text-foreground">{pagination.page}</span> dari <span className="font-medium text-foreground">{pagination.totalPages}</span>
                         </p>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -546,19 +579,23 @@ export default function UserManagement() {
                             <div className="p-1.5 bg-primary/10 rounded-md">
                                 <Edit2 className="h-4 w-4 text-primary" />
                             </div>
-                            Edit User
+                            Ubah Pengguna
                         </SheetTitle>
                         <SheetDescription>
-                            Ubah role dan unit kerja untuk <span className="font-medium text-foreground">{editingUser?.name || editingUser?.email}</span>
+                            Ubah peran dan unit kerja untuk <span className="font-medium text-foreground">{editingUser?.name || editingUser?.email}</span>
                         </SheetDescription>
                     </SheetHeader>
 
                     <div className="py-6 space-y-6">
                         <div className="space-y-2">
-                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Role Pengguna</label>
-                            <Select value={editData.role} onValueChange={(v) => setEditData(d => ({ ...d, role: v }))}>
+                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Peran Pengguna</label>
+                            <Select
+                                value={editData.role}
+                                onValueChange={(v) => setEditData(d => applyRoleMandate(d, v))}
+                                disabled={editingUser?.id === currentUser?.id}
+                            >
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Pilih Role" />
+                                    <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {roles.map(role => (
@@ -569,13 +606,19 @@ export default function UserManagement() {
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                                Role menentukan hak akses pengguna dalam sistem.
+                                {editingUser?.id === currentUser?.id
+                                    ? 'Peran akun sendiri tidak dapat diubah.'
+                                    : 'Peran menentukan hak akses pengguna dalam sistem.'}
                             </p>
                         </div>
 
                         <div className="space-y-2">
                             <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Unit Kerja</label>
-                            <Select value={editData.unitKerjaId || 'none'} onValueChange={(v) => setEditData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}>
+                            <Select
+                                value={editData.unitKerjaId || 'none'}
+                                onValueChange={(v) => setEditData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}
+                                disabled={editUnitLocked}
+                            >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
@@ -589,14 +632,22 @@ export default function UserManagement() {
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                                Unit kerja membatasi data yang dapat dilihat dan dikelola.
+                                {editData.role === 'super_admin'
+                                    ? 'Super admin bekerja lintas unit dan tidak memiliki unit kerja tersimpan.'
+                                    : editMandatedUnitKerjaId
+                                    ? `Unit ${editMandatedUnitKerjaId} ditetapkan otomatis oleh mandat peran.`
+                                    : 'Unit kerja membatasi data yang dapat dilihat dan dikelola.'}
                             </p>
                         </div>
 
                         <div className="space-y-2">
                             <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Status Akun</label>
-                            <Select value={String(editData.isActive)} onValueChange={(v) => setEditData(d => ({ ...d, isActive: v === 'true' }))}>
-                                <SelectTrigger className={editData.isActive ? "border-green-200 bg-green-50 text-green-900" : "border-red-200 bg-red-50 text-red-900"}>
+                            <Select
+                                value={String(editData.isActive)}
+                                onValueChange={(v) => setEditData(d => ({ ...d, isActive: v === 'true' }))}
+                                disabled={editingUser?.id === currentUser?.id}
+                            >
+                                <SelectTrigger className={editData.isActive ? "border-green-200 bg-green-50 dark:bg-green-500/15 text-green-900 dark:text-green-300" : "border-red-200 bg-red-50 dark:bg-red-500/15 text-red-900 dark:text-red-300"}>
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -614,6 +665,11 @@ export default function UserManagement() {
                                     </SelectItem>
                                 </SelectContent>
                             </Select>
+                            {editingUser?.id === currentUser?.id && (
+                                <p className="text-xs text-muted-foreground">
+                                    Akun yang sedang digunakan tidak dapat dinonaktifkan.
+                                </p>
+                            )}
                         </div>
 
                         <div className="space-y-2">
@@ -660,16 +716,16 @@ export default function UserManagement() {
                 <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <UserPlus className="h-5 w-5 text-indigo-600" />
-                            Tambah User Baru
+                            <UserPlus className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                            Tambah Pengguna Baru
                         </DialogTitle>
                         <DialogDescription>
-                            Buat akun user baru. User akan dapat login menggunakan email + password atau Google.
+                            Buat akun pengguna baru. Pengguna dapat masuk menggunakan email dan kata sandi atau akun Google.
                         </DialogDescription>
                     </DialogHeader>
 
                     {addError && (
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700">
+                        <div role="alert" className="bg-red-50 dark:bg-red-500/15 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700 dark:text-red-300">
                             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                             {addError}
                         </div>
@@ -677,18 +733,20 @@ export default function UserManagement() {
 
                     <div className="space-y-4 py-2">
                         <div className="space-y-2">
-                            <Label>Email <span className="text-red-500">*</span></Label>
+                            <Label htmlFor="new-user-email">Email <span className="text-red-500">*</span></Label>
                             <Input
+                                id="new-user-email"
                                 type="email"
-                                placeholder="user@example.com"
+                                placeholder="nama@atrbpn.go.id"
                                 value={addData.email}
                                 onChange={(e) => setAddData(d => ({ ...d, email: e.target.value }))}
                             />
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Nama Lengkap <span className="text-red-500">*</span></Label>
+                            <Label htmlFor="new-user-name">Nama Lengkap <span className="text-red-500">*</span></Label>
                             <Input
+                                id="new-user-name"
                                 placeholder="Nama lengkap pengguna"
                                 value={addData.name}
                                 onChange={(e) => setAddData(d => ({ ...d, name: e.target.value }))}
@@ -696,10 +754,10 @@ export default function UserManagement() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Role</Label>
-                            <Select value={addData.role} onValueChange={(v) => setAddData(d => ({ ...d, role: v }))}>
+                            <Label>Peran</Label>
+                            <Select value={addData.role} onValueChange={(v) => setAddData(d => applyRoleMandate(d, v))}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Pilih Role" />
+                                    <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {roles.map(role => (
@@ -713,7 +771,11 @@ export default function UserManagement() {
 
                         <div className="space-y-2">
                             <Label>Unit Kerja</Label>
-                            <Select value={addData.unitKerjaId || 'none'} onValueChange={(v) => setAddData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}>
+                            <Select
+                                value={addData.unitKerjaId || 'none'}
+                                onValueChange={(v) => setAddData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}
+                                disabled={addUnitLocked}
+                            >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
@@ -726,9 +788,18 @@ export default function UserManagement() {
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {addData.role === 'super_admin' ? (
+                                <p className="text-xs text-muted-foreground">
+                                    Super admin bekerja lintas unit dan tidak memiliki unit kerja tersimpan.
+                                </p>
+                            ) : addMandatedUnitKerjaId && (
+                                <p className="text-xs text-muted-foreground">
+                                    Unit {addMandatedUnitKerjaId} ditetapkan otomatis oleh mandat peran.
+                                </p>
+                            )}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
                                 <Label>Jabatan</Label>
                                 <Input
@@ -752,7 +823,7 @@ export default function UserManagement() {
                         <div className="space-y-2">
                             <Label className="flex items-center gap-1.5">
                                 <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-                                Password
+                                Kata sandi
                             </Label>
                             <div className="relative">
                                 <Input
@@ -769,7 +840,7 @@ export default function UserManagement() {
                                     size="icon"
                                     className="absolute right-0 top-0 h-full w-10 hover:bg-transparent text-muted-foreground"
                                     onClick={() => setShowPassword(v => !v)}
-                                    tabIndex={-1}
+                                    aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
                                 >
                                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                 </Button>
@@ -791,7 +862,7 @@ export default function UserManagement() {
                                 </div>
                             )}
                             <p className="text-xs text-muted-foreground">
-                                Opsional. Jika diisi, user dapat login via email + password. Jika tidak, user hanya bisa login via Google.
+                                Opsional. Jika diisi, pengguna dapat masuk dengan email dan kata sandi. Jika tidak, gunakan akun Google yang telah diprovisi.
                             </p>
                         </div>
                     </div>
@@ -802,7 +873,7 @@ export default function UserManagement() {
                         </Button>
                         <Button onClick={handleCreateUser} disabled={creating} className="bg-indigo-600 hover:bg-indigo-700">
                             {creating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                            Tambah User
+                            Tambah Pengguna
                         </Button>
                     </DialogFooter>
                 </DialogContent>

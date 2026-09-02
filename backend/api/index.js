@@ -1,33 +1,19 @@
 // Vercel Serverless Function handler (ESM)
-// Imports from pre-built dist/app.js (ESM format)
+// Imports from pre-built dist/app.js (ESM format) only after the Preview
+// isolation gate has selected explicit PREVIEW_* resources.
 
-// Vercel function config — increase timeout for Google Drive file uploads
+import { initializeVercelHandler } from './preview-runtime.js';
+
+// One OCR item may spend 30s extracting a text layer, 180s on scanned-page OCR,
+// and 30s acquiring/streaming its private Blob. Keep a 60s margin for database
+// claims, lease renewal, cleanup, and cold-start overhead.
 export const config = {
-    maxDuration: 60, // 60 seconds for file upload to Google Drive
+    maxDuration: 300,
 };
 
-let app;
-let initError;
+const handler = await initializeVercelHandler({
+    environment: process.env,
+    loadApp: () => import('../dist/app.js'),
+});
 
-try {
-    const mod = await import('../dist/app.js');
-    app = mod.default;
-} catch (err) {
-    initError = err;
-    console.error('FATAL: Failed to initialize Express app:', err.message);
-    console.error('Stack:', err.stack);
-}
-
-export default function handler(req, res) {
-    if (initError) {
-        res.statusCode = 500;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({
-            error: 'App initialization failed',
-            message: initError.message,
-            stack: initError.stack?.split('\n').slice(0, 8),
-        }));
-        return;
-    }
-    return app(req, res);
-}
+export default handler;

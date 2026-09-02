@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,13 +11,16 @@ import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, MapPin, Loader2
 import { useAuth } from '@/context/AuthContext'
 import storageLocationService from '@/services/storage-location.service'
 import { Skeleton } from "@/components/ui/skeleton"
+import { useToast } from '@/hooks/use-toast'
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 // Level configuration
 const LEVEL_CONFIG = {
-    gedung: { label: 'Gedung', icon: Building2, color: 'bg-blue-500', bgColor: 'bg-blue-100', textColor: 'text-blue-700' },
-    ruang: { label: 'Ruang', icon: MapPin, color: 'bg-green-500', bgColor: 'bg-green-100', textColor: 'text-green-700' },
-    rak: { label: 'Rak', icon: Layers, color: 'bg-yellow-500', bgColor: 'bg-yellow-100', textColor: 'text-yellow-700' },
-    box: { label: 'Box', icon: Package, color: 'bg-purple-500', bgColor: 'bg-purple-100', textColor: 'text-purple-700' },
+    gedung: { label: 'Gedung', icon: Building2, color: 'bg-blue-500', bgColor: 'bg-blue-100 dark:bg-blue-500/15', textColor: 'text-blue-700 dark:text-blue-300' },
+    ruang: { label: 'Ruang', icon: MapPin, color: 'bg-green-500', bgColor: 'bg-green-100 dark:bg-green-500/15', textColor: 'text-green-700 dark:text-green-300' },
+    rak: { label: 'Rak', icon: Layers, color: 'bg-yellow-500', bgColor: 'bg-yellow-100 dark:bg-yellow-500/15', textColor: 'text-yellow-700 dark:text-yellow-300' },
+    box: { label: 'Box', icon: Package, color: 'bg-purple-500', bgColor: 'bg-purple-100 dark:bg-purple-500/15', textColor: 'text-purple-700 dark:text-purple-300' },
 }
 
 // Tree Node Component
@@ -68,14 +71,14 @@ function TreeNode({ node, level = 0, onEdit, onDelete, onGenerateQR, onAddChild 
 
                 <div className="flex gap-1 ml-2">
                     {node.level !== 'box' && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-indigo-50 hover:text-indigo-600" onClick={() => onAddChild(node)} title="Tambah Sub-lokasi">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={() => onAddChild(node)} title="Tambah Sub-lokasi">
                             <Plus className="h-3.5 w-3.5" />
                         </Button>
                     )}
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-slate-100" onClick={() => onGenerateQR(node)} title="QR Code">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-muted" onClick={() => onGenerateQR(node)} title="QR Code">
                         <QrCode className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 hover:text-blue-600" onClick={() => onEdit(node)} title="Edit">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-600" onClick={() => onEdit(node)} title="Edit">
                         <Edit2 className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={() => onDelete(node)} title="Hapus">
@@ -120,7 +123,7 @@ function QRCodeDialog({ open, onOpenChange, location, qrData }) {
                 <div className="flex flex-col items-center gap-4 py-6 bg-muted/20 rounded-lg mt-2">
                     {qrData?.qrCodeDataUrl ? (
                         <>
-                            <div className="bg-white p-4 rounded-xl shadow-sm border">
+                            <div className="bg-card p-4 rounded-xl shadow-sm border">
                                 <img src={qrData.qrCodeDataUrl} alt="QR Code" className="w-48 h-48 mix-blend-multiply" />
                             </div>
                             <p className="text-sm text-muted-foreground text-center px-4">
@@ -153,8 +156,10 @@ function QRCodeDialog({ open, onOpenChange, location, qrData }) {
 
 // Main Page Component
 export default function StorageLocations() {
-    const { session } = useAuth()
-    const unitKerjaId = session?.user?.unitKerjaId || 'default'
+    const { user } = useAuth()
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
+    const { toast } = useToast()
 
     const [treeData, setTreeData] = useState([])
     const [loading, setLoading] = useState(true)
@@ -176,7 +181,8 @@ export default function StorageLocations() {
     })
 
     // Fetch tree data
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
+        if (!unitKerjaId) return
         setLoading(true)
         try {
             const response = await storageLocationService.getTree(unitKerjaId)
@@ -188,14 +194,19 @@ export default function StorageLocations() {
         } finally {
             setLoading(false)
         }
-    }
-
-    useEffect(() => {
-        if (unitKerjaId) fetchData()
     }, [unitKerjaId])
 
+    useEffect(() => {
+        if (unitKerjaId) {
+            fetchData()
+        } else {
+            setTreeData([])
+            setLoading(false)
+        }
+    }, [fetchData, unitKerjaId])
+
     // Filter tree based on search
-    const filterTree = (nodes, query) => {
+    const filterTree = useCallback(function filterTree(nodes, query) {
         if (!query) return nodes
         const lowerQuery = query.toLowerCase()
 
@@ -209,9 +220,9 @@ export default function StorageLocations() {
             }
             return acc
         }, [])
-    }
+    }, [])
 
-    const filteredData = useMemo(() => filterTree(treeData, searchQuery), [treeData, searchQuery])
+    const filteredData = useMemo(() => filterTree(treeData, searchQuery), [filterTree, treeData, searchQuery])
 
     // Get next level for child
     const getNextLevel = (parentLevel) => {
@@ -222,27 +233,35 @@ export default function StorageLocations() {
 
     // Handle save
     const handleSave = async () => {
+        if (!unitKerjaId) return
         try {
             const data = {
                 ...formData,
                 unitKerjaId,
-                capacity: formData.capacity ? parseInt(formData.capacity) : null,
-                parentId: parentItem?.id || null,
+                // Omit capacity when empty (backend rejects null via .positive()).
+                capacity: formData.capacity ? parseInt(formData.capacity) : undefined,
             }
 
             if (editMode && currentItem) {
-                await storageLocationService.update(currentItem.id, data)
-                // alert('Lokasi berhasil diperbarui')
+                // Do NOT send parentId on edit — the service does a wholesale update and
+                // a null parentId would detach the node and re-parent it to the root.
+                await storageLocationService.update(currentItem.id, data, unitKerjaId)
+                toast({ title: 'Lokasi berhasil diperbarui' })
             } else {
+                data.parentId = parentItem?.id || null
                 await storageLocationService.create(data)
-                // alert('Lokasi berhasil ditambahkan')
+                toast({ title: 'Lokasi berhasil ditambahkan' })
             }
             fetchData()
             setDialogOpen(false)
             resetForm()
         } catch (error) {
-            // alert(error.response?.data?.error || 'Gagal menyimpan data')
             console.error(error)
+            toast({
+                variant: 'destructive',
+                title: 'Gagal menyimpan data',
+                description: error.response?.data?.error || error.message || 'Terjadi kesalahan',
+            })
         }
     }
 
@@ -278,10 +297,11 @@ export default function StorageLocations() {
     }
 
     const handleDelete = async (node) => {
+        if (!unitKerjaId) return
         if (!confirm(`Hapus lokasi "${node.code} - ${node.name}"?`)) return
 
         try {
-            await storageLocationService.delete(node.id)
+            await storageLocationService.delete(node.id, unitKerjaId)
             // alert('Lokasi berhasil dihapus')
             fetchData()
         } catch (error) {
@@ -291,12 +311,13 @@ export default function StorageLocations() {
     }
 
     const handleGenerateQR = async (node) => {
+        if (!unitKerjaId) return
         setQrLocation(node)
         setQrData(null)
         setQrDialogOpen(true)
 
         try {
-            const response = await storageLocationService.generateQR(node.id)
+            const response = await storageLocationService.generateQR(node.id, unitKerjaId)
             if (response.success) {
                 setQrData(response.data)
             }
@@ -313,8 +334,26 @@ export default function StorageLocations() {
     }
 
     const handleAddNew = () => {
+        if (!unitKerjaId) return
         resetForm()
         setDialogOpen(true)
+    }
+
+    if (!unitKerjaId) {
+        return (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <MapPin className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        Lokasi Penyimpanan
+                    </h1>
+                    <p className="text-muted-foreground">Kelola hierarki lokasi penyimpanan arsip fisik</p>
+                </div>
+                <RequiredUnitKerjaScope scope={unitScope} disabled={unitScope.loading} />
+            </div>
+        )
     }
 
     return (
@@ -323,8 +362,8 @@ export default function StorageLocations() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <MapPin className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <MapPin className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         Lokasi Penyimpanan
                     </h1>
@@ -338,8 +377,10 @@ export default function StorageLocations() {
                 </Button>
             </div>
 
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || dialogOpen || qrDialogOpen} />
+
             {/* Stats Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 {Object.entries(LEVEL_CONFIG).map(([key, config]) => {
                     const count = treeData.reduce((acc, node) => {
                         const countLevel = (n) => {
@@ -369,7 +410,7 @@ export default function StorageLocations() {
             {/* Main Content */}
             <Card className="shadow-sm border-border/60">
                 <CardHeader className="pb-4 bg-muted/20">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="relative w-full sm:max-w-md">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input

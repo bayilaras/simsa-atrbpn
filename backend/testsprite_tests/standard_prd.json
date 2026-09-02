@@ -362,12 +362,6 @@
         "file": "src/routes/security.routes.ts",
         "auth_required": true,
         "description": "Security utilities"
-      },
-      {
-        "path": "/api/dev",
-        "file": "src/routes/dev-auth.routes.ts",
-        "auth_required": false,
-        "description": "Development authentication helpers (dev mode only)"
       }
     ],
     "features": [
@@ -859,12 +853,6 @@
         "auth_required": true
       }
     ],
-    "known_limitations": [
-      {
-        "issue": "Development auth routes exposed in dev mode without rate limiting",
-        "location": "src/routes/dev-auth.routes.ts",
-        "impact": "Can be used to bypass normal auth flow in development"
-      }
-    ]
+    "known_limitations": []
   }
 }

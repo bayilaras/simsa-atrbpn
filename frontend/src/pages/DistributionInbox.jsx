@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { Inbox, Send, Check, X, Clock, ArrowRight, RefreshCw, Eye, CheckCircle, XCircle, Search, Filter, Mail, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -34,10 +34,12 @@ import distributionService from '@/services/distribution.service'
 import { format } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
 const statusConfig = {
-    sent: { label: 'Menunggu', variant: 'outline', icon: Clock, className: 'text-yellow-600 border-yellow-200 bg-yellow-50' },
-    received: { label: 'Diterima', variant: 'secondary', icon: Check, className: 'text-blue-600 border-blue-200 bg-blue-50' },
+    sent: { label: 'Menunggu', variant: 'outline', icon: Clock, className: 'text-yellow-600 dark:text-yellow-400 border-yellow-200 bg-yellow-50 dark:bg-yellow-500/15' },
+    received: { label: 'Diterima', variant: 'secondary', icon: Check, className: 'text-blue-600 border-blue-200 bg-blue-50 dark:bg-blue-500/15' },
     processed: { label: 'Selesai', variant: 'default', icon: CheckCircle, className: 'bg-emerald-600 hover:bg-emerald-700' },
     rejected: { label: 'Ditolak', variant: 'destructive', icon: XCircle, className: '' },
 }
@@ -56,13 +58,17 @@ export default function DistributionInbox() {
     const [searchTerm, setSearchTerm] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
 
-    const unitKerjaId = user?.unitKerjaId
+    const unitScope = useRequiredUnitKerjaScope(user)
+    const unitKerjaId = unitScope.unitKerjaId
 
-    useEffect(() => {
-        loadData()
-    }, [])
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
+        if (!unitKerjaId) {
+            setInboxData([])
+            setOutboxData([])
+            setStats(null)
+            setLoading(false)
+            return
+        }
         setLoading(true)
         try {
             const [inboxRes, outboxRes, statsRes] = await Promise.all([
@@ -71,9 +77,9 @@ export default function DistributionInbox() {
                 distributionService.getStats(unitKerjaId),
             ])
 
-            if (inboxRes.success) setInboxData(inboxRes.data)
-            if (outboxRes.success) setOutboxData(outboxRes.data)
-            if (statsRes.success) setStats(statsRes.data)
+            setInboxData(inboxRes)
+            setOutboxData(outboxRes)
+            setStats(statsRes)
         } catch (error) {
             console.error('Error loading distribution data:', error)
             toast({
@@ -84,12 +90,16 @@ export default function DistributionInbox() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [toast, unitKerjaId])
+
+    useEffect(() => {
+        loadData()
+    }, [loadData])
 
     const handleReceive = async (distributionId) => {
         setActionLoading(true)
         try {
-            await distributionService.receive(distributionId)
+            await distributionService.receive(distributionId, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Surat berhasil diterima' })
             loadData()
         } catch (error) {
@@ -106,7 +116,7 @@ export default function DistributionInbox() {
     const handleProcess = async (distributionId) => {
         setActionLoading(true)
         try {
-            await distributionService.process(distributionId)
+            await distributionService.process(distributionId, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Surat ditandai selesai diproses' })
             loadData()
         } catch (error) {
@@ -132,7 +142,7 @@ export default function DistributionInbox() {
 
         setActionLoading(true)
         try {
-            await distributionService.reject(selectedDistribution.id, rejectReason)
+            await distributionService.reject(selectedDistribution.id, rejectReason, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Surat dikembalikan ke pengirim' })
             setRejectDialogOpen(false)
             setRejectReason('')
@@ -186,8 +196,8 @@ export default function DistributionInbox() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <Inbox className="h-6 w-6 text-indigo-600" />
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
+                            <Inbox className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
                         </div>
                         Distribusi Surat
                     </h1>
@@ -199,32 +209,34 @@ export default function DistributionInbox() {
                 </Button>
             </div>
 
+            <RequiredUnitKerjaScope scope={unitScope} disabled={loading || actionLoading} />
+
             {/* Stats Cards */}
             {stats && (
-                <div className="grid gap-4 md:grid-cols-4">
+                <div className="grid gap-4 lg:grid-cols-4">
                     <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Surat Masuk</CardTitle>
-                            <div className="p-2 bg-blue-100 rounded-full">
+                            <div className="p-2 bg-blue-100 dark:bg-blue-500/15 rounded-full">
                                 <ArrowDownLeft className="h-4 w-4 text-blue-600" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-blue-700">{stats.inbox?.total || 0}</div>
+                            <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">{stats.inbox?.total || 0}</div>
                             <p className="text-xs text-muted-foreground mt-1">
-                                <span className="font-medium text-orange-600">{stats.inbox?.pending || 0}</span> menunggu diterima
+                                <span className="font-medium text-orange-600 dark:text-orange-400">{stats.inbox?.pending || 0}</span> menunggu diterima
                             </p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-orange-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Perlu Proses</CardTitle>
-                            <div className="p-2 bg-orange-100 rounded-full">
-                                <Clock className="h-4 w-4 text-orange-600" />
+                            <div className="p-2 bg-orange-100 dark:bg-orange-500/15 rounded-full">
+                                <Clock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-orange-600">
+                            <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
                                 {(stats.inbox?.pending || 0) + (stats.inbox?.received || 0)}
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">Belum tuntas</p>
@@ -233,26 +245,26 @@ export default function DistributionInbox() {
                     <Card className="shadow-sm border-l-4 border-l-emerald-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Selesai</CardTitle>
-                            <div className="p-2 bg-emerald-100 rounded-full">
-                                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                            <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-full">
+                                <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-emerald-600">{stats.inbox?.processed || 0}</div>
+                            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.inbox?.processed || 0}</div>
                             <p className="text-xs text-muted-foreground mt-1">Telah diproses</p>
                         </CardContent>
                     </Card>
                     <Card className="shadow-sm border-l-4 border-l-indigo-500 card-hover">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Surat Dikirim</CardTitle>
-                            <div className="p-2 bg-indigo-100 rounded-full">
-                                <Send className="h-4 w-4 text-indigo-600" />
+                            <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-full">
+                                <Send className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-indigo-600">{stats.outbox?.total || 0}</div>
+                            <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{stats.outbox?.total || 0}</div>
                             <p className="text-xs text-muted-foreground mt-1">
-                                <span className="font-medium text-orange-600">{stats.outbox?.pending || 0}</span> belum diterima
+                                <span className="font-medium text-orange-600 dark:text-orange-400">{stats.outbox?.pending || 0}</span> belum diterima
                             </p>
                         </CardContent>
                     </Card>
@@ -261,7 +273,7 @@ export default function DistributionInbox() {
 
             {/* Tabs & Content */}
             <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val); setSearchTerm('') }} className="space-y-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between gap-4">
                     <TabsList className="bg-muted/50 p-1">
                         <TabsTrigger value="inbox" className="gap-2">
                             <Inbox className="h-4 w-4" />
@@ -300,7 +312,7 @@ export default function DistributionInbox() {
                             <CardDescription>Daftar surat yang didistribusikan ke unit kerja Anda</CardDescription>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/50">
                                     <TableRow className="hover:bg-transparent">
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -331,28 +343,28 @@ export default function DistributionInbox() {
                                         </TableRow>
                                     ) : filteredInbox.map((item, index) => (
                                         <TableRow key={item.id} className="group hover:bg-muted/30 transition-colors">
-                                            <TableCell className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="No." className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="Nomor Surat">
                                                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">
                                                     {item.surat?.nomorSurat || '-'}
                                                 </code>
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="Perihal">
                                                 <span className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
                                                     {item.surat?.perihal || '-'}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-sm text-muted-foreground">
+                                            <TableCell data-label="Dari Unit" className="text-sm text-muted-foreground">
                                                 {item.sourceUnit?.name || '-'}
                                             </TableCell>
-                                            <TableCell className="text-sm font-medium text-orange-600/90 italic">
+                                            <TableCell data-label="Instruksi" className="text-sm font-medium text-orange-600 dark:text-orange-400/90 italic">
                                                 "{item.instruction || '-'}"
                                             </TableCell>
-                                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                            <TableCell data-label="Tanggal Kirim" className="text-xs text-muted-foreground whitespace-nowrap">
                                                 {formatDate(item.sentAt)}
                                             </TableCell>
-                                            <TableCell>{renderStatusBadge(item.status)}</TableCell>
-                                            <TableCell className="text-right">
+                                            <TableCell data-label="Status">{renderStatusBadge(item.status)}</TableCell>
+                                            <TableCell data-label="Aksi" className="text-right">
                                                 <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                                                     {item.status === 'sent' && (
                                                         <TooltipProvider>
@@ -361,7 +373,7 @@ export default function DistributionInbox() {
                                                                     <Button
                                                                         variant="outline"
                                                                         size="icon"
-                                                                        className="h-8 w-8 hover:bg-green-50 hover:text-green-600 hover:border-green-200 transition-colors"
+                                                                        className="h-8 w-8 hover:bg-green-50 dark:hover:bg-green-500/15 hover:text-green-600 dark:hover:text-green-400 hover:border-green-200 transition-colors"
                                                                         onClick={() => handleReceive(item.id)}
                                                                         disabled={actionLoading}
                                                                     >
@@ -429,7 +441,7 @@ export default function DistributionInbox() {
                             <CardDescription>Daftar surat yang Anda distribusikan ke unit lain</CardDescription>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/50">
                                     <TableRow className="hover:bg-transparent">
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -459,27 +471,27 @@ export default function DistributionInbox() {
                                         </TableRow>
                                     ) : filteredOutbox.map((item, index) => (
                                         <TableRow key={item.id} className="group hover:bg-muted/30 transition-colors">
-                                            <TableCell className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="No." className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="Nomor Surat">
                                                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">
                                                     {item.surat?.nomorSurat || '-'}
                                                 </code>
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell data-label="Perihal">
                                                 <span className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
                                                     {item.surat?.perihal || '-'}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-sm text-muted-foreground">
+                                            <TableCell data-label="Tujuan Unit" className="text-sm text-muted-foreground">
                                                 {item.targetUnit?.name || '-'}
                                             </TableCell>
-                                            <TableCell className="text-sm font-medium text-orange-600/90 italic">
+                                            <TableCell data-label="Instruksi" className="text-sm font-medium text-orange-600 dark:text-orange-400/90 italic">
                                                 "{item.instruction || '-'}"
                                             </TableCell>
-                                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                            <TableCell data-label="Tanggal Kirim" className="text-xs text-muted-foreground whitespace-nowrap">
                                                 {formatDate(item.sentAt)}
                                             </TableCell>
-                                            <TableCell>{renderStatusBadge(item.status)}</TableCell>
+                                            <TableCell data-label="Status">{renderStatusBadge(item.status)}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>

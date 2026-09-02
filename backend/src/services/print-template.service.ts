@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 import { penyusutanService } from './penyusutan.service';
+import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
 
 /**
  * Print Template Service
@@ -11,8 +12,16 @@ class PrintTemplateService {
 
     // ==================== FORMULIR 4: DAFTAR ARSIP AKTIF ====================
 
-    async generateDaftarArsipAktif(unitKerjaId: string, tahun?: number): Promise<Buffer> {
-        const data = await penyusutanService.generateDaftarArsipAktif(unitKerjaId, tahun);
+    async generateDaftarArsipAktif(
+        unitKerjaId: string,
+        tahun?: number,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const data = await penyusutanService.generateDaftarArsipAktif(
+            unitKerjaId,
+            tahun,
+            securityClassifications,
+        );
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -109,8 +118,16 @@ class PrintTemplateService {
 
     // ==================== FORMULIR 6: DAFTAR ARSIP INAKTIF ====================
 
-    async generateDaftarArsipInaktif(unitKerjaId: string, tahun?: number): Promise<Buffer> {
-        const data = await penyusutanService.generateDaftarArsipInaktif(unitKerjaId, tahun);
+    async generateDaftarArsipInaktif(
+        unitKerjaId: string,
+        tahun?: number,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const data = await penyusutanService.generateDaftarArsipInaktif(
+            unitKerjaId,
+            tahun,
+            securityClassifications,
+        );
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -199,8 +216,16 @@ class PrintTemplateService {
 
     // ==================== FORMULIR 16: DAFTAR ARSIP USUL MUSNAH ====================
 
-    async generateDaftarUsulMusnah(penyusutanId: string): Promise<Buffer> {
-        const batch = await penyusutanService.findById(penyusutanId);
+    async generateDaftarUsulMusnah(
+        penyusutanId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const batch = await penyusutanService.findById(
+            penyusutanId,
+            unitScope,
+            securityClassifications,
+        );
         if (!batch) throw new Error('Batch not found');
 
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
@@ -242,8 +267,16 @@ class PrintTemplateService {
 
     // ==================== FORMULIR 14: DAFTAR ARSIP USUL PINDAH ====================
 
-    async generateDaftarUsulPindah(penyusutanId: string): Promise<Buffer> {
-        const batch = await penyusutanService.findById(penyusutanId);
+    async generateDaftarUsulPindah(
+        penyusutanId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const batch = await penyusutanService.findById(
+            penyusutanId,
+            unitScope,
+            securityClassifications,
+        );
         if (!batch) throw new Error('Batch not found');
 
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
@@ -297,8 +330,16 @@ class PrintTemplateService {
 
     // ==================== FORMULIR 17: DAFTAR ARSIP USUL SERAH ====================
 
-    async generateDaftarUsulSerah(penyusutanId: string): Promise<Buffer> {
-        const batch = await penyusutanService.findById(penyusutanId);
+    async generateDaftarUsulSerah(
+        penyusutanId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const batch = await penyusutanService.findById(
+            penyusutanId,
+            unitScope,
+            securityClassifications,
+        );
         if (!batch) throw new Error('Batch not found');
 
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
@@ -352,8 +393,16 @@ class PrintTemplateService {
 
     // ==================== BERITA ACARA PEMINDAHAN (Formulir 15) ====================
 
-    async generateBeritaAcaraPemindahan(penyusutanId: string): Promise<Buffer> {
-        const batch = await penyusutanService.findById(penyusutanId);
+    async generateBeritaAcaraPemindahan(
+        penyusutanId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const batch = await penyusutanService.findById(
+            penyusutanId,
+            unitScope,
+            securityClassifications,
+        );
         if (!batch) throw new Error('Batch not found');
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
@@ -423,8 +472,16 @@ class PrintTemplateService {
 
     // ==================== BERITA ACARA PEMUSNAHAN (Formulir 18) ====================
 
-    async generateBeritaAcaraPemusnahan(penyusutanId: string): Promise<Buffer> {
-        const batch = await penyusutanService.findById(penyusutanId);
+    async generateBeritaAcaraPemusnahan(
+        penyusutanId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const batch = await penyusutanService.findById(
+            penyusutanId,
+            unitScope,
+            securityClassifications,
+        );
         if (!batch) throw new Error('Batch not found');
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
@@ -506,8 +563,16 @@ class PrintTemplateService {
 
     // ==================== BERITA ACARA ALIH MEDIA ====================
 
-    async generateBeritaAcaraAlihMedia(penyusutanId: string): Promise<Buffer> {
-        const batch = await penyusutanService.findById(penyusutanId);
+    async generateBeritaAcaraAlihMedia(
+        penyusutanId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const batch = await penyusutanService.findById(
+            penyusutanId,
+            unitScope,
+            securityClassifications,
+        );
         if (!batch) throw new Error('Batch not found');
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
@@ -632,8 +697,16 @@ class PrintTemplateService {
 
     // ==================== BERITA ACARA PENYERAHAN (Formulir 17) ====================
 
-    async generateBeritaAcaraPenyerahan(penyusutanId: string): Promise<Buffer> {
-        const batch = await penyusutanService.findById(penyusutanId);
+    async generateBeritaAcaraPenyerahan(
+        penyusutanId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const batch = await penyusutanService.findById(
+            penyusutanId,
+            unitScope,
+            securityClassifications,
+        );
         if (!batch) throw new Error('Batch not found');
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
@@ -715,28 +788,44 @@ class PrintTemplateService {
      * Generic Berita Acara generator - dispatches to type-specific methods
      * Kept for backward compatibility with existing route
      */
-    async generateBeritaAcara(penyusutanId: string): Promise<Buffer> {
-        const batch = await penyusutanService.findById(penyusutanId);
+    async generateBeritaAcara(
+        penyusutanId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const batch = await penyusutanService.findById(
+            penyusutanId,
+            unitScope,
+            securityClassifications,
+        );
         if (!batch) throw new Error('Batch not found');
 
         switch (batch.jenisPenyusutan) {
             case 'pemindahan':
-                return this.generateBeritaAcaraPemindahan(penyusutanId);
+                return this.generateBeritaAcaraPemindahan(penyusutanId, unitScope, securityClassifications);
             case 'pemusnahan':
-                return this.generateBeritaAcaraPemusnahan(penyusutanId);
+                return this.generateBeritaAcaraPemusnahan(penyusutanId, unitScope, securityClassifications);
             case 'alih_media':
-                return this.generateBeritaAcaraAlihMedia(penyusutanId);
+                return this.generateBeritaAcaraAlihMedia(penyusutanId, unitScope, securityClassifications);
             case 'penyerahan':
-                return this.generateBeritaAcaraPenyerahan(penyusutanId);
+                return this.generateBeritaAcaraPenyerahan(penyusutanId, unitScope, securityClassifications);
             default:
-                return this.generateBeritaAcaraPemindahan(penyusutanId);
+                return this.generateBeritaAcaraPemindahan(penyusutanId, unitScope, securityClassifications);
         }
     }
 
     // ==================== SURAT PERMOHONAN ARSIP STATIS (Formulir 24) ====================
 
-    async generateSuratPermohonanPenyerahan(penyusutanId: string): Promise<Buffer> {
-        const batch = await penyusutanService.findById(penyusutanId);
+    async generateSuratPermohonanPenyerahan(
+        penyusutanId: string,
+        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
+        const batch = await penyusutanService.findById(
+            penyusutanId,
+            unitScope,
+            securityClassifications,
+        );
         if (!batch) throw new Error('Batch not found');
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
@@ -935,9 +1024,16 @@ class PrintTemplateService {
 
     // ==================== ARSIP VITAL & TERJAGA ====================
 
-    async generateDaftarArsipVital(unitKerjaId: string): Promise<Buffer> {
+    async generateDaftarArsipVital(
+        unitKerjaId: string,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
         // Fetch data
-        const { data } = await import('./arsip-vital.service').then(m => m.arsipVitalService.findAll({ unitKerjaId, limit: 1000 }));
+        const { data } = await import('./arsip-vital.service').then(m => m.arsipVitalService.findAll({
+            unitKerjaId,
+            limit: 1000,
+            securityClassifications,
+        }));
 
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
@@ -993,9 +1089,16 @@ class PrintTemplateService {
         });
     }
 
-    async generateDaftarArsipTerjaga(unitKerjaId: string): Promise<Buffer> {
+    async generateDaftarArsipTerjaga(
+        unitKerjaId: string,
+        securityClassifications?: string[] | null,
+    ): Promise<Buffer> {
         // Fetch data
-        const { data } = await import('./arsip-terjaga.service').then(m => m.arsipTerjagaService.findAll({ unitKerjaId, limit: 1000 }));
+        const { data } = await import('./arsip-terjaga.service').then(m => m.arsipTerjagaService.findAll({
+            unitKerjaId,
+            limit: 1000,
+            securityClassifications,
+        }));
 
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];

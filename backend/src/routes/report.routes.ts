@@ -2,7 +2,10 @@ import { Router, Response } from 'express';
 import { reportService, ReportFilters, ArsipReportFilters, LendingReportFilters } from '../services/report.service';
 import { exportService } from '../services/export.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { permissionMiddleware } from '../middlewares/role.middleware';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { createLogger } from '../utils/logger';
+import { allowedSecurityClassifications } from '../services/record-access.service.js';
 
 const log = createLogger('ReportRoutes');
 
@@ -39,7 +42,9 @@ router.use(authMiddleware);
  */
 router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { year, month, tanggalDari, tanggalSampai, period, page, limit } = req.query;
 
         if (!unitKerjaId) {
@@ -56,6 +61,7 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
             period: period as 'daily' | 'weekly' | 'monthly' | 'yearly' | undefined,
             page: page ? parseInt(page as string) : 1,
             limit: limit ? parseInt(limit as string) : 50,
+            securityClassifications: allowedSecurityClassifications(req.user),
         };
 
         const report = await reportService.getSuratMasukReport(filters);
@@ -77,7 +83,9 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
  */
 router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { year, tanggalDari, tanggalSampai, period, page, limit } = req.query;
 
         if (!unitKerjaId) {
@@ -93,6 +101,7 @@ router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
             period: period as 'daily' | 'weekly' | 'monthly' | 'yearly' | undefined,
             page: page ? parseInt(page as string) : 1,
             limit: limit ? parseInt(limit as string) : 50,
+            securityClassifications: allowedSecurityClassifications(req.user),
         };
 
         const report = await reportService.getSuratKeluarReport(filters);
@@ -124,7 +133,9 @@ router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
  */
 router.get('/arsip', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { type, mediaType, daysAhead, year, page, limit } = req.query;
 
         if (!unitKerjaId) {
@@ -140,6 +151,7 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
             year: year ? parseInt(year as string) : undefined,
             page: page ? parseInt(page as string) : 1,
             limit: limit ? parseInt(limit as string) : 50,
+            securityClassifications: allowedSecurityClassifications(req.user),
         };
 
         const report = await reportService.getArsipReport(filters);
@@ -161,11 +173,18 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
  */
 router.get('/lending', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { status, tanggalDari, tanggalSampai, page, limit } = req.query;
 
+        if (!unitKerjaId) {
+            res.status(400).json({ error: 'unitKerjaId is required' });
+            return;
+        }
+
         const filters: LendingReportFilters = {
-            unitKerjaId: unitKerjaId || undefined,
+            unitKerjaId,
             status: (status as 'borrowed' | 'returned' | 'overdue' | 'all') || 'all',
             tanggalDari: tanggalDari as string | undefined,
             tanggalSampai: tanggalSampai as string | undefined,
@@ -192,7 +211,9 @@ router.get('/lending', async (req: AuthRequest, res: Response) => {
  */
 router.get('/summary', async (req: AuthRequest, res: Response) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { year } = req.query;
 
         if (!unitKerjaId) {
@@ -202,7 +223,8 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
 
         const report = await reportService.getSummaryReport(
             unitKerjaId as string,
-            year ? parseInt(year as string) : undefined
+            year ? parseInt(year as string) : undefined,
+            allowedSecurityClassifications(req.user),
         );
         res.json(report);
     } catch (error) {
@@ -233,10 +255,12 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
  *           type: string
  *           enum: [pdf, excel]
  */
-router.get('/export/:type/:format', async (req: AuthRequest, res: Response) => {
+router.get('/export/:type/:format', permissionMiddleware('reports', 'export'), async (req: AuthRequest, res: Response) => {
     try {
         const { type, format } = req.params;
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
         const { year, tanggalDari, tanggalSampai, arsipType, mediaType } = req.query;
 
         if (!unitKerjaId) {
@@ -252,6 +276,7 @@ router.get('/export/:type/:format', async (req: AuthRequest, res: Response) => {
             tahun: year ? parseInt(year as string) : undefined,
             tanggalDari: tanggalDari as string | undefined,
             tanggalSampai: tanggalSampai as string | undefined,
+            securityClassifications: allowedSecurityClassifications(req.user),
         };
 
         if (type === 'surat-masuk') {

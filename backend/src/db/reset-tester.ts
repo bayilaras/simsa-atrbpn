@@ -11,7 +11,18 @@ import { eq } from 'drizzle-orm';
 async function resetTester() {
     console.log('🔄 Resetting tester account...');
 
-    const email = 'tester@simsa.atrbpn.go.id';
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('Refusing to reset a tester account in production.');
+    }
+    if (process.env.ALLOW_TEST_ACCOUNT_RESET !== 'true') {
+        throw new Error('Set ALLOW_TEST_ACCOUNT_RESET=true to acknowledge this destructive test-only operation.');
+    }
+
+    const email = process.env.SIMSA_TEST_EMAIL?.trim();
+    const password = process.env.SIMSA_TEST_PASSWORD;
+    if (!email || !password?.trim()) {
+        throw new Error('SIMSA_TEST_EMAIL and SIMSA_TEST_PASSWORD are required; no default credential is permitted.');
+    }
 
     // Find existing user
     const existingUser = await db.query.users.findFirst({
@@ -33,7 +44,7 @@ async function resetTester() {
     console.log('');
     console.log('Now register via Better Auth API:');
     console.log('POST http://localhost:3001/api/auth/sign-up/email');
-    console.log('Body: { "email": "tester@simsa.atrbpn.go.id", "password": "Password123!@#", "name": "Tester Super Admin" }');
+    console.log(`Use SIMSA_TEST_EMAIL (${email}) and SIMSA_TEST_PASSWORD from the environment; the password is not printed.`);
 
     process.exit(0);
 }

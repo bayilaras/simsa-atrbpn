@@ -1,15 +1,25 @@
 import { db } from '../config/database';
 import { users, accounts } from './schema/users';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { hashCredentialPassword } from '../config/password-hashing.js';
 
 async function seedTester() {
     console.log('🧪 Seeding tester account...');
 
-    const email = 'tester@simsa.atrbpn.go.id';
-    const password = 'password123';
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Never provision a super_admin backdoor against a production database.
+    if (process.env.NODE_ENV === 'production') {
+        console.error('❌ Refusing to run the tester seed with NODE_ENV=production.');
+        process.exit(1);
+    }
+
+    const email = process.env.SEED_TESTER_EMAIL || 'tester@simsa.local';
+    // Password comes from the environment; if absent, a strong random one is generated
+    // and printed. It is never hard-coded in the repo.
+    const generated = !process.env.SEED_TESTER_PASSWORD;
+    const password = process.env.SEED_TESTER_PASSWORD || crypto.randomBytes(15).toString('base64url');
+    const hashedPassword = await hashCredentialPassword(password);
 
     // Check if user exists
     const existingUser = await db.query.users.findFirst({
@@ -21,21 +31,28 @@ async function seedTester() {
 
         // Check if account exists
         const existingAccount = await db.query.accounts.findFirst({
-            where: eq(accounts.userId, existingUser.id),
+            where: and(
+                eq(accounts.userId, existingUser.id),
+                eq(accounts.providerId, 'credential'),
+            ),
         });
 
         if (existingAccount) {
             console.log('⚠️ Tester user and account already exists.');
             console.log('🔄 Updating password for existing user...');
             await db.update(accounts)
-                .set({ password: hashedPassword })
-                .where(eq(accounts.userId, existingUser.id));
+                .set({ password: hashedPassword, updatedAt: new Date() })
+                .where(and(
+                    eq(accounts.userId, existingUser.id),
+                    eq(accounts.providerId, 'credential'),
+                ));
             console.log('✅ Password updated in accounts.');
         } else {
             console.log('🆕 Creating account for existing user...');
             await db.insert(accounts).values({
                 userId: existingUser.id,
-                accountId: email,
+                issuer: 'local:credential',
+                accountId: existingUser.id,
                 providerId: 'credential',
                 password: hashedPassword,
             });
@@ -60,7 +77,8 @@ async function seedTester() {
         // Create account
         await db.insert(accounts).values({
             userId: userId,
-            accountId: email,
+            issuer: 'local:credential',
+            accountId: userId,
             providerId: 'credential',
             password: hashedPassword,
         });
@@ -70,8 +88,9 @@ async function seedTester() {
 
     console.log(`
 🎉 Login Credentials:
-Email: ${email}
-Password: ${password}
+Email: ${email}${generated ? `
+Password (generated — set SEED_TESTER_PASSWORD to choose your own): ${password}` : `
+Password: (from SEED_TESTER_PASSWORD)`}
     `);
 
     process.exit(0);

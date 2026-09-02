@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Chainable DB Mock (same pattern as settings.service.test.ts) ───
 const resultQueue: any[] = [];
+let transactionCommits = 0;
+let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
+const auditMocks = vi.hoisted(() => ({ logActionOrThrow: vi.fn() }));
 
 const mockChain: any = new Proxy({}, {
     get(_target, prop) {
@@ -19,9 +22,20 @@ const mockDb = {
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
+    transaction: async (fn: any) => {
+        try {
+            const result = await fn(mockDb);
+            transactionCommits += 1;
+            return result;
+        } catch (error) {
+            transactionRollbacks += 1;
+            throw error;
+        }
+    },
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
 
 vi.mock('qrcode', () => ({
     default: { toDataURL: async () => 'data:image/png;base64,mockQR' },
@@ -35,6 +49,10 @@ describe('StorageLocationService', () => {
     beforeEach(() => {
         service = new StorageLocationService();
         resultQueue.length = 0;
+        transactionCommits = 0;
+        transactionRollbacks = 0;
+        auditMocks.logActionOrThrow.mockReset();
+        auditMocks.logActionOrThrow.mockResolvedValue(undefined);
     });
 
     // ==================== getTree ====================
@@ -75,13 +93,13 @@ describe('StorageLocationService', () => {
         it('should return location when found', async () => {
             const loc = { id: 'loc-1', code: 'G1', level: 'gedung' };
             enqueue([loc]);
-            const result = await service.findById('loc-1');
+            const result = await service.findById('loc-1', 'u1');
             expect(result).toEqual(loc);
         });
 
         it('should return null when not found', async () => {
             enqueue([]);
-            const result = await service.findById('nonexistent');
+            const result = await service.findById('nonexistent', 'u1');
             expect(result).toBeNull();
         });
     });
@@ -108,8 +126,20 @@ describe('StorageLocationService', () => {
 
             const result = await service.create({
                 unitKerjaId: 'u1', level: 'gedung', name: 'Gedung A', code: 'G1',
-            } as any);
+            } as any, 'u1');
             expect(result.code).toBe('G1');
+        });
+
+        it('rolls back location creation when critical audit storage fails', async () => {
+            enqueue([{ id: 'new-1', code: 'G1', level: 'gedung' }]);
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+
+            await expect(service.create({
+                unitKerjaId: 'u1', level: 'gedung', name: 'Gedung A', code: 'G1',
+            } as any, 'u1', { userId: 'user-1' })).rejects.toThrow('audit unavailable');
+
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
         });
 
         it('should auto-generate code when not provided', async () => {
@@ -120,8 +150,20 @@ describe('StorageLocationService', () => {
 
             const result = await service.create({
                 unitKerjaId: 'u1', level: 'gedung', name: 'Gedung D',
-            } as any);
+            } as any, 'u1');
             expect(result).toBeDefined();
+        });
+
+        it('rejects a parent that is not in the authoritative unit', async () => {
+            enqueue([]);
+
+            await expect(service.create({
+                unitKerjaId: 'forged-unit',
+                parentId: 'parent-other-unit',
+                level: 'ruang',
+                name: 'Ruang A',
+                code: 'G1-R1',
+            } as any, 'u1')).rejects.toThrow('selected unit');
         });
     });
 
@@ -129,9 +171,11 @@ describe('StorageLocationService', () => {
 
     describe('update', () => {
         it('should update and return location', async () => {
-            const updated = { id: 'loc-1', name: 'Updated' };
+            const existing = { id: 'loc-1', unitKerjaId: 'u1', level: 'gedung', parentId: null };
+            const updated = { ...existing, name: 'Updated' };
+            enqueue([existing]);
             enqueue([updated]);
-            const result = await service.update('loc-1', { name: 'Updated' } as any);
+            const result = await service.update('loc-1', { name: 'Updated' } as any, 'u1');
             expect(result).toEqual(updated);
         });
     });
@@ -140,22 +184,36 @@ describe('StorageLocationService', () => {
 
     describe('delete', () => {
         it('should throw if location has children', async () => {
+            enqueue([{ id: 'loc-1', unitKerjaId: 'u1' }]); // scoped target lock
             enqueue([{ count: 2 }]); // children count
-            await expect(service.delete('loc-1')).rejects.toThrow('Cannot delete location with children');
+            await expect(service.delete('loc-1', 'u1')).rejects.toThrow('Cannot delete location with children');
         });
 
         it('should throw if location has arsip items', async () => {
+            enqueue([{ id: 'loc-1', unitKerjaId: 'u1' }]);
             enqueue([{ count: 0 }]); // no children
             enqueue([{ count: 5 }]); // has arsip
-            await expect(service.delete('loc-1')).rejects.toThrow('Cannot delete location with archived items');
+            await expect(service.delete('loc-1', 'u1')).rejects.toThrow('Cannot delete location with archived items');
         });
 
         it('should delete successfully when no dependencies', async () => {
+            enqueue([{ id: 'loc-1', unitKerjaId: 'u1' }]);
             enqueue([{ count: 0 }]); // no children
             enqueue([{ count: 0 }]); // no arsip
+            enqueue([{ count: 0 }]); // no lending history
             enqueue([{ id: 'loc-1' }]); // deleted
-            const result = await service.delete('loc-1');
+            const result = await service.delete('loc-1', 'u1');
             expect(result).toEqual({ id: 'loc-1' });
+        });
+
+        it('preserves locations that have lending history', async () => {
+            enqueue([{ id: 'loc-1', unitKerjaId: 'u1' }]);
+            enqueue([{ count: 0 }]);
+            enqueue([{ count: 0 }]);
+            enqueue([{ count: 1 }]);
+
+            await expect(service.delete('loc-1', 'u1'))
+                .rejects.toThrow('Preserve the audit trail');
         });
     });
 
@@ -164,7 +222,7 @@ describe('StorageLocationService', () => {
     describe('getArsipCount', () => {
         it('should return count of arsip in location', async () => {
             enqueue([{ count: 15 }]);
-            const result = await service.getArsipCount('loc-1');
+            const result = await service.getArsipCount('loc-1', 'u1');
             expect(result).toBe(15);
         });
     });

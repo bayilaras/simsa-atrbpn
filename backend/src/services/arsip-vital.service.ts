@@ -1,6 +1,11 @@
 import { db } from '../config/database';
 import { arsipVital, NewArsipVital, ArsipVital, arsip } from '../db/schema';
-import { eq, and, desc, sql, lte, ilike, or } from 'drizzle-orm';
+import { eq, and, desc, sql, lte, ilike, or, inArray } from 'drizzle-orm';
+import {
+    scopedRecordByIdWhere,
+    type RecordUnitScope,
+} from '../utils/record-unit-scope.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 interface ArsipVitalFilters {
     unitKerjaId?: string;
@@ -10,6 +15,16 @@ interface ArsipVitalFilters {
     search?: string;
     page?: number;
     limit?: number;
+    securityClassifications?: string[] | null;
+}
+
+function archiveSecurityCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+    return inArray(
+        sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+        classes,
+    );
 }
 
 class ArsipVitalService {
@@ -23,7 +38,8 @@ class ArsipVitalService {
             statusProteksi,
             search,
             page = 1,
-            limit = 20
+            limit = 20,
+            securityClassifications,
         } = filters;
 
         const conditions = [];
@@ -49,6 +65,7 @@ class ArsipVitalService {
                 )!
             );
         }
+        conditions.push(archiveSecurityCondition(securityClassifications));
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -78,7 +95,10 @@ class ArsipVitalService {
                 kurunWaktu: arsip.kurunWaktu,
             })
                 .from(arsipVital)
-                .leftJoin(arsip, eq(arsipVital.arsipId, arsip.id))
+                .innerJoin(arsip, and(
+                    eq(arsipVital.arsipId, arsip.id),
+                    eq(arsip.unitKerjaId, arsipVital.unitKerjaId),
+                ))
                 .where(whereClause)
                 .orderBy(desc(arsipVital.createdAt))
                 .limit(limit)
@@ -86,6 +106,10 @@ class ArsipVitalService {
 
             db.select({ count: sql<number>`count(*)::int` })
                 .from(arsipVital)
+                .innerJoin(arsip, and(
+                    eq(arsipVital.arsipId, arsip.id),
+                    eq(arsip.unitKerjaId, arsipVital.unitKerjaId),
+                ))
                 .where(whereClause),
         ]);
 
@@ -100,7 +124,11 @@ class ArsipVitalService {
     }
 
     // Get single arsip vital with arsip details
-    async findById(id: string) {
+    async findById(
+        id: string,
+        unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
+    ) {
         const [result] = await db
             .select({
                 id: arsipVital.id,
@@ -131,49 +159,154 @@ class ArsipVitalService {
                 jenisArsip: arsip.jenisArsip,
             })
             .from(arsipVital)
-            .leftJoin(arsip, eq(arsipVital.arsipId, arsip.id))
-            .where(eq(arsipVital.id, id))
+            .innerJoin(arsip, and(
+                eq(arsipVital.arsipId, arsip.id),
+                eq(arsip.unitKerjaId, arsipVital.unitKerjaId),
+            ))
+            .where(and(
+                scopedRecordByIdWhere(
+                    arsipVital.id,
+                    id,
+                    arsipVital.unitKerjaId,
+                    unitScope,
+                ),
+                archiveSecurityCondition(securityClassifications),
+            ))
             .limit(1);
 
         return result || null;
     }
 
     // Designate an archive as vital
-    async create(data: NewArsipVital) {
-        const [result] = await db.insert(arsipVital).values({
-            ...data,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        }).returning();
-        return result;
+    async create(data: NewArsipVital, auditContext: CriticalAuditContext) {
+        return await db.transaction(async (tx: any) => {
+            const [result] = await tx.insert(arsipVital).values({
+                ...data,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            }).returning();
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'create',
+                entityType: 'arsip',
+                entityId: result.arsipId,
+                changes: {
+                    after: result,
+                    designation: 'vital',
+                    designationId: result.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Update arsip vital
-    async update(id: string, data: Partial<ArsipVital>) {
-        const [result] = await db
-            .update(arsipVital)
-            .set({ ...data, updatedAt: new Date() })
-            .where(eq(arsipVital.id, id))
-            .returning();
-        return result;
+    async update(
+        id: string,
+        data: Partial<ArsipVital>,
+        unitScope: RecordUnitScope,
+        auditContext: CriticalAuditContext,
+    ) {
+        return await db.transaction(async (tx: any) => {
+            const targetWhere = scopedRecordByIdWhere(
+                arsipVital.id,
+                id,
+                arsipVital.unitKerjaId,
+                unitScope,
+            );
+            const [existing] = await tx
+                .select()
+                .from(arsipVital)
+                .where(targetWhere)
+                .limit(1)
+                .for('update');
+
+            if (!existing) return null;
+
+            const [result] = await tx
+                .update(arsipVital)
+                .set({ ...data, updatedAt: new Date() })
+                .where(targetWhere)
+                .returning();
+
+            if (!result) return null;
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'arsip',
+                entityId: result.arsipId,
+                changes: {
+                    before: existing,
+                    after: result,
+                    fields: Object.keys(data),
+                    designation: 'vital',
+                    designationId: result.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Remove vital designation
-    async delete(id: string) {
-        const [result] = await db
-            .delete(arsipVital)
-            .where(eq(arsipVital.id, id))
-            .returning();
-        return result;
+    async delete(
+        id: string,
+        unitScope: RecordUnitScope,
+        auditContext: CriticalAuditContext,
+    ) {
+        return await db.transaction(async (tx: any) => {
+            const targetWhere = scopedRecordByIdWhere(
+                arsipVital.id,
+                id,
+                arsipVital.unitKerjaId,
+                unitScope,
+            );
+            const [existing] = await tx
+                .select()
+                .from(arsipVital)
+                .where(targetWhere)
+                .limit(1)
+                .for('update');
+
+            if (!existing) return null;
+
+            const [result] = await tx
+                .delete(arsipVital)
+                .where(targetWhere)
+                .returning();
+
+            if (!result) return null;
+
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'delete',
+                entityType: 'arsip',
+                entityId: existing.arsipId,
+                changes: {
+                    before: existing,
+                    designation: 'vital',
+                    designationId: existing.id,
+                },
+            }, tx);
+
+            return result;
+        });
     }
 
     // Get statistics for dashboard
-    async getStats(unitKerjaId: string) {
-        const conditions = [eq(arsipVital.unitKerjaId, unitKerjaId)];
+    async getStats(unitKerjaId: string, securityClassifications?: string[] | null) {
+        const conditions = [
+            eq(arsipVital.unitKerjaId, unitKerjaId),
+            archiveSecurityCondition(securityClassifications),
+        ];
 
         const [total, byKategori, byStatus, byKekritisan] = await Promise.all([
             db.select({ count: sql<number>`count(*)::int` })
                 .from(arsipVital)
+                .innerJoin(arsip, eq(arsipVital.arsipId, arsip.id))
                 .where(and(...conditions)),
 
             db.select({
@@ -181,6 +314,7 @@ class ArsipVitalService {
                 count: sql<number>`count(*)::int`,
             })
                 .from(arsipVital)
+                .innerJoin(arsip, eq(arsipVital.arsipId, arsip.id))
                 .where(and(...conditions))
                 .groupBy(arsipVital.kategoriVital),
 
@@ -189,6 +323,7 @@ class ArsipVitalService {
                 count: sql<number>`count(*)::int`,
             })
                 .from(arsipVital)
+                .innerJoin(arsip, eq(arsipVital.arsipId, arsip.id))
                 .where(and(...conditions))
                 .groupBy(arsipVital.statusProteksi),
 
@@ -197,6 +332,7 @@ class ArsipVitalService {
                 count: sql<number>`count(*)::int`,
             })
                 .from(arsipVital)
+                .innerJoin(arsip, eq(arsipVital.arsipId, arsip.id))
                 .where(and(...conditions))
                 .groupBy(arsipVital.tingkatKekritisan),
         ]);
@@ -210,7 +346,11 @@ class ArsipVitalService {
     }
 
     // Get arsip vital due for review
-    async getDueForReview(unitKerjaId: string, daysAhead: number = 30) {
+    async getDueForReview(
+        unitKerjaId: string,
+        daysAhead: number = 30,
+        securityClassifications?: string[] | null,
+    ) {
         const futureDate = new Date();
         futureDate.setDate(futureDate.getDate() + daysAhead);
 
@@ -228,11 +368,15 @@ class ArsipVitalService {
                 nomorSuratOriginal: arsip.nomorSuratOriginal,
             })
             .from(arsipVital)
-            .leftJoin(arsip, eq(arsipVital.arsipId, arsip.id))
+            .innerJoin(arsip, and(
+                eq(arsipVital.arsipId, arsip.id),
+                eq(arsip.unitKerjaId, arsipVital.unitKerjaId),
+            ))
             .where(
                 and(
                     eq(arsipVital.unitKerjaId, unitKerjaId),
-                    lte(arsipVital.tanggalReviewSelanjutnya, futureDate.toISOString().split('T')[0])
+                    lte(arsipVital.tanggalReviewSelanjutnya, futureDate.toISOString().split('T')[0]),
+                    archiveSecurityCondition(securityClassifications),
                 )
             )
             .orderBy(arsipVital.tanggalReviewSelanjutnya);

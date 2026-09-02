@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import { Link, useNavigate } from 'react-router-dom';
 import { Send, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, MailOpen, FolderArchive, RefreshCw, Trash2, FileText, AlertCircle, Inbox, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,12 +60,19 @@ import {
 import { TableSkeleton } from '@/components/skeletons';
 import suratKeluarService from '@/services/surat-keluar.service';
 import settingsService from '@/services/settings.service';
+import approvalService from '@/services/approval.service';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 
 // Generate year options
 const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
+const approvalStatusDisplay = {
+    draft: { label: 'Draft', className: 'text-muted-foreground' },
+    pending: { label: 'Menunggu Persetujuan', className: 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+    approved: { label: 'Disetujui', className: 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+    rejected: { label: 'Perlu Perbaikan', className: 'border-red-300 bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300' },
+};
 
 export default function SuratKeluar() {
     const navigate = useNavigate();
@@ -78,13 +86,15 @@ export default function SuratKeluar() {
     const [loading, setLoading] = useState(true);
     const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
     const [stats, setStats] = useState({ total: 0, diarsipkan: 0 });
+    const [pendingApprovals, setPendingApprovals] = useState([]);
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([]);
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined));
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined));
 
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
     const [tahun, setTahun] = useState('all');
     const [naskahDinas, setNaskahDinas] = useState('all');
@@ -108,24 +118,29 @@ export default function SuratKeluar() {
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
-        : (user?.unitKerjaId || undefined);
+        : (resolveEffectiveUnitKerjaId(user) || undefined);
+
+    // Guards against out-of-order responses overwriting newer results
+    const fetchSeqRef = useRef(0);
 
     // Fetch data from API
     const fetchData = useCallback(async () => {
+        const seq = ++fetchSeqRef.current;
         setLoading(true);
         try {
             const params = {
                 page: pagination.page,
                 limit: pagination.limit,
-                search: searchTerm || undefined,
+                search: debouncedSearchTerm || undefined,
                 unitKerjaId: resolvedUnitKerjaId,
                 tahun: tahun !== 'all' ? tahun : undefined,
-                jenisSurat: naskahDinas !== 'all' ? naskahDinas : undefined,
+                naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
             };
 
             const response = await suratKeluarService.getAll(params);
+            if (seq !== fetchSeqRef.current) return;
             if (response.success) {
                 setData(response.data || []);
                 setPagination(prev => ({
@@ -135,6 +150,7 @@ export default function SuratKeluar() {
                 }));
             }
         } catch (error) {
+            if (seq !== fetchSeqRef.current) return;
             console.error('Error fetching surat keluar:', error);
             toast({
                 title: 'Error',
@@ -142,9 +158,9 @@ export default function SuratKeluar() {
                 variant: 'destructive',
             });
         } finally {
-            setLoading(false);
+            if (seq === fetchSeqRef.current) setLoading(false);
         }
-    }, [pagination.page, pagination.limit, searchTerm, resolvedUnitKerjaId, tahun, naskahDinas, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, naskahDinas, tanggalDari, tanggalSampai, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -158,14 +174,32 @@ export default function SuratKeluar() {
         }
     }, [resolvedUnitKerjaId]);
 
+    const fetchPendingApprovals = useCallback(async () => {
+        if (!isAdmin) {
+            setPendingApprovals([]);
+            return;
+        }
+        try {
+            setPendingApprovals(await approvalService.getPending());
+        } catch (error) {
+            console.error('Error fetching pending approvals:', error);
+            setPendingApprovals([]);
+        }
+    }, [isAdmin]);
+
     useEffect(() => {
         fetchData();
         fetchStats();
     }, [fetchData, fetchStats]);
 
+    useEffect(() => {
+        fetchPendingApprovals();
+    }, [fetchPendingApprovals]);
+
     // Debounced search
     useEffect(() => {
         const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
             setPagination(prev => ({ ...prev, page: 1 }));
         }, 500);
         return () => clearTimeout(timer);
@@ -173,6 +207,12 @@ export default function SuratKeluar() {
 
     const hasActiveFilters = tahun !== 'all' || naskahDinas !== 'all' ||
         tanggalDari || tanggalSampai || searchTerm;
+
+    // Applying a filter must restart from the first page
+    const applyFilter = (setter) => (value) => {
+        setter(value);
+        setPagination(prev => ({ ...prev, page: 1 }));
+    };
 
     const clearAllFilters = () => {
         setSearchTerm('');
@@ -216,6 +256,7 @@ export default function SuratKeluar() {
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             });
+            throw error;
         }
     };
 
@@ -249,11 +290,11 @@ export default function SuratKeluar() {
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Page Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-emerald-100 rounded-lg">
-                            <Send className="h-6 w-6 text-emerald-600" />
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 space-y-1">
+                    <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                        <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-lg">
+                            <Send className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
                         </div>
                         Surat Keluar
                     </h1>
@@ -263,14 +304,14 @@ export default function SuratKeluar() {
                 </div>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex w-full items-center gap-2 sm:w-auto">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPagination(prev => ({ ...prev, page: 1 })); }}>
-                            <SelectTrigger className="w-[220px] h-9">
+                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                <SelectItem value="all">Semua Unit Kerja</SelectItem>
                                 {unitKerjaList.map(uk => (
                                     <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
                                 ))}
@@ -278,15 +319,16 @@ export default function SuratKeluar() {
                         </Select>
                     </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" onClick={fetchData} disabled={loading} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />
                         Refresh
                     </Button>
 
-                    {isAdmin && (
+                    {isAdmin && resolvedUnitKerjaId && (
                         <ImportFromGDrive
                             type="surat-keluar"
+                            unitKerjaId={resolvedUnitKerjaId}
                             onImportComplete={fetchData}
                         />
                     )}
@@ -294,33 +336,54 @@ export default function SuratKeluar() {
                     <ExportButton
                         type="surat-keluar"
                         filters={{
+                            unitKerjaId: resolvedUnitKerjaId,
                             tahun: tahun !== 'all' ? tahun : undefined,
                             naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
-                            tanggalDari: tanggalDari?.toISOString().split('T')[0],
-                            tanggalSampai: tanggalSampai?.toISOString().split('T')[0],
+                            tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
+                            tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
                         }}
                     />
 
                     {isAdmin && (
-                        <Link to="/surat/keluar/tambah">
-                            <Button size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                        <Button asChild size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                            <Link to="/surat/keluar/tambah">
                                 <Plus className="mr-2 h-3.5 w-3.5" />
                                 Surat Baru
-                            </Button>
-                        </Link>
+                            </Link>
+                        </Button>
                     )}
                 </div>
             </div>
 
+            {pendingApprovals.length > 0 && (
+                <Card className="border-amber-300 bg-amber-50/70 dark:bg-amber-500/10">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <AlertCircle className="h-5 w-5 text-amber-600" />
+                            {pendingApprovals.length} surat menunggu keputusan Anda
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-wrap gap-2">
+                        {pendingApprovals.slice(0, 5).map(item => (
+                            <Button key={item.requestId} asChild size="sm" variant="outline">
+                                <Link to={`/surat/keluar/${item.suratId}`}>
+                                    {item.nomorSurat || 'Draft'} — {item.perihal || 'Tanpa perihal'}
+                                </Link>
+                            </Button>
+                        ))}
+                    </CardContent>
+                </Card>
+            )}
+
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card className="shadow-sm border-l-4 border-l-emerald-500 card-hover">
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Surat</p>
                             <p className="text-2xl font-bold">{stats.total}</p>
                         </div>
-                        <div className="p-2.5 bg-emerald-100 rounded-full text-emerald-600">
+                        <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-full text-emerald-600 dark:text-emerald-400">
                             <Send className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -328,10 +391,10 @@ export default function SuratKeluar() {
                 <Card className="shadow-sm border-l-4 border-l-orange-500 card-hover">
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
-                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Draft / Belum Final</p>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Belum Diarsipkan</p>
                             <p className="text-2xl font-bold text-orange-600">{stats.total - stats.diarsipkan}</p>
                         </div>
-                        <div className="p-2.5 bg-orange-100 rounded-full text-orange-600">
+                        <div className="p-2.5 bg-orange-100 dark:bg-orange-500/15 rounded-full text-orange-600">
                             <AlertCircle className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -342,7 +405,7 @@ export default function SuratKeluar() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Diarsipkan</p>
                             <p className="text-2xl font-bold text-blue-600">{stats.diarsipkan}</p>
                         </div>
-                        <div className="p-2.5 bg-blue-100 rounded-full text-blue-600">
+                        <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600">
                             <FolderArchive className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -368,7 +431,7 @@ export default function SuratKeluar() {
                                 <CollapsibleTrigger asChild>
                                     <Button variant="outline" className={`gap-2 w-full md:w-auto ${isAdvancedOpen ? 'bg-muted' : ''}`}>
                                         <Filter className="h-4 w-4" />
-                                        <span className="hidden sm:inline">Filter</span>
+                                        <span className="sr-only sm:not-sr-only">Filter</span>
                                         {hasActiveFilters && (
                                             <Badge variant="secondary" className="ml-0.5 h-5 w-5 p-0 justify-center bg-primary/10 text-primary">
                                                 !
@@ -379,7 +442,7 @@ export default function SuratKeluar() {
                                 </CollapsibleTrigger>
                             </Collapsible>
                             {hasActiveFilters && (
-                                <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" title="Reset Filters">
+                                <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" aria-label="Hapus semua filter" title="Hapus semua filter">
                                     <X className="h-4 w-4" />
                                 </Button>
                             )}
@@ -392,7 +455,7 @@ export default function SuratKeluar() {
                                     {/* Tahun */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-semibold text-muted-foreground uppercase">Tahun</label>
-                                        <Select value={tahun} onValueChange={setTahun}>
+                                        <Select value={tahun} onValueChange={applyFilter(setTahun)}>
                                             <SelectTrigger className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Tahun" />
                                             </SelectTrigger>
@@ -420,7 +483,7 @@ export default function SuratKeluar() {
                                                 'Surat Edaran', 'Pengaduan'
                                             ]}
                                             value={naskahDinas}
-                                            onValueChange={setNaskahDinas}
+                                            onValueChange={applyFilter(setNaskahDinas)}
                                             placeholder="Pilih Naskah"
                                             searchPlaceholder=" Cari..."
                                             className="h-9"
@@ -433,14 +496,14 @@ export default function SuratKeluar() {
                                         <div className="flex items-center gap-2">
                                             <DatePicker
                                                 date={tanggalDari}
-                                                onDateChange={setTanggalDari}
+                                                onDateChange={applyFilter(setTanggalDari)}
                                                 placeholder="Dari tanggal"
                                                 className="h-9 bg-background flex-1"
                                             />
                                             <span className="text-muted-foreground">-</span>
                                             <DatePicker
                                                 date={tanggalSampai}
-                                                onDateChange={setTanggalSampai}
+                                                onDateChange={applyFilter(setTanggalSampai)}
                                                 placeholder="Sampai tanggal"
                                                 className="h-9 bg-background flex-1"
                                             />
@@ -459,7 +522,7 @@ export default function SuratKeluar() {
                                 <TableSkeleton columns={7} rows={5} />
                             </div>
                         ) : (
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/30">
                                     <TableRow className="hover:bg-transparent">
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -488,59 +551,64 @@ export default function SuratKeluar() {
                                     ) : (
                                         data.map((row, index) => (
                                             <TableRow key={row.id} className="group hover:bg-muted/30 transition-colors">
-                                                <TableCell className="text-center font-medium text-muted-foreground text-xs">
+                                                <TableCell data-label="No." className="text-center font-medium text-muted-foreground text-xs">
                                                     {(pagination.page - 1) * pagination.limit + index + 1}
                                                 </TableCell>
-                                                <TableCell className="text-sm">
+                                                <TableCell data-label="Tanggal" className="text-sm">
                                                     <div className="flex flex-col">
                                                         <span className="font-medium">{formatDate(row.tanggalSurat)}</span>
-                                                        {row.tanggalKirim && (
-                                                            <span className="text-xs text-muted-foreground">{formatDate(row.tanggalKirim)} (Kirim)</span>
-                                                        )}
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Nomor Surat">
                                                     <Badge variant="outline" className="font-mono text-xs bg-background">
                                                         {row.nomorSurat}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Perihal">
                                                     <div className="flex flex-col gap-1 max-w-[400px]">
                                                         <span className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
                                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                                             <span className="max-w-[150px] truncate" title={row.kepada}>Kepada: {row.kepada}</span>
-                                                            {row.jenisSurat && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.jenisSurat}</span>}
+                                                            {row.naskahDinas && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.naskahDinas}</span>}
                                                         </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Status">
                                                     <div className="flex flex-wrap gap-1.5">
                                                         {row.filePath && (
-                                                            <Badge variant="secondary" className="gap-1 bg-blue-50 text-blue-700 border-blue-200">
+                                                            <Badge variant="secondary" className="gap-1 bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200">
                                                                 <FileText className="h-3 w-3" />
                                                                 File
                                                             </Badge>
                                                         )}
-                                                        {row.balasanDariId && (
-                                                            <Badge variant="outline" className="gap-1 border-orange-200 text-orange-700 bg-orange-50">
+                                                        {row.balasanUntuk && (
+                                                            <Badge variant="outline" className="gap-1 border-orange-200 text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-500/15">
                                                                 <MailOpen className="h-3 w-3" />
                                                                 Balasan
                                                             </Badge>
                                                         )}
+                                                        <Badge variant="outline" className="capitalize">
+                                                            {(row.klasifikasiKeamanan || 'terbatas').replaceAll('_', ' ')}
+                                                        </Badge>
                                                         {row.isArchived ? (
-                                                            <Badge variant="outline" className="border-green-500 text-green-600 bg-green-50">
+                                                            <Badge variant="outline" className="border-green-500 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/15">
                                                                 <FolderArchive className="h-3 w-3 mr-1" />
                                                                 Arsip
                                                             </Badge>
                                                         ) : (
-                                                            <Badge variant="outline" className="text-muted-foreground">Aktif</Badge>
+                                                            <Badge
+                                                                variant="outline"
+                                                                className={approvalStatusDisplay[row.approvalStatus]?.className || 'text-muted-foreground'}
+                                                            >
+                                                                {approvalStatusDisplay[row.approvalStatus]?.label || 'Draft'}
+                                                            </Badge>
                                                         )}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted">
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted" aria-label="Buka menu tindakan surat keluar">
                                                                 <MoreHorizontal className="h-4 w-4" />
                                                             </Button>
                                                         </DropdownMenuTrigger>
@@ -550,18 +618,24 @@ export default function SuratKeluar() {
                                                             </DropdownMenuItem>
                                                             {isAdmin && (
                                                                 <>
-                                                                    <DropdownMenuItem onClick={() => handleEdit(row)}>
-                                                                        <Edit className="h-4 w-4 mr-2" /> Edit Surat
-                                                                    </DropdownMenuItem>
-                                                                    <DropdownMenuSeparator />
-                                                                    {!row.isArchived && (
+                                                                    {['draft', 'rejected'].includes(row.approvalStatus || 'draft') && (
+                                                                        <DropdownMenuItem onClick={() => handleEdit(row)}>
+                                                                            <Edit className="h-4 w-4 mr-2" /> Edit Surat
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                    {row.approvalStatus === 'approved' && !row.isArchived && (
                                                                         <DropdownMenuItem onClick={() => handleOpenArchiveDialog(row)}>
                                                                             <Archive className="h-4 w-4 mr-2" /> Arsipkan
                                                                         </DropdownMenuItem>
                                                                     )}
-                                                                    <DropdownMenuItem onClick={() => handleOpenDeleteDialog(row)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                                                                        <Trash2 className="h-4 w-4 mr-2" /> Hapus Surat
-                                                                    </DropdownMenuItem>
+                                                                    {['draft', 'rejected'].includes(row.approvalStatus || 'draft') && (
+                                                                        <>
+                                                                            <DropdownMenuSeparator />
+                                                                            <DropdownMenuItem onClick={() => handleOpenDeleteDialog(row)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                                                                                <Trash2 className="h-4 w-4 mr-2" /> Hapus Surat
+                                                                            </DropdownMenuItem>
+                                                                        </>
+                                                                    )}
                                                                 </>
                                                             )}
                                                         </DropdownMenuContent>
@@ -588,27 +662,29 @@ export default function SuratKeluar() {
                                             <Button
                                                 variant="outline"
                                                 size="sm"
+                                                aria-label="Halaman sebelumnya"
                                                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
                                                 disabled={pagination.page <= 1}
                                                 className="h-8 w-8 p-0 lg:w-auto lg:px-4 lg:gap-2"
                                             >
-                                                <span className="hidden lg:inline">Previous</span>
-                                                <span className="lg:hidden">{'<'}</span>
+                                                <span className="hidden lg:inline">Sebelumnya</span>
+                                                <span aria-hidden="true" className="lg:hidden">{'<'}</span>
                                             </Button>
                                         </PaginationItem>
                                         <div className="flex items-center gap-1 mx-2 text-sm font-medium">
-                                            Page {pagination.page} of {pagination.totalPages}
+                                            Halaman {pagination.page} dari {pagination.totalPages}
                                         </div>
                                         <PaginationItem>
                                             <Button
                                                 variant="outline"
                                                 size="sm"
+                                                aria-label="Halaman berikutnya"
                                                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
                                                 disabled={pagination.page >= pagination.totalPages}
                                                 className="h-8 w-8 p-0 lg:w-auto lg:px-4 lg:gap-2"
                                             >
-                                                <span className="hidden lg:inline">Next</span>
-                                                <span className="lg:hidden">{'>'}</span>
+                                                <span className="hidden lg:inline">Berikutnya</span>
+                                                <span aria-hidden="true" className="lg:hidden">{'>'}</span>
                                             </Button>
                                         </PaginationItem>
                                     </PaginationContent>

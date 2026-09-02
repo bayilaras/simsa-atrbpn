@@ -6,7 +6,10 @@ import {
     UnauthorizedError,
     ForbiddenError,
     ConflictError,
+    GoneError,
+    PayloadTooLargeError,
     RateLimitError,
+    ServiceUnavailableError,
 } from '../utils/errors';
 
 describe('AppError', () => {
@@ -70,5 +73,13 @@ describe('RateLimitError', () => {
     it('should have 429 status code', () => {
         const error = new RateLimitError();
         expect(error.statusCode).toBe(429);
+    });
+});
+
+describe('attachment preflight errors', () => {
+    it('maps gone, oversized, and transient failures to their HTTP statuses', () => {
+        expect(new GoneError().statusCode).toBe(410);
+        expect(new PayloadTooLargeError().statusCode).toBe(413);
+        expect(new ServiceUnavailableError().statusCode).toBe(503);
     });
 });

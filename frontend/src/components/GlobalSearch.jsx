@@ -33,37 +33,56 @@ const TYPE_COLORS = {
 export function GlobalSearch({ open, onOpenChange }) {
     const navigate = useNavigate();
     const inputRef = useRef(null);
+    const searchSequenceRef = useRef(0);
     const [query, setQuery] = useState('');
     const [results, setResults] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [searchError, setSearchError] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
 
     // Focus input when dialog opens
     useEffect(() => {
         if (open) {
+            searchSequenceRef.current += 1;
             setTimeout(() => inputRef.current?.focus(), 100);
             setQuery('');
             setResults(null);
+            setLoading(false);
+            setSearchError('');
             setSelectedIndex(0);
         }
     }, [open]);
 
     // Debounced search
     const doSearch = useCallback(async (searchQuery) => {
-        if (!searchQuery || searchQuery.length < 2) {
+        const normalizedQuery = searchQuery.trim();
+        if (normalizedQuery.length < 2) {
+            searchSequenceRef.current += 1;
             setResults(null);
+            setLoading(false);
+            setSearchError('');
             return;
         }
 
+        const requestSequence = ++searchSequenceRef.current;
+        setResults(null);
+        setSelectedIndex(0);
+        setSearchError('');
         setLoading(true);
         try {
-            const data = await searchService.search(searchQuery, { limit: 10 });
-            setResults(data);
-            setSelectedIndex(0);
+            const data = await searchService.search(normalizedQuery, { limit: 10 });
+            if (requestSequence === searchSequenceRef.current) {
+                setResults(data);
+            }
         } catch (error) {
-            console.error('Search error:', error);
+            if (requestSequence === searchSequenceRef.current) {
+                console.error('Search error:', error);
+                setSearchError('Pencarian gagal. Periksa koneksi lalu coba lagi.');
+            }
         } finally {
-            setLoading(false);
+            if (requestSequence === searchSequenceRef.current) {
+                setLoading(false);
+            }
         }
     }, []);
 
@@ -91,7 +110,7 @@ export function GlobalSearch({ open, onOpenChange }) {
 
     // Keyboard navigation
     const handleKeyDown = (e) => {
-        if (!results?.results?.length) return;
+        if (loading || !results?.results?.length) return;
 
         if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -112,18 +131,30 @@ export function GlobalSearch({ open, onOpenChange }) {
 
                 {/* Search Input */}
                 <div className="flex items-center border-b px-3">
-                    <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <Search className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden="true" />
                     <Input
+                        id="global-search-input"
                         ref={inputRef}
+                        type="search"
+                        role="combobox"
+                        aria-label="Cari surat, arsip, dan dosir"
+                        aria-autocomplete="list"
+                        aria-expanded={Boolean(results?.results?.length)}
+                        aria-controls="global-search-results"
+                        aria-activedescendant={results?.results?.length ? `global-search-option-${selectedIndex}` : undefined}
+                        aria-busy={loading}
                         value={query}
-                        onChange={(e) => setQuery(e.target.value)}
+                        onChange={(e) => {
+                            setQuery(e.target.value);
+                            setSearchError('');
+                        }}
                         onKeyDown={handleKeyDown}
                         placeholder="Cari surat, arsip, dosir..."
                         className="border-0 focus-visible:ring-0 h-12"
                     />
-                    {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />}
                     {query && !loading && (
-                        <Button variant="ghost" size="icon" onClick={() => setQuery('')}>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setQuery('')} aria-label="Hapus pencarian">
                             <X className="h-4 w-4" />
                         </Button>
                     )}
@@ -134,7 +165,8 @@ export function GlobalSearch({ open, onOpenChange }) {
                     {results && (
                         <div className="p-2">
                             {/* Counts */}
-                            <div className="flex gap-2 px-2 py-1 mb-2">
+                            <div className="flex flex-wrap gap-2 px-2 py-1 mb-2" role="status" aria-live="polite">
+                                <span className="sr-only">{results.counts.total || results.results.length} hasil ditemukan.</span>
                                 {Object.entries(results.counts).filter(([k, v]) => k !== 'total' && v > 0).map(([type, count]) => (
                                     <Badge key={type} variant="secondary" className={TYPE_COLORS[type]}>
                                         {TYPE_LABELS[type]}: {count}
@@ -144,13 +176,18 @@ export function GlobalSearch({ open, onOpenChange }) {
 
                             {/* Result List */}
                             {results.results.length > 0 ? (
-                                <div className="space-y-1">
+                                <div id="global-search-results" className="space-y-1" role="listbox" aria-label="Hasil pencarian">
                                     {results.results.map((result, index) => {
                                         const Icon = TYPE_ICONS[result.type] || FileText;
                                         return (
                                             <button
+                                                id={`global-search-option-${index}`}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={index === selectedIndex}
                                                 key={`${result.type}-${result.id}`}
                                                 onClick={() => handleSelect(result)}
+                                                onMouseEnter={() => setSelectedIndex(index)}
                                                 className={`w-full text-left px-3 py-2 rounded-lg flex items-start gap-3 transition-colors ${index === selectedIndex
                                                         ? 'bg-accent text-accent-foreground'
                                                         : 'hover:bg-muted'
@@ -173,15 +210,24 @@ export function GlobalSearch({ open, onOpenChange }) {
                                     })}
                                 </div>
                             ) : query.length >= 2 ? (
-                                <div className="text-center py-8 text-muted-foreground">
+                                <div className="text-center py-8 text-muted-foreground" role="status">
                                     Tidak ada hasil untuk "{query}"
                                 </div>
                             ) : null}
                         </div>
                     )}
 
+                    {searchError && !loading && (
+                        <div role="alert" className="flex flex-col items-center gap-3 px-6 py-8 text-center">
+                            <p className="text-sm text-destructive">{searchError}</p>
+                            <Button type="button" variant="outline" size="sm" onClick={() => doSearch(query)}>
+                                Coba lagi
+                            </Button>
+                        </div>
+                    )}
+
                     {/* Empty State */}
-                    {!results && query.length < 2 && (
+                    {!results && !searchError && query.length < 2 && (
                         <div className="text-center py-8 text-muted-foreground">
                             <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
                             <p>Ketik minimal 2 karakter untuk mencari</p>
@@ -193,28 +239,11 @@ export function GlobalSearch({ open, onOpenChange }) {
                 {/* Footer hints */}
                 <div className="border-t px-3 py-2 text-xs text-muted-foreground flex items-center justify-between">
                     <span>↑↓ Navigasi • Enter Pilih • Esc Tutup</span>
-                    <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">⌘K</kbd>
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Ctrl K</kbd>
                 </div>
             </DialogContent>
         </Dialog>
     );
-}
-
-/**
- * Hook for global search keyboard shortcut
- */
-export function useGlobalSearchShortcut(onOpen) {
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-                e.preventDefault();
-                onOpen();
-            }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [onOpen]);
 }
 
 export default GlobalSearch;

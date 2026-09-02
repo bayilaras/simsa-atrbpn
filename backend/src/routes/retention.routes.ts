@@ -1,13 +1,51 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { arsipService } from '../services/arsip.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { canWriteMiddleware } from '../middlewares/role.middleware';
+import { canAccessUnit, Role } from '../config/permissions';
+import { validateBody, validateIdParam } from '../middlewares/validate.middleware';
+import { legalHoldActionSchema } from '../validators/schemas';
+import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
+import {
+    allowedSecurityClassifications,
+    recordAccessService,
+} from '../services/record-access.service.js';
+import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const log = createLogger('RetentionRoutes');
 
 const router = Router();
 
 router.use(authMiddleware);
+
+function resolveScopedUnit(
+    req: AuthRequest,
+    res: Response,
+    source: 'query' | 'body' = 'query',
+): string | null {
+    const requestedUnit = source === 'body'
+        ? req.body?.unitKerjaId
+        : req.query.unitKerjaId;
+    const callerRole = (req.user?.role || 'user') as Role;
+    const unitKerjaId = resolveEffectiveUnitKerjaId(
+        callerRole,
+        req.user?.unitKerjaId,
+        typeof requestedUnit === 'string' ? requestedUnit : null,
+    );
+
+    if (!unitKerjaId) {
+        res.status(400).json({ error: 'unitKerjaId is required' });
+        return null;
+    }
+
+    if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, unitKerjaId)) {
+        res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
+        return null;
+    }
+
+    return unitKerjaId;
+}
 
 /**
  * @swagger
@@ -25,19 +63,19 @@ router.use(authMiddleware);
  *       200:
  *         description: Monthly retention summary with alerts
  */
-router.get('/summary', async (req: AuthRequest, res: Response) => {
+router.get('/summary', async (req: AuthRequest, res: Response, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveScopedUnit(req, res);
+        if (!unitKerjaId) return;
 
-        if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
-        }
-
-        const summary = await arsipService.getRetentionSummary(unitKerjaId as string);
+        const summary = await arsipService.getRetentionSummary(
+            unitKerjaId as string,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, data: summary });
     } catch (error) {
         log.error({ err: error }, 'Error fetching retention summary:');
-        res.status(500).json({ error: 'Failed to fetch retention summary' });
+        next(error);
     }
 });
 
@@ -75,14 +113,11 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: List of disposal candidates
  */
-router.get('/candidates', async (req: AuthRequest, res: Response) => {
+router.get('/candidates', async (req: AuthRequest, res: Response, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveScopedUnit(req, res);
+        if (!unitKerjaId) return;
         const { hasilAkhir, status, page, limit } = req.query;
-
-        if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
-        }
 
         const result = await arsipService.getDisposalCandidates(
             unitKerjaId as string,
@@ -91,13 +126,14 @@ router.get('/candidates', async (req: AuthRequest, res: Response) => {
                 status: status as 'kadaluarsa' | 'akan_kadaluarsa' | 'inaktif' | undefined,
                 page: page ? parseInt(page as string) : 1,
                 limit: limit ? parseInt(limit as string) : 20,
+                securityClassifications: allowedSecurityClassifications(req.user),
             }
         );
 
         res.json({ success: true, ...result });
     } catch (error) {
         log.error({ err: error }, 'Error fetching disposal candidates:');
-        res.status(500).json({ error: 'Failed to fetch disposal candidates' });
+        next(error);
     }
 });
 
@@ -126,24 +162,22 @@ router.get('/candidates', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: Disposal report data
  */
-router.post('/disposal-report', async (req: AuthRequest, res: Response) => {
+router.post('/disposal-report', async (req: AuthRequest, res: Response, next) => {
     try {
-        const unitKerjaId = req.body.unitKerjaId || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveScopedUnit(req, res, 'body');
+        if (!unitKerjaId) return;
         const { archiveIds } = req.body;
-
-        if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
-        }
 
         const reportData = await arsipService.generateDisposalReportData(
             unitKerjaId,
-            archiveIds
+            archiveIds,
+            allowedSecurityClassifications(req.user),
         );
 
         res.json({ success: true, data: reportData });
     } catch (error) {
         log.error({ err: error }, 'Error generating disposal report:');
-        res.status(500).json({ error: 'Failed to generate disposal report' });
+        next(error);
     }
 });
 
@@ -163,20 +197,100 @@ router.post('/disposal-report', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: Lifecycle notifications grouped by status
  */
-router.get('/lifecycle', async (req: AuthRequest, res: Response) => {
+router.get('/lifecycle', async (req: AuthRequest, res: Response, next) => {
     try {
-        const unitKerjaId = (req.query.unitKerjaId as string) || req.user?.unitKerjaId || 'ditjen';
+        const unitKerjaId = resolveScopedUnit(req, res);
+        if (!unitKerjaId) return;
 
-        if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
-        }
-
-        const lifecycle = await arsipService.getLifecycleNotifications(unitKerjaId as string);
+        const lifecycle = await arsipService.getLifecycleNotifications(
+            unitKerjaId as string,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, data: lifecycle });
     } catch (error) {
         log.error({ err: error }, 'Error fetching lifecycle notifications:');
-        res.status(500).json({ error: 'Failed to fetch lifecycle notifications' });
+        next(error);
     }
 });
+
+// GET /api/retention/holds - Active legal holds for a scoped unit.
+router.get('/holds', async (req: AuthRequest, res: Response, next) => {
+    try {
+        const unitKerjaId = resolveScopedUnit(req, res);
+        if (!unitKerjaId) return;
+
+        const holds = await arsipService.getLegalHolds(
+            unitKerjaId,
+            allowedSecurityClassifications(req.user),
+        );
+        res.json({ success: true, data: holds });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// PUT /api/retention/:id/hold - Suspend retention/disposal with a mandatory reason.
+router.put(
+    '/:id/hold',
+    validateIdParam(),
+    canWriteMiddleware(),
+    sensitiveLimiter,
+    validateBody(legalHoldActionSchema),
+    async (req: AuthRequest, res: Response, next) => {
+        try {
+            const unitKerjaId = resolveScopedUnit(req, res, 'body');
+            if (!unitKerjaId) return;
+
+            const access = await recordAccessService.check(req.user, 'arsip', String(req.params.id));
+            if (!access.exists || !access.mutable || access.unitKerjaId !== unitKerjaId) {
+                return res.status(404).json({ error: 'Arsip tidak ditemukan' });
+            }
+
+            const result = await arsipService.placeLegalHold(
+                String(req.params.id),
+                unitKerjaId,
+                req.body.reason,
+                req.user?.id,
+                { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
+            );
+
+            res.json({ success: true, data: result.after });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
+
+// PUT /api/retention/:id/release - Resume retention after a documented release.
+router.put(
+    '/:id/release',
+    validateIdParam(),
+    canWriteMiddleware(),
+    sensitiveLimiter,
+    validateBody(legalHoldActionSchema),
+    async (req: AuthRequest, res: Response, next) => {
+        try {
+            const unitKerjaId = resolveScopedUnit(req, res, 'body');
+            if (!unitKerjaId) return;
+
+            const access = await recordAccessService.check(req.user, 'arsip', String(req.params.id));
+            if (!access.exists || !access.mutable || access.unitKerjaId !== unitKerjaId) {
+                return res.status(404).json({ error: 'Arsip tidak ditemukan' });
+            }
+
+            const result = await arsipService.releaseLegalHold(
+                String(req.params.id),
+                unitKerjaId,
+                req.body.reason,
+                req.user?.id,
+                { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
+            );
+
+            res.json({ success: true, data: result.after });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
 
 export const retentionRoutes = router;

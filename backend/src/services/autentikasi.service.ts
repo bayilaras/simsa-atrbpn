@@ -1,43 +1,133 @@
 import { db } from '../config/database.js';
-import { autentikasi, NewAutentikasi } from '../db/schema/autentikasi.js';
+import { autentikasi } from '../db/schema/autentikasi.js';
 import { arsipElektronik } from '../db/schema/arsip-elektronik.js';
-import { users } from '../db/schema/users.js';
-import { eq, desc, ilike, and, gte, lte, inArray, sql } from 'drizzle-orm';
+import { fileAttachments } from '../db/schema/file-attachments.js';
+import { eq, desc, ilike, and, gte, lte, inArray, isNull, sql } from 'drizzle-orm';
 import { CreateAutentikasi, QueryAutentikasi } from '../validators/schemas.js';
 import PDFDocument from 'pdfkit';
-import fs from 'fs';
-import path from 'path';
+import crypto from 'node:crypto';
+import { blobStorageService } from './blob-storage.service.js';
+import { auditLogService, type CriticalAuditContext } from './audit-log.service.js';
+import { Readable } from 'node:stream';
+import { requireImmutableObjectGeneration } from '../storage/locator.js';
+import {
+    durableFinalObjectService,
+    type FinalObjectWrite,
+} from './durable-final-object.service.js';
+
+function withoutPrivateLocator<T extends Record<string, any>>(record: T) {
+    const {
+        fileLampiran,
+        fileLampiranObjectGeneration: _fileLampiranObjectGeneration,
+        fileLampiranSha256: _fileLampiranSha256,
+        fileLampiranSizeBytes: _fileLampiranSizeBytes,
+        ...safe
+    } = record;
+    return { ...safe, hasPdf: Boolean(fileLampiran) };
+}
 
 export class AutentikasiService {
-    async create(data: CreateAutentikasi & { userId: string }) {
-        return await db.transaction(async (tx: any) => {
-            // 1. Create Autentikasi Record
-            const [newAutentikasi] = await tx.insert(autentikasi).values({
-                nomorBeritaAcara: data.nomorBeritaAcara,
-                tanggalAutentikasi: data.tanggalAutentikasi,
-                kegiatan: data.kegiatan,
-                dilakukanOleh: data.userId,
-                jabatanPenandaTangan: data.jabatanPenandaTangan,
-                tempatDilakukan: data.tempatDilakukan,
-                jumlahArsip: data.itemArsipIds.length,
-            }).returning();
+    async create(
+        data: CreateAutentikasi & { userId: string },
+        auditContext: CriticalAuditContext,
+    ) {
+        let finalWrite: FinalObjectWrite | null = null;
+        try {
+            return await db.transaction(async (tx: any) => {
+                const uniqueItemIds = [...new Set(data.itemArsipIds)];
+                if (uniqueItemIds.length !== data.itemArsipIds.length) {
+                    throw new Error('Item arsip autentikasi tidak boleh duplikat');
+                }
 
-            // 2. Update Arsip Elektronik items
-            await tx.update(arsipElektronik)
-                .set({ autentikasiId: newAutentikasi.id })
-                .where(inArray(arsipElektronik.id, data.itemArsipIds));
+                const [newAutentikasi] = await tx.insert(autentikasi).values({
+                    nomorBeritaAcara: data.nomorBeritaAcara,
+                    tanggalAutentikasi: data.tanggalAutentikasi,
+                    kegiatan: data.kegiatan,
+                    dilakukanOleh: data.userId,
+                    jabatanPenandaTangan: data.jabatanPenandaTangan,
+                    tempatDilakukan: data.tempatDilakukan,
+                    jumlahArsip: uniqueItemIds.length,
+                }).returning();
+                if (!newAutentikasi) throw new Error('Autentikasi gagal dibuat');
 
-            // 3. Generate PDF
-            const pdfPath = await this.generateBeritaAcaraPdf(newAutentikasi.id, tx as any);
+                const eligibleItems = await tx.select({ id: arsipElektronik.id })
+                    .from(arsipElektronik)
+                    .innerJoin(fileAttachments, eq(fileAttachments.id, arsipElektronik.fileAttachmentId))
+                    .where(and(
+                        inArray(arsipElektronik.id, uniqueItemIds),
+                        isNull(arsipElektronik.autentikasiId),
+                        eq(arsipElektronik.statusVerifikasi, 'verified'),
+                        eq(arsipElektronik.immutable, true),
+                        eq(fileAttachments.storageAccess, 'private'),
+                        eq(fileAttachments.integrityStatus, 'verified'),
+                        eq(fileAttachments.malwareScanStatus, 'clean'),
+                    ))
+                    .for('update');
+                if (eligibleItems.length !== uniqueItemIds.length) {
+                    throw new Error(
+                        'Arsip harus terverifikasi, immutable, bersih dari malware, dan lolos pemeriksaan integritas',
+                    );
+                }
 
-            // 4. Update record with file path
-            const [updated] = await tx.update(autentikasi)
-                .set({ fileLampiran: pdfPath })
-                .where(eq(autentikasi.id, newAutentikasi.id))
-                .returning();
+                const linkedItems = await tx.update(arsipElektronik)
+                    .set({ autentikasiId: newAutentikasi.id, updatedAt: new Date() })
+                    .where(and(
+                        inArray(arsipElektronik.id, uniqueItemIds),
+                        isNull(arsipElektronik.autentikasiId),
+                        eq(arsipElektronik.statusVerifikasi, 'verified'),
+                        eq(arsipElektronik.immutable, true),
+                    ))
+                    .returning({ id: arsipElektronik.id });
+                if (linkedItems.length !== uniqueItemIds.length) {
+                    throw new Error('Sebagian item arsip tidak ditemukan atau sudah diautentikasi');
+                }
 
-            return updated;
-        });
+                const pdfBuffer = await this.generateBeritaAcaraPdfBuffer(newAutentikasi.id, tx);
+                const fileName = this.pdfFileName(newAutentikasi.nomorBeritaAcara);
+                finalWrite = await durableFinalObjectService.upload(newAutentikasi.id, {
+                    fileName,
+                    mimeType: 'application/pdf',
+                    buffer: pdfBuffer,
+                    folder: 'autentikasi',
+                });
+                const stored = finalWrite.stored;
+                const uploadedObjectGeneration = requireImmutableObjectGeneration(
+                    stored.url,
+                    stored.generation,
+                );
+
+                const [updated] = await tx.update(autentikasi)
+                    .set({
+                        fileLampiran: stored.url,
+                        fileLampiranObjectGeneration: uploadedObjectGeneration,
+                        fileLampiranSha256: crypto.createHash('sha256').update(pdfBuffer).digest('hex'),
+                        fileLampiranSizeBytes: pdfBuffer.length,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(autentikasi.id, newAutentikasi.id))
+                    .returning();
+                if (!updated) throw new Error('Locator PDF autentikasi gagal direkam');
+
+                const safeResult = withoutPrivateLocator(updated);
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'create',
+                    entityType: 'autentikasi',
+                    entityId: updated.id,
+                    changes: { after: safeResult },
+                }, tx);
+
+                // This update is committed atomically with the domain row. If
+                // anything above rolls back, the pre-write reservation stays
+                // eligible for the isolated final-cleanup principal.
+                await durableFinalObjectService.markReferenced(tx, finalWrite);
+
+                return safeResult;
+            });
+        } catch (error) {
+            await durableFinalObjectService.compensate(finalWrite, error);
+            throw error;
+        }
     }
 
     async findAll(query: QueryAutentikasi) {
@@ -72,7 +162,7 @@ export class AutentikasiService {
             .where(whereClause);
 
         return {
-            data,
+            data: data.map(item => withoutPrivateLocator(item)),
             total: Number(countResult.count),
             page,
             totalPages: Math.ceil(Number(countResult.count) / limit),
@@ -80,7 +170,7 @@ export class AutentikasiService {
     }
 
     async findById(id: string) {
-        return await db.query.autentikasi.findFirst({
+        const result = await db.query.autentikasi.findFirst({
             where: eq(autentikasi.id, id),
             with: {
                 petugas: {
@@ -98,9 +188,67 @@ export class AutentikasiService {
                 }
             }
         });
+        return result ? withoutPrivateLocator(result) : null;
     }
 
-    async generateBeritaAcaraPdf(id: string, tx: any = db): Promise<string> {
+    async getPdfStream(id: string, auditContext: CriticalAuditContext) {
+        const [record] = await db.select({
+            locator: autentikasi.fileLampiran,
+            objectGeneration: autentikasi.fileLampiranObjectGeneration,
+            expectedSha256: autentikasi.fileLampiranSha256,
+            expectedSizeBytes: autentikasi.fileLampiranSizeBytes,
+            nomorBeritaAcara: autentikasi.nomorBeritaAcara,
+        })
+            .from(autentikasi)
+            .where(eq(autentikasi.id, id))
+            .limit(1);
+        if (!record?.locator || !record.expectedSha256 || !record.expectedSizeBytes) return null;
+
+        const objectGeneration = requireImmutableObjectGeneration(
+            record.locator,
+            record.objectGeneration,
+        );
+        const download = await blobStorageService.downloadFile(record.locator, {
+            generation: objectGeneration || undefined,
+        });
+        if (!download) return null;
+        if (download.mimeType !== 'application/pdf') {
+            throw new Error('Stored autentikasi object is not a PDF');
+        }
+        const chunks: Buffer[] = [];
+        let total = 0;
+        for await (const chunk of download.stream) {
+            const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            total += bytes.length;
+            if (total > record.expectedSizeBytes) {
+                throw new Error('Stored autentikasi PDF size mismatch');
+            }
+            chunks.push(bytes);
+        }
+        const buffer = Buffer.concat(chunks);
+        const actualSha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+        if (buffer.length !== record.expectedSizeBytes || actualSha256 !== record.expectedSha256) {
+            throw new Error('Stored autentikasi PDF integrity mismatch');
+        }
+
+        await auditLogService.logActionOrThrow({
+            ...auditContext,
+            action: 'download',
+            entityType: 'autentikasi',
+            entityId: id,
+            changes: {
+                sha256: actualSha256,
+                sizeBytes: buffer.length,
+            },
+        });
+        return {
+            stream: Readable.from([buffer]),
+            mimeType: 'application/pdf',
+            fileName: this.pdfFileName(record.nomorBeritaAcara),
+        };
+    }
+
+    async generateBeritaAcaraPdfBuffer(id: string, tx: any = db): Promise<Buffer> {
         const data = await tx.query.autentikasi.findFirst({
             where: eq(autentikasi.id, id),
             with: {
@@ -115,19 +263,13 @@ export class AutentikasiService {
 
         if (!data) throw new Error('Autentikasi not found');
 
-        // Ensure directory exists
-        const uploadDir = path.join(process.cwd(), 'uploads', 'autentikasi');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-
-        const fileName = `BA_Autentikasi_${data.nomorBeritaAcara.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-        const filePath = path.join(uploadDir, fileName);
-        const relativePath = `/uploads/autentikasi/${fileName}`;
-
         const doc = new PDFDocument({ size: 'A4', margin: 50 });
-        const stream = fs.createWriteStream(filePath);
-        doc.pipe(stream);
+        const chunks: Buffer[] = [];
+        const completed = new Promise<Buffer>((resolve, reject) => {
+            doc.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
+            doc.on('error', reject);
+        });
 
         // --- PDF CONTENT START ---
 
@@ -219,11 +361,16 @@ export class AutentikasiService {
         });
 
         doc.end();
+        return completed;
+    }
 
-        return new Promise((resolve, reject) => {
-            stream.on('finish', () => resolve(relativePath));
-            stream.on('error', reject);
-        });
+    private pdfFileName(nomorBeritaAcara: string): string {
+        const safeNumber = nomorBeritaAcara
+            .normalize('NFKC')
+            .replace(/[^a-zA-Z0-9._-]/g, '_')
+            .replace(/_+/g, '_')
+            .slice(0, 160);
+        return `BA_Autentikasi_${safeNumber || 'arsip'}.pdf`;
     }
 }
 

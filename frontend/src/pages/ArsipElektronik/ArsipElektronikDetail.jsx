@@ -28,13 +28,20 @@ export default function ArsipElektronikDetail({
                         <TabsContent value="detail" className="space-y-4 pt-4">
                             <div className="space-y-3">
                                 <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div className="col-span-2"><span className="text-muted-foreground">Kode registrasi:</span> <strong className="font-mono">{selectedItem.registrationCode || 'Rekod legacy'}</strong></div>
                                     <div><span className="text-muted-foreground">Format:</span> <strong>{selectedItem.formatFile}</strong></div>
                                     <div><span className="text-muted-foreground">Ukuran:</span> <strong>{formatFileSize(selectedItem.ukuranFile)}</strong></div>
                                     <div><span className="text-muted-foreground">Resolusi:</span> <strong>{selectedItem.resolusiDPI ? `${selectedItem.resolusiDPI} DPI` : '-'}</strong></div>
                                     <div><span className="text-muted-foreground">Halaman:</span> <strong>{selectedItem.jumlahHalaman || '-'}</strong></div>
                                     <div><span className="text-muted-foreground">Media:</span> <strong>{selectedItem.mediaAsal} → {selectedItem.mediaTujuan}</strong></div>
                                     <div><span className="text-muted-foreground">Versi:</span> <strong>v{selectedItem.versiDokumen}</strong></div>
+                                    <div><span className="text-muted-foreground">Sumber:</span> <strong>{selectedItem.sourceType || '-'}</strong></div>
+                                    <div><span className="text-muted-foreground">Kedalaman warna:</span> <strong>{selectedItem.colorDepth ? `${selectedItem.colorDepth}-bit` : '-'}</strong></div>
+                                    <div><span className="text-muted-foreground">Kendali mutu:</span> <strong>{selectedItem.qcStatus || 'pending'}</strong></div>
                                 </div>
+                                {selectedItem.qcNotes && (
+                                    <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">{selectedItem.qcNotes}</p>
+                                )}
                                 {selectedItem.hashSHA256 && (
                                     <div className="text-xs">
                                         <span className="text-muted-foreground">SHA-256:</span>
@@ -60,7 +67,7 @@ export default function ArsipElektronikDetail({
                                 <Button variant="destructive" onClick={() => onVerify('rejected')}>
                                     <XCircle className="mr-1 h-4 w-4" /> Tolak
                                 </Button>
-                                <Button onClick={() => onVerify('verified')}>
+                                <Button onClick={() => onVerify('verified')} disabled={selectedItem.qcStatus !== 'passed'}>
                                     <CheckCircle className="mr-1 h-4 w-4" /> Verifikasi
                                 </Button>
                             </DialogFooter>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-    Link2, Search, Plus, Trash2, RefreshCw, ArrowRight, ArrowLeft,
+    Link2, Search, Plus, Unlink, RefreshCw, ArrowRight, ArrowLeft,
     FileText, Mail, Send, FolderOpen, ChevronUp, Info, ExternalLink,
     Filter, MoreHorizontal, ArrowRightLeft, Target, GitMerge
 } from 'lucide-react'
@@ -21,22 +21,23 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
 import { tunjukSilangService } from '@/services/tunjuk-silang.service'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { useAuth } from '@/context/AuthContext'
 
 const ENTITY_TYPES = [
-    { value: 'arsip', label: 'Arsip', icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50' },
-    { value: 'surat_masuk', label: 'Surat Masuk', icon: Mail, color: 'text-green-500', bg: 'bg-green-50' },
-    { value: 'surat_keluar', label: 'Surat Keluar', icon: Send, color: 'text-orange-500', bg: 'bg-orange-50' },
-    { value: 'dosir', label: 'Dosir', icon: FolderOpen, color: 'text-purple-500', bg: 'bg-purple-50' },
+    { value: 'arsip', label: 'Arsip', icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-500/15' },
+    { value: 'surat_masuk', label: 'Surat Masuk', icon: Mail, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-500/15' },
+    { value: 'surat_keluar', label: 'Surat Keluar', icon: Send, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-500/15' },
+    { value: 'dosir', label: 'Dosir', icon: FolderOpen, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-500/15' },
 ]
 
 const RELASI_TYPES = [
-    { value: 'balasan', label: 'Balasan', color: 'bg-blue-100 text-blue-800 border-blue-200' },
-    { value: 'tindak_lanjut', label: 'Tindak Lanjut', color: 'bg-green-100 text-green-800 border-green-200' },
-    { value: 'lampiran', label: 'Lampiran', color: 'bg-purple-100 text-purple-800 border-purple-200' },
-    { value: 'referensi', label: 'Referensi', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-    { value: 'revisi', label: 'Revisi', color: 'bg-orange-100 text-orange-800 border-orange-200' },
-    { value: 'duplikat', label: 'Duplikat', color: 'bg-red-100 text-red-800 border-red-200' },
-    { value: 'berkaitan', label: 'Berkaitan', color: 'bg-slate-100 text-slate-800 border-slate-200' },
+    { value: 'balasan', label: 'Balasan', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-200' },
+    { value: 'tindak_lanjut', label: 'Tindak Lanjut', color: 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300 border-green-200' },
+    { value: 'lampiran', label: 'Lampiran', color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-800 dark:text-purple-300 border-purple-200' },
+    { value: 'referensi', label: 'Referensi', color: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-800 dark:text-yellow-300 border-yellow-200' },
+    { value: 'revisi', label: 'Revisi', color: 'bg-orange-100 dark:bg-orange-500/15 text-orange-800 dark:text-orange-300 border-orange-200' },
+    { value: 'duplikat', label: 'Duplikat', color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300 border-red-200' },
+    { value: 'berkaitan', label: 'Berkaitan', color: 'bg-muted text-foreground border-border' },
 ]
 
 const getEntityIcon = (type) => {
@@ -51,24 +52,26 @@ const getEntityLabel = (type) => {
 
 const getEntityStyle = (type) => {
     const found = ENTITY_TYPES.find(e => e.value === type)
-    return found || { color: 'text-gray-500', bg: 'bg-gray-50' }
+    return found || { color: 'text-muted-foreground', bg: 'bg-muted/50' }
 }
 
 const getRelasiConfig = (relasi) => {
-    return RELASI_TYPES.find(r => r.value === relasi) || { label: relasi, color: 'bg-gray-100 text-gray-800 border-gray-200' }
+    return RELASI_TYPES.find(r => r.value === relasi) || { label: relasi, color: 'bg-muted text-foreground border-border' }
 }
 
 export default function TunjukSilang() {
+    const { user, canWrite } = useAuth()
+    const isAdmin = canWrite()
+    const canViewRegistry = user?.role === 'super_admin'
     const [data, setData] = useState([])
     const [stats, setStats] = useState(null)
     const [loading, setLoading] = useState(false)
     const [page, setPage] = useState(1)
     const [totalPages, setTotalPages] = useState(1)
-    const [total, setTotal] = useState(0)
     const [filterRelasi, setFilterRelasi] = useState('all')
     const [addDialogOpen, setAddDialogOpen] = useState(false)
     const { toast } = useToast()
-    const [activeTab, setActiveTab] = useState('list')
+    const [activeTab, setActiveTab] = useState('lookup')
 
     // Lookup state
     const [lookupType, setLookupType] = useState('arsip')
@@ -91,7 +94,6 @@ export default function TunjukSilang() {
             const result = await tunjukSilangService.getAll(filters)
             setData(result.data || [])
             setTotalPages(result.totalPages || 1)
-            setTotal(result.total || 0)
         } catch (err) {
             console.error('Error:', err)
         }
@@ -107,7 +109,14 @@ export default function TunjukSilang() {
         }
     }, [])
 
-    useEffect(() => { fetchData(); fetchStats(); }, [fetchData, fetchStats])
+    useEffect(() => {
+        if (!canViewRegistry) return undefined
+        const loadTimer = window.setTimeout(() => {
+            fetchData()
+            fetchStats()
+        }, 0)
+        return () => window.clearTimeout(loadTimer)
+    }, [canViewRegistry, fetchData, fetchStats])
 
     const handleLookup = async () => {
         if (!lookupId.trim()) return
@@ -136,8 +145,10 @@ export default function TunjukSilang() {
                 targetType: 'surat_masuk', targetId: '',
                 jenisRelasi: 'referensi', keterangan: '',
             })
-            fetchData()
-            fetchStats()
+            if (canViewRegistry) {
+                fetchData()
+                fetchStats()
+            }
             // Refresh lookup if active
             if (activeTab === 'lookup' && lookupId) handleLookup()
         } catch (err) {
@@ -145,13 +156,20 @@ export default function TunjukSilang() {
         }
     }
 
-    const handleDelete = async (id) => {
-        if (!confirm('Hapus tunjuk silang ini?')) return
+    const handleCancel = async (id) => {
+        const reason = window.prompt('Tuliskan alasan pembatalan tunjuk silang (minimal 10 karakter):')
+        if (reason === null) return
+        if (reason.trim().length < 10) {
+            toast({ title: 'Alasan terlalu singkat', description: 'Gunakan minimal 10 karakter agar koreksi dapat diaudit.', variant: 'destructive' })
+            return
+        }
         try {
-            await tunjukSilangService.delete(id)
-            toast({ title: 'Berhasil dihapus' })
-            fetchData()
-            fetchStats()
+            await tunjukSilangService.cancel(id, reason.trim())
+            toast({ title: 'Tunjuk silang dibatalkan', description: 'Rekod lama tetap disimpan sebagai jejak koreksi.' })
+            if (canViewRegistry) {
+                fetchData()
+                fetchStats()
+            }
             if (activeTab === 'lookup' && lookupId) handleLookup()
         } catch (err) {
             toast({ title: 'Gagal', description: err.message, variant: 'destructive' })
@@ -164,7 +182,7 @@ export default function TunjukSilang() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
                             <Link2 className="h-6 w-6 text-indigo-600" />
                         </div>
                         Tunjuk Silang
@@ -173,8 +191,8 @@ export default function TunjukSilang() {
                         Kelola referensi silang dan keterkaitan antar dokumen
                     </p>
                 </div>
-                <div className="flex gap-2">
-                    <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+                <div className="flex flex-wrap gap-2">
+                    {isAdmin && <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
                         <DialogTrigger asChild>
                             <Button className="bg-indigo-600 hover:bg-indigo-700 shadow-sm">
                                 <Plus className="mr-2 h-4 w-4" /> Tambah Referensi
@@ -192,7 +210,7 @@ export default function TunjukSilang() {
                             </DialogHeader>
                             <div className="space-y-6 py-4">
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div className="flex-1 p-4 bg-muted/40 rounded-lg border-2 border-transparent focus-within:border-indigo-500/50 transition-colors">
                                             <p className="text-xs font-semibold text-muted-foreground mb-3 text-center uppercase tracking-wider">Sumber (Source)</p>
                                             <div className="space-y-3">
@@ -286,19 +304,19 @@ export default function TunjukSilang() {
                                 <Button onClick={handleCreate} className="bg-indigo-600 hover:bg-indigo-700">Simpan Relasi</Button>
                             </DialogFooter>
                         </DialogContent>
-                    </Dialog>
+                    </Dialog>}
                 </div>
             </div>
 
             {/* Stats Overview */}
-            <div className="grid gap-4 md:grid-cols-4">
+            {canViewRegistry && <div className="grid gap-4 lg:grid-cols-4">
                 <Card className="border-indigo-100 shadow-sm bg-indigo-50/30">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Referensi</CardTitle>
                         <Link2 className="h-4 w-4 text-indigo-600" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-indigo-700">{stats?.total || 0}</div>
+                        <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">{stats?.total || 0}</div>
                         <p className="text-xs text-muted-foreground mt-1">Data hubungan tersimpan</p>
                     </CardContent>
                 </Card>
@@ -317,18 +335,18 @@ export default function TunjukSilang() {
                         </Card>
                     )
                 })}
-            </div>
+            </div>}
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-                <TabsList className="grid w-full max-w-[400px] grid-cols-2">
-                    <TabsTrigger value="list">Daftar Referensi</TabsTrigger>
+                <TabsList className={`grid w-full max-w-[400px] ${canViewRegistry ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    {canViewRegistry && <TabsTrigger value="list">Daftar Referensi</TabsTrigger>}
                     <TabsTrigger value="lookup">Cari & Telusuri</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="list" className="space-y-4">
                     <Card className="border-border/60 shadow-sm">
                         <CardHeader className="pb-4 bg-muted/20">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                     <CardTitle>Semua Data Tunjuk Silang</CardTitle>
                                     <CardDescription>Daftar lengkap referensi silang yang tercatat di sistem</CardDescription>
@@ -338,7 +356,7 @@ export default function TunjukSilang() {
                                         <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh
                                     </Button>
                                     <Select value={filterRelasi} onValueChange={(v) => { setFilterRelasi(v); setPage(1); }}>
-                                        <SelectTrigger className="w-[160px] h-8 text-xs bg-background">
+                                        <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
                                             <Filter className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
                                             <SelectValue placeholder="Semua Jenis" />
                                         </SelectTrigger>
@@ -351,7 +369,7 @@ export default function TunjukSilang() {
                             </div>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/50">
                                     <TableRow>
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -391,8 +409,8 @@ export default function TunjukSilang() {
 
                                         return (
                                             <TableRow key={ref.id} className="hover:bg-muted/30">
-                                                <TableCell className="text-center text-muted-foreground text-xs">{(page - 1) * 20 + index + 1}</TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="No." className="text-center text-muted-foreground text-xs">{(page - 1) * 20 + index + 1}</TableCell>
+                                                <TableCell data-label="Sumber (Source)">
                                                     <div className="flex items-center gap-3">
                                                         <div className={`p-1.5 rounded-md ${srcStyle.bg}`}>
                                                             <SrcIcon className={`h-4 w-4 ${srcStyle.color}`} />
@@ -405,10 +423,10 @@ export default function TunjukSilang() {
                                                         </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="text-center">
+                                                <TableCell data-label="Relasi" className="text-center">
                                                     <Badge variant="outline" className={`${relCfg.color} text-[10px] h-5`}>{relCfg.label}</Badge>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Tujuan (Target)">
                                                     <div className="flex items-center gap-3">
                                                         <div className={`p-1.5 rounded-md ${tgtStyle.bg}`}>
                                                             <TgtIcon className={`h-4 w-4 ${tgtStyle.color}`} />
@@ -421,18 +439,19 @@ export default function TunjukSilang() {
                                                         </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate" title={ref.keterangan}>
+                                                <TableCell data-label="Keterangan" className="text-xs text-muted-foreground max-w-[150px] truncate" title={ref.keterangan}>
                                                     {ref.keterangan || '-'}
                                                 </TableCell>
-                                                <TableCell className="text-xs text-muted-foreground">
+                                                <TableCell data-label="Tanggal" className="text-xs text-muted-foreground">
                                                     {new Date(ref.createdAt).toLocaleDateString('id-ID')}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Button
                                                         variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                                        onClick={() => handleDelete(ref.id)}
+                                                        onClick={() => handleCancel(ref.id)}
+                                                        title="Batalkan dengan jejak audit"
                                                     >
-                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                        <Unlink className="h-3.5 w-3.5" />
                                                     </Button>
                                                 </TableCell>
                                             </TableRow>
@@ -518,7 +537,7 @@ export default function TunjukSilang() {
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
+                                            <div className="flex flex-wrap items-center justify-between gap-3">
                                                 <p className="text-sm font-medium flex items-center gap-2">
                                                     <CheckCircle2 className="h-4 w-4 text-green-600" />
                                                     {lookupResults.length} referensi ditemukan
@@ -537,7 +556,7 @@ export default function TunjukSilang() {
                                                             className="group flex flex-col md:flex-row md:items-center gap-4 p-4 border rounded-lg hover:border-indigo-200 hover:bg-indigo-50/10 transition-all bg-card shadow-sm"
                                                         >
                                                             <div className="flex items-center gap-3 min-w-[150px]">
-                                                                <div className={`p-2 rounded-full ${ref.direction === 'outgoing' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
+                                                                <div className={`p-2 rounded-full ${ref.direction === 'outgoing' ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-600' : 'bg-green-100 dark:bg-green-500/15 text-green-600'}`}>
                                                                     <RelIcon className="h-4 w-4" />
                                                                 </div>
                                                                 <div>
@@ -548,7 +567,7 @@ export default function TunjukSilang() {
                                                                 </div>
                                                             </div>
 
-                                                            <div className="flex-1 flex items-center gap-4 p-3 bg-muted/30 rounded-md border border-transparent group-hover:border-indigo-100 group-hover:bg-white transition-colors">
+                                                            <div className="flex-1 flex items-center gap-4 p-3 bg-muted/30 rounded-md border border-transparent group-hover:border-indigo-100 group-hover:bg-card transition-colors">
                                                                 <div className={`p-2 rounded-md ${entStyle.bg}`}>
                                                                     <EntityIcon className={`h-5 w-5 ${entStyle.color}`} />
                                                                 </div>
@@ -571,14 +590,15 @@ export default function TunjukSilang() {
                                                                 </div>
                                                             )}
 
-                                                            <div className="flex justify-end md:block">
+                                                            {isAdmin && <div className="flex justify-end md:block">
                                                                 <Button
                                                                     variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                                                    onClick={() => handleDelete(ref.id)}
+                                                                    onClick={() => handleCancel(ref.id)}
+                                                                    title="Batalkan dengan jejak audit"
                                                                 >
-                                                                    <Trash2 className="h-4 w-4" />
+                                                                    <Unlink className="h-4 w-4" />
                                                                 </Button>
-                                                            </div>
+                                                            </div>}
                                                         </div>
                                                     )
                                                 })}

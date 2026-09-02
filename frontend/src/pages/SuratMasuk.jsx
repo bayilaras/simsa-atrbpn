@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import { Link, useNavigate } from 'react-router-dom';
 import { MailOpen, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, Reply, FolderArchive, ArrowUpDown, Send, RefreshCw, Trash2, FileText, AlertCircle, Inbox, Calendar, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,6 +63,7 @@ import suratMasukService from '@/services/surat-masuk.service';
 import settingsService from '@/services/settings.service';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
+import { PageHeader } from '@/components/PageHeader'
 
 // Generate year options
 const currentYear = new Date().getFullYear();
@@ -82,10 +84,11 @@ export default function SuratMasuk() {
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([]);
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined));
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined));
 
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
     const [tahun, setTahun] = useState('all');
     const [jenisSurat, setJenisSurat] = useState('all');
@@ -113,16 +116,20 @@ export default function SuratMasuk() {
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
-        : (user?.unitKerjaId || undefined);
+        : (resolveEffectiveUnitKerjaId(user) || undefined);
+
+    // Guards against out-of-order responses overwriting newer results
+    const fetchSeqRef = useRef(0);
 
     // Fetch data from API
     const fetchData = useCallback(async () => {
+        const seq = ++fetchSeqRef.current;
         setLoading(true);
         try {
             const params = {
                 page: pagination.page,
                 limit: pagination.limit,
-                search: searchTerm || undefined,
+                search: debouncedSearchTerm || undefined,
                 unitKerjaId: resolvedUnitKerjaId,
                 tahun: tahun !== 'all' ? tahun : undefined,
                 jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
@@ -134,6 +141,7 @@ export default function SuratMasuk() {
             };
 
             const response = await suratMasukService.getAll(params);
+            if (seq !== fetchSeqRef.current) return;
             if (response.success) {
                 setData(response.data || []);
                 setPagination(prev => ({
@@ -143,6 +151,7 @@ export default function SuratMasuk() {
                 }));
             }
         } catch (error) {
+            if (seq !== fetchSeqRef.current) return;
             console.error('Error fetching surat masuk:', error);
             toast({
                 title: 'Error',
@@ -150,9 +159,9 @@ export default function SuratMasuk() {
                 variant: 'destructive',
             });
         } finally {
-            setLoading(false);
+            if (seq === fetchSeqRef.current) setLoading(false);
         }
-    }, [pagination.page, pagination.limit, searchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -174,6 +183,7 @@ export default function SuratMasuk() {
     // Debounced search
     useEffect(() => {
         const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
             setPagination(prev => ({ ...prev, page: 1 }));
         }, 500);
         return () => clearTimeout(timer);
@@ -181,6 +191,12 @@ export default function SuratMasuk() {
 
     const hasActiveFilters = tahun !== 'all' || jenisSurat !== 'all' || status !== 'all' ||
         sifatSurat !== 'all' || disposisiKe !== 'all' || tanggalDari || tanggalSampai || searchTerm;
+
+    // Applying a filter must restart from the first page
+    const applyFilter = (setter) => (value) => {
+        setter(value);
+        setPagination(prev => ({ ...prev, page: 1 }));
+    };
 
     const clearAllFilters = () => {
         setSearchTerm('');
@@ -213,6 +229,7 @@ export default function SuratMasuk() {
             id: surat.id,
             nomorSurat: surat.nomorSurat,
             perihal: surat.perihal,
+            unitKerjaId: surat.unitKerjaId || resolvedUnitKerjaId,
         });
         setDistributeDialogOpen(true);
     };
@@ -236,6 +253,7 @@ export default function SuratMasuk() {
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             });
+            throw error;
         }
     };
 
@@ -268,29 +286,21 @@ export default function SuratMasuk() {
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Page Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-primary/10 rounded-lg">
-                            <MailOpen className="h-6 w-6 text-primary" />
-                        </div>
-                        Surat Masuk
-                    </h1>
-                    <p className="text-muted-foreground">
-                        Kelola dan pantau surat masuk unit kerja Anda
-                    </p>
-                </div>
+            <PageHeader
+                icon={MailOpen}
+                title="Surat Masuk"
+                description="Kelola dan pantau surat masuk unit kerja Anda"
+                actions={<>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex w-full items-center gap-2 sm:w-auto">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPagination(prev => ({ ...prev, page: 1 })); }}>
-                            <SelectTrigger className="w-[220px] h-9">
+                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                <SelectItem value="all">Semua Unit Kerja</SelectItem>
                                 {unitKerjaList.map(uk => (
                                     <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
                                 ))}
@@ -298,15 +308,16 @@ export default function SuratMasuk() {
                         </Select>
                     </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" onClick={fetchData} disabled={loading} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />
                         Refresh
                     </Button>
 
-                    {isAdmin && (
+                    {isAdmin && resolvedUnitKerjaId && (
                         <ImportFromGDrive
                             type="surat-masuk"
+                            unitKerjaId={resolvedUnitKerjaId}
                             onImportComplete={fetchData}
                         />
                     )}
@@ -314,29 +325,31 @@ export default function SuratMasuk() {
                     <ExportButton
                         type="surat-masuk"
                         filters={{
+                            unitKerjaId: resolvedUnitKerjaId,
                             tahun: tahun !== 'all' ? tahun : undefined,
                             jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                             status: status !== 'all' ? status : undefined,
                             sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
                             disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
-                            tanggalDari: tanggalDari?.toISOString().split('T')[0],
-                            tanggalSampai: tanggalSampai?.toISOString().split('T')[0],
+                            tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
+                            tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
                         }}
                     />
 
                     {isAdmin && (
-                        <Link to="/surat/masuk/tambah">
-                            <Button size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                        <Button asChild size="sm" className="h-9">
+                            <Link to="/surat/masuk/tambah">
                                 <Plus className="mr-2 h-3.5 w-3.5" />
                                 Surat Baru
-                            </Button>
-                        </Link>
+                            </Link>
+                        </Button>
                     )}
                 </div>
-            </div>
+                </>}
+            />
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
                 <Card className="shadow-sm border-l-4 border-l-primary card-hover">
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
@@ -354,7 +367,7 @@ export default function SuratMasuk() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Perlu Tindakan</p>
                             <p className="text-2xl font-bold text-orange-600">{stats.belumDibalas}</p>
                         </div>
-                        <div className="p-2.5 bg-orange-100 rounded-full text-orange-600">
+                        <div className="p-2.5 bg-orange-100 dark:bg-orange-500/15 rounded-full text-orange-600">
                             <AlertCircle className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -365,7 +378,7 @@ export default function SuratMasuk() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Sudah Dibalas</p>
                             <p className="text-2xl font-bold text-green-600">{stats.sudahDibalas}</p>
                         </div>
-                        <div className="p-2.5 bg-green-100 rounded-full text-green-600">
+                        <div className="p-2.5 bg-green-100 dark:bg-green-500/15 rounded-full text-green-600">
                             <CheckCircle2 className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -376,7 +389,7 @@ export default function SuratMasuk() {
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Diarsipkan</p>
                             <p className="text-2xl font-bold text-blue-600">{stats.diarsipkan}</p>
                         </div>
-                        <div className="p-2.5 bg-blue-100 rounded-full text-blue-600">
+                        <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600">
                             <FolderArchive className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -402,7 +415,7 @@ export default function SuratMasuk() {
                                 <CollapsibleTrigger asChild>
                                     <Button variant="outline" className={`gap-2 w-full md:w-auto ${isAdvancedOpen ? 'bg-muted' : ''}`}>
                                         <Filter className="h-4 w-4" />
-                                        <span className="hidden sm:inline">Filter</span>
+                                        <span className="sr-only sm:not-sr-only">Filter</span>
                                         {hasActiveFilters && (
                                             <Badge variant="secondary" className="ml-0.5 h-5 w-5 p-0 justify-center bg-primary/10 text-primary">
                                                 !
@@ -413,7 +426,7 @@ export default function SuratMasuk() {
                                 </CollapsibleTrigger>
                             </Collapsible>
                             {hasActiveFilters && (
-                                <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" title="Reset Filters">
+                                <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" aria-label="Hapus semua filter" title="Hapus semua filter">
                                     <X className="h-4 w-4" />
                                 </Button>
                             )}
@@ -426,7 +439,7 @@ export default function SuratMasuk() {
                                     {/* Tahun */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-semibold text-muted-foreground uppercase">Tahun</label>
-                                        <Select value={tahun} onValueChange={setTahun}>
+                                        <Select value={tahun} onValueChange={applyFilter(setTahun)}>
                                             <SelectTrigger className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Tahun" />
                                             </SelectTrigger>
@@ -454,7 +467,7 @@ export default function SuratMasuk() {
                                                 'Surat Edaran', 'Pengaduan'
                                             ]}
                                             value={jenisSurat}
-                                            onValueChange={setJenisSurat}
+                                            onValueChange={applyFilter(setJenisSurat)}
                                             placeholder="Pilih Jenis"
                                             searchPlaceholder=" Cari..."
                                             className="h-9"
@@ -464,7 +477,7 @@ export default function SuratMasuk() {
                                     {/* Status */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
-                                        <Select value={status} onValueChange={setStatus}>
+                                        <Select value={status} onValueChange={applyFilter(setStatus)}>
                                             <SelectTrigger className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Status" />
                                             </SelectTrigger>
@@ -479,7 +492,7 @@ export default function SuratMasuk() {
                                     {/* Sifat Surat */}
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-semibold text-muted-foreground uppercase">Sifat Surat</label>
-                                        <Select value={sifatSurat} onValueChange={setSifatSurat}>
+                                        <Select value={sifatSurat} onValueChange={applyFilter(setSifatSurat)}>
                                             <SelectTrigger className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Sifat" />
                                             </SelectTrigger>
@@ -501,14 +514,14 @@ export default function SuratMasuk() {
                                         <div className="flex items-center gap-2">
                                             <DatePicker
                                                 date={tanggalDari}
-                                                onDateChange={setTanggalDari}
+                                                onDateChange={applyFilter(setTanggalDari)}
                                                 placeholder="Dari tanggal"
                                                 className="h-9 bg-background flex-1"
                                             />
                                             <span className="text-muted-foreground">-</span>
                                             <DatePicker
                                                 date={tanggalSampai}
-                                                onDateChange={setTanggalSampai}
+                                                onDateChange={applyFilter(setTanggalSampai)}
                                                 placeholder="Sampai tanggal"
                                                 className="h-9 bg-background flex-1"
                                             />
@@ -526,7 +539,7 @@ export default function SuratMasuk() {
                                                 'Kabag Kepegawaian Keuangan dan Umum'
                                             ]}
                                             value={disposisiKe}
-                                            onValueChange={setDisposisiKe}
+                                            onValueChange={applyFilter(setDisposisiKe)}
                                             placeholder="Pilih Disposisi"
                                             searchPlaceholder=" Cari disposisi..."
                                             className="h-9"
@@ -545,7 +558,7 @@ export default function SuratMasuk() {
                                 <TableSkeleton columns={7} rows={5} />
                             </div>
                         ) : (
-                            <Table>
+                            <Table responsive>
                                 <TableHeader className="bg-muted/30">
                                     <TableRow className="hover:bg-transparent">
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -574,30 +587,30 @@ export default function SuratMasuk() {
                                     ) : (
                                         data.map((row, index) => (
                                             <TableRow key={row.id} className="group hover:bg-muted/30 transition-colors">
-                                                <TableCell className="text-center font-medium text-muted-foreground text-xs">
+                                                <TableCell data-label="No." className="text-center font-medium text-muted-foreground text-xs">
                                                     {(pagination.page - 1) * pagination.limit + index + 1}
                                                 </TableCell>
-                                                <TableCell className="text-sm">
-                                                    <div className="flex flex-col">
+                                                <TableCell data-label="Tanggal" className="text-sm">
+                                                    <div className="flex flex-col sm:items-start items-end">
                                                         <span className="font-medium">{formatDate(row.tanggalSurat)}</span>
                                                         <span className="text-xs text-muted-foreground">{formatDate(row.tanggalDiterima)} (Trm)</span>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>
+                                                <TableCell data-label="Nomor Surat">
                                                     <Badge variant="outline" className="font-mono text-xs bg-background">
                                                         {row.nomorSurat}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell>
-                                                    <div className="flex flex-col gap-1 max-w-[400px]">
-                                                        <span className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
+                                                <TableCell data-label="Perihal">
+                                                    <div className="flex flex-col gap-1 sm:max-w-[400px] items-end sm:items-start">
+                                                        <span className="font-semibold sm:line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
                                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                            <span className="max-w-[150px] truncate" title={row.dari}>Oleh: {row.dari}</span>
+                                                            <span className="sm:max-w-[150px] sm:truncate" title={row.dari}>Oleh: {row.dari}</span>
                                                             {row.jenisSurat && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.jenisSurat}</span>}
                                                             {row.sifatSurat && row.sifatSurat !== 'biasa' && (
-                                                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${row.sifatSurat === 'penting' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                                                    row.sifatSurat === 'rahasia' ? 'bg-red-50 text-red-700 border-red-200' :
-                                                                        'bg-blue-50 text-blue-700 border-blue-200'
+                                                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${row.sifatSurat === 'penting' ? 'bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200' :
+                                                                    row.sifatSurat === 'rahasia' ? 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' :
+                                                                        'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200'
                                                                     }`}>
                                                                     {row.sifatSurat.replace('_', ' ')}
                                                                 </span>
@@ -605,13 +618,13 @@ export default function SuratMasuk() {
                                                         </div>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell>
-                                                    <div className="flex flex-wrap gap-1.5">
-                                                        <Badge className={`shadow-none ${row.status === 'sudah_dibalas' ? 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200'}`}>
+                                                <TableCell data-label="Status">
+                                                    <div className="flex flex-wrap justify-end gap-1.5 sm:justify-start">
+                                                        <Badge className={`shadow-none ${row.status === 'sudah_dibalas' ? 'bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-200 border-green-200' : 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 hover:bg-orange-200 border-orange-200'}`}>
                                                             {row.status === 'sudah_dibalas' ? 'Sudah Dibalas' : 'Belum Diproses'}
                                                         </Badge>
                                                         {row.isArchived && (
-                                                            <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50">
+                                                            <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 dark:bg-blue-500/15">
                                                                 <FolderArchive className="h-3 w-3 mr-1" />
                                                                 Arsip
                                                             </Badge>
@@ -621,7 +634,7 @@ export default function SuratMasuk() {
                                                 <TableCell className="text-right">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted">
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted" aria-label="Buka menu tindakan surat masuk">
                                                                 <MoreHorizontal className="h-4 w-4" />
                                                             </Button>
                                                         </DropdownMenuTrigger>
@@ -672,27 +685,29 @@ export default function SuratMasuk() {
                                             <Button
                                                 variant="outline"
                                                 size="sm"
+                                                aria-label="Halaman sebelumnya"
                                                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
                                                 disabled={pagination.page <= 1}
                                                 className="h-8 w-8 p-0 lg:w-auto lg:px-4 lg:gap-2"
                                             >
-                                                <span className="hidden lg:inline">Previous</span>
-                                                <span className="lg:hidden">{'<'}</span>
+                                                <span className="hidden lg:inline">Sebelumnya</span>
+                                                <span aria-hidden="true" className="lg:hidden">{'<'}</span>
                                             </Button>
                                         </PaginationItem>
                                         <div className="flex items-center gap-1 mx-2 text-sm font-medium">
-                                            Page {pagination.page} of {pagination.totalPages}
+                                            Halaman {pagination.page} dari {pagination.totalPages}
                                         </div>
                                         <PaginationItem>
                                             <Button
                                                 variant="outline"
                                                 size="sm"
+                                                aria-label="Halaman berikutnya"
                                                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
                                                 disabled={pagination.page >= pagination.totalPages}
                                                 className="h-8 w-8 p-0 lg:w-auto lg:px-4 lg:gap-2"
                                             >
-                                                <span className="hidden lg:inline">Next</span>
-                                                <span className="lg:hidden">{'>'}</span>
+                                                <span className="hidden lg:inline">Berikutnya</span>
+                                                <span aria-hidden="true" className="lg:hidden">{'>'}</span>
                                             </Button>
                                         </PaginationItem>
                                     </PaginationContent>
@@ -717,7 +732,7 @@ export default function SuratMasuk() {
                 open={distributeDialogOpen}
                 onOpenChange={setDistributeDialogOpen}
                 suratData={selectedSurat}
-                sourceUnitId={user?.unitKerjaId || 'ditjen'}
+                sourceUnitId={selectedSurat?.unitKerjaId || resolvedUnitKerjaId || ''}
                 onSuccess={() => {
                     setDistributeDialogOpen(false);
                     fetchData();

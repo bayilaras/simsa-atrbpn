@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, Plus, FolderOpen, Loader2, Calendar, FileText, ArrowRight, Edit2, Trash2, Clock, CheckCircle2, Archive, MailPlus, MailMinus, Eye, Filter, MoreHorizontal, Folder, Building2 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import dosirService from '@/services/dosir.service'
 import settingsService from '@/services/settings.service'
 import { format, parseISO } from 'date-fns'
@@ -25,9 +26,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 const STATUS_CONFIG = {
-    open: { label: 'Aktif', variant: 'default', icon: FolderOpen, className: 'bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200' },
-    closed: { label: 'Selesai', variant: 'secondary', icon: CheckCircle2, className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-emerald-200' },
-    archived: { label: 'Diarsipkan', variant: 'outline', icon: Archive, className: 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200' },
+    open: { label: 'Aktif', variant: 'default', icon: FolderOpen, className: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-200 border-blue-200' },
+    closed: { label: 'Selesai', variant: 'secondary', icon: CheckCircle2, className: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 border-emerald-200' },
+    archived: { label: 'Diarsipkan', variant: 'outline', icon: Archive, className: 'bg-muted text-foreground hover:bg-muted border-border' },
 }
 
 const KATEGORI_OPTIONS = [
@@ -51,7 +52,7 @@ function DosirSkeleton() {
             </CardHeader>
             <CardContent>
                 <Skeleton className="h-12 w-full mb-4" />
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Skeleton className="h-4 w-16" />
                     <Skeleton className="h-4 w-16" />
                 </div>
@@ -84,7 +85,7 @@ export default function Dosir() {
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([])
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined))
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined))
 
     // Load unit kerja list for super admin
     useEffect(() => {
@@ -98,7 +99,7 @@ export default function Dosir() {
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
-        : (user?.unitKerjaId || undefined)
+        : (resolveEffectiveUnitKerjaId(user) || undefined)
 
     const fetchData = useCallback(async () => {
         try {
@@ -110,10 +111,10 @@ export default function Dosir() {
                     kategori: kategoriFilter === 'all' ? '' : kategoriFilter,
                     unitKerjaId: resolvedUnitKerjaId,
                 }),
-                dosirService.getStats(),
+                dosirService.getStats(resolvedUnitKerjaId),
             ])
-            setDosirList(dosirRes.data || [])
-            setStats(statsRes.data || { total: 0, open: 0, closed: 0, archived: 0 })
+            setDosirList(dosirRes || [])
+            setStats(statsRes || { total: 0, open: 0, closed: 0, archived: 0 })
         } catch (error) {
             console.error('Error fetching dosir:', error)
         } finally {
@@ -126,11 +127,11 @@ export default function Dosir() {
     }, [fetchData])
 
     const handleCreate = async () => {
-        if (!formData.judul.trim()) return
+        if (!formData.judul.trim() || !resolvedUnitKerjaId) return
 
         try {
             setCreateLoading(true)
-            await dosirService.create(formData)
+            await dosirService.create(formData, resolvedUnitKerjaId)
             setIsCreateOpen(false)
             setFormData({ judul: '', deskripsi: '', kategori: '', tanggalMulai: '' })
             fetchData()
@@ -167,7 +168,7 @@ export default function Dosir() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-500/15 rounded-lg">
                             <FolderOpen className="h-6 w-6 text-indigo-600" />
                         </div>
                         Pemberkasan Perkara (Dosir)
@@ -182,11 +183,11 @@ export default function Dosir() {
                         <div className="flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-muted-foreground" />
                             <Select value={selectedUnitKerja} onValueChange={setSelectedUnitKerja}>
-                                <SelectTrigger className="w-[220px] h-9">
+                                <SelectTrigger className="w-full sm:w-[220px] h-9">
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                    <SelectItem value="all">📊 Semua Unit Kerja (hanya lihat)</SelectItem>
                                     {unitKerjaList.map(uk => (
                                         <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
                                     ))}
@@ -196,7 +197,7 @@ export default function Dosir() {
                     )}
                     <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                         <DialogTrigger asChild>
-                            <Button className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
+                            <Button disabled={!resolvedUnitKerjaId} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
                                 <Plus className="h-4 w-4 mr-2" />
                                 Buat Dosir Baru
                             </Button>
@@ -275,23 +276,23 @@ export default function Dosir() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-4">
                 <Card className="shadow-sm border-l-4 border-l-slate-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Dosir</CardTitle>
-                        <div className="p-2 bg-slate-100 rounded-full">
-                            <FolderOpen className="h-4 w-4 text-slate-600" />
+                        <div className="p-2 bg-muted rounded-full">
+                            <FolderOpen className="h-4 w-4 text-muted-foreground" />
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-slate-700">{stats.total}</div>
+                        <div className="text-2xl font-bold text-foreground">{stats.total}</div>
                         <p className="text-xs text-muted-foreground mt-1">Total seluruh dosir</p>
                     </CardContent>
                 </Card>
                 <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Aktif</CardTitle>
-                        <div className="p-2 bg-blue-100 rounded-full">
+                        <div className="p-2 bg-blue-100 dark:bg-blue-500/15 rounded-full">
                             <FolderOpen className="h-4 w-4 text-blue-600" />
                         </div>
                     </CardHeader>
@@ -303,7 +304,7 @@ export default function Dosir() {
                 <Card className="shadow-sm border-l-4 border-l-emerald-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Selesai</CardTitle>
-                        <div className="p-2 bg-emerald-100 rounded-full">
+                        <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-full">
                             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                         </div>
                     </CardHeader>
@@ -315,12 +316,12 @@ export default function Dosir() {
                 <Card className="shadow-sm border-l-4 border-l-amber-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Diarsipkan</CardTitle>
-                        <div className="p-2 bg-amber-100 rounded-full">
-                            <Archive className="h-4 w-4 text-amber-600" />
+                        <div className="p-2 bg-amber-100 dark:bg-amber-500/15 rounded-full">
+                            <Archive className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-amber-600">{stats.archived}</div>
+                        <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.archived}</div>
                         <p className="text-xs text-muted-foreground mt-1">Dosir diarsipkan</p>
                     </CardContent>
                 </Card>
@@ -339,9 +340,9 @@ export default function Dosir() {
                                 className="pl-9 bg-muted/50 focus:bg-background"
                             />
                         </div>
-                        <div className="flex gap-4">
+                        <div className="flex flex-wrap gap-3 sm:gap-4">
                             <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                <SelectTrigger className="w-[180px] bg-muted/50 focus:bg-background">
+                                <SelectTrigger className="w-full sm:w-[180px] bg-muted/50 focus:bg-background">
                                     <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
                                     <SelectValue placeholder="Semua Status" />
                                 </SelectTrigger>
@@ -353,7 +354,7 @@ export default function Dosir() {
                                 </SelectContent>
                             </Select>
                             <Select value={kategoriFilter} onValueChange={setKategoriFilter}>
-                                <SelectTrigger className="w-[200px] bg-muted/50 focus:bg-background">
+                                <SelectTrigger className="w-full sm:w-[200px] bg-muted/50 focus:bg-background">
                                     <Folder className="h-4 w-4 mr-2 text-muted-foreground" />
                                     <SelectValue placeholder="Semua Kategori" />
                                 </SelectTrigger>
@@ -465,7 +466,7 @@ export default function Dosir() {
                                 </CardContent>
                                 <CardFooter className="pt-0">
                                     <Button
-                                        className="w-full bg-muted/50 hover:bg-indigo-50 text-foreground hover:text-indigo-700 border border-border/50 hover:border-indigo-200 transition-all font-medium"
+                                        className="w-full bg-muted/50 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 text-foreground hover:text-indigo-700 dark:hover:text-indigo-300 border border-border/50 hover:border-indigo-200 transition-all font-medium"
                                         variant="outline"
                                         onClick={() => navigate(`/dosir/${item.id}`)}
                                     >

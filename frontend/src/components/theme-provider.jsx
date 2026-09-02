@@ -1,9 +1,7 @@
-import { createContext, useContext, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { ThemeProviderContext } from '@/context/theme-context'
 
-const ThemeProviderContext = createContext({
-    theme: "system",
-    setTheme: () => null,
-})
+const TEXT_SIZE_STORAGE_KEY = 'simsa-text-size'
 
 export function ThemeProvider({
     children,
@@ -13,6 +11,9 @@ export function ThemeProvider({
 }) {
     const [theme, setTheme] = useState(
         () => localStorage.getItem(storageKey) || defaultTheme
+    )
+    const [textSize, setTextSize] = useState(
+        () => localStorage.getItem(TEXT_SIZE_STORAGE_KEY) || "standard"
     )
 
     useEffect(() => {
@@ -33,26 +34,36 @@ export function ThemeProvider({
         root.classList.add(theme)
     }, [theme])
 
-    const value = {
+    useEffect(() => {
+        const root = window.document.documentElement
+
+        if (textSize === "large") {
+            root.dataset.textSize = "large"
+        } else {
+            delete root.dataset.textSize
+        }
+    }, [textSize])
+
+    const updateTheme = useCallback((nextTheme) => {
+        localStorage.setItem(storageKey, nextTheme)
+        setTheme(nextTheme)
+    }, [storageKey])
+
+    const updateTextSize = useCallback((size) => {
+        localStorage.setItem(TEXT_SIZE_STORAGE_KEY, size)
+        setTextSize(size)
+    }, [])
+
+    const value = useMemo(() => ({
         theme,
-        setTheme: (theme) => {
-            localStorage.setItem(storageKey, theme)
-            setTheme(theme)
-        },
-    }
+        setTheme: updateTheme,
+        textSize,
+        setTextSize: updateTextSize,
+    }), [theme, textSize, updateTheme, updateTextSize])
 
     return (
         <ThemeProviderContext.Provider {...props} value={value}>
             {children}
         </ThemeProviderContext.Provider>
     )
-}
-
-export const useTheme = () => {
-    const context = useContext(ThemeProviderContext)
-
-    if (context === undefined)
-        throw new Error("useTheme must be used within a ThemeProvider")
-
-    return context
 }

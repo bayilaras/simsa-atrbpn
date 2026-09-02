@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { suratMasukService } from '@/services/surat-masuk.service';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
+import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker';
 import {
     Card,
@@ -101,12 +103,12 @@ const JENIS_SURAT_OPTIONS = [
 
 // Sifat Surat options with colors
 const SIFAT_SURAT_OPTIONS = [
-    { value: 'biasa', label: 'Biasa', color: 'bg-slate-100 text-slate-700 border-slate-200' },
-    { value: 'segera', label: 'Segera', color: 'bg-amber-100 text-amber-700 border-amber-200' },
-    { value: 'sangat_segera', label: 'Sangat Segera', color: 'bg-red-100 text-red-700 border-red-200' },
-    { value: 'rahasia', label: 'Rahasia', color: 'bg-purple-100 text-purple-700 border-purple-200' },
-    { value: 'undangan', label: 'Undangan', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-    { value: 'penting', label: 'Penting', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+    { value: 'biasa', label: 'Biasa', color: 'bg-muted text-foreground border-border' },
+    { value: 'segera', label: 'Segera', color: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200' },
+    { value: 'sangat_segera', label: 'Sangat Segera', color: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
+    { value: 'rahasia', label: 'Rahasia', color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-200' },
+    { value: 'undangan', label: 'Undangan', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200' },
+    { value: 'penting', label: 'Penting', color: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-200' },
 ];
 
 // Keterangan options
@@ -142,9 +144,15 @@ export default function TambahSuratMasuk() {
     const [selectedFile, setSelectedFile] = useState(null);
     const [existingFile, setExistingFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [recordUnitKerjaId, setRecordUnitKerjaId] = useState('');
+    const [numberPreview, setNumberPreview] = useState(null);
+    const unitScope = useRequiredUnitKerjaScope(user, {
+        fixedUnitKerjaId: isEditMode ? recordUnitKerjaId : '',
+    });
+    const resolvedUnitKerjaId = isEditMode ? recordUnitKerjaId : unitScope.unitKerjaId;
 
     // Unsaved changes warning & auto-save draft
-    const { isDirty, setDirty, resetDirty } = useUnsavedChanges();
+    const { setDirty, resetDirty } = useUnsavedChanges();
     const { saveDraft, clearDraft, restoreDraft, saveStatus } = useAutoSave('tambah-surat-masuk');
 
     // Form state
@@ -181,19 +189,13 @@ export default function TambahSuratMasuk() {
                 }
             }
         }
-    }, []);
+    }, [clearDraft, isEditMode, restoreDraft]);
 
-    // Fetch existing data for edit mode
-    useEffect(() => {
-        if (isEditMode && id) {
-            fetchSuratData();
-        }
-    }, [id, isEditMode]);
-
-    const fetchSuratData = async () => {
+    const fetchSuratData = useCallback(async () => {
         setIsLoading(true);
         try {
             const data = await suratMasukService.getById(id);
+            setRecordUnitKerjaId(data.unitKerjaId || '');
             // Map fetched data to form fields
             setFormData({
                 jenisSurat: data.jenisSurat || '',
@@ -227,7 +229,33 @@ export default function TambahSuratMasuk() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [id]);
+
+    // Fetch existing data for edit mode.
+    useEffect(() => {
+        if (isEditMode && id) {
+            void fetchSuratData();
+        }
+    }, [fetchSuratData, id, isEditMode]);
+
+    useEffect(() => {
+        if (isEditMode || !resolvedUnitKerjaId || !formData.tanggalSurat) return;
+        let active = true;
+        suratMasukService.getNextNumber({
+            unitKerjaId: resolvedUnitKerjaId,
+            tahun: Number(formData.tanggalSurat.slice(0, 4)),
+            tanggalSurat: formData.tanggalSurat,
+        }).then((preview) => {
+            if (active) setNumberPreview({
+                ...preview,
+                unitKerjaId: resolvedUnitKerjaId,
+                tanggalSurat: formData.tanggalSurat,
+            });
+        }).catch(() => {
+            // Creation remains authoritative and allocates the number in its transaction.
+        });
+        return () => { active = false; };
+    }, [formData.tanggalSurat, isEditMode, resolvedUnitKerjaId]);
 
     // Handle input changes
     const handleChange = (field, value) => {
@@ -268,8 +296,8 @@ export default function TambahSuratMasuk() {
 
     // Validate form
     const validateForm = () => {
+        if (!resolvedUnitKerjaId) return 'Pilih unit kerja terlebih dahulu';
         if (!formData.jenisSurat) return 'Jenis Surat wajib diisi';
-        if (!formData.nomorSurat) return 'Nomor Surat wajib diisi';
         if (!formData.tanggalSurat) return 'Tanggal Surat wajib diisi';
         if (!formData.perihal) return 'Perihal wajib diisi';
         if (!formData.dari) return 'Pengirim (Dari) wajib diisi';
@@ -300,28 +328,20 @@ export default function TambahSuratMasuk() {
         setError(null);
 
         try {
-            // Resolve unitKerjaId berdasarkan role (konsisten dengan backend resolveUnitKerjaId)
-            // Admin roles have FIXED unit kerja assignments regardless of user record
-            const resolvedUnitKerjaId = (() => {
-                switch (user?.role) {
-                    case 'admin_sesditjen': return 'sesditjen';
-                    case 'admin_dirjen': return 'ditjen';
-                    default: return user?.unitKerjaId || 'ditjen';
-                }
-            })();
-
             const dataToSubmit = {
                 ...formData,
                 unitKerjaId: resolvedUnitKerjaId,
-                tahun: new Date().getFullYear(),
             };
 
             if (isEditMode) {
-                // Update existing surat (with optional file)
+                // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
                 await suratMasukService.update(id, dataToSubmit, selectedFile);
             } else {
                 // Create new surat
-                await suratMasukService.create(dataToSubmit, selectedFile);
+                await suratMasukService.create({
+                    ...dataToSubmit,
+                    tahun: Number(formData.tanggalSurat.slice(0, 4)) || new Date().getFullYear(),
+                }, selectedFile);
             }
             resetDirty();
             clearDraft();
@@ -345,16 +365,13 @@ export default function TambahSuratMasuk() {
         return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     };
 
-    const getSifatColor = (value) => {
-        return SIFAT_SURAT_OPTIONS.find(o => o.value === value)?.color || '';
-    };
-
     // Section Header Component
-    const SectionHeader = ({ icon: Icon, title, description, step }) => (
+    const SectionHeader = ({ icon, title, description, step }) => (
         <div className="flex items-start gap-3 pb-4 border-b border-border/50">
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <Icon className="h-4 w-4 text-primary" />
+                {createElement(icon, { className: 'h-4 w-4 text-primary', 'aria-hidden': true })}
             </div>
+
             <div className="flex-1">
                 <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-foreground">{title}</h3>
@@ -389,10 +406,19 @@ export default function TambahSuratMasuk() {
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
+    if (isEditMode && isLoading) {
+        return (
+            <div role="status" aria-live="polite" className="flex min-h-[40vh] items-center justify-center gap-3 text-muted-foreground">
+                <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
+                Memuat data surat masuk…
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-4xl mx-auto space-y-6 pb-24 relative">
             {/* Sticky Progress Bar */}
-            <div className="fixed top-0 left-0 right-0 h-1 bg-slate-100 z-50">
+            <div className="fixed top-0 left-0 right-0 h-1 bg-muted z-50">
                 <div
                     className="h-full bg-primary transition-all duration-150"
                     style={{ width: `${scrollProgress * 100}%` }}
@@ -401,11 +427,11 @@ export default function TambahSuratMasuk() {
 
             {/* Header */}
             <div className="flex items-center gap-4 pt-4">
-                <Link to="/surat/masuk">
-                    <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
+                <Button asChild variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
+                    <Link to="/surat/masuk" aria-label="Kembali ke daftar surat masuk">
                         <ChevronLeft className="h-5 w-5" />
-                    </Button>
-                </Link>
+                    </Link>
+                </Button>
                 <div className="flex-1">
                     <div className="flex items-center gap-3">
                         <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20">
@@ -427,6 +453,11 @@ export default function TambahSuratMasuk() {
                 </Badge>
             </div>
 
+            <RequiredUnitKerjaScope
+                scope={unitScope}
+                disabled={isEditMode || isSubmitting}
+            />
+
             {/* Error/Success Alerts */}
             {error && (
                 <Alert ref={errorRef} variant="destructive" className="animate-in slide-in-from-top-2">
@@ -436,7 +467,7 @@ export default function TambahSuratMasuk() {
             )}
 
             {success && (
-                <Alert className="border-emerald-500 bg-emerald-50 text-emerald-700 animate-in slide-in-from-top-2">
+                <Alert className="border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 animate-in slide-in-from-top-2">
                     <CheckCircle2 className="h-4 w-4" />
                     <AlertDescription>
                         <span className="font-medium">Berhasil!</span> Surat masuk telah disimpan ke sistem.
@@ -458,11 +489,13 @@ export default function TambahSuratMasuk() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="jenis-surat" className="text-sm font-medium flex items-center gap-2">
                                     <FileText className="h-4 w-4 text-muted-foreground" />
                                     Jenis Surat <span className="text-destructive">*</span>
                                 </Label>
                                 <SearchableSelect
+                                    id="jenis-surat"
+                                    ariaLabel="Jenis surat"
                                     options={JENIS_SURAT_OPTIONS}
                                     value={formData.jenisSurat}
                                     onValueChange={(v) => handleChange('jenisSurat', v)}
@@ -472,11 +505,13 @@ export default function TambahSuratMasuk() {
                             </div>
 
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="sifat-surat" className="text-sm font-medium flex items-center gap-2">
                                     <Zap className="h-4 w-4 text-muted-foreground" />
                                     Sifat Surat <span className="text-destructive">*</span>
                                 </Label>
                                 <SearchableSelect
+                                    id="sifat-surat"
+                                    ariaLabel="Sifat surat"
                                     options={SIFAT_SURAT_OPTIONS.map(opt => ({ value: opt.value, label: opt.label }))}
                                     value={formData.sifatSurat}
                                     onValueChange={(v) => handleChange('sifatSurat', v)}
@@ -500,29 +535,37 @@ export default function TambahSuratMasuk() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="nomor-surat" className="text-sm font-medium flex items-center gap-2">
                                     <Hash className="h-4 w-4 text-muted-foreground" />
-                                    Nomor Surat <span className="text-destructive">*</span>
+                                    Nomor Surat
                                 </Label>
                                 <Input
+                                    id="nomor-surat"
                                     value={formData.nomorSurat}
                                     onChange={(e) => handleChange('nomorSurat', e.target.value)}
-                                    placeholder="Contoh: S-123/PTEP/2026"
+                                    placeholder="Kosongkan untuk nomor otomatis"
                                     className="h-11 focus-visible:ring-primary"
                                 />
                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                                     <Info className="h-3 w-3" />
-                                    Bila tidak ada nomor, isi dengan tanda strip (-)
+                                    Nomor eksternal tetap dipakai bila diisi; jika kosong, template unit diterapkan saat penyimpanan.
                                 </p>
+                                {numberPreview?.unitKerjaId === resolvedUnitKerjaId
+                                    && numberPreview?.tanggalSurat === formData.tanggalSurat
+                                    && numberPreview?.nomorSurat && (
+                                    <p className="text-xs text-primary">Preview nomor otomatis: <code>{numberPreview.nomorSurat}</code></p>
+                                )}
                             </div>
 
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="tanggal-surat" className="text-sm font-medium flex items-center gap-2">
                                     <Calendar className="h-4 w-4 text-muted-foreground" />
                                     Tanggal Surat <span className="text-destructive">*</span>
                                 </Label>
                                 <Input
+                                    id="tanggal-surat"
                                     type="date"
+                                    required
                                     value={formData.tanggalSurat}
                                     onChange={(e) => handleChange('tanggalSurat', e.target.value)}
                                     className="h-11 focus-visible:ring-primary"
@@ -531,10 +574,12 @@ export default function TambahSuratMasuk() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label className="text-sm font-medium">
+                            <Label htmlFor="perihal-surat" className="text-sm font-medium">
                                 Perihal <span className="text-destructive">*</span>
                             </Label>
                             <Textarea
+                                id="perihal-surat"
+                                required
                                 value={formData.perihal}
                                 onChange={(e) => handleChange('perihal', e.target.value)}
                                 placeholder="Tuliskan perihal/hal surat..."
@@ -557,11 +602,13 @@ export default function TambahSuratMasuk() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="pengirim-surat" className="text-sm font-medium flex items-center gap-2">
                                     <User className="h-4 w-4 text-muted-foreground" />
                                     Dari (Pengirim) <span className="text-destructive">*</span>
                                 </Label>
                                 <Input
+                                    id="pengirim-surat"
+                                    required
                                     value={formData.dari}
                                     onChange={(e) => handleChange('dari', e.target.value)}
                                     placeholder="Instansi/nama pengirim surat"
@@ -570,11 +617,13 @@ export default function TambahSuratMasuk() {
                             </div>
 
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="penerima-surat" className="text-sm font-medium flex items-center gap-2">
                                     <Users className="h-4 w-4 text-muted-foreground" />
                                     Kepada (Penerima) <span className="text-destructive">*</span>
                                 </Label>
                                 <Input
+                                    id="penerima-surat"
+                                    required
                                     value={formData.kepada}
                                     onChange={(e) => handleChange('kepada', e.target.value)}
                                     placeholder="Unit kerja/pejabat penerima"
@@ -585,7 +634,7 @@ export default function TambahSuratMasuk() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="keterangan-surat" className="text-sm font-medium flex items-center gap-2">
                                     <Info className="h-4 w-4 text-muted-foreground" />
                                     Keterangan
                                 </Label>
@@ -593,7 +642,7 @@ export default function TambahSuratMasuk() {
                                     value={formData.keterangan}
                                     onValueChange={(v) => handleChange('keterangan', v)}
                                 >
-                                    <SelectTrigger className="h-11 focus-visible:ring-primary">
+                                    <SelectTrigger id="keterangan-surat" className="h-11 focus-visible:ring-primary">
                                         <SelectValue placeholder="Pilih keterangan..." />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -610,11 +659,13 @@ export default function TambahSuratMasuk() {
                             </div>
 
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="disposisi-surat" className="text-sm font-medium flex items-center gap-2">
                                     <ArrowRight className="h-4 w-4 text-muted-foreground" />
                                     Disposisi ke <span className="text-destructive">*</span>
                                 </Label>
                                 <MultiSelect
+                                    id="disposisi-surat"
+                                    ariaLabel="Penerima disposisi"
                                     options={DISPOSISI_OPTIONS.map(opt => ({ label: opt, value: opt }))}
                                     selected={formData.disposisi}
                                     onChange={(val) => handleChange('disposisi', val)}
@@ -637,11 +688,12 @@ export default function TambahSuratMasuk() {
                         />
 
                         <div className="space-y-2">
-                            <Label className="text-sm font-medium flex items-center gap-2">
+                            <Label htmlFor="klasifikasi-arsip" className="text-sm font-medium flex items-center gap-2">
                                 <FolderOpen className="h-4 w-4 text-muted-foreground" />
                                 Klasifikasi
                             </Label>
                             <KlasifikasiPicker
+                                id="klasifikasi-arsip"
                                 value={formData.klasifikasiKode}
                                 onChange={(kode, klasifikasi, jra) => {
                                     setFormData(prev => {
@@ -682,11 +734,12 @@ export default function TambahSuratMasuk() {
 
                         <div className="space-y-4">
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="link-dokumen" className="text-sm font-medium flex items-center gap-2">
                                     <LinkIcon className="h-4 w-4 text-muted-foreground" />
                                     Link Dokumen
                                 </Label>
                                 <Input
+                                    id="link-dokumen"
                                     value={formData.linkDokumen}
                                     onChange={(e) => handleChange('linkDokumen', e.target.value)}
                                     placeholder="https://drive.google.com/..."
@@ -704,18 +757,27 @@ export default function TambahSuratMasuk() {
                             </div>
 
                             <div className="space-y-2">
-                                <Label className="text-sm font-medium flex items-center gap-2">
+                                <Label htmlFor="berkas-surat-masuk" className="text-sm font-medium flex items-center gap-2">
                                     <Upload className="h-4 w-4 text-muted-foreground" />
                                     Upload Berkas
                                 </Label>
                                 <div
-                                    className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${selectedFile
-                                        ? 'border-emerald-400 bg-emerald-50/50'
+                                    className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all ${selectedFile
+                                        ? 'cursor-default border-emerald-400 bg-emerald-50/50'
                                         : isDragging
-                                            ? 'border-primary bg-primary/5 scale-[1.02] shadow-lg'
-                                            : 'border-border hover:border-primary/50 hover:bg-muted/30 group'
+                                            ? 'cursor-pointer border-primary bg-primary/5 scale-[1.02] shadow-lg'
+                                            : 'cursor-pointer border-border hover:border-primary/50 hover:bg-muted/30 group'
                                         }`}
-                                    onClick={() => fileInputRef.current?.click()}
+                                    onClick={() => !selectedFile && fileInputRef.current?.click()}
+                                    role={selectedFile ? undefined : 'button'}
+                                    tabIndex={selectedFile ? undefined : 0}
+                                    aria-label={selectedFile ? undefined : 'Pilih berkas untuk diunggah'}
+                                    onKeyDown={selectedFile ? undefined : (e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            fileInputRef.current?.click();
+                                        }
+                                    }}
                                     onDragOver={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
@@ -751,32 +813,42 @@ export default function TambahSuratMasuk() {
                                     }}
                                 >
                                     <input
+                                        id="berkas-surat-masuk"
                                         ref={fileInputRef}
                                         type="file"
-                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.zip,.rar"
+                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                                         onChange={handleFileSelect}
                                         className="hidden"
                                     />
                                     {selectedFile ? (
-                                        <div className="flex items-center justify-center gap-3">
-                                            <div className="p-2 bg-emerald-100 rounded-lg">
+                                        <div className="flex flex-wrap items-center justify-center gap-3">
+                                            <div className="p-2 bg-emerald-100 dark:bg-emerald-500/15 rounded-lg">
                                                 <FileText className="h-6 w-6 text-emerald-600" />
                                             </div>
                                             <div className="text-left">
-                                                <p className="font-medium text-emerald-700">{selectedFile.name}</p>
+                                                <p className="font-medium text-emerald-700 dark:text-emerald-300">{selectedFile.name}</p>
                                                 <p className="text-sm text-emerald-600">{formatFileSize(selectedFile.size)}</p>
                                             </div>
                                             <Button
                                                 type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => fileInputRef.current?.click()}
+                                            >
+                                                Ganti berkas
+                                            </Button>
+                                            <Button
+                                                type="button"
                                                 variant="ghost"
                                                 size="sm"
-                                                className="ml-2 hover:bg-red-100 hover:text-red-600"
+                                                className="ml-2 hover:bg-red-100 dark:hover:bg-red-500/15 hover:text-red-600"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     removeFile();
                                                 }}
                                             >
                                                 <X className="h-4 w-4" />
+                                                <span className="sr-only">Hapus berkas {selectedFile.name}</span>
                                             </Button>
                                         </div>
                                     ) : isDragging ? (
@@ -808,9 +880,9 @@ export default function TambahSuratMasuk() {
                                 </div>
                             </div>
 
-                            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100">
+                            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-500/15 border border-blue-100">
                                 <Info className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                                <p className="text-xs text-blue-700">
+                                <p className="text-xs text-blue-700 dark:text-blue-300">
                                     <strong>Catatan:</strong> Salah satu dari link dokumen atau upload berkas wajib diisi.
                                     Anda dapat mengisi keduanya jika diperlukan.
                                 </p>
@@ -820,27 +892,25 @@ export default function TambahSuratMasuk() {
                 </Card>
 
                 {/* Floating Action Bar */}
-                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-between sm:justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-between sm:justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                     <div className="hidden sm:block mr-auto">
                         {/* Auto-save status indicator */}
                         {saveStatus && (
-                            <span className="text-xs text-muted-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100">
+                            <span className="text-xs text-muted-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted">
                                 {saveStatus === 'saving' && <><Loader2 className="h-3 w-3 animate-spin" /> Menyimpan draft...</>}
-                                {saveStatus === 'saved' && <><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Draft tersimpan</>}
+                                {saveStatus === 'saved' && <><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Draft sementara tersimpan</>}
                                 {saveStatus === 'restored' && <><FileText className="h-3 w-3 text-blue-500" /> Draft dimuat</>}
                             </span>
                         )}
                     </div>
 
-                    <Link to="/surat/masuk">
-                        <Button type="button" variant="outline" size="lg" disabled={isSubmitting} className="rounded-full px-6">
-                            Batal
-                        </Button>
-                    </Link>
+                    <Button type="button" variant="outline" size="lg" disabled={isSubmitting} onClick={() => navigate('/surat/masuk')} className="rounded-full px-6">
+                        Batal
+                    </Button>
                     <Button
                         type="submit"
                         size="lg"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || !resolvedUnitKerjaId || unitScope.loading}
                         className="min-w-[140px] bg-primary hover:bg-primary/90 rounded-full px-8 shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all"
                     >
                         {isSubmitting ? (

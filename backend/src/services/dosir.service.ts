@@ -1,6 +1,11 @@
 import { db } from '../config/database';
 import { dosir, dosirSuratMasuk, dosirSuratKeluar, suratMasuk, suratKeluar, Dosir } from '../db/schema';
 import { eq, and, desc, asc, ilike, or, sql, inArray } from 'drizzle-orm';
+import {
+    scopedRecordByIdWhere,
+    type RecordUnitScope,
+} from '../utils/record-unit-scope.js';
+import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 interface CreateDosirInput {
     unitKerjaId: string;
@@ -22,7 +27,8 @@ interface UpdateDosirInput {
 }
 
 interface DosirFilters {
-    unitKerjaId?: string;
+    /** null is the explicit all-unit scope reserved for super_admin. */
+    unitKerjaId?: RecordUnitScope;
     status?: string;
     kategori?: string;
     search?: string;
@@ -30,12 +36,48 @@ interface DosirFilters {
     offset?: number;
 }
 
+function incomingSecurityCondition(classes: string[] | null | undefined) {
+    if (classes === undefined || classes === null) return undefined;
+    if (classes.length === 0) return sql`false`;
+    const normalized = sql<string>`CASE
+        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
+            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
+        THEN 'biasa'
+        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
+    END`;
+    return inArray(normalized, classes);
+}
+
+function canReadLegacyOutgoing(classes: string[] | null | undefined) {
+    return classes === undefined || classes === null || classes.includes('terbatas');
+}
+
+async function findAccessibleDosir(
+    id: string,
+    unitScope: RecordUnitScope,
+    executor: Pick<typeof db, 'select'> = db,
+) {
+    const [result] = await executor
+        .select()
+        .from(dosir)
+        .where(scopedRecordByIdWhere(
+            dosir.id,
+            id,
+            dosir.unitKerjaId,
+            unitScope,
+        ))
+        .limit(1);
+
+    return result || null;
+}
+
 export const dosirService = {
     /**
      * Create a new dosir (case file)
      */
-    async create(data: CreateDosirInput) {
-        const [newDosir] = await db.insert(dosir).values({
+    async create(data: CreateDosirInput, auditContext?: CriticalAuditContext) {
+        return db.transaction(async (tx) => {
+        const [newDosir] = await tx.insert(dosir).values({
             unitKerjaId: data.unitKerjaId,
             kode: data.kode,
             judul: data.judul,
@@ -44,36 +86,95 @@ export const dosirService = {
             tanggalMulai: data.tanggalMulai || null,
             createdBy: data.createdBy || null,
         }).returning();
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'create',
+                entityType: 'dosir',
+                entityId: newDosir.id,
+                changes: { after: newDosir },
+            }, tx);
+        }
         return newDosir;
+        });
     },
 
     /**
      * Update dosir details
      */
-    async update(id: string, data: UpdateDosirInput) {
-        const [updated] = await db.update(dosir)
+    async update(
+        id: string,
+        data: UpdateDosirInput,
+        unitScope: RecordUnitScope,
+        auditContext?: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        const before = await findAccessibleDosir(id, unitScope, tx);
+        if (!before) return undefined;
+        const [updated] = await tx.update(dosir)
             .set({
                 ...data,
                 updatedAt: new Date(),
             })
-            .where(eq(dosir.id, id))
+            .where(scopedRecordByIdWhere(
+                dosir.id,
+                id,
+                dosir.unitKerjaId,
+                unitScope,
+            ))
             .returning();
+        if (updated && auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'dosir',
+                entityId: id,
+                changes: { before, after: updated, fields: Object.keys(data) },
+            }, tx);
+        }
         return updated;
+        });
     },
 
     /**
      * Delete dosir (cascade deletes junction table entries)
      */
-    async delete(id: string) {
-        await db.delete(dosir).where(eq(dosir.id, id));
-        return { success: true };
+    async delete(id: string, unitScope: RecordUnitScope, auditContext?: CriticalAuditContext) {
+        return db.transaction(async (tx) => {
+        const before = await findAccessibleDosir(id, unitScope, tx);
+        if (!before) return null;
+        const [deleted] = await tx
+            .delete(dosir)
+            .where(scopedRecordByIdWhere(
+                dosir.id,
+                id,
+                dosir.unitKerjaId,
+                unitScope,
+            ))
+            .returning();
+
+        if (deleted && auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'delete',
+                entityType: 'dosir',
+                entityId: id,
+                changes: { before },
+            }, tx);
+        }
+        return deleted || null;
+        });
     },
 
     /**
      * Get single dosir by ID with linked surat
      */
-    async getById(id: string) {
-        const [result] = await db.select().from(dosir).where(eq(dosir.id, id));
+    async getById(
+        id: string,
+        unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
+    ) {
+        const result = await findAccessibleDosir(id, unitScope);
         if (!result) return null;
 
         // Get linked surat masuk
@@ -84,23 +185,52 @@ export const dosirService = {
             })
             .from(dosirSuratMasuk)
             .innerJoin(suratMasuk, eq(dosirSuratMasuk.suratMasukId, suratMasuk.id))
-            .where(eq(dosirSuratMasuk.dosirId, id));
+            .where(and(
+                eq(dosirSuratMasuk.dosirId, id),
+                eq(suratMasuk.unitKerjaId, result.unitKerjaId),
+                incomingSecurityCondition(securityClassifications),
+            ));
 
         // Get linked surat keluar
-        const linkedKeluar = await db
+        const linkedKeluar = canReadLegacyOutgoing(securityClassifications) ? await db
             .select({
                 link: dosirSuratKeluar,
                 surat: suratKeluar,
             })
             .from(dosirSuratKeluar)
             .innerJoin(suratKeluar, eq(dosirSuratKeluar.suratKeluarId, suratKeluar.id))
-            .where(eq(dosirSuratKeluar.dosirId, id));
+            .where(and(
+                eq(dosirSuratKeluar.dosirId, id),
+                eq(suratKeluar.unitKerjaId, result.unitKerjaId),
+            )) : [];
 
         return {
             ...result,
             suratMasuk: linkedMasuk.map(l => ({ ...l.surat, addedAt: l.link.addedAt, notes: l.link.notes })),
             suratKeluar: linkedKeluar.map(l => ({ ...l.surat, addedAt: l.link.addedAt, notes: l.link.notes })),
         };
+    },
+
+    /**
+     * Resolve only the metadata needed for batched authorization checks.
+     * This avoids loading every linked surat when a caller merely needs to
+     * filter tunjuk-silang results.
+     */
+    async getAccessMetadata(ids: string[], unitScope: RecordUnitScope) {
+        const uniqueIds = [...new Set(ids)];
+        if (uniqueIds.length === 0) return [];
+
+        return db
+            .select({
+                id: dosir.id,
+                unitKerjaId: dosir.unitKerjaId,
+                status: dosir.status,
+            })
+            .from(dosir)
+            .where(and(
+                inArray(dosir.id, uniqueIds),
+                unitScope === null ? undefined : eq(dosir.unitKerjaId, unitScope),
+            ));
     },
 
     /**
@@ -112,7 +242,9 @@ export const dosirService = {
         let query = db.select().from(dosir);
         const conditions = [];
 
-        if (unitKerjaId) conditions.push(eq(dosir.unitKerjaId, unitKerjaId));
+        if (unitKerjaId !== undefined && unitKerjaId !== null) {
+            conditions.push(eq(dosir.unitKerjaId, unitKerjaId));
+        }
         if (status) conditions.push(eq(dosir.status, status));
         if (kategori) conditions.push(eq(dosir.kategori, kategori));
         if (search) {
@@ -169,7 +301,14 @@ export const dosirService = {
     /**
      * Get chronological timeline of all surat in a dosir
      */
-    async getTimeline(dosirId: string) {
+    async getTimeline(
+        dosirId: string,
+        unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
+    ) {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope);
+        if (!accessibleDosir) return null;
+
         // Get surat masuk
         const masukList = await db
             .select({
@@ -184,10 +323,14 @@ export const dosirService = {
             })
             .from(dosirSuratMasuk)
             .innerJoin(suratMasuk, eq(dosirSuratMasuk.suratMasukId, suratMasuk.id))
-            .where(eq(dosirSuratMasuk.dosirId, dosirId));
+            .where(and(
+                eq(dosirSuratMasuk.dosirId, dosirId),
+                eq(suratMasuk.unitKerjaId, accessibleDosir.unitKerjaId),
+                incomingSecurityCondition(securityClassifications),
+            ));
 
         // Get surat keluar
-        const keluarList = await db
+        const keluarList = canReadLegacyOutgoing(securityClassifications) ? await db
             .select({
                 id: suratKeluar.id,
                 type: sql<string>`'keluar'`.as('type'),
@@ -200,7 +343,10 @@ export const dosirService = {
             })
             .from(dosirSuratKeluar)
             .innerJoin(suratKeluar, eq(dosirSuratKeluar.suratKeluarId, suratKeluar.id))
-            .where(eq(dosirSuratKeluar.dosirId, dosirId));
+            .where(and(
+                eq(dosirSuratKeluar.dosirId, dosirId),
+                eq(suratKeluar.unitKerjaId, accessibleDosir.unitKerjaId),
+            )) : [];
 
         // Combine and sort by tanggal (chronologically)
         const timeline = [...masukList, ...keluarList].sort((a, b) => {
@@ -215,58 +361,162 @@ export const dosirService = {
     /**
      * Add surat masuk to dosir
      */
-    async addSuratMasuk(dosirId: string, suratMasukId: string, notes?: string) {
-        const [link] = await db.insert(dosirSuratMasuk).values({
+    async addSuratMasuk(
+        dosirId: string,
+        suratMasukId: string,
+        notes: string | undefined,
+        unitScope: RecordUnitScope,
+        auditContext?: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope, tx);
+        if (!accessibleDosir) return null;
+
+        const [accessibleSurat] = await tx
+            .select({ id: suratMasuk.id })
+            .from(suratMasuk)
+            .where(and(
+                eq(suratMasuk.id, suratMasukId),
+                eq(suratMasuk.unitKerjaId, accessibleDosir.unitKerjaId),
+            ))
+            .limit(1);
+
+        if (!accessibleSurat) return null;
+
+        const [link] = await tx.insert(dosirSuratMasuk).values({
             dosirId,
             suratMasukId,
             notes: notes || null,
         }).returning();
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'dosir',
+                entityId: dosirId,
+                changes: { suratLinked: { type: 'masuk', suratId: suratMasukId, notes: notes || null } },
+            }, tx);
+        }
         return link;
+        });
     },
 
     /**
      * Add surat keluar to dosir
      */
-    async addSuratKeluar(dosirId: string, suratKeluarId: string, notes?: string) {
-        const [link] = await db.insert(dosirSuratKeluar).values({
+    async addSuratKeluar(
+        dosirId: string,
+        suratKeluarId: string,
+        notes: string | undefined,
+        unitScope: RecordUnitScope,
+        auditContext?: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope, tx);
+        if (!accessibleDosir) return null;
+
+        const [accessibleSurat] = await tx
+            .select({ id: suratKeluar.id })
+            .from(suratKeluar)
+            .where(and(
+                eq(suratKeluar.id, suratKeluarId),
+                eq(suratKeluar.unitKerjaId, accessibleDosir.unitKerjaId),
+            ))
+            .limit(1);
+
+        if (!accessibleSurat) return null;
+
+        const [link] = await tx.insert(dosirSuratKeluar).values({
             dosirId,
             suratKeluarId,
             notes: notes || null,
         }).returning();
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'dosir',
+                entityId: dosirId,
+                changes: { suratLinked: { type: 'keluar', suratId: suratKeluarId, notes: notes || null } },
+            }, tx);
+        }
         return link;
+        });
     },
 
     /**
      * Remove surat masuk from dosir
      */
-    async removeSuratMasuk(dosirId: string, suratMasukId: string) {
-        await db.delete(dosirSuratMasuk).where(
+    async removeSuratMasuk(
+        dosirId: string,
+        suratMasukId: string,
+        unitScope: RecordUnitScope,
+        auditContext?: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope, tx);
+        if (!accessibleDosir) return null;
+
+        const [deleted] = await tx.delete(dosirSuratMasuk).where(
             and(
                 eq(dosirSuratMasuk.dosirId, dosirId),
                 eq(dosirSuratMasuk.suratMasukId, suratMasukId)
             )
-        );
+        ).returning({ dosirId: dosirSuratMasuk.dosirId });
+        if (!deleted) return null;
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'dosir',
+                entityId: dosirId,
+                changes: { suratUnlinked: { type: 'masuk', suratId: suratMasukId } },
+            }, tx);
+        }
         return { success: true };
+        });
     },
 
     /**
      * Remove surat keluar from dosir
      */
-    async removeSuratKeluar(dosirId: string, suratKeluarId: string) {
-        await db.delete(dosirSuratKeluar).where(
+    async removeSuratKeluar(
+        dosirId: string,
+        suratKeluarId: string,
+        unitScope: RecordUnitScope,
+        auditContext?: CriticalAuditContext,
+    ) {
+        return db.transaction(async (tx) => {
+        const accessibleDosir = await findAccessibleDosir(dosirId, unitScope, tx);
+        if (!accessibleDosir) return null;
+
+        const [deleted] = await tx.delete(dosirSuratKeluar).where(
             and(
                 eq(dosirSuratKeluar.dosirId, dosirId),
                 eq(dosirSuratKeluar.suratKeluarId, suratKeluarId)
             )
-        );
+        ).returning({ dosirId: dosirSuratKeluar.dosirId });
+        if (!deleted) return null;
+        if (auditContext) {
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'dosir',
+                entityId: dosirId,
+                changes: { suratUnlinked: { type: 'keluar', suratId: suratKeluarId } },
+            }, tx);
+        }
         return { success: true };
+        });
     },
 
     /**
      * Get stats for dosir
      */
-    async getStats(unitKerjaId?: string) {
-        const conditions = unitKerjaId ? eq(dosir.unitKerjaId, unitKerjaId) : undefined;
+    async getStats(unitKerjaId: RecordUnitScope) {
+        const conditions = unitKerjaId === null
+            ? undefined
+            : eq(dosir.unitKerjaId, unitKerjaId);
 
         const stats = await db
             .select({

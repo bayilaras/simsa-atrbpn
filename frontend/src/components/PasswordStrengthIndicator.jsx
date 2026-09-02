@@ -6,17 +6,7 @@ import { Check, X, AlertCircle } from 'lucide-react';
  * Provides real-time feedback on password strength
  */
 
-interface PasswordStrengthProps {
-    password: string;
-    onStrengthChange?: (strength: string, isValid: boolean) => void;
-}
-
-interface PasswordCheck {
-    label: string;
-    test: (password: string) => boolean;
-}
-
-const PASSWORD_CHECKS: PasswordCheck[] = [
+const PASSWORD_CHECKS = [
     {
         label: 'At least 12 characters',
         test: (p) => p.length >= 12
@@ -35,18 +25,16 @@ const PASSWORD_CHECKS: PasswordCheck[] = [
     },
     {
         label: 'Contains special character',
-        test: (p) => /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(p)
+        test: (p) => /[^A-Za-z0-9\s]/.test(p)
     }
 ];
 
-export function PasswordStrengthIndicator({ password, onStrengthChange }: PasswordStrengthProps) {
-    const [strength, setStrength] = useState < 'weak' | 'medium' | 'strong' | 'very-strong' > ('weak');
-    const [score, setScore] = useState(0);
+export function PasswordStrengthIndicator({ password, onStrengthChange }) {
+    const [strength, setStrength] = useState('weak');
 
     useEffect(() => {
         if (!password) {
             setStrength('weak');
-            setScore(0);
             onStrengthChange?.('weak', false);
             return;
         }
@@ -68,10 +56,8 @@ export function PasswordStrengthIndicator({ password, onStrengthChange }: Passwo
         if (/(.)\1{2,}/.test(password)) currentScore = Math.max(0, currentScore - 1);
         if (/(?:012|123|234|345|456|567|678|789|890)/.test(password)) currentScore = Math.max(0, currentScore - 1);
 
-        setScore(currentScore);
-
         // Determine strength
-        let newStrength: typeof strength;
+        let newStrength;
         if (currentScore <= 2) newStrength = 'weak';
         else if (currentScore <= 4) newStrength = 'medium';
         else if (currentScore <= 6) newStrength = 'strong';
@@ -114,15 +100,15 @@ export function PasswordStrengthIndicator({ password, onStrengthChange }: Passwo
             <div className="space-y-1">
                 <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Password Strength</span>
-                    <span className={`font-medium ${strength === 'weak' ? 'text-red-600' :
+                    <span className={`font-medium ${strength === 'weak' ? 'text-red-600 dark:text-red-400' :
                             strength === 'medium' ? 'text-yellow-600' :
-                                strength === 'strong' ? 'text-blue-600' :
+                                strength === 'strong' ? 'text-blue-600 dark:text-blue-400' :
                                     'text-green-600'
                         }`}>
                         {strengthLabels[strength]}
                     </span>
                 </div>
-                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div
                         className={`h-full transition-all duration-300 ${strengthColors[strength]} ${strengthWidth[strength]}`}
                     />
@@ -139,9 +125,9 @@ export function PasswordStrengthIndicator({ password, onStrengthChange }: Passwo
                             {passed ? (
                                 <Check className="w-4 h-4 text-green-600" />
                             ) : (
-                                <X className="w-4 h-4 text-gray-400" />
+                                <X className="w-4 h-4 text-muted-foreground" />
                             )}
-                            <span className={passed ? 'text-green-700' : 'text-muted-foreground'}>
+                            <span className={passed ? 'text-green-700 dark:text-green-300' : 'text-muted-foreground'}>
                                 {check.label}
                             </span>
                         </div>
@@ -151,9 +137,9 @@ export function PasswordStrengthIndicator({ password, onStrengthChange }: Passwo
 
             {/* Warning for weak passwords */}
             {strength === 'weak' && password.length > 0 && (
-                <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <div className="flex items-start gap-2 p-3 bg-yellow-50 dark:bg-yellow-500/15 border border-yellow-200 rounded-md">
                     <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-yellow-800">
+                    <p className="text-sm text-yellow-800 dark:text-yellow-300">
                         Your password is weak. Consider using a longer password with a mix of characters.
                     </p>
                 </div>

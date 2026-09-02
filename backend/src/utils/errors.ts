@@ -46,9 +46,27 @@ export class ConflictError extends AppError {
     }
 }
 
+export class GoneError extends AppError {
+    constructor(message: string = 'Sumber daya sudah tidak tersedia.') {
+        super(message, 410);
+    }
+}
+
+export class PayloadTooLargeError extends AppError {
+    constructor(message: string = 'Ukuran data melebihi batas yang diizinkan.') {
+        super(message, 413);
+    }
+}
+
 export class RateLimitError extends AppError {
     constructor(message: string = 'Terlalu banyak permintaan. Coba lagi nanti.') {
         super(message, 429);
+    }
+}
+
+export class ServiceUnavailableError extends AppError {
+    constructor(message: string = 'Layanan sementara tidak tersedia. Silakan coba lagi.') {
+        super(message, 503);
     }
 }
 

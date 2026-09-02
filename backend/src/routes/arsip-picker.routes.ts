@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { klasifikasiService, jraService } from '../services/klasifikasi.service';
+import { klasifikasiService } from '../services/klasifikasi.service';
 import { arsipService } from '../services/arsip.service';
-import { authMiddleware } from '../middlewares/auth.middleware';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { createLogger } from '../utils/logger';
+import { allowedSecurityClassifications } from '../services/record-access.service.js';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 
 const log = createLogger('ArsipPickerRoutes');
 
@@ -41,7 +43,8 @@ router.get('/klasifikasi/tree', authMiddleware, async (req: Request, res: Respon
  * @swagger
  * /api/arsip-picker/jra/{kode}:
  *   get:
- *     summary: Get JRA by klasifikasi kode (for auto-fill)
+ *     summary: Deprecated unsafe code/prefix based JRA lookup
+ *     deprecated: true
  *     tags: [Arsip Picker]
  *     security:
  *       - bearerAuth: []
@@ -52,42 +55,24 @@ router.get('/klasifikasi/tree', authMiddleware, async (req: Request, res: Respon
  *         schema:
  *           type: string
  *     responses:
- *       200:
- *         description: JRA data with retention info
+ *       410:
+ *         description: Use the canonical JRA picker and submit jraItemId
  */
 router.get('/jra/:kode', authMiddleware, async (req: Request, res: Response) => {
-    try {
-        const kode = req.params.kode as string;
-        const jra = await jraService.getByKode(kode);
-
-        if (!jra) {
-            // Try to find by parent kode or similar prefix
-            const allJra = await jraService.getAll({ activeOnly: true });
-            const bestMatch = allJra.find(j =>
-                kode.startsWith(j.kode) || j.kode.startsWith(kode)
-            );
-
-            if (bestMatch) {
-                res.json({ success: true, data: bestMatch, matched: 'prefix' });
-                return;
-            }
-
-            res.json({ success: true, data: null, message: 'No matching JRA found' });
-            return;
-        }
-
-        res.json({ success: true, data: jra });
-    } catch (error) {
-        log.error({ err: error }, 'Error fetching JRA:');
-        res.status(500).json({ success: false, error: 'Failed to fetch JRA' });
-    }
+    void req.params.kode;
+    res.status(410).json({
+        success: false,
+        error: 'Legacy JRA code lookup is deprecated',
+        message: 'Gunakan picker JRA aktif dan simpan jraItemId serta ruleSetId canonical. Pencocokan kode/prefix tidak boleh digunakan sebagai keputusan retensi.',
+    });
 });
 
 /**
  * @swagger
  * /api/arsip-picker/calculate-dates:
  *   post:
- *     summary: Calculate retention dates based on arsip date and JRA
+ *     summary: Deprecated free-text retention calculation
+ *     deprecated: true
  *     tags: [Arsip Picker]
  *     security:
  *       - bearerAuth: []
@@ -97,8 +82,9 @@ router.get('/jra/:kode', authMiddleware, async (req: Request, res: Response) => 
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [retentionTriggerDate]
  *             properties:
- *               tanggalArsip:
+ *               retentionTriggerDate:
  *                 type: string
  *                 format: date
  *               retensiAktif:
@@ -106,32 +92,15 @@ router.get('/jra/:kode', authMiddleware, async (req: Request, res: Response) => 
  *               retensiInaktif:
  *                 type: string
  *     responses:
- *       200:
- *         description: Calculated dates
+ *       410:
+ *         description: Dates are calculated server-side from the archive's verified rule snapshot
  */
-router.post('/calculate-dates', authMiddleware, async (req: Request, res: Response) => {
-    try {
-        const { tanggalArsip, retensiAktif, retensiInaktif } = req.body;
-
-        if (!tanggalArsip) {
-            res.status(400).json({ success: false, error: 'tanggalArsip is required' });
-            return;
-        }
-
-        const dates = arsipService.calculateRetentionDates(tanggalArsip, retensiAktif, retensiInaktif);
-        const status = arsipService.getArchiveStatus(tanggalArsip, retensiAktif, retensiInaktif);
-
-        res.json({
-            success: true,
-            data: {
-                ...dates,
-                status,
-            }
-        });
-    } catch (error) {
-        log.error({ err: error }, 'Error calculating dates:');
-        res.status(500).json({ success: false, error: 'Failed to calculate dates' });
-    }
+router.post('/calculate-dates', authMiddleware, async (_req: Request, res: Response) => {
+    res.status(410).json({
+        success: false,
+        error: 'Free-text retention calculation is deprecated',
+        message: 'Tanggal retensi dihitung server-side dari jraItemId/ruleSetId dan snapshot aturan terverifikasi pada arsip. Teks retensi tidak diterima sebagai sumber keputusan.',
+    });
 });
 
 /**
@@ -146,12 +115,18 @@ router.post('/calculate-dates', authMiddleware, async (req: Request, res: Respon
  *       200:
  *         description: Lifecycle notifications by status
  */
-router.get('/lifecycle', authMiddleware, async (req: Request, res: Response) => {
+router.get('/lifecycle', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
-        const user = (req as any).user;
-        const unitKerjaId = user?.unitKerjaId || 'PTEP';
+        const unitKerjaId = resolveUnitKerjaId(req);
+        if (!unitKerjaId) {
+            res.status(400).json({ success: false, error: 'unitKerjaId is required' });
+            return;
+        }
 
-        const notifications = await arsipService.getLifecycleNotifications(unitKerjaId);
+        const notifications = await arsipService.getLifecycleNotifications(
+            unitKerjaId,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, data: notifications });
     } catch (error) {
         log.error({ err: error }, 'Error fetching lifecycle notifications:');

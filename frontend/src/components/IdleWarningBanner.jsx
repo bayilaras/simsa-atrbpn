@@ -25,7 +25,7 @@ export function IdleWarningBanner() {
                 </button>
                 <button
                     onClick={signOut}
-                    className="px-3 py-1 text-xs font-semibold bg-white/20 text-amber-950 rounded hover:bg-white/30 transition-colors"
+                    className="px-3 py-1 text-xs font-semibold bg-card/20 text-amber-950 rounded hover:bg-card/30 transition-colors"
                 >
                     Keluar Sekarang
                 </button>

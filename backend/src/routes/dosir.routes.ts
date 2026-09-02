@@ -1,18 +1,56 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { dosirService } from '../services/dosir.service';
-import { authMiddleware } from '../middlewares/auth.middleware';
-import { auditLogService } from '../services/audit-log.service';
+import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
+import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { validateBody } from '../middlewares/validate.middleware';
 import { uuidParamValidator } from '../middlewares/validate.middleware';
 import { createDosirSchema, updateDosirSchema, linkSuratToDosirSchema } from '../validators/schemas';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
+import {
+    resolveRecordUnitScope,
+    type RecordUnitScope,
+} from '../utils/record-unit-scope.js';
+import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { allowedSecurityClassifications } from '../services/record-access.service.js';
+import { sanitizeSuratRecord } from '../utils/sanitize-surat-response.js';
 
 const log = createLogger('DosirRoutes');
 
 const router = Router();
 
 router.use(authMiddleware);
+
+/**
+ * Collection endpoints may honor an explicit unit selected by a super admin.
+ * Every other role remains pinned to the authoritative scope returned by
+ * resolveUnitKerjaId; a missing assigned scope must fail closed.
+ */
+function resolveDosirCollectionUnitScope(
+    req: AuthRequest,
+    res: Response,
+): RecordUnitScope | undefined {
+    const requestedUnit = typeof req.query.unitKerjaId === 'string'
+        ? req.query.unitKerjaId.trim()
+        : '';
+    const unitKerjaId = resolveUnitKerjaId(req);
+
+    if (req.user?.role === 'super_admin') {
+        return requestedUnit || null;
+    }
+
+    if (!unitKerjaId) {
+        res.status(403).json({ success: false, error: 'Mandat unit kerja tidak tersedia' });
+        return undefined;
+    }
+
+    if (requestedUnit && requestedUnit !== unitKerjaId) {
+        res.status(403).json({ success: false, error: 'Unit kerja tidak berada dalam cakupan akses' });
+        return undefined;
+    }
+
+    return unitKerjaId;
+}
 
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);
@@ -43,13 +81,14 @@ router.param('id', uuidParamValidator);
  *       200:
  *         description: List of dosir
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
     try {
-        const user = (req as any).user;
         const { status, kategori, search, limit, offset } = req.query;
+        const unitScope = resolveDosirCollectionUnitScope(req, res);
+        if (unitScope === undefined) return;
 
         const data = await dosirService.getAll({
-            unitKerjaId: user?.unitKerjaId,
+            unitKerjaId: unitScope,
             status: status as string,
             kategori: kategori as string,
             search: search as string,
@@ -76,10 +115,11 @@ router.get('/', async (req: Request, res: Response) => {
  *       200:
  *         description: Stats by status
  */
-router.get('/stats', async (req: Request, res: Response) => {
+router.get('/stats', async (req: AuthRequest, res: Response) => {
     try {
-        const user = (req as any).user;
-        const stats = await dosirService.getStats(user?.unitKerjaId);
+        const unitScope = resolveDosirCollectionUnitScope(req, res);
+        if (unitScope === undefined) return;
+        const stats = await dosirService.getStats(unitScope);
         res.json({ success: true, data: stats });
     } catch (error) {
         log.error({ err: error }, 'Error fetching stats:');
@@ -99,10 +139,16 @@ router.get('/stats', async (req: Request, res: Response) => {
  *       200:
  *         description: Generated kode
  */
-router.get('/generate-kode', async (req: Request, res: Response) => {
+router.get('/generate-kode', async (req: AuthRequest, res: Response) => {
     try {
-        const user = (req as any).user;
-        const unitKerjaId = user?.unitKerjaId || 'PTEP';
+        const unitKerjaId = resolveUnitKerjaId(req);
+        if (!unitKerjaId) {
+            res.status(400).json({
+                success: false,
+                error: 'unitKerjaId is required for all-unit administrators',
+            });
+            return;
+        }
         const kode = await dosirService.generateKode(unitKerjaId);
         res.json({ success: true, data: { kode } });
     } catch (error) {
@@ -129,17 +175,28 @@ router.get('/generate-kode', async (req: Request, res: Response) => {
  *       200:
  *         description: Dosir with surat
  */
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const data = await dosirService.getById(id as string);
+        const data = await dosirService.getById(
+            id as string,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
 
         if (!data) {
             res.status(404).json({ success: false, error: 'Dosir not found' });
             return;
         }
 
-        res.json({ success: true, data });
+        res.json({
+            success: true,
+            data: {
+                ...data,
+                suratMasuk: (data.suratMasuk || []).map((item: any) => sanitizeSuratRecord(item, 'surat_masuk')),
+                suratKeluar: (data.suratKeluar || []).map((item: any) => sanitizeSuratRecord(item, 'surat_keluar')),
+            },
+        });
     } catch (error) {
         log.error({ err: error }, 'Error fetching dosir:');
         res.status(500).json({ success: false, error: 'Failed to fetch dosir' });
@@ -164,10 +221,20 @@ router.get('/:id', async (req: Request, res: Response) => {
  *       200:
  *         description: Chronological timeline
  */
-router.get('/:id/timeline', async (req: Request, res: Response) => {
+router.get('/:id/timeline', async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const timeline = await dosirService.getTimeline(id as string);
+        const timeline = await dosirService.getTimeline(
+            id as string,
+            resolveRecordUnitScope(req),
+            allowedSecurityClassifications(req.user),
+        );
+
+        if (!timeline) {
+            res.status(404).json({ success: false, error: 'Dosir not found' });
+            return;
+        }
+
         res.json({ success: true, data: timeline });
     } catch (error) {
         log.error({ err: error }, 'Error fetching timeline:');
@@ -207,9 +274,9 @@ router.get('/:id/timeline', async (req: Request, res: Response) => {
  *       201:
  *         description: Created dosir
  */
-router.post('/', validateBody(createDosirSchema), async (req: Request, res: Response) => {
+router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (req: AuthRequest, res: Response) => {
     try {
-        const user = (req as any).user;
+        const user = req.user;
         const { kode, judul, deskripsi, kategori, tanggalMulai } = req.body;
 
         if (!judul) {
@@ -217,7 +284,14 @@ router.post('/', validateBody(createDosirSchema), async (req: Request, res: Resp
             return;
         }
 
-        const unitKerjaId = user?.unitKerjaId || 'PTEP';
+        const unitKerjaId = resolveUnitKerjaId(req);
+        if (!unitKerjaId) {
+            res.status(400).json({
+                success: false,
+                error: 'unitKerjaId is required for all-unit administrators',
+            });
+            return;
+        }
         const generatedKode = kode || await dosirService.generateKode(unitKerjaId);
 
         const data = await dosirService.create({
@@ -228,16 +302,9 @@ router.post('/', validateBody(createDosirSchema), async (req: Request, res: Resp
             kategori,
             tanggalMulai,
             createdBy: user?.id,
-        });
-
-        // Audit log
-        await auditLogService.logAction({
+        }, {
             userId: user?.id,
             userEmail: user?.email,
-            action: 'create',
-            entityType: 'dosir' as any,
-            entityId: data.id,
-            changes: { after: data },
             ipAddress: (req.ip || req.get('x-forwarded-for') || '') as string,
         });
 
@@ -285,30 +352,23 @@ router.post('/', validateBody(createDosirSchema), async (req: Request, res: Resp
  *       200:
  *         description: Updated dosir
  */
-router.put('/:id', validateBody(updateDosirSchema), async (req: Request, res: Response) => {
+router.put('/:id', canWriteMiddleware(), validateBody(updateDosirSchema), async (req: AuthRequest, res: Response) => {
     try {
-        const user = (req as any).user;
+        const user = req.user;
         const { id } = req.params;
         const updateData = req.body;
+        const unitScope = resolveRecordUnitScope(req);
 
-        const before = await dosirService.getById(id as string);
-        const data = await dosirService.update(id as string, updateData);
+        const data = await dosirService.update(id as string, updateData, unitScope, {
+            userId: user?.id,
+            userEmail: user?.email,
+            ipAddress: (req.ip || req.get('x-forwarded-for') || '') as string,
+        });
 
         if (!data) {
             res.status(404).json({ success: false, error: 'Dosir not found' });
             return;
         }
-
-        // Audit log
-        await auditLogService.logAction({
-            userId: user?.id,
-            userEmail: user?.email,
-            action: 'update',
-            entityType: 'dosir',
-            entityId: id as string,
-            changes: { before: before ?? undefined, after: data },
-            ipAddress: (req.ip || req.get('x-forwarded-for') || '') as string,
-        });
 
         res.json({ success: true, data });
     } catch (error) {
@@ -335,24 +395,21 @@ router.put('/:id', validateBody(updateDosirSchema), async (req: Request, res: Re
  *       200:
  *         description: Deleted
  */
-router.delete('/:id', sensitiveLimiter, async (req: Request, res: Response) => {
+router.delete('/:id', sensitiveLimiter, canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
     try {
-        const user = (req as any).user;
+        const user = req.user;
         const { id } = req.params;
+        const unitScope = resolveRecordUnitScope(req);
 
-        const before = await dosirService.getById(id as string);
-        await dosirService.delete(id as string);
-
-        // Audit log
-        await auditLogService.logAction({
+        const deleted = await dosirService.delete(id as string, unitScope, {
             userId: user?.id,
             userEmail: user?.email,
-            action: 'delete',
-            entityType: 'dosir',
-            entityId: id as string,
-            changes: { before: before ?? undefined },
             ipAddress: (req.ip || req.get('x-forwarded-for') || '') as string,
         });
+        if (!deleted) {
+            res.status(404).json({ success: false, error: 'Dosir not found' });
+            return;
+        }
 
         res.json({ success: true, message: 'Dosir deleted' });
     } catch (error) {
@@ -396,7 +453,7 @@ router.delete('/:id', sensitiveLimiter, async (req: Request, res: Response) => {
  *       201:
  *         description: Surat linked
  */
-router.post('/:id/surat', validateBody(linkSuratToDosirSchema), async (req: Request, res: Response) => {
+router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const { type, suratId, notes } = req.body;
@@ -408,11 +465,28 @@ router.post('/:id/surat', validateBody(linkSuratToDosirSchema), async (req: Requ
 
         let link;
         if (type === 'masuk') {
-            link = await dosirService.addSuratMasuk(id as string, suratId, notes);
+            link = await dosirService.addSuratMasuk(
+                id as string,
+                suratId,
+                notes,
+                resolveRecordUnitScope(req),
+                { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
+            );
         } else if (type === 'keluar') {
-            link = await dosirService.addSuratKeluar(id as string, suratId, notes);
+            link = await dosirService.addSuratKeluar(
+                id as string,
+                suratId,
+                notes,
+                resolveRecordUnitScope(req),
+                { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
+            );
         } else {
             res.status(400).json({ success: false, error: 'Invalid type. Use masuk or keluar' });
+            return;
+        }
+
+        if (!link) {
+            res.status(404).json({ success: false, error: 'Dosir or surat not found' });
             return;
         }
 
@@ -456,16 +530,32 @@ router.post('/:id/surat', validateBody(linkSuratToDosirSchema), async (req: Requ
  *       200:
  *         description: Surat unlinked
  */
-router.delete('/:id/surat/:type/:suratId', async (req: Request, res: Response) => {
+router.delete('/:id/surat/:type/:suratId', canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
     try {
         const { id, type, suratId } = req.params;
+        let result;
 
         if (type === 'masuk') {
-            await dosirService.removeSuratMasuk(id as string, suratId as string);
+            result = await dosirService.removeSuratMasuk(
+                id as string,
+                suratId as string,
+                resolveRecordUnitScope(req),
+                { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
+            );
         } else if (type === 'keluar') {
-            await dosirService.removeSuratKeluar(id as string, suratId as string);
+            result = await dosirService.removeSuratKeluar(
+                id as string,
+                suratId as string,
+                resolveRecordUnitScope(req),
+                { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
+            );
         } else {
             res.status(400).json({ success: false, error: 'Invalid type' });
+            return;
+        }
+
+        if (!result) {
+            res.status(404).json({ success: false, error: 'Dosir not found' });
             return;
         }
 

@@ -8,6 +8,9 @@ import {
     createPenyusutanSchema,
     updatePenyusutanStatusSchema,
     removePenyusutanItemsSchema,
+    legalHoldActionSchema,
+    updateArsipSchema,
+    calculateRetentionDatesSchema,
     createStorageLocationSchema,
     updateStorageLocationSchema,
     borrowArchiveSchema,
@@ -15,9 +18,68 @@ import {
     createLayananArsipSchema,
     updateLayananStatusSchema,
     markAllReadSchema,
+    createSuratKeluarSchema,
 } from '../validators/schemas';
 
 const validUUID = '550e8400-e29b-41d4-a716-446655440000';
+
+describe('createSuratKeluarSchema numbering contract', () => {
+    const base = {
+        unitKerjaId: 'ditjen',
+        tanggalSurat: '2026-08-28',
+        perihal: 'Undangan rapat',
+        kepada: 'Seluruh unit',
+    };
+
+    it('defaults newly registered outgoing records to ordinary/open', () => {
+        const result = createSuratKeluarSchema.safeParse({
+            ...base,
+        });
+
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.klasifikasiKeamanan).toBe('biasa');
+    });
+
+    it('rejects unknown outgoing security classifications', () => {
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            klasifikasiKeamanan: 'internal-khusus',
+        }).success).toBe(false);
+    });
+
+    it('accepts explicit automatic numbering only when nomorSurat is omitted', () => {
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            numberingMode: 'auto',
+        }).success).toBe(true);
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            numberingMode: 'auto',
+            nomorSurat: '001/ND/08/2026',
+        }).success).toBe(false);
+    });
+
+    it('keeps legacy clients compatible by inferring manual mode from a supplied number', () => {
+        const result = createSuratKeluarSchema.safeParse({
+            ...base,
+            nomorSurat: '001/ND/08/2026',
+        });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.numberingMode).toBeUndefined();
+    });
+
+    it('requires an authoritative nomorSurat for manual numbering', () => {
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            numberingMode: 'manual',
+        }).success).toBe(false);
+        expect(createSuratKeluarSchema.safeParse({
+            ...base,
+            numberingMode: 'manual',
+            nomorSurat: '001/ND/08/2026',
+        }).success).toBe(true);
+    });
+});
 
 // ==================== Dosir Schemas ====================
 
@@ -167,6 +229,20 @@ describe('createPenyusutanSchema', () => {
         });
         expect(result.success).toBe(false);
     });
+
+    it('rejects legacy permanent-transfer batches with governance guidance', () => {
+        const result = createPenyusutanSchema.safeParse({
+            unitKerjaId: 'ditjen',
+            jenisPenyusutan: 'penyerahan',
+            arsipIds: [validUUID],
+        });
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            expect(result.error.issues[0]?.message).toMatch(
+                /Tata Kelola Retensi.*permanent-transfers/i,
+            );
+        }
+    });
 });
 
 describe('updatePenyusutanStatusSchema', () => {
@@ -190,6 +266,95 @@ describe('removePenyusutanItemsSchema', () => {
     it('rejects empty arsipIds', () => {
         const result = removePenyusutanItemsSchema.safeParse({ arsipIds: [] });
         expect(result.success).toBe(false);
+    });
+});
+
+describe('retention and legal hold schemas', () => {
+    it('rejects even a fully documented raw trigger outside the event workflow', () => {
+        const result = updateArsipSchema.safeParse({
+            retentionTriggerType: 'serah_terima',
+            retentionTriggerLabel: 'BAST final',
+            retentionTriggerDate: '2026-08-20',
+            retentionTriggerEvidence: 'BAST Nomor 12/2026 tanggal 20 Agustus 2026',
+            jraVersion: 'JRA 2026',
+            jraReference: 'Kode AT.02',
+        });
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            expect(result.error.issues.some((issue) =>
+                issue.message.includes('workflow peristiwa retensi'),
+            )).toBe(true);
+        }
+    });
+
+    it('rejects a trigger date without supporting evidence', () => {
+        const result = updateArsipSchema.safeParse({
+            retentionTriggerType: 'serah_terima',
+            retentionTriggerLabel: 'BAST final',
+            retentionTriggerDate: '2026-08-20',
+        });
+        expect(result.success).toBe(false);
+    });
+
+    it('allows legacy updates without a trigger and keeps them non-actionable', () => {
+        expect(updateArsipSchema.safeParse({ catatan: 'Koreksi metadata' }).success).toBe(true);
+    });
+
+    it('requires a unit and a meaningful legal-hold reason', () => {
+        expect(legalHoldActionSchema.safeParse({
+            unitKerjaId: 'ditjen',
+            reason: 'Pemeriksaan masih berlangsung',
+        }).success).toBe(true);
+        expect(legalHoldActionSchema.safeParse({
+            unitKerjaId: 'ditjen',
+            reason: 'singkat',
+        }).success).toBe(false);
+    });
+
+    it('requires an explicit trigger date for retention calculations', () => {
+        expect(calculateRetentionDatesSchema.safeParse({
+            retentionTriggerDate: '2026-08-20',
+            retensiAktif: '2 tahun',
+            retensiInaktif: '3 tahun',
+        }).success).toBe(true);
+        expect(calculateRetentionDatesSchema.safeParse({
+            tanggalArsip: '2026-08-20',
+            retensiAktif: '2 tahun',
+            retensiInaktif: '3 tahun',
+        }).success).toBe(false);
+    });
+
+    it('rejects impossible calendar dates instead of relying on database coercion', () => {
+        expect(calculateRetentionDatesSchema.safeParse({
+            retentionTriggerDate: '2026-02-31',
+            retensiAktif: '2 tahun',
+            retensiInaktif: '3 tahun',
+        }).success).toBe(false);
+    });
+
+    it('rejects every raw retention trigger on generic archive updates', () => {
+        expect(updateArsipSchema.safeParse({
+            retentionTriggerType: 'serah_terima',
+            retentionTriggerLabel: 'BAST final',
+            retentionTriggerDate: '9999-01-01',
+            retentionTriggerEvidence: 'BAST yang belum terjadi',
+        }).success).toBe(false);
+    });
+
+    it('rejects direct expiry and final-outcome caches with governance guidance', () => {
+        const result = updateArsipSchema.safeParse({
+            tanggalKadaluarsa: '2031-08-20',
+            hasilAkhir: 'Musnah',
+        });
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            expect(result.error.issues.map((issue) => issue.path[0])).toEqual(
+                expect.arrayContaining(['tanggalKadaluarsa', 'hasilAkhir']),
+            );
+            expect(result.error.issues.some((issue) =>
+                issue.message.includes('dihitung sistem'),
+            )).toBe(true);
+        }
     });
 });
 
@@ -358,7 +523,10 @@ describe('updateLayananStatusSchema', () => {
 describe('markAllReadSchema', () => {
     it('accepts valid notification IDs', () => {
         const result = markAllReadSchema.safeParse({
-            notificationIds: ['notif-1', 'notif-2'],
+            notificationIds: [
+                'surat-masuk:550e8400-e29b-41d4-a716-446655440001:pending:info',
+                'distribusi:550e8400-e29b-41d4-a716-446655440002:unread:urgent',
+            ],
         });
         expect(result.success).toBe(true);
     });

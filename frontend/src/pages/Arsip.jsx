@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { Archive, RefreshCw, Search, Eye, Edit, Clock, Upload, ChevronUp, Trash2, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2 } from 'lucide-react'
+import { Archive, RefreshCw, Search, Eye, Clock, Upload, ChevronUp, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,18 +35,7 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
-    DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import {
     Tabs,
     TabsContent,
@@ -53,7 +43,6 @@ import {
     TabsTrigger,
 } from "@/components/ui/tabs"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { useToast } from '@/hooks/use-toast'
 import { useDataTable } from '@/hooks/use-data-table'
 import {
     Pagination,
@@ -64,17 +53,17 @@ import { arsipService } from '@/services/arsip.service'
 import settingsService from '@/services/settings.service'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
 
+const VALID_TABS = ['keluar', 'masuk', 'retensi']
+
 export default function Arsip() {
     const { tab } = useParams()
     const navigate = useNavigate()
     const { user, canWrite } = useAuth()
     const isAdmin = canWrite()
     const isSuperAdmin = user?.role === 'super_admin'
-    const { toast } = useToast()
 
     // Valid tabs
-    const validTabs = ['keluar', 'masuk', 'retensi']
-    const activeTab = validTabs.includes(tab) ? tab : 'keluar'
+    const activeTab = VALID_TABS.includes(tab) ? tab : 'keluar'
 
     const [searchTerm, setSearchTerm] = useState('')
     const [arsipStats, setArsipStats] = useState({ total: 0, arsipMasuk: 0, arsipKeluar: 0 })
@@ -82,7 +71,7 @@ export default function Arsip() {
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([])
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (user?.unitKerjaId || undefined))
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined))
 
     // Load unit kerja list for super admin
     useEffect(() => {
@@ -96,7 +85,7 @@ export default function Arsip() {
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
-        : (user?.unitKerjaId || undefined)
+        : (resolveEffectiveUnitKerjaId(user) || undefined)
 
     // Fetch arsip stats
     useEffect(() => {
@@ -116,13 +105,9 @@ export default function Arsip() {
     // Filter state
     const [tahunFilter, setTahunFilter] = useState('all')
 
-    // Delete dialog state
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-    const [selectedArsip, setSelectedArsip] = useState(null)
-
     // Redirect if tab is invalid
     useEffect(() => {
-        if (!validTabs.includes(tab)) {
+        if (!VALID_TABS.includes(tab)) {
             navigate('/arsip/keluar', { replace: true })
         }
     }, [tab, navigate])
@@ -175,42 +160,6 @@ export default function Arsip() {
     // Action handlers
     const handleViewDetail = (row) => navigate(`/arsip/detail/${row.id}`)
 
-    const handleEdit = (row) => {
-        toast({
-            title: 'Fitur dalam pengembangan',
-            description: 'Halaman edit arsip akan segera tersedia',
-        })
-    }
-
-    const handleOpenDeleteDialog = (row) => {
-        setSelectedArsip(row)
-        setDeleteDialogOpen(true)
-    }
-
-    const handleDelete = async () => {
-        if (!selectedArsip) return
-        try {
-            await arsipService.delete(selectedArsip.id)
-            toast({
-                title: 'Berhasil Dihapus',
-                description: `Arsip ${selectedArsip.nomorBerkas || ''} telah dihapus`,
-            })
-            setDeleteDialogOpen(false)
-            setSelectedArsip(null)
-            setPage(1) // Refresh data
-
-            // Refresh stats
-            const stats = await arsipService.getStats({ unitKerjaId: resolvedUnitKerjaId })
-            if (stats) setArsipStats(stats)
-        } catch (error) {
-            toast({
-                title: 'Error',
-                description: error.message || 'Gagal menghapus arsip',
-                variant: 'destructive',
-            })
-        }
-    }
-
     const hasActiveFilters = tahunFilter !== 'all' || searchTerm
 
     const clearAllFilters = () => {
@@ -222,11 +171,11 @@ export default function Arsip() {
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Page Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <div className="p-2 bg-blue-100 rounded-lg">
-                            <Archive className="h-6 w-6 text-blue-600" />
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 space-y-1">
+                    <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                        <div className="p-2 bg-blue-100 dark:bg-blue-500/15 rounded-lg">
+                            <Archive className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                         </div>
                         Manajemen Arsip
                     </h1>
@@ -236,14 +185,14 @@ export default function Arsip() {
                 </div>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex w-full items-center gap-2 sm:w-auto">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPage(1); }}>
-                            <SelectTrigger className="w-[220px] h-9">
+                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
+                                <SelectItem value="all">Semua Unit Kerja</SelectItem>
                                 {unitKerjaList.map(uk => (
                                     <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
                                 ))}
@@ -251,39 +200,41 @@ export default function Arsip() {
                         </Select>
                     </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" onClick={() => setPage(1)} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                        Refresh
+                        Perbarui
                     </Button>
 
                     <ExportButton
                         type="arsip"
                         filters={{
                             jenisArsip: activeTab === 'masuk' ? 'masuk' : activeTab === 'keluar' ? 'keluar' : undefined,
+                            unitKerjaId: resolvedUnitKerjaId,
+                            tahun: tahunFilter !== 'all' ? tahunFilter : undefined,
                         }}
                     />
 
                     {isAdmin && (
-                        <Link to="/bulk-upload">
-                            <Button variant="default" size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                        <Button asChild variant="default" size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
+                            <Link to="/bulk-upload">
                                 <Upload className="mr-2 h-3.5 w-3.5" />
-                                Bulk Upload
-                            </Button>
-                        </Link>
+                                Unggah Massal
+                            </Link>
+                        </Button>
                     )}
                 </div>
             </div>
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Arsip</p>
                             <p className="text-2xl font-bold">{arsipStats.total}</p>
                         </div>
-                        <div className="p-2.5 bg-blue-100 rounded-full text-blue-600">
+                        <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600 dark:text-blue-400">
                             <FolderArchive className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -292,9 +243,9 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Arsip Masuk</p>
-                            <p className="text-2xl font-bold text-emerald-600">{arsipStats.arsipMasuk}</p>
+                            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{arsipStats.arsipMasuk}</p>
                         </div>
-                        <div className="p-2.5 bg-emerald-100 rounded-full text-emerald-600">
+                        <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-full text-emerald-600 dark:text-emerald-400">
                             <Inbox className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -303,9 +254,9 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Arsip Keluar</p>
-                            <p className="text-2xl font-bold text-yellow-600">{arsipStats.arsipKeluar}</p>
+                            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{arsipStats.arsipKeluar}</p>
                         </div>
-                        <div className="p-2.5 bg-yellow-100 rounded-full text-yellow-600">
+                        <div className="p-2.5 bg-yellow-100 dark:bg-yellow-500/15 rounded-full text-yellow-600 dark:text-yellow-400">
                             <Upload className="h-5 w-5" />
                         </div>
                     </CardContent>
@@ -314,7 +265,7 @@ export default function Arsip() {
 
             {/* Main Content with Tabs */}
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                     <TabsList className="bg-muted/50 p-1">
                         <TabsTrigger value="keluar" className="gap-2">
                             <Upload className="h-4 w-4" /> Arsip Surat Keluar
@@ -342,8 +293,8 @@ export default function Arsip() {
                             </CardHeader>
                             <CardContent className="text-sm space-y-4 pt-4">
                                 <p className="text-muted-foreground leading-relaxed">
-                                    Jadwal Retensi Arsip (JRA) mengacu pada <strong>Permen ATR/BPN No. 8 Tahun 2020</strong>.
-                                    Sistem akan otomatis menghitung masa retensi aktif dan inaktif berdasarkan klasifikasi arsip.
+                                    Jadwal Retensi Arsip (JRA) memakai <strong>master aturan aktif yang sudah diverifikasi</strong>.
+                                    Sistem menghitung masa retensi hanya setelah klasifikasi, aturan JRA, dan pemicu retensinya tercatat secara kanonis.
                                 </p>
                                 <div className="space-y-3 pt-2">
                                     <div className="flex items-start gap-3">
@@ -354,14 +305,14 @@ export default function Arsip() {
                                         </div>
                                     </div>
                                     <div className="flex items-start gap-3">
-                                        <Badge variant="outline" className="mt-0.5 w-20 justify-center border-orange-200 bg-orange-50 text-orange-700">Inaktif</Badge>
+                                        <Badge variant="outline" className="mt-0.5 w-20 justify-center border-orange-200 bg-orange-50 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300">Inaktif</Badge>
                                         <div className="space-y-1">
                                             <p className="font-medium text-xs">Masa Retensi Inaktif</p>
                                             <p className="text-xs text-muted-foreground">Frekuensi rendah, disimpan di pusat arsip.</p>
                                         </div>
                                     </div>
                                     <div className="flex items-start gap-3">
-                                        <Badge className="mt-0.5 w-20 justify-center bg-blue-600 hover:bg-blue-700">Permanen</Badge>
+                                        <Badge className="mt-0.5 w-20 justify-center bg-primary hover:bg-primary">Permanen</Badge>
                                         <div className="space-y-1">
                                             <p className="font-medium text-xs">Nasib Akhir: Permanen</p>
                                             <p className="text-xs text-muted-foreground">Memiliki nilai guna berkelanjutan, diserahkan ke ANRI.</p>
@@ -400,7 +351,7 @@ export default function Arsip() {
                                             <CollapsibleTrigger asChild>
                                                 <Button variant="outline" className={`gap-2 w-full md:w-auto ${isAdvancedOpen ? 'bg-muted' : ''}`}>
                                                     <Filter className="h-4 w-4" />
-                                                    <span className="hidden sm:inline">Filter</span>
+                                                    <span className="sr-only sm:not-sr-only">Filter</span>
                                                     {tahunFilter !== 'all' && (
                                                         <Badge variant="secondary" className="ml-0.5 h-5 w-5 p-0 justify-center bg-primary/10 text-primary">!</Badge>
                                                     )}
@@ -409,7 +360,7 @@ export default function Arsip() {
                                             </CollapsibleTrigger>
                                         </Collapsible>
                                         {hasActiveFilters && (
-                                            <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" title="Reset Filters">
+                                            <Button variant="ghost" size="icon" onClick={clearAllFilters} className="text-muted-foreground hover:text-destructive shrink-0" aria-label="Hapus semua filter" title="Hapus semua filter">
                                                 <X className="h-4 w-4" />
                                             </Button>
                                         )}
@@ -445,7 +396,7 @@ export default function Arsip() {
                                             <TableSkeleton rows={5} columns={7} />
                                         </div>
                                     ) : (
-                                        <Table>
+                                        <Table responsive>
                                             <TableHeader className="bg-muted/30">
                                                 <TableRow className="hover:bg-transparent">
                                                     <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -479,19 +430,19 @@ export default function Arsip() {
                                                 ) : (
                                                     currentData.map((row, index) => (
                                                         <TableRow key={row.id} className="group hover:bg-muted/30 transition-colors">
-                                                            <TableCell className="text-center font-medium text-muted-foreground text-xs">
+                                                            <TableCell data-label="No." className="text-center font-medium text-muted-foreground text-xs">
                                                                 {(currentPage - 1) * 10 + index + 1}
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="No. Berkas">
                                                                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">{row.nomorBerkas || '-'}</code>
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="Klasifikasi">
                                                                 <div className="flex flex-col">
                                                                     <span className="font-mono text-xs font-semibold">{row.kodeKlasifikasi || '-'}</span>
                                                                     <span className="text-[10px] text-muted-foreground hidden lg:inline-block truncate max-w-[100px]">{row.klasifikasi || ''}</span>
                                                                 </div>
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="Uraian Berkas">
                                                                 <div className="flex flex-col gap-1 max-w-[300px]">
                                                                     <span className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
                                                                         {row.uraianBerkas || row.perihalOriginal || '-'}
@@ -501,7 +452,7 @@ export default function Arsip() {
                                                                     )}
                                                                 </div>
                                                             </TableCell>
-                                                            <TableCell className="text-xs text-muted-foreground">
+                                                            <TableCell data-label="Lokasi" className="text-xs text-muted-foreground">
                                                                 {row.lokasiFc || row.lokasiLaci || row.lokasiFolder ? (
                                                                     <div className="flex flex-col gap-0.5">
                                                                         <span className="font-medium text-foreground text-xs">{row.lokasiFc || '-'}</span>
@@ -509,7 +460,7 @@ export default function Arsip() {
                                                                     </div>
                                                                 ) : '-'}
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="Retensi">
                                                                 <div className="flex flex-col gap-1">
                                                                     <div className="flex items-center gap-1.5 text-xs">
                                                                         <span className="text-[10px] w-8 text-muted-foreground">Aktif:</span>
@@ -521,7 +472,7 @@ export default function Arsip() {
                                                                     </div>
                                                                 </div>
                                                             </TableCell>
-                                                            <TableCell>
+                                                            <TableCell data-label="Status">
                                                                 <Badge variant={row.hasilAkhir === 'Permanen' ? 'default' : row.hasilAkhir === 'Musnah' ? 'destructive' : 'secondary'} className="text-[10px] px-2">
                                                                     {row.hasilAkhir || '-'}
                                                                 </Badge>
@@ -529,7 +480,7 @@ export default function Arsip() {
                                                             <TableCell className="text-right">
                                                                 <DropdownMenu>
                                                                     <DropdownMenuTrigger asChild>
-                                                                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted">
+                                                                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted" aria-label="Buka menu tindakan arsip">
                                                                             <MoreHorizontal className="h-4 w-4" />
                                                                         </Button>
                                                                     </DropdownMenuTrigger>
@@ -537,17 +488,6 @@ export default function Arsip() {
                                                                         <DropdownMenuItem onClick={() => handleViewDetail(row)}>
                                                                             <Eye className="h-4 w-4 mr-2" /> Detail Arsip
                                                                         </DropdownMenuItem>
-                                                                        {isAdmin && (
-                                                                            <>
-                                                                                <DropdownMenuItem onClick={() => handleEdit(row)}>
-                                                                                    <Edit className="h-4 w-4 mr-2" /> Edit Info
-                                                                                </DropdownMenuItem>
-                                                                                <DropdownMenuSeparator />
-                                                                                <DropdownMenuItem onClick={() => handleOpenDeleteDialog(row)} className="text-destructive focus:text-destructive focus:bg-destructive/10">
-                                                                                    <Trash2 className="h-4 w-4 mr-2" /> Hapus Data
-                                                                                </DropdownMenuItem>
-                                                                            </>
-                                                                        )}
                                                                     </DropdownMenuContent>
                                                                 </DropdownMenu>
                                                             </TableCell>
@@ -567,13 +507,13 @@ export default function Arsip() {
                                             <Pagination>
                                                 <PaginationContent>
                                                     <PaginationItem>
-                                                        <Button variant="outline" size="sm" onClick={prevPage} disabled={!canPrev} className="h-8 w-8 p-0">
-                                                            <ChevronUp className="h-4 w-4 rotate-[-90deg]" />
+                                                        <Button variant="outline" size="sm" aria-label="Halaman sebelumnya" onClick={prevPage} disabled={!canPrev} className="h-10 w-10 p-0">
+                                                            <ChevronUp aria-hidden="true" className="h-4 w-4 rotate-[-90deg]" />
                                                         </Button>
                                                     </PaginationItem>
                                                     <PaginationItem>
-                                                        <Button variant="outline" size="sm" onClick={nextPage} disabled={!canNext} className="h-8 w-8 p-0">
-                                                            <ChevronUp className="h-4 w-4 rotate-90" />
+                                                        <Button variant="outline" size="sm" aria-label="Halaman berikutnya" onClick={nextPage} disabled={!canNext} className="h-10 w-10 p-0">
+                                                            <ChevronUp aria-hidden="true" className="h-4 w-4 rotate-90" />
                                                         </Button>
                                                     </PaginationItem>
                                                 </PaginationContent>
@@ -586,25 +526,6 @@ export default function Arsip() {
                     </TabsContent>
                 )}
             </Tabs>
-
-            {/* Delete Confirmation Dialog */}
-            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Hapus Arsip?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            Apakah Anda yakin ingin menghapus arsip <strong>{selectedArsip?.nomorBerkas || selectedArsip?.perihalOriginal}</strong>?
-                            Tindakan ini tidak dapat dibatalkan. Data surat terkait tidak akan terhapus, hanya status arsipnya.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Batal</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                            Hapus
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
         </div>
     )
 }
