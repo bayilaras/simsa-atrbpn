@@ -10,7 +10,8 @@ After this workflow is reviewed, merged, and enabled on the default branch,
 `.github/workflows/backup-cloud-sql.yml` is scheduled daily and can also be
 dispatched manually. Until then it is an unexecuted target configuration, not
 backup evidence. Both jobs reject any ref other than the repository default
-branch and use the protected `gcp-production-backup` GitHub Environment.
+branch. The source job uses `gcp-production-backup`; the independent restore
+uses the separate protected `gcp-production-restore-drill` GitHub Environment.
 
 The backup job:
 
@@ -111,23 +112,32 @@ Maintenance memakai rentang berbeda, sehingga dua workflow tidak berebut
 
 ## Dedicated read-only database role
 
-Create the IAM database user through the normal Cloud SQL administration
-process, then grant the least-privilege database membership from a controlled
-administrator session. Substitute the exact quoted role name; do not paste the
-placeholder:
+Provision the IAM database user through Terraform and use the exact
+`cloud_sql_backup_identity.database_principal` output as
+`CLOUD_SQL_BACKUP_DATABASE_USER`, not the fixed policy-role name. Establish
+membership through the reviewed `db:roles:bootstrap` grant-admin procedure in
+[GCP database maintenance](GCP_DATABASE_MAINTENANCE.md); isolated Preview uses
+the [Preview database bootstrap workflow](GCP_PREVIEW_DATABASE.md). The backup
+job itself never creates roles or changes grants. Do not run migrations or seed
+commands merely to prepare a backup: the required pre-migration backup and
+independent restore must still precede Production maintenance.
 
-```sql
-GRANT pg_read_all_data TO "<exact-cloud-sql-iam-database-user>";
-REVOKE CREATE ON DATABASE "<exact-application-database>"
-  FROM "<exact-cloud-sql-iam-database-user>";
-REVOKE CREATE ON SCHEMA public, drizzle
-  FROM "<exact-cloud-sql-iam-database-user>";
+The exact permitted membership path is:
+
+```text
+<exact-cloud-sql-iam-database-user> -> simsa_backup_reader -> pg_read_all_data
 ```
 
+`simsa_backup_reader` is a fixed `NOLOGIN` role. Both membership edges must use
+`INHERIT TRUE`, `ADMIN FALSE`, and `SET FALSE`. Do not grant `pg_read_all_data`
+directly to the IAM login or add another direct/transitive membership or
+`SET ROLE` path; the bootstrap and backup checks reject such drift.
+
 Do not grant `pg_write_all_data`, `cloudsqlsuperuser`, object mutation
-privileges, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, or ADMIN OPTION. The workflow
-rechecks effective relation privileges and PostgreSQL role attributes every
-run and fails closed if access expands.
+privileges, database/schema `CREATE`, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, or
+ADMIN OPTION to the backup login or its policy role. The workflow rechecks exact
+membership closure, effective relation privileges, and PostgreSQL role
+attributes every run and fails closed if access expands.
 
 ## Two recovery secrets
 
