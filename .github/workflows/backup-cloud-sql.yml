@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 env:
-  POSTGRES_IMAGE: ${{ vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '16' && 'postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825' || vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '17' && 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' || 'invalid-postgres-major' }}
+  POSTGRES_IMAGE: ${{ vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '16' && 'postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825' || vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '17' && 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' || vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '18' && 'postgres:18-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af' || 'invalid-postgres-major' }}
   EXPECTED_POSTGRES_MAJOR: ${{ vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR }}
   CLOUD_SQL_PROXY_VERSION: '2.24.1'
   CLOUD_SQL_PROXY_SHA256: fae2766aac9d614a2bdef2f2a7778f3d054f3acd5ff07a81a9e300bd471512eb
@@ -99,7 +99,7 @@ jobs:
           require('EXPECTED_INSTANCE', r'[a-z][a-z0-9-]{0,96}[a-z0-9]')
           database = require('EXPECTED_DATABASE', r'[A-Za-z_][A-Za-z0-9_-]{0,62}')
           database_user = require('EXPECTED_DATABASE_USER', r'[A-Za-z0-9_.@-]{1,63}')
-          require('EXPECTED_POSTGRES_MAJOR', r'(?:16|17)')
+          require('EXPECTED_POSTGRES_MAJOR', r'(?:16|17|18)')
           require('WIF_PROVIDER', r'projects/[0-9]+/locations/global/workloadIdentityPools/[A-Za-z0-9_-]+/providers/[A-Za-z0-9_-]+')
           service_account = require(
               'WIF_SERVICE_ACCOUNT',
@@ -488,7 +488,7 @@ jobs:
 
     services:
       restore-db:
-        image: ${{ vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '16' && 'postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825' || vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '17' && 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' || 'invalid-postgres-major' }}
+        image: ${{ vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '16' && 'postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825' || vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '17' && 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' || vars.CLOUD_SQL_BACKUP_POSTGRES_MAJOR == '18' && 'postgres:18-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af' || 'invalid-postgres-major' }}
         env:
           POSTGRES_USER: simsa_restore
           POSTGRES_PASSWORD: restore-only-ephemeral

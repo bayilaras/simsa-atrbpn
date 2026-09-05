@@ -14,6 +14,12 @@ memakai identitas IAM project yang sama dan koneksi Cloud SQL Auth Proxy lokal.
 Jangan melemahkan batas tersebut dengan service-account JSON, password statis,
 atau `DATABASE_URL` Production hanya agar deployment dapat menyala.
 
+Matrix CI dan pemilihan client backup/restore mencakup PostgreSQL 16, 17, dan
+18 dengan image Debian Bookworm yang dipin per major. Ini menutup ketidakcocokan
+versi tooling ketika target menyediakan PostgreSQL 18, bukan bukti bahwa IAM,
+koneksi Starter, login Firebase, atau restore live sudah berfungsi. Workflow
+backup Cloud SQL Production tidak otomatis cocok untuk database Starter.
+
 Starter Tier membuat project terkelola yang terpisah dari project Firebase
 Spark yang sudah ada. Project itu mendukung Cloud Run, Firebase Authentication,
 Firestore, dan Cloud SQL developer edition, tetapi tidak dapat mengaktifkan API

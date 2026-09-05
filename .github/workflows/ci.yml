@@ -320,6 +320,8 @@ jobs:
             postgres_image: postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825
           - postgres_major: 17
             postgres_image: postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+          - postgres_major: 18
+            postgres_image: postgres:18-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
     env:
       POSTGRES_IMAGE: ${{ matrix.postgres_image }}
 

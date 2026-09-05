@@ -136,8 +136,8 @@ copy:
 | `CLOUD_SQL_BACKUP_WIF_PROVIDER` | Full WIF provider resource name |
 | `CLOUD_SQL_BACKUP_SERVICE_ACCOUNT` | Dedicated backup service-account email in the same project |
 
-Set repository variable `CLOUD_SQL_BACKUP_POSTGRES_MAJOR` to literal `16` or
-`17`, matching the source instance. It is non-secret compatibility metadata
+Set repository variable `CLOUD_SQL_BACKUP_POSTGRES_MAJOR` to literal `16`, `17`,
+or `18`, matching the source instance. It is non-secret compatibility metadata
 used by both jobs to select the same digest-pinned PostgreSQL image. Do not put
 Cloud SQL project, instance, database, WIF provider, or service-account
 variables on `gcp-production-restore-drill`.
@@ -147,6 +147,24 @@ multi-architecture yang dipin. Restore menjalankan `pg_restore --create` agar
 encoding, collation provider, locale, dan properti database dari archive benar-
 benar diuji; basis Debian menghindari false failure umum ketika locale libc
 Cloud SQL tidak tersedia pada musl/Alpine.
+
+CI menguji migrasi, seed, role, concurrency, dan profil backup pada ketiga major
+tersebut. Checker menolak perbedaan image antara CI, client backup, dan service
+restore, major yang tidak didukung, serta fallback ke major lain. Pemeriksaan
+`server_version_num` pada sumber tetap wajib; jangan memilih `17` untuk sumber
+`18`, karena client `pg_dump` yang lebih lama menolak server major yang lebih
+baru ([dokumentasi PostgreSQL](https://www.postgresql.org/docs/18/app-pgdump.html)).
+Image PostgreSQL 18 dipin ke manifest multi-architecture
+`sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af`,
+diverifikasi pada 2026-09-05 melalui [metadata tag Docker Official Image](https://hub.docker.com/v2/repositories/library/postgres/tags/18-bookworm).
+
+Dukungan major PostgreSQL bukan bukti bahwa workflow ini dapat mengakses
+database AI Studio Starter. Workflow tetap memerlukan WIF, private-IP proxy,
+dan principal backup least-privilege yang sudah diverifikasi; fitur managed
+backup/recovery pada Developer edition tidak tersedia
+([dokumentasi Cloud SQL](https://docs.cloud.google.com/sql/docs/postgres/ai-assisted-coding-and-cloud-sql)).
+Jangan menjalankan workflow Production
+ini terhadap database Starter atau menurunkan batas IAM untuk membuatnya lulus.
 
 The workflow deliberately has no database password and no service-account JSON
 key. The WIF service account needs only the Google Cloud permissions required to
@@ -269,6 +287,8 @@ diff. The validator checks protected triggers, action commit pins, secret
 separation, short retention, required evidence flow, and absence of migration
 or deployment commands. It also runs the offline role-alias parser/SQL-generation
 regression suite, including malformed/truncated metadata, protected identities,
-unexpected settings, and the explicit pre-migration zero-property case. It does
-not contact Google Cloud or read secrets. A passing static/local PostgreSQL 18
-test is not proof of a successful workflow or live PostgreSQL 16/17 restore.
+unexpected settings, and the explicit pre-migration zero-property case. Image
+consistency regressions also check each supported major, mismatched/mutable
+images, unknown-major fallback, and the actual source-version check. It does
+not contact Google Cloud or read secrets. Passing static or local PostgreSQL
+tests are not proof of a successful workflow or live PostgreSQL 16/17/18 restore.
