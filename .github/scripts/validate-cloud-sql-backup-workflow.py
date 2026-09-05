@@ -130,7 +130,7 @@ require(
     and "pg_catalog.to_jsonb(database_record)->>'daticulocale'" in evidence_text
     and "database_record.datlocale" not in evidence_text
     and "database_record.daticulocale" not in evidence_text,
-    "database locale evidence is not compatible with both PostgreSQL 16 and 17 catalogs",
+    "database locale evidence is not compatible with PostgreSQL 16, 17, and 18 catalogs",
 )
 require("retention-days: 14" in text, "artifact retention must remain short")
 require("cloud-sql-proxy" in text and "CLOUD_SQL_PROXY_SHA256" in text, "pinned proxy verification is missing")
@@ -162,14 +162,7 @@ require(
     and 'grep --fixed-strings --line-regexp --quiet "source_identity_sha256=$SOURCE_IDENTITY_SHA256"' in restore_job,
     "independent restore does not verify the source target identity hash in the sealed manifest",
 )
-require(
-    "postgres:16-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825" in text
-    and "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0" in text
-    and "CLOUD_SQL_BACKUP_POSTGRES_MAJOR" in text
-    and "server_version_num" in text,
-    "source and restore are not pinned to the same supported PostgreSQL major",
-)
-require("postgres:16-alpine" not in text and "postgres:17-alpine" not in text,
+require(re.search(r"postgres:[0-9]+-alpine", text) is None,
         "Alpine restore images are forbidden because they may not reproduce Cloud SQL libc locales")
 
 for action in re.findall(r"^\s*uses:\s*([^\s#]+)", text, flags=re.MULTILINE):
@@ -193,9 +186,10 @@ for forbidden in (
 
 # Already invoked by the required CI safety-gate step, so new helper regressions
 # cannot be omitted merely because the cloud workflow is not dispatched locally.
-subprocess.run(
-    [sys.executable, str(ROOT / ".github/scripts/test-prepare-restore-role-aliases.py")],
-    cwd=ROOT,
-    check=True,
-)
-print("backup-cloud-sql workflow static validation and role-alias self-tests passed")
+for helper in (
+    "check-postgres-workflow-images.py",
+    "test-postgres-workflow-images.py",
+    "test-prepare-restore-role-aliases.py",
+):
+    subprocess.run([sys.executable, str(ROOT / ".github/scripts" / helper)], cwd=ROOT, check=True)
+print("backup-cloud-sql workflow static validation, image consistency, and helper self-tests passed")
