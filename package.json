@@ -15,8 +15,9 @@
     "build:frontend": "npm --prefix frontend ci && npm --prefix frontend run build",
     "build:backend": "npm --prefix backend ci --include=dev && npm --prefix backend run build",
     "start": "node scripts/start-demo.mjs",
-    "test": "npm run test:manifest && npm run test:hosting && npm run test:launcher",
+    "test": "npm run test:manifest && npm run test:hosting && npm run test:launcher && npm run test:demo-image",
     "test:launcher": "node --test scripts/demo-launcher-config.test.mjs",
+    "test:demo-image": "node --test scripts/demo-image-config.test.mjs",
     "test:manifest": "npm --prefix frontend exec -- vitest run src/lib/build-manifest.test.js",
     "test:hosting": "npm --prefix backend exec -- vitest run src/__tests__/frontend-hosting.middleware.test.ts"
   }
