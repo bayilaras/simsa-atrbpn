@@ -191,10 +191,12 @@ web service boot.
 5. Uji logout, CSRF, RBAC/unit scope, CRUD metadata, ekspor metadata, restart,
    dan scale-to-zero/wake-up. Jangan unggah arsip asli.
 
-Docker daemon pada mesin pengembangan sebelumnya tidak tersedia, sehingga image
-`Dockerfile.demo` masih harus dibangun dan diuji pada runner/host Docker yang
-berfungsi sebelum digunakan. Kegagalan atau keberhasilan build source lokal
-tidak membuktikan kompatibilitas Starter Tier.
+Docker daemon lokal belum tersedia, tetapi build dan pemeriksaan image
+`Dockerfile.demo` telah lulus pada runner Linux dalam
+[CI PR #4](https://github.com/bayilaras/simsa-atrbpn/actions/runs/33943749921)
+untuk head `72ee8236a0ba491a1babe25b9232a25b78bd6da1`.
+Setiap perubahan berikutnya tetap memerlukan CI baru. Bukti image tersebut
+tidak membuktikan kompatibilitas Starter Tier atau koneksi cloud live.
 
 ## Pemeriksaan PR dan batas promosi
 
@@ -209,6 +211,14 @@ Approval untuk commit lama tidak berlaku untuk perubahan ini. Setelah merge,
 ulangi required checks pada merge commit sebelum provisioning atau promosi.
 Jangan mengaktifkan billing, mengubah project Spark `arsip-d16d3`, atau memakai
 data arsip asli untuk membuktikan kelayakan Starter Tier.
+
+Konfigurasi Vercel untuk root repositori, backend, frontend, dan dokumentasi
+menonaktifkan deployment otomatis dari `main`. Gate root juga penting ketika
+project dokumentasi memakai root repositori, bukan `docs-site` sebagai root.
+Semua entry point tersebut diuji oleh tes konfigurasi frontend. Promosi tetap
+harus dilakukan secara eksplisit setelah checks merge commit; jangan mengandalkan
+merge Git untuk mempromosikan alias Production. Mekanismenya mengikuti
+[konfigurasi Git Vercel](https://vercel.com/docs/project-configuration/git-configuration).
 
 Saat impor GitHub memerlukan OAuth/instalasi aplikasi baru, pemilik akun harus
 memeriksa dan menyetujui izin yang diminta. Batasi akses ke repositori ini bila

@@ -9,6 +9,16 @@ import { createVercelConfig } from '../../vercel.mjs'
 const frontendRoot = process.cwd()
 
 describe('Vercel API proxy configuration', () => {
+  it.each(['vercel.json', 'backend/vercel.json', 'docs-site/vercel.json'])(
+    'requires explicit Production promotion for the %s project root',
+    (relativePath) => {
+      const configuration = JSON.parse(readFileSync(
+        path.resolve(frontendRoot, '..', relativePath), 'utf8',
+      ))
+      expect(configuration.git?.deploymentEnabled?.main).toBe(false)
+    },
+  )
+
   it('uses the production backend only for a production deployment without an override', () => {
     const result = createVercelConfig({ deploymentEnvironment: 'production' })
 
