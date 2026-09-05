@@ -8,6 +8,17 @@ import { VitePWA } from "vite-plugin-pwa"
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 
+// Keep the service worker aligned with the server-side SPA fallback guard.
+// These namespaces belong exclusively to the API and operational probes,
+// Workbox tests pathname + search, while Express matches decoded paths without
+// the query string. Reserve case-insensitive roots with query boundaries too;
+// escaped pathnames must reach the server rather than an ambiguous cached shell.
+export const SPA_NAVIGATION_DENYLIST = Object.freeze([
+  /^\/api(?:\/|\?|$)/i,
+  /^\/(?:health|ready|internal)(?:\/|\?|$)/i,
+  /^[^?]*%/,
+])
+
 function validateClientApiTarget(command, mode) {
   const loadedEnvironment = loadEnv(mode, currentDirectory, '')
   const configuredApiUrl = (process.env.VITE_API_URL ?? loadedEnvironment.VITE_API_URL ?? '').trim()
@@ -44,15 +55,98 @@ function validateFirebaseBuildTarget(command, mode) {
   }
 }
 
+function buildEnvironment(mode) {
+  return {
+    ...loadEnv(mode, currentDirectory, ''),
+    ...process.env,
+  }
+}
+
+export function createSimsaBuildManifest(source = {}) {
+  const value = (name) => typeof source[name] === 'string' ? source[name].trim() : ''
+  const appMode = (value('VITE_APP_MODE') || 'full').toLowerCase()
+  const authProvider = (value('VITE_AUTH_PROVIDER') || 'better-auth').toLowerCase()
+  const storageProvider = (value('VITE_STORAGE_PROVIDER') || 'vercel-blob').toLowerCase()
+
+  if (!['full', 'metadata-demo'].includes(appMode)) {
+    throw new Error('VITE_APP_MODE must be full or metadata-demo for deployment builds.')
+  }
+  if (!['better-auth', 'firebase'].includes(authProvider)) {
+    throw new Error('VITE_AUTH_PROVIDER must be better-auth or firebase for deployment builds.')
+  }
+  if (!['vercel-blob', 'gcs', 'disabled'].includes(storageProvider)) {
+    throw new Error('VITE_STORAGE_PROVIDER has an unsupported deployment value.')
+  }
+
+  if (appMode === 'metadata-demo') {
+    if ((value('VITE_APP_PROFILE') || 'internal').toLowerCase() !== 'internal') {
+      throw new Error('Metadata demo builds require VITE_APP_PROFILE=internal.')
+    }
+    if (value('VITE_API_URL')) {
+      throw new Error('Metadata demo builds require a same-origin API and an empty VITE_API_URL.')
+    }
+    if (storageProvider !== 'disabled') {
+      throw new Error('Metadata demo builds require VITE_STORAGE_PROVIDER=disabled.')
+    }
+    if (value('VITE_FEATURE_SRIKANDI').toLowerCase() === 'true') {
+      throw new Error('Metadata demo builds cannot enable SRIKANDI.')
+    }
+
+    if (authProvider === 'better-auth') {
+      const localBuild = value('SIMSA_DEMO_LOCAL_BUILD') === 'true'
+      const nonDeployed = !value('K_SERVICE')
+        && !value('VERCEL')
+      if (!localBuild || !nonDeployed) {
+        throw new Error('Better Auth metadata demo builds are allowed only by the explicit local build gate.')
+      }
+    }
+  }
+
+  const firebase = authProvider === 'firebase'
+    ? {
+        projectId: value('VITE_FIREBASE_PROJECT_ID'),
+        authDomain: value('VITE_FIREBASE_AUTH_DOMAIN'),
+        appId: value('VITE_FIREBASE_APP_ID'),
+      }
+    : null
+
+  return {
+    schemaVersion: 1,
+    mode: appMode,
+    syntheticDataOnly: appMode === 'metadata-demo',
+    api: 'same-origin',
+    authProvider,
+    storageProvider,
+    firebase,
+  }
+}
+
+function buildManifestPlugin(manifest) {
+  return {
+    name: 'simsa-build-manifest',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'simsa-build.json',
+        source: `${JSON.stringify(manifest)}\n`,
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   validateClientApiTarget(command, mode)
   validateFirebaseBuildTarget(command, mode)
+  const manifest = command === 'build'
+    ? createSimsaBuildManifest(buildEnvironment(mode))
+    : null
 
   return {
   plugins: [
     react(),
     tailwindcss(),
+    ...(manifest ? [buildManifestPlugin(manifest)] : []),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icons/*.png', 'robots.txt'],
@@ -129,8 +223,10 @@ export default defineConfig(({ command, mode }) => {
             }
           }
         ],
-        // API URLs are never navigation fallbacks or precache candidates.
-        navigateFallbackDenylist: [/^\/api\//],
+        // API and operational URLs are never navigation fallbacks. Mirroring
+        // the backend namespaces prevents an installed service worker from
+        // returning a cached SPA shell for a failed health/auth request.
+        navigateFallbackDenylist: SPA_NAVIGATION_DENYLIST,
         // Precache important static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}']
       },

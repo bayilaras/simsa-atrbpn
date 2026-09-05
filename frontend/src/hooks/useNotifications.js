@@ -1,11 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { notificationService } from '../services/notification.service'
 import settingsService, { PREFERENCES_CHANGED_EVENT } from '../services/settings.service'
-import { API_BASE_URL } from '../lib/api-url'
 import { notificationMatchesFilter } from '../lib/notification-routing'
 
-// Use the same base URL pattern as other services
-const API_BASE = API_BASE_URL
 const EMPTY_COUNTS = {
     total: 0, urgent: 0, warning: 0, info: 0,
     suratMasuk: 0, arsipRetensi: 0, distribusi: 0,
@@ -80,16 +77,7 @@ export function useNotifications({ unitKerjaId = '', limit = 20, refreshInterval
         }
         try {
             setError(null)
-            const response = await fetch(
-                `${API_BASE}/api/notifications?unitKerjaId=${encodeURIComponent(unitKerjaId)}&limit=${limit}`,
-                { credentials: 'include' }
-            )
-
-            if (!response.ok) {
-                throw new Error('Failed to fetch notifications')
-            }
-
-            const data = await response.json()
+            const data = await notificationService.getAll({ unitKerjaId, limit })
             setNotifications(data.notifications || [])
             setCounts(data.counts || EMPTY_COUNTS)
         } catch (err) {

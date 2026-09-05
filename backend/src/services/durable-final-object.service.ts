@@ -1,5 +1,8 @@
 import { sql, type SQL } from 'drizzle-orm';
-import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
+import {
+    buildCloudPlatformConfig,
+    type SimsaStorageProvider,
+} from '../config/cloud-platform.js';
 import { pool } from '../config/database.js';
 import { loadFinalObjectRetentionPolicy } from '../config/final-object-retention.js';
 import {
@@ -8,6 +11,7 @@ import {
 } from '../storage/gcs.adapter.js';
 import { requireImmutableObjectGeneration } from '../storage/locator.js';
 import type { CopyFileOptions, StoredFile, UploadFileOptions } from '../storage/types.js';
+import { ServiceUnavailableError } from '../utils/errors.js';
 import { createLogger } from '../utils/logger.js';
 import { blobStorageService } from './blob-storage.service.js';
 
@@ -83,7 +87,7 @@ export class PostgresApiFinalObjectRepository implements ApiFinalObjectRepositor
 }
 
 interface DurableFinalObjectServiceOptions {
-    provider?: () => 'gcs' | 'vercel-blob';
+    provider?: () => SimsaStorageProvider;
     repository?: ApiFinalObjectRepository;
     gcs?: () => GcsStorageAdapter;
     now?: () => Date;
@@ -92,7 +96,7 @@ interface DurableFinalObjectServiceOptions {
 }
 
 export class DurableFinalObjectService {
-    private readonly provider: () => 'gcs' | 'vercel-blob';
+    private readonly provider: () => SimsaStorageProvider;
     private readonly repository: ApiFinalObjectRepository;
     private readonly gcs: () => GcsStorageAdapter;
     private readonly now: () => Date;
@@ -115,6 +119,14 @@ export class DurableFinalObjectService {
 
     private notBefore(): Date {
         return new Date(this.now().getTime() + this.minimumObjectAgeMs());
+    }
+
+    private requireStorageProvider(): Exclude<SimsaStorageProvider, 'disabled'> {
+        const provider = this.provider();
+        if (provider === 'disabled') {
+            throw new ServiceUnavailableError('Object storage is disabled for this deployment.');
+        }
+        return provider;
     }
 
     private async reserve(
@@ -163,7 +175,7 @@ export class DurableFinalObjectService {
     }
 
     async upload(ownerId: string, options: UploadFileOptions): Promise<FinalObjectWrite> {
-        if (this.provider() !== 'gcs') {
+        if (this.requireStorageProvider() !== 'gcs') {
             return { stored: await this.legacy.uploadFile(options), candidate: null };
         }
         const storage = this.gcs();
@@ -182,7 +194,7 @@ export class DurableFinalObjectService {
     }
 
     async copy(ownerId: string, options: CopyFileOptions): Promise<FinalObjectWrite> {
-        if (this.provider() !== 'gcs') {
+        if (this.requireStorageProvider() !== 'gcs') {
             return { stored: await this.legacy.copyFile(options), candidate: null };
         }
         const storage = this.gcs();
@@ -206,6 +218,7 @@ export class DurableFinalObjectService {
         write: FinalObjectWrite,
     ): Promise<void> {
         if (!write.candidate) return;
+        this.requireStorageProvider();
         if (!await this.repository.markReferenced(executor, write.candidate)) {
             throw new Error('Final object cleanup reservation could not be bound to its database reference');
         }
@@ -221,6 +234,7 @@ export class DurableFinalObjectService {
             }, 'Final object remains fenced in the durable cleanup queue after transaction rollback');
             return;
         }
+        this.requireStorageProvider();
         const deleted = await this.legacy.deleteFile(write.stored.url);
         if (!deleted) {
             log.error({ locator: write.stored.url, err: cause },

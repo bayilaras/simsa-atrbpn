@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { Download, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react';
-import { API_BASE_URL } from '@/lib/api-url';
-
-const API_BASE = API_BASE_URL;
+import api from '@/services/api';
 
 /**
  * ExportButton - dropdown for exporting data in Excel/PDF
@@ -28,17 +26,9 @@ const ExportButton = ({ type, filters = {} }) => {
                 queryParams.set('formulirType', formulirType);
             }
 
-            const url = `${API_BASE}/api/export/${type}/${format}?${queryParams}`;
-
-            const response = await fetch(url, {
-                method: 'GET',
-                credentials: 'include',
+            const response = await api.get(`/api/export/${type}/${format}`, Object.fromEntries(queryParams), {
+                responseType: 'response',
             });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `Export failed with status ${response.status}`);
-            }
 
             const contentDisposition = response.headers.get('Content-Disposition');
             let filename = `${type}-export.${format === 'excel' ? 'xlsx' : 'pdf'}`;

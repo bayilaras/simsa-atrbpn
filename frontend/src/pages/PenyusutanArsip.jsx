@@ -176,15 +176,31 @@ export default function PenyusutanArsip() {
     }
 
     // Print
-    const handlePrint = (type, batchId) => {
+    const handlePrint = async (type, batchId) => {
         if (!unitKerjaId) return
-        let url = ''
-        if (type === 'daftar-arsip-aktif' || type === 'daftar-arsip-inaktif') {
-            url = penyusutanService.getPrintUrl(type, { unitKerjaId })
-        } else {
-            url = penyusutanService.getBatchPrintUrl(batchId, type, unitKerjaId)
+        // Open synchronously to keep the user's print action outside popup blocking.
+        const viewer = window.open('about:blank', '_blank')
+        if (viewer) viewer.opener = null
+        try {
+            const blob = type === 'daftar-arsip-aktif' || type === 'daftar-arsip-inaktif'
+                ? await penyusutanService.getPrintDocument(type, { unitKerjaId })
+                : await penyusutanService.getBatchPrintDocument(batchId, type, unitKerjaId)
+            const url = URL.createObjectURL(blob)
+            window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+            if (viewer) {
+                viewer.location.replace(url)
+            } else {
+                const link = document.createElement('a')
+                link.href = url
+                link.download = `${type}.pdf`
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+            }
+        } catch (err) {
+            viewer?.close()
+            toast({ title: 'Cetak gagal', description: err.message || 'Dokumen belum dapat dicetak', variant: 'destructive' })
         }
-        if (url) window.open(url, '_blank')
     }
 
     const toggleCandidate = (id) => {

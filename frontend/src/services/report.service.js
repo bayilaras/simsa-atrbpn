@@ -30,13 +30,9 @@ export const reportService = {
 
     // Export Reports
     exportReport: async (type, format, params) => {
-        const queryParams = new URLSearchParams(scopedParams(params)).toString();
-        const url = `${api.baseUrl}${API_BASE}/export/${type}/${format}?${queryParams}`;
-
-        const response = await fetch(url, { credentials: 'include' });
-        if (!response.ok) throw new Error('Export failed');
-
-        const blob = await response.blob();
+        const blob = await api.get(`${API_BASE}/export/${type}/${format}`, scopedParams(params), {
+            responseType: 'blob',
+        });
         const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = downloadUrl;

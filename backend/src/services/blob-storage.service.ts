@@ -1,4 +1,5 @@
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
+import { assertDemoStorageUnavailable } from '../config/demo.js';
 import { GcsStorageAdapter } from '../storage/gcs.adapter.js';
 import { parseGcsLocator } from '../storage/locator.js';
 import type {
@@ -57,11 +58,13 @@ export class BlobStorageService {
     }
 
     private primary(): ObjectStorageAdapter {
+        assertDemoStorageUnavailable();
         const config = buildCloudPlatformConfig();
         return config.storageProvider === 'gcs' ? this.gcsAdapter() : this.vercel;
     }
 
     private untrustedUploadTarget(): ObjectStorageAdapter {
+        assertDemoStorageUnavailable();
         const config = buildCloudPlatformConfig();
         if (config.storageProvider !== 'gcs') return this.vercel;
 
@@ -74,6 +77,7 @@ export class BlobStorageService {
     }
 
     private adapterFor(locator: string): ObjectStorageAdapter {
+        assertDemoStorageUnavailable();
         if (this.vercel.accepts(locator)) return this.vercel;
         if (locator.startsWith('gs://')) {
             const parsed = parseGcsLocator(locator);

@@ -1,0 +1,88 @@
+ARG NODE_IMAGE=node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e
+
+FROM ${NODE_IMAGE} AS frontend-build
+WORKDIR /build/frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/index.html frontend/vite.config.js frontend/jsconfig.json frontend/tsconfig.json ./
+COPY frontend/public ./public
+COPY frontend/src ./src
+
+# These values are public Firebase Web configuration, never service-account
+# credentials. Leave VITE_API_URL empty so every browser request remains on the
+# service origin. A Firebase build deliberately fails unless all required
+# public values are supplied as build arguments.
+ARG VITE_AUTH_PROVIDER=firebase
+ARG VITE_STORAGE_PROVIDER=disabled
+ARG VITE_FIREBASE_API_KEY=
+ARG VITE_FIREBASE_AUTH_DOMAIN=
+ARG VITE_FIREBASE_PROJECT_ID=
+ARG VITE_FIREBASE_APP_ID=
+ARG VITE_FIREBASE_STORAGE_BUCKET=
+ARG VITE_FIREBASE_MESSAGING_SENDER_ID=
+ARG VITE_FIREBASE_APP_CHECK_SITE_KEY=
+ENV VITE_API_URL="" \
+    VITE_APP_MODE=metadata-demo \
+    VITE_APP_PROFILE=internal \
+    VITE_AUTH_PROVIDER=${VITE_AUTH_PROVIDER} \
+    VITE_STORAGE_PROVIDER=${VITE_STORAGE_PROVIDER} \
+    VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY} \
+    VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN} \
+    VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID} \
+    VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID} \
+    VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET} \
+    VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID} \
+    VITE_FIREBASE_APP_CHECK_SITE_KEY=${VITE_FIREBASE_APP_CHECK_SITE_KEY}
+RUN npm run build
+
+FROM ${NODE_IMAGE} AS backend-build
+WORKDIR /build/backend
+
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci
+
+COPY backend/tsconfig.json backend/drizzle.config.ts ./
+COPY backend/src ./src
+RUN npm run build
+
+FROM ${NODE_IMAGE} AS runtime
+ENV NODE_ENV=production \
+    PORT=8080 \
+    SIMSA_FRONTEND_DIST=/app/frontend-dist \
+    SIMSA_APP_MODE=metadata-demo \
+    SIMSA_CLOUD_PLATFORM=gcp \
+    APP_PROFILE=internal \
+    AUTH_PROVIDER=firebase \
+    OBJECT_STORAGE_PROVIDER=disabled \
+    SRIKANDI_ENABLED=false \
+    MALWARE_SCANNER_MODE=disabled \
+    MALWARE_SCAN_WORKER_ENABLED=false
+WORKDIR /app/backend
+
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci --omit=dev \
+    && rm -rf \
+        node_modules/drizzle-kit \
+        node_modules/vitest \
+        node_modules/@vitest \
+        node_modules/vite \
+        node_modules/vite-node \
+        node_modules/tsx \
+        node_modules/.bin/drizzle-kit \
+        node_modules/.bin/vitest \
+        node_modules/.bin/vite \
+        node_modules/.bin/vite-node \
+        node_modules/.bin/tsx \
+    && npm cache clean --force
+
+COPY --from=backend-build --chown=node:node /build/backend/dist ./dist
+COPY --from=frontend-build --chown=node:node /build/frontend/dist /app/frontend-dist
+
+USER node
+EXPOSE 8080
+
+# Schema migration and seeding remain controlled maintenance operations and
+# are intentionally never run during a web-service startup.
+CMD ["node", "dist/index.js"]

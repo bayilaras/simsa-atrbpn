@@ -9,6 +9,7 @@ COPY tsconfig.json drizzle.config.ts ./
 COPY src ./src
 COPY scripts/apply-database-role-bootstrap.mjs ./scripts/apply-database-role-bootstrap.mjs
 COPY scripts/apply-database-grant-convergence.mjs ./scripts/apply-database-grant-convergence.mjs
+COPY scripts/migrate-database.mjs ./scripts/migrate-database.mjs
 RUN npm run build
 
 # Deliberately separate from the API runtime. This target contains the reviewed

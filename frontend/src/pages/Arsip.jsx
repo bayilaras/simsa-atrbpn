@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
+import { useAppConfig } from '@/context/app-config-context'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { Archive, RefreshCw, Search, Eye, Clock, Upload, ChevronUp, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X } from 'lucide-react'
@@ -59,6 +60,7 @@ export default function Arsip() {
     const { tab } = useParams()
     const navigate = useNavigate()
     const { user, canWrite } = useAuth()
+    const { capabilities } = useAppConfig()
     const isAdmin = canWrite()
     const isSuperAdmin = user?.role === 'super_admin'
 
@@ -215,7 +217,7 @@ export default function Arsip() {
                         }}
                     />
 
-                    {isAdmin && (
+                    {isAdmin && capabilities.files && (
                         <Button asChild variant="default" size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
                             <Link to="/bulk-upload">
                                 <Upload className="mr-2 h-3.5 w-3.5" />

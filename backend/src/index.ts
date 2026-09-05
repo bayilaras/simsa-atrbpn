@@ -2,6 +2,7 @@ import app from './app';
 import { env, malwareScanConfig, validateEnv } from './config/env';
 import { logger } from './utils/logger';
 import { malwareScanWorker } from './services/malware-scan.worker.js';
+import { getDemoListenHost, isMetadataDemo } from './config/demo.js';
 
 // Validate environment variables
 try {
@@ -13,10 +14,15 @@ try {
 
 // Start server
 const PORT = env.PORT;
+const listenHost = getDemoListenHost();
 
-const server = app.listen(PORT, () => {
+const server = app.listen({
+    port: PORT,
+    ...(listenHost ? { host: listenHost } : {}),
+}, () => {
     logger.info({
         port: PORT,
+        host: listenHost,
         env: env.NODE_ENV,
         frontendUrl: env.FRONTEND_URL,
     }, `SIMSA Backend running at http://localhost:${PORT}`);
@@ -25,7 +31,9 @@ const server = app.listen(PORT, () => {
 // The worker uses atomic database claims, so multiple persistent application
 // instances may run it safely. Disabled/test environments keep every file in
 // quarantine because only an actual clean verdict changes release state.
-if (malwareScanConfig.worker.runtime === 'embedded') {
+if (isMetadataDemo()) {
+    logger.info('Metadata demo serves no file uploads and starts no background workers');
+} else if (malwareScanConfig.worker.runtime === 'embedded') {
     malwareScanWorker.start();
 } else {
     logger.info('Malware scanning is assigned to the external persistent worker');

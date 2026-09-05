@@ -147,6 +147,20 @@ describe('frontend/API integration contracts', () => {
         );
     });
 
+    it('fetches scoped penyusutan print documents through the authenticated API transport', async () => {
+        const pdf = new Blob(['pdf'], { type: 'application/pdf' });
+        apiMock.get.mockResolvedValue(pdf);
+
+        await expect(penyusutanService.getPrintDocument('daftar-arsip-aktif', { unitKerjaId: 'unit/a' })).resolves.toBe(pdf);
+        await expect(penyusutanService.getBatchPrintDocument('batch/a', 'berita-acara', 'unit/a')).resolves.toBe(pdf);
+        expect(apiMock.get).toHaveBeenNthCalledWith(1, '/api/penyusutan/print/daftar-arsip-aktif',
+            { unitKerjaId: 'unit/a' }, { responseType: 'blob' });
+        expect(apiMock.get).toHaveBeenNthCalledWith(2, '/api/penyusutan/batch%2Fa/print/berita-acara',
+            { unitKerjaId: 'unit/a' }, { responseType: 'blob' });
+        expect(() => penyusutanService.getBatchPrintDocument('batch', 'berita-acara', '')).toThrow(/unitKerjaId wajib/);
+        expect(() => penyusutanService.getPrintDocument('invalid', { unitKerjaId: 'unit/a' })).toThrow(/tidak didukung/);
+    });
+
     it('requests only server-qualified records for the authentication picker', async () => {
         const result = { data: [], total: 0 };
         apiMock.get.mockResolvedValue(result);

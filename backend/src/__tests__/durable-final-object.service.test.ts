@@ -5,6 +5,7 @@ import {
     type DurableFinalObjectCandidate,
 } from '../services/durable-final-object.service.js';
 import type { ApiFinalObjectPlan } from '../storage/gcs.adapter.js';
+import type { StoredFile } from '../storage/types.js';
 
 const plan: ApiFinalObjectPlan = {
     ownerId: '10000000-0000-4000-8000-000000000001',
@@ -123,6 +124,133 @@ describe('durable API final-object writes', () => {
             candidate,
         }, new Error('transaction rolled back'));
 
+        expect(legacy.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy provider behaviour unchanged outside metadata-only demo mode', async () => {
+        const stored: StoredFile = {
+            id: 'https://store.private.blob.vercel-storage.com/final/report.pdf',
+            name: 'report.pdf',
+            mimeType: 'application/pdf',
+            url: 'https://store.private.blob.vercel-storage.com/final/report.pdf',
+            downloadUrl: 'https://store.private.blob.vercel-storage.com/final/report.pdf',
+        };
+        const legacy = {
+            uploadFile: vi.fn().mockResolvedValue(stored),
+            copyFile: vi.fn().mockResolvedValue(stored),
+            deleteFile: vi.fn().mockResolvedValue(true),
+        };
+        const gcs = vi.fn();
+        const repository: ApiFinalObjectRepository = {
+            reserve: vi.fn(),
+            record: vi.fn(),
+            markReferenced: vi.fn(),
+        };
+        const service = new DurableFinalObjectService({
+            provider: () => 'vercel-blob',
+            legacy,
+            gcs,
+            repository,
+        });
+
+        const write = await service.upload(plan.ownerId, {
+            fileName: 'report.pdf',
+            mimeType: 'application/pdf',
+            buffer: Buffer.from('%PDF'),
+            folder: 'autentikasi',
+        });
+        expect(write).toEqual({ stored, candidate: null });
+        expect(legacy.uploadFile).toHaveBeenCalledOnce();
+        expect(gcs).not.toHaveBeenCalled();
+        expect(repository.reserve).not.toHaveBeenCalled();
+    });
+
+    it('rejects disabled storage before any injected GCS, repository, or legacy dependency can run', async () => {
+        const repository: ApiFinalObjectRepository = {
+            reserve: vi.fn(),
+            record: vi.fn(),
+            markReferenced: vi.fn(),
+        };
+        const legacy = {
+            uploadFile: vi.fn(),
+            copyFile: vi.fn(),
+            deleteFile: vi.fn(),
+        };
+        const gcs = vi.fn();
+        const minimumObjectAgeMs = vi.fn(() => 1);
+        const service = new DurableFinalObjectService({
+            provider: () => 'disabled',
+            repository,
+            legacy,
+            gcs,
+            minimumObjectAgeMs,
+        });
+        const upload = {
+            fileName: 'blocked.pdf',
+            mimeType: 'application/pdf',
+            buffer: Buffer.from('%PDF'),
+            folder: 'autentikasi',
+        };
+
+        await expect(service.upload(plan.ownerId, upload)).rejects.toMatchObject({ statusCode: 503 });
+        await expect(service.copy(plan.ownerId, {
+            sourceUrl: plan.locator,
+            sourceGeneration: '1',
+            fileName: 'blocked.pdf',
+            mimeType: 'application/pdf',
+            folder: 'autentikasi',
+        })).rejects.toMatchObject({ statusCode: 503 });
+
+        expect(gcs).not.toHaveBeenCalled();
+        expect(minimumObjectAgeMs).not.toHaveBeenCalled();
+        expect(repository.reserve).not.toHaveBeenCalled();
+        expect(repository.record).not.toHaveBeenCalled();
+        expect(legacy.uploadFile).not.toHaveBeenCalled();
+        expect(legacy.copyFile).not.toHaveBeenCalled();
+    });
+
+    it('rejects disabled storage before injected reference or compensation I/O', async () => {
+        const repository: ApiFinalObjectRepository = {
+            reserve: vi.fn(),
+            record: vi.fn(),
+            markReferenced: vi.fn(),
+        };
+        const legacy = {
+            uploadFile: vi.fn(),
+            copyFile: vi.fn(),
+            deleteFile: vi.fn(),
+        };
+        const service = new DurableFinalObjectService({
+            provider: () => 'disabled',
+            repository,
+            legacy,
+        });
+        const candidate: DurableFinalObjectCandidate = {
+            provider: 'gcs',
+            ownerId: plan.ownerId,
+            cleanupToken: plan.cleanupToken,
+            locator: plan.locator,
+            generation: '1735689600123456',
+        };
+        const legacyWrite = {
+            stored: {
+                id: 'legacy',
+                name: 'legacy.pdf',
+                mimeType: 'application/pdf',
+                url: 'https://store.private.blob.vercel-storage.com/final/legacy.pdf',
+                downloadUrl: 'https://store.private.blob.vercel-storage.com/final/legacy.pdf',
+            },
+            candidate: null,
+        };
+
+        await expect(service.markReferenced({ execute: vi.fn() }, {
+            stored: legacyWrite.stored,
+            candidate,
+        })).rejects.toMatchObject({ statusCode: 503 });
+        await expect(service.compensate(legacyWrite, new Error('rollback')))
+            .rejects.toMatchObject({ statusCode: 503 });
+
+        expect(repository.markReferenced).not.toHaveBeenCalled();
         expect(legacy.deleteFile).not.toHaveBeenCalled();
     });
 });

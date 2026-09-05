@@ -1,5 +1,5 @@
 const AUTH_PROVIDERS = new Set(['better-auth', 'firebase']);
-const STORAGE_PROVIDERS = new Set(['vercel-blob', 'gcs']);
+const STORAGE_PROVIDERS = new Set(['vercel-blob', 'gcs', 'disabled']);
 
 function normalizeProvider(value, fallback, allowed, variableName) {
     const provider = typeof value === 'string' && value.trim()
@@ -36,3 +36,4 @@ export const AUTH_PROVIDER = CLOUD_PROVIDER_CONFIG.authProvider;
 export const STORAGE_PROVIDER = CLOUD_PROVIDER_CONFIG.storageProvider;
 export const USE_FIREBASE_AUTH = AUTH_PROVIDER === 'firebase';
 export const USE_GCS_STORAGE = STORAGE_PROVIDER === 'gcs';
+export const FILE_STORAGE_DISABLED = STORAGE_PROVIDER === 'disabled';

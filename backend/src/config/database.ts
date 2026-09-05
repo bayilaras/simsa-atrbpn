@@ -32,6 +32,10 @@ function strictBoolean(
     throw new Error(`${name} must be true or false`);
 }
 
+function utcSessionOptions(configuredOptions: string | undefined): string {
+    return [configuredOptions?.trim(), '-c timezone=UTC'].filter(Boolean).join(' ');
+}
+
 export function buildDatabasePoolConfig(
     source: NodeJS.ProcessEnv = process.env,
 ): PoolConfig {
@@ -62,6 +66,11 @@ export function buildDatabasePoolConfig(
             'DB_CONNECT_TIMEOUT_MS',
         ),
         application_name: applicationName,
+        // Drizzle maps timestamp-without-time-zone columns as UTC and writes
+        // JavaScript Dates as UTC. Set the session before its first query so
+        // PostgreSQL defaultNow() values follow the same convention, regardless
+        // of the host/cluster timezone. Preserve other operator startup options.
+        options: utcSessionOptions(source.PGOPTIONS),
     };
 
     const connectionString = source.DATABASE_URL?.trim();
@@ -83,6 +92,17 @@ export function buildDatabasePoolConfig(
         throw new Error('Configure only one of CLOUD_SQL_UNIX_SOCKET or DB_HOST');
     }
     if (connectionString) {
+        // node-postgres lets URL options override the PoolConfig options field.
+        // Preserve the last URL options value (its existing precedence), then
+        // enforce UTC last so a URL or PGOPTIONS cannot reintroduce clock drift.
+        const url = new URL(connectionString);
+        if (url.searchParams.has('options')) {
+            // An empty final URL value falls back to PGOPTIONS in the driver;
+            // retain that fallback so read-only and timeout settings survive.
+            const configuredOptions = url.searchParams.getAll('options').at(-1) || source.PGOPTIONS;
+            url.searchParams.set('options', utcSessionOptions(configuredOptions));
+            return { ...shared, connectionString: url.toString() };
+        }
         return { ...shared, connectionString };
     }
 

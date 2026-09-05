@@ -41,10 +41,69 @@ Manifest juga memuat `backup_role_membership_closure=exact`; restore drill dan
 maintenance gate menolak artifact bila exact closure proof tersebut hilang.
 
 A separate job on a fresh runner downloads that artifact, validates its hashes,
-streams decryption directly into `pg_restore`, restores into an ephemeral
+authenticates the complete encrypted archive while inspecting its database
+properties, streams decryption directly into `pg_restore`, restores into an ephemeral
 PostgreSQL service, reruns the existing evidence collector, and requires an
 exact match. The workflow never executes migrations, seed commands, deployment,
 or Production data mutation.
+
+### Portable database-role settings
+
+`pg_dump --no-owner --no-privileges` still includes `ALTER ROLE ... IN DATABASE`
+in the `DATABASE PROPERTIES` entry. Source IAM login names normally do not exist
+on an independent restore host. Ignoring this entry would also stop testing the
+archive's database properties; using the restore login as a substitute does not
+preserve the meaning of role-specific settings.
+
+The restore job therefore performs this bounded procedure **only inside its
+disposable PostgreSQL service**, never on the source Cloud SQL instance:
+
+1. Verify the sealed hashes, then decrypt through `pg_restore --create --list`.
+   The metadata pipeline drains the entire remaining input and checks both
+   process statuses; early `pg_restore` exit must not bypass final `age` chunk
+   authentication. The initial TOC pass is unfiltered, includes the exact source
+   database, and must have its complete entry count.
+2. Select only the `DATABASE PROPERTIES` TOC ID for SQL inspection. PostgreSQL
+   additionally emits `CREATE DATABASE`, session, and reconnect wrappers when
+   `--create` is used. The helper validates those bounded wrappers and the exact
+   database name but **never executes the extracted SQL**. No application rows
+   or plaintext custom-format dump are written to disk.
+3. Require seven distinct source principals with the eight canonical bootstrap
+   settings: six `search_path=pg_catalog, public`, plus the migrator's
+   `search_path=public` and `role=simsa_migrator`. The four runtime IAM principals
+   must belong to one exact source project. Unknown SQL/settings, unsafe names,
+   fixed/protected role names, target identity collisions, and pre-existing
+   aliases fail closed. A changed valid database/locale syntax or custom setting
+   needs an explicit reviewed helper extension, not a permissive fallback.
+4. Create absent source-name aliases with `NOLOGIN NOINHERIT`, no password,
+   PostgreSQL capabilities, or memberships. Restore the **full original archive**
+   with `--create --no-owner --no-privileges`; do not pass the filtered TOC to the
+   actual restore. Encoding, locale/provider, and database properties are kept.
+5. Before bootstrapping the seven different restore principals, verify the
+   restored database-role settings exactly match the inspected archive and each
+   alias remains inert: no login, inheritance, password, memberships, object/ACL
+   dependencies, sessions, or settings outside this database. Then atomically
+   `RESET ALL` for those aliases and `DROP ROLE` without `CASCADE`. Drift aborts
+   cleanup without removing or changing the aliases. The existing bootstrap and
+   grant convergence now establish settings/permissions for restore principals.
+
+The `pre_migration` profile may represent a legacy 0000–0020 database with no
+`DATABASE PROPERTIES` entry. That **zero-alias** case is accepted only when the
+complete, authenticated TOC proves the entry is absent, selected SQL contains
+no role properties, and the restored database has no database-role settings.
+An empty/truncated extraction is never evidence of absence. If the entry exists
+in either profile, all seven roles/eight canonical settings are mandatory;
+`post_migration` never accepts the zero-alias case. This does not waive the
+separate exact migration-history or backup-role checks.
+
+The lifecycle SQL deliberately requires the exact ephemeral PostgreSQL
+superuser created by the Docker service. It is **not** a managed Cloud SQL
+superuser workaround or permission grant. Recovery directly into managed Cloud
+SQL still requires a separately reviewed IAM/capability-aware recovery runbook.
+On failure, do not blindly rerun against an existing database or reuse aliases:
+preserve the evidence and use a new disposable instance (or explicitly preserve
+and diagnose the failed local test database). No automatic destructive cleanup
+or `DROP ... CASCADE` is performed.
 
 ## Protected Environment configuration
 
@@ -208,4 +267,8 @@ python .github/scripts/validate-cloud-sql-backup-workflow.py
 Then parse the YAML with the repository's trusted YAML tool and inspect the
 diff. The validator checks protected triggers, action commit pins, secret
 separation, short retention, required evidence flow, and absence of migration
-or deployment commands; it does not contact Google Cloud or read secrets.
+or deployment commands. It also runs the offline role-alias parser/SQL-generation
+regression suite, including malformed/truncated metadata, protected identities,
+unexpected settings, and the explicit pre-migration zero-property case. It does
+not contact Google Cloud or read secrets. A passing static/local PostgreSQL 18
+test is not proof of a successful workflow or live PostgreSQL 16/17 restore.

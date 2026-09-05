@@ -102,6 +102,7 @@ class ApiClient {
     }
 
     async request(endpoint, options = {}, retryCount = 0) {
+        options.signal?.throwIfAborted();
         const url = `${this.baseUrl}${endpoint}`;
         const method = (options.method || 'GET').toUpperCase();
         const responseType = options.responseType || 'json';
@@ -150,8 +151,12 @@ class ApiClient {
 
         let response;
         try {
+            options.signal?.throwIfAborted();
             response = await fetch(url, config);
-        } catch {
+        } catch (error) {
+            // Cancellation is intentional, not a network outage. In particular,
+            // never retry a document fetch after its viewer has been closed.
+            if (options.signal?.aborted || error?.name === 'AbortError') throw error;
             // Network error (offline, DNS failure, etc.) — retry once.
             // Only safe/idempotent methods may be retried: a dropped connection can
             // happen after the server already processed a mutation, so re-sending a
@@ -214,6 +219,9 @@ class ApiClient {
             );
         }
 
+        // File consumers sometimes need Content-Disposition or a bounded stream.
+        // Return it only after applying the same auth/error handling as JSON.
+        if (responseType === 'response') return response;
         if (responseType === 'blob') return response.blob();
         if (responseType === 'arrayBuffer') return response.arrayBuffer();
         if (responseType === 'text') return response.text();

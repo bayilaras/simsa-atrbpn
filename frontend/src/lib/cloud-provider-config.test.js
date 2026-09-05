@@ -19,6 +19,16 @@ describe('cloud provider configuration', () => {
         });
     });
 
+    it('accepts an explicit disabled storage provider for metadata-only deployments', () => {
+        expect(resolveCloudProviderConfig({
+            VITE_AUTH_PROVIDER: 'firebase',
+            VITE_STORAGE_PROVIDER: ' DISABLED ',
+        })).toEqual({
+            authProvider: 'firebase',
+            storageProvider: 'disabled',
+        });
+    });
+
     it('fails closed on unknown provider values', () => {
         expect(() => resolveCloudProviderConfig({ VITE_AUTH_PROVIDER: 'unknown' }))
             .toThrow(/VITE_AUTH_PROVIDER tidak valid/);

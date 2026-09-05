@@ -228,6 +228,9 @@ async function uploadFileToVercelBlob(file, { folder = 'uploads', purpose, ruleS
 }
 
 export async function uploadFileToBlob(file, options = {}) {
+    if (STORAGE_PROVIDER === 'disabled') {
+        throw new Error('Unggah berkas dinonaktifkan pada demo metadata.');
+    }
     if (STORAGE_PROVIDER === 'gcs') return uploadFileToGcs(file, options);
     return uploadFileToVercelBlob(file, options);
 }

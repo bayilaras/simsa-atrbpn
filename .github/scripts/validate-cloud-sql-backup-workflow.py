@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -92,6 +94,30 @@ require(
     and "pg_restore --exit-on-error --create" in text,
     "restore does not bootstrap the fixed owner role and converge versioned ACLs",
 )
+require(
+    'pg_restore --create --list' in restore_job
+    and 'prepare-restore-role-aliases.py" select-toc' in restore_job
+    and 'prepare-restore-role-aliases.py" prepare' in restore_job
+    and '--toc-input "$ROLE_METADATA_DIR/archive.toc.list"' in restore_job
+    and '--use-list /metadata/database-properties.list --file=-' in restore_job
+    and restore_job.count('exit "$metadata_status"') == 2
+    and restore_job.count('cat > /dev/null') == 2,
+    "restore metadata must include complete DATABASE PROPERTIES and fully drain authenticated decryption",
+)
+require(
+    restore_job.index('prepare-restore-role-aliases.py" prepare')
+    < restore_job.index('CREATE ROLE "simsa-api-runtime@simsa-restore-drill.iam" LOGIN;')
+    < restore_job.index('--file /aliases/prepare-aliases.sql')
+    < restore_job.index('pg_restore --exit-on-error --create')
+    < restore_job.index('--file /aliases/cleanup-aliases.sql')
+    < restore_job.index('--file /grants/0001_bootstrap_cloud_sql_roles.sql'),
+    "inert source aliases must be validated before mutation and removed before restore-principal bootstrap",
+)
+restore_command = re.search(r"pg_restore --exit-on-error --create[^\n]*\n[^\n]*", restore_job)
+require(restore_command is not None
+        and '--no-owner --no-privileges --dbname postgres' in restore_command.group(0)
+        and '--use-list' not in restore_command.group(0),
+        "the actual restore must retain the complete archive including database properties")
 evidence_text = (ROOT / ".github" / "scripts" / "collect-backup-evidence.sql").read_text(
     encoding="utf-8"
 )
@@ -165,4 +191,11 @@ for forbidden in (
 ):
     require(forbidden not in text.lower(), f"forbidden mutation command is present: {forbidden}")
 
-print("backup-cloud-sql workflow static validation passed")
+# Already invoked by the required CI safety-gate step, so new helper regressions
+# cannot be omitted merely because the cloud workflow is not dispatched locally.
+subprocess.run(
+    [sys.executable, str(ROOT / ".github/scripts/test-prepare-restore-role-aliases.py")],
+    cwd=ROOT,
+    check=True,
+)
+print("backup-cloud-sql workflow static validation and role-alias self-tests passed")

@@ -1,6 +1,7 @@
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useAppConfig } from '@/context/app-config-context';
 import { suratKeluarService } from '@/services/surat-keluar.service';
 import { suratMasukService } from '@/services/surat-masuk.service';
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker';
@@ -114,6 +115,8 @@ export default function TambahSuratKeluar() {
     const { id } = useParams(); // Get ID from URL for edit mode
     const isEditMode = Boolean(id);
     const { user } = useAuth();
+    const { capabilities } = useAppConfig();
+    const filesEnabled = capabilities.files;
     const navigate = useNavigate();
     const location = useLocation();
     const fileInputRef = useRef(null);
@@ -197,11 +200,11 @@ export default function TambahSuratKeluar() {
                 klasifikasiSubstantifKode: data.klasifikasiSubstantifKode || '',
                 // Historical rows without explicit metadata remain fail-closed.
                 klasifikasiKeamanan: data.klasifikasiKeamanan || 'terbatas',
-                linkDokumen: data.linkDokumen || '',
+                linkDokumen: filesEnabled ? (data.linkDokumen || '') : '',
                 balasanUntuk: data.balasanUntuk || null,
             });
             // Track existing file info
-            if (data.filePath) {
+            if (filesEnabled && data.filePath) {
                 setExistingFile({
                     path: data.filePath,
                     name: data.fileOriginalName || (data.filePath.startsWith('blob:') || data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
@@ -222,7 +225,7 @@ export default function TambahSuratKeluar() {
         } finally {
             setIsLoading(false);
         }
-    }, [id]);
+    }, [filesEnabled, id]);
 
     // Fetch existing data for edit mode.
     useEffect(() => {
@@ -339,7 +342,7 @@ export default function TambahSuratKeluar() {
         if (!formData.tanggalSurat) return 'Tanggal Surat wajib diisi';
         if (!formData.perihal) return 'Perihal wajib diisi';
         // For edit mode, allow existing file or link
-        if (!formData.linkDokumen && !selectedFile && !existingFile) {
+        if (filesEnabled && !formData.linkDokumen && !selectedFile && !existingFile) {
             return 'Link dokumen atau upload berkas wajib diisi (salah satu)';
         }
         return null;
@@ -365,19 +368,20 @@ export default function TambahSuratKeluar() {
         try {
             const dataToSubmit = {
                 ...formData,
+                linkDokumen: filesEnabled ? formData.linkDokumen : '',
                 unitKerjaId: resolvedUnitKerjaId,
             };
 
             if (isEditMode) {
                 // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
-                await suratKeluarService.update(id, dataToSubmit, selectedFile);
+                await suratKeluarService.update(id, dataToSubmit, filesEnabled ? selectedFile : null);
             } else {
                 // Create new surat
                 await suratKeluarService.create({
                     ...dataToSubmit,
                     ...buildOutgoingNumberingPayload(formData.nomorSurat),
                     tahun: Number(formData.tanggalSurat?.slice(0, 4)) || new Date().getFullYear(),
-                }, selectedFile);
+                }, filesEnabled ? selectedFile : null);
             }
             setSuccess(true);
 
@@ -819,6 +823,7 @@ export default function TambahSuratKeluar() {
                 </Card>
 
                 {/* Section 6: Lampiran Dokumen */}
+                {filesEnabled && (
                 <Card className="overflow-hidden border-border/50 shadow-sm transition-all hover:shadow-md">
                     <CardContent className="p-6 space-y-5">
                         <SectionHeader
@@ -968,7 +973,7 @@ export default function TambahSuratKeluar() {
                                                     Seret file ke sini atau klik untuk memilih berkas
                                                 </p>
                                                 <p className="text-xs text-muted-foreground mt-1">
-                                                    PDF, DOC, DOCX, JPG, PNG, ZIP, RAR (maks. 10MB)
+                                                    PDF, DOC, DOCX, JPG, PNG (maks. 10MB)
                                                 </p>
                                             </div>
                                         </div>
@@ -986,6 +991,7 @@ export default function TambahSuratKeluar() {
                         </div>
                     </CardContent>
                 </Card>
+                )}
 
                 {/* Floating Action Bar */}
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">

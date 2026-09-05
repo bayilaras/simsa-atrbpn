@@ -30,9 +30,10 @@ dan identitas database benar-benar disediakan.
 - image target `maintenance` dibangun tepat sekali dari commit itu. Content ID,
   label revision/source, hash Dockerfile, dan hash lockfile masuk evidence;
 - urutan database tetap: bootstrap awal, migration, bootstrap final, grant
-  convergence, seed, lalu evidence. Bootstrap awal memberi migrator hak
-  `CREATE` database yang sementara diperlukan Drizzle untuk
-  `CREATE SCHEMA IF NOT EXISTS drizzle`; bootstrap final wajib mencabutnya;
+  convergence, seed, lalu evidence. Bootstrap awal masih mempertahankan grant
+  `CREATE` database sementara untuk kompatibilitas bootstrap lama; bootstrap
+  final wajib mencabutnya. Runner `db:migrate` tidak memerlukan grant tersebut
+  dan tidak menjalankan `CREATE SCHEMA IF NOT EXISTS drizzle`;
 - evidence serializable/read-only mencocokkan seluruh 34 timestamp/hash journal
   dengan manifest kode yang direview, terakhir `0033`, kepemilikan aplikasi,
   exact direct/transitive membership closure, pasangan empat runtime login ke
@@ -54,6 +55,19 @@ Tidak ada jalur `db:push`. Perintah terkendali yang dijalankan adalah:
 4. `npm run db:grants:converge` sebagai migrator dengan manifest migrasi exact;
 5. `npm run seed:all` sebagai maintenance;
 6. koleksi evidence read-only sebagai migrator.
+
+`db:migrate` memakai `scripts/migrate-database.mjs`, bukan CLI migrasi Drizzle.
+Schema `public` dan `drizzle` harus sudah dimiliki `simsa_migrator`, dan koneksi
+harus memiliki effective role tersebut melalui bootstrap yang disetujui.
+Runner memegang transaction-scoped advisory lock pada satu koneksi, memeriksa
+seluruh prefix timestamp/hash journal, lalu menerapkan SQL dan ledger secara
+atomik. UTC ditetapkan hanya selama transaksi agar default/backfill timestamp
+konsisten dengan runtime, tanpa mengubah timezone server atau data historis.
+Timeout menunggu lock adalah 30 detik; kegagalan membatalkan transaksi.
+Rerun tanpa perubahan harus menghasilkan `0 applied` meskipun database
+`CREATE` sudah dicabut. Hash historis yang diizinkan dibaca dari manifest JSON
+yang sama dengan verifier backup; jangan mengedit SQL migrasi yang sudah
+diterapkan atau menambahkan hash untuk melewati error divergensi.
 
 ## Provisioning sebelum run pertama
 

@@ -18,6 +18,7 @@ import {
     ShieldCheck,
 } from 'lucide-react'
 import appConfig from '@/lib/app-config'
+import { AUTH_PROVIDER } from '@/lib/cloud-provider-config'
 
 const BENEFITS = [
     'Temukan surat dan arsip dari satu pencarian',
@@ -32,6 +33,7 @@ export default function Login() {
     const [password, setPassword] = useState('')
     const [showPassword, setShowPassword] = useState(false)
     const [localError, setLocalError] = useState('')
+    const localDemo = appConfig.mode === 'metadata-demo' && AUTH_PROVIDER === 'better-auth'
 
     if (isAuthenticated) {
         return <Navigate to="/" replace />
@@ -111,7 +113,9 @@ export default function Login() {
                     <Card className="gap-4 border-border/80 py-0 shadow-sm">
                         <CardHeader className="sr-only">
                             <CardTitle>Masuk ke {appConfig.shortName}</CardTitle>
-                            <CardDescription>Masukkan email dan kata sandi, atau gunakan akun Google.</CardDescription>
+                            <CardDescription>{localDemo
+                                ? 'Masukkan email dan kata sandi akun uji lokal.'
+                                : 'Masukkan email dan kata sandi, atau gunakan akun Google.'}</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-5 px-5 pb-1 pt-5 sm:px-6 sm:pt-6">
                             {displayError && (
@@ -175,7 +179,7 @@ export default function Login() {
                                 </Button>
                             </form>
 
-                            <div className="relative py-1" role="separator" aria-label="Pilihan masuk lainnya">
+                            {!localDemo && <><div className="relative py-1" role="separator" aria-label="Pilihan masuk lainnya">
                                 <div className="absolute inset-0 flex items-center" aria-hidden="true">
                                     <Separator className="w-full" />
                                 </div>
@@ -199,7 +203,7 @@ export default function Login() {
                                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                                 </svg>
                                 {loading ? 'Menghubungkan…' : 'Masuk dengan Google'}
-                            </Button>
+                            </Button></>}
                         </CardContent>
 
                         <CardFooter className="flex-col gap-3 border-t bg-muted/25 px-5 py-4 sm:px-6">
