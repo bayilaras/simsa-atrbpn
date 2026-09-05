@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useAppConfig } from '@/context/app-config-context';
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import { Link, useNavigate } from 'react-router-dom';
 import { Send, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, MailOpen, FolderArchive, RefreshCw, Trash2, FileText, AlertCircle, Inbox, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
@@ -78,6 +79,7 @@ export default function SuratKeluar() {
     const navigate = useNavigate();
     const { toast } = useToast();
     const { user, canWrite } = useAuth();
+    const { capabilities } = useAppConfig();
     const isAdmin = canWrite();
     const isSuperAdmin = user?.role === 'super_admin';
 
@@ -575,7 +577,7 @@ export default function SuratKeluar() {
                                                 </TableCell>
                                                 <TableCell data-label="Status">
                                                     <div className="flex flex-wrap gap-1.5">
-                                                        {row.filePath && (
+                                                        {capabilities.files && row.filePath && (
                                                             <Badge variant="secondary" className="gap-1 bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200">
                                                                 <FileText className="h-3 w-3" />
                                                                 File

@@ -9,6 +9,7 @@ import {
     buildCloudPlatformConfig,
 } from './cloud-platform.js';
 import { loadFinalObjectRetentionPolicy } from './final-object-retention.js';
+import { isMetadataDemo, validateDemoEnvironment } from './demo.js';
 
 dotenv.config();
 
@@ -120,6 +121,7 @@ export function validateRuntimeEnv(
     runtime: SimsaRuntime,
     source: NodeJS.ProcessEnv = process.env,
 ) {
+    validateDemoEnvironment(runtime, source);
     const cloudConfig = buildCloudPlatformConfig(source);
     const deployedRuntime = source.NODE_ENV === 'production'
         || Boolean(source.K_SERVICE)
@@ -255,6 +257,7 @@ export function validateRuntimeEnv(
 
     if (
         runtimeProfile === 'internal'
+        && !isMetadataDemo(source)
         && runtimeMalwareConfig.mode === 'disabled'
         && deployedRuntime
     ) {
@@ -270,6 +273,9 @@ export function validateRuntimeEnv(
 
     // Private Blob is the canonical bitstream store. Production must fail at
     // startup rather than accepting records whose evidence cannot be stored.
+    if (cloudConfig.storageProvider === 'disabled') {
+        return;
+    }
     if (cloudConfig.storageProvider === 'vercel-blob') {
         assertValidBlobStorageEnvironment(source);
     } else {

@@ -4,6 +4,7 @@ import { registerSW } from 'virtual:pwa-register'
 import { AuthProvider } from './context/AuthContext'
 import { AppConfigProvider } from './context/AppConfigContext'
 import { ThemeProvider } from './components/theme-provider'
+import { RuntimeConfigurationGate } from './components/RuntimeConfigurationGate'
 // Bundled so the PWA keeps its typography offline and the shell is not
 // blocked on a font CDN that government networks often filter.
 import '@fontsource-variable/inter'
@@ -36,9 +37,11 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
       <AppConfigProvider>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        <RuntimeConfigurationGate>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </RuntimeConfigurationGate>
       </AppConfigProvider>
     </ThemeProvider>
   </StrictMode>,

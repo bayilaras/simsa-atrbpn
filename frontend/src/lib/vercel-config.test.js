@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
@@ -8,6 +9,16 @@ import { createVercelConfig } from '../../vercel.mjs'
 const frontendRoot = process.cwd()
 
 describe('Vercel API proxy configuration', () => {
+  it.each(['vercel.json', 'backend/vercel.json', 'docs-site/vercel.json'])(
+    'requires explicit Production promotion for the %s project root',
+    (relativePath) => {
+      const configuration = JSON.parse(readFileSync(
+        path.resolve(frontendRoot, '..', relativePath), 'utf8',
+      ))
+      expect(configuration.git?.deploymentEnabled?.main).toBe(false)
+    },
+  )
+
   it('uses the production backend only for a production deployment without an override', () => {
     const result = createVercelConfig({ deploymentEnvironment: 'production' })
 
@@ -67,22 +78,36 @@ describe('Vercel API proxy configuration', () => {
   })
 
   it('builds a minimal maintenance artifact with a cache-cleaning service worker', () => {
-    execFileSync(process.execPath, ['scripts/build-preview-unavailable.mjs'], {
-      cwd: frontendRoot,
-      stdio: 'pipe',
-    })
+    // The maintenance builder replaces dist by design. Exercise it in an
+    // isolated fixture, never overwrite the developer's actual frontend build.
+    const fixtureRoot = realpathSync(mkdtempSync(path.join(tmpdir(), 'simsa-preview-test-')))
+    try {
+      mkdirSync(path.join(fixtureRoot, 'scripts'))
+      mkdirSync(path.join(fixtureRoot, 'public'))
+      copyFileSync(path.join(frontendRoot, 'scripts/build-preview-unavailable.mjs'),
+        path.join(fixtureRoot, 'scripts/build-preview-unavailable.mjs'))
+      for (const file of ['preview-unavailable.html', 'preview-unavailable.json']) {
+        copyFileSync(path.join(frontendRoot, 'public', file), path.join(fixtureRoot, 'public', file))
+      }
+      execFileSync(process.execPath, ['scripts/build-preview-unavailable.mjs'], {
+        cwd: fixtureRoot,
+        stdio: 'pipe',
+      })
 
-    const outputDirectory = path.join(frontendRoot, 'dist')
-    expect(readdirSync(outputDirectory).sort()).toEqual([
-      'index.html',
-      'preview-unavailable.html',
-      'preview-unavailable.json',
-      'sw.js',
-    ])
-    expect(JSON.parse(readFileSync(path.join(outputDirectory, 'preview-unavailable.json'), 'utf8')))
-      .toMatchObject({ reason: 'preview_not_provisioned' })
-    expect(readFileSync(path.join(outputDirectory, 'sw.js'), 'utf8'))
-      .toContain('caches.delete')
+      const outputDirectory = path.join(fixtureRoot, 'dist')
+      expect(readdirSync(outputDirectory).sort()).toEqual([
+        'index.html',
+        'preview-unavailable.html',
+        'preview-unavailable.json',
+        'sw.js',
+      ])
+      expect(JSON.parse(readFileSync(path.join(outputDirectory, 'preview-unavailable.json'), 'utf8')))
+        .toMatchObject({ reason: 'preview_not_provisioned' })
+      expect(readFileSync(path.join(outputDirectory, 'sw.js'), 'utf8'))
+        .toContain('caches.delete')
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true })
+    }
   })
 
   it('rejects the production backend as the Preview target', () => {

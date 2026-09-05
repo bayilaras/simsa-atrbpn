@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { API_BASE_URL } from '@/lib/api-url'
+import api from '@/services/api'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -198,7 +198,6 @@ function JRAItem({ item, isSelected, onSelect }) {
  * KlasifikasiPicker Component - Enhanced with JRA Mapping Suggestions
  */
 export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi Arsip", id }) {
-    const API_BASE = API_BASE_URL;
     const [open, setOpen] = useState(false)
     const [activeTab, setActiveTab] = useState('all')
     const [allData, setAllData] = useState([])
@@ -222,10 +221,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         setLoading(true)
         setError(null)
         try {
-            const response = await fetch(`${API_BASE}/api/klasifikasi`, {
-                credentials: 'include'
-            })
-            const result = await response.json()
+            const result = await api.get('/api/klasifikasi')
             if (result.success && result.data) {
                 setAllData(result.data)
             } else {
@@ -237,7 +233,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         } finally {
             setLoading(false)
         }
-    }, [API_BASE])
+    }, [])
 
     // Refresh the active rule edition every time the picker opens so a newly
     // published version cannot leave stale choices in a long-lived browser tab.
@@ -255,10 +251,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         setJraMappings([])
         setSelectedJRA(null)
         try {
-            const response = await fetch(`${API_BASE}/api/mapping/suggest-jra/${encodeURIComponent(kode)}`, {
-                credentials: 'include'
-            })
-            const result = await response.json()
+            const result = await api.get(`/api/mapping/suggest-jra/${encodeURIComponent(kode)}`)
             if (result.success) {
                 setSuggestedJRA(result.suggestedJRA || [])
                 setJraMappings(result.mappings || [])
@@ -282,10 +275,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     const fetchAllJRA = useCallback(async () => {
         setLoadingJRA(true)
         try {
-            const response = await fetch(`${API_BASE}/api/jra`, {
-                credentials: 'include'
-            })
-            const result = await response.json()
+            const result = await api.get('/api/jra')
             if (result.success) {
                 setAllJRA(result.data || [])
             }
@@ -294,7 +284,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         } finally {
             setLoadingJRA(false)
         }
-    }, [API_BASE])
+    }, [])
 
     // Effect to handle JRA tab switching
     useEffect(() => {

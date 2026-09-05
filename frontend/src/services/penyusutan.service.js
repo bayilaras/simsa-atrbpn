@@ -1,5 +1,4 @@
 import api from './api';
-import { API_BASE_URL } from '../lib/api-url';
 
 const BASE_URL = '/api/penyusutan';
 
@@ -62,8 +61,9 @@ export const penyusutanService = {
         return api.delete(scopedPath(`${BASE_URL}/${id}`, unitKerjaId));
     },
 
-    // Print template URLs
-    getPrintUrl(type, params = {}) {
+    // Fetch through the authenticated transport. A browser navigation cannot
+    // attach the Firebase App Check header required by these private endpoints.
+    getPrintDocument(type, params = {}) {
         const scopedParams = {
             ...params,
             unitKerjaId: requireUnitKerjaId(params.unitKerjaId),
@@ -72,39 +72,29 @@ export const penyusutanService = {
         Object.entries(scopedParams).forEach(([key, value]) => {
             if (value != null) searchParams.set(key, String(value));
         });
-        const base = API_BASE_URL;
         switch (type) {
             case 'daftar-arsip-aktif':
-                return `${base}${BASE_URL}/print/daftar-arsip-aktif?${searchParams.toString()}`;
             case 'daftar-arsip-inaktif':
-                return `${base}${BASE_URL}/print/daftar-arsip-inaktif?${searchParams.toString()}`;
+                return api.get(`${BASE_URL}/print/${type}`, Object.fromEntries(searchParams), { responseType: 'blob' });
             default:
-                return '';
+                throw new Error('Jenis cetakan penyusutan tidak didukung.');
         }
     },
 
-    getBatchPrintUrl(batchId, type, unitKerjaId) {
-        const base = API_BASE_URL;
-        const suffix = `?unitKerjaId=${encodeURIComponent(requireUnitKerjaId(unitKerjaId))}`;
+    getBatchPrintDocument(batchId, type, unitKerjaId) {
+        const unit = requireUnitKerjaId(unitKerjaId);
         switch (type) {
             case 'usul-musnah':
-                return `${base}${BASE_URL}/${batchId}/print/usul-musnah${suffix}`;
             case 'usul-pindah':
-                return `${base}${BASE_URL}/${batchId}/print/usul-pindah${suffix}`;
             case 'usul-serah':
-                return `${base}${BASE_URL}/${batchId}/print/usul-serah${suffix}`;
             case 'berita-acara':
-                return `${base}${BASE_URL}/${batchId}/print/berita-acara${suffix}`;
             case 'berita-acara-pemindahan':
-                return `${base}${BASE_URL}/${batchId}/print/berita-acara-pemindahan${suffix}`;
             case 'berita-acara-pemusnahan':
-                return `${base}${BASE_URL}/${batchId}/print/berita-acara-pemusnahan${suffix}`;
             case 'berita-acara-alih-media':
-                return `${base}${BASE_URL}/${batchId}/print/berita-acara-alih-media${suffix}`;
             case 'berita-acara-penyerahan':
-                return `${base}${BASE_URL}/${batchId}/print/berita-acara-penyerahan${suffix}`;
+                return api.get(`${BASE_URL}/${encodeURIComponent(batchId)}/print/${type}`, { unitKerjaId: unit }, { responseType: 'blob' });
             default:
-                return '';
+                throw new Error('Jenis cetakan penyusutan tidak didukung.');
         }
     },
 };

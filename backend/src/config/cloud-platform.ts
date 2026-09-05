@@ -1,6 +1,8 @@
+import { isMetadataDemo } from './demo.js';
+
 export type SimsaCloudPlatform = 'local' | 'gcp';
 export type SimsaAuthProvider = 'better-auth' | 'firebase';
-export type SimsaStorageProvider = 'vercel-blob' | 'gcs';
+export type SimsaStorageProvider = 'vercel-blob' | 'gcs' | 'disabled';
 
 export interface CloudPlatformConfig {
     platform: SimsaCloudPlatform;
@@ -92,6 +94,7 @@ export function buildCloudPlatformConfig(
     source: NodeJS.ProcessEnv = process.env,
 ): CloudPlatformConfig {
     const errors: string[] = [];
+    const metadataDemo = isMetadataDemo(source);
     const inferredPlatform: SimsaCloudPlatform = source.K_SERVICE ? 'gcp' : 'local';
     const platform = choice(
         source.SIMSA_CLOUD_PLATFORM,
@@ -109,7 +112,7 @@ export function buildCloudPlatformConfig(
     );
     const storageProvider = choice(
         source.OBJECT_STORAGE_PROVIDER,
-        ['vercel-blob', 'gcs'] as const,
+        ['vercel-blob', 'gcs', 'disabled'] as const,
         platform === 'gcp' ? 'gcs' : 'vercel-blob',
         'OBJECT_STORAGE_PROVIDER',
         errors,
@@ -173,7 +176,13 @@ export function buildCloudPlatformConfig(
     if (platform === 'gcp' && authProvider !== 'firebase') {
         errors.push('The GCP platform requires AUTH_PROVIDER=firebase');
     }
-    if (platform === 'gcp' && storageProvider !== 'gcs') {
+    if (storageProvider === 'disabled' && !metadataDemo) {
+        errors.push('Disabled storage is only permitted in metadata-demo mode');
+    }
+    if (metadataDemo && storageProvider !== 'disabled') {
+        errors.push('Metadata demo requires disabled storage');
+    }
+    if (platform === 'gcp' && storageProvider !== 'gcs' && !(metadataDemo && storageProvider === 'disabled')) {
         errors.push('The GCP platform requires OBJECT_STORAGE_PROVIDER=gcs');
     }
 

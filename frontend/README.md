@@ -5,7 +5,7 @@ Frontend SIMSA untuk Ditjen Pengadaan Tanah dan Pengembangan Pertanahan. Profil 
 ## Menjalankan lokal
 
 ```bash
-npm install
+npm ci
 copy .env.example .env.local
 npm run dev
 ```
@@ -13,10 +13,16 @@ npm run dev
 Konfigurasi build utama:
 
 ```dotenv
-VITE_API_URL=http://localhost:3001
+VITE_API_URL=
 VITE_APP_PROFILE=internal
 VITE_FEATURE_SRIKANDI=false
 ```
+
+Biarkan `VITE_API_URL` kosong juga saat pengujian lokal. Vite meneruskan `/api`
+ke backend port 3001; buka aplikasi dari origin frontend port 3000. Samakan
+`FRONTEND_URL` dan `BETTER_AUTH_URL` backend dengan origin tersebut, dan jangan
+mencampur `localhost` dengan `127.0.0.1` dalam satu sesi login. Panduan batas
+pengujian tanpa resource cloud ada di [LOCAL_TESTING.md](../LOCAL_TESTING.md).
 
 - `VITE_APP_PROFILE` menerima `internal` atau `integrated`. Nilai kosong/tidak dikenal kembali ke `internal`.
 - `VITE_FEATURE_SRIKANDI` default `false`. Menu dan route SRIKANDI hanya tersedia jika profil build `integrated`, flag bernilai `true`, dan metadata `/api/health` mengonfirmasi backend `integrated` dengan connector aktif. Kegagalan verifikasi menyembunyikan fitur.

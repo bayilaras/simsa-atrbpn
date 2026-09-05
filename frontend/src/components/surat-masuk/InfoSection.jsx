@@ -4,8 +4,10 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
+import { useAppConfig } from '@/context/app-config-context';
 
 export function InfoSection({ surat }) {
+    const { capabilities } = useAppConfig();
     const formatDate = (dateString) => {
         if (!dateString) return '-';
         try {
@@ -104,7 +106,7 @@ export function InfoSection({ surat }) {
                 </div>
 
                 {/* Link Dokumen */}
-                {surat.linkDokumen && (
+                {capabilities.files && surat.linkDokumen && (
                     <>
                         <Separator />
                         <div className="space-y-2">

@@ -23,6 +23,47 @@ describe('ApiClient transport contracts', () => {
         expect(json).not.toHaveBeenCalled();
     });
 
+    it('exposes successful raw responses without consuming their private document stream', async () => {
+        const response = { ok: true, status: 200, headers: new Headers(), json: vi.fn(), blob: vi.fn() };
+        const fetchMock = vi.fn().mockResolvedValue(response);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await expect(api.get('/api/files/surat_masuk/id', {}, { responseType: 'response' })).resolves.toBe(response);
+        expect(response.json).not.toHaveBeenCalled();
+        expect(response.blob).not.toHaveBeenCalled();
+        expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('responseType');
+    });
+
+    it('still rejects private-file errors when a raw response is requested', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false, status: 403, headers: new Headers(),
+            json: async () => ({ error: 'Akses ditolak' }),
+        }));
+        await expect(api.get('/api/files/surat_masuk/id', {}, { responseType: 'response' }))
+            .rejects.toMatchObject({ status: 403, message: 'Akses ditolak' });
+    });
+
+    it('does not turn an aborted document request into a retry or a connection error', async () => {
+        const aborted = new DOMException('Viewer closed', 'AbortError');
+        const fetchMock = vi.fn().mockRejectedValue(aborted);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await expect(api.get('/api/files/surat_masuk/id', {}, { signal: new AbortController().signal }))
+            .rejects.toBe(aborted);
+        expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it('never sends an already cancelled request', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+
+        await expect(api.get('/api/files/surat_masuk/id', {}, { signal: controller.signal }))
+            .rejects.toMatchObject({ name: 'AbortError' });
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('sends FormData unchanged and lets fetch set the multipart boundary', async () => {
         document.cookie = 'csrf-token=test-token; path=/';
         const fetchMock = vi.fn().mockResolvedValue({

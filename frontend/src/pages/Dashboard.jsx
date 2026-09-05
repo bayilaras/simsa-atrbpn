@@ -36,6 +36,7 @@ import dashboardService from '@/services/dashboard.service'
 import settingsService from '@/services/settings.service'
 import { DashboardSkeleton } from '@/components/skeletons'
 import { useAuth } from '@/context/AuthContext'
+import { useAppConfig } from '@/context/app-config-context'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import DashboardPengawasan from '@/components/dashboard/DashboardPengawasan'
 import { PageHeader } from '@/components/PageHeader';
@@ -99,6 +100,7 @@ export default function Dashboard() {
     const navigate = useNavigate();
     const location = useLocation();
     const { user, canWrite } = useAuth();
+    const { capabilities } = useAppConfig();
     const isAdmin = canWrite();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -480,7 +482,7 @@ export default function Dashboard() {
                                         <FileBarChart className="h-5 w-5" />
                                         <span className="text-xs">Laporan</span>
                                     </Button>
-                                    {isAdmin && (
+                                    {isAdmin && capabilities.files && (
                                         <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/bulk-upload')}>
                                             <FolderArchive className="h-5 w-5" />
                                             <span className="text-xs">Upload</span>

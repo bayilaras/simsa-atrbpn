@@ -1,6 +1,7 @@
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useAppConfig } from '@/context/app-config-context';
 import { suratMasukService } from '@/services/surat-masuk.service';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { useAutoSave } from '@/hooks/useAutoSave';
@@ -133,6 +134,8 @@ export default function TambahSuratMasuk() {
     const { id } = useParams(); // Get ID from URL for edit mode
     const isEditMode = Boolean(id);
     const { user } = useAuth();
+    const { capabilities } = useAppConfig();
+    const filesEnabled = capabilities.files;
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
     const errorRef = useRef(null);
@@ -214,10 +217,10 @@ export default function TambahSuratMasuk() {
                 jraKeterangan: data.jraKeterangan || '',
                 keterangan: data.keterangan || '',
                 disposisi: Array.isArray(data.disposisi) ? data.disposisi : (data.disposisi ? [data.disposisi] : []),
-                linkDokumen: data.linkDokumen || '',
+                linkDokumen: filesEnabled ? (data.linkDokumen || '') : '',
             });
             // Track existing file info
-            if (data.filePath) {
+            if (filesEnabled && data.filePath) {
                 setExistingFile({
                     path: data.filePath,
                     name: data.fileOriginalName || (data.filePath.startsWith('blob:') || data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
@@ -229,7 +232,7 @@ export default function TambahSuratMasuk() {
         } finally {
             setIsLoading(false);
         }
-    }, [id]);
+    }, [filesEnabled, id]);
 
     // Fetch existing data for edit mode.
     useEffect(() => {
@@ -304,7 +307,7 @@ export default function TambahSuratMasuk() {
         if (!formData.kepada) return 'Penerima (Kepada) wajib diisi';
         if (!formData.disposisi || formData.disposisi.length === 0) return 'Disposisi wajib diisi';
         // For edit mode, allow existing file or link
-        if (!formData.linkDokumen && !selectedFile && !existingFile) {
+        if (filesEnabled && !formData.linkDokumen && !selectedFile && !existingFile) {
             return 'Link dokumen atau upload berkas wajib diisi (salah satu)';
         }
         return null;
@@ -330,18 +333,19 @@ export default function TambahSuratMasuk() {
         try {
             const dataToSubmit = {
                 ...formData,
+                linkDokumen: filesEnabled ? formData.linkDokumen : '',
                 unitKerjaId: resolvedUnitKerjaId,
             };
 
             if (isEditMode) {
                 // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
-                await suratMasukService.update(id, dataToSubmit, selectedFile);
+                await suratMasukService.update(id, dataToSubmit, filesEnabled ? selectedFile : null);
             } else {
                 // Create new surat
                 await suratMasukService.create({
                     ...dataToSubmit,
                     tahun: Number(formData.tanggalSurat.slice(0, 4)) || new Date().getFullYear(),
-                }, selectedFile);
+                }, filesEnabled ? selectedFile : null);
             }
             resetDirty();
             clearDraft();
@@ -723,6 +727,7 @@ export default function TambahSuratMasuk() {
                 </Card>
 
                 {/* Section 5: Lampiran Dokumen */}
+                {filesEnabled && (
                 <Card className="overflow-hidden border-border/50 shadow-sm transition-all hover:shadow-md">
                     <CardContent className="p-6 space-y-5">
                         <SectionHeader
@@ -872,7 +877,7 @@ export default function TambahSuratMasuk() {
                                                     Seret file ke sini atau klik untuk memilih berkas
                                                 </p>
                                                 <p className="text-xs text-muted-foreground mt-1">
-                                                    PDF, DOC, DOCX, JPG, PNG, ZIP, RAR (maks. 10MB)
+                                                    PDF, DOC, DOCX, JPG, PNG (maks. 10MB)
                                                 </p>
                                             </div>
                                         </div>
@@ -890,6 +895,7 @@ export default function TambahSuratMasuk() {
                         </div>
                     </CardContent>
                 </Card>
+                )}
 
                 {/* Floating Action Bar */}
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-between sm:justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">

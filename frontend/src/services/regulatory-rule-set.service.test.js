@@ -78,7 +78,7 @@ describe('regulatoryRuleSetService', () => {
 
     it('fetches an authenticated private PDF stream and reads its safe filename', async () => {
         const pdf = new Blob(['%PDF-1.7\nsource'], { type: 'application/pdf' });
-        globalThis.fetch.mockResolvedValue({
+        apiMock.get.mockResolvedValue({
             ok: true,
             headers: {
                 get: (name) => name.toLowerCase() === 'content-disposition'
@@ -90,9 +90,10 @@ describe('regulatoryRuleSetService', () => {
 
         const result = await regulatoryRuleSetService.fetchSourceDocument('rule-set-id');
 
-        expect(globalThis.fetch).toHaveBeenCalledWith(
-            'https://api.example.test/api/regulatory-rule-sets/rule-set-id/source-document',
-            { method: 'GET', credentials: 'include' },
+        expect(apiMock.get).toHaveBeenCalledWith(
+            '/api/regulatory-rule-sets/rule-set-id/source-document',
+            {},
+            { responseType: 'response' },
         );
         expect(result.fileName).toBe('Permen ATR.pdf');
         expect(result.blob).toBe(pdf);

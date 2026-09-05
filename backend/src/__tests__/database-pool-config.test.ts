@@ -30,6 +30,7 @@ describe('database pool configuration', () => {
             idleTimeoutMillis: 30_000,
             connectionTimeoutMillis: 5_000,
             application_name: 'simsa-backend',
+            options: '-c timezone=UTC',
             connectionString: 'postgresql://user:pass@db.example.test/simsa',
         });
     });
@@ -152,4 +153,65 @@ describe('database pool configuration', () => {
             DB_APPLICATION_NAME: 'x'.repeat(80),
         }).application_name).toBe('x'.repeat(63));
     });
+
+    it.each([
+        { DATABASE_URL: 'postgresql://user:pass@db.example.test/simsa' },
+        { DB_HOST: '127.0.0.1', DB_USER: 'simsa', DB_PASSWORD: '', DB_NAME: 'simsa' },
+        { CLOUD_SQL_UNIX_SOCKET: '/cloudsql/project:region:instance', DB_USER: 'simsa', DB_PASSWORD: '', DB_NAME: 'simsa' },
+    ])('sets UTC before the first query for each connection authority: %j', async (authority) => {
+        const { Client } = await vi.importActual<typeof import('pg')>('pg');
+        const config = buildDatabasePoolConfig(authority);
+        const client = new Client(config) as unknown as { getStartupConf(): { options: string } };
+        expect(client.getStartupConf().options).toBe('-c timezone=UTC');
+    });
+
+    it('preserves other PGOPTIONS while making UTC the final session setting', async () => {
+        const { Client } = await vi.importActual<typeof import('pg')>('pg');
+        const config = buildDatabasePoolConfig({
+            DATABASE_URL: 'postgresql://user:pass@db.example.test/simsa',
+            PGOPTIONS: '  -c statement_timeout=9000 -c timezone=Asia/Bangkok  ',
+        });
+        const client = new Client(config) as unknown as { getStartupConf(): { options: string } };
+        expect(client.getStartupConf().options)
+            .toBe('-c statement_timeout=9000 -c timezone=Asia/Bangkok -c timezone=UTC');
+    });
+
+    it('preserves URL startup settings and TLS without letting a URL timezone override UTC', async () => {
+        const { Client } = await vi.importActual<typeof import('pg')>('pg');
+        const config = buildDatabasePoolConfig({
+            DATABASE_URL: 'postgresql://user:pass@db.example.test/simsa?sslmode=verify-full&options=-c%20statement_timeout%3D9000%20-c%20timezone%3DAsia%2FBangkok',
+            PGOPTIONS: '-c statement_timeout=1000 -c timezone=Pacific/Honolulu',
+        });
+        const url = new URL(config.connectionString!);
+        expect(url.searchParams.get('sslmode')).toBe('verify-full');
+        const client = new Client(config) as unknown as { getStartupConf(): { options: string } };
+        expect(client.getStartupConf().options)
+            .toBe('-c statement_timeout=9000 -c timezone=Asia/Bangkok -c timezone=UTC');
+    });
+
+    it.each([
+        '?options=-c%20timezone%3DAsia%2FBangkok&options=-c%20statement_timeout%3D9000',
+        '?%6fptions=-c%20statement_timeout%3D9000',
+    ])('handles duplicate or encoded URL option keys using driver precedence: %s', async (query) => {
+        const { Client } = await vi.importActual<typeof import('pg')>('pg');
+        const config = buildDatabasePoolConfig({
+            DATABASE_URL: `postgresql://user:pass@db.example.test/simsa${query}`,
+        });
+        const client = new Client(config) as unknown as { getStartupConf(): { options: string } };
+        expect(client.getStartupConf().options).toBe('-c statement_timeout=9000 -c timezone=UTC');
+        expect(new URL(config.connectionString!).searchParams.getAll('options')).toHaveLength(1);
+    });
+
+    it.each(['?options=', '?options=-c%20statement_timeout%3D9000&options='])(
+        'preserves the driver PGOPTIONS fallback for an empty final URL options value: %s', async (query) => {
+            const { Client } = await vi.importActual<typeof import('pg')>('pg');
+            const config = buildDatabasePoolConfig({
+                DATABASE_URL: `postgresql://user:pass@db.example.test/simsa${query}`,
+                PGOPTIONS: '-c default_transaction_read_only=on -c timezone=Asia/Bangkok',
+            });
+            const client = new Client(config) as unknown as { getStartupConf(): { options: string } };
+            expect(client.getStartupConf().options)
+                .toBe('-c default_transaction_read_only=on -c timezone=Asia/Bangkok -c timezone=UTC');
+        },
+    );
 });

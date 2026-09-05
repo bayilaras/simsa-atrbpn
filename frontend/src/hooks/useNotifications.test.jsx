@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     getPreferences: vi.fn(),
@@ -11,11 +11,20 @@ vi.mock('../services/settings.service', () => ({
     default: { getPreferences: mocks.getPreferences },
     PREFERENCES_CHANGED_EVENT: 'simsa-preferences-changed',
 }));
-vi.mock('../services/notification.service', () => ({
-    notificationService: {
-        markAsRead: mocks.markAsRead,
-        markAllAsRead: mocks.markAllAsRead,
-    },
+vi.mock('../services/notification.service', async (importOriginal) => {
+    const original = await importOriginal();
+    return {
+        notificationService: {
+            ...original.notificationService,
+            markAsRead: mocks.markAsRead,
+            markAllAsRead: mocks.markAllAsRead,
+        },
+    };
+});
+vi.mock('../lib/cloud-provider-config', () => ({ USE_FIREBASE_AUTH: true }));
+vi.mock('../lib/firebase-client', () => ({
+    getFirebaseAppCheckToken: vi.fn().mockResolvedValue('test-app-check'),
+    getFirebaseLimitedUseAppCheckToken: vi.fn(),
 }));
 
 import { useNotifications } from './useNotifications';
@@ -37,6 +46,7 @@ function notificationResponse() {
 }
 
 describe('useNotifications unit-scoped mutations', () => {
+    afterEach(() => vi.unstubAllGlobals());
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getPreferences.mockResolvedValue({ notificationsEnabled: true });
@@ -62,7 +72,10 @@ describe('useNotifications unit-scoped mutations', () => {
 
         expect(fetch).toHaveBeenCalledWith(
             expect.stringContaining('unitKerjaId=unit-server-a'),
-            { credentials: 'include' },
+            expect.objectContaining({
+                credentials: 'include',
+                headers: expect.objectContaining({ 'X-Firebase-AppCheck': 'test-app-check' }),
+            }),
         );
         expect(mocks.markAsRead).toHaveBeenCalledWith(notification.id, 'unit-server-a');
     });

@@ -3,6 +3,7 @@ import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2
 import api from '@/services/api';
 import { buildGoogleSheetsImportPayload } from '@/lib/google-sheets-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { useAppConfig } from '@/context/app-config-context';
 
 /**
  * ImportFromGDrive — Modal component for importing data from Google Spreadsheets
@@ -20,6 +21,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
  * - onImportComplete: () => void (callback to refresh data)
  */
 const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
+    const { capabilities } = useAppConfig();
     const [isOpen, setIsOpen] = useState(false);
     const [step, setStep] = useState('input'); // input, sheets, preview, importing, result
     const [spreadsheetUrl, setSpreadsheetUrl] = useState('');
@@ -135,6 +137,8 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
             setStep('preview');
         }
     };
+
+    if (!capabilities.externalIntegrations) return null;
 
     return (
         <>

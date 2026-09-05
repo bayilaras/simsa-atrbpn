@@ -138,6 +138,15 @@ function SrikandiFeatureGuard({ children }) {
   return children
 }
 
+function FileCapabilityGuard({ children }) {
+  const { capabilities, loading } = useAppConfig()
+
+  if (loading) return <PageLoader />
+  if (!capabilities.files) return <Navigate to="/not-found" replace />
+
+  return children
+}
+
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
 const SUPER_ADMIN_ONLY = ['super_admin'];
 const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
@@ -249,7 +258,7 @@ const router = createBrowserRouter([
       { path: "/arsip", element: <Navigate to="/arsip/keluar" replace /> },
       { path: "/arsip/detail/:id", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><ArsipDetail /></RoleGuard> },
       { path: "/arsip/:tab", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Arsip /></RoleGuard> },
-      { path: "/bulk-upload", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard> },
+      { path: "/bulk-upload", element: <FileCapabilityGuard><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard></FileCapabilityGuard> },
       { path: "/laporan", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Laporan /></RoleGuard> },
       { path: "/audit-log", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AuditLog /></RoleGuard> },
       { path: "/record-access-grants", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><RecordAccessGrants /></RoleGuard> },
@@ -277,10 +286,10 @@ const router = createBrowserRouter([
       { path: "/penyusutan", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><PenyusutanArsip /></RoleGuard> },
       { path: "/arsip-vital", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipVital /></RoleGuard> },
       { path: "/arsip-terjaga", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipTerjaga /></RoleGuard> },
-      { path: "/arsip-elektronik", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipElektronik /></RoleGuard> },
+      { path: "/arsip-elektronik", element: <FileCapabilityGuard><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipElektronik /></RoleGuard></FileCapabilityGuard> },
       { path: "/tunjuk-silang", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TunjukSilang /></RoleGuard> },
-      { path: "/autentikasi", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AutentikasiIndex /></RoleGuard> },
-      { path: "/autentikasi/create", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AutentikasiCreate /></RoleGuard> },
+      { path: "/autentikasi", element: <FileCapabilityGuard><RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AutentikasiIndex /></RoleGuard></FileCapabilityGuard> },
+      { path: "/autentikasi/create", element: <FileCapabilityGuard><RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AutentikasiCreate /></RoleGuard></FileCapabilityGuard> },
       { path: "/formulir", element: <FormulirIndex /> },
       { path: "/layanan-arsip", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><LayananArsipIndex /></RoleGuard> },
       { path: "/layanan-arsip/create", element: <RoleGuard allowedRoles={STAFF_AND_ABOVE}><LayananArsipCreate /></RoleGuard> },

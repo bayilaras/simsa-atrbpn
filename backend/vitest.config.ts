@@ -5,6 +5,10 @@ export default defineConfig({
     test: {
         globals: true,
         environment: 'node',
+        // PGlite migration suites and the full auth import graph are memory
+        // intensive. Bound the default fan-out to avoid resource-contention
+        // timeouts on development machines; --maxWorkers can override this.
+        maxWorkers: 2,
         // Some route-policy tests intentionally import the application graph
         // without executing a database query. Give node-postgres an inert test
         // authority so module construction stays side-effect free; production

@@ -582,6 +582,7 @@ jobs:
           MANIFEST_FILE="$DOWNLOAD_DIR/$MANIFEST_NAME"
           SOURCE_EVIDENCE="$RUNNER_TEMP/cloud-sql-source.evidence"
           RESTORE_EVIDENCE="$RUNNER_TEMP/cloud-sql-restore.evidence"
+          ROLE_METADATA_DIR="$RUNNER_TEMP/cloud-sql-role-metadata-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cleanup_drill() {
             status=$?
             trap - EXIT
@@ -589,6 +590,7 @@ jobs:
               "$RUNNER_TEMP/cloud-sql-restore-session.sql" \
               "$RUNNER_TEMP/collect-backup-evidence.sql" \
               "$CLOUD_SQL_AGE_IDENTITY_FILE"
+            rm -rf -- "$ROLE_METADATA_DIR"
             exit "$status"
           }
           trap cleanup_drill EXIT
@@ -627,9 +629,51 @@ jobs:
             exit 1
           fi
 
-          # The portable archive excludes environment-specific IAM ACLs. These
-          # disposable passwordless login roles exist only so the production
-          # bootstrap can exercise the same principal mapping after restore.
+          # --no-owner/--no-privileges do NOT remove ALTER ROLE ... IN DATABASE
+          # properties. Authenticate and inspect the complete encrypted archive
+          # before creating any roles or database. Metadata passes drain stdin
+          # after pg_restore exits early so age verifies the FINAL chunk too;
+          # pipefail checks both decryption and pg_restore before proceeding.
+          install -d -m 700 "$ROLE_METADATA_DIR"
+          age-bin --decrypt --identity "$CLOUD_SQL_AGE_IDENTITY_FILE" "$ARCHIVE_FILE" \
+            | {
+                metadata_status=0
+                docker run --rm --interactive "$POSTGRES_IMAGE" \
+                  pg_restore --create --list || metadata_status=$?
+                cat > /dev/null
+                exit "$metadata_status"
+              } > "$ROLE_METADATA_DIR/archive.toc.list"
+          python3 "$GITHUB_WORKSPACE/.github/scripts/prepare-restore-role-aliases.py" select-toc \
+            --database "$RESTORED_DATABASE" --schema-profile "$SCHEMA_PROFILE" \
+            --input "$ROLE_METADATA_DIR/archive.toc.list" \
+            --output "$ROLE_METADATA_DIR/database-properties.list"
+          age-bin --decrypt --identity "$CLOUD_SQL_AGE_IDENTITY_FILE" "$ARCHIVE_FILE" \
+            | {
+                metadata_status=0
+                docker run --rm --interactive \
+                  --volume "$ROLE_METADATA_DIR:/metadata:ro" \
+                  "$POSTGRES_IMAGE" pg_restore --create --no-owner --no-privileges \
+                    --use-list /metadata/database-properties.list --file=- || metadata_status=$?
+                cat > /dev/null
+                exit "$metadata_status"
+              } > "$ROLE_METADATA_DIR/database-properties.sql"
+          python3 "$GITHUB_WORKSPACE/.github/scripts/prepare-restore-role-aliases.py" prepare \
+            --database "$RESTORED_DATABASE" --schema-profile "$SCHEMA_PROFILE" \
+            --target-admin simsa_restore \
+            --target-role simsa-api-runtime@simsa-restore-drill.iam \
+            --target-role simsa-event-runtime@simsa-restore-drill.iam \
+            --target-role simsa-malware-worker@simsa-restore-drill.iam \
+            --target-role simsa-final-cleanup@simsa-restore-drill.iam \
+            --target-role simsa_restore_maintenance \
+            --target-role simsa_restore_migrator \
+            --target-role simsa_restore_backup \
+            --toc-input "$ROLE_METADATA_DIR/archive.toc.list" \
+            --input "$ROLE_METADATA_DIR/database-properties.sql" \
+            --output-dir "$ROLE_METADATA_DIR/validated"
+          printf '%s  %s\n' "$ARCHIVE_SHA256" "$ARCHIVE_FILE" | sha256sum --check --status -
+
+          # These disposable restore login roles have different identities from
+          # the source. They receive actual policy membership only at bootstrap.
           docker run --rm --interactive --network host \
             --env PGHOST=127.0.0.1 --env PGPORT=5432 \
             --env PGUSER=simsa_restore --env PGPASSWORD=restore-only-ephemeral \
@@ -644,6 +688,16 @@ jobs:
           CREATE ROLE simsa_restore_backup LOGIN;
           SQL
 
+          # Create ONLY previously absent inert NOLOGIN source-name aliases.
+          # They have no password, inheritance, capability, or role membership.
+          docker run --rm --network host \
+            --env PGHOST=127.0.0.1 --env PGPORT=5432 \
+            --env PGUSER=simsa_restore --env PGPASSWORD=restore-only-ephemeral \
+            --env PGDATABASE=postgres \
+            --volume "$ROLE_METADATA_DIR/validated:/aliases:ro" \
+            "$POSTGRES_IMAGE" psql --no-psqlrc --set ON_ERROR_STOP=on \
+              --file /aliases/prepare-aliases.sql
+
           # Let pg_restore --create reproduce the archive's encoding, locale,
           # collation provider, and database properties instead of silently
           # accepting the service container defaults.
@@ -654,6 +708,17 @@ jobs:
                 --env PGDATABASE=postgres \
                 "$POSTGRES_IMAGE" pg_restore --exit-on-error --create \
                   --no-owner --no-privileges --dbname postgres
+
+          # Before bootstrap, prove ALL restored database role properties equal
+          # the validated archive and aliases gained no authority. RESET ALL and
+          # DROP ROLE (never CASCADE) run atomically; any drift stops this drill.
+          docker run --rm --network host \
+            --env PGHOST=127.0.0.1 --env PGPORT=5432 \
+            --env PGUSER=simsa_restore --env PGPASSWORD=restore-only-ephemeral \
+            --env PGDATABASE=postgres \
+            --volume "$ROLE_METADATA_DIR/validated:/aliases:ro" \
+            "$POSTGRES_IMAGE" psql --no-psqlrc --set ON_ERROR_STOP=on \
+              --file /aliases/cleanup-aliases.sql
 
           # pg_restore made the disposable grant administrator the owner. The
           # same bootstrap used in Cloud SQL now excludes extension members,
@@ -742,4 +807,5 @@ jobs:
             echo "- Production target identity SHA-256: \`$SOURCE_IDENTITY_SHA256\`"
             echo "- Source commit: \`$GITHUB_SHA\`"
             echo '- Drill: fresh runner, independently restored PostgreSQL, exact evidence match'
+            echo '- Source database-role properties: validated, restored, checked, and inert aliases removed before restore-role bootstrap'
           } >> "$GITHUB_STEP_SUMMARY"

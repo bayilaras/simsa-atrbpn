@@ -45,6 +45,11 @@ jobs:
         run: npm ci
         working-directory: docs-site
 
+      - name: Test same-origin demo launcher, manifest, and hosting boundaries
+        # Only the focused root test scripts run here; the complete frontend
+        # and backend suites remain in their existing required jobs below.
+        run: npm test
+
       - name: TypeScript check (backend)
         run: npx tsc --noEmit
         working-directory: backend
@@ -100,6 +105,73 @@ jobs:
             command -v psql >/dev/null || {
               echo "Required maintenance executable is missing: psql" >&2
               exit 1
+            }
+          '
+
+      - name: Build and inspect metadata-only demo image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="simsa-metadata-demo:${{ github.sha }}"
+          docker build --check --file Dockerfile.demo .
+          # These are inert public Web identifiers, never Firebase credentials.
+          # This build does not contact Firebase or provision a cloud resource.
+          docker build --target runtime --tag "$image" --file Dockerfile.demo \
+            --build-arg VITE_FIREBASE_API_KEY=ci-public-api-key \
+            --build-arg VITE_FIREBASE_AUTH_DOMAIN=simsa-ci.firebaseapp.com \
+            --build-arg VITE_FIREBASE_PROJECT_ID=simsa-ci \
+            --build-arg VITE_FIREBASE_APP_ID=1:123456789:web:abcdef123456 \
+            --build-arg VITE_FIREBASE_APP_CHECK_SITE_KEY=ci-public-site-key \
+            .
+          test "$(docker image inspect --format '{{json .Config.Cmd}}' "$image")" = '["node","dist/index.js"]'
+          docker run --rm --network none --entrypoint node "$image" --check dist/index.js
+          docker run --rm --network none --entrypoint node "$image" --input-type=module -e '
+            import assert from "node:assert/strict";
+            import { lstatSync, readFileSync } from "node:fs";
+            assert.notEqual(process.getuid(), 0, "Demo image must run as a non-root user");
+            assert.equal(process.cwd(), "/app/backend");
+            for (const [name, expected] of Object.entries({
+              NODE_ENV: "production",
+              SIMSA_APP_MODE: "metadata-demo",
+              SIMSA_CLOUD_PLATFORM: "gcp",
+              SIMSA_FRONTEND_DIST: "/app/frontend-dist",
+              APP_PROFILE: "internal",
+              AUTH_PROVIDER: "firebase",
+              OBJECT_STORAGE_PROVIDER: "disabled",
+              SRIKANDI_ENABLED: "false",
+              MALWARE_SCANNER_MODE: "disabled",
+              MALWARE_SCAN_WORKER_ENABLED: "false",
+            })) assert.equal(process.env[name], expected, `Unexpected image default: ${name}`);
+            assert.equal(process.env.SIMSA_DEMO_DATA_ACKNOWLEDGED, undefined,
+              "Synthetic-data acknowledgement must be supplied at deployment, never baked in");
+            const manifest = JSON.parse(readFileSync("/app/frontend-dist/simsa-build.json", "utf8"));
+            assert.deepEqual(manifest, {
+              schemaVersion: 1,
+              mode: "metadata-demo",
+              syntheticDataOnly: true,
+              api: "same-origin",
+              authProvider: "firebase",
+              storageProvider: "disabled",
+              firebase: {
+                projectId: "simsa-ci",
+                authDomain: "simsa-ci.firebaseapp.com",
+                appId: "1:123456789:web:abcdef123456",
+              },
+            });
+            for (const asset of ["index.html", "sw.js"]) {
+              assert.ok(lstatSync(`/app/frontend-dist/${asset}`).isFile(), `Missing built asset: ${asset}`);
+            }
+            for (const forbidden of [
+              "src", "scripts", "drizzle.config.ts", ".env", ".env.local", ".env.production",
+              "node_modules/drizzle-kit", "node_modules/vitest", "node_modules/@vitest",
+              "node_modules/vite", "node_modules/vite-node", "node_modules/tsx",
+              "node_modules/.bin/drizzle-kit", "node_modules/.bin/vitest",
+              "node_modules/.bin/vite", "node_modules/.bin/vite-node", "node_modules/.bin/tsx",
+              "/app/frontend-dist/src", "/app/frontend-dist/node_modules",
+              "/app/frontend-dist/.env", "/app/frontend-dist/.env.production",
+            ]) {
+              assert.equal(lstatSync(forbidden, { throwIfNoEntry: false }), undefined,
+                `Forbidden source, environment, or maintenance/test path in demo image: ${forbidden}`);
             }
           '
 

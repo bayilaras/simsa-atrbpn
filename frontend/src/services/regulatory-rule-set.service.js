@@ -1,4 +1,4 @@
-import api, { API_BASE_URL } from './api';
+import api from './api';
 
 const API_BASE = '/api/regulatory-rule-sets';
 
@@ -45,17 +45,11 @@ const regulatoryRuleSetService = {
     },
 
     async fetchSourceDocument(id, { download = false } = {}) {
-        const suffix = download ? '?download=1' : '';
-        const response = await fetch(
-            `${API_BASE_URL}${API_BASE}/${encodeURIComponent(id)}/source-document${suffix}`,
-            { method: 'GET', credentials: 'include' },
+        const response = await api.get(
+            `${API_BASE}/${encodeURIComponent(id)}/source-document`,
+            download ? { download: 1 } : {},
+            { responseType: 'response' },
         );
-        if (!response.ok) {
-            const body = await response.json().catch(() => ({}));
-            const error = new Error(body.message || body.error || `HTTP ${response.status}`);
-            error.status = response.status;
-            throw error;
-        }
         const disposition = response.headers.get('Content-Disposition') || '';
         const encodedMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
         const plainMatch = disposition.match(/filename="([^"]+)"/i);

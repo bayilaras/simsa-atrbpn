@@ -128,6 +128,17 @@ export function getBlobStorageConfigurationStatus(
 
 export function getObjectStorageConfigurationStatus(source: NodeJS.ProcessEnv = process.env) {
     const cloud = buildCloudPlatformConfig(source);
+    if (cloud.storageProvider === 'disabled') {
+        return {
+            provider: 'disabled' as const,
+            required: false,
+            configured: false,
+            callbackRequired: false,
+            callbackConfigured: false,
+            ready: false,
+            validationErrors: cloud.validationErrors,
+        };
+    }
     if (cloud.storageProvider === 'vercel-blob') {
         return getBlobStorageConfigurationStatus(buildBlobStorageConfig(source));
     }

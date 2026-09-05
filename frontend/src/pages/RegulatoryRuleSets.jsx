@@ -50,6 +50,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader, StatTile } from '@/components/PageHeader';
 import { useAuth } from '@/context/AuthContext';
+import { useAppConfig } from '@/context/app-config-context';
 import { useToast } from '@/hooks/use-toast';
 import regulatoryRuleSetService from '@/services/regulatory-rule-set.service';
 import { uploadFileToBlob } from '@/services/blob-upload.service';
@@ -236,7 +237,7 @@ function StatusBadge({ status }) {
     return <Badge variant={config.variant}>{config.label}</Badge>;
 }
 
-function ActiveRuleCard({ instrumentType, ruleSet, canPublish, canAudit, onClone, onAudit, onSourceDocument }) {
+function ActiveRuleCard({ instrumentType, ruleSet, canPublish, canAudit, filesEnabled, externalIntegrationsEnabled, onClone, onAudit, onSourceDocument }) {
     const instrument = INSTRUMENTS[instrumentType];
 
     if (!ruleSet) {
@@ -293,7 +294,7 @@ function ActiveRuleCard({ instrumentType, ruleSet, canPublish, canAudit, onClone
                     </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2 border-t pt-4">
-                    {canAudit && (
+                    {canAudit && filesEnabled && (
                         <Button
                             variant="outline"
                             size="sm"
@@ -311,7 +312,7 @@ function ActiveRuleCard({ instrumentType, ruleSet, canPublish, canAudit, onClone
                             Lihat master aktif <ExternalLink className="h-3.5 w-3.5" />
                         </Link>
                     </Button>
-                    {ruleSet.sourceUrl && (
+                    {externalIntegrationsEnabled && ruleSet.sourceUrl && (
                         <Button variant="ghost" size="sm" asChild>
                             <a href={ruleSet.sourceUrl} target="_blank" rel="noopener noreferrer">
                                 Buka sumber hukum <ExternalLink className="h-3.5 w-3.5" />
@@ -387,6 +388,7 @@ function ValidationReport({ report }) {
 
 export default function RegulatoryRuleSets() {
     const { user } = useAuth();
+    const { capabilities } = useAppConfig();
     const { toast } = useToast();
     const [searchParams, setSearchParams] = useSearchParams();
     const canPublish = user?.role === 'super_admin';
@@ -535,6 +537,7 @@ export default function RegulatoryRuleSets() {
     };
 
     const uploadSourceDocument = async () => {
+        if (!capabilities.files) return;
         if (!sourceRuleSet || !sourceFile) return;
         try {
             setActionLoading(true);
@@ -691,6 +694,7 @@ export default function RegulatoryRuleSets() {
     };
 
     const openSourceDocument = async (ruleSet) => {
+        if (!capabilities.files) return;
         const viewer = window.open('about:blank', '_blank');
         if (viewer) viewer.opener = null;
         try {
@@ -844,6 +848,8 @@ export default function RegulatoryRuleSets() {
                             ruleSet={activeRuleSet}
                             canPublish={canPublish}
                             canAudit={canAudit}
+                            filesEnabled={capabilities.files}
+                            externalIntegrationsEnabled={capabilities.externalIntegrations}
                             onClone={openClone}
                             onAudit={() => openEvents(activeRuleSet)}
                             onSourceDocument={openSourceDocument}
@@ -903,7 +909,7 @@ export default function RegulatoryRuleSets() {
                                                 <TableCell data-label="Tindakan" className="text-right">
                                                     {canGovern ? (
                                                         <div className="flex flex-wrap justify-end gap-2">
-                                                            <Button
+                                                            {capabilities.files && <Button
                                                                 variant="outline"
                                                                 size="sm"
                                                                 disabled={!ruleSet.sourceDocumentStored || actionLoading}
@@ -911,15 +917,15 @@ export default function RegulatoryRuleSets() {
                                                                     ? 'Tampilkan PDF sumber terverifikasi; penampil PDF menyediakan opsi unduh.'
                                                                     : 'PDF belum tersedia pada private Blob.'}
                                                                 onClick={() => openSourceDocument(ruleSet)}
-                                                            ><FileDown /> PDF</Button>
+                                                            ><FileDown /> PDF</Button>}
                                                             {ruleSet.status === 'draft' && canPublish && (
                                                                 <>
                                                                     <Button variant="outline" size="sm" asChild>
                                                                         <Link to={`${instrument.editorPath}?ruleSetId=${ruleSet.id}&mode=draft`}>Edit isi</Link>
                                                                     </Button>
                                                                     <Button variant="outline" size="sm" onClick={() => validateDraft(ruleSet)}><FileCheck2 /> Validasi</Button>
-                                                                    <Button variant="outline" size="sm" onClick={() => openImport(ruleSet)}><Upload /> Impor JSON</Button>
-                                                                    <Button variant="outline" size="sm" onClick={() => { setSourceRuleSet(ruleSet); setSourceFile(null); setSourceUploadProgress(null); }}><Upload /> PDF sumber</Button>
+                                                                    {capabilities.externalIntegrations && <Button variant="outline" size="sm" onClick={() => openImport(ruleSet)}><Upload /> Impor JSON</Button>}
+                                                                    {capabilities.files && <Button variant="outline" size="sm" onClick={() => { setSourceRuleSet(ruleSet); setSourceFile(null); setSourceUploadProgress(null); }}><Upload /> PDF sumber</Button>}
                                                                     <Button variant="outline" size="sm" onClick={() => openManifest(ruleSet)}><ClipboardCheck /> Manifest</Button>
                                                                     <Button variant="outline" size="sm" onClick={() => generateImpact(ruleSet)} disabled={actionLoading}><GitBranch /> Diff & dampak</Button>
                                                                     <Button size="sm" onClick={() => openWorkflow(ruleSet, 'submit')}><Send /> Ajukan</Button>
@@ -962,7 +968,7 @@ export default function RegulatoryRuleSets() {
                                                         </div>
                                                     ) : canAudit ? (
                                                         <div className="flex flex-wrap justify-end gap-2">
-                                                            <Button
+                                                            {capabilities.files && <Button
                                                                 variant="outline"
                                                                 size="sm"
                                                                 disabled={!ruleSet.sourceDocumentStored || actionLoading}
@@ -970,7 +976,7 @@ export default function RegulatoryRuleSets() {
                                                                     ? 'Tampilkan PDF sumber terverifikasi; penampil PDF menyediakan opsi unduh.'
                                                                     : 'PDF belum tersedia pada private Blob.'}
                                                                 onClick={() => openSourceDocument(ruleSet)}
-                                                            ><FileDown /> PDF</Button>
+                                                            ><FileDown /> PDF</Button>}
                                                             <Button variant="ghost" size="sm" onClick={() => openEvents(ruleSet)}><History /> Audit</Button>
                                                         </div>
                                                     ) : (
@@ -1059,7 +1065,7 @@ export default function RegulatoryRuleSets() {
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={Boolean(importRuleSet)} onOpenChange={(open) => !open && closeImport()}>
+            <Dialog open={capabilities.externalIntegrations && Boolean(importRuleSet)} onOpenChange={(open) => !open && closeImport()}>
                 <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>Impor manifest ke draft {importRuleSet?.version}</DialogTitle>
@@ -1128,7 +1134,7 @@ export default function RegulatoryRuleSets() {
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={Boolean(sourceRuleSet)} onOpenChange={(open) => {
+            <Dialog open={capabilities.files && Boolean(sourceRuleSet)} onOpenChange={(open) => {
                 if (!open && !actionLoading) {
                     setSourceRuleSet(null);
                     setSourceFile(null);

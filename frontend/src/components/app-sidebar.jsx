@@ -183,12 +183,14 @@ const menuGroups = [
                 url: '/arsip-elektronik',
                 icon: HardDrive,
                 allowedRoles: ADMIN_ROLES,
+                capability: 'files',
             },
             {
                 title: 'Autentikasi',
                 url: '/autentikasi',
                 icon: ShieldAlert,
                 allowedRoles: ['super_admin'],
+                capability: 'files',
             },
             {
                 title: 'Tunjuk Silang',
@@ -256,7 +258,7 @@ const menuGroups = [
 import { useAuth } from '@/context/AuthContext'
 
 export function AppSidebar() {
-    const { features } = useAppConfig()
+    const { features, capabilities } = useAppConfig()
     const location = useLocation()
     const { setOpenMobile } = useSidebar()
     const { user } = useAuth()
@@ -269,6 +271,7 @@ export function AppSidebar() {
     // Check if a menu item is visible to the current user
     const isAllowed = (item) => {
         if (item.feature && !features[item.feature]) return false
+        if (item.capability && !capabilities[item.capability]) return false
         if (!item.allowedRoles) return true
         return item.allowedRoles.includes(userRole)
     }

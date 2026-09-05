@@ -191,6 +191,36 @@ describe('collectReadiness', () => {
         expect(databaseRelease).toHaveBeenCalledWith(false);
     });
 
+    it.each([true, false])('requires the isolated demo database identity before schema readiness (matches=%s)', async (matches) => {
+        vi.stubEnv('SIMSA_APP_MODE', 'metadata-demo');
+        vi.stubEnv('SIMSA_DEMO_DATABASE', 'simsa_demo_readiness');
+        vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'disabled');
+        blobStatus.mockReturnValue({
+            provider: 'disabled', required: false, configured: false,
+            ready: false, validationErrors: [],
+        });
+        const query = vi.fn()
+            .mockResolvedValueOnce({ rows: [{ database_name: matches ? 'simsa_demo_readiness' : 'production' }] })
+            .mockResolvedValueOnce({ rows: [{ schema_ready: true }] });
+        const release = vi.fn();
+        poolConnect.mockResolvedValueOnce({ query, release });
+
+        const result = await collectReadiness();
+
+        expect(result.status).toBe(matches ? 'ready' : 'not_ready');
+        expect(query.mock.calls[0][0]).toContain('current_database()');
+        expect(query).toHaveBeenCalledTimes(matches ? 2 : 1);
+        if (matches) expect(query.mock.calls[1][0]).toContain('runtime_membership_closure');
+        expect(poolConnect).toHaveBeenCalledOnce(); // No heartbeat query in a file-free demo.
+        expect(blobProbe).not.toHaveBeenCalled();
+        expect(result.dependencies.blobStorage.configured).toBe(false);
+        expect(result.dependencies.blobStorage.runtime).toEqual({ ready: true, skipped: true });
+        // A client connected to an unexpected database is outside the demo
+        // trust boundary and must be retired instead of returned to the pool.
+        expect(release).toHaveBeenCalledWith(!matches);
+        expect(JSON.stringify(result)).not.toContain('production');
+    });
+
     it('aborts live probes when their readiness deadline expires', async () => {
         vi.useFakeTimers();
         const databaseSignals: AbortSignal[] = [];

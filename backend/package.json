@@ -25,7 +25,7 @@
     "db:generate": "drizzle-kit generate",
     "db:roles:bootstrap": "node scripts/apply-database-role-bootstrap.mjs",
     "db:grants:converge": "node scripts/apply-database-grant-convergence.mjs",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "node scripts/migrate-database.mjs",
     "db:studio": "drizzle-kit studio",
     "seed:unit-kerja": "tsx src/db/seeds/seed-unit-kerja.ts",
     "seed:klasifikasi": "tsx src/db/seed-klasifikasi.ts",
