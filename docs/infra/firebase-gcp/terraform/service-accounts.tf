@@ -145,6 +145,16 @@ resource "google_project_iam_member" "api_firebase_session_runtime" {
   member  = google_service_account.api.member
 }
 
+# Consuming limited-use App Check tokens calls the remote verification API.
+# Firebase Auth permissions alone do not authorize this replay-protection flow.
+resource "google_project_iam_member" "api_app_check_token_verifier" {
+  project = var.project_id
+  role    = "roles/firebaseappcheck.tokenVerifier"
+  member  = google_service_account.api.member
+
+  depends_on = [google_project_service.required["firebaseappcheck.googleapis.com"]]
+}
+
 resource "google_project_iam_custom_role" "api_quarantine_runtime" {
   project     = var.project_id
   role_id     = "simsaApiQuarantineRuntime"
