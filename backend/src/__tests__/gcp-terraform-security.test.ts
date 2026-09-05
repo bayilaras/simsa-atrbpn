@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 function terraformFile(name: string): string {
@@ -64,6 +64,67 @@ describe('GCP Terraform least-privilege contract', () => {
         expect(variables).toContain('variable "firebase_app_check_app_ids"');
         expect(cloudRun).toContain('FIREBASE_APP_CHECK_APP_IDS');
         expect(cloudRun).toContain('var.firebase_app_check_app_ids');
+    });
+
+    it('grants App Check replay consumption only to the API identity in its own project', () => {
+        const serviceAccounts = terraformFile('service-accounts.tf');
+        const verifierBinding = terraformResourceBody(
+            serviceAccounts,
+            'google_project_iam_member',
+            'api_app_check_token_verifier',
+        );
+
+        expect(verifierBinding).toMatch(/^\s*project\s*=\s*var\.project_id\s*$/m);
+        expect(verifierBinding).toMatch(
+            /^\s*role\s*=\s*"roles\/firebaseappcheck\.tokenVerifier"\s*$/m,
+        );
+        expect(verifierBinding).toMatch(/^\s*member\s*=\s*google_service_account\.api\.member\s*$/m);
+        expect(verifierBinding).toContain(
+            'depends_on = [google_project_service.required["firebaseappcheck.googleapis.com"]]',
+        );
+        expect(verifierBinding).not.toMatch(/\b(?:for_each|count|condition)\s*[={]/);
+        expect(verifierBinding.match(/google_service_account\.\w+\.member/g))
+            .toEqual(['google_service_account.api.member']);
+    });
+
+    it('orders API creation after the App Check grant without coupling other workloads to it', () => {
+        const cloudRun = terraformFile('cloud-run.tf');
+        const api = terraformResourceBody(cloudRun, 'google_cloud_run_v2_service', 'api');
+        const events = terraformResourceBody(cloudRun, 'google_cloud_run_v2_service', 'events');
+        const cleanup = terraformResourceBody(cloudRun, 'google_cloud_run_v2_job', 'final_cleanup');
+        const verifierDependency = 'google_project_iam_member.api_app_check_token_verifier';
+
+        expect(api.match(/\n  depends_on = \[(?<body>[\s\S]*?)\n  \]/)?.groups?.body)
+            .toContain(verifierDependency);
+        expect(events).not.toContain(verifierDependency);
+        expect(cleanup).not.toContain(verifierDependency);
+        expect(terraformFile('worker.tf')).not.toContain(verifierDependency);
+    });
+
+    it('does not replace the one API verifier grant with broader App Check or Firebase access', () => {
+        const terraformDirectory = new URL('../../../docs/infra/firebase-gcp/terraform/', import.meta.url);
+        const terraform = readdirSync(terraformDirectory)
+            .filter(name => name.endsWith('.tf'))
+            .map(terraformFile)
+            .join('\n');
+
+        expect(terraform.match(/role\s*=\s*"roles\/firebaseappcheck\.tokenVerifier"/g) ?? [])
+            .toHaveLength(1);
+        for (const broaderRole of [
+            'roles/firebaseappcheck.admin',
+            'roles/firebase.admin',
+            'roles/firebase.developAdmin',
+            'roles/firebase.sdkAdminServiceAgent',
+            'roles/firebaseappcheck.serviceAgent',
+        ]) {
+            expect(terraform).not.toContain(`"${broaderRole}"`);
+        }
+        // The predefined verifier role is the only App Check permission grant;
+        // no second custom role may silently add mint/config/debug-token access.
+        const customPermissions = [...terraform.matchAll(/\bpermissions\s*=\s*\[([\s\S]*?)\]/g)]
+            .map(match => match[1])
+            .join('\n');
+        expect(customPermissions).not.toMatch(/"firebaseappcheck\.[^"\s]+"/);
     });
 
     it('does not grant the storage event receiver access to the final bucket', () => {

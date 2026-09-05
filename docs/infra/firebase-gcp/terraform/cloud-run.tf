@@ -225,6 +225,7 @@ resource "google_cloud_run_v2_service" "api" {
     google_project_iam_member.cloud_sql_client,
     google_project_iam_member.cloud_sql_instance_user,
     google_project_iam_member.api_firebase_session_runtime,
+    google_project_iam_member.api_app_check_token_verifier,
     google_secret_manager_secret_iam_member.api_session_csrf_accessor,
     google_storage_bucket_iam_member.upload_api_runtime,
     google_storage_bucket_iam_member.final_api_runtime,

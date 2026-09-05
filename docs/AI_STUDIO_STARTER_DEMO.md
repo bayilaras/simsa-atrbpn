@@ -159,6 +159,22 @@ menyediakan bentuk koneksi atau hak PostgreSQL yang berbeda. Catat environment
 non-rahasia dan atribut role yang benar-benar diberikan, lalu review sebelum
 menambahkan adapter kompatibilitas; jangan menebak kontraknya.
 
+Identitas service account API yang benar-benar terpasang juga memerlukan
+`roles/firebaseappcheck.tokenVerifier` pada project Firebase yang sama.
+Role ini hanya memberi `firebaseappcheck.appCheckTokens.verify`, yang dipakai
+ketika login dan pencabutan sesi mengonsumsi token App Check sekali pakai.
+Terraform mengikatnya hanya ke `simsa-api-runtime`; identitas worker, event,
+migrasi, dan backup tidak menerimanya. Untuk Starter, periksa identitas runtime
+yang benar-benar disediakan sebelum provisioning; jangan menganggapnya sama
+dengan identitas Terraform atau mengganti role ini dengan Firebase Admin.
+Lihat [kontrak replay protection Firebase](https://firebase.google.com/docs/app-check/custom-resource-backend#replay_protection_beta)
+dan [permission role resmi](https://docs.cloud.google.com/iam/docs/roles-permissions/firebaseappcheck).
+
+`/ready` menguji akses konfigurasi Firebase Auth, bukan konsumsi token App Check.
+Sebelum URL dibagikan, uji login dengan token limited-use baru dan pastikan
+pemakaian ulang token tersebut ditolak. Keberhasilan probe saja belum membuktikan
+kontrak IAM replay protection atau login live.
+
 ## Routing dan keamanan static
 
 - `/api`, `/health`, `/ready`, dan `/internal` tidak pernah menerima fallback
