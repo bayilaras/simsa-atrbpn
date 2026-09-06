@@ -15,6 +15,7 @@ import {
   parseArguments, sterileEnvironment, assertPort, assertClusterIdentity, inside,
   createEncryptor, encryptBuffer, decryptBuffer, validateManifest, normalizeEvidence, extractBackupGuard,
   WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl,
+  LOCAL_POSTGRES_ISOLATION_CONFIG, nativePostgresOptions,
 } from './local-backup-drill-core.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -244,11 +245,19 @@ async function runLocalDrill(options) {
     await command(`initdb-${kind}`, binary('initdb'), ['--pgdata', cluster.dataDir, '--username', cluster.admin,
       '--pwfile', passwordFile, '--encoding=UTF8', '--no-locale', '--auth-host=scram-sha-256', '--auth-local=scram-sha-256']);
     cluster.systemIdentifier = await diskIdentity(cluster);
+    // This is the config created by the initdb immediately above, not a
+    // pre-existing server. Verify its exact path before a bounded append.
+    const configPath = join(cluster.dataDir, 'postgresql.conf');
+    const configStat = await lstat(configPath);
+    requireCondition(configStat.isFile() && !configStat.isSymbolicLink()
+      && (await realpath(configPath)) === configPath,
+    'Fresh cluster configuration identity could not be verified');
+    await appendFile(configPath, LOCAL_POSTGRES_ISOLATION_CONFIG);
     await portFree(cluster.port);
     // The generated -o string contains no user-supplied values or paths.
     cluster.startAttempted = true;
     await command(`start-${kind}`, binary('pg_ctl'), ['--pgdata', cluster.dataDir, '--log', join(privateDir, `${kind}-postgres.log`),
-      '-o', `-p ${cluster.port} -h 127.0.0.1 -c unix_socket_directories='' -c shared_buffers=32MB -c max_connections=20 -c logging_collector=off`,
+      '-o', nativePostgresOptions(cluster.port),
       '-w', '-t', '30', 'start']);
     cluster.started = true;
     await guard(cluster);

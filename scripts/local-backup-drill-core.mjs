@@ -106,6 +106,16 @@ export function assertPort(port) {
   return port;
 }
 
+// pg_ctl forwards -o through platform-specific process quoting. An empty
+// single-quoted argv value becomes a literal "''" directory on Windows; put
+// this setting in PostgreSQL's own configuration grammar instead.
+export const LOCAL_POSTGRES_ISOLATION_CONFIG =
+  "\n# Local synthetic drill: TCP loopback only; no Unix-domain listener.\nunix_socket_directories = ''\n";
+
+export function nativePostgresOptions(port) {
+  return `-p ${assertPort(port)} -h 127.0.0.1 -c shared_buffers=32MB -c max_connections=20 -c logging_collector=off`;
+}
+
 export function assertClusterIdentity(actual, expected) {
   requireCondition(actual && actual.database === 'postgres' && actual.user === expected.admin
     && actual.session_user === expected.admin && actual.superuser === true

@@ -9,6 +9,7 @@ import {
   parseArguments, sterileEnvironment, assertPort, assertClusterIdentity,
   encryptBuffer, decryptBuffer, validateManifest, normalizeEvidence, extractBackupGuard,
   WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl,
+  LOCAL_POSTGRES_ISOLATION_CONFIG, nativePostgresOptions,
 } from './local-backup-drill-core.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -113,6 +114,16 @@ test('ports cannot select a default, low, remote or malformed endpoint', () => {
   }
   assert.equal(assertPort(40000), 40000);
   assert.equal(assertPort(59999), 59999);
+});
+
+test('native pg_ctl options use loopback without shell-dependent empty quoting', () => {
+  assert.equal(nativePostgresOptions(45678),
+    '-p 45678 -h 127.0.0.1 -c shared_buffers=32MB -c max_connections=20 -c logging_collector=off');
+  assert.doesNotMatch(nativePostgresOptions(45678), /["']|unix_socket_directories/);
+  assert.match(LOCAL_POSTGRES_ISOLATION_CONFIG, /^unix_socket_directories = ''$/m);
+  assert.equal(LOCAL_POSTGRES_ISOLATION_CONFIG.match(/unix_socket_directories/g).length, 1);
+  assert.throws(() => nativePostgresOptions(5432));
+  assert.throws(() => nativePostgresOptions('45678 -h 0.0.0.0'));
 });
 
 test('every observed cluster identity field is mandatory and exact', () => {
