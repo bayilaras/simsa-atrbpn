@@ -7,6 +7,26 @@ export const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 export const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
 
+// A constant read-only probe: pass the path through a dedicated environment
+// value, never interpolate it into PowerShell code. Errors must terminate.
+export const WINDOWS_ACL_PROBE_SCRIPT =
+  "$ErrorActionPreference='Stop'; Set-StrictMode -Version Latest; " +
+  '$a=Get-Acl -LiteralPath $env:SIMSA_DRILL_ACL_TARGET; ' +
+  '$r=@($a.Access | ForEach-Object { @{ sid=$_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value; ' +
+  'type=$_.AccessControlType.ToString(); inherited=$_.IsInherited; rights=$_.FileSystemRights.ToString(); ' +
+  'inheritance=$_.InheritanceFlags.ToString(); propagation=$_.PropagationFlags.ToString() } }); ' +
+  '@{ protected=$a.AreAccessRulesProtected; rules=$r } | ConvertTo-Json -Depth 4 -Compress';
+
+export function assertWindowsPrivateAcl(proof, sid) {
+  requireCondition(/^S-1-5-[0-9-]+$/.test(sid) && proof?.protected === true
+    && Array.isArray(proof.rules) && proof.rules.length === 1
+    && proof.rules[0]?.sid === sid && proof.rules[0].type === 'Allow'
+    && proof.rules[0].inherited === false && proof.rules[0].rights === 'FullControl'
+    && proof.rules[0].inheritance === 'ContainerInherit, ObjectInherit'
+    && proof.rules[0].propagation === 'None',
+  'Private Windows ACL differs from the expected inheritable user-only full-control rule');
+}
+
 export function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
 }

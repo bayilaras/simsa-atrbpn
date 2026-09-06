@@ -14,6 +14,7 @@ import {
   FORMAT, MAX_ARCHIVE_BYTES, MAX_EVIDENCE_BYTES, sha256, requireCondition, strictPath,
   parseArguments, sterileEnvironment, assertPort, assertClusterIdentity, inside,
   createEncryptor, encryptBuffer, decryptBuffer, validateManifest, normalizeEvidence, extractBackupGuard,
+  WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl,
 } from './local-backup-drill-core.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -130,16 +131,10 @@ async function runLocalDrill(options) {
     await command('restrict-private-root', join(system, 'icacls.exe'),
       [runDir, '/inheritance:r', '/grant:r', `*${sid}:(OI)(CI)F`]);
     const acl = await command('verify-private-acl', join(system, 'WindowsPowerShell/v1.0/powershell.exe'),
-      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
-        '$a=Get-Acl -LiteralPath $env.SIMSA_DRILL_ACL_TARGET; ' +
-        '$r=@($a.Access | ForEach-Object { @{ sid=$_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value; type=$_.AccessControlType.ToString(); inherited=$_.IsInherited; rights=$_.FileSystemRights.ToString() } }); ' +
-        '@{ protected=$a.AreAccessRulesProtected; rules=$r } | ConvertTo-Json -Depth 4 -Compress'],
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', WINDOWS_ACL_PROBE_SCRIPT],
       { env: { ...environment, SIMSA_DRILL_ACL_TARGET: runDir } });
     const proof = JSON.parse(acl.output.trim());
-    requireCondition(proof.protected === true && proof.rules.length === 1
-      && proof.rules[0].sid === sid && proof.rules[0].type === 'Allow'
-      && proof.rules[0].inherited === false && proof.rules[0].rights === 'FullControl',
-    'Private Windows ACL differs from the expected user-only full-control rule');
+    assertWindowsPrivateAcl(proof, sid);
   }
 
   async function git(label, args) {

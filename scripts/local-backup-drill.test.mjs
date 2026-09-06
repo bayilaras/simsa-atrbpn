@@ -8,6 +8,7 @@ import {
   FORMAT, MAGIC, MAX_ARCHIVE_BYTES, sha256, strictPath, inside, validateOutputParent,
   parseArguments, sterileEnvironment, assertPort, assertClusterIdentity,
   encryptBuffer, decryptBuffer, validateManifest, normalizeEvidence, extractBackupGuard,
+  WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl,
 } from './local-backup-drill-core.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -79,6 +80,31 @@ test('child environment strips database, cloud, npm and Node injection', () => {
   assert.equal(env.NPM_CONFIG_OFFLINE, 'true');
   assert.equal(env.PATH.includes('attacker-first'), false);
   assert.equal(inherited.PGHOST, 'external');
+});
+
+test('Windows read-only ACL probe uses actual environment syntax and terminating errors', () => {
+  assert.match(WINDOWS_ACL_PROBE_SCRIPT, /Get-Acl -LiteralPath \$env:SIMSA_DRILL_ACL_TARGET;/);
+  assert.doesNotMatch(WINDOWS_ACL_PROBE_SCRIPT, /\$env\./);
+  assert.match(WINDOWS_ACL_PROBE_SCRIPT, /\$ErrorActionPreference='Stop'/);
+  assert.match(WINDOWS_ACL_PROBE_SCRIPT, /Set-StrictMode -Version Latest/);
+  assert.doesNotMatch(WINDOWS_ACL_PROBE_SCRIPT, /Set-Acl|icacls|Remove-Item|New-Item/);
+});
+
+test('Windows ACL must be exactly one explicit inheritable FullControl rule for the current SID', () => {
+  const sid = 'S-1-5-21-111-222-333-1002';
+  const rule = { sid, type: 'Allow', inherited: false, rights: 'FullControl',
+    inheritance: 'ContainerInherit, ObjectInherit', propagation: 'None' };
+  const proof = { protected: true, rules: [rule] };
+  assert.doesNotThrow(() => assertWindowsPrivateAcl(proof, sid));
+  for (const invalid of [null, { protected: null, rules: [] }, { ...proof, protected: false },
+    { ...proof, rules: [] }, { ...proof, rules: rule }, { ...proof, rules: [rule, rule] }]) {
+    assert.throws(() => assertWindowsPrivateAcl(invalid, sid));
+  }
+  for (const [name, value] of Object.entries({ sid: 'S-1-5-32-544', type: 'Deny', inherited: true,
+    rights: 'ReadAndExecute', inheritance: 'None', propagation: 'InheritOnly' })) {
+    assert.throws(() => assertWindowsPrivateAcl({ protected: true, rules: [{ ...rule, [name]: value }] }, sid));
+  }
+  assert.throws(() => assertWindowsPrivateAcl(proof, 'not-a-sid'));
 });
 
 test('ports cannot select a default, low, remote or malformed endpoint', () => {
