@@ -4,6 +4,11 @@ This runbook covers the Firebase/Google Cloud target only. The existing Neon
 workflow remains available as a temporary rollback path and is not modified or
 disabled by this design.
 
+For a repeatable synthetic drill without cloud credentials, see the
+[native local backup/restore drill](docs/LOCAL_BACKUP_RESTORE_DRILL.md). It uses
+fresh local PostgreSQL clusters and separate local encryption; it does not
+satisfy this runbook's cloud backup, `age`, WIF, or independent-runner gates.
+
 ## What the workflow guarantees
 
 After this workflow is reviewed, merged, and enabled on the default branch,
