@@ -1,0 +1,10 @@
+{
+  "indexes": [{
+    "collectionGroup": "records", "queryScope": "COLLECTION",
+    "fields": [
+      { "fieldPath": "referenceNumber", "order": "ASCENDING" },
+      { "fieldPath": "updatedAt", "order": "DESCENDING" }
+    ]
+  }],
+  "fieldOverrides": []
+}

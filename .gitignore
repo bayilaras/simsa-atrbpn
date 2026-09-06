@@ -44,6 +44,7 @@ debug-seed.log
 
 # Test output
 output/
+.playwright-cli/
 test-output*.txt
 tsc_errors*.txt
 reproduction_error*.txt
