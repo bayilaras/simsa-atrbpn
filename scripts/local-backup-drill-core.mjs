@@ -100,6 +100,20 @@ export function sterileEnvironment(parent, { privateDir, pgBin, nodePath, platfo
   return result;
 }
 
+export function buildLocalMaintenanceScripts({ nodePath, migrationPath, seedPath, tsxPath, platform = process.platform }) {
+  // npm invokes its script shell. A quoted executable as the first token can
+  // acquire an extra quoting layer in cmd.exe. npm also prepends ancestor .bin
+  // paths, so bare node is NOT an exact executable binding. CALL/exec retain
+  // the validated absolute executable and its exit status. strictPath rejects
+  // percent/exclamation/shell expansion characters before Windows CALL parsing.
+  requireCondition(['win32', 'linux', 'darwin'].includes(platform), 'Unsupported maintenance script platform');
+  const launch = `${platform === 'win32' ? 'call' : 'exec'} "${strictPath(nodePath, 'Node executable')}"`;
+  return {
+    'db:migrate': `${launch} "${strictPath(migrationPath, 'migration entry')}"`,
+    'seed:all': `${launch} "${strictPath(tsxPath, 'installed tsx entry')}" "${strictPath(seedPath, 'seed entry')}"`,
+  };
+}
+
 export function assertPort(port) {
   requireCondition(Number.isInteger(port) && port >= 40000 && port <= 59999,
     'Only generated high loopback ports 40000-59999 are permitted');

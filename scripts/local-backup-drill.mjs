@@ -17,6 +17,7 @@ import {
   WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl,
   LOCAL_POSTGRES_ISOLATION_CONFIG, nativePostgresOptions,
   CLUSTER_IDENTITY_SQL, awaitPostgresLauncherExit,
+  buildLocalMaintenanceScripts,
 } from './local-backup-drill-core.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -326,10 +327,9 @@ async function runLocalDrill(options) {
     const seedPath = strictPath(join(repository, 'backend/src/db/seed.ts'), 'seed entry');
     const tsxPath = strictPath(join(repository, 'backend/node_modules/tsx/dist/cli.mjs'), 'installed tsx entry');
     requireCondition((await lstat(tsxPath)).isFile(), 'Install backend dependencies separately before this offline drill');
-    await writeFile(join(privateDir, 'package.json'), JSON.stringify({ private: true, scripts: {
-      'db:migrate': `"${nodePath}" "${migrationPath}"`,
-      'seed:all': `"${nodePath}" "${tsxPath}" "${seedPath}"`,
-    } }, null, 2), { flag: 'wx', mode: 0o600 });
+    await writeFile(join(privateDir, 'package.json'), JSON.stringify({ private: true,
+      scripts: buildLocalMaintenanceScripts({ nodePath, migrationPath, seedPath, tsxPath }),
+    }, null, 2), { flag: 'wx', mode: 0o600 });
     async function maintenance(script, roleIndex) {
       await guard(source);
       const uri = new URL(`postgresql://127.0.0.1:${source.port}/${report.database}`);

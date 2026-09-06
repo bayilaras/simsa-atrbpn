@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 import {
@@ -12,6 +12,7 @@ import {
   WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl,
   LOCAL_POSTGRES_ISOLATION_CONFIG, nativePostgresOptions,
   CLUSTER_IDENTITY_SQL, awaitPostgresLauncherExit,
+  buildLocalMaintenanceScripts,
 } from './local-backup-drill-core.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -82,7 +83,28 @@ test('child environment strips database, cloud, npm and Node injection', () => {
   assert.equal(env.HOME, outside);
   assert.equal(env.NPM_CONFIG_OFFLINE, 'true');
   assert.equal(env.PATH.includes('attacker-first'), false);
+  assert.equal(env.PATH.split(delimiter)[0], dirname(process.execPath));
   assert.equal(inherited.PGHOST, 'external');
+});
+
+test('generated maintenance commands bind exact Node despite npm PATH prepending and quote space-containing paths', () => {
+  const paths = { nodePath: resolve(outside, 'node with spaces/node'), migrationPath: resolve(outside, 'repo with spaces/migrate.mjs'),
+    tsxPath: resolve(outside, 'repo with spaces/tsx.mjs'), seedPath: resolve(outside, 'repo with spaces/seed.ts') };
+  for (const [platform, command] of [['win32', 'call'], ['linux', 'exec'], ['darwin', 'exec']]) {
+    const scripts = buildLocalMaintenanceScripts({ ...paths, platform });
+    assert.deepEqual(scripts, {
+      'db:migrate': `${command} "${paths.nodePath}" "${paths.migrationPath}"`,
+      'seed:all': `${command} "${paths.nodePath}" "${paths.tsxPath}" "${paths.seedPath}"`,
+    });
+    assert.doesNotMatch(scripts['db:migrate'], /^node /);
+  }
+  for (const name of Object.keys(paths)) {
+    assert.throws(() => buildLocalMaintenanceScripts({ ...paths, [name]: resolve(outside, 'entry & injected') }));
+    assert.throws(() => buildLocalMaintenanceScripts({ ...paths, [name]: 'relative.mjs' }));
+    assert.throws(() => buildLocalMaintenanceScripts({ ...paths, [name]: resolve(outside, 'entry%expanded%') }));
+    assert.throws(() => buildLocalMaintenanceScripts({ ...paths, [name]: resolve(outside, 'entry!expanded!') }));
+  }
+  assert.throws(() => buildLocalMaintenanceScripts({ ...paths, platform: 'unknown' }));
 });
 
 test('Windows read-only ACL probe uses actual environment syntax and terminating errors', () => {
