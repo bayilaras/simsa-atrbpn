@@ -4,12 +4,14 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EventEmitter } from 'node:events';
 import {
   FORMAT, MAGIC, MAX_ARCHIVE_BYTES, sha256, strictPath, inside, validateOutputParent,
   parseArguments, sterileEnvironment, assertPort, assertClusterIdentity,
   encryptBuffer, decryptBuffer, validateManifest, normalizeEvidence, extractBackupGuard,
   WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl,
   LOCAL_POSTGRES_ISOLATION_CONFIG, nativePostgresOptions,
+  CLUSTER_IDENTITY_SQL, awaitPostgresLauncherExit,
 } from './local-backup-drill-core.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -124,6 +126,57 @@ test('native pg_ctl options use loopback without shell-dependent empty quoting',
   assert.equal(LOCAL_POSTGRES_ISOLATION_CONFIG.match(/unix_socket_directories/g).length, 1);
   assert.throws(() => nativePostgresOptions(5432));
   assert.throws(() => nativePostgresOptions('45678 -h 0.0.0.0'));
+});
+
+test('cluster SQL renders the host without an inet netmask while retaining strict host comparison', () => {
+  assert.match(CLUSTER_IDENTITY_SQL, /'host', host\(inet_server_addr\(\)\)/);
+  assert.doesNotMatch(CLUSTER_IDENTITY_SQL, /inet_server_addr\(\)::text/);
+  assert.match(CLUSTER_IDENTITY_SQL, /pg_control_system\(\)/);
+  assert.match(CLUSTER_IDENTITY_SQL, /current_setting\('data_directory'\)/);
+});
+
+test('file-stdio PostgreSQL launcher completes on its exit without waiting for daemon close', async () => {
+  const child = new EventEmitter();
+  const completion = awaitPostgresLauncherExit(child, { timeoutMs: 1000 });
+  child.emit('exit', 0, null);
+  await completion;
+  assert.equal(child.listenerCount('close'), 1);
+  assert.doesNotThrow(() => child.emit('error', new Error('late error after exit')));
+  child.emit('close', 0, null);
+  assert.equal(child.listenerCount('close'), 0);
+  assert.equal(child.listenerCount('error'), 0);
+  assert.equal(child.listenerCount('exit'), 0);
+});
+
+test('PostgreSQL launcher rejects nonzero, signal, spawn failure and bounded timeout', async () => {
+  for (const [code, signal] of [[1, null], [null, 'SIGTERM']]) {
+    const child = new EventEmitter();
+    const completion = awaitPostgresLauncherExit(child, { timeoutMs: 1000 });
+    child.emit('exit', code, signal);
+    await assert.rejects(completion, /PostgreSQL launcher failed/);
+    child.emit('close', code, signal);
+  }
+  const spawnFailure = new EventEmitter();
+  const failure = awaitPostgresLauncherExit(spawnFailure, { timeoutMs: 1000 });
+  spawnFailure.emit('error', new Error('spawn failure'));
+  await assert.rejects(failure, /spawn failure/);
+  assert.doesNotThrow(() => spawnFailure.emit('error', new Error('second spawn error')));
+  assert.equal(spawnFailure.listenerCount('error'), 1);
+  spawnFailure.emit('close', -1, null);
+  assert.equal(spawnFailure.listenerCount('error'), 0);
+  assert.equal(spawnFailure.listenerCount('close'), 0);
+  const neverExits = new EventEmitter();
+  let killed = 0;
+  neverExits.kill = () => { killed++; };
+  await assert.rejects(awaitPostgresLauncherExit(neverExits, { timeoutMs: 10 }), /timed out/);
+  assert.equal(killed, 1);
+  assert.doesNotThrow(() => neverExits.emit('error', new Error('late asynchronous kill error')));
+  assert.doesNotThrow(() => neverExits.emit('error', new Error('second late kill error')));
+  neverExits.emit('close', null, 'SIGTERM');
+  assert.equal(neverExits.listenerCount('error'), 0);
+  assert.equal(neverExits.listenerCount('close'), 0);
+  assert.equal(neverExits.listenerCount('exit'), 0);
+  assert.throws(() => awaitPostgresLauncherExit(new EventEmitter(), { timeoutMs: 60001 }));
 });
 
 test('every observed cluster identity field is mandatory and exact', () => {

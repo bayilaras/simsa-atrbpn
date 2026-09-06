@@ -7,7 +7,7 @@ import { dirname, join, resolve, basename } from 'node:path';
 import { randomBytes, randomInt } from 'node:crypto';
 import { createServer, createConnection } from 'node:net';
 import { createWriteStream } from 'node:fs';
-import { lstat, realpath, readFile, writeFile, mkdir, mkdtemp, chmod, appendFile } from 'node:fs/promises';
+import { lstat, realpath, readFile, writeFile, mkdir, mkdtemp, chmod, appendFile, open } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import {
@@ -16,6 +16,7 @@ import {
   createEncryptor, encryptBuffer, decryptBuffer, validateManifest, normalizeEvidence, extractBackupGuard,
   WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl,
   LOCAL_POSTGRES_ISOLATION_CONFIG, nativePostgresOptions,
+  CLUSTER_IDENTITY_SQL, awaitPostgresLauncherExit,
 } from './local-backup-drill-core.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -199,12 +200,7 @@ async function runLocalDrill(options) {
   }
   async function guard(cluster) {
     await diskIdentity(cluster);
-    const row = await psql(cluster, `SELECT json_build_object(
-      'database', current_database(), 'user', current_user, 'session_user', session_user,
-      'superuser', (SELECT rolsuper FROM pg_roles WHERE rolname=current_user),
-      'host', inet_server_addr()::text, 'port', inet_server_port(),
-      'version', current_setting('server_version_num'), 'data_directory', current_setting('data_directory'),
-      'system_identifier', (SELECT system_identifier::text FROM pg_control_system()));`, { label: 'guard-cluster', stopping: true });
+    const row = await psql(cluster, CLUSTER_IDENTITY_SQL, { label: 'guard-cluster', stopping: true });
     assertClusterIdentity(JSON.parse(row.trim()), cluster);
   }
   function principals(cluster) {
@@ -256,9 +252,22 @@ async function runLocalDrill(options) {
     await portFree(cluster.port);
     // The generated -o string contains no user-supplied values or paths.
     cluster.startAttempted = true;
-    await command(`start-${kind}`, binary('pg_ctl'), ['--pgdata', cluster.dataDir, '--log', join(privateDir, `${kind}-postgres.log`),
-      '-o', nativePostgresOptions(cluster.port),
-      '-w', '-t', '30', 'start']);
+    const launcherLog = join(privateDir, `${String(++commandNumber).padStart(3, '0')}-start-${kind}.log`);
+    const launcherOutput = await open(launcherLog, 'wx', 0o600);
+    try {
+      controller.signal.throwIfAborted();
+      // No inherited Node pipes: the pg_ctl Windows command-shell descendant
+      // stays alive with the daemon. Preserve startup diagnostics in the new
+      // private log while waiting for pg_ctl's own successful exit only.
+      const launcher = spawn(binary('pg_ctl'), ['--pgdata', cluster.dataDir, '--log', join(privateDir, `${kind}-postgres.log`),
+        '-o', nativePostgresOptions(cluster.port), '-w', '-t', '30', 'start'], {
+        cwd: privateDir, env: environment, shell: false, windowsHide: true,
+        stdio: ['ignore', launcherOutput.fd, launcherOutput.fd], signal: controller.signal,
+      });
+      await awaitPostgresLauncherExit(launcher);
+    } finally {
+      await launcherOutput.close();
+    }
     cluster.started = true;
     await guard(cluster);
     return cluster;

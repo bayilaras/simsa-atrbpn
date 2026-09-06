@@ -116,6 +116,51 @@ export function nativePostgresOptions(port) {
   return `-p ${assertPort(port)} -h 127.0.0.1 -c shared_buffers=32MB -c max_connections=20 -c logging_collector=off`;
 }
 
+export const CLUSTER_IDENTITY_SQL = `SELECT json_build_object(
+  'database', current_database(), 'user', current_user, 'session_user', session_user,
+  'superuser', (SELECT rolsuper FROM pg_roles WHERE rolname=current_user),
+  'host', host(inet_server_addr()), 'port', inet_server_port(),
+  'version', current_setting('server_version_num'), 'data_directory', current_setting('data_directory'),
+  'system_identifier', (SELECT system_identifier::text FROM pg_control_system()));`;
+
+// Only for pg_ctl start with file/ignored stdio (no pipes). Its Windows cmd.exe
+// descendant lives as long as PostgreSQL; inherited pipes can keep 'close'
+// pending long after the actual launcher has exited. Ordinary commands must
+// still wait for 'close' and complete stream consumption.
+export function awaitPostgresLauncherExit(child, { timeoutMs = 45_000 } = {}) {
+  requireCondition(Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 60_000,
+    'PostgreSQL launcher timeout must be bounded');
+  return new Promise((resolveDone, rejectDone) => {
+    let settled = false;
+    const settle = error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.removeListener('exit', onExit);
+      if (error) rejectDone(error); else resolveDone();
+    };
+    // Keep observing late kill/abort/spawn errors until the child actually
+    // closes, but do not make successful launcher completion wait for close.
+    const onError = error => settle(error);
+    const onExit = (code, signal) => {
+      if (code === 0) settle();
+      else settle(new Error(`PostgreSQL launcher failed (exit ${code}, signal ${signal || 'none'})`));
+    };
+    const onClose = () => {
+      if (!settled) settle(new Error('PostgreSQL launcher closed before reporting its exit'));
+      child.removeListener('error', onError);
+      child.removeListener('exit', onExit);
+    };
+    const timer = setTimeout(() => {
+      settle(new Error('PostgreSQL launcher timed out; owned cluster requires cleanup'));
+      try { child.kill(); } catch { /* Parent still performs owned-cluster cleanup. */ }
+    }, timeoutMs);
+    child.on('error', onError);
+    child.once('exit', onExit);
+    child.once('close', onClose);
+  });
+}
+
 export function assertClusterIdentity(actual, expected) {
   requireCondition(actual && actual.database === 'postgres' && actual.user === expected.admin
     && actual.session_user === expected.admin && actual.superuser === true
