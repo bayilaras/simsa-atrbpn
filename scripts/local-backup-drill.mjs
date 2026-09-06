@@ -18,6 +18,7 @@ import {
   LOCAL_POSTGRES_ISOLATION_CONFIG, nativePostgresOptions,
   CLUSTER_IDENTITY_SQL, awaitPostgresLauncherExit,
   buildLocalMaintenanceScripts,
+  isPermittedMetadataInputClose,
 } from './local-backup-drill-core.mjs';
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -101,8 +102,11 @@ async function runLocalDrill(options) {
     // immediate spawn error now as well as propagating it through finish().
     done.catch(() => {});
     // Metadata pg_restore may stop reading early; plaintext is already fully
-    // authenticated before reaching it. Only EPIPE is a permissible stdin close.
-    child.stdin.on('error', error => { if (!(allowEarlyStdinClose && error.code === 'EPIPE')) limitError = error; });
+    // authenticated before reaching it. Only explicit metadata calls may accept
+    // EPIPE or the observed Windows EOF, never full-restore input failures.
+    child.stdin.on('error', error => {
+      if (!isPermittedMetadataInputClose(error, { allowEarlyStdinClose })) limitError = error;
+    });
     if (input !== undefined) child.stdin.end(input); else child.stdin.end();
     const finish = async () => {
       let code;

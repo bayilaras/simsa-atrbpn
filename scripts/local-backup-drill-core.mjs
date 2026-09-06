@@ -175,6 +175,15 @@ export function awaitPostgresLauncherExit(child, { timeoutMs = 45_000 } = {}) {
   });
 }
 
+export function isPermittedMetadataInputClose(error, { allowEarlyStdinClose = false, platform = process.platform } = {}) {
+  // The complete bounded archive was authenticated before metadata tools run.
+  // They may read only the TOC/property entry then close stdin: Windows libuv
+  // reports EOF for this observed case, while other platforms report EPIPE.
+  // This never permits a nonzero tool exit, timeout, or full-restore pipe error.
+  return allowEarlyStdinClose === true
+    && (error?.code === 'EPIPE' || (platform === 'win32' && error?.code === 'EOF'));
+}
+
 export function assertClusterIdentity(actual, expected) {
   requireCondition(actual && actual.database === 'postgres' && actual.user === expected.admin
     && actual.session_user === expected.admin && actual.superuser === true

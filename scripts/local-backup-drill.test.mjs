@@ -13,6 +13,7 @@ import {
   LOCAL_POSTGRES_ISOLATION_CONFIG, nativePostgresOptions,
   CLUSTER_IDENTITY_SQL, awaitPostgresLauncherExit,
   buildLocalMaintenanceScripts,
+  isPermittedMetadataInputClose,
 } from './local-backup-drill-core.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -199,6 +200,22 @@ test('PostgreSQL launcher rejects nonzero, signal, spawn failure and bounded tim
   assert.equal(neverExits.listenerCount('close'), 0);
   assert.equal(neverExits.listenerCount('exit'), 0);
   assert.throws(() => awaitPostgresLauncherExit(new EventEmitter(), { timeoutMs: 60001 }));
+});
+
+test('stdin EOF is allowed only for Windows metadata; full restores and other errors fail closed', () => {
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    assert.equal(isPermittedMetadataInputClose({ code: 'EPIPE' }, { allowEarlyStdinClose: true, platform }), true);
+    assert.equal(isPermittedMetadataInputClose({ code: 'EOF' }, { allowEarlyStdinClose: true, platform }), platform === 'win32');
+    for (const code of ['EPIPE', 'EOF', 'ECONNRESET', 'ERR_STREAM_DESTROYED', 'EACCES', undefined]) {
+      assert.equal(isPermittedMetadataInputClose({ code }, { platform }), false);
+      assert.equal(isPermittedMetadataInputClose({ code }, { platform, allowEarlyStdinClose: false }), false);
+      assert.equal(isPermittedMetadataInputClose({ code }, { platform, allowEarlyStdinClose: 'true' }), false);
+    }
+    for (const code of ['ECONNRESET', 'ERR_STREAM_DESTROYED', 'EACCES', undefined]) {
+      assert.equal(isPermittedMetadataInputClose({ code }, { platform, allowEarlyStdinClose: true }), false);
+    }
+  }
+  assert.equal(isPermittedMetadataInputClose(null, { platform: 'win32', allowEarlyStdinClose: true }), false);
 });
 
 test('every observed cluster identity field is mandatory and exact', () => {
