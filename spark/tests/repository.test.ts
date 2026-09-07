@@ -205,6 +205,43 @@ describe("Firestore-only Spark repository against enforced emulator rules", () =
       }),
     ).rejects.toMatchObject({ code: "permission-denied" });
   });
+  it("replays the same create attempt concurrently once, including after later edit and archive", async () => {
+    const { repo } = client(), attempt = repo.createRecordAttempt(unit, input);
+    const ids = await Promise.all([
+      repo.saveRecord(unit, input, undefined, attempt),
+      repo.saveRecord(unit, input, undefined, attempt),
+    ]);
+    expect(ids[0]).toBe(ids[1]);
+    let rows = (await repo.listRecords(unit)).records;
+    expect(rows).toHaveLength(1);
+    expect(await repo.listHistory(unit, ids[0]!)).toHaveLength(1);
+    await repo.saveRecord(unit, { ...input, title: "Later metadata edit", status: "active" }, rows[0]);
+    await expect(repo.saveRecord(unit, input, undefined, attempt)).resolves.toBe(ids[0]);
+    rows = (await repo.listRecords(unit)).records;
+    expect(rows[0]!.title).toBe("Later metadata edit");
+    expect(rows[0]!.version).toBe(2);
+    await repo.archiveRecord(unit, rows[0]!, "Synthetic completed record.");
+    await expect(repo.saveRecord(unit, input, undefined, attempt)).resolves.toBe(ids[0]);
+    rows = (await repo.listRecords(unit)).records;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe("archived");
+    expect(rows[0]!.version).toBe(3);
+    expect((await repo.listHistory(unit, ids[0]!)).map((event) => event.snapshot.version)).toEqual([3, 2, 1]);
+  });
+  it("keeps create attempts context-bound and refuses missing original history without replacing data", async () => {
+    const { repo } = client(), attempt = repo.createRecordAttempt(unit, input);
+    const id = await repo.saveRecord(unit, input, undefined, attempt);
+    await expect(client().repo.saveRecord(unit, input, undefined, attempt)).rejects.toBeInstanceOf(DomainValidationError);
+    await expect(repo.saveRecord(unit, { ...input, title: "Different draft" }, undefined, attempt)).rejects.toBeInstanceOf(DomainValidationError);
+    await privileged(async (db) => {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "sparkUnits", unit, "records", id, "history", "v1"));
+      await batch.commit();
+    });
+    await expect(repo.saveRecord(unit, input, undefined, attempt)).rejects.toBeInstanceOf(RecordConflictError);
+    expect((await repo.listRecords(unit)).records).toHaveLength(1);
+    expect(await repo.listHistory(unit, id)).toHaveLength(0);
+  });
   it("rejects stale edits and preserves the winning concurrent transaction", async () => {
     const { repo } = client();
     const id = await repo.saveRecord(unit, input),

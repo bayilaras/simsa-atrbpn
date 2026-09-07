@@ -55,8 +55,18 @@ the opaque cursor must reset whenever unit/auth/reference-number filter changes.
 - `getUnit(unitId)`, `listClassifications(unitId)`, `listLocations(unitId)`.
 - `listRecords(unitId, { cursor?, referenceNumber? })` with page size 25 and
   exact reference-number search across the unit, ordered updatedAt descending.
-- `saveRecord(unitId, input, existing?)` returning id; transaction with expected
-  version check on edits. No silent last-write-wins or offline-success claim.
+- `createRecordAttempt(unitId, input)` returning an opaque `RecordCreateAttempt`
+  bound to this repository/actor, unit, normalized input and one document ID.
+- `saveRecord(unitId, input, existing?, createAttempt?)` returning id;
+  transaction with expected version check on edits. UI creates retain the same
+  attempt and submitted input through retries. A replay only acknowledges the
+  same ID if both the record and its original immutable v1 history prove that
+  exact create; it does not overwrite subsequent edits/closure. Missing,
+  malformed, mismatched or unreadable evidence never counts as success.
+  Attempts cannot be transferred between repositories/units, used for edits,
+  or reused with changed input. Callers omitting the token start a new intent
+  on each call; there is no deduplication by reference number. No silent
+  last-write-wins or offline-success claim.
 - `archiveRecord(unitId, existing, reason)` with same optimistic concurrency.
 - `listHistory(unitId, recordId)` returning latest <=25 snapshots.
 
@@ -66,6 +76,16 @@ no initialization at module import. Firebase Auth uses session-only persistence,
 email/password + Google popup; no self-signup UI. App clears unit data promptly
 on sign-out, inactive profile, unit switch or request generation change. Memory
 Firestore cache only. Never put administrator credentials into a frontend.
+
+Create attempts exist only in memory for the current editor/context. After an
+uncertain save the UI locks the submitted payload and offers same-attempt retry.
+Explicitly discarding the editor, reloading, changing account/unit or closing
+the browser loses that retry identity; none of these actions rolls back a write
+that may already have committed. Confirm the record/history before starting a
+replacement draft. This is not durable exactly-once delivery across sessions.
+Pending/failed sign-out hides unit data and blocks new login until sign-out can
+be confirmed. Transient catalogue errors allow a full retry; incomplete
+catalogues never enable record reads or writes. Access failures remain blocked.
 
 ## Local / release boundaries
 
