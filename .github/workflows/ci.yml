@@ -845,6 +845,12 @@ jobs:
         run: npm run test:emulator
         working-directory: spark
 
+      - name: Rehearse encrypted Spark metadata backup and independent local restore
+        # Dedicated empty demo namespaces, no live credentials or projects.
+        # Accounts restore disabled; this is not a production Auth backup gate.
+        run: npm run backup:drill
+        working-directory: spark
+
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest

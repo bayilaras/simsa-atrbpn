@@ -37,6 +37,7 @@ npm test
 npm run typecheck
 npm run build:emulator
 npm run test:emulator
+npm run backup:drill
 ```
 
 Tes emulator menjalankan Auth/Firestore lokal hanya pada project
@@ -117,8 +118,10 @@ kembali. Akses server berikutnya tetap diperiksa Rules.
 8. Tentukan prosedur backup **metadata lengkap** oleh operator: inventaris
    semua koleksi/subkoleksi dan akun, penghentian penulisan untuk konsistensi,
    ekspor tervalidasi/terenkripsi, kunci terpisah, retensi, lalu restore ke
-   project/emulator terpisah dan perbandingan data. Ekspor halaman UI maupun
-   drill PostgreSQL lama tidak memenuhi ini. Belum ada tool full backup Spark.
+  project/emulator terpisah dan perbandingan data. Ekspor halaman UI maupun
+   drill PostgreSQL lama tidak memenuhi ini. [Latihan backup terenkripsi lokal](BACKUP-DRILL.md)
+   tersedia untuk metadata sintetis dan metadata akun (tanpa kredensial, akun
+   restore nonaktif). Tool backup live yang lengkap tetap belum tersedia.
 9. Hanya setelah pilot diterima dan backup teruji, putuskan pemakaian metadata
    nyata serta promosi Hosting. Catat commit, URL dan release sebelumnya untuk
    rollback; rollback frontend tidak mengembalikan data atau Rules otomatis.
