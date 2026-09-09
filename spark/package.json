@@ -10,11 +10,12 @@
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build",
     "build:emulator": "npm run typecheck && vite build --mode emulator --outDir dist-emulator",
-    "test": "node --test scripts/seed-emulator.test.mjs && vitest run",
+    "test": "node --test scripts/*.test.mjs && vitest run",
     "test:rules": "vitest run --config vitest.emulator.config.ts",
     "test:emulator": "node scripts/emulators.mjs test",
     "emulators": "node scripts/emulators.mjs start",
-    "seed:emulator": "node scripts/seed-emulator.mjs"
+    "seed:emulator": "node scripts/seed-emulator.mjs",
+    "backup:drill": "node scripts/emulators.mjs backup"
   },
   "dependencies": {
     "firebase": "12.18.0",

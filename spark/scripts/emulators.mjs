@@ -3,12 +3,24 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
+import { createServer } from "node:net";
 
 // This launcher has no deploy/provision verb and no overridable target or port.
 const action = process.argv[2];
-if (!["test", "start"].includes(action) || process.argv.length !== 3)
-  throw new Error("Use emulators.mjs test|start");
+if (!["test", "start", "backup"].includes(action) || process.argv.length !== 3)
+  throw new Error("Use emulators.mjs test|start|backup");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// Refuse to attach a rehearsal to somebody else's emulator/app processes.
+// This preflight cannot reserve ports across process startup; the drill also
+// verifies the hub inventory and requires both namespaces to be completely empty.
+for (const port of [8088, 9098, 4408]) {
+  await new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", () => reject(new Error(`Emulator port ${port} is already in use or unavailable; no process was stopped.`)));
+    server.listen({ host: "127.0.0.1", port, exclusive: true }, () => server.close(resolve));
+  });
+}
+const project = action === "backup" ? "demo-simsa-spark-backup" : "demo-simsa-spark";
 const env = Object.fromEntries(
   Object.entries(process.env).filter(
     ([key]) =>
@@ -26,8 +38,8 @@ const env = Object.fromEntries(
 // allowed to broaden beyond this exact generated directory.
 env.XDG_CONFIG_HOME = mkdtempSync(path.join(os.tmpdir(), "simsa-spark-cli-"));
 Object.assign(env, {
-  GCLOUD_PROJECT: "demo-simsa-spark",
-  GOOGLE_CLOUD_PROJECT: "demo-simsa-spark",
+  GCLOUD_PROJECT: project,
+  GOOGLE_CLOUD_PROJECT: project,
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9098",
   FIRESTORE_EMULATOR_HOST: "127.0.0.1:8088",
   FIREBASE_CLI_DISABLE_UPDATE_CHECK: "true",
@@ -71,18 +83,19 @@ const args = [
   "--import",
   `data:text/javascript,${encodeURIComponent(shutdownBridge)}`,
   path.join(root, "node_modules/firebase-tools/lib/bin/firebase.js"),
-  action === "test" ? "emulators:exec" : "emulators:start",
+  action === "start" ? "emulators:start" : "emulators:exec",
   "--only",
   "auth,firestore",
   "--project",
-  "demo-simsa-spark",
+  project,
   "--config",
-  "firebase.json",
+  action === "backup" ? "firebase.backup-emulator.json" : "firebase.json",
 ];
 if (action === "test")
   args.push(
     "node node_modules/vitest/vitest.mjs run --config vitest.emulator.config.ts",
   );
+if (action === "backup") args.push("node scripts/backup-drill.mjs");
 const child = spawn(process.execPath, args, {
   cwd: root,
   env,
