@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { loadMigrations, validateAppliedMigrations, migrateDatabase } from '../backend/scripts/migrate-database.mjs';
+import { assertNeonBackupRole, NEON_BACKUP_GRANTS } from './neon-backup-role.mjs';
 
 export const POLICY_ROLES = Object.freeze(['simsa_api_runtime', 'simsa_event_runtime', 'simsa_worker_runtime',
   'simsa_final_cleanup', 'simsa_maintenance', 'simsa_migrator', 'simsa_backup_reader']);
@@ -73,6 +74,7 @@ export async function bootstrapNeonDatabase(client, { database, admin, passwords
 }
 
 export async function assertNeonRoleBoundaries(client, { database, role }) {
+  await assertNeonBackupRole(client, { database, allowAbsent: true, permissions: false });
   const identity = (await client.query('SELECT current_database() AS database, current_user AS actor, session_user AS session_actor')).rows[0];
   requireCondition(identity.database === database && identity.session_actor === role
     && identity.actor === (role === 'simsa_migration' ? 'simsa_migrator' : role), 'Unexpected database or authenticated application identity');
@@ -160,7 +162,8 @@ export async function loadNeonGrantPolicy() {
   // Its preceding GCP IAM/backup-global-role contract is replaced by the exact
   // Neon SQL login/ownership checks above, never by fictional IAM identities.
   return 'BEGIN;\nSET LOCAL search_path=pg_catalog, public;\n'
-    + body.replace(defaultAclScope, defaultAclScope + providerDefaultException);
+    + 'REVOKE ALL ON ALL TABLES IN SCHEMA drizzle FROM simsa_backup_reader;\nREVOKE ALL ON ALL SEQUENCES IN SCHEMA drizzle FROM simsa_backup_reader;\n'
+    + body.replace(defaultAclScope, defaultAclScope + providerDefaultException).replace(/COMMIT;\n$/, NEON_BACKUP_GRANTS + '\nCOMMIT;\n');
 }
 
 export async function migrateNeonDatabase(client, { database }) {
@@ -174,6 +177,7 @@ export async function migrateNeonDatabase(client, { database }) {
   try { await client.query(grantPolicy); }
   catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
   await assertNeonRoleBoundaries(client, { database, role: 'simsa_migration' });
+  await assertNeonBackupRole(client, { database, allowAbsent: true });
   return result;
 }
 
