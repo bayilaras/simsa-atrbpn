@@ -121,10 +121,46 @@ export async function loadNeonGrantPolicy() {
     'Versioned grant policy changed; review and update the Neon adapter before deployment');
   const marker = '\nALTER SCHEMA public OWNER TO simsa_migrator;\n';
   requireCondition(source.split(marker).length === 2 && source.endsWith('COMMIT;\n'), 'Reviewed grant policy shape changed; review the Neon adapter');
+  const defaultAclScope = "        WHERE (defaults.defaclnamespace = 0 OR n.nspname IN ('public', 'drizzle'))\n"
+    + '          AND privilege.grantee <> defaults.defaclrole\n';
+  const body = marker.trimStart() + source.split(marker)[1];
+  requireCondition(body.split(defaultAclScope).length === 2, 'Reviewed default ACL check changed; review the Neon adapter');
+  // Neon PostgreSQL 18 creates these defaults for its own superuser only.
+  // They do not apply to objects created by simsa_migrator. Keep every other
+  // ACL check, including application-owner defaults, exactly as reviewed.
+  const providerDefaultException = `          AND NOT COALESCE((
+            n.nspname = 'public'
+            AND defaults.defaclobjtype IN ('r', 'S')
+            AND EXISTS (
+                SELECT 1 FROM pg_catalog.pg_roles provider_owner
+                WHERE provider_owner.oid = defaults.defaclrole
+                  AND provider_owner.rolname = 'cloud_admin' AND provider_owner.rolsuper
+            )
+            AND EXISTS (
+                SELECT 1 FROM pg_catalog.pg_roles provider_grantee
+                WHERE provider_grantee.oid = privilege.grantee
+                  AND provider_grantee.rolname = 'neon_superuser'
+                  AND NOT provider_grantee.rolsuper AND NOT provider_grantee.rolcanlogin
+                  AND provider_grantee.rolcreatedb AND provider_grantee.rolcreaterole
+                  AND provider_grantee.rolbypassrls
+            )
+            AND (
+                SELECT pg_catalog.bool_and(provider_privilege.is_grantable)
+                   AND pg_catalog.array_agg(provider_privilege.privilege_type ORDER BY provider_privilege.privilege_type)
+                       = CASE defaults.defaclobjtype
+                           WHEN 'r' THEN ARRAY['DELETE','INSERT','MAINTAIN','REFERENCES','SELECT','TRIGGER','TRUNCATE','UPDATE']::text[]
+                           WHEN 'S' THEN ARRAY['SELECT','UPDATE','USAGE']::text[]
+                         END
+                FROM pg_catalog.aclexplode(defaults.defaclacl) provider_privilege
+                WHERE provider_privilege.grantee = privilege.grantee
+            )
+          ), false)
+`;
   // Reuse the entire versioned ACL body and its final unversioned-ACL rejection.
   // Its preceding GCP IAM/backup-global-role contract is replaced by the exact
   // Neon SQL login/ownership checks above, never by fictional IAM identities.
-  return 'BEGIN;\nSET LOCAL search_path=pg_catalog, public;\n' + marker.trimStart() + source.split(marker)[1];
+  return 'BEGIN;\nSET LOCAL search_path=pg_catalog, public;\n'
+    + body.replace(defaultAclScope, defaultAclScope + providerDefaultException);
 }
 
 export async function migrateNeonDatabase(client, { database }) {

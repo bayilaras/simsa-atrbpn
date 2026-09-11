@@ -62,3 +62,54 @@ test('non-superuser Neon-style bootstrap runs all migrations, preserves runtime 
     await assert.rejects(assertNeonRoleBoundaries(client, { ...target, role: 'simsa_api' }), /membership escapes/);
   } finally { await db.close(); }
 });
+
+test('Neon provider defaults are accepted only for the exact platform owner, grantee, scope and privilege set', async () => {
+  const { db, client, passwords } = await setup();
+  const asMigrator = 'SET SESSION AUTHORIZATION simsa_migration; SET ROLE simsa_migrator';
+  const configure = async sql => db.exec(`RESET ROLE; SET SESSION AUTHORIZATION postgres; ${sql}; ${asMigrator}`);
+  try {
+    await db.exec(`RESET ROLE; SET SESSION AUTHORIZATION postgres;
+      CREATE ROLE cloud_admin SUPERUSER LOGIN;
+      CREATE ROLE neon_superuser NOLOGIN NOSUPERUSER CREATEROLE CREATEDB BYPASSRLS;
+      CREATE ROLE foreign_grantee NOLOGIN NOSUPERUSER CREATEROLE CREATEDB BYPASSRLS;
+      ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT ALL ON TABLES TO neon_superuser WITH GRANT OPTION;
+      ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO neon_superuser WITH GRANT OPTION;
+      SET SESSION AUTHORIZATION neon_test_admin`);
+    await bootstrapNeonDatabase(client, { ...target, passwords });
+    await configure('SELECT 1');
+    assert.equal((await migrateNeonDatabase(client, target)).applied, 38);
+    assert.equal((await migrateNeonDatabase(client, target)).applied, 0);
+    await db.exec('RESET ROLE; SET SESSION AUTHORIZATION simsa_api');
+    assert.equal((await verifyNeonRuntime(client, target)).runtime_role, 'simsa_api');
+
+    const cases = [
+      ['application owner',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE simsa_migrator IN SCHEMA public GRANT ALL ON TABLES TO neon_superuser WITH GRANT OPTION',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE simsa_migrator IN SCHEMA public REVOKE ALL ON TABLES FROM neon_superuser'],
+      ['foreign grantee',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT ALL ON TABLES TO foreign_grantee WITH GRANT OPTION',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE ALL ON TABLES FROM foreign_grantee'],
+      ['drizzle scope',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA drizzle GRANT ALL ON SEQUENCES TO neon_superuser WITH GRANT OPTION',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA drizzle REVOKE ALL ON SEQUENCES FROM neon_superuser'],
+      ['global scope',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin GRANT ALL ON SEQUENCES TO neon_superuser WITH GRANT OPTION',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin REVOKE ALL ON SEQUENCES FROM neon_superuser'],
+      ['non-superuser owner', 'ALTER ROLE cloud_admin NOSUPERUSER', 'ALTER ROLE cloud_admin SUPERUSER'],
+      ['incomplete table privileges',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE SELECT ON TABLES FROM neon_superuser',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT SELECT ON TABLES TO neon_superuser WITH GRANT OPTION'],
+      ['missing grant option',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE GRANT OPTION FOR USAGE ON SEQUENCES FROM neon_superuser',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT USAGE ON SEQUENCES TO neon_superuser WITH GRANT OPTION'],
+      ['direct table ACL', 'GRANT SELECT ON public.users TO neon_superuser', 'REVOKE SELECT ON public.users FROM neon_superuser'],
+    ];
+    for (const [name, inject, restore] of cases) {
+      await configure(inject);
+      await assert.rejects(migrateNeonDatabase(client, target),
+        error => error.code === 'P0001' && /unversioned direct ACL remains/.test(error.message), name);
+      await configure(restore);
+    }
+    assert.equal((await migrateNeonDatabase(client, target)).applied, 0);
+  } finally { await db.close(); }
+});
