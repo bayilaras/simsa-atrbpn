@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseDebData, assertPinnedSignature, assessScan, makePdf, assertFreshManifest, runMeasured } from './core.mjs';
-import handler from './api/index.mjs';
+import handler, { createPocHandler } from './api/index.mjs';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -64,5 +64,35 @@ test('POC is Preview-only; form has no data fields and arbitrary request data is
   process.env.SIMSA_CLAMAV_POC_ENABLED='1';process.env.VERCEL_ENV='production';assert.equal((await invoke({method:'GET'})).statusCode,404);
   process.env.VERCEL_ENV='preview';const form=await invoke({method:'GET'});assert.match(form.body,/<form method="post" action="\/">/);assert.doesNotMatch(form.body,/<input|<textarea|<script/);
   for(const patch of [{body:{url:'https://example.com/private'}},{query:{file:'anything'}},{headers:{'content-length':'1'}},{headers:{'transfer-encoding':'chunked'}},{body:Buffer.from('data')}])assert.equal((await invoke({method:'POST',...patch})).statusCode,400);
+ }finally{if(oldEnv===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=oldEnv;if(oldFlag===undefined)delete process.env.SIMSA_CLAMAV_POC_ENABLED;else process.env.SIMSA_CLAMAV_POC_ENABLED=oldFlag;}
+});
+test('empty browser form bodies reach the probe report, including null-prototype objects and zero-length buffers',async()=>{
+ const oldEnv=process.env.VERCEL_ENV,oldFlag=process.env.SIMSA_CLAMAV_POC_ENABLED;
+ // A boundary fixture proves routing only; it is not ClamAV execution evidence.
+ const report={poc:true,passed:false,boundaryFixture:true,scans:[]};let calls=0;const logs=[];
+ const route=createPocHandler(async()=>{calls++;return report;},record=>logs.push(record));
+ try{
+  process.env.VERCEL_ENV='preview';process.env.SIMSA_CLAMAV_POC_ENABLED='1';
+  for(const body of [Object.create(null),Buffer.alloc(0),{},'',undefined,null]){
+   const response={statusCode:200,setHeader(){},end(value){this.body=value;}};
+   await route({method:'POST',headers:{'content-length':'0','content-type':'application/x-www-form-urlencoded'},query:Object.create(null),body},response);
+   assert.equal(response.statusCode,503);assert.deepEqual(JSON.parse(response.body),report);
+  }
+  assert.equal(calls,6);assert.equal(logs.length,6);
+  assert.ok(logs.every(entry=>entry.event==='clamav_poc_result'&&entry.report===report));
+ }finally{if(oldEnv===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=oldEnv;if(oldFlag===undefined)delete process.env.SIMSA_CLAMAV_POC_ENABLED;else process.env.SIMSA_CLAMAV_POC_ENABLED=oldFlag;}
+});
+test('nonempty parsed bodies remain rejected and diagnostics contain structure only',async()=>{
+ const oldEnv=process.env.VERCEL_ENV,oldFlag=process.env.SIMSA_CLAMAV_POC_ENABLED;let calls=0;const logs=[];
+ const route=createPocHandler(async()=>{calls++;return {passed:true};},record=>logs.push(record));
+ try{
+  process.env.VERCEL_ENV='preview';process.env.SIMSA_CLAMAV_POC_ENABLED='1';
+  const nullProto=Object.assign(Object.create(null),{url:'SENSITIVE_SENTINEL'});
+  for(const body of [nullProto,{url:'SENSITIVE_SENTINEL'},Buffer.from('SENSITIVE_SENTINEL'),'SENSITIVE_SENTINEL',[],42]){
+   const response={statusCode:200,setHeader(){},end(value){this.body=value;}};
+   await route({method:'POST',headers:{},query:{},body},response);assert.equal(response.statusCode,400);
+  }
+  assert.equal(calls,0);assert.equal(logs.length,6);assert.doesNotMatch(JSON.stringify(logs),/SENSITIVE_SENTINEL|url/);
+  assert.ok(logs.every(entry=>entry.event==='clamav_poc_request_rejected'&&typeof entry.shape.bodyKind==='string'));
  }finally{if(oldEnv===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=oldEnv;if(oldFlag===undefined)delete process.env.SIMSA_CLAMAV_POC_ENABLED;else process.env.SIMSA_CLAMAV_POC_ENABLED=oldFlag;}
 });
