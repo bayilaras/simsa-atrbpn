@@ -187,10 +187,12 @@ export default function Arsip() {
                 </div>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex w-full items-center gap-2 sm:w-auto">
-                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="w-full space-y-1.5 sm:w-auto">
+                        <label htmlFor="arsip-unit-kerja" className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                            <Building2 className="h-4 w-4" aria-hidden="true" /> Unit kerja
+                        </label>
                         <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPage(1); }}>
-                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
+                            <SelectTrigger id="arsip-unit-kerja" className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
@@ -342,15 +344,19 @@ export default function Arsip() {
                         <Card className="shadow-sm border-border/60">
                             <CardHeader className="pb-4">
                                 <div className="flex flex-col space-y-4">
-                                    <div className="flex flex-col md:flex-row gap-3">
-                                        <div className="relative flex-1">
-                                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                            <Input
-                                                placeholder={`Cari arsip surat ${activeTab}...`}
-                                                className="pl-9 bg-background/50 border-input/60 focus:bg-background transition-colors"
-                                                value={searchTerm}
-                                                onChange={(e) => setSearchTerm(e.target.value)}
-                                            />
+                                    <div className="flex flex-col md:flex-row gap-3 md:items-end">
+                                        <div className="min-w-0 flex-1 space-y-1.5">
+                                            <label htmlFor="arsip-search" className="text-sm font-medium">Cari arsip</label>
+                                            <div className="relative">
+                                                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                                <Input
+                                                    id="arsip-search"
+                                                    placeholder={`Cari arsip surat ${activeTab}...`}
+                                                    className="pl-9 bg-background/50 border-input/60 focus:bg-background transition-colors"
+                                                    value={searchTerm}
+                                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                                />
+                                            </div>
                                         </div>
                                         <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen} className="flex-none">
                                             <CollapsibleTrigger asChild>
@@ -375,9 +381,9 @@ export default function Arsip() {
                                         <CollapsibleContent className="pt-2">
                                             <div className="bg-muted/30 p-4 rounded-lg border border-border/50 flex flex-col md:flex-row gap-4 items-start md:items-end">
                                                 <div className="space-y-1.5 w-full md:w-[200px]">
-                                                    <label className="text-xs font-semibold text-muted-foreground uppercase">Tahun Arsip</label>
+                                                    <label htmlFor="arsip-tahun" className="text-xs font-semibold text-muted-foreground uppercase">Tahun Arsip</label>
                                                     <Select value={tahunFilter} onValueChange={setTahunFilter}>
-                                                        <SelectTrigger className="h-9 bg-background">
+                                                        <SelectTrigger id="arsip-tahun" className="h-9 bg-background">
                                                             <SelectValue placeholder="Tahun" />
                                                         </SelectTrigger>
                                                         <SelectContent>
@@ -432,7 +438,7 @@ export default function Arsip() {
                                                                     <FolderArchive className="h-8 w-8 opacity-50" />
                                                                 </div>
                                                                 <p className="font-medium">Belum ada data arsip {activeTab}</p>
-                                                                <p className="text-sm opacity-70">
+                                                                <p className="text-sm text-muted-foreground">
                                                                     {searchTerm || hasActiveFilters
                                                                         ? 'Coba sesuaikan filter pencarian Anda'
                                                                         : 'Gunakan menu Arsip di Surat Masuk/Keluar untuk menambahkan data'

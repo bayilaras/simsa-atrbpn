@@ -80,6 +80,7 @@ export default function SuratMasuk() {
     // Data state
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
     const [stats, setStats] = useState({ total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 });
 
@@ -126,6 +127,7 @@ export default function SuratMasuk() {
     const fetchData = useCallback(async () => {
         const seq = ++fetchSeqRef.current;
         setLoading(true);
+        setLoadError(false);
         try {
             const params = {
                 page: pagination.page,
@@ -143,6 +145,7 @@ export default function SuratMasuk() {
 
             const response = await suratMasukService.getAll(params);
             if (seq !== fetchSeqRef.current) return;
+            if (!response.success) throw new Error('Daftar surat masuk tidak dapat dimuat.');
             if (response.success) {
                 setData(response.data || []);
                 setPagination(prev => ({
@@ -153,6 +156,7 @@ export default function SuratMasuk() {
             }
         } catch (error) {
             if (seq !== fetchSeqRef.current) return;
+            setLoadError(true);
             console.error('Error fetching surat masuk:', error);
             toast({
                 title: 'Error',
@@ -294,10 +298,12 @@ export default function SuratMasuk() {
                 actions={<>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex w-full items-center gap-2 sm:w-auto">
-                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="w-full space-y-1.5 sm:w-auto">
+                        <label htmlFor="surat-masuk-unit-kerja" className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                            <Building2 className="h-4 w-4" aria-hidden="true" /> Unit kerja
+                        </label>
                         <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPagination(prev => ({ ...prev, page: 1 })); }}>
-                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
+                            <SelectTrigger id="surat-masuk-unit-kerja" className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
@@ -405,15 +411,19 @@ export default function SuratMasuk() {
                 <CardHeader className="pb-4">
                     <div className="flex flex-col space-y-4">
                         {/* Search & Filter Controls */}
-                        <div className="flex flex-col md:flex-row gap-3">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                <Input
-                                    placeholder="Cari nomor surat, perihal, atau pengirim..."
-                                    className="pl-9 bg-background/50 border-input/60 focus:bg-background transition-colors"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                />
+                        <div className="flex flex-col md:flex-row gap-3 md:items-end">
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                                <label htmlFor="surat-masuk-search" className="text-sm font-medium">Cari surat masuk</label>
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id="surat-masuk-search"
+                                        placeholder="Cari nomor surat, perihal, atau pengirim..."
+                                        className="pl-9 bg-background/50 border-input/60 focus:bg-background transition-colors"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
+                                </div>
                             </div>
                             <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen} className="flex-none">
                                 <CollapsibleTrigger asChild>
@@ -442,9 +452,9 @@ export default function SuratMasuk() {
                                 <div className="bg-muted/30 p-4 rounded-lg border border-border/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                     {/* Tahun */}
                                     <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Tahun</label>
+                                        <label htmlFor="surat-masuk-tahun" className="text-xs font-semibold text-muted-foreground uppercase">Tahun</label>
                                         <Select value={tahun} onValueChange={applyFilter(setTahun)}>
-                                            <SelectTrigger className="h-9 bg-background">
+                                            <SelectTrigger id="surat-masuk-tahun" className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Tahun" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -458,8 +468,10 @@ export default function SuratMasuk() {
 
                                     {/* Jenis Surat */}
                                     <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Jenis Surat</label>
+                                        <label htmlFor="surat-masuk-jenis" className="text-xs font-semibold text-muted-foreground uppercase">Jenis Surat</label>
                                         <SearchableSelect
+                                            id="surat-masuk-jenis"
+                                            ariaLabel="Jenis Surat"
                                             options={[
                                                 { value: 'all', label: 'Semua Jenis' },
                                                 'Keputusan', 'Surat Tugas', 'Surat Perintah', 'Nota Dinas', 'Memorandum',
@@ -480,9 +492,9 @@ export default function SuratMasuk() {
 
                                     {/* Status */}
                                     <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
+                                        <label htmlFor="surat-masuk-status" className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
                                         <Select value={status} onValueChange={applyFilter(setStatus)}>
-                                            <SelectTrigger className="h-9 bg-background">
+                                            <SelectTrigger id="surat-masuk-status" className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Status" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -495,9 +507,9 @@ export default function SuratMasuk() {
 
                                     {/* Sifat Surat */}
                                     <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Sifat Surat</label>
+                                        <label htmlFor="surat-masuk-sifat" className="text-xs font-semibold text-muted-foreground uppercase">Sifat Surat</label>
                                         <Select value={sifatSurat} onValueChange={applyFilter(setSifatSurat)}>
-                                            <SelectTrigger className="h-9 bg-background">
+                                            <SelectTrigger id="surat-masuk-sifat" className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Sifat" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -513,29 +525,36 @@ export default function SuratMasuk() {
                                     </div>
 
                                     {/* Filter Tanggal */}
-                                    <div className="space-y-1.5 sm:col-span-2">
-                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Rentang Tanggal</label>
-                                        <div className="flex items-center gap-2">
-                                            <DatePicker
-                                                date={tanggalDari}
-                                                onDateChange={applyFilter(setTanggalDari)}
-                                                placeholder="Dari tanggal"
-                                                className="h-9 bg-background flex-1"
-                                            />
-                                            <span className="text-muted-foreground">-</span>
-                                            <DatePicker
-                                                date={tanggalSampai}
-                                                onDateChange={applyFilter(setTanggalSampai)}
-                                                placeholder="Sampai tanggal"
-                                                className="h-9 bg-background flex-1"
-                                            />
+                                    <fieldset className="min-w-0 space-y-1.5 sm:col-span-2">
+                                        <legend className="text-xs font-semibold text-muted-foreground uppercase">Rentang Tanggal</legend>
+                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                            <label className="min-w-0 space-y-1.5">
+                                                <span className="text-xs text-muted-foreground">Tanggal dari</span>
+                                                <DatePicker
+                                                    date={tanggalDari}
+                                                    onDateChange={applyFilter(setTanggalDari)}
+                                                    placeholder="Pilih tanggal awal"
+                                                    className="h-9 bg-background"
+                                                />
+                                            </label>
+                                            <label className="min-w-0 space-y-1.5">
+                                                <span className="text-xs text-muted-foreground">Tanggal sampai</span>
+                                                <DatePicker
+                                                    date={tanggalSampai}
+                                                    onDateChange={applyFilter(setTanggalSampai)}
+                                                    placeholder="Pilih tanggal akhir"
+                                                    className="h-9 bg-background"
+                                                />
+                                            </label>
                                         </div>
-                                    </div>
+                                    </fieldset>
 
                                     {/* Disposisi Ke */}
                                     <div className="space-y-1.5 sm:col-span-2">
-                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Disposisi Ke</label>
+                                        <label htmlFor="surat-masuk-disposisi" className="text-xs font-semibold text-muted-foreground uppercase">Disposisi Ke</label>
                                         <SearchableSelect
+                                            id="surat-masuk-disposisi"
+                                            ariaLabel="Disposisi Ke"
                                             options={[
                                                 { value: 'all', label: 'Semua Disposisi' },
                                                 'Ditjen', 'SekDitjen', 'Dit. BPPT', 'Dit. PTEP',
@@ -561,6 +580,15 @@ export default function SuratMasuk() {
                             <div className="p-4">
                                 <TableSkeleton columns={7} rows={5} />
                             </div>
+                        ) : loadError ? (
+                            <div role="alert" className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                                <AlertCircle className="h-8 w-8 text-destructive" aria-hidden="true" />
+                                <p className="font-medium">Gagal memuat daftar surat masuk</p>
+                                <p className="text-sm text-muted-foreground">Periksa koneksi Anda lalu coba lagi.</p>
+                                <Button variant="outline" onClick={fetchData}>
+                                    <RefreshCw className="h-4 w-4" aria-hidden="true" /> Coba lagi
+                                </Button>
+                            </div>
                         ) : (
                             <Table responsive>
                                 <TableHeader className="bg-muted/30">
@@ -582,7 +610,7 @@ export default function SuratMasuk() {
                                                         <Inbox className="h-8 w-8 opacity-50" />
                                                     </div>
                                                     <p className="font-medium">Tidak ada surat masuk ditemukan</p>
-                                                    <p className="text-sm opacity-70">
+                                                    <p className="text-sm text-muted-foreground">
                                                         {searchTerm || hasActiveFilters ? 'Coba sesuaikan filter pencarian Anda' : 'Belum ada data surat di sistem'}
                                                     </p>
                                                 </div>
@@ -601,14 +629,14 @@ export default function SuratMasuk() {
                                                     </div>
                                                 </TableCell>
                                                 <TableCell data-label="Nomor Surat">
-                                                    <Badge variant="outline" className="font-mono text-xs bg-background">
+                                                    <span className="rounded-md border bg-background px-2 py-0.5 font-mono text-xs" style={{ overflowWrap: 'anywhere' }}>
                                                         {row.nomorSurat}
-                                                    </Badge>
+                                                    </span>
                                                 </TableCell>
                                                 <TableCell data-label="Perihal">
                                                     <div className="flex flex-col gap-1 sm:max-w-[400px] items-end sm:items-start">
                                                         <span className="font-semibold sm:line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
-                                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                        <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground sm:justify-start">
                                                             <span className="sm:max-w-[150px] sm:truncate" title={row.dari}>Oleh: {row.dari}</span>
                                                             {row.jenisSurat && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.jenisSurat}</span>}
                                                             {row.sifatSurat && row.sifatSurat !== 'biasa' && (
@@ -677,7 +705,7 @@ export default function SuratMasuk() {
                     </div>
 
                     {/* Footer Pagination */}
-                    {pagination.totalPages > 1 && (
+                    {!loading && !loadError && pagination.totalPages > 1 && (
                         <div className="border-t border-border/60 p-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
                             <p className="text-sm text-muted-foreground order-2 sm:order-1">
                                 Menampilkan <span className="font-medium text-foreground">{data.length}</span> dari <span className="font-medium text-foreground">{pagination.total}</span> surat
