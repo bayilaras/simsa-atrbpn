@@ -420,7 +420,7 @@ export const queryArsipVitalSchema = paginationSchema.extend({
 export const createArsipTerjagaSchema = z.object({
     arsipId: uuidSchema,
     unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
-    kategoriTerjaga: z.enum(['kekayaan_negara', 'hak_keperdataan', 'pertanahan']),
+    kategoriTerjaga: z.enum(['kepulauan', 'perjanjian_internasional', 'masalah_strategis']),
     dasarHukum: z.string().max(2000).optional(),
     uraianIsi: z.string().max(2000).optional(),
     periodePelaporanHari: z.coerce.number().int().min(1).max(3650).optional().default(365),
@@ -437,7 +437,7 @@ export const updateArsipTerjagaSchema = createArsipTerjagaSchema.partial()
 
 export const queryArsipTerjagaSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
-    kategoriTerjaga: z.enum(['kekayaan_negara', 'hak_keperdataan', 'pertanahan']).optional(),
+    kategoriTerjaga: z.enum(['kepulauan', 'perjanjian_internasional', 'masalah_strategis', 'kekayaan_negara', 'hak_keperdataan', 'pertanahan', 'batas_wilayah']).optional(),
     statusPelaporan: z.enum(['belum_dilaporkan', 'dicatat', 'dikirim', 'diterima', 'bukti_diverifikasi']).optional(),
     statusKepatuhan: z.enum(['terlambat', 'belum_dinilai']).optional(),
     search: z.string().max(255).optional(),

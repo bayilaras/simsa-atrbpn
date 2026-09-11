@@ -73,3 +73,26 @@ REVOKE ALL ON arsip_terjaga_reports FROM PUBLIC;
 REVOKE ALL ON arsip_terjaga_reports FROM simsa_api_runtime;
 GRANT SELECT, INSERT, UPDATE ON arsip_terjaga_reports TO simsa_api_runtime;
 GRANT SELECT ON arsip_terjaga_reports TO simsa_backup_reader;
+--> statement-breakpoint
+CREATE INDEX arsip_terjaga_reports_sent_attachment_idx ON arsip_terjaga_reports(sent_attachment_id) WHERE sent_attachment_id IS NOT NULL;
+CREATE INDEX arsip_terjaga_reports_received_attachment_idx ON arsip_terjaga_reports(received_attachment_id) WHERE received_attachment_id IS NOT NULL;
+CREATE FUNCTION preserve_terjaga_reporting_attachment() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
+BEGIN
+    IF TG_OP = 'DELETE' OR NEW.sha256 IS DISTINCT FROM OLD.sha256
+       OR NEW.file_url IS DISTINCT FROM OLD.file_url OR NEW.drive_file_id IS DISTINCT FROM OLD.drive_file_id
+       OR NEW.object_generation IS DISTINCT FROM OLD.object_generation OR NEW.size_bytes IS DISTINCT FROM OLD.size_bytes
+       OR NEW.storage_access IS DISTINCT FROM OLD.storage_access OR NEW.file_name IS DISTINCT FROM OLD.file_name
+       OR NEW.mime_type IS DISTINCT FROM OLD.mime_type OR NEW.entity_type IS DISTINCT FROM OLD.entity_type
+       OR NEW.entity_id IS DISTINCT FROM OLD.entity_id OR NEW.uploaded_by IS DISTINCT FROM OLD.uploaded_by THEN
+        IF EXISTS (SELECT 1 FROM public.arsip_terjaga_reports report
+                   WHERE report.sent_attachment_id=OLD.id OR report.received_attachment_id=OLD.id) THEN
+            RAISE EXCEPTION 'Reporting evidence attachment is immutable';
+        END IF;
+    END IF;
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION preserve_terjaga_reporting_attachment() FROM PUBLIC;
+CREATE TRIGGER terjaga_reporting_attachment_guard BEFORE UPDATE OR DELETE ON file_attachments
+    FOR EACH ROW EXECUTE FUNCTION preserve_terjaga_reporting_attachment();

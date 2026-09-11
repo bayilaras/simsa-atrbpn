@@ -107,6 +107,7 @@ export default function ArsipTerjaga() {
     const handleUpdate = async () => {
         try {
             const { arsipId: _arsipId, ...metadata } = form
+            if (metadata.kategoriTerjaga === selectedItem.kategoriTerjaga && KATEGORI_CONFIG[metadata.kategoriTerjaga]?.legacy) delete metadata.kategoriTerjaga
             await arsipTerjagaService.update(selectedItem.id, metadata)
             toast({ title: 'Berhasil', description: 'Data berhasil diperbarui' })
             setShowDetailDialog(false); setIsEditing(false); loadData()

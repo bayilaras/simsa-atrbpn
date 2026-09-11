@@ -47,8 +47,8 @@ export default function ArsipTerjagaDetail({
                                     <Select value={form.kategoriTerjaga} onValueChange={v => setForm(f => ({ ...f, kategoriTerjaga: v }))}>
                                         <SelectTrigger><SelectValue /></SelectTrigger>
                                         <SelectContent>
-                                            {Object.entries(KATEGORI_CONFIG).map(([k, v]) => (
-                                                <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                                            {Object.entries(KATEGORI_CONFIG).filter(([k, v]) => !v.legacy || k === selectedItem.kategoriTerjaga).map(([k, v]) => (
+                                                <SelectItem key={k} value={k} disabled={v.legacy}>{v.label}</SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>

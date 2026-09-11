@@ -10,11 +10,15 @@ SIMSA mencatat bukti pengiriman melalui kanal resmi, penerimaan, dan pemeriksaan
 
 Status `bukti_diverifikasi` berarti pemeriksaan bukti internal selesai. Tidak ada transisi yang menetapkan `statusKepatuhan=patuh` atau menghapus penilaian terlambat. Role teknis pemeriksa yang tersedia saat ini adalah `super_admin`, `admin_dirjen`, dan `admin_sesditjen`; instansi tetap perlu menetapkan siapa yang diberi mandat tersebut.
 
+Pilihan kategori penetapan baru mengikuti Lampiran II halaman 99 [Permen ATR/BPN Nomor 2 Tahun 2026](https://peraturan.bpk.go.id/Details/346032/permen-atrkepala-bpn-no-2-tahun-2026): Arsip Kepulauan, Arsip Perjanjian Internasional, dan Arsip Masalah-masalah Pemerintahan yang Strategis. Nilai lama `kekayaan_negara`, `hak_keperdataan`, `pertanahan`, dan `batas_wilayah` tetap tersimpan dan ditandai perlu ditinjau. Penentuan apakah isi suatu arsip termasuk kategori tersebut dilakukan petugas berwenang; tidak ada pemetaan kategori otomatis.
+
 ## Migrasi dan konfigurasi
 
 Migrasi `0036_terjaga_reporting_evidence.sql` menyimpan klaim historis dalam `arsip_terjaga.legacy_reporting`. Status lama dilaporkan/terverifikasi diturunkan menjadi `dicatat`; klaim `patuh` diturunkan menjadi `belum_dinilai`. Nomor, tanggal, dan nilai historis tidak hilang. Rekod lama tidak mendapatkan bukti atau verifikasi baru secara otomatis.
 
 Tabel `arsip_terjaga_reports` menyimpan setiap siklus beserta hash, lampiran, pelaku, waktu, catatan dan status. Referensi lampiran tidak boleh dihapus; trigger database membekukan identitas, bukti yang sudah dicatat, dan rekod final. Runtime API mendapat SELECT/INSERT/UPDATE tanpa DELETE. Audit wajib disimpan dalam transaksi yang sama.
+
+Lampiran yang sudah dipakai sebagai bukti dibekukan pada identitas berkas, lokasi penyimpanan, hash, ukuran, akses privat, dan pengunggah; hasil pemeriksaan integritas atau antivirus tetap dapat diperbarui. Pembuatan, perubahan, dan penghapusan penetapan menggunakan akun serta izin arsip aktual dalam transaksi yang sama. Legal hold, usulan penyusutan, pencabutan akun, dan ketiadaan izin pengelolaan mencegah perubahan penetapan.
 
 Jalankan migrasi dan konvergensi grants sesuai prosedur deployment sebelum menggunakan fitur. Storage privat serta worker antivirus harus operasional untuk menambahkan bukti; konfigurasi lokal tanpa storage tidak melewati pemeriksaan ini. Tidak diperlukan kredensial atau endpoint ANRI untuk pencatatan lokal ini.
 

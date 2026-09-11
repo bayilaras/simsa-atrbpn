@@ -7,6 +7,7 @@ let transactionRollbacks = 0;
 const auditMocks = vi.hoisted(() => ({
     logActionOrThrow: vi.fn(),
 }));
+const terjagaContextMocks = vi.hoisted(() => ({ lockTerjagaContext: vi.fn(), lockTerjagaArchiveContext: vi.fn(), terjagaReportService: {} }));
 
 const mockChain: any = new Proxy({}, {
     get(_target, prop) {
@@ -37,6 +38,7 @@ const mockDb: any = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
+vi.mock('../services/terjaga-report.service', () => terjagaContextMocks);
 
 const { arsipVitalService } = await import('../services/arsip-vital.service.js');
 const { arsipTerjagaService } = await import('../services/arsip-terjaga.service.js');
@@ -96,7 +98,8 @@ describe('Arsip Vital and Arsip Terjaga transactional audit', () => {
             ...existing,
             catatan: 'Catatan baru',
         };
-        resultQueue.push([existing], [updated]);
+        terjagaContextMocks.lockTerjagaContext.mockResolvedValueOnce({ designation: existing });
+        resultQueue.push([updated]);
         auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
 
         await expect(arsipTerjagaService.update(

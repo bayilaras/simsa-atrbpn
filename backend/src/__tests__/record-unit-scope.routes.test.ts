@@ -217,7 +217,7 @@ describe('record route unit scoping', () => {
         const terjagaPayload = {
             arsipId: '11111111-1111-4111-8111-111111111111',
             unitKerjaId: 'unit-attacker',
-            kategoriTerjaga: 'pertanahan',
+            kategoriTerjaga: 'kepulauan',
         };
 
         await request(app).post('/arsip-vital').send(vitalPayload).expect(201);

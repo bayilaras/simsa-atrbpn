@@ -6,8 +6,9 @@ import {
     type RecordUnitScope,
 } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
-import { terjagaReportService } from './terjaga-report.service';
+import { lockTerjagaArchiveContext, lockTerjagaContext, terjagaReportService } from './terjaga-report.service';
 import { ConflictError, ValidationError } from '../utils/errors';
+import { createArsipTerjagaSchema } from '../validators/schemas';
 
 const EDITABLE_FIELDS = new Set(['kategoriTerjaga', 'dasarHukum', 'uraianIsi', 'periodePelaporanHari', 'tanggalPenetapan', 'tanggalReviewSelanjutnya', 'catatan']);
 
@@ -184,15 +185,15 @@ class ArsipTerjagaService {
 
     // Designate an archive as terjaga
     async create(data: NewArsipTerjaga, auditContext: CriticalAuditContext) {
+        if (!createArsipTerjagaSchema.shape.kategoriTerjaga.safeParse(data.kategoriTerjaga).success) throw new ValidationError('Pilih kategori penetapan ATR/BPN yang berlaku. Kategori lama perlu ditinjau.');
         return await db.transaction(async (tx: any) => {
-            const [parent] = await tx.select({ id: arsip.id, unitKerjaId: arsip.unitKerjaId, disposalStatus: arsip.disposalStatus, disposalBatchId: arsip.disposalBatchId })
-                .from(arsip).where(eq(arsip.id, data.arsipId)).limit(1).for('update');
-            if (!parent || parent.unitKerjaId !== data.unitKerjaId || parent.disposalStatus !== 'active' || parent.disposalBatchId) {
+            const { archive: parent, user } = await lockTerjagaArchiveContext(tx, data.arsipId, { id: auditContext.userId });
+            if (parent.unitKerjaId !== data.unitKerjaId || parent.disposalBatchId) {
                 throw new ConflictError('Penetapan terjaga memerlukan arsip yang tersedia dan tidak sedang dalam penyusutan.');
             }
             const editable = Object.fromEntries(Object.entries(data).filter(([key]) => EDITABLE_FIELDS.has(key)));
             const [result] = await tx.insert(arsipTerjaga).values({
-                ...editable, arsipId: data.arsipId, unitKerjaId: parent.unitKerjaId, createdBy: data.createdBy,
+                ...editable, arsipId: data.arsipId, unitKerjaId: parent.unitKerjaId, createdBy: user.id,
                 statusPelaporan: 'belum_dilaporkan', statusKepatuhan: 'belum_dinilai',
                 createdAt: new Date(),
                 updatedAt: new Date(),
@@ -222,6 +223,7 @@ class ArsipTerjagaService {
         auditContext: CriticalAuditContext,
     ) {
         if (Object.keys(data).some(key => !EDITABLE_FIELDS.has(key))) throw new ValidationError('Status pelaporan dan kepatuhan hanya dikelola melalui alur bukti.');
+        if (data.kategoriTerjaga !== undefined && !createArsipTerjagaSchema.shape.kategoriTerjaga.safeParse(data.kategoriTerjaga).success) throw new ValidationError('Kategori lama perlu ditinjau sebelum menetapkan kategori baru.');
         return await db.transaction(async (tx: any) => {
             const targetWhere = scopedRecordByIdWhere(
                 arsipTerjaga.id,
@@ -229,14 +231,7 @@ class ArsipTerjagaService {
                 arsipTerjaga.unitKerjaId,
                 unitScope,
             );
-            const [existing] = await tx
-                .select()
-                .from(arsipTerjaga)
-                .where(targetWhere)
-                .limit(1)
-                .for('update');
-
-            if (!existing) return null;
+            const { designation: existing } = await lockTerjagaContext(tx, id, { id: auditContext.userId }, true, unitScope);
 
             const [result] = await tx
                 .update(arsipTerjaga)
@@ -277,14 +272,7 @@ class ArsipTerjagaService {
                 arsipTerjaga.unitKerjaId,
                 unitScope,
             );
-            const [existing] = await tx
-                .select()
-                .from(arsipTerjaga)
-                .where(targetWhere)
-                .limit(1)
-                .for('update');
-
-            if (!existing) return null;
+            const { designation: existing } = await lockTerjagaContext(tx, id, { id: auditContext.userId }, true, unitScope);
 
             const [report] = await tx.select({ id: arsipTerjagaReports.id }).from(arsipTerjagaReports)
                 .where(eq(arsipTerjagaReports.designationId, id)).limit(1);

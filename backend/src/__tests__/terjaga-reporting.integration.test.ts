@@ -17,6 +17,7 @@ vi.mock('../services/blob-storage.service', () => ({ blobStorageService: storage
 let database: PGlite;
 let migratedLegacy: any;
 let service: typeof import('../services/terjaga-report.service').terjagaReportService;
+let designations: typeof import('../services/arsip-terjaga.service').arsipTerjagaService;
 const actor = (n: number) => ({ id: `10000000-0000-4000-8000-00000000000${n}`, email: `user${n}@example.test`, role: 'super_admin' });
 const archiveId = '20000000-0000-4000-8000-000000000001';
 const designationId = '30000000-0000-4000-8000-000000000001';
@@ -45,6 +46,7 @@ beforeAll(async () => {
     migratedLegacy = (await database.query('SELECT status_pelaporan,status_kepatuhan,legacy_reporting FROM arsip_terjaga')).rows[0];
     holder.db = drizzle(database, { schema });
     ({ terjagaReportService: service } = await import('../services/terjaga-report.service'));
+    ({ arsipTerjagaService: designations } = await import('../services/arsip-terjaga.service'));
 }, 45_000);
 afterAll(async () => { await database?.close(); });
 beforeEach(async () => {
@@ -119,9 +121,11 @@ describe('controlled terjaga reporting', () => {
     });
     it('re-reads bytes at final verification and rejects an uploader as verifier', async () => {
         const report = await draft();
+        await database.exec(`UPDATE file_attachments SET uploaded_by='${actor(2).id}'`);
         await advance(report.id, 'send');
         await advance(report.id, 'receive');
-        await database.exec(`UPDATE file_attachments SET uploaded_by='${actor(2).id}'`);
+        // The recorded uploader is a contributor even if another user recorded the report steps.
+        // This uploader was recorded before the document became reporting evidence.
         await expect(service.transition(designationId, report.id, { action: 'verify', notes: 'Bukti telah diperiksa lengkap.' }, actor(2))).rejects.toThrow(/independen|sendiri/i);
         storage.downloadFile.mockResolvedValue({ stream: Readable.from([Buffer.from('changed')]) });
         await expect(service.transition(designationId, report.id, { action: 'verify', notes: 'Bukti telah diperiksa lengkap.' }, actor(3))).rejects.toThrow(/integritas|hash|bukti/i);
@@ -172,5 +176,38 @@ describe('controlled terjaga reporting', () => {
     it('does not grant API runtime DELETE on reporting evidence', async () => {
         const { rows } = await database.query<any>("SELECT has_table_privilege('simsa_api_runtime','arsip_terjaga_reports','DELETE') AS allowed");
         expect(rows[0].allowed).toBe(false);
+    });
+    it('keeps referenced attachment identity immutable while allowing integrity quarantine', async () => {
+        const report = await draft();
+        await advance(report.id, 'send');
+        for (const [column, value] of [
+            ['file_url', 'https://test.private.blob.vercel-storage.com/replacement.pdf'],
+            ['sha256', 'a'.repeat(64)], ['entity_id', actor(3).id], ['file_name', 'replacement.pdf'],
+        ]) {
+            await expect(database.query(`UPDATE file_attachments SET ${column}=$1 WHERE id=$2`, [value, attachmentId(1)])).rejects.toThrow(/immutable/i);
+        }
+        await expect(database.query(`UPDATE file_attachments SET integrity_status='mismatch' WHERE id=$1`, [attachmentId(1)])).resolves.toBeDefined();
+    });
+    it('allows authorized designation CRUD and attributes creation to the current actor', async () => {
+        const audit = { userId: actor(1).id, userEmail: actor(1).email };
+        const created = await designations.create({ arsipId: archiveId, unitKerjaId: 'ditjen', kategoriTerjaga: 'kepulauan', createdBy: actor(3).id }, audit);
+        expect(created.createdBy).toBe(actor(1).id);
+        expect(created.statusKepatuhan).toBe('belum_dinilai');
+        await expect(designations.update(created.id, { catatan: 'Catatan diperbarui' }, 'ditjen', audit)).resolves.toMatchObject({ catatan: 'Catatan diperbarui' });
+        await expect(designations.update(created.id, { catatan: 'Lingkup salah' }, 'other-unit', audit)).rejects.toThrow();
+        await expect(designations.delete(created.id, null, audit)).resolves.toMatchObject({ id: created.id });
+        expect((await database.query('SELECT id FROM arsip_terjaga WHERE id=$1', [created.id])).rows).toHaveLength(0);
+        expect((await database.query("SELECT action FROM audit_log WHERE changes->>'designationId'=$1", [created.id])).rows.map((row: any) => row.action).sort()).toEqual(['create', 'delete', 'update']);
+    });
+    it.each(['no_grant', 'held', 'proposed', 'revoked'])('denies designation metadata/removal and creation when %s', async restriction => {
+        if (restriction === 'no_grant') await database.exec("UPDATE arsip SET klasifikasi_keamanan='rahasia'");
+        if (restriction === 'held') await database.exec("UPDATE arsip SET legal_hold=true,legal_hold_reason='Pemeriksaan arsip masih berlangsung',legal_hold_placed_at=now()");
+        if (restriction === 'proposed') await database.exec("UPDATE arsip SET disposal_status='proposed_musnah'");
+        if (restriction === 'revoked') await database.exec("UPDATE users SET is_active=false");
+        const audit = { userId: actor(1).id, userEmail: actor(1).email };
+        await expect(designations.update(designationId, { dasarHukum: 'Changed without authority' }, null, audit)).rejects.toThrow();
+        await expect(designations.delete(designationId, null, audit)).rejects.toThrow();
+        await expect(designations.create({ arsipId: archiveId, unitKerjaId: 'ditjen', kategoriTerjaga: 'kepulauan', createdBy: actor(1).id }, audit)).rejects.toThrow();
+        expect((await database.query<any>('SELECT dasar_hukum FROM arsip_terjaga')).rows).toEqual([{ dasar_hukum: null }]);
     });
 });

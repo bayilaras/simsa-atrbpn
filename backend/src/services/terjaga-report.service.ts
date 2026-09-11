@@ -7,20 +7,19 @@ import { isFileReleased } from './file-release-policy';
 import auditLogService from './audit-log.service';
 import { ConflictError, ForbiddenError, NotFoundError } from '../utils/errors';
 import { createTerjagaReportSchema, transitionTerjagaReportSchema, type CreateTerjagaReport, type TransitionTerjagaReport } from '../validators/terjaga-report.schemas';
+import { scopedRecordByIdWhere, type RecordUnitScope } from '../utils/record-unit-scope';
 
 export interface TerjagaReportingActor extends RecordUser { email?: string; ipAddress?: string; }
 type Executor = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const WRITERS = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff']);
 const VERIFIERS = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
 
-async function context(tx: Executor, designationId: string, actor: TerjagaReportingActor, mutation: boolean) {
+export async function lockTerjagaArchiveContext(tx: Executor, archiveId: string, actor: TerjagaReportingActor, mutation = true) {
     if (!actor.id) throw new ForbiddenError('Akun aktif diperlukan untuk mengakses bukti pelaporan.');
-    const [link] = await tx.select({ arsipId: arsipTerjaga.arsipId }).from(arsipTerjaga).where(eq(arsipTerjaga.id, designationId)).limit(1);
-    if (!link) throw new NotFoundError('Penetapan arsip terjaga');
-    // Same parent-first locking order as designation/disposal, including final verification.
-    const [archive] = await tx.select({ id: arsip.id }).from(arsip).where(eq(arsip.id, link.arsipId)).limit(1).for('update');
-    const [designation] = await tx.select().from(arsipTerjaga).where(eq(arsipTerjaga.id, designationId)).limit(1).for('update');
-    if (!archive || !designation) throw new NotFoundError('Penetapan arsip terjaga');
+    // Serialize designation/report mutations against retention and legal-hold changes.
+    const [archive] = await tx.select({ id: arsip.id, unitKerjaId: arsip.unitKerjaId, disposalBatchId: arsip.disposalBatchId })
+        .from(arsip).where(eq(arsip.id, archiveId)).limit(1).for('update');
+    if (!archive) throw new NotFoundError('Arsip terjaga');
     const [user] = await tx.select({ id: users.id, email: users.email, role: users.role, unitKerjaId: users.unitKerjaId, isActive: users.isActive })
         .from(users).where(eq(users.id, actor.id || '')).limit(1).for('update');
     if (!user?.isActive) throw new ForbiddenError('Akun harus aktif untuk mengakses bukti pelaporan.');
@@ -30,6 +29,16 @@ async function context(tx: Executor, designationId: string, actor: TerjagaReport
         access = await recordAccessService.check(user, 'arsip', archive.id, tx);
     }
     if (!access.allowed || (mutation && (!access.mutable || !WRITERS.has(user.role)))) throw new NotFoundError('Arsip dengan akses pelaporan');
+    return { archive, user, access };
+}
+
+export async function lockTerjagaContext(tx: Executor, designationId: string, actor: TerjagaReportingActor, mutation = true, unitScope: RecordUnitScope = null) {
+    const targetWhere = scopedRecordByIdWhere(arsipTerjaga.id, designationId, arsipTerjaga.unitKerjaId, unitScope);
+    const [link] = await tx.select({ arsipId: arsipTerjaga.arsipId }).from(arsipTerjaga).where(targetWhere).limit(1);
+    if (!link) throw new NotFoundError('Penetapan arsip terjaga');
+    const { user, access } = await lockTerjagaArchiveContext(tx, link.arsipId, actor, mutation);
+    const [designation] = await tx.select().from(arsipTerjaga).where(targetWhere).limit(1).for('update');
+    if (!designation) throw new NotFoundError('Penetapan arsip terjaga');
     if (designation.unitKerjaId !== access.unitKerjaId) throw new ConflictError('Unit penetapan tidak cocok dengan arsip.');
     return { designation, user, access };
 }
@@ -67,7 +76,7 @@ async function audit(tx: Executor, actor: TerjagaReportingActor, archiveId: stri
 export const terjagaReportService = {
     async list(designationId: string, actor: TerjagaReportingActor) {
         return db.transaction(async tx => {
-            const { designation, user, access } = await context(tx, designationId, actor, false);
+            const { designation, user, access } = await lockTerjagaContext(tx, designationId, actor, false);
             const reports = await tx.select().from(arsipTerjagaReports).where(eq(arsipTerjagaReports.designationId, designationId))
                 .orderBy(desc(arsipTerjagaReports.createdAt), desc(arsipTerjagaReports.id));
             const actorIds = [...new Set(reports.flatMap(report => [report.createdBy, report.sentBy, report.receivedBy, report.verifiedBy, report.cancelledBy]).filter((id): id is string => Boolean(id)))];
@@ -90,7 +99,7 @@ export const terjagaReportService = {
     async createDraft(designationId: string, raw: CreateTerjagaReport, actor: TerjagaReportingActor) {
         const input = createTerjagaReportSchema.parse(raw);
         return db.transaction(async tx => {
-            const { designation, user } = await context(tx, designationId, actor, true);
+            const { designation, user } = await lockTerjagaContext(tx, designationId, actor);
             const [open] = await tx.select({ id: arsipTerjagaReports.id }).from(arsipTerjagaReports)
                 .where(and(eq(arsipTerjagaReports.designationId, designationId), inArray(arsipTerjagaReports.status, ['draft', 'sent', 'received']))).limit(1);
             if (open) throw new ConflictError('Selesaikan atau batalkan catatan pelaporan yang masih terbuka.');
@@ -104,7 +113,7 @@ export const terjagaReportService = {
     async transition(designationId: string, reportId: string, raw: TransitionTerjagaReport, actor: TerjagaReportingActor) {
         const input = transitionTerjagaReportSchema.parse(raw);
         return db.transaction(async tx => {
-            const { designation, user } = await context(tx, designationId, actor, true);
+            const { designation, user } = await lockTerjagaContext(tx, designationId, actor);
             const [report] = await tx.select().from(arsipTerjagaReports).where(and(eq(arsipTerjagaReports.id, reportId), eq(arsipTerjagaReports.designationId, designationId))).limit(1).for('update');
             if (!report) throw new NotFoundError('Catatan pelaporan');
             if (['verified', 'cancelled'].includes(report.status)) throw new ConflictError('Catatan pelaporan final tidak dapat diubah.');

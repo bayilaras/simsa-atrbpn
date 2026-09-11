@@ -28,7 +28,7 @@ describe('partial update contracts', () => {
             ...parent, kategoriVital: 'operasional', tingkatKekritisan: 'penting', alasanPenetapan: 'Dasar',
         }).statusProteksi).toBe('belum_diproteksi');
         expect(createArsipTerjagaSchema.parse({
-            ...parent, kategoriTerjaga: 'pertanahan', dasarHukum: 'Dasar', uraianIsi: 'Uraian',
+            ...parent, kategoriTerjaga: 'kepulauan', dasarHukum: 'Dasar', uraianIsi: 'Uraian',
         })).toMatchObject({
             periodePelaporanHari: 365,
         });
