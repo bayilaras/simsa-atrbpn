@@ -12,6 +12,7 @@ node_modules/
 # Build output
 dist/
 build/
+frontend/dev-dist/
 
 # Terraform working data and local state (provider lock files stay tracked)
 .terraform/
