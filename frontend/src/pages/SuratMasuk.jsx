@@ -82,7 +82,8 @@ export default function SuratMasuk() {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
     const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
-    const [stats, setStats] = useState({ total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 });
+    const [statsSnapshot, setStatsSnapshot] = useState({ scope: null, status: 'loading', data: null });
+    const statsSeqRef = useRef(0);
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([]);
@@ -119,6 +120,9 @@ export default function SuratMasuk() {
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined);
+    const statsScope = JSON.stringify([user?.id, user?.role, resolvedUnitKerjaId]);
+    const statsLoading = statsSnapshot.scope !== statsScope || statsSnapshot.status === 'loading';
+    const stats = !statsLoading && statsSnapshot.status === 'success' ? statsSnapshot.data : null;
 
     // Guards against out-of-order responses overwriting newer results
     const fetchSeqRef = useRef(0);
@@ -170,20 +174,32 @@ export default function SuratMasuk() {
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
+        const seq = ++statsSeqRef.current;
+        setStatsSnapshot({ scope: statsScope, status: 'loading', data: null });
         try {
             const result = await suratMasukService.getStats({ unitKerjaId: resolvedUnitKerjaId });
-            if (result) {
-                setStats(result);
+            if (seq !== statsSeqRef.current) return;
+            if (!['total', 'belumDibalas', 'sudahDibalas', 'diarsipkan'].every(key => Number.isSafeInteger(result?.[key]) && result[key] >= 0)) {
+                throw new Error('Statistik surat masuk tidak lengkap.');
             }
+            setStatsSnapshot({ scope: statsScope, status: 'success', data: result });
         } catch (error) {
+            if (seq !== statsSeqRef.current) return;
             console.error('Error fetching stats:', error);
+            setStatsSnapshot({ scope: statsScope, status: 'error', data: null });
         }
-    }, [resolvedUnitKerjaId]);
+    }, [resolvedUnitKerjaId, statsScope]);
 
     useEffect(() => {
         fetchData();
+    }, [fetchData]);
+
+    useEffect(() => {
         fetchStats();
-    }, [fetchData, fetchStats]);
+        return () => { statsSeqRef.current += 1; };
+    }, [fetchStats]);
+
+    const refreshAll = () => { fetchData(); fetchStats(); };
 
     // Debounced search
     useEffect(() => {
@@ -316,7 +332,7 @@ export default function SuratMasuk() {
                     </div>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="outline" onClick={fetchData} disabled={loading} size="sm" className="h-9">
+                    <Button variant="outline" onClick={refreshAll} disabled={loading} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />
                         Refresh
                     </Button>
@@ -364,7 +380,7 @@ export default function SuratMasuk() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Surat</p>
-                            <p className="text-2xl font-bold">{stats.total}</p>
+                            <p className="text-2xl font-bold">{stats?.total ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-primary/10 rounded-full text-primary">
                             <MailOpen className="h-5 w-5" />
@@ -375,7 +391,7 @@ export default function SuratMasuk() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Perlu Tindakan</p>
-                            <p className="text-2xl font-bold text-orange-600">{stats.belumDibalas}</p>
+                            <p className="text-2xl font-bold text-orange-600">{stats?.belumDibalas ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-orange-100 dark:bg-orange-500/15 rounded-full text-orange-600">
                             <AlertCircle className="h-5 w-5" />
@@ -386,7 +402,7 @@ export default function SuratMasuk() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Sudah Dibalas</p>
-                            <p className="text-2xl font-bold text-green-600">{stats.sudahDibalas}</p>
+                            <p className="text-2xl font-bold text-green-600">{stats?.sudahDibalas ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-green-100 dark:bg-green-500/15 rounded-full text-green-600">
                             <CheckCircle2 className="h-5 w-5" />
@@ -397,7 +413,7 @@ export default function SuratMasuk() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Diarsipkan</p>
-                            <p className="text-2xl font-bold text-blue-600">{stats.diarsipkan}</p>
+                            <p className="text-2xl font-bold text-blue-600">{stats?.diarsipkan ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600">
                             <FolderArchive className="h-5 w-5" />
@@ -405,6 +421,13 @@ export default function SuratMasuk() {
                     </CardContent>
                 </Card>
             </div>
+
+            {statsLoading ? <p role="status" className="text-sm text-muted-foreground">Memuat statistik…</p> : !stats && (
+                <div role="alert" className="rounded-lg border border-destructive/40 p-3">
+                    <p className="text-sm">Statistik belum tersedia. Periksa koneksi dan coba lagi.</p>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={fetchStats}>Coba lagi statistik</Button>
+                </div>
+            )}
 
             {/* Main Content Area */}
             <Card className="shadow-sm border-border/60">
@@ -585,7 +608,7 @@ export default function SuratMasuk() {
                                 <AlertCircle className="h-8 w-8 text-destructive" aria-hidden="true" />
                                 <p className="font-medium">Gagal memuat daftar surat masuk</p>
                                 <p className="text-sm text-muted-foreground">Periksa koneksi Anda lalu coba lagi.</p>
-                                <Button variant="outline" onClick={fetchData}>
+                                <Button variant="outline" onClick={refreshAll}>
                                     <RefreshCw className="h-4 w-4" aria-hidden="true" /> Coba lagi
                                 </Button>
                             </div>
@@ -656,7 +679,7 @@ export default function SuratMasuk() {
                                                             {row.status === 'sudah_dibalas' ? 'Sudah Dibalas' : 'Belum Diproses'}
                                                         </Badge>
                                                         {row.isArchived && (
-                                                            <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 dark:bg-blue-500/15">
+                                                            <Badge variant="outline" className="text-blue-700 dark:text-blue-300 border-blue-200 bg-blue-50 dark:bg-blue-500/15">
                                                                 <FolderArchive className="h-3 w-3 mr-1" />
                                                                 Arsip
                                                             </Badge>

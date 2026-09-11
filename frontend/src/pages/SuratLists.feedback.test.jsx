@@ -34,13 +34,15 @@ const letters = [
     { kind: 'masuk', Component: SuratMasuk, emptyText: 'Tidak ada surat masuk ditemukan' },
     { kind: 'keluar', Component: SuratKeluar, emptyText: 'Tidak ada surat keluar ditemukan' },
 ];
-function renderList(Component, kind) {
-    return render(<MemoryRouter initialEntries={[kind === 'arsip' ? '/arsip/masuk' : `/surat/${kind}`]}>
+function listElement(Component, kind) {
+    return <MemoryRouter initialEntries={[kind === 'arsip' ? '/arsip/masuk' : `/surat/${kind}`]}>
         <Routes><Route path={kind === 'arsip' ? '/arsip/:tab' : '*'} element={<Component />} /></Routes>
-    </MemoryRouter>);
+    </MemoryRouter>;
 }
+const renderList = (Component, kind) => render(listElement(Component, kind));
 
 beforeEach(() => {
+    mocks.user = { id: 'reader', role: 'super_admin', unitKerjaId: 'unit-a' };
     for (const service of [mocks.masuk, mocks.keluar, mocks.arsip]) {
         service.getAll.mockReset().mockResolvedValue(empty);
         service.getStats.mockReset().mockResolvedValue({ total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0, arsipMasuk: 0, arsipKeluar: 0 });
@@ -48,6 +50,58 @@ beforeEach(() => {
     mocks.units.mockReset().mockResolvedValue({ data: [{ id: 'unit-a', name: 'Unit A' }] });
     mocks.toast.mockClear();
     vi.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+describe.each([...letters, { kind: 'arsip', Component: Arsip }])('$kind statistics fidelity', ({ kind, Component }) => {
+    const validStats = total => ({ total, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0, arsipMasuk: 0, arsipKeluar: 0 });
+    const totalValue = () => screen.getByText(kind === 'arsip' ? 'Total Arsip' : 'Total Surat').parentElement.querySelector('p:last-child');
+
+    it('distinguishes loading and unavailable statistics from a successfully loaded zero, with retry', async () => {
+        let rejectStats;
+        mocks[kind].getStats.mockImplementationOnce(() => new Promise((_, reject) => { rejectStats = reject; }));
+        renderList(Component, kind);
+        expect(totalValue()).toHaveTextContent('—');
+        expect(screen.getByRole('status')).toHaveTextContent('Memuat statistik');
+        await act(async () => rejectStats(new Error('Statistics offline')));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Statistik belum tersedia');
+        expect(totalValue()).toHaveTextContent('—');
+        mocks[kind].getStats.mockResolvedValue(validStats(0));
+        fireEvent.click(screen.getByRole('button', { name: 'Coba lagi statistik' }));
+        await waitFor(() => expect(totalValue()).toHaveTextContent(/^0$/));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('rejects incomplete statistics instead of presenting missing counters as zero', async () => {
+        mocks[kind].getStats.mockResolvedValue({ total: 4 });
+        renderList(Component, kind);
+        expect(await screen.findByRole('alert')).toHaveTextContent('Statistik belum tersedia');
+        expect(totalValue()).toHaveTextContent('—');
+    });
+
+    it('hides old-unit counts immediately and ignores a refresh completing after the new unit', async () => {
+        mocks.user = { id: 'reader', role: 'staff', unitKerjaId: 'unit-a' };
+        mocks[kind].getStats.mockResolvedValue(validStats(101));
+        const page = renderList(Component, kind);
+        await waitFor(() => expect(totalValue()).toHaveTextContent(/^101$/));
+        let resolveOld;
+        let resolveNew;
+        mocks[kind].getStats.mockImplementation(({ unitKerjaId }) => new Promise(resolve => {
+            if (unitKerjaId === 'unit-a') resolveOld = resolve;
+            else resolveNew = resolve;
+        }));
+        await waitFor(() => expect(screen.getByRole('button', { name: kind === 'arsip' ? 'Perbarui' : 'Refresh' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: kind === 'arsip' ? 'Perbarui' : 'Refresh' }));
+        await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
+        mocks.user = { ...mocks.user, unitKerjaId: 'unit-b' };
+        page.rerender(listElement(Component, kind));
+        expect(totalValue()).toHaveTextContent('—');
+        await waitFor(() => expect(resolveNew).toBeTypeOf('function'));
+        await act(async () => resolveNew(validStats(202)));
+        await waitFor(() => expect(totalValue()).toHaveTextContent(/^202$/));
+        await act(async () => resolveOld(validStats(303)));
+        expect(totalValue()).toHaveTextContent(/^202$/);
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 

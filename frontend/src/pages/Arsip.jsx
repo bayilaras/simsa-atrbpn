@@ -70,7 +70,7 @@ export default function Arsip() {
 
     const [searchTerm, setSearchTerm] = useState('')
     const [refreshVersion, setRefreshVersion] = useState(0)
-    const [arsipStats, setArsipStats] = useState({ total: 0, arsipMasuk: 0, arsipKeluar: 0 })
+    const [statsSnapshot, setStatsSnapshot] = useState({ scope: null, status: 'loading', data: null })
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
 
     // Unit kerja filter for super admin
@@ -90,23 +90,31 @@ export default function Arsip() {
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined)
+    const statsScope = JSON.stringify([user?.id, user?.role, resolvedUnitKerjaId])
+    const statsLoading = statsSnapshot.scope !== statsScope || statsSnapshot.status === 'loading'
+    const arsipStats = !statsLoading && statsSnapshot.status === 'success' ? statsSnapshot.data : null
 
     // Fetch arsip stats
     useEffect(() => {
         let active = true
         const fetchArsipStats = async () => {
+            setStatsSnapshot({ scope: statsScope, status: 'loading', data: null })
             try {
                 const result = await arsipService.getStats({ unitKerjaId: resolvedUnitKerjaId })
-                if (active && result) {
-                    setArsipStats(result)
+                if (!active) return
+                if (!['total', 'arsipMasuk', 'arsipKeluar'].every(key => Number.isSafeInteger(result?.[key]) && result[key] >= 0)) {
+                    throw new Error('Statistik arsip tidak lengkap.')
                 }
+                setStatsSnapshot({ scope: statsScope, status: 'success', data: result })
             } catch (error) {
+                if (!active) return
                 console.error('Error fetching arsip stats:', error)
+                setStatsSnapshot({ scope: statsScope, status: 'error', data: null })
             }
         }
         fetchArsipStats()
         return () => { active = false }
-    }, [activeTab, resolvedUnitKerjaId, refreshVersion])
+    }, [activeTab, resolvedUnitKerjaId, refreshVersion, statsScope])
 
     // Filter state
     const [tahunFilter, setTahunFilter] = useState('all')
@@ -239,7 +247,7 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Arsip</p>
-                            <p className="text-2xl font-bold">{arsipStats.total}</p>
+                            <p className="text-2xl font-bold">{arsipStats?.total ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600 dark:text-blue-400">
                             <FolderArchive className="h-5 w-5" />
@@ -250,7 +258,7 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Arsip Masuk</p>
-                            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{arsipStats.arsipMasuk}</p>
+                            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{arsipStats?.arsipMasuk ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-full text-emerald-600 dark:text-emerald-400">
                             <Inbox className="h-5 w-5" />
@@ -261,7 +269,7 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Arsip Keluar</p>
-                            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{arsipStats.arsipKeluar}</p>
+                            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{arsipStats?.arsipKeluar ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-yellow-100 dark:bg-yellow-500/15 rounded-full text-yellow-600 dark:text-yellow-400">
                             <Upload className="h-5 w-5" />
@@ -269,6 +277,13 @@ export default function Arsip() {
                     </CardContent>
                 </Card>
             </div>
+
+            {statsLoading ? <p role="status" className="text-sm text-muted-foreground">Memuat statistik…</p> : !arsipStats && (
+                <div role="alert" className="rounded-lg border border-destructive/40 p-3">
+                    <p className="text-sm">Statistik belum tersedia. Periksa koneksi dan coba lagi.</p>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => setRefreshVersion(version => version + 1)}>Coba lagi statistik</Button>
+                </div>
+            )}
 
             {/* Main Content with Tabs */}
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
