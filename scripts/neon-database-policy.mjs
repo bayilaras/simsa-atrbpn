@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { loadMigrations, validateAppliedMigrations, migrateDatabase } from '../backend/scripts/migrate-database.mjs';
 import { assertNeonBackupRole, NEON_BACKUP_GRANTS } from './neon-backup-role.mjs';
+import { assertNeonWorkerRole } from './neon-worker-role.mjs';
 
 export const POLICY_ROLES = Object.freeze(['simsa_api_runtime', 'simsa_event_runtime', 'simsa_worker_runtime',
   'simsa_final_cleanup', 'simsa_maintenance', 'simsa_migrator', 'simsa_backup_reader']);
@@ -75,6 +76,7 @@ export async function bootstrapNeonDatabase(client, { database, admin, passwords
 
 export async function assertNeonRoleBoundaries(client, { database, role }) {
   await assertNeonBackupRole(client, { database, allowAbsent: true, permissions: false });
+  await assertNeonWorkerRole(client, { database, allowAbsent: true, permissions: false });
   const identity = (await client.query('SELECT current_database() AS database, current_user AS actor, session_user AS session_actor')).rows[0];
   requireCondition(identity.database === database && identity.session_actor === role
     && identity.actor === (role === 'simsa_migration' ? 'simsa_migrator' : role), 'Unexpected database or authenticated application identity');
@@ -178,6 +180,7 @@ export async function migrateNeonDatabase(client, { database }) {
   catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
   await assertNeonRoleBoundaries(client, { database, role: 'simsa_migration' });
   await assertNeonBackupRole(client, { database, allowAbsent: true });
+  await assertNeonWorkerRole(client, { database, allowAbsent: true });
   return result;
 }
 

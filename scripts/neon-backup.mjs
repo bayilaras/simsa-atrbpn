@@ -18,7 +18,7 @@ const requireBackend = createRequire(new URL('../backend/package.json',import.me
 const { Client } = requireBackend('pg');
 const root=resolve(import.meta.dirname,'..');
 const helperFiles=['scripts/neon-backup.mjs','scripts/neon-backup-core.mjs','scripts/neon-backup-runtime.mjs','scripts/neon-backup-role.mjs',
-  'scripts/neon-database-policy.mjs','scripts/local-backup-drill-core.mjs','.github/scripts/collect-backup-evidence.sql','backend/src/db/grants/0002_converge_application_grants.sql'];
+  'scripts/neon-database-policy.mjs','scripts/neon-worker-role.mjs','scripts/local-backup-drill-core.mjs','.github/scripts/collect-backup-evidence.sql','backend/src/db/grants/0002_converge_application_grants.sql'];
 export async function neonBackupHelperHashes(){return Object.fromEntries(await Promise.all(helperFiles.map(async file=>[file,sha256((await readFile(join(root,file),'utf8')).replaceAll('\r\n','\n'))])));}
 const helperHashes=neonBackupHelperHashes;
 const ident=v=>{check(/^[A-Za-z][A-Za-z0-9_.@-]{0,62}$/.test(v),'Invalid authenticated database identifier');return `"${v}"`;};
