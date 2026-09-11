@@ -15,6 +15,13 @@ body, atau header autentikasi. Log Pino dalam permintaan mendapatkan konteks
 pesan exception mentah. Pelindungan field kredensial berlaku juga pada mode
 pengembangan. Ini tidak menggantikan audit akses arsip yang sudah ada di database.
 
+Untuk error terstruktur (`err`/`error`), logger hanya menyimpan jenis error dan
+kode operasional yang dikenali. Pesan exception, stack, cause, serta payload
+provider tidak disalin. Pemanggilan Pino tanpa teks juga memakai pesan tetap agar
+pesan exception tidak otomatis masuk ke `msg`. Teks log langsung dan keluaran
+`console` lama tetap perlu menggunakan pesan aman di lokasi pemanggilannya;
+pelindung ini bukan penyaring semua data sensitif secara umum.
+
 Pada paket Windows, log proses berada di
 `output/local-runtime/internal-app.stdout.log` dan `internal-app.stderr.log`.
 Folder tersebut diabaikan Git dan tetap perlu dibatasi aksesnya oleh pengelola.
