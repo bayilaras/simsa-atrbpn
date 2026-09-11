@@ -1,3 +1,4 @@
+import { buildSuratFormPayload } from '@/lib/surat-form-payload'
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -135,7 +136,7 @@ export default function TambahSuratMasuk() {
     const isEditMode = Boolean(id);
     const { user } = useAuth();
     const { capabilities } = useAppConfig();
-    const filesEnabled = capabilities.files;
+    const filesEnabled = capabilities.fileUploads;
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
     const errorRef = useRef(null);
@@ -333,11 +334,7 @@ export default function TambahSuratMasuk() {
         setError(null);
 
         try {
-            const dataToSubmit = {
-                ...formData,
-                linkDokumen: filesEnabled ? formData.linkDokumen : '',
-                unitKerjaId: resolvedUnitKerjaId,
-            };
+            const dataToSubmit = buildSuratFormPayload(formData, resolvedUnitKerjaId, filesEnabled);
 
             if (isEditMode) {
                 // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa

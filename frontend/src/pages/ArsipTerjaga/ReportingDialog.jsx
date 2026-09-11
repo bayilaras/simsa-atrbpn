@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { useAppConfig } from '@/context/app-config-context'
+import { FileAvailabilityNotice } from '@/components/FileAvailabilityNotice'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 const LABELS = { draft: 'Draf tercatat', sent: 'Bukti pengiriman tercatat', received: 'Bukti penerimaan tercatat', verified: 'Bukti diverifikasi internal', cancelled: 'Dibatalkan' }
@@ -13,6 +15,7 @@ const today = () => new Intl.DateTimeFormat('en-CA', {
 }).format(new Date())
 
 export default function ReportingDialog({ open, onOpenChange, item, onSaved }) {
+    const { capabilities } = useAppConfig()
     const [ledger, setLedger] = useState(null)
     const [error, setError] = useState('')
     const [message, setMessage] = useState('')
@@ -83,7 +86,7 @@ export default function ReportingDialog({ open, onOpenChange, item, onSaved }) {
                         <p className="text-sm text-muted-foreground">Tanggal laporan: {report.tanggalPelaporan || '—'}</p>
                         {report.createdByName && <p className="text-sm text-muted-foreground">Dicatat oleh {report.createdByName}</p>}
                         {[[report.sentEvidence, 'Bukti pengiriman'], [report.receivedEvidence, 'Bukti penerimaan']].map(([proof, label]) => proof && <div key={label} className="space-y-1">
-                            <Button variant="link" className="h-auto p-0" onClick={() => download(proof)}>{label}: {proof.fileName || 'Lampiran'}</Button>
+                            <Button variant="link" className="h-auto p-0" disabled={!capabilities.files} onClick={() => download(proof)}>{label}: {proof.fileName || 'Lampiran'}</Button>
                             <p className="text-xs break-all text-muted-foreground">SHA-256: {proof.sha256}</p>
                         </div>)}
                         {report.verificationNotes && <p className="text-sm">Hasil pemeriksaan{report.verifiedByName ? ` oleh ${report.verifiedByName}` : ''}: {report.verificationNotes}</p>}
@@ -98,11 +101,12 @@ export default function ReportingDialog({ open, onOpenChange, item, onSaved }) {
                 </section>}
                 {ledger.canManage && current && <section className="rounded border p-4 space-y-3">
                     <h3 className="font-semibold">Lengkapi catatan: {current.nomorLaporan}</h3>
+                    <FileAvailabilityNotice />
                     {['draft', 'sent'].includes(current.status) && <>
                         <div className="space-y-1"><Label htmlFor="report-file">Unggah lampiran bukti</Label>
-                            <Input id="report-file" type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy} onChange={event => {
+                            <Input id="report-file" type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy || !capabilities.fileUploads} onChange={event => {
                                 const file = event.target.files?.[0]
-                                if (file) run(() => arsipTerjagaService.uploadEvidence(item.arsipId, file), 'Lampiran diunggah. Tunggu pemeriksaan antivirus lalu muat ulang bukti.')
+                                if (file && capabilities.fileUploads) run(() => arsipTerjagaService.uploadEvidence(item.arsipId, file), 'Lampiran diunggah. Tunggu pemeriksaan antivirus lalu muat ulang bukti.')
                                 event.target.value = ''
                             }} />
                         </div>
@@ -117,8 +121,8 @@ export default function ReportingDialog({ open, onOpenChange, item, onSaved }) {
                     </>}
                     <div className="space-y-1"><Label htmlFor="report-notes">Catatan pemeriksaan atau tindakan</Label><Textarea id="report-notes" value={notes} onChange={event => setNotes(event.target.value)} maxLength={2000} placeholder="Jelaskan bukti atau alasan tindakan, minimal 10 karakter." /></div>
                     <div className="flex flex-wrap gap-2">
-                        {['draft', 'sent'].includes(current.status) && <Button disabled={busy || !attachmentId || !occurredOn || notes.trim().length < 10} onClick={() => transition(current.status === 'draft' ? 'send' : 'receive')}>{current.status === 'draft' ? 'Catat bukti pengiriman' : 'Catat bukti penerimaan'}</Button>}
-                        {current.canVerify && <Button disabled={busy || notes.trim().length < 10} onClick={() => transition('verify')}>Verifikasi bukti internal</Button>}
+                        {['draft', 'sent'].includes(current.status) && <Button disabled={busy || !capabilities.files || !attachmentId || !occurredOn || notes.trim().length < 10} onClick={() => transition(current.status === 'draft' ? 'send' : 'receive')}>{current.status === 'draft' ? 'Catat bukti pengiriman' : 'Catat bukti penerimaan'}</Button>}
+                        {current.canVerify && <Button disabled={busy || !capabilities.files || notes.trim().length < 10} onClick={() => transition('verify')}>Verifikasi bukti internal</Button>}
                         <Button variant="outline" disabled={busy || notes.trim().length < 10} onClick={() => transition('cancel')}>Batalkan catatan</Button>
                     </div>
                     {current.status === 'received' && !current.canVerify && <p className="text-sm text-muted-foreground">Minta pemeriksa independen yang berwenang membuka bukti dan memverifikasi catatan ini.</p>}

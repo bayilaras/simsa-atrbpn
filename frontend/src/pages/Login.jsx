@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import appConfig from '@/lib/app-config'
 import { AUTH_PROVIDER } from '@/lib/cloud-provider-config'
+import { useAppConfig } from '@/context/app-config-context'
 
 const BENEFITS = [
     'Temukan surat dan arsip dari satu pencarian',
@@ -34,6 +35,9 @@ export default function Login() {
     const [showPassword, setShowPassword] = useState(false)
     const [localError, setLocalError] = useState('')
     const localDemo = appConfig.mode === 'metadata-demo' && AUTH_PROVIDER === 'better-auth'
+    const runtime = useAppConfig()
+    const googleAvailable = !runtime.loading && runtime.authentication?.googleSignIn === true
+        && runtime.authentication?.provider === AUTH_PROVIDER && !localDemo
 
     if (isAuthenticated) {
         return <Navigate to="/" replace />
@@ -115,7 +119,8 @@ export default function Login() {
                             <CardTitle>Masuk ke {appConfig.shortName}</CardTitle>
                             <CardDescription>{localDemo
                                 ? 'Masukkan email dan kata sandi akun uji lokal.'
-                                : 'Masukkan email dan kata sandi, atau gunakan akun Google.'}</CardDescription>
+                                : googleAvailable ? 'Masukkan email dan kata sandi, atau gunakan akun Google.'
+                                    : 'Masukkan email dan kata sandi yang diberikan administrator.'}</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-5 px-5 pb-1 pt-5 sm:px-6 sm:pt-6">
                             {displayError && (
@@ -179,7 +184,7 @@ export default function Login() {
                                 </Button>
                             </form>
 
-                            {!localDemo && <><div className="relative py-1" role="separator" aria-label="Pilihan masuk lainnya">
+                            {googleAvailable && <><div className="relative py-1" role="separator" aria-label="Pilihan masuk lainnya">
                                 <div className="absolute inset-0 flex items-center" aria-hidden="true">
                                     <Separator className="w-full" />
                                 </div>

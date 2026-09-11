@@ -3,8 +3,11 @@ import { api } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useAppConfig } from '@/context/app-config-context'
+import { FileAvailabilityNotice } from '@/components/FileAvailabilityNotice'
 
 export default function ExternalPreservationFields({ electronicId, data, onChange, disabled }) {
+    const { capabilities } = useAppConfig()
     const [options, setOptions] = useState({ attachments: [], arsipId: '' })
     const [revision, setRevision] = useState(0)
     const [loading, setLoading] = useState(true)
@@ -22,7 +25,7 @@ export default function ExternalPreservationFields({ electronicId, data, onChang
         return () => { active = false }
     }, [electronicId, revision])
     const upload = async () => {
-        if (!file || !options.arsipId || uploading) return
+        if (!file || !options.arsipId || uploading || !capabilities.fileUploads) return
         const body = new FormData(); body.append('file', file)
         setUploading(true); setError('')
         try {
@@ -33,6 +36,7 @@ export default function ExternalPreservationFields({ electronicId, data, onChang
         finally { setUploading(false) }
     }
     return <div className="space-y-4 rounded-md border p-3">
+        <FileAvailabilityNotice />
         <p className="text-sm text-muted-foreground">SIMSA mencatat tindakan yang dilakukan dengan perangkat lain. Hasil dan bukti dibaca ulang untuk memeriksa hash; validasi format, mutu hasil, dan pelaksanaan tetap ditinjau petugas.</p>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         {message && <p role="status" className="text-sm">{message}</p>}
@@ -46,10 +50,10 @@ export default function ExternalPreservationFields({ electronicId, data, onChang
         </div>)}
         <div className="space-y-2">
             <Label htmlFor="preservation-file">Unggah hasil atau bukti baru (maksimal 10 MB)</Label>
-            <Input id="preservation-file" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif" disabled={disabled || uploading}
+            <Input id="preservation-file" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif" disabled={disabled || uploading || !capabilities.fileUploads}
                 onChange={event => setFile(event.target.files?.[0] || null)} />
             <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" disabled={disabled || uploading || !file || !options.arsipId} onClick={upload}>Unggah lampiran</Button>
+                <Button type="button" variant="outline" disabled={disabled || uploading || !capabilities.fileUploads || !file || !options.arsipId} onClick={upload}>Unggah lampiran</Button>
                 <Button type="button" variant="outline" disabled={disabled || loading || uploading} onClick={() => setRevision(value => value + 1)}>Perbarui pilihan</Button>
             </div>
         </div>

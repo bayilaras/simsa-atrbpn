@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     getDemoListenHost,
-    getPublicCapabilities,
     loadAppMode,
     validateDemoEnvironment,
 } from '../config/demo.js';
+import { getPublicCapabilities } from '../config/public-capabilities.js';
 import { validateRuntimeEnv } from '../config/env.js';
 import { assertValidCloudPlatformEnvironment } from '../config/cloud-platform.js';
 import { getObjectStorageConfigurationStatus } from '../config/blob-storage.js';
@@ -37,7 +37,8 @@ describe('isolated metadata demo configuration', () => {
         expect(() => loadAppMode({ SIMSA_APP_MODE: 'demoo' })).toThrow();
         expect(getPublicCapabilities(localDemo)).toEqual({
             mode: 'metadata-demo', syntheticDataOnly: true,
-            capabilities: { metadata: true, files: false, externalIntegrations: false },
+            capabilities: { metadata: true, files: false, fileUploads: false, externalIntegrations: false },
+            authentication: { provider: 'better-auth', googleSignIn: false },
         });
     });
     it('binds only a local Better Auth metadata demo to loopback', () => {

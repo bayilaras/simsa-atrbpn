@@ -1,3 +1,4 @@
+import { FileCapabilityGuard } from '@/components/FileCapabilityGuard'
 import { lazy, Suspense, useEffect } from 'react'
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, Link, useLocation } from 'react-router-dom'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
@@ -138,14 +139,7 @@ function SrikandiFeatureGuard({ children }) {
   return children
 }
 
-function FileCapabilityGuard({ children }) {
-  const { capabilities, loading } = useAppConfig()
 
-  if (loading) return <PageLoader />
-  if (!capabilities.files) return <Navigate to="/not-found" replace />
-
-  return children
-}
 
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
 const SUPER_ADMIN_ONLY = ['super_admin'];
@@ -258,7 +252,7 @@ const router = createBrowserRouter([
       { path: "/arsip", element: <Navigate to="/arsip/keluar" replace /> },
       { path: "/arsip/detail/:id", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><ArsipDetail /></RoleGuard> },
       { path: "/arsip/:tab", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Arsip /></RoleGuard> },
-      { path: "/bulk-upload", element: <FileCapabilityGuard><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard></FileCapabilityGuard> },
+      { path: "/bulk-upload", element: <FileCapabilityGuard upload><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard></FileCapabilityGuard> },
       { path: "/laporan", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Laporan /></RoleGuard> },
       { path: "/audit-log", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AuditLog /></RoleGuard> },
       { path: "/record-access-grants", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><RecordAccessGrants /></RoleGuard> },

@@ -27,19 +27,6 @@ export function getDemoListenHost(source: NodeJS.ProcessEnv = process.env): stri
     return !deployed && authProvider === 'better-auth' ? '127.0.0.1' : undefined;
 }
 
-export function getPublicCapabilities(source: NodeJS.ProcessEnv = process.env) {
-    const demo = isMetadataDemo(source);
-    return {
-        mode: demo ? 'metadata-demo' : 'full',
-        syntheticDataOnly: demo,
-        capabilities: {
-            metadata: true,
-            files: !demo,
-            externalIntegrations: !demo && source.SRIKANDI_ENABLED?.trim().toLowerCase() === 'true',
-        },
-    } as const;
-}
-
 /** The demo is a distinct deployment, never a switch on a live archive DB. */
 export function validateDemoEnvironment(
     runtime: string,

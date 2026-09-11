@@ -537,7 +537,7 @@ export default function RegulatoryRuleSets() {
     };
 
     const uploadSourceDocument = async () => {
-        if (!capabilities.files) return;
+        if (!capabilities.fileUploads) return;
         if (!sourceRuleSet || !sourceFile) return;
         try {
             setActionLoading(true);
@@ -925,7 +925,7 @@ export default function RegulatoryRuleSets() {
                                                                     </Button>
                                                                     <Button variant="outline" size="sm" onClick={() => validateDraft(ruleSet)}><FileCheck2 /> Validasi</Button>
                                                                     {capabilities.externalIntegrations && <Button variant="outline" size="sm" onClick={() => openImport(ruleSet)}><Upload /> Impor JSON</Button>}
-                                                                    {capabilities.files && <Button variant="outline" size="sm" onClick={() => { setSourceRuleSet(ruleSet); setSourceFile(null); setSourceUploadProgress(null); }}><Upload /> PDF sumber</Button>}
+                                                                    {capabilities.fileUploads && <Button variant="outline" size="sm" onClick={() => { setSourceRuleSet(ruleSet); setSourceFile(null); setSourceUploadProgress(null); }}><Upload /> PDF sumber</Button>}
                                                                     <Button variant="outline" size="sm" onClick={() => openManifest(ruleSet)}><ClipboardCheck /> Manifest</Button>
                                                                     <Button variant="outline" size="sm" onClick={() => generateImpact(ruleSet)} disabled={actionLoading}><GitBranch /> Diff & dampak</Button>
                                                                     <Button size="sm" onClick={() => openWorkflow(ruleSet, 'submit')}><Send /> Ajukan</Button>
@@ -1134,7 +1134,7 @@ export default function RegulatoryRuleSets() {
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={capabilities.files && Boolean(sourceRuleSet)} onOpenChange={(open) => {
+            <Dialog open={capabilities.fileUploads && Boolean(sourceRuleSet)} onOpenChange={(open) => {
                 if (!open && !actionLoading) {
                     setSourceRuleSet(null);
                     setSourceFile(null);

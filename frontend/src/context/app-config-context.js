@@ -5,11 +5,13 @@ export const DISABLED_FEATURES = Object.freeze({ srikandi: false })
 export const FULL_CAPABILITIES = Object.freeze({
     metadata: true,
     files: true,
+    fileUploads: true,
     externalIntegrations: true,
 })
 
 export const AppConfigContext = createContext({
     features: DISABLED_FEATURES,
+    authentication: Object.freeze({ googleSignIn: false }),
     capabilities: FULL_CAPABILITIES,
     mode: 'full',
     syntheticDataOnly: false,

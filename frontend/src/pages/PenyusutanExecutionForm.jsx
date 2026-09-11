@@ -4,10 +4,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { useAppConfig } from '@/context/app-config-context'
+import { FileAvailabilityNotice } from '@/components/FileAvailabilityNotice'
 
 const selectClass = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm'
 
 export default function PenyusutanExecutionForm({ batch, unitKerjaId, onComplete }) {
+    const { capabilities } = useAppConfig()
     const mounted = useRef(true)
     const [options, setOptions] = useState({ attachments: [], witnesses: [] })
     const [revision, setRevision] = useState(0)
@@ -43,7 +46,7 @@ export default function PenyusutanExecutionForm({ batch, unitKerjaId, onComplete
     </div>
 
     const upload = async () => {
-        if (!file || busy) return
+        if (!file || busy || !capabilities.fileUploads) return
         setBusy(true); setError(''); setNotice('')
         try {
             await penyusutanService.uploadExecutionEvidence(batch.id, unitKerjaId, uploadArchiveId, file)
@@ -54,7 +57,7 @@ export default function PenyusutanExecutionForm({ batch, unitKerjaId, onComplete
     }
     const submit = async event => {
         event.preventDefault()
-        if (busy) return
+        if (busy || !capabilities.files) return
         setBusy(true); setError('')
         try {
             await penyusutanService.updateStatus(batch.id, unitKerjaId, { executionEvidence: {
@@ -72,16 +75,17 @@ export default function PenyusutanExecutionForm({ batch, unitKerjaId, onComplete
         </div>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         {notice && <p role="status" className="text-sm">{notice}</p>}
+        <FileAvailabilityNotice />
         <div className="space-y-3 rounded-md bg-muted/40 p-3">
             <Label htmlFor="evidence-archive">Arsip tempat bukti dilampirkan</Label>
             <select id="evidence-archive" className={selectClass} value={uploadArchiveId} disabled={busy} onChange={event => setUploadArchiveId(event.target.value)}>
                 {(batch.items || []).map(item => <option key={item.arsipId} value={item.arsipId}>{item.arsip?.nomorBerkas || item.arsip?.uraianBerkas || `Arsip ${item.nomorUrut || ''}`}</option>)}
             </select>
             <Label htmlFor="execution-file">Unggah dokumen bukti (PDF, JPEG, PNG; maksimal 10 MB)</Label>
-            <Input id="execution-file" type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy}
+            <Input id="execution-file" type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy || !capabilities.fileUploads}
                 onChange={event => setFile(event.target.files?.[0] || null)} />
             <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" disabled={busy || !file || !uploadArchiveId} onClick={upload}>Unggah bukti</Button>
+                <Button type="button" variant="outline" disabled={busy || !capabilities.fileUploads || !file || !uploadArchiveId} onClick={upload}>Unggah bukti</Button>
                 <Button type="button" variant="outline" disabled={busy || loading} onClick={() => setRevision(value => value + 1)}>Perbarui bukti</Button>
             </div>
         </div>
@@ -107,7 +111,7 @@ export default function PenyusutanExecutionForm({ batch, unitKerjaId, onComplete
                 {attachmentSelect(`Dokumen penugasan saksi ${index + 1}`, witness.authorityAttachmentId,
                     value => changeWitness(index, 'authorityAttachmentId', value), `execution-authority-${index}`)}
             </fieldset>)}
-            <Button type="submit" disabled={busy || loading || !options.attachments.length}>{busy ? 'Menyimpan…' : 'Simpan bukti dan catat selesai'}</Button>
+            <Button type="submit" disabled={busy || loading || !capabilities.files || !options.attachments.length}>{busy ? 'Menyimpan…' : 'Simpan bukti dan catat selesai'}</Button>
         </form>
     </section>
 }

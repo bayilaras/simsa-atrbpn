@@ -7,6 +7,24 @@ import {
 } from './app-config'
 
 describe('app config', () => {
+    it('accepts full runtime restrictions and rejects partial or conflicting capability contracts', () => {
+        const build = createAppConfig({})
+        const full = { mode: 'full', syntheticDataOnly: false,
+            capabilities: { metadata: true, files: true, fileUploads: false, externalIntegrations: false },
+            authentication: { provider: 'better-auth', googleSignIn: true } }
+        expect(resolveRuntimeCapabilities(build, full)).toMatchObject({ compatible: true,
+            capabilities: { files: true, fileUploads: false }, authentication: { googleSignIn: true } })
+        for (const invalid of [null, { ...full, mode: 'metadata-demo' }, { ...full, syntheticDataOnly: true },
+            { ...full, authentication: { provider: 'firebase', googleSignIn: true } },
+            { ...full, capabilities: { metadata: true, files: true } },
+            { ...full, capabilities: { ...full.capabilities, files: false, fileUploads: true } },
+            { ...full, capabilities: { ...full.capabilities, files: 'true' } }]) {
+            expect(resolveRuntimeCapabilities(build, invalid)).toMatchObject({ compatible: false,
+                capabilities: { files: false, fileUploads: false, externalIntegrations: false }, authentication: { googleSignIn: false } })
+        }
+        expect(resolveRuntimeCapabilities(build, { ...full, mode: 'metadata-demo' }).capabilities.metadata).toBe(false)
+        expect(resolveRuntimeCapabilities(build, null).capabilities.metadata).toBe(true)
+    })
     it.each([
         ['true', true],
         [' TRUE ', true],

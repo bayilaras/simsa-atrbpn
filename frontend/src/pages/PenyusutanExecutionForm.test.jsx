@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PenyusutanExecutionForm from './PenyusutanExecutionForm'
+import { AppConfigContext } from '@/context/app-config-context'
 
 const mocks = vi.hoisted(() => ({ getExecutionOptions: vi.fn(), updateStatus: vi.fn(), uploadExecutionEvidence: vi.fn() }))
 vi.mock('@/services/penyusutan.service', () => ({ penyusutanService: mocks }))
@@ -25,6 +26,18 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 describe('destruction evidence workflow', () => {
+    it('disables uploads and completion without storage even with historical evidence options', async () => {
+        render(<AppConfigContext.Provider value={{ mode: 'full', capabilities: { files: false, fileUploads: false } }}>
+            <PenyusutanExecutionForm batch={batch} unitKerjaId="unit-1" onComplete={vi.fn()} />
+        </AppConfigContext.Provider>)
+        await waitFor(() => expect(screen.getByLabelText('Berita acara selesai')).not.toBeDisabled())
+        expect(screen.getByRole('button', { name: 'Unggah bukti' })).toBeDisabled()
+        expect(screen.getByLabelText(/Unggah dokumen bukti/)).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Simpan bukti dan catat selesai' })).toBeDisabled()
+        fireEvent.submit(screen.getByRole('button', { name: 'Simpan bukti dan catat selesai' }).closest('form'))
+        expect(mocks.updateStatus).not.toHaveBeenCalled()
+        expect(screen.getByRole('note')).toHaveTextContent('Metadata surat dan arsip tetap dapat dikelola')
+    })
     it('submits selected documents and named witnesses only when the operator records completion', async () => {
         const complete = vi.fn()
         render(<PenyusutanExecutionForm batch={batch} unitKerjaId="unit-1" onComplete={complete} />)

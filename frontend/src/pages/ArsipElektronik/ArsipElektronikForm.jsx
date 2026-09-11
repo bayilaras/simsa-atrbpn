@@ -13,10 +13,13 @@ import {
 import api from '@/services/api'
 import { arsipService } from '@/services/arsip.service'
 import { MEDIA_OPTIONS } from './constants'
+import { useAppConfig } from '@/context/app-config-context'
+import { FileAvailabilityNotice } from '@/components/FileAvailabilityNotice'
 
 const MINIMUM_DPI = { paper: 300, cartographic: 400, photo: 600 }
 
 export default function ArsipElektronikForm({ open, onOpenChange, form, setForm, onSubmit }) {
+    const { capabilities } = useAppConfig()
     const [pickerOpen, setPickerOpen] = useState(false)
     const [search, setSearch] = useState('')
     const [archives, setArchives] = useState([])
@@ -74,7 +77,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
     const uploadControlledAttachment = async (event) => {
         const file = event.target.files?.[0]
         event.target.value = ''
-        if (!file || !form.arsipId) return
+        if (!file || !form.arsipId || !capabilities.fileUploads) return
 
         setUploading(true)
         setError('')
@@ -124,6 +127,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                         {form.arsipId && (
                             <div className="space-y-2 rounded-lg border p-3">
                                 <Label>Bitstream/lampiran terkendali *</Label>
+                                <FileAvailabilityNotice />
                                 <Select
                                     value={form.fileAttachmentId || ''}
                                     onValueChange={(value) => setForm(current => ({ ...current, fileAttachmentId: value }))}
@@ -143,7 +147,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                     <Input
                                         type="file"
                                         accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif"
-                                        disabled={uploading}
+                                        disabled={uploading || !capabilities.fileUploads}
                                         onChange={uploadControlledAttachment}
                                     />
                                     {uploading && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -482,7 +482,7 @@ export default function Dashboard() {
                                         <FileBarChart className="h-5 w-5" />
                                         <span className="text-xs">Laporan</span>
                                     </Button>
-                                    {isAdmin && capabilities.files && (
+                                    {isAdmin && capabilities.fileUploads && (
                                         <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/bulk-upload')}>
                                             <FolderArchive className="h-5 w-5" />
                                             <span className="text-xs">Upload</span>
