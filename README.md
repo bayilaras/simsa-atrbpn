@@ -28,6 +28,11 @@ untuk perintah mulai ulang, pembaruan build, dan batas lingkungan yang tersedia.
 Perubahan alur harian, perlindungan formulir, dan pemeriksaan tampilan dijelaskan
 dalam [hasil perbaikan UX](docs/HASIL_PERBAIKAN_UX_2026-09-11.md).
 
+Pemeriksaan izin, nomor penelusuran gangguan, metrik administrator, serta
+pemulihan unggahan dijelaskan dalam [panduan operasional backend](docs/OPERASIONAL_BACKEND.md).
+Pengelola juga dapat menjalankan [backup database lokal dan uji pemulihan](docs/BACKUP_LOKAL.md);
+status backup dan verifikasi bundle yang sama tersedia melalui **Cek-SIMSA.cmd**.
+
 Untuk membangun ulang setelah perubahan kode, operator dapat menjalankan
 `npm run build:internal` dengan dependensi yang sudah terpasang. Perintah ini
 membangun frontend mode full dengan Better Auth dan API pada origin yang sama,

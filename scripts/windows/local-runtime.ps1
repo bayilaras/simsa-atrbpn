@@ -205,6 +205,36 @@ function Write-AppReadiness($readiness) {
     if (-not $readiness.application.externalIntegrations.srikandi.enabled) { Write-Output 'Integrasi SRIKANDI: nonaktif.' }
 }
 
+function Format-LocalBackupStatus($metadata, [datetime]$now) {
+    try {
+        if ($null -eq $metadata -or $metadata.format -ne 1) { throw 'Invalid metadata' }
+        if ($metadata.PSObject.Properties['lastAttempt'] -and $metadata.lastAttempt.status -eq 'failed') {
+            Write-Output 'Backup: operasi terakhir gagal. Pengelola perlu memeriksa laporan privat; bukti sukses sebelumnya tetap tercatat.'
+        }
+        if (-not $metadata.PSObject.Properties['lastBackup']) { Write-Output 'Backup: belum ada backup database lokal yang berhasil tercatat.'; return }
+        $backup = $metadata.lastBackup
+        $snapshot = [datetime]::MinValue
+        if ($backup.status -ne 'passed' -or -not [datetime]::TryParse([string]$backup.snapshot_at, [ref]$snapshot) -or
+            -not $backup.PSObject.Properties['run_id'] -or $snapshot.ToUniversalTime() -gt $now.ToUniversalTime()) { throw 'Invalid backup metadata' }
+        $age = [Math]::Round(($now.ToUniversalTime() - $snapshot.ToUniversalTime()).TotalHours, 1)
+        Write-Output ('Backup database: snapshot ' + $snapshot.ToLocalTime().ToString('yyyy-MM-dd HH:mm:ss') + ' (usia ' + $age + ' jam).')
+        if ($metadata.PSObject.Properties['lastVerification'] -and $metadata.lastVerification.status -eq 'passed' -and
+            $metadata.lastVerification.run_id -ceq $backup.run_id) {
+            Write-Output 'Backup terbaru: restore terpisah terverifikasi. Ini bukti database; berkas digital eksternal tidak dicakup.'
+        } else { Write-Output 'Backup terbaru: belum diuji restore. Jalankan prosedur verifikasi dalam docs/BACKUP_LOKAL.md.' }
+    } catch { Write-Output 'Backup: metadata status tidak valid. Pengelola perlu memeriksa laporan privat.' }
+}
+
+function Write-LocalBackupStatus($config) {
+    $file = Join-Path $config.runtimeRoot 'local-backup-status.json'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Write-Output 'Backup: belum ada backup database lokal yang berhasil tercatat.'; return }
+    try {
+        $item = Get-Item -LiteralPath $file
+        if ($item.Length -gt 32768 -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unsafe status file' }
+        Format-LocalBackupStatus (Get-Content -LiteralPath $file -Raw | ConvertFrom-Json) ([datetime]::UtcNow)
+    } catch { Write-Output 'Backup: metadata status tidak valid. Pengelola perlu memeriksa laporan privat.' }
+}
+
 function Stop-OwnedApplication($config) {
     $app = Get-AppStatus $config
     if ($app.running) {
@@ -309,6 +339,7 @@ function Invoke-LocalLauncher([string]$requestedAction, [bool]$stopPostgres, [bo
                 $readiness = Read-AppReadiness
                 if ($null -ne $readiness) { Write-AppReadiness $readiness } else { Write-Output 'Aplikasi: proses ada, tetapi belum siap. Periksa log lokal.' }
             } else { Write-Output 'Aplikasi: berhenti. Jalankan Mulai-SIMSA.cmd.' }
+            Write-LocalBackupStatus $config
             return
         }
         if (-not $database.running) {
