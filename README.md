@@ -22,6 +22,9 @@ untuk login, akun per unit, surat, impor, serta pencarian lokasi. Lampiran digit
 dan proses berbukti file digunakan setelah fasilitasnya siap; panduan ini tidak
 menyatakan seluruh fitur atau integrasi eksternal sudah operasional.
 
+Pengelola dapat membaca [panduan operasional lokal dan hasil verifikasi](docs/OPERASIONAL_LOKAL_2026-09-11.md)
+untuk perintah mulai ulang, pembaruan build, dan batas lingkungan yang tersedia.
+
 Untuk membangun ulang setelah perubahan kode, operator dapat menjalankan
 `npm run build:internal` dengan dependensi yang sudah terpasang. Perintah ini
 membangun frontend mode full dengan Better Auth dan API pada origin yang sama,
