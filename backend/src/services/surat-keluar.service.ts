@@ -539,6 +539,7 @@ export class SuratKeluarService {
     ) {
         // Mirror dashboard pattern: conditionally apply unitKerjaId filter
         const conditions = [
+            eq(suratKeluar.isDeleted, false),
             ...(unitKerjaId !== null ? [eq(suratKeluar.unitKerjaId, unitKerjaId)] : []),
             ...(tahun ? [eq(suratKeluar.tahun, tahun)] : []),
             ...(securityClassifications !== undefined && securityClassifications !== null
@@ -556,7 +557,7 @@ export class SuratKeluarService {
         const stats = await db
             .select({
                 total: sql<number>`count(*)::int`,
-                diarsipkan: sql<number>`sum(case when ${suratKeluar.isArchived} = true then 1 else 0 end)::int`,
+                diarsipkan: sql<number>`count(*) filter (where ${suratKeluar.isArchived} = true)::int`,
             })
             .from(suratKeluar)
             .where(whereClause);
