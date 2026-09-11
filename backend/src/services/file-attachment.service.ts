@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { fileAttachments, NewFileAttachment, FileAttachment } from '../db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { blobStorageService } from './blob-storage.service';
 import crypto from 'crypto';
 import type { Readable } from 'node:stream';
@@ -20,6 +20,7 @@ import {
     type ClientBlobPurpose,
 } from './client-blob-upload.service.js';
 import { requireImmutableObjectGeneration } from '../storage/locator.js';
+import { inspectBitstream } from './bitstream-integrity.js';
 
 export const ATTACHMENT_PREFLIGHT_MAX_BYTES = 10 * 1024 * 1024;
 export const ATTACHMENT_PREFLIGHT_TIMEOUT_MS = 30_000;
@@ -363,23 +364,9 @@ export class FileAttachmentService {
         const locator = attachment.fileUrl || attachment.driveFileId;
         if (!locator) return null;
 
-        const objectGeneration = requireImmutableObjectGeneration(
-            locator,
-            attachment.objectGeneration,
-        );
-        const download = await blobStorageService.downloadFile(locator, {
-            generation: objectGeneration || undefined,
-        });
-        if (!download) return null;
-
-        const digest = crypto.createHash('sha256');
-        for await (const chunk of download.stream) {
-            digest.update(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        const actualHash = digest.digest('hex');
-        const matches = crypto.timingSafeEqual(
-            Buffer.from(attachment.sha256, 'hex'),
-            Buffer.from(actualHash, 'hex'),
+        const { actualHash, matches } = await inspectBitstream(
+            attachment,
+            (url, options) => blobStorageService.downloadFile(url, options),
         );
 
         const [updated] = await executor
@@ -388,11 +375,21 @@ export class FileAttachmentService {
                 integrityStatus: matches ? 'verified' : 'mismatch',
                 lastFixityCheckAt: new Date(),
             })
-            .where(eq(fileAttachments.id, id))
+            .where(and(
+                eq(fileAttachments.id, id),
+                eq(fileAttachments.sha256, attachment.sha256),
+                eq(fileAttachments.sizeBytes, attachment.sizeBytes!),
+                eq(fileAttachments.storageAccess, attachment.storageAccess),
+                attachment.fileUrl ? eq(fileAttachments.fileUrl, attachment.fileUrl) : isNull(fileAttachments.fileUrl),
+                attachment.driveFileId ? eq(fileAttachments.driveFileId, attachment.driveFileId) : isNull(fileAttachments.driveFileId),
+                attachment.objectGeneration ? eq(fileAttachments.objectGeneration, attachment.objectGeneration) : isNull(fileAttachments.objectGeneration),
+            ))
             .returning();
 
+        if (!updated) throw new ConflictError('Baseline berkas berubah selama pemeriksaan integritas; ulangi pemeriksaan.');
+
         return {
-            attachment: updated || attachment,
+            attachment: updated,
             expectedHash: attachment.sha256,
             actualHash,
             matches,
