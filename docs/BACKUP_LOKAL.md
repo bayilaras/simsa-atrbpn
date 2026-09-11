@@ -8,6 +8,12 @@ Sumber sengaja dikunci pada `127.0.0.1:55432/simsa_local`, PostgreSQL 18, system
 
 Gunakan Node 24 yang sudah disiapkan di `output/local-runtime/node-v24.21.0-win-x64/node.exe`, PostgreSQL 18 native, Python 3 yang sudah terpasang, serta dependency backend yang sudah tersedia. Lokasi executable PostgreSQL diambil dari `output/local-runtime/local-launcher.json`. Skrip tidak memasang dependency atau memerlukan Docker/cloud. Jangan memindahkan/mengubah `backend.env`, `credentials.json`, atau direktori database sumber untuk menjalankan prosedur ini.
 
+Tes logika portabel dijalankan dengan `npm run test:local-current-backup` dan
+disertakan dalam `npm test`. Pada Windows, jalankan
+`npm run test:local-current-backup:windows` untuk turut menguji PowerShell dan
+tampilan status launcher. Pemisahan ini mempertahankan pengujian Windows tanpa
+membuat pemeriksaan inti bergantung pada tersedianya PowerShell di CI Linux.
+
 Backup memakai **akun backup read-only yang sudah ada**, bukan admin. Bila kredensial tidak cocok, closure role berbeda, atau izin kurang, operasi gagal tanpa menambahkan grant. Bukti sumber memeriksa identitas fisik/proses, waktu hidup server, database/user/port, PostgreSQL major, dan sesi read-only. Dump dan fingerprint dibaca dari satu exported snapshot.
 
 Backup mencakup tabel akun, data autentikasi/sesi, arsip, surat, audit, skema, dan metadata database. Isinya sensitif. Arsip dan fingerprint dienkripsi AES-256-GCM; manifest dilindungi HMAC-SHA256, dengan kunci per backup. Role server dan password PostgreSQL bukan bagian dump database; pemulihan membuat principal baru dan menerapkan grant yang ditinjau hanya pada target baru.

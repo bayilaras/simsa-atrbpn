@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
-import { spawnSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { EventEmitter, once } from 'node:events';
 import { mkdtemp, open, writeFile, readFile, access, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as currentCore from './local-current-backup-core.mjs';
 import { SOURCE, CURRENT_FORMAT, assertSourceIdentity, assertTargetIdentity, assertTargetLocation,
   parseCurrentArguments, sealManifest, authenticateManifest, verifyArtifactHashes, assertSeparateKey } from './local-current-backup-core.mjs';
-import { encryptBuffer, decryptBuffer, sha256, sterileEnvironment } from './local-backup-drill-core.mjs';
+import { encryptBuffer, decryptBuffer, sha256 } from './local-backup-drill-core.mjs';
 
 const repository = resolve(import.meta.dirname, '..');
 const dataDir = resolve(repository, 'output/backup-verification/run/private/restore-data');
@@ -72,14 +72,6 @@ test('recovery key cannot be stored inside the bundle', () => {
   assert.throws(() => assertSeparateKey(bundle, resolve(bundle, 'key.json')));
   assert.throws(() => assertSeparateKey(bundle, resolve(bundle, 'nested/key.json')));
   assert.throws(() => assertSeparateKey(bundle, resolve(bundle, '..private/key.json')));
-});
-test('sterile identity probe launches an absolute native executable inside a PowerShell pipeline', { skip: process.platform !== 'win32' }, () => {
-  const env = sterileEnvironment(process.env, { privateDir: repository, pgBin: resolve(repository, 'unused'), nodePath: process.execPath });
-  const result = spawnSync(resolve(env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', "$ErrorActionPreference='Stop'; (& $env:SIMSA_TEST_NODE --version | Out-String).Trim()"],
-    { encoding: 'utf8', windowsHide: true, env: { ...currentCore.sourceProbeEnvironment(env, repository), SIMSA_TEST_NODE: process.execPath } });
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout.trim(), process.version);
 });
 test('independent recovery decodes authenticated evidence and rejects corruption before exposing archive', () => {
   const categories = ['schema_profile', 'checkout_migration_manifest', 'database_properties', 'database_engine_major',
