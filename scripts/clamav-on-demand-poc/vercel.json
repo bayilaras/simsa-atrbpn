@@ -1,0 +1,1 @@
+{"version":2,"framework":null,"fluid":true,"installCommand":"node --version","buildCommand":"node build.mjs","functions":{"api/index.mjs":{"maxDuration":300,"includeFiles":"vendor/**"}},"rewrites":[{"source":"/(.*)","destination":"/api/index.mjs"}]}
