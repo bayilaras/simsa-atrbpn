@@ -11,6 +11,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ExportButton } from '@/components/ExportButton';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
+import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
 import { DistributeDialog } from '@/components/DistributeDialog';
 import {
@@ -322,10 +323,13 @@ export default function SuratMasuk() {
                         />
                     )}
 
+                    {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="surat-masuk" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
+
                     <ExportButton
                         type="surat-masuk"
                         filters={{
                             unitKerjaId: resolvedUnitKerjaId,
+                            search: debouncedSearchTerm || undefined,
                             tahun: tahun !== 'all' ? tahun : undefined,
                             jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                             status: status !== 'all' ? status : undefined,

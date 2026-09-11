@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ExportButton } from '@/components/ExportButton'
+import ImportCsvDialog from '@/components/ImportCsvDialog'
 import { ArchiveLifecycleWidget } from '@/components/ArchiveLifecycleWidget'
 import {
     Select,
@@ -207,11 +208,14 @@ export default function Arsip() {
                         Perbarui
                     </Button>
 
+                    {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="arsip" unitKerjaId={resolvedUnitKerjaId} onImportComplete={() => setRefreshVersion(version => version + 1)} />}
+
                     <ExportButton
                         type="arsip"
                         filters={{
                             jenisArsip: activeTab === 'masuk' ? 'masuk' : activeTab === 'keluar' ? 'keluar' : undefined,
                             unitKerjaId: resolvedUnitKerjaId,
+                            search: searchTerm || undefined,
                             tahun: tahunFilter !== 'all' ? tahunFilter : undefined,
                         }}
                     />
