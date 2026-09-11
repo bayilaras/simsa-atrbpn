@@ -382,6 +382,8 @@ export class FileAttachmentService {
                 eq(fileAttachments.sha256, attachment.sha256),
                 eq(fileAttachments.sizeBytes, attachment.sizeBytes!),
                 eq(fileAttachments.storageAccess, attachment.storageAccess),
+                eq(fileAttachments.integrityStatus, attachment.integrityStatus),
+                eq(fileAttachments.malwareScanStatus, attachment.malwareScanStatus),
                 attachment.fileUrl ? eq(fileAttachments.fileUrl, attachment.fileUrl) : isNull(fileAttachments.fileUrl),
                 attachment.driveFileId ? eq(fileAttachments.driveFileId, attachment.driveFileId) : isNull(fileAttachments.driveFileId),
                 attachment.objectGeneration ? eq(fileAttachments.objectGeneration, attachment.objectGeneration) : isNull(fileAttachments.objectGeneration),
@@ -401,27 +403,32 @@ export class FileAttachmentService {
     // Delete attachment and its private Blob object. driveFileId is retained
     // only as a read-compatible locator for legacy rows.
     async delete(id: string): Promise<boolean> {
-        const attachment = await this.findById(id);
-        if (!attachment) return false;
-
-        // Delete from Vercel Blob
-        const locator = attachment.fileUrl || attachment.driveFileId;
-        if (locator) {
-            const objectGeneration = requireImmutableObjectGeneration(
-                locator,
-                attachment.objectGeneration,
-            );
-            const deleted = objectGeneration
-                ? await blobStorageService.deleteFileGeneration(locator, objectGeneration)
-                : await blobStorageService.deleteFile(locator);
-            // Retain the database provenance when storage cannot prove the
-            // exact object was removed; a later retry remains possible.
-            if (!deleted) return false;
+        const unconfirmed = new Error('Object deletion was not confirmed');
+        try {
+            return await db.transaction(async tx => {
+                const [attachment] = await tx.select().from(fileAttachments)
+                    .where(eq(fileAttachments.id, id)).limit(1).for('update');
+                if (!attachment) return false;
+                // FK and evidence triggers must reject deletion BEFORE any
+                // irreversible storage call. A failed storage operation rolls
+                // back this uncommitted row deletion.
+                await tx.delete(fileAttachments).where(eq(fileAttachments.id, id));
+                const locator = attachment.fileUrl || attachment.driveFileId;
+                if (locator) {
+                    const generation = requireImmutableObjectGeneration(locator, attachment.objectGeneration);
+                    const deleted = generation
+                        ? await blobStorageService.deleteFileGeneration(locator, generation)
+                        : await blobStorageService.deleteFile(locator);
+                    if (!deleted) throw unconfirmed;
+                }
+                // Storage and PostgreSQL do not share a distributed transaction:
+                // a later DB commit failure still requires reconciliation.
+                return true;
+            });
+        } catch (error) {
+            if (error === unconfirmed) return false;
+            throw error;
         }
-
-        // Delete database record
-        await db.delete(fileAttachments).where(eq(fileAttachments.id, id));
-        return true;
     }
 }
 

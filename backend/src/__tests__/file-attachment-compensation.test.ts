@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     select: vi.fn(),
     deleteRow: vi.fn(),
     audit: vi.fn(),
+    rollback: vi.fn(),
 }));
 
 vi.mock('../config/database', () => ({
@@ -17,7 +18,10 @@ vi.mock('../config/database', () => ({
         insert: mocks.insert,
         select: mocks.select,
         delete: mocks.deleteRow,
-        transaction: async (callback: any) => callback({ insert: mocks.insert }),
+        transaction: async (callback: any) => {
+            try { return await callback({ insert: mocks.insert, select: mocks.select, delete: mocks.deleteRow }); }
+            catch (error) { mocks.rollback(); throw error; }
+        },
     },
 }));
 
@@ -308,10 +312,11 @@ describe('FileAttachmentService exact-generation deletion', () => {
         };
         mocks.select.mockReturnValue({
             from: () => ({
-                where: () => ({ limit: async () => [attachment] }),
+                where: () => ({ limit: () => ({ for: async () => [attachment] }) }),
             }),
         });
         mocks.deleteFileGeneration.mockResolvedValueOnce(false);
+        mocks.deleteRow.mockReturnValue({ where: async () => [] });
         const service = new FileAttachmentService();
 
         await expect(service.delete(attachment.id)).resolves.toBe(false);
@@ -319,6 +324,14 @@ describe('FileAttachmentService exact-generation deletion', () => {
             attachment.fileUrl,
             attachment.objectGeneration,
         );
-        expect(mocks.deleteRow).not.toHaveBeenCalled();
+        expect(mocks.rollback).toHaveBeenCalledOnce();
+    });
+    it('never deletes an evidence object when a database reference guard denies removal', async () => {
+        const attachment = { id: 'attachment-1', fileUrl: 'gs://simsa-final/released/evidence.pdf', objectGeneration: '1735689600123456' };
+        mocks.select.mockReturnValue({ from: () => ({ where: () => ({ limit: () => ({ for: async () => [attachment] }) }) }) });
+        mocks.deleteRow.mockReturnValue({ where: () => Promise.reject(new Error('evidence is retained')) });
+        mocks.deleteFileGeneration.mockResolvedValueOnce(true);
+        await expect(new FileAttachmentService().delete(attachment.id)).rejects.toThrow('evidence is retained');
+        expect(mocks.deleteFileGeneration).not.toHaveBeenCalled();
     });
 });

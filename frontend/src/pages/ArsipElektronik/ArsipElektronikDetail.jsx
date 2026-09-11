@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { useState } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -12,6 +13,7 @@ import { formatFileSize } from './constants'
 export default function ArsipElektronikDetail({
     open, onOpenChange, selectedItem, verifyNote, setVerifyNote, onVerify
 }) {
+    const [preservationRevision, setPreservationRevision] = useState(0)
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-2xl">
@@ -82,12 +84,13 @@ export default function ArsipElektronikDetail({
                                     </p>
                                 </div>
                                 <PreservationActionForm
+                                    key={selectedItem.id}
                                     arsipId={selectedItem.id}
-                                    onSuccess={() => { }}
+                                    onSuccess={() => setPreservationRevision(value => value + 1)}
                                 />
                             </div>
                             <div className="max-h-[400px] overflow-auto pr-1">
-                                <PreservationHistory arsipId={selectedItem.id} />
+                                <PreservationHistory arsipId={selectedItem.id} refreshVersion={preservationRevision} />
                             </div>
                         </TabsContent>
                     </Tabs>

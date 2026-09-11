@@ -10,9 +10,9 @@ import {
     ElectronicSourceType,
     evaluateScanQuality,
     identifyFileFormat,
-    isPreservationAction,
     ScanCategory,
 } from './electronic-archive-policy.js';
+import { recordPreservationActivity } from './preservation-activity.service.js';
 
 interface ArsipElektronikFilters {
     arsipId?: string;
@@ -516,55 +516,13 @@ class ArsipElektronikService {
         details?: string;
         performedBy: string;
         notes?: string;
+        outputAttachmentId?: string;
+        evidenceAttachmentId?: string;
+        toolName?: string;
+        toolVersion?: string;
+        activityAt?: string;
     }, auditContext?: CriticalAuditContext) {
-        if (!isPreservationAction(data.action)) {
-            throw new Error('Aksi preservasi tidak dikenali');
-        }
-        return db.transaction(async (tx) => {
-        const [record] = await tx.select()
-            .from(arsipElektronik)
-            .where(eq(arsipElektronik.id, data.arsipElektronikId))
-            .limit(1)
-            .for('update');
-        if (!record) throw new Error('Arsip elektronik tidak ditemukan');
-
-        let details = data.details;
-        if (data.action === 'integrity_check') {
-            if (!record.fileAttachmentId) throw new Error('Bitstream terkendali tidak tersedia');
-            const fixity = await fileAttachmentService.verifyIntegrity(record.fileAttachmentId, tx);
-            if (!fixity) throw new Error('Pemeriksaan integritas tidak dapat dijalankan');
-            details = JSON.stringify({
-                result: fixity.matches ? 'match' : 'mismatch',
-                algorithm: 'SHA-256',
-                checkedAt: new Date().toISOString(),
-            });
-        }
-        // Import dynamically to avoid circular dependency issues if any, though likely not needed here
-        // better to import at top level if possible, but let's see if preservasiTrack is available
-        // It is not imported at top level yet.
-        const { preservasiTrack } = await import('../db/schema/preservasi-track.js');
-
-        const result = await tx.insert(preservasiTrack).values({
-            ...data,
-            details,
-            performedAt: new Date(),
-        }).returning();
-        if (auditContext) {
-            await auditLogService.logActionOrThrow({
-                ...auditContext,
-                action: data.action === 'integrity_check' ? 'verify_integrity' : 'update',
-                entityType: 'arsip_elektronik',
-                entityId: data.arsipElektronikId,
-                changes: {
-                    preservationActionId: result[0]?.id,
-                    action: data.action,
-                    details,
-                    notes: data.notes,
-                },
-            }, tx);
-        }
-        return result[0];
-        });
+        return recordPreservationActivity(data, auditContext);
     }
 
     async getPreservationHistory(arsipElektronikId: string) {
@@ -576,6 +534,9 @@ class ArsipElektronikService {
             details: preservasiTrack.details,
             performedAt: preservasiTrack.performedAt,
             notes: preservasiTrack.notes,
+            recordingMode: preservasiTrack.recordingMode,
+            evidenceSnapshot: preservasiTrack.evidenceSnapshot,
+            evidenceSnapshotSha256: preservasiTrack.evidenceSnapshotSha256,
             performedBy: {
                 id: users.id,
                 name: users.name,

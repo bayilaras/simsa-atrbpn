@@ -9,6 +9,8 @@ import {
     allowedSecurityClassifications,
     recordAccessService,
 } from '../services/record-access.service.js';
+import { preservationActivitySchema } from '../validators/preservation-activity.schemas.js';
+import { preservationAttachmentOptions } from '../services/preservation-activity.service.js';
 
 const router = Router();
 
@@ -229,25 +231,28 @@ router.post('/:id/verify', permissionMiddleware('arsip', 'update'), async (req: 
 });
 
 // POST /api/arsip-elektronik/:id/preservasi — Add preservation action tracking
+router.get('/:id/preservasi/options', permissionMiddleware('arsip', 'update'), async (req: AuthRequest, res, next) => {
+    try {
+        const id = String(req.params.id);
+        if (!(await getAuthorizedRecord(req, id, 'mutate'))) return res.status(404).json({ error: 'Record not found' });
+        res.json(await preservationAttachmentOptions(id));
+    } catch (error) { next(error); }
+});
+
 router.post('/:id/preservasi', permissionMiddleware('arsip', 'update'), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const id = String(req.params.id);
         if (!(await getAuthorizedRecord(req, id, 'mutate'))) {
             return res.status(404).json({ error: 'Record not found' });
         }
-        const { action, details, notes } = req.body;
+        const parsed = preservationActivitySchema.safeParse(req.body);
+        if (!parsed.success) return validationError(res, parsed.error);
         const userId = req.user!.id;
-
-        if (!action) {
-            return res.status(400).json({ error: 'action is required' });
-        }
 
         const result = await arsipElektronikService.addPreservationAction({
             arsipElektronikId: id,
-            action,
-            details: typeof details === 'object' ? JSON.stringify(details) : details,
+            ...parsed.data,
             performedBy: userId,
-            notes
         }, {
             userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
         });
