@@ -667,7 +667,7 @@ jobs:
               seed: $database[0].seed,
               ordered_operations: [
                 "db:roles:bootstrap-initial", "db:migrate",
-                "db:roles:bootstrap-final", "db:grants:converge", "seed:all"
+                "db:roles:bootstrap-final", "db:grants:converge", "seed:deployment"
               ]
             }' >preview-database-evidence/preview-database-summary.json
           jq -e '

@@ -34,8 +34,8 @@ dan identitas database benar-benar disediakan.
   `CREATE` database sementara untuk kompatibilitas bootstrap lama; bootstrap
   final wajib mencabutnya. Runner `db:migrate` tidak memerlukan grant tersebut
   dan tidak menjalankan `CREATE SCHEMA IF NOT EXISTS drizzle`;
-- evidence serializable/read-only mencocokkan seluruh 34 timestamp/hash journal
-  dengan manifest kode yang direview, terakhir `0033`, kepemilikan aplikasi,
+- evidence serializable/read-only mencocokkan seluruh 38 timestamp/hash journal
+  dengan manifest kode yang direview, terakhir `0037`, kepemilikan aplikasi,
   exact direct/transitive membership closure, pasangan empat runtime login ke
   service account Terraform kanonis, fingerprint ACL/membership,
   `CREATE=false` untuk migrator, serta
@@ -53,7 +53,7 @@ Tidak ada jalur `db:push`. Perintah terkendali yang dijalankan adalah:
 2. `npm run db:migrate` sebagai migrator;
 3. `npm run db:roles:bootstrap` lagi sebagai grant-admin;
 4. `npm run db:grants:converge` sebagai migrator dengan manifest migrasi exact;
-5. `npm run seed:all` sebagai maintenance;
+5. `npm run seed:deployment` sebagai maintenance: tambah unit yang belum ada dan verifikasi instrumen aktif yang disahkan;
 6. koleksi evidence read-only sebagai migrator.
 
 `db:migrate` memakai `scripts/migrate-database.mjs`, bukan CLI migrasi Drizzle.
@@ -68,6 +68,21 @@ Rerun tanpa perubahan harus menghasilkan `0 applied` meskipun database
 `CREATE` sudah dicabut. Hash historis yang diizinkan dibaca dari manifest JSON
 yang sama dengan verifier backup; jangan mengedit SQL migrasi yang sudah
 diterapkan atau menambahkan hash untuk melewati error divergensi.
+
+## Gate instrumen dan setup pertama
+
+`seed:deployment` mempertahankan konfigurasi unit yang sudah ada dan tidak menulis butir, versi aturan, pemetaan, atau keputusan pengesahan. SQL yang sama dipakai kembali oleh collector evidence: harus ada tepat satu edisi aktif per instrumen, butir selectable, sumber PDF privat dengan verifier/ukuran/generation, manifest dan laporan dampak, aktor serta waktu pengajuan/telaah/persetujuan/publikasi, dan event `activate` yang cocok. Edisi pengganti yang sah diterima tanpa mewajibkan UUID baseline 2018/2020 tetap aktif. Pemetaan tematik dihitung bila ada, tetapi bukan syarat pengesahan instrumen.
+
+Pada database baru, gate berhenti dengan `GOVERNANCE_REQUIRED` sampai tata kelola selesai. Rerun edisi aktif yang lengkap menghasilkan sukses tanpa aktivasi ulang. Database hasil clone dari seed development juga tetap ditolak jika publikasinya hanya berupa `bootstrap_activate` atau tidak mempunyai bukti/aktor yang dipersyaratkan.
+
+Urutan setup administratif sebelum pembukaan layanan:
+
+1. Selesaikan provisioning, backup, bootstrap role, migrasi, dan convergence melalui workflow yang disetujui. Kegagalan `GOVERNANCE_REQUIRED` pada tahap seed tidak membatalkan migrasi yang telah dicatat; dua unit awal tersedia untuk setup. Simpan log kegagalan sebagai status belum siap, bukan evidence sukses.
+2. Operator perlu menyediakan instance administrasi terisolasi dari artifact API/frontend yang direview, memakai database, Firebase Auth/App Check, scanner, dan private storage **lingkungan tujuan**. Pertahankan `NODE_ENV=production`; gunakan akun runtime terbatas, jaringan privat serta akses administratif terautentikasi, dan jangan mengarahkan traffic pengguna umum ke instance setup. Instance tersebut belum dibuat oleh perubahan kode ini dan tetap memerlukan target/project serta provisioning yang disetujui operator.
+3. Provision akun penyusun, penelaah, dan penyetuju berwenang. Melalui **Master Data > Versi Aturan**, pilih draft awal hasil migrasi; impor array butir yang telah diperiksa (`items`, bukan seluruh envelope asset seed), unggah PDF sumber melalui alur privat aplikasi, lalu verifikasi manifest dan laporan dampak. Jalankan **Ajukan → Telaah → Setujui → Aktifkan** dengan akun independen. Untuk clone development yang baseline-nya sudah aktif, buat draft revisi dan terbitkan edisi pengganti dengan bukti yang lengkap; jangan memodifikasi status melalui SQL.
+4. Periksa PDF dapat diakses melalui endpoint terautentikasi dan rantai audit aplikasi valid. Rerun maintenance dari commit yang direview, lalu simpan evidence baru dengan `seed.governance_verified=true` dan ID kedua edisi aktif. Hanya evidence sukses ini yang boleh dipakai untuk gate release normal.
+
+Gate maintenance memeriksa **bukti yang tersimpan di database**. Principal maintenance tidak mendapat akses object storage; ketersediaan byte sumber instrumen diperiksa oleh alur aktivasi dan akses runtime, bukan oleh job fixity lampiran arsip. Nilai `governance_verified` tidak menyatakan sertifikasi hukum atau keberhasilan pemeriksaan storage secara real time. `seed:all` tetap khusus development/test lokal dan tidak dipakai oleh workflow deployment.
 
 ## Provisioning sebelum run pertama
 

@@ -44,14 +44,14 @@ SERVICE_ACCOUNT_RE = re.compile(
 BACKUP_WORKFLOW = ".github/workflows/backup-cloud-sql.yml"
 MAINTENANCE_WORKFLOW = ".github/workflows/database-maintenance-gcp.yml"
 PREVIEW_BOOTSTRAP_WORKFLOW = ".github/workflows/database-bootstrap-gcp-preview.yml"
-LATEST_MIGRATION = 1788060600000
-EXPECTED_MIGRATION_COUNT = 34
+LATEST_MIGRATION = 1788063000000
+EXPECTED_MIGRATION_COUNT = 38
 EXPECTED_OPERATIONS = [
     "db:roles:bootstrap-initial",
     "db:migrate",
     "db:roles:bootstrap-final",
     "db:grants:converge",
-    "seed:all",
+    "seed:deployment",
 ]
 
 
@@ -517,7 +517,7 @@ def validate_maintenance_evidence(
             raise GateFailure(f"reviewed source hash is invalid: {key}")
     journal = summary.get("database_journal") or {}
     if journal.get("count") != EXPECTED_MIGRATION_COUNT or journal.get("latest_created_at") != LATEST_MIGRATION:
-        raise GateFailure("maintenance journal is not complete through migration 0033")
+        raise GateFailure("maintenance journal is not complete through migration 0037")
     if summary.get("migration_manifest_verified") is not True or re.fullmatch(
         r"[0-9a-f]{64}", str(summary.get("migration_manifest_sha256") or "")
     ) is None:
@@ -535,6 +535,8 @@ def validate_maintenance_evidence(
     seed = summary.get("seed") or {}
     if seed.get("verified") is not True:
         raise GateFailure("seed convergence evidence is missing")
+    if seed.get("governance_verified") is not True:
+        raise GateFailure("governed active regulatory evidence is missing")
     acl = str(summary.get("acl_fingerprint_md5") or "")
     if re.fullmatch(r"[0-9a-f]{32}", acl) is None:
         raise GateFailure("ACL evidence fingerprint is invalid")
@@ -670,7 +672,7 @@ def validate_preview_bootstrap_evidence(
         raise GateFailure("Preview isolation evidence does not match the sealed database target")
     journal = summary.get("database_journal") or {}
     if journal.get("count") != EXPECTED_MIGRATION_COUNT or journal.get("latest_created_at") != LATEST_MIGRATION:
-        raise GateFailure("Preview journal is not complete through migration 0033")
+        raise GateFailure("Preview journal is not complete through migration 0037")
     if summary.get("migration_manifest_verified") is not True or SHA256_RE.fullmatch(
         str(summary.get("migration_manifest_sha256") or "")
     ) is None:
@@ -685,6 +687,8 @@ def validate_preview_bootstrap_evidence(
         raise GateFailure("Preview operations are missing, reordered, or unexpected")
     if (summary.get("seed") or {}).get("verified") is not True:
         raise GateFailure("Preview seed convergence evidence is missing")
+    if (summary.get("seed") or {}).get("governance_verified") is not True:
+        raise GateFailure("Preview governed active regulatory evidence is missing")
     if re.fullmatch(r"[0-9a-f]{32}", str(summary.get("acl_fingerprint_md5") or "")) is None:
         raise GateFailure("Preview ACL fingerprint is invalid")
 
@@ -997,14 +1001,14 @@ def run_self_test() -> None:
                 "package_lock_sha256": "2" * 64,
                 "production_merge_review_and_checks": "passed",
             },
-            "database_journal": {"count": 34, "latest_created_at": LATEST_MIGRATION},
+            "database_journal": {"count": 38, "latest_created_at": LATEST_MIGRATION},
             "migration_manifest_verified": True,
             "migration_manifest_sha256": "3" * 64,
             "grant_convergence": "passed",
             "ownership_violations": 0,
             "migrator_database_create": False,
             "principal_memberships_verified": True,
-            "seed": {"verified": True},
+            "seed": {"verified": True, "governance_verified": True},
             "acl_fingerprint_md5": "4" * 32,
             "ordered_operations": EXPECTED_OPERATIONS,
             "backup": {
@@ -1124,6 +1128,22 @@ def run_self_test() -> None:
             encoding="utf-8",
         )
         assert validate_maintenance_evidence(maintenance_root, maintenance_metadata)["commit_sha"] == sha
+        summary["seed"]["governance_verified"] = False
+        summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
+        manifest_path.write_text(
+            "".join(
+                f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+                for path in (auxiliary, backup_gate_path, image_evidence_path, summary_path)
+            ),
+            encoding="utf-8",
+        )
+        try:
+            validate_maintenance_evidence(maintenance_root, maintenance_metadata)
+        except GateFailure:
+            pass
+        else:
+            raise AssertionError("local bootstrap seed evidence was accepted as deployment governance")
+        summary["seed"]["governance_verified"] = True
         summary["backup"]["independent_restore"] = "missing"
         summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
         manifest_path.write_text(

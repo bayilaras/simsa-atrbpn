@@ -34,6 +34,7 @@
     "seed:jra": "tsx src/db/seed-jra.ts",
     "seed:mapping": "tsx src/db/seed-mapping.ts",
     "seed:all": "tsx src/db/seed.ts",
+    "seed:deployment": "tsx src/db/seed-deployment.ts",
     "seed:tester": "tsx src/db/seed-tester.ts",
     "test": "vitest run",
     "test:postgres-locks": "node -e \"if (!process.env.TEST_POSTGRES_URL) throw new Error('TEST_POSTGRES_URL is required')\" && vitest run --config vitest.postgres.config.ts",
