@@ -423,29 +423,23 @@ export const createArsipTerjagaSchema = z.object({
     kategoriTerjaga: z.enum(['kekayaan_negara', 'hak_keperdataan', 'pertanahan']),
     dasarHukum: z.string().max(2000).optional(),
     uraianIsi: z.string().max(2000).optional(),
-    statusPelaporan: z.enum(['belum_dilaporkan', 'dilaporkan', 'terverifikasi']).optional().default('belum_dilaporkan'),
-    tanggalPelaporan: dateSchema.optional(),
-    nomorLaporanANRI: z.string().max(100).optional(),
     periodePelaporanHari: z.coerce.number().int().min(1).max(3650).optional().default(365),
     tanggalPenetapan: dateSchema.optional(),
     tanggalReviewSelanjutnya: dateSchema.optional(),
-    statusKepatuhan: z.enum(['patuh', 'terlambat', 'belum_dinilai']).optional().default('belum_dinilai'),
     catatan: z.string().max(2000).optional(),
-});
+}).strict();
 
 export const updateArsipTerjagaSchema = createArsipTerjagaSchema.partial()
     .omit({ arsipId: true, unitKerjaId: true })
     .extend({
-        statusPelaporan: createArsipTerjagaSchema.shape.statusPelaporan.removeDefault().optional(),
         periodePelaporanHari: createArsipTerjagaSchema.shape.periodePelaporanHari.removeDefault().optional(),
-        statusKepatuhan: createArsipTerjagaSchema.shape.statusKepatuhan.removeDefault().optional(),
-    });
+    }).strict();
 
 export const queryArsipTerjagaSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
     kategoriTerjaga: z.enum(['kekayaan_negara', 'hak_keperdataan', 'pertanahan']).optional(),
-    statusPelaporan: z.enum(['belum_dilaporkan', 'dilaporkan', 'terverifikasi']).optional(),
-    statusKepatuhan: z.enum(['patuh', 'terlambat', 'belum_dinilai']).optional(),
+    statusPelaporan: z.enum(['belum_dilaporkan', 'dicatat', 'dikirim', 'diterima', 'bukti_diverifikasi']).optional(),
+    statusKepatuhan: z.enum(['terlambat', 'belum_dinilai']).optional(),
     search: z.string().max(255).optional(),
 });
 

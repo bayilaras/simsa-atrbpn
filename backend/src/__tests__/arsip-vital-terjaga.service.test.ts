@@ -85,7 +85,7 @@ describe('Arsip Vital and Arsip Terjaga transactional audit', () => {
         );
     });
 
-    it('rolls back an ANRI reporting status change when critical audit storage fails', async () => {
+    it('rolls back a terjaga metadata change when critical audit storage fails', async () => {
         const existing = {
             id: 'terjaga-1',
             arsipId: 'arsip-1',
@@ -94,18 +94,14 @@ describe('Arsip Vital and Arsip Terjaga transactional audit', () => {
         };
         const updated = {
             ...existing,
-            statusPelaporan: 'dilaporkan',
-            nomorLaporanANRI: 'ANRI-001',
-            tanggalPelaporan: '2026-08-28',
-            statusKepatuhan: 'patuh',
+            catatan: 'Catatan baru',
         };
         resultQueue.push([existing], [updated]);
         auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
 
-        await expect(arsipTerjagaService.markAsReported(
+        await expect(arsipTerjagaService.update(
             'terjaga-1',
-            'ANRI-001',
-            '2026-08-28',
+            { catatan: 'Catatan baru' },
             'unit-1',
             auditContext,
         )).rejects.toThrow('audit unavailable');
@@ -114,7 +110,7 @@ describe('Arsip Vital and Arsip Terjaga transactional audit', () => {
         expect(transactionRollbacks).toBe(1);
         expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
             expect.objectContaining({
-                action: 'status_change',
+                action: 'update',
                 entityType: 'arsip',
                 entityId: 'arsip-1',
             }),

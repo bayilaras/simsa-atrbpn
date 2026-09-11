@@ -97,6 +97,7 @@ export function requiresExplicitAccessGrant(
 async function findAccessMetadata(
     entityType: RecordEntityType,
     entityId: string,
+    executor: Pick<typeof db, 'select'> = db,
 ): Promise<{
     unitKerjaId: string;
     classification: string | null;
@@ -104,7 +105,7 @@ async function findAccessMetadata(
     mutable: boolean;
 } | null> {
     if (entityType === 'surat_masuk') {
-        const [record] = await db
+        const [record] = await executor
             .select({
                 unitKerjaId: suratMasuk.unitKerjaId,
                 classification: suratMasuk.sifatSurat,
@@ -123,7 +124,7 @@ async function findAccessMetadata(
     }
 
     if (entityType === 'surat_keluar') {
-        const [record] = await db
+        const [record] = await executor
             .select({
                 unitKerjaId: suratKeluar.unitKerjaId,
                 classification: suratKeluar.klasifikasiKeamanan,
@@ -143,7 +144,7 @@ async function findAccessMetadata(
         } : null;
     }
 
-    const [record] = await db
+    const [record] = await executor
         .select({
             unitKerjaId: arsip.unitKerjaId,
             classification: arsip.klasifikasiKeamanan,
@@ -187,8 +188,9 @@ export const recordAccessService = {
         user: RecordUser | undefined,
         entityType: RecordEntityType,
         entityId: string,
+        executor: Pick<typeof db, 'select'> = db,
     ): Promise<RecordAccessResult> {
-        const metadata = await findAccessMetadata(entityType, entityId);
+        const metadata = await findAccessMetadata(entityType, entityId, executor);
         const unitKerjaId = metadata?.unitKerjaId || null;
         const normalizedClassification = normalizeSecurityClassification(
             metadata?.classification,
@@ -208,7 +210,7 @@ export const recordAccessService = {
             user?.id &&
             requiresExplicitAccessGrant(normalizedClassification)
         ) {
-            const [activeGrant] = await db
+            const [activeGrant] = await executor
                 .select({
                     id: recordAccessGrants.id,
                     purpose: recordAccessGrants.purpose,

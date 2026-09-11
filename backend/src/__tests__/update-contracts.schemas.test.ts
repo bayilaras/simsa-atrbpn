@@ -30,14 +30,14 @@ describe('partial update contracts', () => {
         expect(createArsipTerjagaSchema.parse({
             ...parent, kategoriTerjaga: 'pertanahan', dasarHukum: 'Dasar', uraianIsi: 'Uraian',
         })).toMatchObject({
-            statusPelaporan: 'belum_dilaporkan', periodePelaporanHari: 365, statusKepatuhan: 'belum_dinilai',
+            periodePelaporanHari: 365,
         });
     });
 
     it('still accepts explicit status changes without inserting unrelated defaults', () => {
         expect(updateSuratMasukSchema.parse({ status: 'sudah_dibalas' })).toEqual({ status: 'sudah_dibalas' });
         expect(updateArsipVitalSchema.parse({ statusProteksi: 'terlindungi' })).toEqual({ statusProteksi: 'terlindungi' });
-        expect(updateArsipTerjagaSchema.parse({ statusPelaporan: 'dilaporkan' })).toEqual({ statusPelaporan: 'dilaporkan' });
+        expect(updateArsipTerjagaSchema.safeParse({ statusPelaporan: 'dilaporkan' }).success).toBe(false);
     });
 
     it('preserves actual editable archive metadata', () => {

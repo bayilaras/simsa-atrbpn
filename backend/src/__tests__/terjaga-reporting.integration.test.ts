@@ -1,0 +1,176 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { Readable } from 'node:stream';
+import { createHash } from 'node:crypto';
+import { PGlite } from '@electric-sql/pglite';
+import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { drizzle } from 'drizzle-orm/pglite';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as schema from '../db/schema';
+import { enterTestMigratorRole } from './helpers/database-role-fixture';
+
+const holder = vi.hoisted(() => ({ db: null as any }));
+const storage = vi.hoisted(() => ({ downloadFile: vi.fn() }));
+vi.mock('../config/database', () => ({ db: holder.db }));
+vi.mock('../services/blob-storage.service', () => ({ blobStorageService: storage }));
+
+let database: PGlite;
+let migratedLegacy: any;
+let service: typeof import('../services/terjaga-report.service').terjagaReportService;
+const actor = (n: number) => ({ id: `10000000-0000-4000-8000-00000000000${n}`, email: `user${n}@example.test`, role: 'super_admin' });
+const archiveId = '20000000-0000-4000-8000-000000000001';
+const designationId = '30000000-0000-4000-8000-000000000001';
+const attachmentId = (n: number) => `40000000-0000-4000-8000-00000000000${n}`;
+const bytes = Buffer.from('controlled reporting evidence');
+const digest = createHash('sha256').update(bytes).digest('hex');
+const draft = () => service.createDraft(designationId, { nomorLaporan: 'LAP/2026/001', tanggalPelaporan: '2026-09-01' }, actor(1));
+const advance = (reportId: string, action: 'send' | 'receive', user = actor(1), n = action === 'send' ? 1 : 2) => service.transition(designationId, reportId, {
+    action, attachmentId: attachmentId(n), occurredOn: '2026-09-02', notes: 'Bukti pelaporan telah dicatat sesuai dokumen.',
+}, user);
+
+beforeAll(async () => {
+    database = new PGlite({ extensions: { pgcrypto } });
+    await database.waitReady;
+    await enterTestMigratorRole(database);
+    const dir = fileURLToPath(new URL('../db/migrations/', import.meta.url));
+    for (const file of readdirSync(dir).filter(file => /^\d{4}.*\.sql$/.test(file) && (Number(file.slice(0, 4)) <= 33 || file.startsWith('0036_'))).sort()) {
+        if (file.startsWith('0036_')) {
+            await database.exec(`INSERT INTO unit_kerja(id,name) VALUES ('legacy-unit','Legacy');
+                INSERT INTO arsip(id,unit_kerja_id,jenis_arsip,tahun) VALUES ('${archiveId}','legacy-unit','masuk',2020);
+                INSERT INTO arsip_terjaga(id,arsip_id,unit_kerja_id,kategori_terjaga,status_pelaporan,status_kepatuhan,nomor_laporan_anri,tanggal_pelaporan)
+                VALUES ('${designationId}','${archiveId}','legacy-unit','pertanahan','terverifikasi','patuh','LAP-OLD','2020-01-01');`);
+        }
+        for (const sql of readFileSync(`${dir}/${file}`, 'utf8').split('--> statement-breakpoint').filter(sql => sql.trim())) await database.exec(sql);
+    }
+    migratedLegacy = (await database.query('SELECT status_pelaporan,status_kepatuhan,legacy_reporting FROM arsip_terjaga')).rows[0];
+    holder.db = drizzle(database, { schema });
+    ({ terjagaReportService: service } = await import('../services/terjaga-report.service'));
+}, 45_000);
+afterAll(async () => { await database?.close(); });
+beforeEach(async () => {
+    await database.exec(`TRUNCATE arsip, users, unit_kerja CASCADE;
+        INSERT INTO unit_kerja(id,name) VALUES ('ditjen','Ditjen');
+        INSERT INTO users(id,email,role) VALUES
+          ('${actor(1).id}','${actor(1).email}','super_admin'),
+          ('${actor(2).id}','${actor(2).email}','super_admin'),
+          ('${actor(3).id}','${actor(3).email}','super_admin');
+        INSERT INTO arsip(id,unit_kerja_id,jenis_arsip,tahun,klasifikasi_keamanan) VALUES ('${archiveId}','ditjen','masuk',2026,'biasa');
+        INSERT INTO arsip_terjaga(id,arsip_id,unit_kerja_id,kategori_terjaga,created_by) VALUES ('${designationId}','${archiveId}','ditjen','pertanahan','${actor(1).id}');
+        INSERT INTO file_attachments(id,entity_type,entity_id,file_name,file_url,sha256,storage_access,integrity_status,malware_scan_status,uploaded_by) VALUES
+        ('${attachmentId(1)}','arsip','${archiveId}','pengiriman.pdf','https://test.private.blob.vercel-storage.com/send.pdf','${digest}','private','verified','clean','${actor(1).id}'),
+        ('${attachmentId(2)}','arsip','${archiveId}','penerimaan.pdf','https://test.private.blob.vercel-storage.com/receive.pdf','${digest}','private','verified','clean','${actor(1).id}');
+        UPDATE file_attachments SET size_bytes=${bytes.length};`);
+    vi.clearAllMocks();
+    storage.downloadFile.mockImplementation(async () => ({ stream: Readable.from([bytes]) }));
+});
+
+describe('controlled terjaga reporting', () => {
+    it('preserves legacy assertions without grandfathering compliance or external verification', () => {
+        expect(migratedLegacy).toMatchObject({ status_pelaporan: 'dicatat', status_kepatuhan: 'belum_dinilai', legacy_reporting: {
+            statusPelaporan: 'terverifikasi', statusKepatuhan: 'patuh', nomorLaporanANRI: 'LAP-OLD', tanggalPelaporan: '2020-01-01',
+        } });
+    });
+    it('records number/date only as draft, never as compliance', async () => {
+        const report = await draft();
+        expect(report.status).toBe('draft');
+        const { rows } = await database.query<any>('SELECT status_pelaporan,status_kepatuhan FROM arsip_terjaga');
+        expect(rows[0]).toEqual({ status_pelaporan: 'dicatat', status_kepatuhan: 'belum_dinilai' });
+    });
+    it('requires evidence, valid order and independent verification, retaining history between cycles', async () => {
+        const report = await draft();
+        await expect(service.transition(designationId, report.id, { action: 'verify', notes: 'Pemeriksaan bukti dilakukan.' }, actor(2))).rejects.toThrow(/diterima/i);
+        await advance(report.id, 'send');
+        await advance(report.id, 'receive');
+        await expect(service.transition(designationId, report.id, { action: 'verify', notes: 'Pemeriksaan bukti dilakukan.' }, actor(1))).rejects.toThrow(/independen|sendiri/i);
+        const verified = await service.transition(designationId, report.id, { action: 'verify', notes: 'Dua bukti diperiksa dan sesuai.' }, actor(2));
+        expect(verified.status).toBe('verified');
+        expect(verified.sentEvidence.sha256).toBe(digest);
+        expect(verified.verifiedBy).toBe(actor(2).id);
+        await expect(service.transition(designationId, report.id, { action: 'cancel', notes: 'Pembatalan setelah verifikasi.' }, actor(1))).rejects.toThrow(/final|terverifikasi/i);
+        await draft();
+        expect((await service.list(designationId, actor(1))).reports).toHaveLength(2);
+        expect((await database.query<any>('SELECT status_kepatuhan FROM arsip_terjaga')).rows[0].status_kepatuhan).toBe('belum_dinilai');
+    });
+    it.each(['public', 'quarantined', 'foreign', 'tampered', 'missing'])('rejects %s evidence without advancing or writing audit', async condition => {
+        const report = await draft();
+        if (condition === 'public') await database.exec(`UPDATE file_attachments SET storage_access='public'`);
+        if (condition === 'quarantined') await database.exec(`UPDATE file_attachments SET malware_scan_status='pending'`);
+        if (condition === 'foreign') await database.exec(`UPDATE file_attachments SET entity_id='20000000-0000-4000-8000-000000000002'`);
+        if (condition === 'tampered') storage.downloadFile.mockResolvedValue({ stream: Readable.from([Buffer.from('changed')]) });
+        if (condition === 'missing') storage.downloadFile.mockResolvedValue(null);
+        await expect(advance(report.id, 'send')).rejects.toThrow();
+        const { rows } = await database.query<any>('SELECT status,sent_evidence FROM arsip_terjaga_reports');
+        expect(rows[0]).toEqual({ status: 'draft', sent_evidence: null });
+        expect((await database.query<any>('SELECT count(*)::int AS n FROM audit_log')).rows[0].n).toBe(1);
+    });
+    it('rejects revoked actor and cross-record report IDs', async () => {
+        const report = await draft();
+        await database.exec(`UPDATE users SET is_active=false WHERE id='${actor(1).id}'`);
+        await expect(advance(report.id, 'send')).rejects.toThrow(/aktif|akses/i);
+        await expect(service.list('30000000-0000-4000-8000-000000000002', actor(2))).rejects.toThrow(/ditemukan/i);
+    });
+    it('uses live unit authority and requires a manage grant even for a super administrator', async () => {
+        await database.exec(`UPDATE arsip SET klasifikasi_keamanan='rahasia'`);
+        await expect(draft()).rejects.toThrow(/akses|ditemukan/i);
+        await database.exec(`UPDATE arsip SET klasifikasi_keamanan='biasa';
+            INSERT INTO unit_kerja(id,name) VALUES ('unit-other','Unit lain');
+            UPDATE users SET role='staff',unit_kerja_id='unit-other' WHERE id='${actor(1).id}';`);
+        await expect(draft()).rejects.toThrow(/akses|ditemukan/i);
+    });
+    it('re-reads bytes at final verification and rejects an uploader as verifier', async () => {
+        const report = await draft();
+        await advance(report.id, 'send');
+        await advance(report.id, 'receive');
+        await database.exec(`UPDATE file_attachments SET uploaded_by='${actor(2).id}'`);
+        await expect(service.transition(designationId, report.id, { action: 'verify', notes: 'Bukti telah diperiksa lengkap.' }, actor(2))).rejects.toThrow(/independen|sendiri/i);
+        storage.downloadFile.mockResolvedValue({ stream: Readable.from([Buffer.from('changed')]) });
+        await expect(service.transition(designationId, report.id, { action: 'verify', notes: 'Bukti telah diperiksa lengkap.' }, actor(3))).rejects.toThrow(/integritas|hash|bukti/i);
+    });
+    it('database preserves evidence and rejects final edits/deletion', async () => {
+        const report = await draft();
+        await advance(report.id, 'send'); await advance(report.id, 'receive');
+        await service.transition(designationId, report.id, { action: 'verify', notes: 'Bukti telah diperiksa lengkap.' }, actor(2));
+        await expect(database.exec(`UPDATE arsip_terjaga_reports SET nomor_laporan='changed' WHERE id='${report.id}'`)).rejects.toThrow();
+        await expect(database.exec(`DELETE FROM arsip_terjaga_reports WHERE id='${report.id}'`)).rejects.toThrow();
+    });
+    it('rolls back the report transition and parent state if the critical audit cannot be stored', async () => {
+        const report = await draft();
+        await database.exec(`CREATE FUNCTION reject_reporting_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$;
+            CREATE TRIGGER reject_reporting_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_reporting_audit();`);
+        try {
+            await expect(advance(report.id, 'send')).rejects.toMatchObject({ cause: expect.objectContaining({ message: 'audit unavailable' }) });
+            expect((await database.query<any>('SELECT status FROM arsip_terjaga_reports')).rows[0].status).toBe('draft');
+            expect((await database.query<any>('SELECT status_pelaporan FROM arsip_terjaga')).rows[0].status_pelaporan).toBe('dicatat');
+        } finally {
+            await database.exec('DROP TRIGGER reject_reporting_audit ON audit_log; DROP FUNCTION reject_reporting_audit();');
+        }
+    });
+    it('does not turn a deadline assessment into compliance when a report is verified', async () => {
+        await database.exec(`UPDATE arsip_terjaga SET status_kepatuhan='terlambat'`);
+        const report = await draft();
+        await advance(report.id, 'send'); await advance(report.id, 'receive');
+        await service.transition(designationId, report.id, { action: 'verify', notes: 'Bukti telah diperiksa lengkap.' }, actor(2));
+        expect((await database.query<any>('SELECT status_kepatuhan FROM arsip_terjaga')).rows[0].status_kepatuhan).toBe('terlambat');
+    });
+    it.each(['sent_on', 'received_on', 'verification_notes', 'cancellation_notes'])('database rejects incomplete %s evidence even without application validation', async field => {
+        const report = await draft();
+        const snapshot = JSON.stringify({ attachmentId: attachmentId(1), sha256: digest, uploadedBy: actor(1).id });
+        if (field === 'sent_on') {
+            await expect(database.query(`UPDATE arsip_terjaga_reports SET status='sent', sent_attachment_id=$1, sent_evidence=$2, sent_by=$3,
+                sent_at=now(), sent_notes='Pengiriman tercatat lengkap', sent_on=NULL WHERE id=$4`, [attachmentId(1), snapshot, actor(1).id, report.id])).rejects.toThrow();
+        } else if (field === 'received_on') {
+            await advance(report.id, 'send');
+            await expect(database.query(`UPDATE arsip_terjaga_reports SET status='received', received_attachment_id=$1, received_evidence=$2, received_by=$3,
+                received_at=now(), received_notes='Penerimaan tercatat lengkap', received_on=NULL WHERE id=$4`, [attachmentId(1), snapshot, actor(1).id, report.id])).rejects.toThrow();
+        } else if (field === 'verification_notes') {
+            await advance(report.id, 'send'); await advance(report.id, 'receive');
+            await expect(database.query(`UPDATE arsip_terjaga_reports SET status='verified', verified_by=$1, verified_at=now(), verification_notes=NULL WHERE id=$2`, [actor(2).id, report.id])).rejects.toThrow();
+        } else {
+            await expect(database.query(`UPDATE arsip_terjaga_reports SET status='cancelled', cancelled_by=$1, cancelled_at=now(), cancellation_notes=NULL WHERE id=$2`, [actor(1).id, report.id])).rejects.toThrow();
+        }
+    });
+    it('does not grant API runtime DELETE on reporting evidence', async () => {
+        const { rows } = await database.query<any>("SELECT has_table_privilege('simsa_api_runtime','arsip_terjaga_reports','DELETE') AS allowed");
+        expect(rows[0].allowed).toBe(false);
+    });
+});

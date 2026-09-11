@@ -1,11 +1,15 @@
 import { db } from '../config/database';
-import { arsipTerjaga, NewArsipTerjaga, ArsipTerjaga, arsip } from '../db/schema';
+import { arsipTerjaga, arsipTerjagaReports, NewArsipTerjaga, ArsipTerjaga, arsip } from '../db/schema';
 import { eq, and, desc, sql, lte, ilike, or, inArray } from 'drizzle-orm';
 import {
     scopedRecordByIdWhere,
     type RecordUnitScope,
 } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
+import { terjagaReportService } from './terjaga-report.service';
+import { ConflictError, ValidationError } from '../utils/errors';
+
+const EDITABLE_FIELDS = new Set(['kategoriTerjaga', 'dasarHukum', 'uraianIsi', 'periodePelaporanHari', 'tanggalPenetapan', 'tanggalReviewSelanjutnya', 'catatan']);
 
 interface ArsipTerjagaFilters {
     unitKerjaId?: string;
@@ -181,8 +185,15 @@ class ArsipTerjagaService {
     // Designate an archive as terjaga
     async create(data: NewArsipTerjaga, auditContext: CriticalAuditContext) {
         return await db.transaction(async (tx: any) => {
+            const [parent] = await tx.select({ id: arsip.id, unitKerjaId: arsip.unitKerjaId, disposalStatus: arsip.disposalStatus, disposalBatchId: arsip.disposalBatchId })
+                .from(arsip).where(eq(arsip.id, data.arsipId)).limit(1).for('update');
+            if (!parent || parent.unitKerjaId !== data.unitKerjaId || parent.disposalStatus !== 'active' || parent.disposalBatchId) {
+                throw new ConflictError('Penetapan terjaga memerlukan arsip yang tersedia dan tidak sedang dalam penyusutan.');
+            }
+            const editable = Object.fromEntries(Object.entries(data).filter(([key]) => EDITABLE_FIELDS.has(key)));
             const [result] = await tx.insert(arsipTerjaga).values({
-                ...data,
+                ...editable, arsipId: data.arsipId, unitKerjaId: parent.unitKerjaId, createdBy: data.createdBy,
+                statusPelaporan: 'belum_dilaporkan', statusKepatuhan: 'belum_dinilai',
                 createdAt: new Date(),
                 updatedAt: new Date(),
             }).returning();
@@ -210,6 +221,7 @@ class ArsipTerjagaService {
         unitScope: RecordUnitScope,
         auditContext: CriticalAuditContext,
     ) {
+        if (Object.keys(data).some(key => !EDITABLE_FIELDS.has(key))) throw new ValidationError('Status pelaporan dan kepatuhan hanya dikelola melalui alur bukti.');
         return await db.transaction(async (tx: any) => {
             const targetWhere = scopedRecordByIdWhere(
                 arsipTerjaga.id,
@@ -274,6 +286,9 @@ class ArsipTerjagaService {
 
             if (!existing) return null;
 
+            const [report] = await tx.select({ id: arsipTerjagaReports.id }).from(arsipTerjagaReports)
+                .where(eq(arsipTerjagaReports.designationId, id)).limit(1);
+            if (report) throw new ConflictError('Penetapan dengan riwayat pelaporan tidak dapat dihapus.');
             const [result] = await tx
                 .delete(arsipTerjaga)
                 .where(targetWhere)
@@ -297,7 +312,7 @@ class ArsipTerjagaService {
         });
     }
 
-    // Mark as reported to ANRI
+    // Compatibility endpoint records a draft only; it never asserts ANRI delivery/compliance.
     async markAsReported(
         id: string,
         nomorLaporan: string,
@@ -305,56 +320,10 @@ class ArsipTerjagaService {
         unitScope: RecordUnitScope,
         auditContext: CriticalAuditContext,
     ) {
-        return await db.transaction(async (tx: any) => {
-            const targetWhere = scopedRecordByIdWhere(
-                arsipTerjaga.id,
-                id,
-                arsipTerjaga.unitKerjaId,
-                unitScope,
-            );
-            const [existing] = await tx
-                .select()
-                .from(arsipTerjaga)
-                .where(targetWhere)
-                .limit(1)
-                .for('update');
-
-            if (!existing) return null;
-
-            const [result] = await tx
-                .update(arsipTerjaga)
-                .set({
-                    statusPelaporan: 'dilaporkan',
-                    nomorLaporanANRI: nomorLaporan,
-                    tanggalPelaporan: tanggalPelaporan,
-                    statusKepatuhan: 'patuh',
-                    updatedAt: new Date(),
-                })
-                .where(targetWhere)
-                .returning();
-
-            if (!result) return null;
-
-            await auditLogService.logActionOrThrow({
-                ...auditContext,
-                action: 'status_change',
-                entityType: 'arsip',
-                entityId: result.arsipId,
-                changes: {
-                    before: existing,
-                    after: result,
-                    fields: [
-                        'statusPelaporan',
-                        'nomorLaporanANRI',
-                        'tanggalPelaporan',
-                        'statusKepatuhan',
-                    ],
-                    designation: 'terjaga',
-                    designationId: result.id,
-                },
-            }, tx);
-
-            return result;
+        const existing = await this.findById(id, unitScope);
+        if (!existing) return null;
+        return terjagaReportService.createDraft(id, { nomorLaporan, tanggalPelaporan }, {
+            id: auditContext.userId, email: auditContext.userEmail, ipAddress: auditContext.ipAddress,
         });
     }
 
@@ -439,7 +408,6 @@ class ArsipTerjagaService {
             .where(
                 and(
                     eq(arsipTerjaga.unitKerjaId, unitKerjaId),
-                    eq(arsipTerjaga.statusPelaporan, 'belum_dilaporkan'),
                     archiveSecurityCondition(securityClassifications),
                     sql`COALESCE(
                         ${arsipTerjaga.tanggalReviewSelanjutnya},

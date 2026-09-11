@@ -47,6 +47,18 @@ export const arsipTerjagaService = {
         return api.put(`${BASE_URL}/${id}/report`, { nomorLaporan, tanggalPelaporan });
     },
 
+    getReports(id) { return api.get(`${BASE_URL}/${id}/reports`); },
+    createReport(id, data) { return api.post(`${BASE_URL}/${id}/reports`, data); },
+    transitionReport(id, reportId, data) { return api.post(`${BASE_URL}/${id}/reports/${reportId}/transitions`, data); },
+    uploadEvidence(arsipId, file) {
+        const body = new FormData();
+        body.append('file', file);
+        return api.post(`/api/upload/arsip/${arsipId}`, body);
+    },
+    downloadEvidence(attachmentId) {
+        return api.get(`/api/files/attachment/${attachmentId}`, { download: 1 }, { responseType: 'blob' });
+    },
+
     // Delete
     async delete(id) {
         return api.delete(`${BASE_URL}/${id}`);

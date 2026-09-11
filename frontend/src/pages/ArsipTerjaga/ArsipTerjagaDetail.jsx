@@ -133,9 +133,9 @@ export default function ArsipTerjagaDetail({
                     ) : (
                         <>
                             <Button variant="outline" onClick={() => onOpenChange(false)}>Tutup</Button>
-                            {selectedItem?.statusPelaporan === 'belum_dilaporkan' && (
+                            {selectedItem && (
                                 <Button className="bg-primary hover:bg-primary" onClick={() => { onOpenChange(false); onOpenReport(selectedItem) }}>
-                                    <Send className="h-4 w-4 mr-2" /> Laporkan ke ANRI
+                                    <Send className="h-4 w-4 mr-2" /> Catatan pelaporan
                                 </Button>
                             )}
                             <Button variant="secondary" onClick={() => setIsEditing(true)}>
