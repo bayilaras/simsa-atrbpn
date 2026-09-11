@@ -7,6 +7,7 @@ Template dan pemeriksaan lokal bukan bukti bahwa deployment Neon/Render sudah be
 ## Batas biaya dan layanan
 
 - Blueprint `deploy/render/render.yaml` mendeklarasikan tepat satu web service `plan: free`, tanpa database Render, disk, worker, cron, atau pekerjaan keep-alive. Periksa ringkasan paket sebelum membuat layanan; jangan menerima peningkatan berbayar otomatis.
+- Paket Free tidak menjamin pembuatan layanan tanpa kartu: Render dapat meminta verifikasi akun. Bila dialog **Add Card** muncul, operator harus memutuskan apakah akan melanjutkan verifikasi; jangan memasukkan data kartu atau mengubah paket secara otomatis. Render menjelaskan otorisasi kartu sementara sampai US$1. Setelah metode pembayaran ditambahkan, penggunaan bandwidth atau menit build yang melewati kuota dapat ditagihkan; batas biaya pipeline tidak membatasi tagihan bandwidth. Untuk batas biaya ketat Rp0, jangan menganggap pilihan Free saja sebagai jaminan. [Verifikasi akun Render](https://community.render.com/t/the-deployement-of-a-web-service-fails/36005), [otorisasi kartu](https://render.com/terms), [tagihan layanan Free](https://render.com/docs/faq)
 - Render Free dapat tidur setelah 15 menit tidak aktif dan perlu sekitar satu menit untuk bangun. Render menyatakan paket gratis tidak ditujukan untuk produksi. Jangan menjanjikan ketersediaan atau waktu respons tetap. [Dokumentasi Render Free](https://render.com/docs/free)
 - Pilih paket **Free** pada proyek Neon baru. Periksa penggunaan dan batas yang berlaku di akun; batas yang ditinjau saat panduan ini ditulis adalah 0,5 GB penyimpanan per proyek dan 100 CU-jam per bulan. Batas tersebut bukan kapasitas arsip yang telah diuji. [Paket Neon](https://neon.com/pricing)
 - Aplikasi tidak menyediakan heartbeat agar layanan gratis terus hidup. `/health` dipakai sebagai pemeriksaan proses Render; `/ready` dipakai operator untuk memeriksa dependensi saat penerimaan deployment.
@@ -114,3 +115,10 @@ Tes mencakup pin endpoint/TLS/role, larangan target berisi data, PostgreSQL tanp
 - API hasil build terhadap database disposable: **39 pemeriksaan lulus**, meliputi login, provisioning akun, CRUD surat, pembatasan unit/role, CSRF, audit, serta penolakan berkas/OCR. Buktinya berada di `output/neon-deployment-tests/acceptance-1789124587692/http-acceptance.json` pada workstation pengujian, bukan repository publik.
 
 Uji API memakai HTTP loopback dengan header origin HTTPS dan pemindahan cookie secara manual. Uji browser terpisah memeriksa tampilan login hasil build dengan fixture capabilities tanpa database. Keduanya tidak menggantikan login browser HTTPS pada Render. Database dan proses lokal aktif tidak dipakai sebagai target drill. Penerimaan pada Neon/Render, backup database cloud, dan pemindahan data lama belum dibuktikan oleh hasil di atas.
+
+### Percobaan layanan cloud sebenarnya — 11 September 2026
+
+- Neon Free PostgreSQL 18 di Singapore: bootstrap, 38 migrasi, konvergensi grant, verifikasi runtime `simsa_api`, serta pembuatan administrator pertama berhasil. Pengulangan migrasi menghasilkan `applied: 0`.
+- Adapter default ACL provider diuji dan ditinjau terpisah; delapan kasus penyimpangan izin tetap ditolak.
+- Formulir Render disiapkan untuk Free, Singapore, branch `fix/user-readiness`, dan auto-deploy Off. Setelah operator menyetujui pengiriman dua secret runtime, klik deploy membuka dialog **Add Card**, sehingga layanan belum dibuat dan URL publik belum diterbitkan.
+- Belum ada bukti login HTTPS pada Render, penerimaan aplikasi cloud, backup cloud, atau pemindahan data lokal. Jangan membagikan URL perkiraan atau mengundang pengguna sampai deployment dan penerimaan benar-benar selesai.
