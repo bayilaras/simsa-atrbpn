@@ -54,7 +54,7 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
         }
     }
 
-    return <div className="space-y-4">
+    return <div className="min-w-0 space-y-4">
         <p className="text-sm text-muted-foreground">
             Tanggal wajib diisi sebagai YYYY-MM-DD atau DD/MM/YYYY. Koreksi tanggal yang ditolak pada CSV sumber; aplikasi tidak menggantinya dengan tanggal hari ini.
         </p>
@@ -65,7 +65,7 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
         <div className="space-y-2">
             <label htmlFor={inputId} className="text-sm font-medium">Berkas CSV</label>
             <input id={inputId} type="file" accept=".csv,text/csv" disabled={busy} onChange={chooseFile}
-                className="block w-full rounded-md border p-2 text-sm" />
+                className="block min-w-0 w-full rounded-md border p-2 text-sm" />
         </div>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         {result && <div className="space-y-3" aria-live="polite">
