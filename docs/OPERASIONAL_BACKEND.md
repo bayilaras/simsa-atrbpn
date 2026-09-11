@@ -79,12 +79,14 @@ Pada bulk OCR, parent memeriksa berkas dan memegang lease kapasitas global di
 database. Ekstraksi PDF/render/Tesseract dijalankan di child
 `dist/workers/ocr-process.js`, tanpa kredensial database, autentikasi, atau object
 storage. PDF dikirim lewat stdin, tidak ditulis ke direktori kerja. Child memakai
-direktori sementara sendiri untuk cache model, yang dibersihkan setelah proses
-tertutup. `OCR_TESSDATA_PATH` tetap menunjuk model bahasa yang disiapkan pengelola;
+direktori sementara sendiri untuk cache model. Parent yang masih hidup
+membersihkannya setelah child tertutup; jika parent mati mendadak, cache model
+dapat tertinggal di direktori sementara OS, tanpa PDF sumber.
+`OCR_TESSDATA_PATH` tetap menunjuk model bahasa yang disiapkan pengelola;
 path relatif dinormalisasi sebelum direktori kerja berubah.
 
-Batas pengawas child OCR adalah 200 detik sejak parent memulai proses; parent
-memiliki batas tunggu tambahan 225 detik. Input dibatasi 50 MiB dan heap V8
+Batas pengawas child OCR adalah 200 detik sejak parent memulai proses; batas
+luar parent adalah 225 detik sejak child dimulai. Input dibatasi 50 MiB dan heap V8
 512 MiB. Batas heap
 bukan batas seluruh memori native; gunakan pembatasan memori/CPU pada deployment.
 Batas halaman/piksel/teks yang sudah ada tetap berlaku. Timeout atau kehilangan

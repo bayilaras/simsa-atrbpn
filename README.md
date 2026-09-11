@@ -32,6 +32,8 @@ Pemeriksaan izin, nomor penelusuran gangguan, metrik administrator, serta
 pemulihan unggahan dijelaskan dalam [panduan operasional backend](docs/OPERASIONAL_BACKEND.md).
 Pengelola juga dapat menjalankan [backup database lokal dan uji pemulihan](docs/BACKUP_LOKAL.md);
 status backup dan verifikasi bundle yang sama tersedia melalui **Cek-SIMSA.cmd**.
+Rincian perubahan, pengukuran lokal, dan batas pengujian ada di
+[hasil penguatan backend](docs/HASIL_PENGUATAN_BACKEND_2026-09-11.md).
 
 Untuk membangun ulang setelah perubahan kode, operator dapat menjalankan
 `npm run build:internal` dengan dependensi yang sudah terpasang. Perintah ini

@@ -110,9 +110,16 @@ serta menjalankan worker Node 24 langsung dari artifact commit backend yang
 sama dengan API. Image produksi dipatok dengan digest dan seluruh container memiliki batas
 CPU/memori serta rotasi log; perubahan digest wajib disertai uji ulang.
 
-Cold-start produksi akan gagal bila Vercel dikonfigurasi `embedded`, scanner
-dinonaktifkan, worker dinonaktifkan, token Blob hilang, atau pengakuan jaringan
-tepercaya belum diberikan. Worker terpisah juga menolak dijalankan di Vercel.
+Untuk produksi dengan ClamAV aktif, worker wajib diaktifkan dan API pada Vercel
+atau Cloud Run memakai runtime `external`. Token Blob diperlukan bagi provider
+Blob; GCS memakai konfigurasinya sendiri. Host scanner eksplisit dan pengakuan
+jaringan tepercaya wajib pada proses yang benar-benar membuka koneksi ClamAV.
+Worker terpisah juga menolak dijalankan sebagai fungsi Vercel.
+
+Profil `internal` mengizinkan scanner dan worker sama-sama nonaktif dalam mode
+karantina tertutup. Pengecualian ini memungkinkan pengelolaan metadata sebelum
+fasilitas berkas tersedia; berkas tidak dianggap bersih dan tidak dilepas oleh
+gateway. Profil terintegrasi tetap memerlukan scanner sesuai validasi runtime.
 
 ## Status dan pemulihan
 
