@@ -95,12 +95,12 @@ BEGIN
     SELECT count(*), max(created_at)
       INTO journal_count, latest_migration
       FROM drizzle.__drizzle_migrations;
-    IF journal_count <> 38 OR latest_migration <> 1788063000000 THEN
-        RAISE EXCEPTION 'journal is not complete through 0037: count %, latest %',
+    IF journal_count <> 39 OR latest_migration <> 1788063600000 THEN
+        RAISE EXCEPTION 'journal is not complete through 0038: count %, latest %',
             journal_count, latest_migration;
     END IF;
     IF pg_catalog.jsonb_typeof(expected_migrations) <> 'array'
-       OR pg_catalog.jsonb_array_length(expected_migrations) <> 38
+       OR pg_catalog.jsonb_array_length(expected_migrations) <> 39
        OR EXISTS (
            SELECT 1
              FROM pg_catalog.jsonb_array_elements(expected_migrations) expected

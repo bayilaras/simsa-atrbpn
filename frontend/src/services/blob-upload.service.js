@@ -7,6 +7,7 @@
  */
 import { STORAGE_PROVIDER } from '../lib/cloud-provider-config';
 import { api } from './api';
+import { archiveUploadError } from '../lib/archive-upload';
 
 const GCS_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 const GCS_FINALIZATION_TIMEOUT_MS = 60 * 1000;
@@ -172,6 +173,8 @@ export async function uploadFileToGcs(file, {
     waitForPending = waitForPendingUpload,
 } = {}) {
     const resolvedPurpose = resolveGcsUploadPurpose({ folder, purpose });
+    const validationError = archiveUploadError(file);
+    if (validationError) throw new Error(validationError);
     if (!file?.name || !Number.isSafeInteger(file.size) || file.size <= 0) {
         throw new Error('Berkas upload GCS harus memiliki nama dan ukuran positif.');
     }
@@ -228,6 +231,8 @@ async function uploadFileToVercelBlob(file, { folder = 'uploads', purpose, ruleS
 }
 
 export async function uploadFileToBlob(file, options = {}) {
+    const validationError = archiveUploadError(file);
+    if (validationError) throw new Error(validationError);
     if (STORAGE_PROVIDER === 'disabled') {
         throw new Error('Unggah berkas dinonaktifkan pada demo metadata.');
     }

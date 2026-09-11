@@ -7,7 +7,7 @@ Backup mencakup database SIMSA, termasuk akun dan hash kata sandi, sesi, audit, 
 ## Prasyarat
 
 - Node.js 24, dependency backend sesuai lockfile, dan executable PostgreSQL 18 lengkap (`pg_dump`, `pg_restore`, `psql`, `initdb`, `pg_ctl`, `pg_controldata`).
-- Target Neon direct yang telah melalui bootstrap/migrasi SIMSA; 38 migrasi harus cocok dengan checkout. URL pooler ditolak. Tidak ada perubahan skema oleh perintah backup.
+- Target Neon direct yang telah melalui bootstrap/migrasi SIMSA; 39 migrasi harus cocok dengan checkout. URL pooler ditolak. Tidak ada perubahan skema oleh perintah backup. Bundle terdahulu dengan 38 migrasi harus dipulihkan memakai checkout/helper yang cocok dengan bundle tersebut.
 - Direktori output dan kunci yang dipilih operator, sebaiknya di luar repository. CLI membuat subdirektori baru. Pada Windows, ACL hanya untuk pengguna saat ini dipasang dan diperiksa **sebelum** menulis data; SID pemilik juga harus sama dengan pengguna yang menjalankan perintah. Bundle/kunci yang sudah ada dengan pemilik berbeda ditolak, tanpa mengubah kepemilikannya diam-diam. `mode: 0600` saja tidak dipakai sebagai bukti privasi. Pada Linux, direktori harus dimiliki pengguna dan tidak terbuka untuk grup/pengguna lain.
 - Pemulihan membutuhkan PostgreSQL 18 dengan dukungan locale/ICU yang cocok dengan sumber. Perbedaan locale atau fingerprint menggagalkan verifikasi; jangan menghapus pemeriksaannya agar hasil terlihat lulus. Untuk sumber Neon Linux, gunakan lingkungan pemulihan yang mendukung locale sumber. Jalankan `initdb` sebagai pengguna biasa, bukan root.
 

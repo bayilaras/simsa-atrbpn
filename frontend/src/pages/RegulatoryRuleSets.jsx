@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { archiveUploadError } from '@/lib/archive-upload';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
     AlertTriangle,
@@ -540,6 +541,8 @@ export default function RegulatoryRuleSets() {
         if (!capabilities.fileUploads) return;
         if (!sourceRuleSet || !sourceFile) return;
         try {
+            const validationError = archiveUploadError(sourceFile);
+            if (validationError) throw new Error(validationError);
             setActionLoading(true);
             setSourceUploadProgress(0);
             let response;
@@ -1145,7 +1148,7 @@ export default function RegulatoryRuleSets() {
                     <DialogHeader>
                         <DialogTitle>Verifikasi PDF sumber {sourceRuleSet?.version}</DialogTitle>
                         <DialogDescription>
-                            Unggah salinan PDF resmi (maks. 50 MB) langsung ke penyimpanan privat. Nama, ukuran, jumlah halaman, dan SHA-256 diverifikasi server; hash tidak dapat diisi manual.
+                            Unggah salinan PDF resmi (maks. 10 MiB) langsung ke penyimpanan privat. Nama, ukuran, jumlah halaman, dan SHA-256 diverifikasi server; hash tidak dapat diisi manual.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-3 py-3">

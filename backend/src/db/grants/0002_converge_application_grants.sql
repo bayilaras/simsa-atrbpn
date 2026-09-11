@@ -280,7 +280,7 @@ BEGIN
         RAISE EXCEPTION 'grant convergence requires the Drizzle migration journal';
     END IF;
     IF pg_catalog.jsonb_typeof(expected_manifest) <> 'array'
-       OR pg_catalog.jsonb_array_length(expected_manifest) <> 38
+       OR pg_catalog.jsonb_array_length(expected_manifest) <> 39
        OR EXISTS (
            SELECT 1
            FROM pg_catalog.jsonb_array_elements(expected_manifest) AS entry(value)
@@ -312,16 +312,16 @@ BEGIN
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
         10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
         20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-        30, 31, 32, 33, 34, 35, 36, 37
+        30, 31, 32, 33, 34, 35, 36, 37, 38
     ]::integer[] THEN
-        RAISE EXCEPTION 'expected migration manifest is not the exact 0000-0037 chain';
+        RAISE EXCEPTION 'expected migration manifest is not the exact 0000-0038 chain';
     END IF;
     SELECT pg_catalog.array_agg(created_at ORDER BY created_at)
     INTO actual_timestamps
     FROM drizzle.__drizzle_migrations;
-    IF pg_catalog.cardinality(actual_timestamps) <> 38
-       OR (SELECT pg_catalog.count(*) FROM drizzle.__drizzle_migrations) <> 38
-       OR (SELECT pg_catalog.count(DISTINCT created_at) FROM drizzle.__drizzle_migrations) <> 38
+    IF pg_catalog.cardinality(actual_timestamps) <> 39
+       OR (SELECT pg_catalog.count(*) FROM drizzle.__drizzle_migrations) <> 39
+       OR (SELECT pg_catalog.count(DISTINCT created_at) FROM drizzle.__drizzle_migrations) <> 39
        OR actual_timestamps IS DISTINCT FROM expected_timestamps
        OR EXISTS (
            SELECT 1
@@ -347,7 +347,7 @@ BEGIN
        OR pg_catalog.to_regprocedure(
            'public.simsa_mark_api_final_object_referenced(uuid,text,text)'
        ) IS NULL THEN
-        RAISE EXCEPTION 'grant convergence requires the complete 0037 schema';
+        RAISE EXCEPTION 'grant convergence requires the complete 0038 schema';
     END IF;
 
     SELECT candidate.* INTO unexpected

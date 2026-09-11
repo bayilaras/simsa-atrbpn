@@ -282,6 +282,16 @@ describe('regulatory rule-set pure policy', () => {
 describe('RegulatoryRuleSetService lifecycle', () => {
     let service: InstanceType<typeof RegulatoryRuleSetService>;
 
+    it('rejects source PDFs above 10 MiB before storage upload or evidence persistence', async () => {
+        vi.spyOn(service, 'assertSourceDocumentUploadAllowed').mockResolvedValueOnce({} as any);
+        const buffer = Buffer.alloc(10_485_761); buffer.write('%PDF-1.7');
+        await expect(service.verifySourceDocument('22222222-2222-4222-8222-222222222222', {
+            buffer, originalname: 'source.pdf', mimetype: 'application/pdf', size: buffer.length,
+        }, '33333333-3333-4333-8333-333333333333')).rejects.toThrow('10 MiB');
+        expect(blobStorageMocks.uploadUntrustedFile).not.toHaveBeenCalled();
+        expect(capturedValues).toEqual([]);
+    });
+
     beforeEach(() => {
         resultQueue.length = 0;
         capturedSets.length = 0;

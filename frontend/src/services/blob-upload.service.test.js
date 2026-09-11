@@ -7,6 +7,18 @@ import {
 } from './blob-upload.service';
 
 describe('GCS direct upload bridge', () => {
+    it.each([
+        { name: 'arsip.pdf', type: 'application/pdf', size: 10_485_761 },
+        { name: 'arsip.exe', type: 'application/pdf', size: 10 },
+        { name: 'arsip.pdf', type: 'image/png', size: 10 },
+        { name: 'arsip.pdf', type: 'application/pdf', size: 0 },
+    ])('does not request storage authorization for an invalid PDF: %j', async file => {
+        const apiClient = { post: vi.fn() };
+        const uploadTransport = vi.fn();
+        await expect(uploadFileToGcs(file, { purpose: 'surat_masuk', apiClient, uploadTransport })).rejects.toThrow();
+        expect(apiClient.post).not.toHaveBeenCalled();
+        expect(uploadTransport).not.toHaveBeenCalled();
+    });
     it('maps existing business folders to backend upload purposes', () => {
         expect(resolveGcsUploadPurpose({ folder: 'surat-masuk' })).toBe('surat_masuk');
         expect(resolveGcsUploadPurpose({ folder: 'surat-keluar' })).toBe('surat_keluar');

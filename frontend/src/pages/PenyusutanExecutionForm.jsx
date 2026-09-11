@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { useAppConfig } from '@/context/app-config-context'
 import { FileAvailabilityNotice } from '@/components/FileAvailabilityNotice'
+import { archiveUploadError } from '@/lib/archive-upload'
 
 const selectClass = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm'
 
@@ -47,6 +48,8 @@ export default function PenyusutanExecutionForm({ batch, unitKerjaId, onComplete
 
     const upload = async () => {
         if (!file || busy || !capabilities.fileUploads) return
+        const invalid = archiveUploadError(file)
+        if (invalid) { setError(invalid); setNotice(''); return }
         setBusy(true); setError(''); setNotice('')
         try {
             await penyusutanService.uploadExecutionEvidence(batch.id, unitKerjaId, uploadArchiveId, file)
@@ -81,9 +84,14 @@ export default function PenyusutanExecutionForm({ batch, unitKerjaId, onComplete
             <select id="evidence-archive" className={selectClass} value={uploadArchiveId} disabled={busy} onChange={event => setUploadArchiveId(event.target.value)}>
                 {(batch.items || []).map(item => <option key={item.arsipId} value={item.arsipId}>{item.arsip?.nomorBerkas || item.arsip?.uraianBerkas || `Arsip ${item.nomorUrut || ''}`}</option>)}
             </select>
-            <Label htmlFor="execution-file">Unggah dokumen bukti (PDF, JPEG, PNG; maksimal 10 MB)</Label>
-            <Input id="execution-file" type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy || !capabilities.fileUploads}
-                onChange={event => setFile(event.target.files?.[0] || null)} />
+            <Label htmlFor="execution-file">Unggah dokumen bukti (PDF; maksimal 10 MiB)</Label>
+            <Input id="execution-file" type="file" accept=".pdf,application/pdf" disabled={busy || !capabilities.fileUploads}
+                onChange={event => {
+                    const selected = event.target.files?.[0] || null
+                    const invalid = selected ? archiveUploadError(selected) : null
+                    setFile(invalid ? null : selected); setError(invalid || ''); setNotice('')
+                    if (invalid) event.target.value = ''
+                }} />
             <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" disabled={busy || !capabilities.fileUploads || !file || !uploadArchiveId} onClick={upload}>Unggah bukti</Button>
                 <Button type="button" variant="outline" disabled={busy || loading} onClick={() => setRevision(value => value + 1)}>Perbarui bukti</Button>

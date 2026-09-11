@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
     },
     tokenOptions: null as Record<string, any> | null,
     assertUploadAllowed: vi.fn(),
+    assertArsipUploadAllowed: vi.fn(),
     recordCompletedUpload: vi.fn(),
     cleanupExpired: vi.fn(),
     authCalls: 0,
@@ -26,10 +27,18 @@ vi.mock('../middlewares/auth.middleware.js', () => ({
 }));
 
 vi.mock('../services/client-blob-upload.service.js', () => ({
+    parseArsipUploadPath: (pathname: string) => {
+        const match = /^arsip-attachments\/([0-9a-f-]{36})\/([^/\\]+\.pdf)$/.exec(pathname);
+        return match && !pathname.includes('..') ? { arsipId: match[1], fileName: match[2] } : null;
+    },
     clientBlobUploadService: {
         recordCompletedUpload: state.recordCompletedUpload,
         cleanupExpired: state.cleanupExpired,
     },
+}));
+
+vi.mock('../services/arsip-attachment-upload.service.js', () => ({
+    arsipAttachmentUploadService: { assertUploadAllowed: state.assertArsipUploadAllowed },
 }));
 
 vi.mock('../middlewares/rate-limiter.middleware.js', () => ({
@@ -41,7 +50,7 @@ vi.mock('../middlewares/rate-limiter.middleware.js', () => ({
 }));
 
 vi.mock('../services/regulatory-rule-set.service.js', () => ({
-    REGULATORY_SOURCE_MAX_BYTES: 50 * 1024 * 1024,
+    REGULATORY_SOURCE_MAX_BYTES: 10 * 1024 * 1024,
     default: { assertSourceDocumentUploadAllowed: state.assertUploadAllowed },
 }));
 
@@ -81,6 +90,40 @@ function uploadBody(overrides: Record<string, unknown> = {}) {
 }
 
 describe('rule-set-bound direct Blob upload tokens', () => {
+    it('authorizes an existing archive and signs a distinct, non-overwritable PDF namespace', async () => {
+        const pathname = `arsip-attachments/${ruleSetId}/bukti.pdf`;
+        await request(app).post('/client-upload').send(uploadBody({ pathname, clientPayload: null })).expect(200);
+        expect(state.assertArsipUploadAllowed).toHaveBeenCalledWith(ruleSetId, { userId: state.user.id });
+        expect(state.tokenOptions).toMatchObject({ allowedContentTypes: ['application/pdf'], maximumSizeInBytes: 10_485_760, addRandomSuffix: true, allowOverwrite: false });
+        expect(JSON.parse(state.tokenOptions!.tokenPayload)).toEqual({ purpose: 'arsip', arsipId: ruleSetId, userId: state.user.id });
+    });
+    it('refuses archive token generation after current target authority is denied', async () => {
+        state.assertArsipUploadAllowed.mockRejectedValueOnce(new Error('record not mutable'));
+        await request(app).post('/client-upload').send(uploadBody({ pathname: `arsip-attachments/${ruleSetId}/bukti.pdf`, clientPayload: null })).expect(400);
+        expect(state.tokenOptions).toBeNull();
+    });
+    it.each(['missing', 'wrong', 'invalid-path'])('rejects %s archive binding in a completed callback', async variant => {
+        const pathname = variant === 'invalid-path' ? 'arsip-attachments/bukti.pdf' : `arsip-attachments/${ruleSetId}/bukti-random.pdf`;
+        await request(app).post('/client-upload').send({ type: 'blob.upload-completed', payload: {
+            blob: { url: `https://store.private.blob.vercel-storage.com/${pathname}`, pathname },
+            tokenPayload: JSON.stringify({ purpose: 'arsip', userId: state.user.id, ...(variant === 'missing' ? {} : { arsipId: '33333333-3333-4333-8333-333333333333' }) }),
+        } }).expect(400);
+        expect(state.recordCompletedUpload).not.toHaveBeenCalled();
+    });
+    it('records a completed archive lease with the signed uploader and target', async () => {
+        const pathname = `arsip-attachments/${ruleSetId}/bukti-random.pdf`;
+        const blobUrl = `https://store.private.blob.vercel-storage.com/${pathname}`;
+        await request(app).post('/client-upload').send({ type: 'blob.upload-completed', payload: {
+            blob: { url: blobUrl, pathname }, tokenPayload: JSON.stringify({ purpose: 'arsip', arsipId: ruleSetId, userId: state.user.id }),
+        } }).expect(200);
+        expect(state.recordCompletedUpload).toHaveBeenCalledWith({ blobUrl, pathname, purpose: 'arsip', uploadedBy: state.user.id });
+        expect(state.authCalls).toBe(0);
+    });
+    it('issues letter upload tokens only for PDF and at most 10 MiB', async () => {
+        await request(app).post('/client-upload').send(uploadBody({ pathname: 'surat-masuk/letter.pdf', clientPayload: null })).expect(200);
+        expect(state.tokenOptions).toMatchObject({ allowedContentTypes: ['application/pdf'], maximumSizeInBytes: 10_485_760 });
+        await request(app).post('/client-upload').send(uploadBody({ pathname: 'surat-masuk/letter.docx', clientPayload: null })).expect(400);
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         state.user.role = 'super_admin';
@@ -89,6 +132,7 @@ describe('rule-set-bound direct Blob upload tokens', () => {
         state.limiterCalls = 0;
         state.rejectLimiter = false;
         state.assertUploadAllowed.mockResolvedValue(undefined);
+        state.assertArsipUploadAllowed.mockResolvedValue(undefined);
         state.recordCompletedUpload.mockResolvedValue({ id: 'lease-1' });
         state.cleanupExpired.mockResolvedValue({ inspected: 0, deleted: 0, failed: 0 });
     });
@@ -102,7 +146,7 @@ describe('rule-set-bound direct Blob upload tokens', () => {
         expect(state.assertUploadAllowed).toHaveBeenCalledWith(ruleSetId);
         expect(state.tokenOptions).toMatchObject({
             allowedContentTypes: ['application/pdf'],
-            maximumSizeInBytes: 50 * 1024 * 1024,
+            maximumSizeInBytes: 10 * 1024 * 1024,
             addRandomSuffix: true,
             allowOverwrite: false,
         });

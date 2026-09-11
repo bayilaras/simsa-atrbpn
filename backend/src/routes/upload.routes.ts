@@ -7,6 +7,10 @@ import { uploadLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
 import { uuidParamValidator } from '../middlewares/validate.middleware';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
+import { ARCHIVE_UPLOAD_MAX_BYTES, assertPdfUpload, isPdfUploadMetadata } from '../config/archive-upload.js';
+import { AppError, ValidationError } from '../utils/errors.js';
+import { arsipAttachmentUploadService } from '../services/arsip-attachment-upload.service.js';
+import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
 
 const log = createLogger('UploadRoutes');
 
@@ -41,59 +45,16 @@ function publicAttachment(attachment: any) {
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB limit
+        fileSize: ARCHIVE_UPLOAD_MAX_BYTES,
     },
     fileFilter: (req, file, cb) => {
-        // Allow common document and image types
-        const allowedTypes = [
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'image/jpeg',
-            'image/png',
-            'image/gif',
-        ];
-
-        if (allowedTypes.includes(file.mimetype)) {
+        if (isPdfUploadMetadata(file.originalname, file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type. Only PDF, Word, Excel, and images are allowed.'));
+            cb(new ValidationError('Hanya PDF yang diperbolehkan (maks. 10 MiB).'));
         }
     },
 });
-
-// Magic-byte family each accepted MIME type must resolve to. Legacy Office formats
-// share the OLE2 container and the OOXML formats share the ZIP container, so they
-// can only be distinguished down to the family level.
-type ContentFamily = 'pdf' | 'ole' | 'ooxml' | 'jpeg' | 'png' | 'gif';
-
-const EXPECTED_CONTENT_FAMILY: Record<string, ContentFamily> = {
-    'application/pdf': 'pdf',
-    'application/msword': 'ole',
-    'application/vnd.ms-excel': 'ole',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'ooxml',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'ooxml',
-    'image/jpeg': 'jpeg',
-    'image/png': 'png',
-    'image/gif': 'gif',
-};
-
-const OLE_SIGNATURE = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
-const ZIP_SIGNATURE = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-
-function detectContentFamily(buffer: Buffer): ContentFamily | null {
-    if (buffer.length < 8) return null;
-    if (buffer.subarray(0, 4).toString('latin1') === '%PDF') return 'pdf';
-    if (buffer.subarray(0, 8).equals(OLE_SIGNATURE)) return 'ole';
-    if (buffer.subarray(0, 4).equals(ZIP_SIGNATURE)) return 'ooxml';
-    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'jpeg';
-    if (buffer.subarray(0, 8).equals(PNG_SIGNATURE)) return 'png';
-    if (buffer.subarray(0, 4).toString('latin1') === 'GIF8') return 'gif';
-    return null;
-}
 
 // multer's fileFilter can only see the client-supplied Content-Type, so the stored
 // bytes are checked here before anything is persisted.
@@ -102,8 +63,9 @@ function verifyFileContent(req: Request, res: Response, next: NextFunction) {
         return next();
     }
 
-    const expected = EXPECTED_CONTENT_FAMILY[req.file.mimetype];
-    if (!expected || detectContentFamily(req.file.buffer) !== expected) {
+    try {
+        assertPdfUpload(req.file.originalname, req.file.mimetype, req.file.buffer.length, req.file.buffer);
+    } catch {
         return res.status(400).json({
             error: 'File content does not match the declared file type.',
         });
@@ -117,18 +79,39 @@ router.post(
     '/:suratType/:suratId',
     authMiddleware,
     canWriteMiddleware(),
+    (req: Request, res: Response, next: NextFunction) => {
+        if (req.params.suratType === 'arsip' && !req.is('application/json')
+            && buildCloudPlatformConfig().storageProvider === 'vercel-blob') {
+            return res.status(400).json({
+                error: 'Gunakan unggah langsung dari formulir lampiran arsip, lalu registrasikan berkas.',
+                code: 'DIRECT_ARCHIVE_UPLOAD_REQUIRED',
+            });
+        }
+        next();
+    },
     upload.single('file'),
     verifyFileContent,
     async (req: AuthRequest, res: Response) => {
         try {
             const suratType = req.params.suratType as string;
             const suratId = req.params.suratId as string;
-            const { folderId } = req.body;
+            const { folderId } = req.body || {};
 
             // Validate surat type
             const entityType = toRecordEntityType(suratType);
             if (!entityType) {
                 return res.status(400).json({ error: 'Invalid surat type' });
+            }
+
+            if (req.is('application/json')) {
+                if (entityType !== 'arsip' || req.file) throw new ValidationError('Registrasi langsung ini hanya tersedia untuk lampiran arsip.');
+                const result = await arsipAttachmentUploadService.finalize(suratId, req.body, {
+                    userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
+                });
+                return res.status(result.reused ? 200 : 201).json({
+                    success: true, data: publicAttachment(result.attachment), hash: result.attachment.sha256,
+                    reused: result.reused, message: 'Lampiran tercatat dalam karantina. Tunggu pemeriksaan malware dan integritas.',
+                });
             }
 
             const access = await recordAccessService.check(req.user, entityType, suratId);
@@ -162,6 +145,9 @@ router.post(
             });
         } catch (error: any) {
             log.error({ err: error }, 'Upload error:');
+            if (error instanceof AppError) return res.status(error.statusCode).json({
+                error: error.message, code: 'code' in error && error.code === 'UPLOAD_COMPLETION_PENDING' ? error.code : 'ATTACHMENT_UPLOAD_REJECTED',
+            });
             res.status(500).json({ error: 'Gagal menyimpan lampiran', code: 'ATTACHMENT_UPLOAD_FAILED' });
         }
     }

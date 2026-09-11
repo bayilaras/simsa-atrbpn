@@ -21,8 +21,9 @@ import {
 } from './client-blob-upload.service.js';
 import { requireImmutableObjectGeneration } from '../storage/locator.js';
 import { inspectBitstream } from './bitstream-integrity.js';
+import { ARCHIVE_UPLOAD_MAX_BYTES, assertPdfUpload } from '../config/archive-upload.js';
 
-export const ATTACHMENT_PREFLIGHT_MAX_BYTES = 10 * 1024 * 1024;
+export const ATTACHMENT_PREFLIGHT_MAX_BYTES = ARCHIVE_UPLOAD_MAX_BYTES;
 export const ATTACHMENT_PREFLIGHT_TIMEOUT_MS = 30_000;
 export const ATTACHMENT_FINALIZATION_MARGIN_MS = 5_000;
 
@@ -97,10 +98,11 @@ export class FileAttachmentService {
         options: PrepareExistingAttachmentOptions = {},
     ): Promise<PreparedExistingAttachmentData> {
         const locator = normalizeBlobLocator(data.locator);
-        const maxBytes = options.maxBytes ?? ATTACHMENT_PREFLIGHT_MAX_BYTES;
+        const configuredMaxBytes = options.maxBytes ?? ATTACHMENT_PREFLIGHT_MAX_BYTES;
+        const maxBytes = Math.min(configuredMaxBytes, ARCHIVE_UPLOAD_MAX_BYTES);
         const timeoutMs = options.timeoutMs ?? ATTACHMENT_PREFLIGHT_TIMEOUT_MS;
 
-        if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
+        if (!Number.isFinite(configuredMaxBytes) || maxBytes <= 0) {
             throw new Error('Attachment preflight byte limit must be positive.');
         }
         if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
@@ -111,6 +113,7 @@ export class FileAttachmentService {
         let sizeBytes = data.buffer?.length || 0;
         let objectGeneration: string | null;
         const digest = crypto.createHash('sha256');
+        let prefix = Buffer.alloc(0);
 
         if (data.buffer) {
             if (options.clientBlobClaim) {
@@ -120,6 +123,7 @@ export class FileAttachmentService {
                 throw new PayloadTooLargeError('Lampiran melebihi batas 10 MiB.');
             }
             objectGeneration = requireImmutableObjectGeneration(locator, data.objectGeneration);
+            prefix = Buffer.from(data.buffer.subarray(0, 5));
             digest.update(data.buffer);
         } else {
             const claim = options.clientBlobClaim;
@@ -185,6 +189,7 @@ export class FileAttachmentService {
                                 download.stream.destroy();
                                 throw new PayloadTooLargeError('Lampiran melebihi batas 10 MiB.');
                             }
+                            if (prefix.length < 5) prefix = Buffer.concat([prefix, bytes.subarray(0, 5 - prefix.length)]);
                             digest.update(bytes);
                         }
                     })(),
@@ -201,6 +206,7 @@ export class FileAttachmentService {
             }
         }
 
+        assertPdfUpload(data.fileName, mimeType, sizeBytes, prefix);
         return {
             fileName: data.fileName,
             locator,
@@ -255,6 +261,7 @@ export class FileAttachmentService {
         auditContext: CriticalAuditContext,
         executor?: Pick<typeof db, 'insert'>,
     ): Promise<FileAttachment & { hash: string }> {
+        assertPdfUpload(data.fileName, data.mimeType, data.buffer.length, data.buffer);
         // Calculate hash
         const hash = crypto.createHash('sha256').update(data.buffer).digest('hex');
 

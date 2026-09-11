@@ -84,7 +84,7 @@ describe('reviewed migration filesystem manifest', () => {
         const actualDirectory = resolve('src/db/migrations');
         const journal = JSON.parse(readFileSync(join(actualDirectory, 'meta/_journal.json'), 'utf8'));
         const legacy = JSON.parse(readFileSync(join(actualDirectory, 'meta/approved_legacy_hashes.json'), 'utf8'));
-        expect(migrations).toHaveLength(38);
+        expect(migrations).toHaveLength(39);
         for (const [index, item] of migrations.entries()) {
             const entry = journal.entries[index];
             const sql = readFileSync(join(actualDirectory, `${entry.tag}.sql`), 'utf8').replaceAll('\r\n', '\n');

@@ -326,6 +326,39 @@ describe('FileAttachmentService exact-generation deletion', () => {
         );
         expect(mocks.rollback).toHaveBeenCalledOnce();
     });
+
+    it.each([
+        ['PNG content disguised as PDF', 'direct.pdf', 'application/pdf', Buffer.from('\x89PNG\r\n\x1a\n')],
+        ['incorrect declared MIME', 'direct.pdf', 'image/png', Buffer.from('%PDF-1.7')],
+        ['incorrect filename extension', 'direct.png', 'application/pdf', Buffer.from('%PDF-1.7')],
+        ['truncated PDF signature', 'direct.pdf', 'application/pdf', Buffer.from('%PDF')],
+    ])('rejects %s before direct metadata can be persisted', async (_label, fileName, mimeType, bytes) => {
+        vi.spyOn(clientBlobUploadService, 'preAuthorizeClaim').mockResolvedValueOnce({} as any);
+        mocks.downloadFile.mockResolvedValueOnce({ stream: Readable.from([bytes]), mimeType, fileName });
+        await expect(new FileAttachmentService().prepareExisting({ ...directAttachment, fileName }, {
+            clientBlobClaim: directClaim,
+        })).rejects.toMatchObject({ statusCode: 400 });
+        expect(mocks.insert).not.toHaveBeenCalled();
+    });
+
+    it('accepts exactly 10 MiB with the PDF signature split between stream chunks', async () => {
+        vi.spyOn(clientBlobUploadService, 'preAuthorizeClaim').mockResolvedValueOnce({} as any);
+        mocks.downloadFile.mockResolvedValueOnce({
+            stream: Readable.from([Buffer.from('%P'), Buffer.from('DF-'), Buffer.alloc(10 * 1024 * 1024 - 5)]),
+            mimeType: 'application/pdf', fileName: 'direct.pdf',
+        });
+        await expect(new FileAttachmentService().prepareExisting(directAttachment, {
+            clientBlobClaim: directClaim,
+        })).resolves.toMatchObject({ sizeBytes: 10 * 1024 * 1024, mimeType: 'application/pdf' });
+    });
+
+    it('rejects a non-PDF multipart buffer before uploading or persisting it', async () => {
+        await expect(new FileAttachmentService().create({
+            suratId: '11111111-1111-4111-8111-111111111111', suratType: 'masuk',
+            fileName: 'image.png', mimeType: 'image/png', buffer: Buffer.from('\x89PNG\r\n\x1a\n'),
+        }, { userId: directClaim.uploadedBy })).rejects.toMatchObject({ statusCode: 400 });
+        expect(mocks.uploadUntrustedFile).not.toHaveBeenCalled();
+    });
     it('never deletes an evidence object when a database reference guard denies removal', async () => {
         const attachment = { id: 'attachment-1', fileUrl: 'gs://simsa-final/released/evidence.pdf', objectGeneration: '1735689600123456' };
         mocks.select.mockReturnValue({ from: () => ({ where: () => ({ limit: () => ({ for: async () => [attachment] }) }) }) });

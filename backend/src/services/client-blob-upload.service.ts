@@ -8,7 +8,16 @@ import { toGcsLocator } from '../storage/locator.js';
 
 const log = createLogger('ClientBlobUploadService');
 
-export type ClientBlobPurpose = 'surat_masuk' | 'surat_keluar' | 'regulatory_source';
+export type ClientBlobPurpose = 'surat_masuk' | 'surat_keluar' | 'regulatory_source' | 'arsip';
+
+/** The signed token and finalizer both bind an archive upload to this namespace. */
+export function parseArsipUploadPath(pathname: string): { arsipId: string; fileName: string } | null {
+    const match = /^arsip-attachments\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/([^/\\]+\.[pP][dD][fF])$/.exec(pathname);
+    // Callback names include the storage provider's random suffix. Token input
+    // is capped separately at 240 so the completed immutable name still fits.
+    if (!match || pathname.includes('..') || match[2].length > 512 || /[\u0000-\u001f\u007f]/.test(pathname)) return null;
+    return { arsipId: match[1], fileName: match[2] };
+}
 
 export interface CompletedClientBlobUpload {
     blobUrl: string;
@@ -86,6 +95,7 @@ function expectedPrefix(purpose: ClientBlobPurpose): string {
         case 'surat_masuk': return 'surat-masuk/';
         case 'surat_keluar': return 'surat-keluar/';
         case 'regulatory_source': return 'regulatory-sources/';
+        case 'arsip': return 'arsip-attachments/';
     }
 }
 
@@ -297,7 +307,7 @@ export class ClientBlobUploadService {
     async claimWithExecutor(
         executor: any,
         input: ClaimClientBlobUpload,
-        entityType: 'surat_masuk' | 'surat_keluar' | 'regulatory_rule_set',
+        entityType: 'surat_masuk' | 'surat_keluar' | 'regulatory_rule_set' | 'arsip',
         entityId: string,
         now = new Date(),
     ): Promise<ClientBlobUpload> {

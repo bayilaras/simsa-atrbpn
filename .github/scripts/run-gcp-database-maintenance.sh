@@ -196,8 +196,8 @@ case "$MODE" in
       --set "expected_migrations_json=$EXPECTED_MIGRATIONS_JSON" \
       --file /evidence/collect.sql >"$EVIDENCE_DIR/database-evidence.json"
     jq -e '
-      .journal.count == 38 and
-      .journal.latest_created_at == 1788063000000 and
+      .journal.count == 39 and
+      .journal.latest_created_at == 1788063600000 and
       .evidence_role == "simsa_migrator" and
       .ownership_violations == 0 and
       .migrator_database_create == false and

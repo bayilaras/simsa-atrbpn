@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/services/api'
+import { uploadArsipAttachment } from '@/services/arsip-attachment-upload.service'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAppConfig } from '@/context/app-config-context'
 import { FileAvailabilityNotice } from '@/components/FileAvailabilityNotice'
+import { archiveUploadError } from '@/lib/archive-upload'
 
 export default function ExternalPreservationFields({ electronicId, data, onChange, disabled }) {
     const { capabilities } = useAppConfig()
@@ -25,11 +27,12 @@ export default function ExternalPreservationFields({ electronicId, data, onChang
         return () => { active = false }
     }, [electronicId, revision])
     const upload = async () => {
-        if (!file || !options.arsipId || uploading || !capabilities.fileUploads) return
-        const body = new FormData(); body.append('file', file)
+        if (!file || !options.arsipId || disabled || uploading || !capabilities.fileUploads) return
+        const invalid = archiveUploadError(file)
+        if (invalid) { setError(invalid); setMessage(''); return }
         setUploading(true); setError('')
         try {
-            await api.post(`/api/upload/arsip/${options.arsipId}`, body)
+            await uploadArsipAttachment(options.arsipId, file)
             setMessage('Lampiran masuk karantina. Perbarui pilihan setelah pemeriksaan malware dan integritas selesai.')
             setRevision(value => value + 1)
         } catch (err) { setError(err.message) }
@@ -49,9 +52,14 @@ export default function ExternalPreservationFields({ electronicId, data, onChang
             </select>
         </div>)}
         <div className="space-y-2">
-            <Label htmlFor="preservation-file">Unggah hasil atau bukti baru (maksimal 10 MB)</Label>
-            <Input id="preservation-file" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif" disabled={disabled || uploading || !capabilities.fileUploads}
-                onChange={event => setFile(event.target.files?.[0] || null)} />
+            <Label htmlFor="preservation-file">Unggah hasil atau bukti baru (PDF; maksimal 10 MiB)</Label>
+            <Input id="preservation-file" type="file" accept=".pdf,application/pdf" disabled={disabled || uploading || !capabilities.fileUploads}
+                onChange={event => {
+                    const selected = event.target.files?.[0] || null
+                    const invalid = selected ? archiveUploadError(selected) : null
+                    setFile(invalid ? null : selected); setError(invalid || ''); setMessage('')
+                    if (invalid) event.target.value = ''
+                }} />
             <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" disabled={disabled || uploading || !capabilities.fileUploads || !file || !options.arsipId} onClick={upload}>Unggah lampiran</Button>
                 <Button type="button" variant="outline" disabled={disabled || loading || uploading} onClick={() => setRevision(value => value + 1)}>Perbarui pilihan</Button>

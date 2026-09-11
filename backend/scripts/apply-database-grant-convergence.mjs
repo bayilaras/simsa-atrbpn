@@ -68,8 +68,8 @@ try {
 } catch {
   throw new Error('EXPECTED_MIGRATIONS_JSON must be valid JSON');
 }
-if (!Array.isArray(expectedManifest) || expectedManifest.length !== 38) {
-  throw new Error('EXPECTED_MIGRATIONS_JSON must contain the exact 38-entry chain');
+if (!Array.isArray(expectedManifest) || expectedManifest.length !== 39) {
+  throw new Error('EXPECTED_MIGRATIONS_JSON must contain the exact 39-entry chain');
 }
 
 const here = dirname(fileURLToPath(import.meta.url));

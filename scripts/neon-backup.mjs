@@ -36,7 +36,7 @@ export async function captureNeonSnapshot({client,command,environment,source,sig
     await assertNeonRoleBoundaries(client,{database:source.database,role:'simsa_backup'});
     await assertNeonBackupRole(client,{database:source.database,requireIdentity:true});
     const applied=(await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id')).rows;
-    check(applied.length===38 && validateAppliedMigrations(loadMigrations(),applied).length===0,'Source migration history differs from this release');
+    check(applied.length===39 && validateAppliedMigrations(loadMigrations(),applied).length===0,'Source migration history differs from this release');
     const snapshot=(await client.query('SELECT pg_export_snapshot() AS id,clock_timestamp() AS taken_at')).rows[0];
     check(/^[0-9A-F]+-[0-9A-F]+-[0-9]+$/.test(snapshot.id),'Unsafe snapshot identifier');
     const collector=await loadNeonEvidenceSql();

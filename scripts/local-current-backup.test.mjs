@@ -52,7 +52,7 @@ const plain = Buffer.from('PGDMP test-only');
 const archive = encryptBuffer(plain, key, runId, 'archive');
 const evidence = encryptBuffer(Buffer.from('evidence'), key, runId, 'evidence');
 const body = { format: CURRENT_FORMAT, run_id: runId, source: SOURCE, scope: 'database-only',
-  backup_role_membership_closure: 'exact', snapshot_at: new Date().toISOString(), migrations: Array.from({ length: 38 }, () => ({})),
+  backup_role_membership_closure: 'exact', snapshot_at: new Date().toISOString(), migrations: Array.from({ length: 39 }, () => ({})),
   helpers: { collector: '1'.repeat(64) }, archive_sha256: sha256(archive), evidence_sha256: sha256(evidence) };
 test('manifest and both encrypted artifacts must authenticate before restore', () => {
   const sealed = sealManifest(body, key);

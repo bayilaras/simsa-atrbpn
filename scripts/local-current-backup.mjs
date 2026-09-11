@@ -196,7 +196,7 @@ export async function runCurrentBackup(options) {
       requireCondition(/\(PostgreSQL\) 18(?:\.|\s|$)/.test(await command(`${name}-version`, binary(name), ['--version'])), 'All PostgreSQL tools must be version 18');
     }
     const migrations = JSON.parse((await command('migration-manifest', options.python, ['-I', join(repository, helpers[0])])).trim());
-    requireCondition(migrations.length === 38, 'Expected reviewed migration manifest 0000-0037');
+    requireCondition(migrations.length === 39, 'Expected reviewed migration manifest 0000-0038');
     const hashes = await helperHashes();
     const collector = await readFile(join(repository, helpers[1]), 'utf8');
     if (options.action === 'backup') {

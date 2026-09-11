@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { bulkUploadService } from '../services/bulk-upload.service';
+import { ARCHIVE_UPLOAD_MAX_BYTES, archiveUploadError } from '../lib/archive-upload';
 
 export const BULK_UPLOAD_LIMITS = Object.freeze({
     maxFiles: 50,
-    maxFileBytes: 50 * 1024 * 1024,
+    maxFileBytes: ARCHIVE_UPLOAD_MAX_BYTES,
     maxBatchBytes: 100 * 1024 * 1024,
 });
 
@@ -39,10 +40,12 @@ export function getOCRRetryDelayMs(error, now = Date.now()) {
 
 export function validateNewBulkFiles(existingFiles, incomingFiles) {
     const candidates = Array.from(incomingFiles);
-    const pdfFiles = candidates.filter(file => file.type === 'application/pdf');
+    const pdfFiles = candidates.filter(file => file.type === 'application/pdf' && /\.pdf$/i.test(file.name || ''));
     if (pdfFiles.some(file => file.size > BULK_UPLOAD_LIMITS.maxFileBytes)) {
-        return { files: [], error: 'Ukuran satu file tidak boleh melebihi 50 MB' };
+        return { files: [], error: 'Ukuran satu file tidak boleh melebihi 10 MiB' };
     }
+    const invalid = pdfFiles.find(file => archiveUploadError(file));
+    if (invalid) return { files: [], error: archiveUploadError(invalid) };
     if (existingFiles.length + pdfFiles.length > BULK_UPLOAD_LIMITS.maxFiles) {
         return { files: [], error: 'Maksimum 50 file per upload' };
     }

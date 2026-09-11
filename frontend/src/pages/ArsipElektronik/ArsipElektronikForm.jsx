@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { archiveUploadError } from '@/lib/archive-upload'
 import { Loader2, Search, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +12,7 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import api from '@/services/api'
+import { uploadArsipAttachment } from '@/services/arsip-attachment-upload.service'
 import { arsipService } from '@/services/arsip.service'
 import { MEDIA_OPTIONS } from './constants'
 import { useAppConfig } from '@/context/app-config-context'
@@ -77,17 +79,18 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
     const uploadControlledAttachment = async (event) => {
         const file = event.target.files?.[0]
         event.target.value = ''
-        if (!file || !form.arsipId || !capabilities.fileUploads) return
+        if (!file || !form.arsipId || uploading || !capabilities.fileUploads) return
+        const validationError = archiveUploadError(file)
+        if (validationError) { setError(validationError); return }
 
         setUploading(true)
         setError('')
         try {
-            const payload = new FormData()
-            payload.append('file', file)
-            const result = await api.post(`/api/upload/arsip/${form.arsipId}`, payload)
+            const arsipId = form.arsipId
+            const result = await uploadArsipAttachment(arsipId, file)
             const attachment = result.data
             setAttachments(current => [attachment, ...current.filter(item => item.id !== attachment.id)])
-            setForm(current => ({ ...current, fileAttachmentId: attachment.id }))
+            setForm(current => current.arsipId === arsipId ? { ...current, fileAttachmentId: attachment.id } : current)
         } catch (requestError) {
             setError(requestError.message || 'Unggah lampiran gagal')
         } finally {
@@ -99,7 +102,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
 
     return (
         <>
-            <Dialog open={open} onOpenChange={onOpenChange}>
+            <Dialog open={open} onOpenChange={value => { if (!uploading) onOpenChange(value) }}>
                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
                     <DialogHeader>
                         <DialogTitle>Registrasi Arsip Elektronik Terkendali</DialogTitle>
@@ -118,7 +121,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                         <p className="text-muted-foreground">Belum ada arsip dipilih</p>
                                     )}
                                 </div>
-                                <Button type="button" variant="outline" onClick={() => setPickerOpen(true)}>
+                                <Button type="button" variant="outline" disabled={uploading} onClick={() => setPickerOpen(true)}>
                                     <Search className="mr-2 h-4 w-4" /> Cari
                                 </Button>
                             </div>
@@ -146,14 +149,15 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                 <div className="flex items-center gap-2">
                                     <Input
                                         type="file"
-                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif"
+                                        aria-label="Unggah lampiran arsip PDF"
+                                        accept=".pdf,application/pdf"
                                         disabled={uploading || !capabilities.fileUploads}
                                         onChange={uploadControlledAttachment}
                                     />
                                     {uploading && <Loader2 className="h-4 w-4 animate-spin" />}
                                 </div>
                                 <p className="text-xs text-muted-foreground">
-                                    Format, ukuran, dan SHA-256 dihitung otomatis dari byte yang tersimpan; nilai tersebut tidak dapat diketik manual.
+                                    PDF maksimal 10 MiB. Format, ukuran, dan SHA-256 dihitung otomatis dari byte yang tersimpan; nilai tersebut tidak dapat diketik manual.
                                 </p>
                             </div>
                         )}
@@ -246,7 +250,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                         {error && <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => onOpenChange(false)}>Batal</Button>
+                        <Button variant="outline" disabled={uploading} onClick={() => onOpenChange(false)}>Batal</Button>
                         <Button onClick={onSubmit} disabled={!form.fileAttachmentId || uploading}>
                             <Upload className="mr-2 h-4 w-4" /> Registrasikan
                         </Button>

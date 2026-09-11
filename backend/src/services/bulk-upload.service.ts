@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { ARCHIVE_UPLOAD_MAX_BYTES } from '../config/archive-upload.js';
 import { Readable } from 'node:stream';
 import { db } from '../config/database.js';
 import {
@@ -28,7 +29,7 @@ const log = createLogger('BulkUploadService');
 
 export const BULK_UPLOAD_LIMITS = Object.freeze({
     maxFiles: 50,
-    maxFileBytes: 50 * 1024 * 1024,
+    maxFileBytes: ARCHIVE_UPLOAD_MAX_BYTES,
     maxBatchBytes: 100 * 1024 * 1024,
 });
 
@@ -183,11 +184,11 @@ export class BulkUploadService {
         }
 
         files.forEach((file) => {
-            if (file.mimeType !== 'application/pdf') {
+            if (file.mimeType !== 'application/pdf' || !/\.pdf$/i.test(file.fileName)) {
                 errors.push(`File "${file.fileName}" bukan PDF. Hanya file PDF yang diperbolehkan.`);
             }
             if (!file.buffer.length || file.buffer.length > this.MAX_FILE_BYTES) {
-                errors.push(`Ukuran file "${file.fileName}" harus antara 1 byte dan 50 MB.`);
+                errors.push(`Ukuran file "${file.fileName}" harus antara 1 byte dan 10 MiB.`);
             }
             if (file.fileName.length > 255) {
                 errors.push(`Nama file "${file.fileName}" melebihi 255 karakter.`);

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
-import path from 'path';
+import { ARCHIVE_UPLOAD_MAX_BYTES, isPdfUploadMetadata } from '../config/archive-upload.js';
+import { ValidationError } from '../utils/errors.js';
 import { suratKeluarService } from '../services/surat-keluar.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
@@ -32,14 +33,12 @@ const log = createLogger('SuratKeluarRoutes');
 // Keep uploads in memory until the private Blob ingest path accepts them.
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    limits: { fileSize: ARCHIVE_UPLOAD_MAX_BYTES },
     fileFilter: (req, file, cb) => {
-        const allowedTypes = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'];
-        const ext = path.extname(file.originalname).toLowerCase();
-        if (allowedTypes.includes(ext)) {
+        if (isPdfUploadMetadata(file.originalname, file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type'));
+            cb(new ValidationError('Hanya PDF yang diperbolehkan (maks. 10 MiB).'));
         }
     }
 });

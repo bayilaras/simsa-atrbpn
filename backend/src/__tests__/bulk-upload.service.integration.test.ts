@@ -359,13 +359,20 @@ describe('BulkUploadService durable lifecycle', () => {
             subarray: () => Buffer.from('%PDF-'),
         }) as unknown as Buffer;
         const result = bulkUploadService.validateFiles([
-            { fileName: 'one.pdf', mimeType: 'application/pdf', buffer: pretendPdf(50 * 1024 * 1024) },
-            { fileName: 'two.pdf', mimeType: 'application/pdf', buffer: pretendPdf(50 * 1024 * 1024) },
+            ...Array.from({ length: 10 }, (_, index) => ({ fileName: `${index}.pdf`, mimeType: 'application/pdf', buffer: pretendPdf(10 * 1024 * 1024) })),
             { fileName: 'three.pdf', mimeType: 'application/pdf', buffer: pretendPdf(1) },
         ]);
 
         expect(result.valid).toBe(false);
         expect(result.errors).toContain('Ukuran total satu batch tidak boleh melebihi 100 MB.');
+        expect(storageMocks.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('accepts exactly 10 MiB PDF and rejects a larger file or false extension before storage', () => {
+        const buffer = Buffer.alloc(10_485_760); buffer.write('%PDF-1.7');
+        expect(bulkUploadService.validateFiles([{ fileName: 'exact.PDF', mimeType: 'application/pdf', buffer }]).valid).toBe(true);
+        expect(bulkUploadService.validateFiles([{ fileName: 'large.pdf', mimeType: 'application/pdf', buffer: Buffer.concat([buffer, Buffer.from([0])]) }])).toMatchObject({ valid: false, errors: [expect.stringContaining('10 MiB')] });
+        expect(bulkUploadService.validateFiles([{ fileName: 'false.exe', mimeType: 'application/pdf', buffer }]).valid).toBe(false);
         expect(storageMocks.uploadFile).not.toHaveBeenCalled();
     });
 

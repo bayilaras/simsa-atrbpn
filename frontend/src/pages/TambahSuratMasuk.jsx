@@ -1,4 +1,5 @@
 import { buildSuratFormPayload } from '@/lib/surat-form-payload'
+import { archiveUploadError } from '@/lib/archive-upload';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -303,13 +304,9 @@ export default function TambahSuratMasuk() {
         if (saveLockedRef.current) return;
         const file = e.target.files?.[0];
         if (file) {
-            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
-            if (!allowedTypes.includes(file.type)) {
-                setError('Tipe file tidak didukung. Gunakan PDF, DOC, DOCX, JPG, atau PNG.');
-                return;
-            }
-            if (file.size > 10 * 1024 * 1024) {
-                setError('Ukuran file maksimal 10MB');
+            const validationError = archiveUploadError(file);
+            if (validationError) {
+                setError(validationError);
                 return;
             }
             setSelectedFile(file);
@@ -857,7 +854,7 @@ export default function TambahSuratMasuk() {
                                         id="berkas-surat-masuk"
                                         ref={fileInputRef}
                                         type="file"
-                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                        accept=".pdf,application/pdf"
                                         onChange={handleFileSelect}
                                         className="hidden"
                                     />
@@ -913,7 +910,7 @@ export default function TambahSuratMasuk() {
                                                     Seret file ke sini atau klik untuk memilih berkas
                                                 </p>
                                                 <p className="text-xs text-muted-foreground mt-1">
-                                                    PDF, DOC, DOCX, JPG, PNG (maks. 10MB)
+                                                    PDF (maks. 10 MiB)
                                                 </p>
                                             </div>
                                         </div>

@@ -52,7 +52,7 @@ export const clientBlobUploads = pgTable('client_blob_uploads', {
     index('client_blob_uploads_expiry_idx').on(table.status, table.expiresAt),
     check(
         'client_blob_uploads_purpose_check',
-        sql`${table.purpose} in ('surat_masuk', 'surat_keluar', 'regulatory_source')`,
+        sql`${table.purpose} in ('surat_masuk', 'surat_keluar', 'regulatory_source', 'arsip')`,
     ),
     check(
         'client_blob_uploads_status_check',

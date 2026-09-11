@@ -80,7 +80,7 @@ export function authenticateManifest(sealed, key) {
     && body.source.database === SOURCE.database && body.source.systemIdentifier === SOURCE.systemIdentifier
     && body.source.backupUser === SOURCE.backupUser && body.source.major === SOURCE.major
     && body.scope === 'database-only' && body.backup_role_membership_closure === 'exact'
-    && Number.isFinite(Date.parse(body.snapshot_at)) && Array.isArray(body.migrations) && body.migrations.length === 38
+    && Number.isFinite(Date.parse(body.snapshot_at)) && Array.isArray(body.migrations) && body.migrations.length === 39
     && ['archive_sha256', 'evidence_sha256'].every(field => /^[a-f0-9]{64}$/.test(body[field]))
     && body.helpers && Object.values(body.helpers).every(hash => /^[a-f0-9]{64}$/.test(hash)),
   'Manifest does not describe the pinned current local database');

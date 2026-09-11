@@ -315,7 +315,7 @@ async function runLocalDrill(options) {
     }
     const manifest = (await command('migration-manifest', options.python,
       ['-I', join(repository, '.github/scripts/build-migration-manifest.py')])).output.trim();
-    requireCondition(JSON.parse(manifest).length === 38, 'Expected current 0000-0037 manifest');
+    requireCondition(JSON.parse(manifest).length === 39, 'Expected current 0000-0038 manifest');
     const collector = await readFile(join(repository, '.github/scripts/collect-backup-evidence.sql'), 'utf8');
     const backupGuard = extractBackupGuard(await readFile(join(repository, '.github/workflows/backup-cloud-sql.yml'), 'utf8'));
     report.database = `simsa_local_${runId.slice(0, 16)}`;
@@ -361,7 +361,7 @@ async function runLocalDrill(options) {
     await maintenance('seed:all', 4);
     requireCondition(beforeSeedRepeat.equals(await stableSourceEvidence('after-repeated-seed-evidence')),
       'Repeated seed:all changed normalized schema/data evidence');
-    report.steps.push('source-migrated-0037', 'seed-all-repeat-exact-evidence-match', 'exact-backup-role-closure');
+    report.steps.push('source-migrated-0038', 'seed-all-repeat-exact-evidence-match', 'exact-backup-role-closure');
     console.log('Synthetic source migrated, seeded, and least-privilege backup role verified.');
 
     const requireBackend = createRequire(join(repository, 'backend/package.json'));

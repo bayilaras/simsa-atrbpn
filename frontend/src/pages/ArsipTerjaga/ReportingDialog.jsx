@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { useAppConfig } from '@/context/app-config-context'
 import { FileAvailabilityNotice } from '@/components/FileAvailabilityNotice'
+import { archiveUploadError } from '@/lib/archive-upload'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 const LABELS = { draft: 'Draf tercatat', sent: 'Bukti pengiriman tercatat', received: 'Bukti penerimaan tercatat', verified: 'Bukti diverifikasi internal', cancelled: 'Dibatalkan' }
@@ -104,11 +105,15 @@ export default function ReportingDialog({ open, onOpenChange, item, onSaved }) {
                     <FileAvailabilityNotice />
                     {['draft', 'sent'].includes(current.status) && <>
                         <div className="space-y-1"><Label htmlFor="report-file">Unggah lampiran bukti</Label>
-                            <Input id="report-file" type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy || !capabilities.fileUploads} onChange={event => {
+                            <Input id="report-file" type="file" accept=".pdf,application/pdf" disabled={busy || !capabilities.fileUploads} onChange={event => {
                                 const file = event.target.files?.[0]
-                                if (file && capabilities.fileUploads) run(() => arsipTerjagaService.uploadEvidence(item.arsipId, file), 'Lampiran diunggah. Tunggu pemeriksaan antivirus lalu muat ulang bukti.')
                                 event.target.value = ''
+                                if (!file || busy || !capabilities.fileUploads) return
+                                const invalid = archiveUploadError(file)
+                                if (invalid) { setError(invalid); setMessage(''); return }
+                                run(() => arsipTerjagaService.uploadEvidence(item.arsipId, file), 'Lampiran diunggah. Tunggu pemeriksaan antivirus lalu muat ulang bukti.')
                             }} />
+                            <p className="text-sm text-muted-foreground">PDF, maksimal 10 MiB per berkas.</p>
                         </div>
                         <p className="text-sm text-muted-foreground">Hanya lampiran arsip ini yang privat, bersih dari malware, dan sudah diperiksa integritasnya yang dapat dipakai.</p>
                         <div className="space-y-1"><Label htmlFor="report-attachment">Lampiran bukti</Label>

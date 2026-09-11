@@ -1,4 +1,5 @@
 import api from './api';
+import { uploadArsipAttachment } from './arsip-attachment-upload.service';
 
 const BASE_URL = '/api/arsip-terjaga';
 
@@ -51,9 +52,7 @@ export const arsipTerjagaService = {
     createReport(id, data) { return api.post(`${BASE_URL}/${id}/reports`, data); },
     transitionReport(id, reportId, data) { return api.post(`${BASE_URL}/${id}/reports/${reportId}/transitions`, data); },
     uploadEvidence(arsipId, file) {
-        const body = new FormData();
-        body.append('file', file);
-        return api.post(`/api/upload/arsip/${arsipId}`, body);
+        return uploadArsipAttachment(arsipId, file);
     },
     downloadEvidence(attachmentId) {
         return api.get(`/api/files/attachment/${attachmentId}`, { download: 1 }, { responseType: 'blob' });

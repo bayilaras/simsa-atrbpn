@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { ARCHIVE_UPLOAD_MAX_BYTES } from '../config/archive-upload.js';
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../config/database';
 import { allowsLocalRegulatoryBootstrap } from '../config/regulatory-bootstrap';
@@ -44,7 +45,9 @@ import {
 type RuleItem = Record<string, any>;
 type JsonObject = Record<string, unknown>;
 
-export const REGULATORY_SOURCE_MAX_BYTES = 50 * 1024 * 1024;
+export const REGULATORY_SOURCE_MAX_BYTES = ARCHIVE_UPLOAD_MAX_BYTES;
+// The new-upload cap must not make previously retained source evidence unreadable.
+const RETAINED_SOURCE_MAX_BYTES = 50 * 1024 * 1024;
 
 interface VerifiedSourceDocument {
     originalName: string;
@@ -814,7 +817,7 @@ async function readLimitedStream(stream: NodeJS.ReadableStream, maximumBytes: nu
         total += bytes.length;
         if (total > maximumBytes) {
             if (typeof (stream as any).destroy === 'function') (stream as any).destroy();
-            throw new ValidationError('PDF sumber melebihi batas 50 MB.');
+            throw new ValidationError('PDF sumber melebihi batas 10 MiB.');
         }
         chunks.push(bytes);
     }
@@ -829,7 +832,7 @@ async function inspectSourcePdf(
         throw new ValidationError('Ukuran dokumen sumber tidak valid.');
     }
     if (declaredSize > REGULATORY_SOURCE_MAX_BYTES) {
-        throw new ValidationError('PDF sumber melebihi batas 50 MB.');
+        throw new ValidationError('PDF sumber melebihi batas 10 MiB.');
     }
     if (!buffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
         throw new ValidationError('Dokumen sumber harus berupa PDF dengan signature yang valid.');
@@ -870,7 +873,7 @@ async function retrieveAndInspectSourceBlob(
         throw new ValidationError('Ukuran objek private Blob tidak valid.');
     }
     if (Number(metadata.size) > REGULATORY_SOURCE_MAX_BYTES) {
-        throw new ValidationError('PDF sumber melebihi batas 50 MB.');
+        throw new ValidationError('PDF sumber melebihi batas 10 MiB.');
     }
 
     const downloaded = await blobStorageService.downloadFile(blobUrl, {
@@ -966,7 +969,7 @@ export class RegulatoryRuleSetService {
             || metadata.mimeType !== 'application/pdf'
             || !Number.isInteger(metadata.size)
             || Number(metadata.size) <= 0
-            || Number(metadata.size) > REGULATORY_SOURCE_MAX_BYTES
+            || Number(metadata.size) > RETAINED_SOURCE_MAX_BYTES
             || (Number.isInteger(ruleSet.sourceDocumentSizeBytes)
                 && metadata.size !== ruleSet.sourceDocumentSizeBytes)
         ) {

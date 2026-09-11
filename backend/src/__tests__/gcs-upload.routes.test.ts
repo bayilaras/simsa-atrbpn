@@ -80,6 +80,24 @@ describe('GCS direct upload route', () => {
         }));
     });
 
+    it.each([
+        ['picture.png', 'image/png', 1024, 415],
+        ['picture.png', 'application/pdf', 1024, 415],
+        ['archive.pdf', 'application/pdf', 10 * 1024 * 1024 + 1, 413],
+    ])('rejects invalid PDF intent %s/%s/%i before a storage session exists', async (fileName, contentType, sizeBytes, status) => {
+        const response = await request(app()).post('/api/object-uploads')
+            .send({ purpose: 'surat_masuk', fileName, contentType, sizeBytes });
+        expect(response.status).toBe(status);
+        expect(mocks.authorize).not.toHaveBeenCalled();
+        expect(mocks.createSession).not.toHaveBeenCalled();
+    });
+
+    it('allows a PDF intent at exactly 10 MiB', async () => {
+        const response = await request(app()).post('/api/object-uploads')
+            .send({ purpose: 'surat_masuk', fileName: 'archive.PDF', contentType: 'application/pdf', sizeBytes: 10 * 1024 * 1024 });
+        expect(response.status).toBe(201);
+    });
+
     it('authorizes an exact lease before returning a browser resumable session', async () => {
         const response = await request(app())
             .post('/api/object-uploads')
@@ -112,8 +130,8 @@ describe('GCS direct upload route', () => {
         mocks.createSession.mockRejectedValueOnce(new Error('GCS unavailable'));
         const response = await request(app()).post('/api/object-uploads').send({
             purpose: 'surat_keluar',
-            fileName: 'surat.docx',
-            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            fileName: 'surat.pdf',
+            contentType: 'application/pdf',
             sizeBytes: 2048,
         });
 

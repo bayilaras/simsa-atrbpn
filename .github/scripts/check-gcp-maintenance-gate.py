@@ -44,8 +44,8 @@ SERVICE_ACCOUNT_RE = re.compile(
 BACKUP_WORKFLOW = ".github/workflows/backup-cloud-sql.yml"
 MAINTENANCE_WORKFLOW = ".github/workflows/database-maintenance-gcp.yml"
 PREVIEW_BOOTSTRAP_WORKFLOW = ".github/workflows/database-bootstrap-gcp-preview.yml"
-LATEST_MIGRATION = 1788063000000
-EXPECTED_MIGRATION_COUNT = 38
+LATEST_MIGRATION = 1788063600000
+EXPECTED_MIGRATION_COUNT = 39
 EXPECTED_OPERATIONS = [
     "db:roles:bootstrap-initial",
     "db:migrate",
@@ -517,7 +517,7 @@ def validate_maintenance_evidence(
             raise GateFailure(f"reviewed source hash is invalid: {key}")
     journal = summary.get("database_journal") or {}
     if journal.get("count") != EXPECTED_MIGRATION_COUNT or journal.get("latest_created_at") != LATEST_MIGRATION:
-        raise GateFailure("maintenance journal is not complete through migration 0037")
+        raise GateFailure("maintenance journal is not complete through migration 0038")
     if summary.get("migration_manifest_verified") is not True or re.fullmatch(
         r"[0-9a-f]{64}", str(summary.get("migration_manifest_sha256") or "")
     ) is None:
@@ -672,7 +672,7 @@ def validate_preview_bootstrap_evidence(
         raise GateFailure("Preview isolation evidence does not match the sealed database target")
     journal = summary.get("database_journal") or {}
     if journal.get("count") != EXPECTED_MIGRATION_COUNT or journal.get("latest_created_at") != LATEST_MIGRATION:
-        raise GateFailure("Preview journal is not complete through migration 0037")
+        raise GateFailure("Preview journal is not complete through migration 0038")
     if summary.get("migration_manifest_verified") is not True or SHA256_RE.fullmatch(
         str(summary.get("migration_manifest_sha256") or "")
     ) is None:
@@ -1001,7 +1001,7 @@ def run_self_test() -> None:
                 "package_lock_sha256": "2" * 64,
                 "production_merge_review_and_checks": "passed",
             },
-            "database_journal": {"count": 38, "latest_created_at": LATEST_MIGRATION},
+            "database_journal": {"count": 39, "latest_created_at": LATEST_MIGRATION},
             "migration_manifest_verified": True,
             "migration_manifest_sha256": "3" * 64,
             "grant_convergence": "passed",

@@ -148,6 +148,28 @@ const validSuratMasuk = {
 };
 
 describe('surat and attachment route security policy', () => {
+    it('accepts exactly 10 MiB multipart and rejects one byte more before storage', async () => {
+        mocks.attachment.create.mockResolvedValue({ id: 'attachment-boundary', hash: 'hash' });
+        const exact = Buffer.alloc(10_485_760); exact.write('%PDF-1.7');
+        const url = '/api/upload/masuk/550e8400-e29b-41d4-a716-446655440010';
+        const accepted = await request(app).post(url).attach('file', exact, { filename: 'boundary.pdf', contentType: 'application/pdf' });
+        expect(accepted.status).toBe(201);
+        expect(mocks.attachment.create).toHaveBeenCalledOnce();
+        mocks.attachment.create.mockClear();
+        const rejected = await request(app).post(url).attach('file', Buffer.concat([exact, Buffer.from([0])]), { filename: 'boundary.pdf', contentType: 'application/pdf' });
+        expect(rejected.status).toBe(400);
+        expect(mocks.attachment.create).not.toHaveBeenCalled();
+    });
+    it.each([['picture.png', 'image/png', '\x89PNG\r\n\x1a\n'], ['fake.pdf', 'application/pdf', 'not a pdf'], ['truncated.pdf', 'application/pdf', '%PDF']])(
+        'rejects non-PDF multipart %s before storage', async (filename, contentType, content) => {
+            for (const url of ['/api/surat-masuk', '/api/surat-keluar', '/api/upload/masuk/550e8400-e29b-41d4-a716-446655440010']) {
+                const response = await request(app).post(url).attach('file', Buffer.from(content), { filename, contentType });
+                expect(response.status).toBe(400);
+            }
+            expect(mocks.blobUpload).not.toHaveBeenCalled();
+            expect(mocks.attachment.create).not.toHaveBeenCalled();
+        },
+    );
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.role = 'admin_sesditjen';

@@ -6,7 +6,7 @@ import { encryptBuffer, decryptBuffer, sha256, requireCondition as check } from 
 import { loadMigrations } from '../backend/scripts/migrate-database.mjs';
 
 export const NEON_BACKUP_FORMAT = 'simsa-neon-backup-v1';
-export const COLLECTOR_SHA256 = '434c8be339b85237cdf50b87f271e2173656989ec292d26adc36b51c43b22b54';
+export const COLLECTOR_SHA256 = 'a972632f4b5d090e0c7f9baa3655b71b7848198256a68ae98a8410ce7d32ef18';
 const path = value => { check(typeof value === 'string' && isAbsolute(value) && !/[\x00-\x1f\x7f]/.test(value), 'Use an absolute physical path'); return resolve(value); };
 export function parseNeonBackupOperation(args, environment) {
   const [action, ...rest] = args;
@@ -42,7 +42,7 @@ export function parseNeonBackupOperation(args, environment) {
 
 export function migrationManifest() {
   const migrations = loadMigrations();
-  check(migrations.length === 38, 'Migration release changed; review backup compatibility');
+  check(migrations.length === 39, 'Migration release changed; review backup compatibility');
   return migrations.map(m => ({ tag: m.tag, created_at: m.timestamp, accepted_sha256: m.acceptedHashes }));
 }
 export async function loadNeonEvidenceSql() {

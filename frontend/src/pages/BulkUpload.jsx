@@ -227,7 +227,7 @@ export default function BulkUpload() {
                                         Seret dan lepas berkas PDF di sini
                                     </h3>
                                     <p className="text-muted-foreground dark:text-muted-foreground mb-6 max-w-sm">
-                                        atau klik untuk memilih berkas (maks. 50 berkas, 50 MB/berkas, 100 MB total)
+                                        atau klik untuk memilih berkas (maks. 50 berkas, 10 MiB/berkas, 100 MiB total)
                                     </p>
                                     <span aria-hidden="true" className="inline-flex min-h-11 items-center rounded-md border border-blue-200 bg-background px-4 text-sm font-medium text-foreground">
                                         Pilih berkas
