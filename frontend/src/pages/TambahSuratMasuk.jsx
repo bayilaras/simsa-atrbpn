@@ -156,7 +156,9 @@ export default function TambahSuratMasuk() {
 
     // Unsaved changes warning & auto-save draft
     const { setDirty, resetDirty } = useUnsavedChanges();
-    const { saveDraft, clearDraft, restoreDraft, saveStatus } = useAutoSave('tambah-surat-masuk');
+    const { saveDraft, clearDraft, restoreDraft, saveStatus } = useAutoSave(
+        isEditMode ? `edit-surat-masuk-${id}` : 'tambah-surat-masuk'
+    );
 
     // Form state
     const [formData, setFormData] = useState({

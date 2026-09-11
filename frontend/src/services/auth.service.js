@@ -111,6 +111,8 @@ export function createAuthService({
         },
 
         async signOut() {
+            // Drop local drafts immediately, even while remote logout is pending.
+            const storageCleanup = clearStorage();
             let signOutError = null;
             try {
                 if (firebaseMode) await apiClient.post('/api/auth/sign-out');
@@ -123,7 +125,7 @@ export function createAuthService({
                     await firebase.signOut().catch(() => undefined);
                     clearCsrfToken();
                 }
-                await clearStorage();
+                await storageCleanup;
             }
             if (signOutError && firebaseMode) throw signOutError;
         },

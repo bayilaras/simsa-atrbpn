@@ -1,8 +1,8 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
+import { getDraftSessionId, memoryDrafts } from '../lib/memory-drafts';
 
 // Draft metadata can contain personal or classified information. Keep it only in
 // the running tab's JavaScript memory; never persist it to browser storage.
-const memoryDrafts = new Map();
 
 /**
  * Hook to auto-save form data in volatile browser memory as a draft.
@@ -37,6 +37,7 @@ const memoryDrafts = new Map();
  * @param {number} intervalMs - Auto-save interval in milliseconds (default: 30000)
  */
 export function useAutoSave(key, intervalMs = 30000) {
+    const [draftSessionId] = useState(getDraftSessionId);
     const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'saved' | 'restored'
     const pendingDataRef = useRef(null);
     const timerRef = useRef(null);
@@ -44,6 +45,7 @@ export function useAutoSave(key, intervalMs = 30000) {
 
     // Save data only in memory. A refresh intentionally clears the draft.
     const writeDraft = useCallback((data) => {
+        if (draftSessionId !== getDraftSessionId()) return;
         try {
             const payload = {
                 data,
@@ -57,7 +59,7 @@ export function useAutoSave(key, intervalMs = 30000) {
         } catch (err) {
             console.warn('[AutoSave] Failed to save draft:', err);
         }
-    }, [draftKey]);
+    }, [draftKey, draftSessionId]);
 
     // Remove plaintext drafts created by older releases.
     useEffect(() => {
@@ -70,15 +72,17 @@ export function useAutoSave(key, intervalMs = 30000) {
 
     // Queue data for next auto-save cycle
     const saveDraft = useCallback((data) => {
-        pendingDataRef.current = data;
-    }, []);
+        pendingDataRef.current = { draftKey, data };
+    }, [draftKey]);
 
     // Auto-save timer
     useEffect(() => {
         timerRef.current = setInterval(() => {
             if (pendingDataRef.current) {
-                setSaveStatus('saving');
-                writeDraft(pendingDataRef.current);
+                if (pendingDataRef.current.draftKey === draftKey) {
+                    setSaveStatus('saving');
+                    writeDraft(pendingDataRef.current.data);
+                }
                 pendingDataRef.current = null;
             }
         }, intervalMs);
@@ -86,10 +90,11 @@ export function useAutoSave(key, intervalMs = 30000) {
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
         };
-    }, [intervalMs, writeDraft]);
+    }, [draftKey, intervalMs, writeDraft]);
 
     // Restore a draft retained by this tab's current application session.
     const restoreDraft = useCallback(() => {
+        if (draftSessionId !== getDraftSessionId()) return null;
         try {
             const draft = memoryDrafts.get(draftKey);
             if (!draft) return null;
@@ -110,11 +115,11 @@ export function useAutoSave(key, intervalMs = 30000) {
             console.warn('[AutoSave] Failed to restore draft:', err);
             return null;
         }
-    }, [draftKey]);
+    }, [draftKey, draftSessionId]);
 
     // Clear the in-memory draft and any legacy plaintext copy.
     const clearDraft = useCallback(() => {
-        memoryDrafts.delete(draftKey);
+        if (draftSessionId === getDraftSessionId()) memoryDrafts.delete(draftKey);
         try {
             window.localStorage?.removeItem(draftKey);
         } catch {
@@ -122,12 +127,12 @@ export function useAutoSave(key, intervalMs = 30000) {
         }
         pendingDataRef.current = null;
         setSaveStatus(null);
-    }, [draftKey]);
+    }, [draftKey, draftSessionId]);
 
     // Check if a draft exists
     const hasDraft = useCallback(() => {
-        return memoryDrafts.has(draftKey);
-    }, [draftKey]);
+        return draftSessionId === getDraftSessionId() && memoryDrafts.has(draftKey);
+    }, [draftKey, draftSessionId]);
 
     return {
         saveDraft,
