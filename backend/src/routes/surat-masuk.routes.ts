@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
 import multer from 'multer';
 import { ARCHIVE_UPLOAD_MAX_BYTES, isPdfUploadMetadata } from '../config/archive-upload.js';
 import { ValidationError } from '../utils/errors.js';
@@ -297,6 +298,7 @@ router.post('/',
             // The committed surat, client lease, canonical attachment, audit,
             // and outbox now own the locator atomically.
             requestCreatedBlobUrl = null;
+            if (filePath) scheduleMalwareScanWake();
 
             res.status(201).json({ success: true, data: sanitizeSuratRecord(result, 'surat_masuk') });
         } catch (error) {
@@ -445,6 +447,7 @@ router.put('/:id', validateIdParam(),
 
             requestCreatedBlobUrl = null;
 
+            if (shouldRegisterAttachment) scheduleMalwareScanWake();
             res.json({ success: true, data: sanitizeSuratRecord(result, 'surat_masuk') });
         } catch (error: any) {
             await deleteRequestCreatedBlob(requestCreatedBlobUrl, {

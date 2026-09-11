@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
 import multer from 'multer';
 import { ARCHIVE_UPLOAD_MAX_BYTES, isPdfUploadMetadata } from '../config/archive-upload.js';
 import { ValidationError } from '../utils/errors.js';
@@ -275,6 +276,7 @@ router.post('/',
 
             requestCreatedBlobUrl = null;
 
+            if (filePath) scheduleMalwareScanWake();
             res.status(201).json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error) {
             await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
@@ -434,6 +436,7 @@ router.put('/:id', validateIdParam(),
 
             requestCreatedBlobUrl = null;
 
+            if (shouldRegisterAttachment) scheduleMalwareScanWake();
             res.json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error: any) {
             await deleteRequestCreatedBlob(requestCreatedBlobUrl, {

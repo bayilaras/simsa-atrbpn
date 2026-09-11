@@ -150,6 +150,33 @@ describe('authorized GCS file access', () => {
         expect(mocks.downloadFile).toHaveBeenCalledWith(locator, { generation, abortSignal: expect.any(AbortSignal) });
     });
 
+    it.each([['not_scanned', 'pending'], ['infected', 'blocked'], ['scan_error', 'blocked']])('returns safe %s quarantine guidance without reading bytes', async (malwareScanStatus, expected) => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, malwareScanStatus }]));
+        const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(423);
+        expect(response.body.scanState).toBe(expected);
+        expect(JSON.stringify(response.body)).not.toContain(locator);
+        expect(mocks.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('does not leak scan state when the record ACL denies access', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, malwareScanStatus: 'infected' }]));
+        mocks.accessCheck.mockResolvedValue({ exists: true, allowed: false });
+        const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(404);
+        expect(response.body).not.toHaveProperty('scanState');
+        expect(mocks.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('uses the matching surat registration instead of another attachment status', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ filePath: `blob:${locator}`, fileName: 'final.pdf' }]))
+            .mockReturnValueOnce(unrestrictedRows([
+                { ...attachment, fileUrl: 'gs://simsa-final/another.pdf', malwareScanStatus: 'not_scanned' },
+                { ...attachment, malwareScanStatus: 'infected' },
+            ]));
+        const response = await request(app).get(`/api/files/surat_masuk/${attachment.entityId}`).expect(423);
+        expect(response.body.scanState).toBe('blocked');
+        expect(mocks.downloadFile).not.toHaveBeenCalled();
+    });
+
     it('fails closed and destroys the provider stream when audit persistence fails', async () => {
         const stream = Readable.from([Buffer.from('%PDF-must-not-leak')]);
         const destroy = vi.spyOn(stream, 'destroy');

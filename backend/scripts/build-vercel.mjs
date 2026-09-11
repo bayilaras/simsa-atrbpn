@@ -21,3 +21,17 @@ if (result.error || result.status !== 0) throw new Error('Backend Vercel build f
 await build({ entryPoints: [join(project, 'lib/vercel-runtime.mjs')],
     outfile: join(output, 'vercel-runtime.js'), bundle: true, platform: 'node',
     format: 'esm', target: 'node24' });
+await build({ entryPoints: [join(project, 'lib/internal-malware-scan-runtime.mjs')],
+    outfile: join(output, 'internal-malware-scan-runtime.js'), bundle: true,
+    platform: 'node', format: 'esm', target: 'node24' });
+await build({ entryPoints: [join(project, 'src/workers/malware-scan-on-demand.ts'),
+    join(project, 'src/workers/native-clamav-process.ts')], outdir: join(output, 'workers'),
+    bundle: true, packages: 'external', platform: 'node', format: 'esm', target: 'node24' });
+// Never refresh/download native assets during a default Preview build.
+if (process.env.VERCEL_ENV === 'production' && process.env.CLAMAV_TRANSPORT === 'native'
+    && process.env.MALWARE_SCAN_WORKER_RUNTIME === 'on-demand') {
+    const native = spawnSync(process.execPath, [join(project, 'scripts/build-native-clamav.mjs')], {
+        cwd: project, stdio: 'inherit', windowsHide: true, shell: false,
+    });
+    if (native.error || native.status !== 0) throw new Error('Native antivirus packaging failed');
+}

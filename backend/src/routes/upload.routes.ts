@@ -3,7 +3,8 @@ import multer from 'multer';
 import { fileAttachmentService } from '../services/file-attachment.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
-import { uploadLimiter } from '../middlewares/rate-limiter.middleware';
+import { uploadLimiter, sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
+import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
 import { createLogger } from '../utils/logger';
 import { uuidParamValidator } from '../middlewares/validate.middleware';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
@@ -108,6 +109,7 @@ router.post(
                 const result = await arsipAttachmentUploadService.finalize(suratId, req.body, {
                     userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
                 });
+                scheduleMalwareScanWake();
                 return res.status(result.reused ? 200 : 201).json({
                     success: true, data: publicAttachment(result.attachment), hash: result.attachment.sha256,
                     reused: result.reused, message: 'Lampiran tercatat dalam karantina. Tunggu pemeriksaan malware dan integritas.',
@@ -137,6 +139,7 @@ router.post(
                 ipAddress: req.ip,
             });
 
+            scheduleMalwareScanWake();
             res.status(201).json({
                 success: true,
                 data: publicAttachment(attachment),
@@ -152,6 +155,27 @@ router.post(
         }
     }
 );
+
+// Recovery wakes the durable queue, never a client-selected job or locator.
+router.post('/:suratType/:suratId/scan', authMiddleware, canWriteMiddleware(), sensitiveLimiter,
+    async (req: AuthRequest, res: Response) => {
+        try {
+            const entityType = toRecordEntityType(req.params.suratType as string);
+            if (!entityType || Object.keys(req.query).length || (req.body != null
+                && (typeof req.body !== 'object' || Array.isArray(req.body) || Object.keys(req.body).length))) {
+                return res.status(400).json({ success: false, code: 'INVALID_SCAN_RECOVERY_REQUEST' });
+            }
+            const access = await recordAccessService.check(req.user, entityType, req.params.suratId as string);
+            if (!access.exists || !access.allowed) return res.status(404).json({ error: 'Record not found' });
+            if (!scheduleMalwareScanWake()) return res.status(503).json({ success: false,
+                code: 'MALWARE_SCAN_WAKE_UNAVAILABLE', message: 'Pemindaian belum dapat dijadwalkan. Berkas tetap menunggu pemeriksaan.' });
+            return res.status(202).json({ success: true, status: 'pending',
+                message: 'Pemindaian dijadwalkan. Status berkas akan diperbarui setelah pemeriksaan selesai.' });
+        } catch {
+            return res.status(503).json({ success: false, code: 'MALWARE_SCAN_WAKE_UNAVAILABLE',
+                message: 'Pemindaian belum dapat dijadwalkan. Berkas tetap menunggu pemeriksaan.' });
+        }
+    });
 
 // Get attachments for a surat
 router.get('/:suratType/:suratId', authMiddleware, async (req: AuthRequest, res: Response) => {

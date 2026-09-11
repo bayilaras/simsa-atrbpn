@@ -1,6 +1,13 @@
 # Operasi Antivirus Bitstream SIMSA
 
-SIMSA memakai protokol resmi ClamAV `clamd` TCP `INSTREAM`. Berkas tetap berada
+SIMSA mendukung worker ClamAV TCP untuk instalasi persisten dan adaptor native
+sesuai permintaan untuk Vercel. Konfigurasi, isolasi akun dan recovery Vercel ada
+di [panduan Vercel dan Neon](DEPLOY_VERCEL_NEON.md#antivirus-native-sesuai-permintaan).
+Adaptor native memakai executable resmi, definisi bertanda tangan yang diperbarui
+setelah 24 jam, deadline serta batas memori; Preview aplikasi tidak menjalankannya.
+Aktivasi Production memerlukan hasil uji cloud lengkap, bukan hanya unit test.
+
+Bagian TCP berikut memakai protokol resmi ClamAV `clamd` `INSTREAM`. Berkas tetap berada
 dalam karantina sampai `clamd` mengembalikan respons persis `stream: OK` dan
 SHA-256 serta ukuran hasil baca ulang cocok dengan baseline ingest. Respons
 ambigu, timeout, object storage gagal, hash berubah, atau scanner nonaktif tidak

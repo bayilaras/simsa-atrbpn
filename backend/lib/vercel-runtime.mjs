@@ -70,6 +70,13 @@ export function configureVercelMetadata(source) {
 }
 
 export async function initializeSimsaVercelHandler({ environment = process.env, loadApp, now } = {}) {
+    // Only the separate, authenticated worker function may activate this login.
+    delete environment.MALWARE_WORKER_DATABASE_URL;
+    delete environment.PREVIEW_MALWARE_WORKER_DATABASE_URL;
+    if (environment.VERCEL_ENV !== 'production') {
+        delete environment.MALWARE_SCAN_DISPATCH_TOKEN;
+        delete environment.PREVIEW_MALWARE_SCAN_DISPATCH_TOKEN;
+    }
     const optIn = environment.SIMSA_VERCEL_METADATA_ENABLED;
     if (optIn === undefined || optIn === '' || optIn === 'false') {
         return initializeVercelHandler({ environment, loadApp, now });

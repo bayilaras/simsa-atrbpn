@@ -14,7 +14,7 @@ const holder = vi.hoisted(() => ({ db: null as any, download: vi.fn(), upload: v
 vi.mock('../config/database', () => ({ get db() { return holder.db; } }));
 vi.mock('../services/blob-storage.service', () => ({ blobStorageService: { downloadFile: holder.download, uploadUntrustedFile: holder.upload } }));
 vi.mock('../middlewares/auth.middleware', () => ({ authMiddleware: (req: any, _res: any, next: any) => { req.user = { id: '10000000-0000-4000-8000-000000000001', email: 'stale@example.test', role: 'admin_dirjen', unitKerjaId: 'ditjen' }; next(); } }));
-vi.mock('../middlewares/rate-limiter.middleware', () => ({ uploadLimiter: (_req: any, _res: any, next: any) => next() }));
+vi.mock('../middlewares/rate-limiter.middleware', () => ({ uploadLimiter: (_req: any, _res: any, next: any) => next(), sensitiveLimiter: (_req: any, _res: any, next: any) => next() }));
 let database: PGlite;
 let service: typeof import('../services/arsip-attachment-upload.service').arsipAttachmentUploadService;
 let audit: typeof import('../services/audit-log.service').default;

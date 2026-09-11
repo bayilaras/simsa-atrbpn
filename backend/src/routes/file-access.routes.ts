@@ -8,7 +8,7 @@ import { validateIdParam } from '../middlewares/validate.middleware';
 import { auditLogService } from '../services/audit-log.service';
 import { blobStorageService } from '../services/blob-storage.service';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
-import { isFileReleased } from '../services/file-release-policy.js';
+import { isFileReleased, quarantinedFileScanState } from '../services/file-release-policy.js';
 import { createLogger } from '../utils/logger';
 import {
     normalizeStoredObjectLocator,
@@ -184,6 +184,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             if (!isFileReleased(attachment)) {
                 return res.status(423).json({
                     error: 'File quarantined',
+                    scanState: quarantinedFileScanState(attachment),
                     message: 'Bitstream belum dinyatakan bersih dan utuh oleh kontrol ingest.',
                 });
             }
@@ -235,15 +236,17 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 eq(fileAttachments.entityType, entityType),
                 eq(fileAttachments.entityId, entityId),
             ));
-        const releasedRegistration = registrations.find((registration) => {
+        const matchingRegistrations = registrations.filter((registration) => {
             const registeredLocator = normalizeBlobLocator(
                 registration.fileUrl || registration.driveFileId,
             );
-            return registeredLocator === locator && isFileReleased(registration);
+            return registeredLocator === locator;
         });
+        const releasedRegistration = matchingRegistrations.find(isFileReleased);
         if (!releasedRegistration) {
             return res.status(423).json({
                 error: 'File quarantined',
+                scanState: matchingRegistrations.length === 1 ? quarantinedFileScanState(matchingRegistrations[0]) : 'unavailable',
                 message: 'Bitstream harus diregistrasi, dipindai malware, dan memiliki baseline hash.',
             });
         }

@@ -70,7 +70,7 @@ function withFixture(action) {
         // running the exact wrappers and real npm lifecycle, including failure.
         const bundler = path.join(directory, 'backend/node_modules/esbuild'); mkdirSync(bundler, { recursive: true });
         writeFileSync(path.join(bundler, 'package.json'), '{"type":"module","exports":"./index.js"}');
-        writeFileSync(path.join(bundler, 'index.js'), `import{writeFileSync,readFileSync}from'node:fs';import{dirname,join}from'node:path';import assert from'node:assert/strict';export async function build(options){assert.equal(readFileSync(join(dirname(options.outfile),'../lifecycle.log'),'utf8'),'prebuild\\nbuild\\npostbuild\\n');writeFileSync(options.outfile,'// fixture bundled after npm lifecycle');}`);
+        writeFileSync(path.join(bundler, 'index.js'), `import{writeFileSync,readFileSync,mkdirSync}from'node:fs';import{dirname,join,basename}from'node:path';import assert from'node:assert/strict';export async function build(options){const root=options.outdir?join(options.outdir,'../..'):join(dirname(options.outfile),'..');assert.equal(readFileSync(join(root,'lifecycle.log'),'utf8'),'prebuild\\nbuild\\npostbuild\\n');const outputs=options.outfile?[options.outfile]:options.entryPoints.map(entry=>join(options.outdir,basename(entry).replace(/\\.ts$/,'.js')));for(const file of outputs){mkdirSync(dirname(file),{recursive:true});writeFileSync(file,'// fixture bundled after npm lifecycle');}}`);
         const environment = { PATH: [path.dirname(process.execPath), process.env.PATH ?? process.env.Path ?? ''].join(path.delimiter),
             HOME: directory, USERPROFILE: directory, APPDATA: directory, LOCALAPPDATA: directory,
             TEMP: directory, TMP: directory, NPM_CONFIG_USERCONFIG: path.join(directory, 'empty.npmrc'),
@@ -104,7 +104,14 @@ for (const [wrapper, args, projects, output] of [
         assert.equal(readFileSync(path.join(directory, project, 'lifecycle.log'), 'utf8'), 'prebuild\nbuild\npostbuild\n');
         assert.equal(existsSync(path.join(directory, project, output, 'app.js')), true);
     }
-    if (wrapper.startsWith('backend/')) assert.equal(existsSync(path.join(directory, 'backend/dist-vercel/vercel-runtime.js')), true);
+    if (wrapper.startsWith('backend/')) {
+        for (const artifact of ['vercel-runtime.js', 'internal-malware-scan-runtime.js',
+            'workers/malware-scan-on-demand.js', 'workers/native-clamav-process.js']) {
+            assert.equal(existsSync(path.join(directory, 'backend/dist-vercel', artifact)), true);
+        }
+        assert.equal(existsSync(path.join(directory, 'backend/native-clamav-assets')), false,
+            'default build must not provision native assets');
+    }
 }));
 test('a failing npm prebuild aborts the wrapper before build or manifest verification', () => withFixture(({ directory, environment, run }) => {
     environment.FAIL_PREBUILD = 'true';

@@ -9,7 +9,17 @@
     },
     "buildCommand": "node scripts/build-vercel.mjs",
     "installCommand": "npm ci --include=dev",
+    "functions": {
+        "api/internal-malware-scan.js": {
+            "maxDuration": 300,
+            "includeFiles": "{dist-vercel/workers,native-clamav-assets}/**"
+        }
+    },
     "rewrites": [
+        {
+            "source": "/api/internal-malware-scan",
+            "destination": "/api/internal-malware-scan.js"
+        },
         {
             "source": "/(.*)",
             "destination": "/api/index.js"

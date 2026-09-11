@@ -32,6 +32,7 @@ const state = vi.hoisted(() => ({
         activate: vi.fn(),
     },
     audit: vi.fn(),
+    wake: vi.fn(),
 }));
 
 vi.mock('../middlewares/auth.middleware', () => ({
@@ -58,6 +59,7 @@ vi.mock('../services/regulatory-rule-set.service', () => {
 vi.mock('../services/audit-log.service', () => ({
     default: { logActionOrThrow: state.audit },
 }));
+vi.mock('../services/malware-scan-dispatch.service.js', () => ({ scheduleMalwareScanWake: state.wake }));
 
 const { default: router } = await import('../routes/regulatory-rule-set.routes');
 
@@ -83,6 +85,14 @@ const draftRuleSet = {
     status: 'draft',
     effectiveFrom: '2026-08-26',
 };
+
+function uploadSource(mode: 'multipart' | 'blob') {
+    return mode === 'multipart'
+        ? request(app).post(`/regulatory-rule-sets/${ruleSetId}/source-document/verify`)
+            .attach('file', Buffer.from('%PDF-1.7\n%%EOF'), { filename: 'peraturan.pdf', contentType: 'application/pdf' })
+        : request(app).post(`/regulatory-rule-sets/${ruleSetId}/source-document/verify-blob`)
+            .send({ blobUrl: `https://store.private.blob.vercel-storage.com/regulatory-sources/${ruleSetId}/peraturan-abc.pdf`, originalFileName: 'peraturan.pdf' });
+}
 
 describe('regulatory rule-set routes', () => {
     beforeEach(() => {
@@ -127,6 +137,7 @@ describe('regulatory rule-set routes', () => {
             validation: { valid: true },
         });
         state.audit.mockResolvedValue(undefined);
+        state.wake.mockReset().mockReturnValue(true);
     });
 
     it('allows authenticated readers to list and get the active edition', async () => {
@@ -374,6 +385,7 @@ describe('regulatory rule-set routes', () => {
             .expect(400);
 
         expect(state.service.verifySourceDocument).not.toHaveBeenCalled();
+        expect(state.wake).not.toHaveBeenCalled();
     });
 
     it('verifies a rule-set-bound private Blob through the server', async () => {
@@ -389,6 +401,48 @@ describe('regulatory rule-set routes', () => {
             state.user.id,
             expect.objectContaining({ actorEmail: state.user.email }),
         );
+    });
+
+    it.each(['multipart', 'blob'] as const)('wakes the durable queue only after %s source registration commits without declaring it clean', async (mode) => {
+        let finish!: () => void;
+        let started!: () => void;
+        const entered = new Promise<void>(resolve => { started = resolve; });
+        const committed = new Promise<void>(resolve => { finish = resolve; });
+        const service = mode === 'multipart' ? state.service.verifySourceDocument : state.service.verifySourceDocumentFromBlob;
+        service.mockImplementationOnce(async () => {
+            started();
+            await committed;
+            return { ruleSet: { ...draftRuleSet, sourceDocumentVerifiedAt: null }, sourceDocument: { malwareScanStatus: 'not_scanned' } };
+        });
+        const pending = uploadSource(mode).then(response => response);
+        await entered;
+        expect(state.wake).not.toHaveBeenCalled();
+        finish();
+        const response = await pending;
+        expect(response.status).toBe(200);
+        expect(state.wake).toHaveBeenCalledExactlyOnceWith();
+        expect(response.body.data).toMatchObject({ ruleSet: { sourceDocumentVerifiedAt: null }, sourceDocument: { malwareScanStatus: 'not_scanned' } });
+    });
+
+    it.each(['multipart', 'blob'] as const)('retains successful %s registration when on-demand wake is unavailable', async (mode) => {
+        state.wake.mockReturnValue(false);
+        const response = await uploadSource(mode).expect(200);
+        expect(response.body).toMatchObject({ success: true, data: { ruleSet: draftRuleSet } });
+        expect(state.wake).toHaveBeenCalledOnce();
+    });
+
+    it.each(['multipart', 'blob'] as const)('never wakes the queue when %s source registration rejects', async (mode) => {
+        const service = mode === 'multipart' ? state.service.verifySourceDocument : state.service.verifySourceDocumentFromBlob;
+        service.mockRejectedValueOnce(new Error('Source registration rejected'));
+        await uploadSource(mode).expect(500);
+        expect(state.wake).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid Blob command before registration or queue wake', async () => {
+        await request(app).post(`/regulatory-rule-sets/${ruleSetId}/source-document/verify-blob`)
+            .send({ blobUrl: 'not-a-url', originalFileName: 'peraturan.pdf' }).expect(400);
+        expect(state.service.verifySourceDocumentFromBlob).not.toHaveBeenCalled();
+        expect(state.wake).not.toHaveBeenCalled();
     });
 
     it('reports audit-chain integrity through a read-only endpoint', async () => {

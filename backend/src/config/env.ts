@@ -50,7 +50,7 @@ export const env = {
     COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || '',
 };
 
-export type SimsaRuntime = 'api' | 'malware-worker' | 'srikandi-worker';
+export type SimsaRuntime = 'api' | 'malware-worker' | 'malware-on-demand' | 'srikandi-worker';
 
 function validateFrontendUrl(source: NodeJS.ProcessEnv): void {
     const raw = source.FRONTEND_URL?.trim() || 'http://localhost:3000';
@@ -194,7 +194,7 @@ export function validateRuntimeEnv(
     }
 
     const runtimeProfile = loadAppProfile(source);
-    if (runtime !== 'malware-worker') {
+    if (runtime !== 'malware-worker' && runtime !== 'malware-on-demand') {
         validateAppProfileEnvironment(runtimeProfile, source);
     }
 
@@ -226,12 +226,15 @@ export function validateRuntimeEnv(
         },
     );
 
-    if (runtime === 'malware-worker') {
-        if (source.VERCEL) {
+    if (runtime === 'malware-worker' || runtime === 'malware-on-demand') {
+        if (runtime === 'malware-worker' && source.VERCEL) {
             throw new Error('The malware scan worker requires a persistent runtime and cannot run as a Vercel function');
         }
-        if (runtimeMalwareConfig.worker.runtime !== 'external') {
+        if (runtime === 'malware-worker' && runtimeMalwareConfig.worker.runtime !== 'external') {
             throw new Error('Set MALWARE_SCAN_WORKER_RUNTIME=external for the dedicated worker process');
+        }
+        if (runtime === 'malware-on-demand' && (runtimeMalwareConfig.worker.runtime !== 'on-demand' || runtimeMalwareConfig.transport !== 'native')) {
+            throw new Error('The on-demand entrypoint requires native ClamAV and MALWARE_SCAN_WORKER_RUNTIME=on-demand');
         }
         if (runtimeMalwareConfig.mode !== 'clamav' || !runtimeMalwareConfig.workerEnabled) {
             throw new Error(

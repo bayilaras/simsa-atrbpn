@@ -10,6 +10,7 @@ import {
     uuidParamValidator,
 } from '../middlewares/validate.middleware';
 import auditLogService from '../services/audit-log.service';
+import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
 import regulatoryRuleSetService, {
     RegulatoryRuleSetValidationError,
 } from '../services/regulatory-rule-set.service';
@@ -232,6 +233,9 @@ router.post(
                 req.user?.id,
                 auditContext(req),
             );
+            // The service has committed a quarantined source; wake is only an
+            // accelerator and cannot turn ingest evidence into a clean verdict.
+            scheduleMalwareScanWake();
             res.json({ success: true, data });
         } catch (error) {
             next(error);
@@ -252,6 +256,7 @@ router.post(
                 req.user?.id,
                 auditContext(req),
             );
+            scheduleMalwareScanWake();
             res.json({ success: true, data });
         } catch (error) {
             next(error);

@@ -10,6 +10,7 @@ import { getSrikandiConfigurationStatus, srikandiConfig } from '../config/srikan
 import type { OperationalWorker } from '../db/schema/operational-heartbeats.js';
 import { blobStorageService } from './blob-storage.service.js';
 import { createLogger } from '../utils/logger.js';
+import { isCurrentMalwareEngineEvidence } from './malware-scanner.service.js';
 
 const log = createLogger('ReadinessService');
 
@@ -467,6 +468,21 @@ export function evaluateWorkerReadiness(
     };
 }
 
+export function evaluateOnDemandMalwareReadiness(rows: HeartbeatRow[], now: number) {
+    const candidates = rows.filter(row => row.worker === 'malware-scan')
+        .sort((left, right) => new Date(right.last_seen_at).getTime() - new Date(left.last_seen_at).getTime());
+    const row = candidates[0];
+    const seen = row ? new Date(row.last_seen_at).getTime() : NaN;
+    const proof = row?.details?.engineEvidence;
+    if (!row || row.status !== 'running' || row.details?.runtime !== 'on-demand'
+        || !Number.isFinite(seen) || seen > now || !isCurrentMalwareEngineEvidence(proof, now)
+        || Date.parse(proof.definitionsVerifiedAt) > seen) {
+        return { required: true, state: 'not_ready' as RuntimeState, reason: 'on_demand_verification_missing_or_expired' };
+    }
+    return { required: true, state: 'ready' as RuntimeState, runtime: 'on-demand',
+        lastSeenAt: new Date(seen).toISOString(), definitionsExpiresAt: proof.definitionsExpiresAt };
+}
+
 export async function collectReadiness(
     dependencies: ReadinessDependencies = defaultDependencies,
 ) {
@@ -522,9 +538,11 @@ export async function collectReadiness(
 
     const malwareRequired = !storageDisabled && malwareScanConfig.mode === 'clamav'
         && malwareScanConfig.workerEnabled
-        && malwareScanConfig.worker.runtime === 'external';
+        && ['external', 'on-demand'].includes(malwareScanConfig.worker.runtime);
     const malwareWorker = heartbeatError && malwareRequired
         ? { required: true, state: 'not_ready' as RuntimeState, reason: 'heartbeat_query_failed' }
+        : malwareRequired && malwareScanConfig.worker.runtime === 'on-demand'
+            ? evaluateOnDemandMalwareReadiness(heartbeatRows, dependencies.now())
         : evaluateWorkerReadiness(
             heartbeatRows,
             'malware-scan',
@@ -566,6 +584,8 @@ export async function collectReadiness(
                 ? { state: 'disabled', runtime: embeddedScanner }
                 : malwareScanConfig.worker.runtime === 'external'
                     ? { state: 'delegated_to_worker' }
+                    : malwareScanConfig.worker.runtime === 'on-demand'
+                        ? { state: 'on_demand', runtime: malwareWorker }
                     : { state: embeddedScanner.ready ? 'ready' : 'not_ready', runtime: embeddedScanner },
             malwareWorker,
             srikandiWorker,

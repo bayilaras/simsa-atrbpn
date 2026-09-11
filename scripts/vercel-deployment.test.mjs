@@ -11,9 +11,17 @@ test('Vercel routes explicitly use the gated Node function and Fluid Compute', (
     assert.equal(config.framework, null);
     assert.equal(config.fluid, true);
     assert.equal(config.buildCommand, 'node scripts/build-vercel.mjs');
-    assert.deepEqual(config.rewrites, [{ source: '/(.*)', destination: '/api/index.js' }]);
-    assert.deepEqual(readdirSync(new URL('../backend/api/', import.meta.url)).filter(name => !name.startsWith('.')), ['index.js'],
+    assert.deepEqual(config.rewrites, [
+        { source: '/api/internal-malware-scan', destination: '/api/internal-malware-scan.js' },
+        { source: '/(.*)', destination: '/api/index.js' },
+    ]);
+    assert.equal(config.functions['api/internal-malware-scan.js'].maxDuration, 300);
+    assert.equal(config.functions['api/internal-malware-scan.js'].includeFiles, '{dist-vercel/workers,native-clamav-assets}/**');
+    assert.deepEqual(readdirSync(new URL('../backend/api/', import.meta.url)).filter(name => !name.startsWith('.')), ['index.js', 'internal-malware-scan.js'],
         'named-only helpers must not be discovered as bare Vercel functions');
+    const workerEntry = readFileSync(new URL('../backend/api/internal-malware-scan.js', import.meta.url), 'utf8');
+    assert.match(workerEntry, /createInternalMalwareScanHandler/);
+    assert.match(workerEntry, /loadWorker: \(\) => import\(/, 'worker imports must remain behind authentication');
 });
 function production(overrides = {}) {
     return { ...cloudMetadataEnvironment, VERCEL: '1', VERCEL_ENV: 'production',

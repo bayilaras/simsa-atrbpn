@@ -29,6 +29,42 @@ Rilis unggah langsung arsip memakai migrasi `0038_arsip_direct_upload`, sehingga
 
 Konfigurasi manual tersebut **masih memerlukan private Blob, database Production yang benar, serta antivirus cloud yang telah diuji**. Flag opsional tidak membuka berkas karantina dan bukan pengganti scanner. POC ClamAV terpisah hanya memvalidasi kelayakan runtime; tidak memperbarui status berkas aplikasi. Jangan mengaktifkan `SIMSA_VERCEL_METADATA_ENABLED` untuk mengklaim arsip digital aktif.
 
+## Antivirus native sesuai permintaan
+
+Implementasi ini memakai satu fungsi Vercel terpisah untuk satu pekerjaan pemindaian. Belum boleh dinyatakan aktif sebelum uji cloud lengkap lulus. Konfigurasi backend Production untuk jalur ini:
+
+```dotenv
+NODE_ENV=production
+APP_PROFILE=internal
+SIMSA_APP_MODE=full
+SIMSA_CLOUD_PLATFORM=local
+AUTH_PROVIDER=better-auth
+OBJECT_STORAGE_PROVIDER=vercel-blob
+MALWARE_SCANNER_MODE=clamav
+CLAMAV_TRANSPORT=native
+MALWARE_SCAN_WORKER_ENABLED=true
+MALWARE_SCAN_WORKER_RUNTIME=on-demand
+MALWARE_SCAN_BATCH_SIZE=1
+MALWARE_SCAN_STALE_AFTER_MS=300000
+MALWARE_SCAN_DOWNLOAD_TIMEOUT_MS=30000
+CLAMAV_SCAN_TIMEOUT_MS=200000
+CLAMAV_MAX_STREAM_BYTES=10485760
+SIMSA_BULK_OCR_ENABLED=false
+SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED=false
+SRIKANDI_ENABLED=false
+GOOGLE_OAUTH_ENABLED=false
+```
+
+Flag `SIMSA_VERCEL_METADATA_ENABLED` harus tidak aktif. Simpan `DATABASE_URL` untuk `simsa_api`, `BETTER_AUTH_SECRET`, token **store Blob privat**, `MALWARE_WORKER_DATABASE_URL` untuk `simsa_worker`, dan `MALWARE_SCAN_DISPATCH_TOKEN` acak minimal 43 karakter base64url hanya pada environment Production backend. Akun API dan worker harus menunjuk database serta endpoint Neon direct yang sama. Jangan memberikan kredensial migrator/owner kepada runtime. `FRONTEND_URL` dan `BETTER_AUTH_URL` menunjuk origin frontend HTTPS yang sama; frontend memproksi API ke backend dan tidak menerima rahasia database/worker melalui `VITE_*`.
+
+Login Neon worker bersifat opsional dan tidak mengubah grant tabel yang sudah ditinjau. `scripts/neon-worker.mjs provision --apply` memerlukan env privat dengan pin target, admin terpisah dan `NEON_WORKER_DATABASE_URL`; perintah menolak akun worker yang sudah ada dan tidak mereset password. `verify` menggunakan akun worker untuk memeriksa identitas dan batas akses. Setelah pemulihan database pada target baru, provision kembali akun ini memakai kredensial baru sebelum mengaktifkan worker; kredensial runtime tidak disalin ke backup database.
+
+Fungsi `/api/internal-malware-scan` menolak Preview sebelum membaca rahasia, memeriksa token internal sebelum mengimpor database/engine, lalu memakai koneksi `simsa_worker`. Handler API biasa menghapus variabel koneksi worker sebelum memuat aplikasi. Request worker menggunakan OIDC **Trusted Sources** untuk proyek dan environment yang sama serta token internal terpisah; jangan menonaktifkan Deployment Protection. Konfigurasi self-project `simsa-backend` telah diperiksa di dashboard pada 12 September 2026 tanpa perubahan akses.
+
+Upload yang telah commit membangunkan worker melalui `waitUntil`. Antrean tetap disimpan dalam database; `waitUntil` bukan antrean persisten. Advisory lock membatasi pemindaian menjadi satu pekerjaan lintas instance dan hasil hanya diterapkan bila lease, locator, generation, hash, ukuran serta bukti definisi masih cocok. Respons penjadwalan tidak membuat berkas bersih. Bila wake gagal atau semua retry selesai, pengguna berwenang dapat memilih **Lanjutkan pemeriksaan**; endpoint recovery menjalankan auth, role, ACL dan rate limit lagi.
+
+Build Production native memasukkan paket ClamAV yang dipatok dan diverifikasi, sertifikat serta tiga definisi resmi. Proses terisolasi membatasi waktu, memori, output dan environment. Definisi diverifikasi ulang oleh Freshclam setelah 24 jam; kegagalan pembaruan mempertahankan karantina. Bukti readiness memakai verifikasi engine/definisi nyata, sehingga idle worker tidak diwajibkan mengirim heartbeat setiap menit. Uji sintetis terpisah tidak mengubah status berkas aplikasi dan tidak menggantikan uji login–unggah–pindai–unduh privat di Production.
+
 ## Tahap metadata dengan login nyata
 
 Tahap terbatas ini menyimpan data nyata melalui Better Auth/PostgreSQL dan tetap memakai mode `full/internal`. Unggah/unduh berkas, OCR, dan integrasi SRIKANDI tidak dinyatakan aktif. Ini tidak memenuhi permintaan arsip digital lengkap hingga infrastrukturnya tersedia.
