@@ -9,6 +9,14 @@ Sumber awal yang dimuat dalam aplikasi adalah:
 
 Pemetaan tematik klasifikasi ke JRA hanya merupakan **saran pencarian**. Pemetaan tersebut bukan hubungan hukum otomatis; arsiparis tetap memilih butir JRA yang sesuai dengan isi, fungsi, dan pemicu retensi arsip.
 
+## Aktivasi awal pada deployment
+
+Perintah `seed:all`, `seed:klasifikasi`, dan `seed:jra` hanya boleh mengaktifkan baseline otomatis dalam development/test lokal. Perintah tersebut ditolak sebelum mengambil lock atau menulis data jika `NODE_ENV=production`, `K_SERVICE`, atau `VERCEL` terpasang; mode selain development/test juga ditolak. Mengubah `NODE_ENV` menjadi development pada Cloud Run atau Vercel tidak membuka pengecualian ini.
+
+Pada deployment baru, gunakan draft awal yang disediakan migrasi melalui **Master Data > Versi Aturan**. Impor butir dari manifest JSON yang telah diperiksa, unggah PDF sumber privat, verifikasi manifest kelengkapan, buat laporan dampak, lalu jalankan **Ajukan → Telaah → Setujui → Aktifkan** dengan aktor berwenang. Tahap dan bukti yang sama berlaku untuk baseline maupun edisi berikutnya: aktor verifikasi, locator privat, ukuran PDF, dan ketersediaan objek diperiksa sebelum publikasi. Hash atau nama regulasi dalam asset seed bukan persetujuan hukum.
+
+Seed lokal tetap dapat dijalankan berulang; edisi yang sudah dipublikasikan tidak ditulis ulang. Perbaikan ini tidak mengubah atau mengesahkan ulang baseline yang telanjur aktif pada instalasi lama. Untuk instalasi tersebut, arsiparis perlu memeriksa provenance dan menerbitkan edisi pengganti melalui alur normal apabila bukti sumber atau pengesahannya belum lengkap. Snapshot arsip lama tetap dipertahankan.
+
 ## Menerbitkan perubahan aturan
 
 Super Admin menyiapkan, mengajukan, dan mengaktifkan edisi. Penelaah dan penyetuju dapat memakai akun admin Ditjen/Sesditjen yang berbeda; aplikasi menolak penyusun, pengaju, penelaah, atau penyetuju yang merangkap pada tahapan yang dilarang.

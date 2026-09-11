@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../config/database';
+import { allowsLocalRegulatoryBootstrap } from '../config/regulatory-bootstrap';
 import {
     jadwalRetensiArsip,
     klasifikasiArsip,
@@ -235,7 +236,8 @@ function applyGovernanceReadinessChecks(
     items: RuleItem[],
     requireImpact = true,
 ) {
-    const officialBaseline = [KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(ruleSet.id);
+    const officialBaseline = allowsLocalRegulatoryBootstrap()
+        && [KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(ruleSet.id);
     const manifest = asJsonObject(ruleSet.completenessManifest) as Partial<RegulatoryCompletenessManifestInput>;
     const ranges = Array.isArray(manifest.coveredPageRanges)
         ? manifest.coveredPageRanges.filter((range: any) => (
@@ -1019,7 +1021,8 @@ export class RegulatoryRuleSetService {
     }
 
     private async assertStoredSourceAvailable(ruleSet: RegulatoryRuleSet): Promise<void> {
-        if ([KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(ruleSet.id)) return;
+        if (allowsLocalRegulatoryBootstrap()
+            && [KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(ruleSet.id)) return;
         if (!ruleSet.sourceDocumentBlobUrl) {
             throw new ConflictError('Byte PDF sumber belum disimpan pada private Blob.');
         }
@@ -2028,6 +2031,9 @@ export class RegulatoryRuleSetService {
         actorId?: string,
         auditContext: Omit<GovernanceAuditContext, 'actorId'> = {},
     ) {
+        if (!allowsLocalRegulatoryBootstrap() && !actorId?.trim()) {
+            throw new ValidationError('Aktor aktivasi wajib tercatat setelah pengesahan instrumen pada deployment.');
+        }
         try {
             return await db.transaction(async (tx: any) => {
                 const [candidate] = await tx
@@ -2037,7 +2043,7 @@ export class RegulatoryRuleSetService {
                     .limit(1)
                     .for('update');
                 if (!candidate) throw new NotFoundError('Versi aturan');
-                const bootstrapBaseline = !actorId
+                const bootstrapBaseline = allowsLocalRegulatoryBootstrap() && !actorId
                     && [KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(candidate.id)
                     && candidate.status === 'draft';
                 if (candidate.status !== 'approved' && !bootstrapBaseline) {
