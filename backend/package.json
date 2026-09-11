@@ -84,6 +84,7 @@
     "@google-cloud/storage": "^8.0.1",
     "@napi-rs/canvas": "^0.1.90",
     "@vercel/blob": "^2.3.0",
+    "@vercel/functions": "3.9.7",
     "bcryptjs": "^3.0.3",
     "better-auth": "^1.7.1",
     "compression": "^1.8.1",

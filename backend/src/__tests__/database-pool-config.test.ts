@@ -16,12 +16,40 @@ vi.mock('../db/schema', () => ({}));
 vi.mock('../utils/logger', () => ({
     createLogger: () => ({ error: vi.fn() }),
 }));
+vi.mock('@vercel/functions', () => ({ attachDatabasePool: vi.fn() }));
 
 vi.stubEnv('DATABASE_URL', 'postgresql://bootstrap.invalid/simsa');
 const { buildDatabasePoolConfig } = await import('../config/database.js');
 vi.unstubAllEnvs();
 
 describe('database pool configuration', () => {
+    it('registers the single Vercel pool for suspension cleanup without creating request pools', async () => {
+        const { attachDatabasePool } = await import('@vercel/functions');
+        vi.mocked(attachDatabasePool).mockClear();
+        vi.resetModules();
+        vi.stubEnv('VERCEL', '1');
+        vi.stubEnv('DATABASE_URL', 'postgresql://bootstrap.invalid/simsa');
+        try {
+            const first = await import('../config/database.js');
+            const second = await import('../config/database.js');
+            expect(first.pool).toBe(second.pool);
+            expect(attachDatabasePool).toHaveBeenCalledExactlyOnceWith(first.pool);
+        } finally { vi.unstubAllEnvs(); }
+    });
+
+    it('does not register a persistent local or Cloud Run pool with Vercel', async () => {
+        const { attachDatabasePool } = await import('@vercel/functions');
+        vi.mocked(attachDatabasePool).mockClear();
+        vi.resetModules();
+        vi.stubEnv('VERCEL', '');
+        vi.stubEnv('K_SERVICE', 'simsa-api');
+        vi.stubEnv('DATABASE_URL', 'postgresql://bootstrap.invalid/simsa');
+        try {
+            await import('../config/database.js');
+            expect(attachDatabasePool).not.toHaveBeenCalled();
+        } finally { vi.unstubAllEnvs(); }
+    });
+
     it('uses bounded local defaults and trims a connection URL', () => {
         expect(buildDatabasePoolConfig({
             DATABASE_URL: '  postgresql://user:pass@db.example.test/simsa  ',

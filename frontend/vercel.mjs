@@ -153,7 +153,16 @@ export function createVercelConfig({
   proxyOrigin = process.env.API_PROXY_ORIGIN?.trim() ?? '',
   gitCommitRef = process.env.VERCEL_GIT_COMMIT_REF?.trim() ?? '',
   protectionBypassConfigured = Boolean(process.env[PROTECTION_BYPASS_ENV]?.trim()),
+  metadataMode = process.env.SIMSA_VERCEL_METADATA_ENABLED ?? '',
 } = {}) {
+  if (!['', 'false', 'true'].includes(metadataMode)) {
+    throw new Error('SIMSA_VERCEL_METADATA_ENABLED must be true or false.')
+  }
+  const deploymentBuild = metadataMode === 'true' ? {
+    ...DEPLOYMENT_BUILD,
+    buildCommand: 'node scripts/build-vercel-metadata.mjs',
+    outputDirectory: 'dist-vercel-metadata',
+  } : DEPLOYMENT_BUILD
   if (!KNOWN_DEPLOYMENT_ENVIRONMENTS.has(deploymentEnvironment)) {
     return unprovisionedPreviewConfig()
   }
@@ -190,7 +199,7 @@ export function createVercelConfig({
     // negative lookahead leaves Vite/PWA asset paths to normal filesystem
     // serving instead of rewriting them to index.html.
     return {
-      ...DEPLOYMENT_BUILD,
+      ...deploymentBuild,
       routes: [
         ...proxyRules,
         PROTECTED_SPA_FALLBACK,
@@ -199,7 +208,7 @@ export function createVercelConfig({
   }
 
   return {
-    ...DEPLOYMENT_BUILD,
+    ...deploymentBuild,
     rewrites: [...proxyRules, spaFallback],
   }
 }

@@ -9,6 +9,23 @@ import { createVercelConfig } from '../../vercel.mjs'
 const frontendRoot = process.cwd()
 
 describe('Vercel API proxy configuration', () => {
+  it('opts into an isolated full metadata build without changing same-origin routes', () => {
+    const result = createVercelConfig({ deploymentEnvironment: 'production', metadataMode: 'true' })
+    expect(result.buildCommand).toBe('node scripts/build-vercel-metadata.mjs')
+    expect(result.outputDirectory).toBe('dist-vercel-metadata')
+    expect(result.rewrites[0].source).toBe('/api/:path*')
+    expect(result.rewrites[0].destination).toBe('https://simsa-backend.vercel.app/api/:path*')
+    expect(createVercelConfig({ deploymentEnvironment: 'production', metadataMode: 'false' }).outputDirectory).toBe('dist')
+  })
+
+  it('does not let metadata opt-in bypass Preview provisioning or target isolation', () => {
+    expect(createVercelConfig({ deploymentEnvironment: 'preview', metadataMode: 'true' }).buildCommand)
+      .toBe('node scripts/build-preview-unavailable.mjs')
+    expect(() => createVercelConfig({ deploymentEnvironment: 'preview', metadataMode: 'true',
+      proxyOrigin: 'https://simsa-backend.vercel.app' })).toThrow(/production SIMSA backend/)
+    expect(() => createVercelConfig({ deploymentEnvironment: 'production', metadataMode: 'TRUE' })).toThrow(/true or false/)
+  })
+
   it.each(['vercel.json', 'backend/vercel.json', 'docs-site/vercel.json'])(
     'requires explicit Production promotion for the %s project root',
     (relativePath) => {

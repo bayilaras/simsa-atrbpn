@@ -1,11 +1,13 @@
 {
     "version": 2,
+    "framework": null,
+    "fluid": true,
     "git": {
         "deploymentEnabled": {
             "main": false
         }
     },
-    "buildCommand": "npm run build",
+    "buildCommand": "node scripts/build-vercel.mjs",
     "installCommand": "npm ci --include=dev",
     "rewrites": [
         {
