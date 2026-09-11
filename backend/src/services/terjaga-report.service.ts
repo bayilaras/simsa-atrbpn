@@ -1,7 +1,8 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../config/database';
+import { hasPermission, type Role } from '../config/permissions';
 import { arsip, arsipTerjaga, arsipTerjagaReports, fileAttachments, users, recordAccessGrants, type TerjagaReport, type TerjagaReportEvidence } from '../db/schema';
-import { recordAccessService, type RecordUser } from './record-access.service';
+import { recordAccessService, type RecordUser, type RecordAccessResult } from './record-access.service';
 import { fileAttachmentService } from './file-attachment.service';
 import { isFileReleased } from './file-release-policy';
 import auditLogService from './audit-log.service';
@@ -11,7 +12,7 @@ import { scopedRecordByIdWhere, type RecordUnitScope } from '../utils/record-uni
 
 export interface TerjagaReportingActor extends RecordUser { email?: string; ipAddress?: string; }
 type Executor = Parameters<Parameters<typeof db.transaction>[0]>[0];
-const WRITERS = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff']);
+const canManage = (role: string) => hasPermission(role as Role, 'arsip_terjaga', 'update');
 const VERIFIERS = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
 const jakartaCalendar = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -27,11 +28,12 @@ export async function lockTerjagaArchiveContext(tx: Executor, archiveId: string,
         .from(users).where(eq(users.id, actor.id || '')).limit(1).for('update');
     if (!user?.isActive) throw new ForbiddenError('Akun harus aktif untuk mengakses bukti pelaporan.');
     let access = await recordAccessService.check(user, 'arsip', archive.id, tx);
-    if (access.grantId) {
-        await tx.select({ id: recordAccessGrants.id }).from(recordAccessGrants).where(eq(recordAccessGrants.id, access.grantId)).for('update');
+    const lockedGrantId = access.grantId;
+    if (lockedGrantId) {
+        await tx.select({ id: recordAccessGrants.id }).from(recordAccessGrants).where(eq(recordAccessGrants.id, lockedGrantId)).for('update');
         access = await recordAccessService.check(user, 'arsip', archive.id, tx);
     }
-    if (!access.allowed || (mutation && (!access.mutable || !WRITERS.has(user.role)))) throw new NotFoundError('Arsip dengan akses pelaporan');
+    if (!access.allowed || access.grantId !== lockedGrantId || (mutation && (!access.mutable || !canManage(user.role)))) throw new NotFoundError('Arsip dengan akses pelaporan');
     return { archive, user, access };
 }
 
@@ -50,13 +52,28 @@ function independent(report: TerjagaReport, userId: string): boolean {
     return ![report.createdBy, report.sentBy, report.receivedBy, report.sentEvidence?.uploadedBy, report.receivedEvidence?.uploadedBy].includes(userId);
 }
 
-async function evidence(tx: Executor, id: string, archiveId: string, expected?: TerjagaReportEvidence) {
+function assertCurrentManageAccess(access: RecordAccessResult, lockedGrantId: string | null) {
+    if (!access.mutable || access.grantId !== lockedGrantId
+        || (access.grantExpiresAt && access.grantExpiresAt <= new Date())) {
+        throw new ForbiddenError('Akses pengelolaan arsip telah berakhir.');
+    }
+}
+
+type EvidenceMismatch = { attachmentId: string; expectedHash: string; actualHash: string };
+type EvidenceCheck = { snapshot: TerjagaReportEvidence; mismatch?: never } | { snapshot?: never; mismatch: EvidenceMismatch };
+
+async function evidence(tx: Executor, id: string, archiveId: string, expected?: TerjagaReportEvidence): Promise<EvidenceCheck> {
     const [attachment] = await tx.select().from(fileAttachments).where(eq(fileAttachments.id, id)).limit(1).for('update');
     if (!attachment || attachment.entityType !== 'arsip' || attachment.entityId !== archiveId || !isFileReleased(attachment)) {
         throw new ConflictError('Bukti harus berupa lampiran arsip yang sama, privat, bersih dan terverifikasi integritasnya.');
     }
     const checked = await fileAttachmentService.verifyIntegrity(id, tx);
-    if (!checked?.matches || !isFileReleased(checked.attachment)
+    if (checked && !checked.matches) {
+        // The caller must retain this quarantine with a critical rejection
+        // audit, rather than rolling the detected corruption back to verified.
+        return { mismatch: { attachmentId: id, expectedHash: checked.expectedHash, actualHash: checked.actualHash } };
+    }
+    if (!checked || !isFileReleased(checked.attachment)
         || (expected && (expected.sha256 !== checked.actualHash || expected.objectGeneration !== checked.attachment.objectGeneration || expected.sizeBytes !== checked.attachment.sizeBytes))) {
         throw new ConflictError('Bukti tidak tersedia atau pemeriksaan hash/integritas gagal.');
     }
@@ -65,7 +82,7 @@ async function evidence(tx: Executor, id: string, archiveId: string, expected?: 
         sizeBytes: attachment.sizeBytes, objectGeneration: attachment.objectGeneration,
         uploadedBy: attachment.uploadedBy, checkedAt: new Date().toISOString(),
     };
-    return snapshot;
+    return { snapshot };
 }
 
 async function audit(tx: Executor, actor: TerjagaReportingActor, archiveId: string, reportId: string, action: string, before: TerjagaReport | null, after: TerjagaReport) {
@@ -93,7 +110,7 @@ export const terjagaReportService = {
             return {
                 reports: reports.map(report => ({ ...report, createdByName: labels.get(report.createdBy), verifiedByName: report.verifiedBy ? labels.get(report.verifiedBy) : null, canVerify: access.mutable && VERIFIERS.has(user.role) && report.status === 'received' && independent(report, user.id) })),
                 attachments: attachments.map(attachment => ({ ...attachment, released: isFileReleased(attachment) })),
-                canManage: access.mutable && WRITERS.has(user.role),
+                canManage: access.mutable && canManage(user.role),
                 legacyReporting: designation.legacyReporting,
             };
         });
@@ -115,12 +132,22 @@ export const terjagaReportService = {
 
     async transition(designationId: string, reportId: string, raw: TransitionTerjagaReport, actor: TerjagaReportingActor) {
         const input = transitionTerjagaReportSchema.parse(raw);
-        return db.transaction(async tx => {
-            const { designation, user } = await lockTerjagaContext(tx, designationId, actor);
+        const outcome = await db.transaction(async tx => {
+            const { designation, user, access: lockedAccess } = await lockTerjagaContext(tx, designationId, actor);
             const [report] = await tx.select().from(arsipTerjagaReports).where(and(eq(arsipTerjagaReports.id, reportId), eq(arsipTerjagaReports.designationId, designationId))).limit(1).for('update');
             if (!report) throw new NotFoundError('Catatan pelaporan');
             if (['verified', 'cancelled'].includes(report.status)) throw new ConflictError('Catatan pelaporan final tidak dapat diubah.');
             const now = new Date();
+            const actorAudit = { ...actor, id: user.id, email: user.email };
+            const rejectMismatch = async (mismatch: EvidenceMismatch) => {
+                const access = await recordAccessService.check(user, 'arsip', designation.arsipId, tx);
+                assertCurrentManageAccess(access, lockedAccess.grantId);
+                await auditLogService.logActionOrThrow({ userId: user.id, userEmail: user.email, ipAddress: actor.ipAddress,
+                    action: 'verify_integrity', entityType: 'arsip', entityId: designation.arsipId,
+                    changes: { operation: 'terjaga_evidence_rejected', reportId, reportAction: input.action, ...mismatch } }, tx);
+                assertCurrentManageAccess(access, lockedAccess.grantId);
+                return { failure: 'Integritas bukti tidak cocok; berkas dikarantina dan pelaporan tidak dilanjutkan.' };
+            };
             const change: Partial<TerjagaReport> = {};
             let mirror = designation.statusPelaporan;
             if (input.action === 'send' || input.action === 'receive') {
@@ -128,7 +155,9 @@ export const terjagaReportService = {
                 if (input.occurredOn < (input.action === 'send' ? report.tanggalPelaporan : report.sentOn!) || input.occurredOn > jakartaCalendar.format(now)) {
                     throw new ConflictError('Tanggal bukti harus berurutan dan tidak boleh di masa depan.');
                 }
-                const snapshot = await evidence(tx, input.attachmentId, designation.arsipId);
+                const checked = await evidence(tx, input.attachmentId, designation.arsipId);
+                if (checked.mismatch) return rejectMismatch(checked.mismatch);
+                const snapshot = checked.snapshot;
                 if (input.action === 'send') {
                     Object.assign(change, { status: 'sent', sentAttachmentId: input.attachmentId, sentEvidence: snapshot, sentBy: user.id, sentOn: input.occurredOn, sentAt: now, sentNotes: input.notes });
                     mirror = 'dikirim';
@@ -140,8 +169,10 @@ export const terjagaReportService = {
                 if (report.status !== 'received') throw new ConflictError('Bukti pengiriman dan penerimaan harus dicatat sebagai diterima terlebih dahulu.');
                 if (!VERIFIERS.has(user.role) || !independent(report, user.id)) throw new ForbiddenError('Verifikasi wajib oleh pemeriksa independen, bukan pembuat, pencatat atau pengunggah bukti sendiri.');
                 const sent = await evidence(tx, report.sentAttachmentId!, designation.arsipId, report.sentEvidence!);
+                if (sent.mismatch) return rejectMismatch(sent.mismatch);
                 const received = await evidence(tx, report.receivedAttachmentId!, designation.arsipId, report.receivedEvidence!);
-                if ([sent.uploadedBy, received.uploadedBy].includes(user.id)) throw new ForbiddenError('Pemeriksa harus independen dari pengunggah bukti.');
+                if (received.mismatch) return rejectMismatch(received.mismatch);
+                if ([sent.snapshot.uploadedBy, received.snapshot.uploadedBy].includes(user.id)) throw new ForbiddenError('Pemeriksa harus independen dari pengunggah bukti.');
                 Object.assign(change, { status: 'verified', verifiedBy: user.id, verifiedAt: now, verificationNotes: input.notes });
                 mirror = 'bukti_diverifikasi';
             } else {
@@ -150,13 +181,16 @@ export const terjagaReportService = {
             }
             // A long byte verification may outlive an access grant; check it again before committing.
             const access = await recordAccessService.check(user, 'arsip', designation.arsipId, tx);
-            if (!access.mutable) throw new ForbiddenError('Akses pengelolaan arsip telah berakhir.');
+            assertCurrentManageAccess(access, lockedAccess.grantId);
             const [updated] = await tx.update(arsipTerjagaReports).set(change).where(and(eq(arsipTerjagaReports.id, report.id), eq(arsipTerjagaReports.status, report.status))).returning();
             if (!updated) throw new ConflictError('Catatan pelaporan telah berubah.');
             // Reporting evidence never assigns legal/institutional compliance, nor clears overdue assessment.
             await tx.update(arsipTerjaga).set({ statusPelaporan: mirror, updatedAt: now }).where(eq(arsipTerjaga.id, designationId));
-            await audit(tx, { ...actor, id: user.id, email: user.email }, designation.arsipId, report.id, input.action, report, updated);
-            return updated;
+            await audit(tx, actorAudit, designation.arsipId, report.id, input.action, report, updated);
+            assertCurrentManageAccess(access, lockedAccess.grantId);
+            return { updated };
         });
+        if ('failure' in outcome) throw new ConflictError(outcome.failure);
+        return outcome.updated;
     },
 };

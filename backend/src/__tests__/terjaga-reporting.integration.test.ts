@@ -5,9 +5,11 @@ import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { drizzle } from 'drizzle-orm/pglite';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
 import { enterTestMigratorRole } from './helpers/database-role-fixture';
+import { isFileReleased } from '../services/file-release-policy';
 
 const holder = vi.hoisted(() => ({ db: null as any }));
 const storage = vi.hoisted(() => ({ downloadFile: vi.fn() }));
@@ -28,6 +30,11 @@ const draft = () => service.createDraft(designationId, { nomorLaporan: 'LAP/2026
 const advance = (reportId: string, action: 'send' | 'receive', user = actor(1), n = action === 'send' ? 1 : 2) => service.transition(designationId, reportId, {
     action, attachmentId: attachmentId(n), occurredOn: '2026-09-02', notes: 'Bukti pelaporan telah dicatat sesuai dokumen.',
 }, user);
+const createManageGrant = () => database.exec(`UPDATE arsip SET klasifikasi_keamanan='rahasia';
+    INSERT INTO record_access_grants(requester_id,target_user_id,entity_type,entity_id,unit_kerja_id,required_classification,
+        purpose,access_mode,status,decided_by,decided_at,decision_reason,expires_at)
+    VALUES ('${actor(1).id}','${actor(1).id}','arsip','${archiveId}','ditjen','rahasia','Pemeriksaan bukti pelaporan terkendali','manage','approved',
+        '${actor(2).id}','2026-09-10T00:00:00Z','Akses untuk pelaporan terjaga','2026-09-11T01:00:00Z');`);
 
 beforeAll(async () => {
     database = new PGlite({ extensions: { pgcrypto } });
@@ -105,12 +112,11 @@ describe('controlled terjaga reporting', () => {
         expect((await service.list(designationId, actor(1))).reports).toHaveLength(2);
         expect((await database.query<any>('SELECT status_kepatuhan FROM arsip_terjaga')).rows[0].status_kepatuhan).toBe('belum_dinilai');
     });
-    it.each(['public', 'quarantined', 'foreign', 'tampered', 'missing'])('rejects %s evidence without advancing or writing audit', async condition => {
+    it.each(['public', 'quarantined', 'foreign', 'missing'])('rejects %s evidence without advancing or writing audit', async condition => {
         const report = await draft();
         if (condition === 'public') await database.exec(`UPDATE file_attachments SET storage_access='public'`);
         if (condition === 'quarantined') await database.exec(`UPDATE file_attachments SET malware_scan_status='pending'`);
         if (condition === 'foreign') await database.exec(`UPDATE file_attachments SET entity_id='20000000-0000-4000-8000-000000000002'`);
-        if (condition === 'tampered') storage.downloadFile.mockResolvedValue({ stream: Readable.from([Buffer.from('changed')]) });
         if (condition === 'missing') storage.downloadFile.mockResolvedValue(null);
         await expect(advance(report.id, 'send')).rejects.toThrow();
         const { rows } = await database.query<any>('SELECT status,sent_evidence FROM arsip_terjaga_reports');
@@ -221,5 +227,79 @@ describe('controlled terjaga reporting', () => {
         await expect(designations.delete(designationId, null, audit)).rejects.toThrow();
         await expect(designations.create({ arsipId: archiveId, unitKerjaId: 'ditjen', kategoriTerjaga: 'kepulauan', createdBy: actor(1).id }, audit)).rejects.toThrow();
         expect((await database.query<any>('SELECT dasar_hukum FROM arsip_terjaga')).rows).toEqual([{ dasar_hukum: null }]);
+    });
+    it('rechecks same-unit staff downgrade for designation CRUD, report drafting and UI permissions', async () => {
+        await database.exec(`UPDATE users SET role='staff',unit_kerja_id='ditjen' WHERE id='${actor(1).id}'`);
+        const audit = { userId: actor(1).id, userEmail: actor(1).email };
+        await expect(designations.update(designationId, { catatan: 'Stale elevated role' }, null, audit)).rejects.toThrow(/akses|izin/i);
+        await expect(designations.delete(designationId, null, audit)).rejects.toThrow(/akses|izin/i);
+        await expect(designations.create({ arsipId: archiveId, unitKerjaId: 'ditjen', kategoriTerjaga: 'kepulauan' }, audit)).rejects.toThrow(/akses|izin/i);
+        await expect(draft()).rejects.toThrow(/akses|izin/i);
+        expect((await service.list(designationId, actor(1))).canManage).toBe(false);
+        expect((await database.query('SELECT id FROM audit_log')).rows).toHaveLength(0);
+    });
+    it('denies report transitions when the current actor becomes read-only in the same unit', async () => {
+        const report = await draft();
+        await database.exec(`UPDATE users SET role='staff',unit_kerja_id='ditjen' WHERE id='${actor(1).id}'`);
+        await expect(advance(report.id, 'send')).rejects.toThrow(/akses|izin/i);
+        expect(storage.downloadFile).not.toHaveBeenCalled();
+        expect((await database.query<any>('SELECT status FROM arsip_terjaga_reports')).rows[0].status).toBe('draft');
+    });
+    it.each(['send', 'receive', 'verify'] as const)('retains mismatch quarantine and rejection audit without advancing %s', async action => {
+        const report = await draft();
+        if (action !== 'send') await advance(report.id, 'send');
+        if (action === 'verify') await advance(report.id, 'receive');
+        storage.downloadFile.mockImplementation(async () => ({ stream: Readable.from([Buffer.from('changed')]) }));
+        const attempt = action === 'verify' ? service.transition(designationId, report.id,
+            { action, notes: 'Pemeriksaan independen bitstream.' }, actor(2)) : advance(report.id, action);
+        await expect(attempt).rejects.toThrow(/integritas|hash|bukti/i);
+        const beforeStatus = action === 'send' ? 'draft' : action === 'receive' ? 'sent' : 'received';
+        expect((await database.query<any>('SELECT status FROM arsip_terjaga_reports')).rows[0].status).toBe(beforeStatus);
+        const target = action === 'receive' ? attachmentId(2) : attachmentId(1);
+        const [attachment] = await holder.db.select().from(schema.fileAttachments).where(eq(schema.fileAttachments.id, target));
+        expect(attachment.integrityStatus).toBe('mismatch');
+        expect(isFileReleased(attachment)).toBe(false);
+        expect((await database.query<any>("SELECT changes FROM audit_log WHERE changes->>'operation'='terjaga_evidence_rejected'")).rows[0].changes)
+            .toMatchObject({ reportId: report.id, reportAction: action, attachmentId: target, expectedHash: digest });
+    });
+    it('rolls back mismatch quarantine when its required rejection audit cannot be stored', async () => {
+        const report = await draft();
+        storage.downloadFile.mockImplementation(async () => ({ stream: Readable.from([Buffer.from('changed')]) }));
+        await database.exec(`CREATE FUNCTION reject_failure_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$;
+            CREATE TRIGGER reject_failure_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_failure_audit();`);
+        try {
+            await expect(advance(report.id, 'send')).rejects.toMatchObject({ cause: expect.objectContaining({ message: 'audit unavailable' }) });
+            expect((await database.query<any>('SELECT integrity_status FROM file_attachments WHERE id=$1', [attachmentId(1)])).rows[0].integrity_status).toBe('verified');
+            expect((await database.query<any>('SELECT status FROM arsip_terjaga_reports')).rows[0].status).toBe('draft');
+        } finally { await database.exec('DROP TRIGGER reject_failure_audit ON audit_log; DROP FUNCTION reject_failure_audit();'); }
+    });
+    it.each(['matching', 'mismatch'])('does not commit %s bytes after the grant expires during storage I/O', async result => {
+        const report = await draft();
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-09-11T00:00:00Z'));
+        try {
+            await createManageGrant();
+            storage.downloadFile.mockImplementation(async () => {
+                vi.setSystemTime(new Date('2026-09-11T02:00:00Z'));
+                return { stream: Readable.from([result === 'matching' ? bytes : Buffer.from('changed')]) };
+            });
+            await expect(advance(report.id, 'send')).rejects.toThrow(/akses|izin/i);
+            expect((await database.query<any>('SELECT integrity_status FROM file_attachments WHERE id=$1', [attachmentId(1)])).rows[0].integrity_status).toBe('verified');
+            expect((await database.query<any>('SELECT status FROM arsip_terjaga_reports')).rows[0].status).toBe('draft');
+            expect((await database.query('SELECT id FROM audit_log')).rows).toHaveLength(1);
+        } finally { vi.useRealTimers(); }
+    });
+    it('rejects a revoked grant before reading bytes or persisting a rejection', async () => {
+        const report = await draft();
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-09-11T00:00:00Z'));
+        try {
+            await createManageGrant();
+            await database.exec(`UPDATE record_access_grants SET status='revoked',revoked_by='${actor(2).id}',
+                revoked_at=now(),revocation_reason='Akses ditarik oleh penanggung jawab'`);
+            await expect(advance(report.id, 'send')).rejects.toThrow(/akses|izin/i);
+            expect(storage.downloadFile).not.toHaveBeenCalled();
+            expect((await database.query('SELECT id FROM audit_log')).rows).toHaveLength(1);
+        } finally { vi.useRealTimers(); }
     });
 });
