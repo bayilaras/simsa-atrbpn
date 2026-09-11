@@ -20,6 +20,7 @@ import {
 import appConfig from '@/lib/app-config'
 import { AUTH_PROVIDER } from '@/lib/cloud-provider-config'
 import { useAppConfig } from '@/context/app-config-context'
+import { AppServiceNotice } from '@/components/AppServiceNotice'
 
 const BENEFITS = [
     'Temukan surat dan arsip dari satu pencarian',
@@ -227,6 +228,8 @@ export default function Login() {
                             </div>
                         </CardFooter>
                     </Card>
+
+                    <div className="mt-4"><AppServiceNotice /></div>
 
                     <div className="mt-5 flex flex-col items-center justify-between gap-3 text-sm sm:flex-row">
                         <Button asChild variant="ghost" size="sm" className="min-h-11 text-muted-foreground">

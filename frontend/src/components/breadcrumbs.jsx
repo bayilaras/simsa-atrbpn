@@ -20,9 +20,9 @@ const routeNameMap = {
     'retention-governance': 'Tata Kelola Retensi',
     'storage-locations': 'Lokasi Penyimpanan',
     'archive-lending': 'Peminjaman Arsip',
-    'dosir': 'Pemberkasan Perkara',
+    'dosir': 'Pemberkasan (Dosir)',
     'retention': 'Manajemen Retensi',
-    'bulk-upload': 'Bulk Upload',
+    'bulk-upload': 'Unggah Massal',
     'panduan': 'Panduan Pengguna',
     'settings': 'Pengaturan',
 };

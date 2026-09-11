@@ -323,7 +323,7 @@ export function AppSidebar() {
                                     <SidebarMenu>
                                         {visibleItems.map((item) => (
                                             item.subItems ? (
-                                                <Collapsible key={item.title} defaultOpen={isParentActive(item)} className="group/collapsible">
+                                                <Collapsible key={item.title} asChild defaultOpen={isParentActive(item)} className="group/collapsible">
                                                     <SidebarMenuItem>
                                                         <CollapsibleTrigger asChild>
                                                             <SidebarMenuButton tooltip={item.title} isActive={isParentActive(item)}>
@@ -381,7 +381,7 @@ export function AppSidebar() {
 
             <SidebarFooter className="border-t border-sidebar-border/50 p-4">
                 <div className="flex flex-col items-start gap-1.5 group-data-[collapsible=icon]:hidden">
-                    <div className="text-xs font-medium text-sidebar-foreground/60">{appConfig.name} v1.0.0</div>
+                    <div className="text-xs font-medium text-muted-foreground">{appConfig.name} v1.0.0</div>
                     <Badge variant="outline" className="h-6 px-2 text-[11px] text-sidebar-foreground/75">
                         {appConfig.usageBadge}
                     </Badge>

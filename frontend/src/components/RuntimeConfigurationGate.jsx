@@ -1,6 +1,5 @@
-import { AlertTriangle, FlaskConical } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { useAppConfig } from '@/context/app-config-context'
-import { FileAvailabilityNotice } from './FileAvailabilityNotice'
 
 export function RuntimeConfigurationGate({ children }) {
     const { mode, loading, compatible, configurationError, capabilities } = useAppConfig()
@@ -37,18 +36,7 @@ export function RuntimeConfigurationGate({ children }) {
         )
     }
 
-    return (
-        <>
-            {mode === 'full' && !loading && capabilities?.fileUploads === false && <FileAvailabilityNotice />}
-            {mode === 'metadata-demo' && (
-                <aside className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-sm font-medium text-amber-950" role="note">
-                    <FlaskConical className="mr-2 inline h-4 w-4" aria-hidden="true" />
-                    Demo — hanya gunakan data contoh. Unggah, impor, dan akses dokumen asli dinonaktifkan.
-                </aside>
-            )}
-            {children}
-        </>
-    )
+    return children
 }
 
 export default RuntimeConfigurationGate

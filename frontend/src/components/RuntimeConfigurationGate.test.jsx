@@ -2,11 +2,13 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { AppConfigContext, DISABLED_FEATURES } from '@/context/app-config-context'
 import { RuntimeConfigurationGate } from './RuntimeConfigurationGate'
+import { AppServiceNotice } from './AppServiceNotice'
 
 function renderGate(value) {
     return render(
         <AppConfigContext.Provider value={{ features: DISABLED_FEATURES, ...value }}>
             <RuntimeConfigurationGate>
+                <AppServiceNotice />
                 <p>Konten aplikasi</p>
             </RuntimeConfigurationGate>
         </AppConfigContext.Provider>,

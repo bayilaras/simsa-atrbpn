@@ -1,4 +1,5 @@
 import { FileCapabilityGuard } from '@/components/FileCapabilityGuard'
+import { AppServiceNotice } from '@/components/AppServiceNotice'
 import { lazy, Suspense, useEffect } from 'react'
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, Link, useLocation } from 'react-router-dom'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
@@ -65,26 +66,10 @@ const SrikandiIntegration = appConfig.features.srikandi
 // Suspense loading fallback
 function PageLoader() {
   return (
-    <div role="status" aria-live="polite" className="flex items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-300">
-      <div className="flex flex-col items-center gap-4">
-        <div className="relative">
-          <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full animate-pulse"></div>
-          <img
-            src="/logo-simsa.png"
-            alt=""
-            className="h-16 w-16 relative z-10 animate-bounce"
-            style={{ animationDuration: '2s' }}
-          />
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <h3 className="font-semibold text-lg text-primary tracking-tight">{appConfig.shortName}</h3>
-          <span className="sr-only">Memuat halaman…</span>
-          <div className="flex items-center gap-1">
-            <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.3s]"></div>
-            <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.15s]"></div>
-            <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce"></div>
-          </div>
-        </div>
+    <div role="status" aria-live="polite" className="flex min-h-[40vh] items-center justify-center p-6">
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <img src="/logo-simsa.png" alt="" className="h-9 w-9" />
+        <span>Memuat halaman…</span>
       </div>
     </div>
   )
@@ -163,6 +148,7 @@ function AppLayout() {
         <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 px-4 py-5 outline-none sm:px-6 sm:py-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1600px] space-y-5 sm:space-y-6">
             <Breadcrumbs />
+            <AppServiceNotice />
             <ErrorBoundary fallbackMessage="Terjadi kesalahan saat memuat halaman. Silakan coba lagi.">
               <Suspense fallback={<PageLoader />}>
                 <Outlet />
@@ -212,6 +198,7 @@ function GuideLayout() {
         </div>
       </header>
       <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-5 outline-none sm:px-6 sm:py-6 lg:px-8">
+        <div className="mb-5"><AppServiceNotice /></div>
         <Suspense fallback={<PageLoader />}>
           <Outlet />
         </Suspense>

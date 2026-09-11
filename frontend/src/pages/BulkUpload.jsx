@@ -4,6 +4,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useOCRUpload } from '@/hooks/useOCRUpload';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
+import { PageHeader } from '@/components/PageHeader';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import {
     Card,
     CardContent,
@@ -43,6 +45,7 @@ import {
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 
 export default function BulkUpload() {
+    const reducedMotion = useReducedMotion();
     const { user } = useAuth();
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
@@ -65,6 +68,8 @@ export default function BulkUpload() {
         upload,
         confirmBatch,
     } = useOCRUpload(unitScope.unitKerjaId);
+    const progressPercentage = isProcessing && Number.isFinite(progress?.percentage) && progress?.total > 0
+        ? Math.min(100, Math.max(0, progress.percentage)) : null;
 
     // Drag handlers
     const handleDrag = useCallback((e) => {
@@ -156,29 +161,12 @@ export default function BulkUpload() {
 
     return (
         <div className="space-y-6">
-            {/* Hero Header */}
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-blue-600 to-indigo-700 p-5 text-white shadow-lg sm:p-8">
-                <div className="absolute top-0 right-0 p-4 opacity-10">
-                    <CloudUpload className="h-64 w-64" />
-                </div>
-                <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-2">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Kembali ke daftar arsip"
-                            onClick={() => navigate('/arsip')}
-                            className="text-white/80 hover:text-white hover:bg-card/20 -ml-2"
-                        >
-                            <ChevronLeft className="h-5 w-5" />
-                        </Button>
-                        <h1 className="text-2xl font-bold sm:text-3xl">Unggah Massal &amp; OCR</h1>
-                    </div>
-                    <p className="text-blue-100 max-w-2xl text-lg">
-                        Unggah beberapa berkas PDF sekaligus. Sistem akan mengekstrak informasi dan menyiapkan draf arsip untuk Anda.
-                    </p>
-                </div>
-            </div>
+            <PageHeader icon={CloudUpload} title="Unggah Massal & OCR"
+                description="Unggah berkas PDF, lalu periksa hasil ekstraksi sebelum menyimpan arsip."
+                actions={<Button variant="outline" onClick={() => navigate('/arsip')}>
+                    <ChevronLeft aria-hidden="true" />Daftar arsip
+                </Button>}
+            />
 
             <RequiredUnitKerjaScope
                 scope={unitScope}
@@ -194,12 +182,13 @@ export default function BulkUpload() {
 
             <AnimatePresence mode="wait">
                 {/* Upload Phase */}
-                {!batch && !isProcessing && !isResuming && (
+                {!batch && !isProcessing && !isResuming && !isUploading && (
                     <Motion.div
                         key="upload"
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
+                        exit={reducedMotion ? { opacity: 1 } : { opacity: 0, y: -20 }}
+                        transition={reducedMotion ? { duration: 0 } : undefined}
                     >
                         <Card className="border-2 border-dashed border-border dark:border-gray-800 shadow-sm hover:border-blue-400 dark:hover:border-blue-500 transition-colors bg-card/50 dark:bg-foreground/50 backdrop-blur-sm">
                             <CardContent className="p-4 sm:p-10">
@@ -312,9 +301,10 @@ export default function BulkUpload() {
                 {(isProcessing || isUploading || isResuming) && (
                     <Motion.div
                         key="processing"
-                        initial={{ opacity: 0, scale: 0.95 }}
+                        initial={reducedMotion ? false : { opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
+                        exit={reducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.95 }}
+                        transition={reducedMotion ? { duration: 0 } : undefined}
                         className="max-w-xl mx-auto mt-12"
                     >
                         <Card className="shadow-lg border-blue-100 dark:border-blue-900">
@@ -325,26 +315,28 @@ export default function BulkUpload() {
                                         <Loader2 className="h-10 w-10 animate-spin" />
                                     </div>
                                 </div>
-                                <div>
+                                <div role="status" aria-live="polite">
                                     <h3 className="text-xl font-bold text-foreground dark:text-gray-100 mb-2">
                                         {isResuming
-                                            ? 'Memulihkan Batch Tersimpan...'
+                                            ? 'Memulihkan proses tersimpan…'
                                             : isUploading
-                                                ? 'Mengupload File...'
-                                                : 'Memproses OCR Metadata...'}
+                                                ? 'Mengunggah berkas…'
+                                                : 'Mengekstrak informasi dokumen…'}
                                     </h3>
                                     <p className="text-muted-foreground dark:text-muted-foreground">
-                                        Sistem sedang membaca isi dokumen Anda secara otomatis.
+                                        {isResuming ? 'Memeriksa status berkas terakhir di server.'
+                                            : isUploading ? 'Menunggu penerimaan berkas oleh server. Tetap buka halaman ini.'
+                                                : 'Periksa hasil ekstraksi sebelum menyimpannya sebagai arsip.'}
                                     </p>
                                 </div>
-                                {!isResuming && <div className="space-y-2">
+                                {progressPercentage !== null && <div className="space-y-2">
                                     <div className="flex justify-between text-sm text-muted-foreground dark:text-muted-foreground px-1">
-                                        <span>Progress</span>
-                                        <span>{progress?.percentage || 0}%</span>
+                                        <span>Kemajuan ekstraksi</span>
+                                        <span>{progressPercentage}%</span>
                                     </div>
-                                    <Progress value={progress?.percentage || 0} className="h-2 w-full" />
+                                    <Progress value={progressPercentage} aria-label="Kemajuan ekstraksi dokumen" className="h-2 w-full" />
                                     <p className="text-xs text-muted-foreground text-right">
-                                        {progress?.processed || 0} dari {progress?.total || files.length} file selesai
+                                        {progress.processed} dari {progress.total} berkas diproses
                                     </p>
                                 </div>}
                             </CardContent>
@@ -356,8 +348,9 @@ export default function BulkUpload() {
                 {batch && !isProcessing && !isUploading && !isResuming && (
                     <Motion.div
                         key="results"
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
+                        transition={reducedMotion ? { duration: 0 } : undefined}
                         className="space-y-6"
                     >
                         <Card className="border-none shadow-md bg-card/50 dark:bg-foreground/50 backdrop-blur-sm">
