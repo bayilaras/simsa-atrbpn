@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseDebData, assertPinnedSignature, assessScan, makePdf, assertFreshManifest, runMeasured } from './core.mjs';
 import handler from './api/index.mjs';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { readCvdArtifact, assertCvdVerification } from './core.mjs';
 
 test('requires the pinned primary signer and a successful signature, not a GOOD signature from another key', () => {
   const fingerprint='5BADCA2665EF59DCF8A23D8B707F0DB480836771';
@@ -26,6 +30,26 @@ test('stale or future manifests cannot be treated as fresh',()=>{
 test('reject malformed Debian container lengths before extraction',()=>{
   assert.throws(()=>parseDebData(Buffer.from('not a deb')));
   assert.throws(()=>parseDebData(Buffer.from('!<arch>\n'+'data.tar.xz'.padEnd(48)+'9999999999'+'`\n')));
+});
+test('Freshclam signatures use the exact CVD header version; unversioned or other-version files do not qualify',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'simsa-cvd-layout-'));
+ try{
+  const header='ClamAV-VDB:11 Sep 2026 08-00 +0000:64:1234:90:0123456789abcdef0123456789abcdef:signature:builder:1789100000';
+  await writeFile(join(dir,'main.cvd'),header.padEnd(512,' ')+'synthetic layout fixture, not a verified database');
+  await writeFile(join(dir,'main.cvd.sign'),'wrong unversioned signature');
+  await writeFile(join(dir,'main-63.cvd.sign'),'wrong version');
+  await assert.rejects(readCvdArtifact(dir,'main'));
+  await writeFile(join(dir,'main-64.cvd.sign'),'synthetic signature layout fixture');
+  const artifact=await readCvdArtifact(dir,'main');assert.equal(artifact.version,64);assert.equal(artifact.signatureFile,'main-64.cvd.sign');assert.match(artifact.signatureSha256,/^[a-f0-9]{64}$/);
+  await writeFile(join(dir,'main-64.cvd.sign'),'');await assert.rejects(readCvdArtifact(dir,'main'));
+  await writeFile(join(dir,'main.cvd'),'ClamAV-VDB:time:../escape'.padEnd(512,' '));await assert.rejects(readCvdArtifact(dir,'main'));
+  await assert.rejects(readCvdArtifact(dir,'../main'));
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('database manifest accepts only matching authenticated sigtool verification, never unsigned info or a zero exit alone',()=>{
+ const valid={code:0,signal:null,timedOut:false,outputExceeded:false,stdout:'Version: 64\nVerification OK.\n',stderr:''};
+ assertCvdVerification(valid,64);
+ for(const patch of [{stdout:'Version: 64\nVerification: Unsigned container\n'},{stdout:'Version: 63\nVerification OK.\n'},{code:1},{signal:'SIGKILL'},{timedOut:true},{stderr:'ERROR: Verification failed'}])assert.throws(()=>assertCvdVerification({...valid,...patch},64));
 });
 test('deadline terminates and waits for an actual child instead of releasing early',async()=>{
  const result=await runMeasured(process.execPath,['-e','console.log(process.pid);setInterval(()=>{},1000)'],{env:{},deadline:Date.now()+1000});

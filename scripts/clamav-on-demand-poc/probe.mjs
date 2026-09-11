@@ -1,9 +1,8 @@
 import { mkdtemp, readFile, writeFile, rm, statfs } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MAX_LIFETIME_MS, assertFreshManifest, makePdf, runMeasured, assessScan, childEnvironment } from './core.mjs';
+import { MAX_LIFETIME_MS, assertFreshManifest, makePdf, runMeasured, assessScan, childEnvironment, readCvdArtifact } from './core.mjs';
 
 const root=dirname(fileURLToPath(import.meta.url));
 let running=false;
@@ -14,7 +13,8 @@ export async function runProbe(){
  try{
   const deadline=Date.now()+MAX_LIFETIME_MS,vendor=join(root,'vendor');
   const manifest=JSON.parse(await readFile(join(vendor,'manifest.json'),'utf8'));assertFreshManifest(manifest);
-  for(const db of manifest.databases){const buffer=await readFile(join(vendor,'database',`${db.name}.cvd`));if(buffer.length!==db.bytes||createHash('sha256').update(buffer).digest('hex')!==db.sha256)throw new Error('Bundled database hash mismatch');}
+  if(!Array.isArray(manifest.databases)||manifest.databases.length!==3||new Set(manifest.databases.map(db=>db.name)).size!==3)throw new Error('Bundled database manifest is incomplete');
+  for(const db of manifest.databases){const actual=await readCvdArtifact(join(vendor,'database'),db.name);for(const field of ['version','bytes','sha256','signatureFile','signatureBytes','signatureSha256'])if(actual[field]!==db[field])throw new Error('Bundled database or signature hash mismatch');}
   work=await mkdtemp(join(tmpdir(),'simsa-clamav-probe-'));const space=await statfs(work);
   const fixtures=[{name:'small.pdf',bytes:makePdf(1024),expected:'clean'},{name:'ten-mib.pdf',bytes:makePdf(10*1024*1024),expected:'clean'},{name:'eicar.txt',bytes:Buffer.from('X5O!P%@AP[4\\PZX54(P^)7CC)7}$'+'EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*','ascii'),expected:'eicar'}];
   const scans=[];

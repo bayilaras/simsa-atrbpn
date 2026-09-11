@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile, readdir, cp, lstat, stat, chmod } 
 import { tmpdir, userInfo } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VERSION, SIGNER, parseDebData, assertPinnedSignature, runMeasured, childEnvironment } from './core.mjs';
+import { VERSION, SIGNER, parseDebData, assertPinnedSignature, runMeasured, childEnvironment, readCvdArtifact, assertCvdVerification } from './core.mjs';
 
 const root=dirname(fileURLToPath(import.meta.url));
 const releaseSha256='28d6efc5b4423e7830c3559339552eb53870a9eac51ac4efb37d60530d329886';
@@ -34,17 +34,20 @@ await writeFile(config,[`DatabaseDirectory ${db}`,`DatabaseOwner ${userInfo().us
 // Freshclam performs authenticated updates and engine load tests. No raw CVD curl,
 // third-party mirror, disabled TestDatabases, or unsigned fallback is accepted.
 const update=await checked(join(install,'bin/freshclam'),['--config-file',config,'--stdout'],{env:clamEnv,deadline:Date.now()+360000});
+console.log(JSON.stringify({phase:'freshclam',elapsedMs:update.elapsedMs,databaseFiles:(await readdir(db)).sort().slice(0,30),publicBuildDiagnostic:(update.stdout+'\n'+update.stderr).slice(-4096)}));
 const databases=[];
 for(const name of ['main','daily','bytecode']){
- const path=join(db,`${name}.cvd`);await stat(path);await stat(path+'.sign');
- await checked(join(install,'bin/sigtool'),[`--info=${path}`,'--fips-limits',`--cvdcertsdir=${install}/etc/certs`],{env:clamEnv});
- const buffer=await readFile(path);databases.push({name,bytes:buffer.length,sha256:createHash('sha256').update(buffer).digest('hex')});
+ const metadata=await readCvdArtifact(db,name),path=join(db,`${name}.cvd`);
+ const verification=await checked(join(install,'bin/sigtool'),[`--info=${path}`,'--fips-limits',`--cvdcertsdir=${install}/etc/certs`],{env:clamEnv});
+ assertCvdVerification(verification,metadata.version);
+ databases.push(metadata);console.log(JSON.stringify({phase:'cvd_verified',...metadata}));
 }
 const vendor=join(root,'vendor');await mkdir(vendor);await mkdir(join(vendor,'bin'));await mkdir(join(vendor,'lib'));await mkdir(join(vendor,'etc'));await cp(join(install,'etc/certs'),join(vendor,'etc/certs'),{recursive:true});
 await cp(join(install,'bin/clamscan'),join(vendor,'bin/clamscan'));
 await chmod(join(vendor,'bin/clamscan'),0o755);
 for(const entry of await readdir(join(install,'lib'))){if(/\.so(?:\.|$)/.test(entry))await cp(join(install,'lib',entry),join(vendor,'lib',entry),{verbatimSymlinks:true});}
-await cp(db,join(vendor,'database'),{recursive:true});
+await mkdir(join(vendor,'database'));
+for(const metadata of databases){for(const name of [`${metadata.name}.cvd`,metadata.signatureFile])await cp(join(db,name),join(vendor,'database',name));}
 async function total(path){let n=0;for(const name of await readdir(path)){const p=join(path,name),s=await lstat(p);if(s.isDirectory())n+=await total(p);else if(s.isFile())n+=s.size;}return n;}
 const bundleBytes=await total(vendor);
 const report={poc:true,version:VERSION,releaseSha256,signer:SIGNER,verifiedAt:new Date().toISOString(),databases,bundleBytes,requiresLargeFunctions:bundleBytes>240*1024*1024,freshclamElapsedMs:update.elapsedMs,buildScanVerified:false};

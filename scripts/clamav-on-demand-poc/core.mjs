@@ -1,10 +1,30 @@
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, lstat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 export const VERSION='1.5.4';
 export const SIGNER='5BADCA2665EF59DCF8A23D8B707F0DB480836771';
 export const MAX_LIFETIME_MS=240000;
+// Official1.5.4 Freshclam names detached signatures dbname-VERSION.cvd.sign.
+// This is structural inspection only; sigtool with --fips-limits must still
+// authenticate the CVD before the build records a successful verification.
+export async function readCvdArtifact(directory,name){
+  if(!['main','daily','bytecode'].includes(name))throw new Error('Unexpected CVD database name');
+  const file=join(directory,`${name}.cvd`),info=await lstat(file);
+  if(!info.isFile()||info.size<512||info.size>120*1024*1024)throw new Error('CVD must be a bounded regular file');
+  const bytes=await readFile(file),fields=bytes.subarray(0,512).toString('ascii').trim().split(':');
+  const version=Number(fields[2]);
+  if(fields[0]!=='ClamAV-VDB'||fields.length<9||!/^\d+$/.test(fields[2]??'')||!Number.isSafeInteger(version)||version<=0)throw new Error('Invalid CVD header version');
+  const signatureFile=`${name}-${version}.cvd.sign`,signaturePath=join(directory,signatureFile),signatureInfo=await lstat(signaturePath);
+  if(!signatureInfo.isFile()||signatureInfo.size<=0||signatureInfo.size>65536)throw new Error('CVD signature must be a bounded nonempty regular file');
+  const signature=await readFile(signaturePath);
+  return {name,version,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),signatureFile,signatureBytes:signature.length,signatureSha256:createHash('sha256').update(signature).digest('hex')};
+}
+export function assertCvdVerification(result,version){
+  if(result.code!==0||result.signal||result.timedOut||result.outputExceeded||result.memoryExceeded||/ERROR|Unsigned container/i.test(result.stdout+'\n'+result.stderr)||!new RegExp(`^Version:\\s+${version}\\s*$`,'m').test(result.stdout)||!/^Verification OK\.\s*$/m.test(result.stdout))throw new Error('Authenticated CVD verification failed');
+}
 export function assertPinnedSignature(status){
   const valid=status.split('\n').some(line=>{const words=line.trim().split(/\s+/);return words[0]==='[GNUPG:]'&&words[1]==='VALIDSIG'&&(words[2]===SIGNER||words.at(-1)===SIGNER);});
   if(!valid||/\[GNUPG:\] (?:BADSIG|ERRSIG|EXPSIG|EXPKEYSIG|REVKEYSIG)/.test(status))throw new Error('Release signature verification failed');
