@@ -519,7 +519,7 @@ export class SuratMasukService {
             return result;
         } catch (error) {
             console.error('[SuratMasukService.getStats] Query failed:', error);
-            return { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 };
+            throw error;
         }
     }
 
