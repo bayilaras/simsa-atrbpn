@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Login from './Login'
 
 const profile = vi.hoisted(() => ({ mode: 'full', provider: 'better-auth', configured: false }))
+const logout = vi.hoisted(() => ({ signingOut: false, error: null, retry: vi.fn() }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ loading: false,
     authentication: { provider: profile.provider, googleSignIn: profile.configured },
 }) }))
@@ -13,11 +14,26 @@ vi.mock('@/lib/app-config', () => ({ default: {
 } }))
 vi.mock('@/lib/cloud-provider-config', () => ({ get AUTH_PROVIDER() { return profile.provider } }))
 vi.mock('../context/AuthContext', () => ({ useAuth: () => ({
-    loading: false, isAuthenticated: false, error: null,
+    loading: logout.signingOut, isAuthenticated: false, error: logout.error,
+    signingOut: logout.signingOut, logoutError: logout.error, signOut: logout.retry,
     signInWithGoogle: vi.fn(), signInWithEmail: vi.fn(),
 }) }))
 
 describe('demo login provider controls', () => {
+    beforeEach(() => { logout.signingOut = false; logout.error = null; logout.retry.mockClear() })
+    it('holds the login form while server logout is pending', () => {
+        logout.signingOut = true
+        render(<MemoryRouter><Login /></MemoryRouter>)
+        expect(screen.getByRole('status')).toHaveTextContent('Menutup sesi di server')
+        expect(screen.queryByLabelText('Email kedinasan')).not.toBeInTheDocument()
+    })
+    it('shows a clear remote failure and allows retry without exposing private content', () => {
+        logout.error = 'Penutupan sesi server belum terkonfirmasi.'
+        render(<MemoryRouter><Login /></MemoryRouter>)
+        expect(screen.getByRole('alert')).toHaveTextContent('sesi server belum terkonfirmasi')
+        fireEvent.click(screen.getByRole('button', { name: 'Coba keluar lagi' }))
+        expect(logout.retry).toHaveBeenCalledOnce()
+    })
     it.each([
         ['full', 'better-auth', true, true], ['full', 'better-auth', false, false],
         ['metadata-demo', 'firebase', true, true], ['metadata-demo', 'better-auth', true, false],

@@ -116,7 +116,10 @@ export function createAuthService({
             let signOutError = null;
             try {
                 if (firebaseMode) await apiClient.post('/api/auth/sign-out');
-                else await legacyClient.signOut();
+                else {
+                    const result = await legacyClient.signOut();
+                    if (result?.error) throw new Error(result.error.message || 'Penutupan sesi server belum terkonfirmasi.');
+                }
             } catch (error) {
                 signOutError = error;
                 console.error('Sign out failed:', error);
@@ -127,7 +130,7 @@ export function createAuthService({
                 }
                 await storageCleanup;
             }
-            if (signOutError && firebaseMode) throw signOutError;
+            if (signOutError) throw signOutError;
         },
 
         async revokeSessions() {

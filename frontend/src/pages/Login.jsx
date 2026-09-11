@@ -28,7 +28,7 @@ const BENEFITS = [
 ]
 
 export default function Login() {
-    const { signInWithGoogle, signInWithEmail, loading, error, isAuthenticated } = useAuth()
+    const { signInWithGoogle, signInWithEmail, signOut, signingOut, logoutError, loading, error, isAuthenticated } = useAuth()
     const navigate = useNavigate()
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
@@ -38,6 +38,12 @@ export default function Login() {
     const runtime = useAppConfig()
     const googleAvailable = !runtime.loading && runtime.authentication?.googleSignIn === true
         && runtime.authentication?.provider === AUTH_PROVIDER && !localDemo
+
+    if (signingOut) {
+        return <main className="flex min-h-svh items-center justify-center bg-background p-6" role="status" aria-live="polite">
+            <p className="text-sm text-muted-foreground">Menutup sesi di server…</p>
+        </main>
+    }
 
     if (isAuthenticated) {
         return <Navigate to="/" replace />
@@ -133,6 +139,9 @@ export default function Login() {
                                     <span>{displayError}</span>
                                 </div>
                             )}
+                            {logoutError && <Button type="button" variant="outline" className="w-full" onClick={signOut} disabled={loading}>
+                                Coba keluar lagi
+                            </Button>}
 
                             <form onSubmit={handleEmailLogin} className="space-y-4" aria-busy={loading}>
                                 <div className="space-y-2">
