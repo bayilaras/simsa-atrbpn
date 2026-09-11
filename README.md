@@ -39,6 +39,12 @@ dengan `npm run dev`, dan frontend dari direktori `frontend` dengan
 `npm run dev -- --host 127.0.0.1 --port 3000 --strictPort`.
 Buka `http://localhost:3000`; `FRONTEND_URL` dan `BETTER_AUTH_URL` harus memakai
 origin yang sama persis. Biarkan `VITE_API_URL` kosong agar `/api` diproksi Vite.
+Untuk juga menguji login email melalui `http://127.0.0.1:3000`, tambahkan
+`ADDITIONAL_TRUSTED_ORIGINS=http://127.0.0.1:3000` pada environment backend,
+lalu restart backend. Browser menganggap `localhost` dan `127.0.0.1` sebagai
+host berbeda, sehingga perlu login terpisah pada masing-masing alamat.
+Konfigurasi tambahan ini hanya untuk pengembangan lokal; domain deployment
+harus dikonfigurasi secara eksplisit dengan HTTPS.
 Batasi listener backend ke loopback atau gunakan lingkungan pengembangan terisolasi.
 
 Perintah `npm start`/`npm run build` di akar repositori adalah launcher **demo
