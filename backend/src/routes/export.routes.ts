@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { exportService } from '../services/export.service';
+import { ExportCompletenessError } from '../services/export-completeness.js';
 import { exportLimiter } from '../middlewares/rate-limiter.middleware';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { permissionMiddleware } from '../middlewares/role.middleware';
@@ -30,9 +31,10 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
+        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
 
         const filters = {
+            search: typeof search === 'string' ? search : undefined,
             unitKerjaId: unitKerjaId as string,
             tahun: tahun ? Number(tahun) : undefined,
             tanggalDari: tanggalDari as string,
@@ -51,6 +53,9 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
     } catch (error) {
+        if (error instanceof ExportCompletenessError) {
+            return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+        }
         log.error({ err: error }, 'Error exporting Surat Masuk to Excel:');
         res.status(500).json({ error: 'Failed to export to Excel' });
     }
@@ -68,9 +73,10 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
+        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
 
         const filters = {
+            search: typeof search === 'string' ? search : undefined,
             unitKerjaId: unitKerjaId as string,
             tahun: tahun ? Number(tahun) : undefined,
             tanggalDari: tanggalDari as string,
@@ -89,6 +95,9 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
     } catch (error) {
+        if (error instanceof ExportCompletenessError) {
+            return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+        }
         log.error({ err: error }, 'Error exporting Surat Masuk to PDF:');
         res.status(500).json({ error: 'Failed to export to PDF' });
     }
@@ -108,9 +117,10 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif } = req.query;
+        const { search, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif } = req.query;
 
         const filters = {
+            search: typeof search === 'string' ? search : undefined,
             unitKerjaId: unitKerjaId as string,
             tahun: tahun ? Number(tahun) : undefined,
             tanggalDari: tanggalDari as string,
@@ -128,6 +138,9 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
     } catch (error) {
+        if (error instanceof ExportCompletenessError) {
+            return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+        }
         log.error({ err: error }, 'Error exporting Surat Keluar to Excel:');
         res.status(500).json({ error: 'Failed to export to Excel' });
     }
@@ -145,9 +158,10 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif } = req.query;
+        const { search, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif } = req.query;
 
         const filters = {
+            search: typeof search === 'string' ? search : undefined,
             unitKerjaId: unitKerjaId as string,
             tahun: tahun ? Number(tahun) : undefined,
             tanggalDari: tanggalDari as string,
@@ -165,6 +179,9 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
     } catch (error) {
+        if (error instanceof ExportCompletenessError) {
+            return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+        }
         log.error({ err: error }, 'Error exporting Surat Keluar to PDF:');
         res.status(500).json({ error: 'Failed to export to PDF' });
     }
@@ -191,9 +208,10 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { jenisArsip, tahun, formulirType } = req.query;
+        const { search, jenisArsip, tahun, formulirType } = req.query;
 
         const filters = {
+            search: typeof search === 'string' ? search : undefined,
             unitKerjaId: unitKerjaId as string,
             jenisArsip: jenisArsip as string,
             tahun: tahun ? Number(tahun) : undefined,
@@ -209,6 +227,9 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
     } catch (error) {
+        if (error instanceof ExportCompletenessError) {
+            return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+        }
         log.error({ err: error }, 'Error exporting Arsip to Excel:');
         res.status(500).json({ error: 'Failed to export to Excel' });
     }
@@ -226,9 +247,10 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { jenisArsip, tahun, formulirType } = req.query;
+        const { search, jenisArsip, tahun, formulirType } = req.query;
 
         const filters = {
+            search: typeof search === 'string' ? search : undefined,
             unitKerjaId: unitKerjaId as string,
             jenisArsip: jenisArsip as string,
             tahun: tahun ? Number(tahun) : undefined,
@@ -244,6 +266,9 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
     } catch (error) {
+        if (error instanceof ExportCompletenessError) {
+            return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+        }
         log.error({ err: error }, 'Error exporting Arsip to PDF:');
         res.status(500).json({ error: 'Failed to export to PDF' });
     }
