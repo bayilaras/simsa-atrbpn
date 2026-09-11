@@ -80,7 +80,7 @@ Perintah ini menggunakan akun runtime `simsa_api`, hash native Better Auth, dan 
 
 ## 4. Buat layanan Render Free
 
-1. Hubungkan repository yang sudah memuat perubahan ini ke Render. Pilih Blueprint dengan path `deploy/render/render.yaml` dan konfirmasi **satu web service Free**. Tidak ada database Render yang perlu dibuat.
+1. Pastikan branch `fix/user-readiness` yang memuat perubahan ini sudah dipublikasikan ke repository tujuan, lalu hubungkan repository tersebut ke Render. Pada pembuatan Blueprint pilih **branch `fix/user-readiness`** dan path **`deploy/render/render.yaml`**. Branch layanan juga dipin ke `fix/user-readiness` di YAML; jangan menerima pilihan default `main` yang belum memuat kode ini. Konfirmasi **satu web service Free**. Tidak ada database Render yang perlu dibuat.
 2. Isi secret `DATABASE_URL` dengan URL `simsa_api` yang sudah diverifikasi. `BETTER_AUTH_SECRET` dihasilkan Render; pertahankan nilainya antar deployment karena penggantian dapat membatalkan sesi. Jangan memasukkan URL admin/migrator/operator atau file setup ke layanan.
 3. Tinjau seluruh flag pada Blueprint dan `deploy/render/runtime.env.example`. Storage/scanner/OAuth Google tetap disabled. Pool dibatasi 3 koneksi, idle timeout 10 detik dan connect timeout 15 detik. Ini pembatas awal, bukan hasil uji kapasitas untuk jumlah pengguna tertentu.
 4. `npm run build:cloud-metadata` membangun `backend/dist-cloud-metadata` dan `frontend/dist-cloud-metadata`, terpisah dari hasil build lokal. `npm run start:cloud-metadata` memvalidasi konfigurasi dan manifest, lalu menjalankan aplikasi dengan origin yang sama. URL publik diturunkan dari `RENDER_EXTERNAL_URL` bila `FRONTEND_URL`/`BETTER_AUTH_URL` kosong; domain kustom harus memakai nilai HTTPS eksplisit yang cocok.

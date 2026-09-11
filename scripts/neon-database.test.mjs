@@ -79,6 +79,7 @@ test('Render Blueprint declares one free web service with manual deployment and 
   assert.equal(blueprint.services.length, 1);
   const service = blueprint.services[0];
   assert.equal(service.type, 'web'); assert.equal(service.runtime, 'node'); assert.equal(service.plan, 'free');
+  assert.equal(service.branch, 'fix/user-readiness');
   assert.equal(service.autoDeployTrigger, 'off'); assert.equal(service.healthCheckPath, '/health');
   assert.equal(service.buildCommand, 'npm run build:cloud-metadata');
   assert.equal(service.startCommand, 'npm run start:cloud-metadata');

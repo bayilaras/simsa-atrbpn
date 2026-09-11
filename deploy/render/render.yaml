@@ -3,6 +3,7 @@ services:
   - type: web
     name: simsa-cloud-metadata
     runtime: node
+    branch: fix/user-readiness
     plan: free
     region: singapore
     autoDeployTrigger: "off"
