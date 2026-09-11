@@ -68,6 +68,7 @@ export default function Arsip() {
     const activeTab = VALID_TABS.includes(tab) ? tab : 'keluar'
 
     const [searchTerm, setSearchTerm] = useState('')
+    const [refreshVersion, setRefreshVersion] = useState(0)
     const [arsipStats, setArsipStats] = useState({ total: 0, arsipMasuk: 0, arsipKeluar: 0 })
     const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
 
@@ -91,10 +92,11 @@ export default function Arsip() {
 
     // Fetch arsip stats
     useEffect(() => {
+        let active = true
         const fetchArsipStats = async () => {
             try {
                 const result = await arsipService.getStats({ unitKerjaId: resolvedUnitKerjaId })
-                if (result) {
+                if (active && result) {
                     setArsipStats(result)
                 }
             } catch (error) {
@@ -102,7 +104,8 @@ export default function Arsip() {
             }
         }
         fetchArsipStats()
-    }, [activeTab, resolvedUnitKerjaId])
+        return () => { active = false }
+    }, [activeTab, resolvedUnitKerjaId, refreshVersion])
 
     // Filter state
     const [tahunFilter, setTahunFilter] = useState('all')
@@ -130,32 +133,28 @@ export default function Arsip() {
         canNext,
         canPrev,
         setPage,
-        isLoading
+        isLoading,
+        error: loadError
     } = useDataTable(
         async (page, limit) => {
             if (activeTab === 'retensi') return { data: [], total: 0 }
 
-            try {
-                const response = await arsipService.getAll({
-                    page,
-                    limit,
-                    unitKerjaId: resolvedUnitKerjaId,
-                    jenisArsip: activeTab,
-                    search: searchTerm,
-                    tahun: tahunFilter !== 'all' ? parseInt(tahunFilter) : undefined,
-                })
-                return {
-                    data: response.data,
-                    total: response.pagination.total,
-                }
-            } catch (error) {
-                console.error('Failed to fetch arsip:', error)
-                return { data: [], total: 0 }
+            const response = await arsipService.getAll({
+                page,
+                limit,
+                unitKerjaId: resolvedUnitKerjaId,
+                jenisArsip: activeTab,
+                search: searchTerm,
+                tahun: tahunFilter !== 'all' ? parseInt(tahunFilter) : undefined,
+            })
+            return {
+                data: response.data,
+                total: response.pagination.total,
             }
         },
         {
             pageSize: 10,
-            dependencies: [activeTab, searchTerm, tahunFilter, user, resolvedUnitKerjaId]
+            dependencies: [activeTab, searchTerm, tahunFilter, user, resolvedUnitKerjaId, refreshVersion]
         }
     )
 
@@ -203,7 +202,7 @@ export default function Arsip() {
                     </div>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="outline" onClick={() => setPage(1)} size="sm" className="h-9">
+                    <Button variant="outline" onClick={() => setRefreshVersion(version => version + 1)} disabled={isLoading} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                         Perbarui
                     </Button>
@@ -396,6 +395,15 @@ export default function Arsip() {
                                     {isLoading ? (
                                         <div className="p-4">
                                             <TableSkeleton rows={5} columns={7} />
+                                        </div>
+                                    ) : loadError ? (
+                                        <div role="alert" className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                                            <AlertCircle className="h-8 w-8 text-destructive" aria-hidden="true" />
+                                            <p className="font-medium">Gagal memuat daftar arsip</p>
+                                            <p className="text-sm text-muted-foreground">Periksa koneksi Anda lalu coba lagi.</p>
+                                            <Button variant="outline" onClick={() => setRefreshVersion(version => version + 1)}>
+                                                <RefreshCw className="h-4 w-4" aria-hidden="true" /> Coba lagi
+                                            </Button>
                                         </div>
                                     ) : (
                                         <Table responsive>
