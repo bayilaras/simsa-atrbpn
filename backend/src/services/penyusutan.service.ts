@@ -32,6 +32,10 @@ import { recoverInactiveTransferSchema } from '../validators/penyusutan-evidence
 import { fileAttachmentService } from './file-attachment.service';
 import { lockDispositionActor, type DispositionActor } from './penyusutan-authority';
 
+const jakartaCalendar = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
 // Types
 interface PenyusutanFilters {
     unitKerjaId: string;
@@ -767,7 +771,7 @@ class PenyusutanService {
                 status: nextStatus,
                 updatedAt: new Date(),
             };
-            const today = new Date().toISOString().split('T')[0];
+            const today = jakartaCalendar.format(new Date());
             if (nextStatus === 'proposed') {
                 updateData.tanggalUsul = today;
                 updateData.proposedBy = actorId;
@@ -782,7 +786,7 @@ class PenyusutanService {
             }
             if (nextStatus === 'executed') {
                 updateData.tanggalPelaksanaan = execution
-                    ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(execution.snapshot.performedAt))
+                    ? jakartaCalendar.format(new Date(execution.snapshot.performedAt))
                     : today;
                 updateData.executedBy = actorId;
                 if (execution) {
@@ -907,16 +911,26 @@ class PenyusutanService {
     async getExecutionOptions(id: string, actor: DispositionActor, unitScope: RecordUnitScope,
         securityClassifications?: string[] | null) {
         if (actor.role !== 'super_admin') throw new ForbiddenError('Hanya pencatat pelaksanaan yang dapat memilih bukti.');
-        const batch = await this.findById(id, unitScope, securityClassifications);
-        if (!batch) throw new Error('Penyusutan batch not found');
-        if (batch.jenisPenyusutan !== 'pemusnahan' || batch.status !== 'approved') {
-            throw new ConflictError('Pilihan bukti tersedia untuk pemusnahan yang telah disetujui.');
-        }
-        const archives = batch.items.map((item: any) => item.arsip);
-        if (!archives.length) throw new ConflictError('Batch tidak memiliki arsip.');
         return db.transaction(async tx => {
+            const [batch] = await tx.select().from(penyusutanArsip).where(and(
+                scopedRecordByIdWhere(penyusutanArsip.id, id, penyusutanArsip.unitKerjaId, unitScope),
+                batchSecurityCondition(securityClassifications),
+            )).limit(1).for('update');
+            if (!batch) throw new Error('Penyusutan batch not found');
+            if (batch.jenisPenyusutan !== 'pemusnahan' || batch.status !== 'approved') {
+                throw new ConflictError('Pilihan bukti tersedia untuk pemusnahan yang telah disetujui.');
+            }
             actor = await lockDispositionActor(tx, actor, id, batch.unitKerjaId);
             if (actor.role !== 'super_admin') throw new ForbiddenError('Kewenangan administrator terkini diperlukan untuk memilih bukti.');
+            // Reload after the parent locks; the earlier request cannot authorize stale rows.
+            const archives = await tx.select({ ...getTableColumns(arsip), isTerjaga: protectedDesignation }).from(arsip)
+                .innerJoin(penyusutanItems, eq(penyusutanItems.arsipId, arsip.id))
+                .where(eq(penyusutanItems.penyusutanId, id)).orderBy(asc(arsip.id)).for('update', { of: arsip });
+            if (!archives.length || archives.some(archive => archive.unitKerjaId !== batch.unitKerjaId
+                || archive.legalHold || archive.isTerjaga || archive.disposalStatus !== 'approved' || archive.disposalBatchId !== id
+                || !isAllowedArchiveClass(archive.klasifikasiKeamanan, securityClassifications))) {
+                throw new ConflictError('Arsip batch tidak tersedia untuk memilih bukti pelaksanaan.');
+            }
             await assertManageGrants(tx, archives, actor);
             const attachments = await tx.select().from(fileAttachments).where(and(
                 eq(fileAttachments.entityType, 'arsip'), inArray(fileAttachments.entityId, archives.map((row: any) => row.id)),

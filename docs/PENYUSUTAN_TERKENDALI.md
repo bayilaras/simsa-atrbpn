@@ -24,6 +24,8 @@ Eksekusi menyimpan snapshot identitas dokumen, hash, saksi, metode, waktu, dan p
 
 Transisi, unggah bukti, dan pemulihan pemindahan memuat ulang akun aktif, peran, dan mandat unit setelah mengunci arsip dalam transaksi. Finalisasi membaca ulang byte setiap lampiran bukti unik dengan batas ukuran/waktu pemeriksaan integritas, lalu memeriksa kembali masa berlaku grant sebelum menyimpan snapshot. Hash snapshot memakai representasi JSON kanonis agar tetap cocok setelah disimpan sebagai JSONB.
 
+Pilihan bukti juga membaca status batch dan metadata arsip di dalam transaksi setelah penguncian; perubahan klasifikasi, unit, legal hold, atau status proses harus memenuhi pemeriksaan terkini sebelum nama dokumen ditampilkan. Tanggal usul, review, persetujuan, dan pelaksanaan memakai kalender Asia/Jakarta, termasuk tindakan setelah tengah malam WIB.
+
 Jika byte berbeda, transaksi menyimpan status integritas `mismatch` beserta audit penolakan, sementara batch tetap disetujui dan belum dilaksanakan. Jika storage tidak tersedia, proses gagal tanpa menyatakan pemeriksaan baru berhasil. Jika audit tidak dapat disimpan, seluruh transaksi termasuk hasil pemeriksaan dibatalkan; perbaiki audit dan ulangi pemeriksaan. Pemeriksaan integritas terjadwal tetap diperlukan untuk memantau berkas setelah transaksi selesai.
 
 Pencatatan ini **tidak menjalankan penghapusan objek/replika/backup** dan tidak membuktikan isi dokumen benar secara hukum. Pelaksanaan fisik/digital, kebijakan salinan, jadwal backup, dan uji operasional harus dilaksanakan serta dibuktikan oleh petugas. Penyimpanan privat dan worker antivirus diperlukan agar bukti dapat keluar dari karantina. Tidak ada kredensial layanan atau bukti pelaksanaan yang dibuat secara sintetis untuk penggunaan nyata.

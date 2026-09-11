@@ -62,6 +62,34 @@ beforeEach(async () => {
 });
 
 describe('disposition final authority and stored bytes', () => {
+    it.each(['classification', 'unit', 'batch_status'])('reloads %s before disclosing execution options', async changed => {
+        const transaction = holder.db.transaction.bind(holder.db);
+        const race = vi.spyOn(holder.db, 'transaction').mockImplementationOnce(async (callback: any) => {
+            if (changed === 'classification') await database.exec("UPDATE arsip SET klasifikasi_keamanan='rahasia'");
+            if (changed === 'unit') await database.exec("UPDATE arsip SET unit_kerja_id='other'");
+            if (changed === 'batch_status') await database.exec("UPDATE penyusutan_arsip SET status='draft'");
+            return transaction(callback);
+        });
+        try { await expect(service.getExecutionOptions(batchId, actor, null)).rejects.toThrow(); }
+        finally { race.mockRestore(); }
+    });
+    it('returns authorized options from the current batch', async () => {
+        const result = await service.getExecutionOptions(batchId, actor, null);
+        expect(result.attachments).toHaveLength(4);
+        expect(result.witnesses.map(witness => witness.id).sort()).toEqual([id(2), id(3)]);
+        expect(result.attachments[0]).not.toHaveProperty('fileUrl');
+    });
+    it.each([
+        ['draft', 'tanggal_usul'], ['proposed', 'tanggal_review'], ['reviewed', 'tanggal_persetujuan'],
+    ])('uses the Jakarta calendar when advancing %s early in the morning', async (status, field) => {
+        await database.query('UPDATE penyusutan_arsip SET status=$1', [status]);
+        vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-09-10T18:00:00Z'));
+        try {
+            await service.updateStatus(batchId, { user: actor }, null);
+            const row = (await database.query<any>('SELECT tanggal_usul::text AS tanggal_usul,tanggal_review::text AS tanggal_review,tanggal_persetujuan::text AS tanggal_persetujuan FROM penyusutan_arsip')).rows[0];
+            expect(row[field]).toBe('2026-09-11');
+        } finally { vi.useRealTimers(); }
+    });
     it('rechecks every unique proof and hashes the persisted JSONB consistently', async () => {
         await execute();
         expect(storage.downloadFile).toHaveBeenCalledTimes(4);
