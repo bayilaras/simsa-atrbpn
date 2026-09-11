@@ -5,7 +5,7 @@ Project ini hanya menguji mesin ClamAV asli terhadap tiga fixture tetap: PDF bua
 ## Pengaturan Vercel Preview
 
 1. Buat project terpisah dari repository ini; **Root Directory `scripts/clamav-on-demand-poc`**, framework **Other**, Node.js **24.x**. Jangan salin variabel database, Blob, atau autentikasi aplikasi.
-2. Gunakan `vercel.json` di direktori ini: Install Command `node --version`; Build Command `node build.mjs`; Output Directory tidak perlu ditentukan. Build harus berjalan pada Linux x64. `tar` dan `gpg`/`gpg2` harus tersedia; build berhenti bila alat atau verifikasi gagal.
+2. Gunakan `vercel.json` di direktori ini: Install Command `node --version`; Build Command `node build.mjs`; Output Directory `public` menunjuk direktori statis kosong. Engine dan definisi tetap di `vendor/`, hanya diikutkan dalam function. Build harus berjalan pada Linux x64. `tar` dan `gpg`/`gpg2` harus tersedia; build berhenti bila alat atau verifikasi gagal.
 3. Tetapkan variabel nonrahasia **`SIMSA_CLAMAV_POC_ENABLED=1` hanya untuk Preview**. `VERCEL_ENV` berasal dari Vercel; jangan membuat override. Endpoint menolak Production. Deploy branch percobaan sebagai Preview.
 4. Sebelum membuka atau menjalankan uji, pastikan **Deployment Protection: Vercel Authentication** aktif pada Preview di dashboard, dan permintaan anonim ditolak oleh Vercel. Kode POC tidak dapat membuktikan setting platform itu sendiri. Jangan gunakan bypass token publik.
 5. Buka deployment yang terlindungi melalui browser yang sudah masuk ke Vercel. Klik **Jalankan tiga uji sintetis**. Form melakukan POST kosong pada origin yang sama; hasil teks JSON bisa dibaca langsung. Tidak perlu membuka konsol, mengirim cookie, atau memasukkan file.
