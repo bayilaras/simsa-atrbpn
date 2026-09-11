@@ -28,7 +28,8 @@ describe('session-scoped drafts', () => {
             provider: 'better-auth',
             legacyClient: { signOut: fails ? vi.fn().mockRejectedValue(new Error('offline')) : vi.fn().mockResolvedValue({}) },
         })
-        await auth.signOut()
+        if (fails) await expect(auth.signOut()).rejects.toThrow('offline')
+        else await auth.signOut()
         const nextUser = renderHook(() => useAutoSave(key, 100))
         let draft
         act(() => { draft = nextUser.result.current.restoreDraft() })
