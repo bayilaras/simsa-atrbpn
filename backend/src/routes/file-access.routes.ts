@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import type { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../config/database';
 import { fileAttachments, suratKeluar, suratMasuk } from '../db/schema';
@@ -64,27 +65,58 @@ async function streamAuthorizedFile(
         }
     }
 
-    const objectGeneration = requireImmutableObjectGeneration(
-        details.locator,
-        details.objectGeneration,
-    );
-    const stored = await blobStorageService.downloadFile(details.locator, {
-        generation: objectGeneration || undefined,
-    });
-    if (!stored) {
-        return res.status(404).json({ error: 'File not found' });
-    }
-
-    const disposition = download ? 'attachment' : 'inline';
-    const fileName = safeFileName(details.fileName, stored.fileName);
-
-    res.setHeader('Content-Type', stored.mimeType);
-    res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-
+    const controller = new AbortController();
+    let stream: Readable | undefined;
+    let streaming = false;
+    const cleanup = () => {
+        res.off('close', disconnected);
+        res.off('finish', cleanup);
+    };
+    const disconnected = () => {
+        if (!res.writableFinished) {
+            controller.abort();
+            stream?.destroy();
+        }
+        cleanup();
+    };
+    const responseClosed = () => controller.signal.aborted || res.destroyed || res.writableEnded;
+    res.once('close', disconnected);
+    res.once('finish', cleanup);
     try {
+        if (responseClosed()) return;
+        const objectGeneration = requireImmutableObjectGeneration(
+            details.locator,
+            details.objectGeneration,
+        );
+        const stored = await blobStorageService.downloadFile(details.locator, {
+            generation: objectGeneration || undefined,
+            abortSignal: controller.signal,
+        });
+        stream = stored?.stream;
+        stream?.on('error', (error) => {
+            // A cancelled provider request can still report an asynchronous
+            // stream error. Keep it handled without writing to a closed socket.
+            if (responseClosed()) return;
+            log.error({ err: error, entityId: details.auditEntityId }, 'Blob stream failed');
+            stream?.destroy();
+            if (!res.headersSent) res.status(502).end();
+            else res.destroy(error);
+        });
+        if (responseClosed()) {
+            // A provider may resolve after cancellation instead of rejecting.
+            stream?.destroy();
+            return;
+        }
+        if (!stored) return res.status(404).json({ error: 'File not found' });
+
+        const disposition = download ? 'attachment' : 'inline';
+        const fileName = safeFileName(details.fileName, stored.fileName);
+        res.setHeader('Content-Type', stored.mimeType);
+        res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+        res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+
         await auditLogService.logActionOrThrow({
             userId: req.user?.id,
             userEmail: req.user?.email,
@@ -107,20 +139,24 @@ async function streamAuthorizedFile(
             },
             ipAddress: req.ip,
         });
+        if (responseClosed()) {
+            stored.stream.destroy();
+            return;
+        }
+        streaming = true;
+        stored.stream.pipe(res);
     } catch (error) {
         // The storage stream may already hold a provider connection. Close it
         // before failing the request so an unavailable audit trail cannot leak
         // either protected bytes or transport resources.
-        stored.stream.destroy();
+        stream?.destroy();
+        if (responseClosed()) return;
         throw error;
+    } finally {
+        // While piping, finish/close owns cleanup. Every early exit releases
+        // the listeners even if storage or audit rejects before piping starts.
+        if (!streaming) cleanup();
     }
-
-    stored.stream.on('error', (error) => {
-        log.error({ err: error, entityId: details.auditEntityId }, 'Blob stream failed');
-        if (!res.headersSent) res.status(502).end();
-        else res.destroy(error);
-    });
-    stored.stream.pipe(res);
 }
 
 router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => {
@@ -155,7 +191,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             const locator = normalizeBlobLocator(attachment.fileUrl || attachment.driveFileId);
             if (!locator) return res.status(404).json({ error: 'File not found' });
 
-            return streamAuthorizedFile(req, res, {
+            return await streamAuthorizedFile(req, res, {
                 locator,
                 objectGeneration: attachment.objectGeneration,
                 fileName: attachment.fileName || 'lampiran',
@@ -212,7 +248,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             });
         }
 
-        return streamAuthorizedFile(req, res, {
+        return await streamAuthorizedFile(req, res, {
             locator,
             objectGeneration: releasedRegistration.objectGeneration,
             fileName: record?.fileName || 'dokumen',
