@@ -268,6 +268,10 @@ function Invoke-PostgresControl($config, [ValidateSet('start', 'stop')][string]$
     $child = Start-Process -FilePath (Join-Path $config.postgresBin 'pg_ctl.exe') -ArgumentList $arguments -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $config.runtimeRoot 'postgres-control.stdout.log') `
         -RedirectStandardError (Join-Path $config.runtimeRoot 'postgres-control.stderr.log') -PassThru
+    # PowerShell 5 can lose a short-lived child's exit code unless its process
+    # handle is retained before waiting. Do not use Start-Process -Wait: that
+    # also waits for PostgreSQL descendants during start.
+    $null = $child.Handle
     if (-not $child.WaitForExit(35000)) { throw 'Perintah PostgreSQL belum selesai. Periksa status lokal sebelum mencoba kembali.' }
     $child.Refresh()
     if ($child.ExitCode -ne 0) { throw 'Perintah PostgreSQL gagal. Pengelola dapat memeriksa postgres-control.stderr.log; jangan membuat cluster pengganti.' }

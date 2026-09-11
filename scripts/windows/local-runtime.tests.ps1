@@ -100,4 +100,26 @@ Check 'rejects a foreign listener' {
 Check 'accepts only the recorded loopback listener' {
     Assert-OwnedListeners @([pscustomobject]@{OwningProcess=1234;LocalAddress='127.0.0.1'}) 1234
 }
+
+$fixtureDirectory = Join-Path ([IO.Path]::GetTempPath()) ('simsa-launcher-' + [guid]::NewGuid().ToString('N'))
+$null = New-Item -ItemType Directory -Path $fixtureDirectory
+# Exercise a real short-lived Windows child without starting/stopping PostgreSQL.
+function Start-Process {
+    param($FilePath, $ArgumentList, $WindowStyle, $RedirectStandardOutput, $RedirectStandardError, [switch]$PassThru)
+    Microsoft.PowerShell.Management\Start-Process -FilePath (Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe') `
+        -ArgumentList '-NoProfile', '-Command', 'exit 0' -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput $RedirectStandardOutput -RedirectStandardError $RedirectStandardError
+}
+try {
+    Check 'recognizes a successful short-lived native child on Windows PowerShell' {
+        Invoke-PostgresControl ([pscustomobject]@{postgresBin=$config.postgresBin;dataDirectory=$config.dataDirectory;runtimeRoot=$fixtureDirectory}) 'stop'
+    }
+} finally {
+    Remove-Item Function:\Start-Process
+    foreach ($filename in @('postgres-control.stdout.log','postgres-control.stderr.log')) {
+        $file = Join-Path $fixtureDirectory $filename
+        if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file }
+    }
+    Remove-Item -LiteralPath $fixtureDirectory
+}
 Write-Output ('All ' + $script:passed + ' launcher guard tests passed.')
