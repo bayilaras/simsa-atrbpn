@@ -59,13 +59,17 @@ export function createAppConfig(env = {}) {
     // rejecting an unknown value; only the exact metadata-demo value enables
     // the restrictive UI and its mandatory backend capability handshake.
     const mode = requestedMode === 'metadata-demo' ? 'metadata-demo' : 'full'
+    const providers = resolveCloudProviderConfig(env)
     const capabilities = mode === 'metadata-demo'
         ? Object.freeze({ ...RESTRICTED_CAPABILITIES })
-        : FULL_CAPABILITIES
+        : providers.storageProvider === 'disabled'
+            ? Object.freeze({ ...FULL_CAPABILITIES, files: false, fileUploads: false })
+            : FULL_CAPABILITIES
 
     return Object.freeze({
         mode,
-        authProvider: resolveCloudProviderConfig(env).authProvider,
+        authProvider: providers.authProvider,
+        storageProvider: providers.storageProvider,
         profile,
         name: branding.name,
         shortName: branding.shortName,
@@ -93,6 +97,7 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
             && typeof backendCapabilities?.fileUploads === 'boolean'
             && typeof backendCapabilities?.externalIntegrations === 'boolean'
             && !(backendCapabilities.fileUploads && !backendCapabilities.files)
+            && !(buildConfig.storageProvider === 'disabled' && backendCapabilities.files)
         return Object.freeze({
             compatible: Boolean(compatible), mode: 'full', syntheticDataOnly: false,
             capabilities: Object.freeze(compatible ? { ...backendCapabilities }

@@ -2,6 +2,7 @@ import { isMetadataDemo } from './demo.js';
 import { buildCloudPlatformConfig } from './cloud-platform.js';
 import { getObjectStorageConfigurationStatus } from './blob-storage.js';
 import { loadMalwareScanConfig, validateMalwareScanConfig } from './malware-scanner.js';
+import { buildGoogleOAuthConfig } from './google-oauth.js';
 
 /** Configuration availability only; no credentials or claims of live service health. */
 export function getPublicCapabilities(source: NodeJS.ProcessEnv = process.env) {
@@ -20,7 +21,7 @@ export function getPublicCapabilities(source: NodeJS.ProcessEnv = process.env) {
     }
     const googleSignIn = cloud.authProvider === 'firebase'
         ? Boolean(cloud.firebaseProjectId) && !cloud.validationErrors.some(error => /Firebase|FIREBASE|project authority|AUTH_PROVIDER/.test(error))
-        : !demo && Boolean(source.GOOGLE_CLIENT_ID?.trim() && source.GOOGLE_CLIENT_SECRET?.trim());
+        : !demo && buildGoogleOAuthConfig(source).configured;
     return {
         mode: demo ? 'metadata-demo' : 'full',
         syntheticDataOnly: demo,

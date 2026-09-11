@@ -60,6 +60,14 @@ describe('validated API runtime lifecycle', () => {
         expect(state.worker.start).toHaveBeenCalledOnce();
     });
 
+    it('starts full internal metadata without a background worker or keepalive poll', async () => {
+        const state = setup('full', 'embedded');
+        vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'disabled');
+        await import('../api-runtime.js');
+        expect(state.listen).toHaveBeenCalledExactlyOnceWith({ port: 3015 }, expect.any(Function));
+        expect(state.worker.start).not.toHaveBeenCalled();
+    });
+
     it('preserves full mode external worker assignment', async () => {
         const state = setup('full', 'external');
         await import('../api-runtime.js');

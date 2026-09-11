@@ -5,6 +5,7 @@ import { db } from './database';
 import { env } from './env';
 import { getTrustedOrigins, isTrustedOrigin } from './trusted-origins';
 import { hashCredentialPassword, verifyCredentialPassword } from './password-hashing.js';
+import { buildGoogleOAuthConfig } from './google-oauth.js';
 import * as schema from '../db/schema';
 
 // OAuth is served through the public frontend origin in production. Falling
@@ -76,7 +77,9 @@ export const auth = betterAuth({
         disableSignUp: env.NODE_ENV === 'production',
         autoSignIn: true,
     },
-    socialProviders: {
+    // Do not register an OAuth provider when the operator explicitly disabled
+    // it. Startup validates the opt-out; stale credentials cannot re-enable it.
+    socialProviders: buildGoogleOAuthConfig().enabled ? {
         google: {
             clientId: env.GOOGLE_CLIENT_ID,
             clientSecret: env.GOOGLE_CLIENT_SECRET,
@@ -90,7 +93,7 @@ export const auth = betterAuth({
             // client cannot turn an OAuth login into unmanaged provisioning.
             disableSignUp: true,
         },
-    },
+    } : {},
     account: {
         accountLinking: {
             enabled: true,

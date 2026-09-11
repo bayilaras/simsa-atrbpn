@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { internalRuntimeConfig, validateInternalBuild } from './config/internal-runtime.js';
+import { isObjectStorageDisabled } from './config/demo.js';
 
 // Validate before importing the application graph (auth, database, and workers).
 // The Windows launcher supplies the existing env file; no data is seeded here.
@@ -18,7 +19,7 @@ async function main() {
     app.set('trust proxy', false);
     const server = app.listen({ host, port }, () => {
         console.info(`SIMSA internal tersedia di http://${host}:${port}`);
-        if (malwareScanConfig.worker.runtime === 'embedded') malwareScanWorker.start();
+        if (!isObjectStorageDisabled() && malwareScanConfig.worker.runtime === 'embedded') malwareScanWorker.start();
     });
     server.on('error', () => {
         console.error('SIMSA gagal membuka port lokal. Jalankan Cek-SIMSA.cmd untuk memeriksa layanan.');

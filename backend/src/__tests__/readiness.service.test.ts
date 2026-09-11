@@ -34,6 +34,27 @@ vi.mock('../services/blob-storage.service.js', () => ({
 const { collectReadiness, evaluateWorkerReadiness } = await import('../services/readiness.service.js');
 
 describe('collectReadiness', () => {
+    it('probes only the database for full internal mode with explicitly disabled storage and workers', async () => {
+        vi.stubEnv('SIMSA_APP_MODE', 'full');
+        vi.stubEnv('APP_PROFILE', 'internal');
+        vi.stubEnv('AUTH_PROVIDER', 'better-auth');
+        vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'disabled');
+        blobStatus.mockReturnValue({ provider: 'disabled', required: false, configured: false,
+            ready: false, validationErrors: [] });
+        const probeDatabase = vi.fn().mockResolvedValue(undefined);
+        const probeBlob = vi.fn().mockRejectedValue(new Error('must not access storage'));
+        const probeEmbeddedScanner = vi.fn().mockRejectedValue(new Error('must not access scanner'));
+        const readHeartbeats = vi.fn().mockRejectedValue(new Error('must not poll workers'));
+        const result = await collectReadiness({ probeDatabase, probeBlob, probeEmbeddedScanner,
+            readHeartbeats, now: Date.now });
+        expect(result.status).toBe('ready');
+        expect(probeDatabase).toHaveBeenCalledOnce();
+        expect(probeBlob).not.toHaveBeenCalled();
+        expect(probeEmbeddedScanner).not.toHaveBeenCalled();
+        expect(readHeartbeats).not.toHaveBeenCalled();
+        expect(result.dependencies.blobStorage).toMatchObject({ provider: 'disabled', ready: false,
+            runtime: { ready: true, skipped: true } });
+    });
     afterEach(() => {
         vi.unstubAllEnvs();
     });

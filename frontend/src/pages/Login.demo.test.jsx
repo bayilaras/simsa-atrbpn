@@ -1,10 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Login from './Login'
 
 const profile = vi.hoisted(() => ({ mode: 'full', provider: 'better-auth', configured: false }))
 const logout = vi.hoisted(() => ({ signingOut: false, error: null, retry: vi.fn() }))
+const emailSignIn = vi.hoisted(() => vi.fn())
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ loading: false,
     authentication: { provider: profile.provider, googleSignIn: profile.configured },
 }) }))
@@ -16,11 +17,25 @@ vi.mock('@/lib/cloud-provider-config', () => ({ get AUTH_PROVIDER() { return pro
 vi.mock('../context/AuthContext', () => ({ useAuth: () => ({
     loading: logout.signingOut, isAuthenticated: false, error: logout.error,
     signingOut: logout.signingOut, logoutError: logout.error, signOut: logout.retry,
-    signInWithGoogle: vi.fn(), signInWithEmail: vi.fn(),
+    signInWithGoogle: vi.fn(), signInWithEmail: emailSignIn,
 }) }))
 
 describe('demo login provider controls', () => {
-    beforeEach(() => { logout.signingOut = false; logout.error = null; logout.retry.mockClear() })
+    beforeEach(() => {
+        logout.signingOut = false; logout.error = null; logout.retry.mockClear()
+        emailSignIn.mockReset().mockResolvedValue(undefined)
+        Object.assign(profile, { mode: 'full', provider: 'better-auth', configured: false })
+    })
+    it('keeps credential login usable when the server intentionally disables Google', async () => {
+        render(<MemoryRouter><Login /></MemoryRouter>)
+        expect(screen.queryByRole('button', { name: 'Masuk dengan Google' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('separator')).not.toBeInTheDocument()
+        expect(screen.queryByRole('link', { name: /daftar/i })).not.toBeInTheDocument()
+        fireEvent.change(screen.getByLabelText('Email kedinasan'), { target: { value: 'operator@example.test' } })
+        fireEvent.change(screen.getByLabelText('Kata sandi'), { target: { value: 'synthetic-password-only' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Masuk', exact: true }))
+        await waitFor(() => expect(emailSignIn).toHaveBeenCalledWith('operator@example.test', 'synthetic-password-only'))
+    })
     it('holds the login form while server logout is pending', () => {
         logout.signingOut = true
         render(<MemoryRouter><Login /></MemoryRouter>)

@@ -78,3 +78,6 @@ coverage/
 # Generated Python bytecode from local workflow validators
 __pycache__/
 *.py[cod]
+# Isolated cloud trial builds; preserve the existing local runtime artifacts.
+/frontend/dist-cloud-metadata/
+/backend/dist-cloud-metadata/

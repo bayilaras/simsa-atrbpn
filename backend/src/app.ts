@@ -7,6 +7,8 @@ import cookieParser from 'cookie-parser';
 import { env, validateEnv, cloudPlatformConfig } from './config/env';
 import { getPublicAppMetadata } from './config/app-profile.js';
 import { isMetadataDemo } from './config/demo.js';
+import { isObjectStorageDisabled } from './config/demo.js';
+import { createFileStorageAccessMiddleware } from './middlewares/file-storage-access.middleware.js';
 import { getPublicCapabilities } from './config/public-capabilities.js';
 import { createDemoAccessMiddleware } from './middlewares/demo-access.middleware.js';
 import { installFrontendHosting } from './middlewares/frontend-hosting.middleware.js';
@@ -291,6 +293,7 @@ app.use('/api', firebaseAppCheckMiddleware);
 // Defense in depth: hiding file controls in the demo UI is not authorization.
 // Reject unsupported operations before any domain router or upload parser runs.
 app.use('/api', createDemoAccessMiddleware(isMetadataDemo()));
+app.use('/api', createFileStorageAccessMiddleware(isObjectStorageDisabled()));
 
 // Response compression - compress all responses
 app.use(compression({

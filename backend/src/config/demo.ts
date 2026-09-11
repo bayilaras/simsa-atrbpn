@@ -1,4 +1,10 @@
+import { ServiceUnavailableError } from '../utils/errors.js';
+
 export type SimsaAppMode = 'full' | 'metadata-demo';
+
+export function isObjectStorageDisabled(source: NodeJS.ProcessEnv = process.env): boolean {
+    return source.OBJECT_STORAGE_PROVIDER?.trim().toLowerCase() === 'disabled';
+}
 
 export function loadAppMode(source: NodeJS.ProcessEnv = process.env): SimsaAppMode {
     const value = source.SIMSA_APP_MODE?.trim().toLowerCase() || 'full';
@@ -76,7 +82,10 @@ export function validateDemoEnvironment(
 }
 
 export function assertDemoStorageUnavailable(source: NodeJS.ProcessEnv = process.env): void {
-    if (isMetadataDemo(source) || source.OBJECT_STORAGE_PROVIDER?.trim().toLowerCase() === 'disabled') {
-        throw new Error('Object storage is disabled in metadata demo');
+    if (isMetadataDemo(source)) {
+        throw new ServiceUnavailableError('Object storage is disabled in metadata demo');
+    }
+    if (isObjectStorageDisabled(source)) {
+        throw new ServiceUnavailableError('Penyimpanan berkas digital dinonaktifkan pada layanan ini. Metadata arsip tetap tersedia.');
     }
 }

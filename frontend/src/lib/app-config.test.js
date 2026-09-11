@@ -7,6 +7,18 @@ import {
 } from './app-config'
 
 describe('app config', () => {
+    it('keeps an explicitly storage-disabled build restricted even if the API advertises files', () => {
+        const build = createAppConfig({ VITE_APP_PROFILE: 'internal', VITE_STORAGE_PROVIDER: 'disabled' })
+        expect(build.capabilities).toMatchObject({ metadata: true, files: false, fileUploads: false })
+        const payload = { mode: 'full', syntheticDataOnly: false,
+            capabilities: { metadata: true, files: false, fileUploads: false, externalIntegrations: true },
+            authentication: { provider: 'better-auth', googleSignIn: false } }
+        expect(resolveRuntimeCapabilities(build, payload).compatible).toBe(true)
+        expect(resolveRuntimeCapabilities(build, { ...payload,
+            capabilities: { ...payload.capabilities, files: true } })).toMatchObject({
+                compatible: false, capabilities: { metadata: false, files: false, fileUploads: false },
+            })
+    })
     it('accepts full runtime restrictions and rejects partial or conflicting capability contracts', () => {
         const build = createAppConfig({})
         const full = { mode: 'full', syntheticDataOnly: false,

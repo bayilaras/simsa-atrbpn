@@ -473,9 +473,13 @@ export async function collectReadiness(
     const blobConfiguration = getObjectStorageConfigurationStatus();
     const emailConfiguration = getEmailConfigurationStatus();
     const srikandiConfiguration = getSrikandiConfigurationStatus();
-    const firebaseIdentityRequired = buildCloudPlatformConfig().authProvider === 'firebase';
+    const cloud = buildCloudPlatformConfig();
+    const firebaseIdentityRequired = cloud.authProvider === 'firebase';
+    const storageDisabled = cloud.storageProvider === 'disabled';
+    const disabledStorageValid = !storageDisabled || (cloud.validationErrors.length === 0
+        && malwareScanConfig.mode === 'disabled' && !malwareScanConfig.workerEnabled);
 
-    const embeddedScannerRequired = malwareScanConfig.mode === 'clamav'
+    const embeddedScannerRequired = !storageDisabled && malwareScanConfig.mode === 'clamav'
         && malwareScanConfig.workerEnabled
         && malwareScanConfig.worker.runtime === 'embedded';
     let heartbeatRows: HeartbeatRow[] = [];
@@ -503,7 +507,8 @@ export async function collectReadiness(
                 dependencies.probeEmbeddedScanner || defaultDependencies.probeEmbeddedScanner!,
             )
             : Promise.resolve({ ready: true, skipped: true }),
-        isMetadataDemo() ? Promise.resolve({ ready: true, skipped: true }) : timedProbe('worker_heartbeats', async (signal) => {
+        isMetadataDemo() || (storageDisabled && !srikandiConfig.enabled)
+            ? Promise.resolve({ ready: true, skipped: true }) : timedProbe('worker_heartbeats', async (signal) => {
             const rows = await dependencies.readHeartbeats(signal);
             // A non-cooperative injected dependency may settle after timeout;
             // never let that late result mutate the readiness snapshot.
@@ -515,7 +520,7 @@ export async function collectReadiness(
         ? null
         : ('reason' in heartbeatRuntime && heartbeatRuntime.reason) || 'heartbeat query failed';
 
-    const malwareRequired = malwareScanConfig.mode === 'clamav'
+    const malwareRequired = !storageDisabled && malwareScanConfig.mode === 'clamav'
         && malwareScanConfig.workerEnabled
         && malwareScanConfig.worker.runtime === 'external';
     const malwareWorker = heartbeatError && malwareRequired
@@ -537,7 +542,7 @@ export async function collectReadiness(
             dependencies.now(),
         );
 
-    const requiredReady = database.ready
+    const requiredReady = database.ready && disabledStorageValid
         && (!blobConfiguration.required || blobConfiguration.ready)
         && blobStorage.ready
         && firebaseIdentity.ready

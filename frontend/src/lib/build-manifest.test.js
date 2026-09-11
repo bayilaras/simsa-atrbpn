@@ -15,6 +15,14 @@ const firebaseDemo = {
 }
 
 describe('SIMSA public build manifest', () => {
+    it('supports operational internal metadata without demo restrictions or file storage', () => {
+        const source = { VITE_APP_MODE: 'full', VITE_APP_PROFILE: 'internal', VITE_STORAGE_PROVIDER: 'disabled' }
+        expect(createSimsaBuildManifest(source)).toMatchObject({
+            mode: 'full', syntheticDataOnly: false, authProvider: 'better-auth', storageProvider: 'disabled',
+        })
+        expect(() => createSimsaBuildManifest({ ...source, VITE_APP_PROFILE: 'integrated' })).toThrow(/internal/)
+        expect(() => createSimsaBuildManifest({ ...source, VITE_APP_PROFILE: '' })).toThrow(/internal/)
+    })
     it('describes a default full same-origin rollback build without Firebase authority', () => {
         expect(createSimsaBuildManifest()).toEqual({
             schemaVersion: 1,

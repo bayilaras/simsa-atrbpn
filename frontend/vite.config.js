@@ -77,6 +77,10 @@ export function createSimsaBuildManifest(source = {}) {
   if (!['vercel-blob', 'gcs', 'disabled'].includes(storageProvider)) {
     throw new Error('VITE_STORAGE_PROVIDER has an unsupported deployment value.')
   }
+  if (appMode === 'full' && storageProvider === 'disabled'
+      && value('VITE_APP_PROFILE').toLowerCase() !== 'internal') {
+    throw new Error('Full builds with disabled storage require explicit VITE_APP_PROFILE=internal.')
+  }
 
   if (appMode === 'metadata-demo') {
     if ((value('VITE_APP_PROFILE') || 'internal').toLowerCase() !== 'internal') {

@@ -88,8 +88,8 @@ describe('isolated metadata demo configuration', () => {
     ])('preserves deployed Firebase and GCP protections %j', override => {
         expect(() => validateRuntimeEnv('api', { ...gcpDemo, ...override })).toThrow();
     });
-    it('does not permit disabled storage in full mode even when a worker filters storage errors', () => {
-        expect(() => assertValidCloudPlatformEnvironment({ OBJECT_STORAGE_PROVIDER: 'disabled' }, {
+    it('does not permit disabled storage in integrated full mode even when a worker filters storage errors', () => {
+        expect(() => assertValidCloudPlatformEnvironment({ APP_PROFILE: 'integrated', SIMSA_APP_MODE: 'full', OBJECT_STORAGE_PROVIDER: 'disabled' }, {
             requireAuth: false, requireStorage: false,
         })).toThrow(/only permitted/);
     });
