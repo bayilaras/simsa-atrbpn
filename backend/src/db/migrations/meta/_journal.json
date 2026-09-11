@@ -239,6 +239,34 @@
       "when": 1788060600000,
       "tag": "0033_final_object_orphan_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788061200000,
+      "tag": "0034_scheduled_file_fixity",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788061800000,
+      "tag": "0035_disposition_lifecycle_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788062400000,
+      "tag": "0036_terjaga_reporting_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788063000000,
+      "tag": "0037_preservation_activity_evidence",
+      "breakpoints": true
     }
   ]
 }

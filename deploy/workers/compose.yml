@@ -131,7 +131,7 @@ services:
     networks:
       - outbound
 
-  blob-reconciler:
+  blob-reconciler: &maintenance-worker
     profiles: ["maintenance"]
     image: ${SIMSA_WORKER_IMAGE:?SIMSA_WORKER_IMAGE is required}
     pull_policy: always
@@ -139,7 +139,7 @@ services:
     init: true
     stop_grace_period: 1m
     command: ["node", "dist/workers/blob-reconciliation.js"]
-    environment:
+    environment: &maintenance-environment
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:-}
       DB_HOST: ${DB_HOST:-}
@@ -166,6 +166,18 @@ services:
         max-file: ${CONTAINER_LOG_MAX_FILES:-5}
     networks:
       - outbound
+
+  file-fixity:
+    <<: *maintenance-worker
+    command: ["node", "dist/workers/file-fixity.js"]
+    environment:
+      <<: *maintenance-environment
+      DB_APPLICATION_NAME: simsa-file-fixity
+      FIXITY_BATCH_SIZE: ${FIXITY_BATCH_SIZE:-20}
+      FIXITY_INTERVAL_SECONDS: ${FIXITY_INTERVAL_SECONDS:-604800}
+      FIXITY_RETRY_SECONDS: ${FIXITY_RETRY_SECONDS:-3600}
+      FIXITY_MAX_BYTES: ${FIXITY_MAX_BYTES:-67108864}
+      FIXITY_TIMEOUT_MS: ${FIXITY_TIMEOUT_MS:-30000}
 
 volumes:
   clamav-signatures:

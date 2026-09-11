@@ -86,6 +86,10 @@ jobs:
             for required in \
               drizzle.config.ts \
               src/db/migrations/0033_final_object_orphan_queue.sql \
+              src/db/migrations/0034_scheduled_file_fixity.sql \
+              src/db/migrations/0035_disposition_lifecycle_evidence.sql \
+              src/db/migrations/0036_terjaga_reporting_evidence.sql \
+              src/db/migrations/0037_preservation_activity_evidence.sql \
               src/db/grants/0001_bootstrap_cloud_sql_roles.sql \
               src/db/grants/0002_converge_application_grants.sql \
               scripts/apply-database-grant-convergence.mjs

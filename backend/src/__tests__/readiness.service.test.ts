@@ -98,7 +98,7 @@ describe('collectReadiness', () => {
         expect(JSON.stringify(result)).not.toContain('permission denied');
     });
 
-    it('requires the complete 0033 least-privilege schema contract in the default database probe', async () => {
+    it('requires the complete 0037 least-privilege schema contract in the default database probe', async () => {
         const databaseQuery = vi.fn().mockResolvedValue({ rows: [{ schema_ready: true }] });
         const databaseRelease = vi.fn();
         const heartbeatRelease = vi.fn();
@@ -117,7 +117,7 @@ describe('collectReadiness', () => {
         const [query, parameters] = databaseQuery.mock.calls[0] as [string, undefined?];
         expect(parameters).toBeUndefined();
         // Runtime identities deliberately cannot read the Drizzle journal.
-        // Readiness proves the resulting 0033 contract from public catalogs.
+        // Readiness proves the resulting 0037 contract from public catalogs.
         expect(query).not.toContain('drizzle.__drizzle_migrations');
         expect(query).toContain('pg_catalog.pg_attribute');
         expect(query).toContain('FROM pg_constraint AS constraint_record');

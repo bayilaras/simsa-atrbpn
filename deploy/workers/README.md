@@ -329,3 +329,15 @@ from an HTTP 2xx response alone.
 database/private-Blob probes and require a fresh heartbeat for each enabled
 persistent worker. A missing, stale, degraded, or stopped required worker is
 reported as not ready rather than inferred from environment variables.
+
+## Scheduled integrity checks
+
+The worker image also includes `file-fixity`, a bounded, one-shot read of clean
+private files against their stored hash, size and immutable object generation.
+The GCP bootstrap installs `simsa-file-fixity.timer` every fifteen minutes; a
+successful file is rescheduled seven days later. Failures produce a nonzero exit
+status and need an operator alert. `/ready` does not monitor this one-shot timer.
+Use `systemctl status simsa-file-fixity.timer` and
+`journalctl -u simsa-file-fixity.service` to inspect the deployed scheduler.
+For limits, backlog checks and recovery steps, see
+[the integrity operations guide](../../docs/OPERASI_PEMERIKSAAN_INTEGRITAS.md).

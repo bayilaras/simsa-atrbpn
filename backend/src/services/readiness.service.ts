@@ -38,6 +38,24 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
             ('file_attachments', 'uploaded_by'),
             ('file_attachments', 'integrity_status'),
             ('file_attachments', 'malware_scan_status'),
+            ('file_fixity_jobs', 'next_check_at'),
+            ('file_fixity_jobs', 'claim_token'),
+            ('file_fixity_jobs', 'lease_expires_at'),
+            ('file_fixity_jobs', 'last_result'),
+            ('arsip', 'inactive_transferred_at'),
+            ('arsip', 'inactive_transfer_batch_id'),
+            ('penyusutan_arsip', 'execution_evidence'),
+            ('penyusutan_arsip', 'execution_evidence_sha256'),
+            ('arsip_terjaga', 'legacy_reporting'),
+            ('arsip_terjaga_reports', 'sent_evidence'),
+            ('arsip_terjaga_reports', 'received_evidence'),
+            ('arsip_terjaga_reports', 'verified_by'),
+            ('preservasi_track', 'recording_mode'),
+            ('preservasi_track', 'source_attachment_id'),
+            ('preservasi_track', 'output_attachment_id'),
+            ('preservasi_track', 'evidence_attachment_id'),
+            ('preservasi_track', 'evidence_snapshot'),
+            ('preservasi_track', 'evidence_snapshot_sha256'),
             ('client_blob_uploads', 'blob_url'),
             ('client_blob_uploads', 'purpose'),
             ('client_blob_uploads', 'uploaded_by'),
@@ -113,6 +131,17 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
     required_constraints(table_name, constraint_name) AS (
         VALUES
             ('users', 'users_role_unit_mandate_check'),
+            ('file_fixity_jobs', 'file_fixity_jobs_claim_check'),
+            ('file_fixity_jobs', 'file_fixity_jobs_result_check'),
+            ('preservasi_track', 'preservation_activity_evidence_check'),
+            ('arsip', 'arsip_inactive_transfer_pair_check'),
+            ('penyusutan_arsip', 'penyusutan_execution_evidence_pair_check'),
+            ('arsip_terjaga', 'arsip_terjaga_reporting_state_check'),
+            ('arsip_terjaga', 'arsip_terjaga_compliance_state_check'),
+            ('arsip_terjaga_reports', 'arsip_terjaga_reports_sent_check'),
+            ('arsip_terjaga_reports', 'arsip_terjaga_reports_received_check'),
+            ('arsip_terjaga_reports', 'arsip_terjaga_reports_verified_check'),
+            ('arsip_terjaga_reports', 'arsip_terjaga_reports_cancelled_check'),
             ('users', 'users_identity_provider_check'),
             ('users', 'users_firebase_identity_check'),
             ('client_blob_uploads', 'client_blob_uploads_status_check'),
@@ -146,6 +175,27 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
                   AND relation.relname = required.table_name
                   AND constraint_record.conname = required.constraint_name
                   AND constraint_record.convalidated
+            )
+        ) AS ready
+    ),
+    trigger_state AS (
+        SELECT NOT EXISTS (
+            SELECT 1 FROM (VALUES
+                ('penyusutan_arsip', 'penyusutan_execution_evidence_guard'),
+                ('file_attachments', 'disposition_evidence_attachment_guard'),
+                ('preservasi_track', 'preservation_activity_immutable_guard'),
+                ('file_attachments', 'preservation_attachment_guard'),
+                ('file_attachments', 'terjaga_reporting_attachment_guard'),
+                ('arsip_terjaga_reports', 'arsip_terjaga_reports_immutable')
+            ) AS required(table_name, trigger_name)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_trigger AS trigger_record
+                JOIN pg_catalog.pg_class AS relation ON relation.oid = trigger_record.tgrelid
+                JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+                WHERE namespace.nspname = 'public' AND relation.relname = required.table_name
+                  AND trigger_record.tgname = required.trigger_name
+                  AND trigger_record.tgenabled IN ('O','A')
+                  AND NOT trigger_record.tgisinternal
             )
         ) AS ready
     ),
@@ -194,6 +244,16 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
             AND has_table_privilege(current_user, 'public.audit_log', 'INSERT')
             AND NOT has_table_privilege(current_user, 'public.audit_log', 'UPDATE')
             AND NOT has_table_privilege(current_user, 'public.audit_log', 'DELETE')
+            AND has_table_privilege(current_user, 'public.file_fixity_jobs', 'SELECT')
+            AND NOT has_table_privilege(current_user, 'public.file_fixity_jobs', 'INSERT')
+            AND NOT has_table_privilege(current_user, 'public.file_fixity_jobs', 'UPDATE')
+            AND NOT has_table_privilege(current_user, 'public.file_fixity_jobs', 'DELETE')
+            AND has_table_privilege(current_user, 'public.arsip_terjaga_reports', 'SELECT')
+            AND has_table_privilege(current_user, 'public.arsip_terjaga_reports', 'INSERT')
+            AND has_table_privilege(current_user, 'public.arsip_terjaga_reports', 'UPDATE')
+            AND NOT has_table_privilege(current_user, 'public.arsip_terjaga_reports', 'DELETE')
+            AND NOT has_table_privilege(current_user, 'public.preservasi_track', 'UPDATE')
+            AND NOT has_table_privilege(current_user, 'public.preservasi_track', 'DELETE')
             AND NOT has_table_privilege(current_user, 'public.final_object_orphans', 'SELECT')
             AND NOT has_table_privilege(current_user, 'public.final_object_orphans', 'UPDATE')
             AND NOT has_table_privilege(current_user, 'public.final_object_orphans', 'DELETE')
@@ -226,9 +286,10 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
     )
     SELECT column_state.ready
         AND constraint_state.ready
+        AND trigger_state.ready
         AND membership_state.ready
         AND privilege_state.ready AS schema_ready
-    FROM column_state, constraint_state, membership_state, privilege_state
+    FROM column_state, constraint_state, trigger_state, membership_state, privilege_state
 `;
 
 type RuntimeState = 'ready' | 'not_ready' | 'disabled';
@@ -290,7 +351,7 @@ const defaultDependencies: ReadinessDependencies = {
                 }
             }
             // The runtime login intentionally cannot read the migration journal.
-            // Validate the complete migration-0033 schema/constraint contract
+            // Validate the complete migration-0037 schema/constraint contract
             // instead of weakening least privilege for a timestamp probe.
             const result = await client.query<{ schema_ready: boolean }>(
                 DATABASE_SCHEMA_READINESS_SQL,

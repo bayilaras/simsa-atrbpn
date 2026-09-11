@@ -108,7 +108,7 @@ describe('versioned PostgreSQL role policy', () => {
 
     it('provides fail-closed grant convergence for no-privileges disaster restores', () => {
         expect(convergenceSql).toContain("current_user <> 'simsa_migrator'");
-        expect(convergenceSql).toContain("jsonb_array_length(expected_manifest) <> 34");
+        expect(convergenceSql).toContain("jsonb_array_length(expected_manifest) <> 38");
         expect(convergenceSql).toContain("value->'accepted_sha256' ? applied.hash");
         expect(convergenceRunner).toContain('EXPECTED_MIGRATIONS_JSON');
         expect(bootstrapSql).toContain('REVOKE %I FROM %I');

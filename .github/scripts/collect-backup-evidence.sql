@@ -51,7 +51,7 @@ DECLARE
     1787967000000, 1787967600000, 1787968200000, 1787968800000,
     1787969400000, 1787970000000, 1787970600000, 1787971200000,
     1787971800000, 1787972400000, 1788058800000, 1788059400000,
-    1788060000000, 1788060600000
+    1788060000000, 1788060600000, 1788061200000, 1788061800000, 1788062400000, 1788063000000
   ]::bigint[];
   expected_code_manifest jsonb := current_setting('simsa.expected_migrations_json')::jsonb;
   checkout_migration_indices integer[];
@@ -62,8 +62,8 @@ BEGIN
   END IF;
 
   IF jsonb_typeof(expected_code_manifest) <> 'array'
-     OR jsonb_array_length(expected_code_manifest) <> 34 THEN
-    RAISE EXCEPTION 'checkout migration manifest must contain exactly 34 entries';
+     OR jsonb_array_length(expected_code_manifest) <> 38 THEN
+    RAISE EXCEPTION 'checkout migration manifest must contain exactly 38 entries';
   END IF;
   IF EXISTS (
     SELECT 1
@@ -101,9 +101,9 @@ BEGIN
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
     10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
     20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-    30, 31, 32, 33
+    30, 31, 32, 33, 34, 35, 36, 37
   ]::integer[] OR checkout_migration_timestamps IS DISTINCT FROM post_migration_timestamps THEN
-    RAISE EXCEPTION 'checkout migration journal differs from the canonical 0000-0033 sequence';
+    RAISE EXCEPTION 'checkout migration journal differs from the canonical 0000-0037 sequence';
   END IF;
 
   SELECT string_agg(
@@ -294,10 +294,23 @@ BEGIN
         ('simsa_api_runtime', 'users', 'SELECT', true),
         ('simsa_api_runtime', 'audit_log', 'INSERT', true),
         ('simsa_api_runtime', 'audit_log', 'UPDATE', false),
+        ('simsa_api_runtime', 'file_fixity_jobs', 'SELECT', true),
+        ('simsa_api_runtime', 'file_fixity_jobs', 'INSERT', false),
+        ('simsa_api_runtime', 'file_fixity_jobs', 'UPDATE', false),
+        ('simsa_api_runtime', 'file_fixity_jobs', 'DELETE', false),
+        ('simsa_api_runtime', 'arsip_terjaga_reports', 'INSERT', true),
+        ('simsa_api_runtime', 'arsip_terjaga_reports', 'UPDATE', true),
+        ('simsa_api_runtime', 'arsip_terjaga_reports', 'DELETE', false),
+        ('simsa_api_runtime', 'preservasi_track', 'UPDATE', false),
+        ('simsa_api_runtime', 'preservasi_track', 'DELETE', false),
         ('simsa_event_runtime', 'client_blob_uploads', 'UPDATE', true),
         ('simsa_event_runtime', 'users', 'SELECT', false),
         ('simsa_worker_runtime', 'operational_heartbeats', 'DELETE', true),
         ('simsa_worker_runtime', 'srikandi_outbox', 'UPDATE', true),
+        ('simsa_worker_runtime', 'file_fixity_jobs', 'SELECT', true),
+        ('simsa_worker_runtime', 'file_fixity_jobs', 'INSERT', true),
+        ('simsa_worker_runtime', 'file_fixity_jobs', 'UPDATE', true),
+        ('simsa_worker_runtime', 'file_fixity_jobs', 'DELETE', false),
         ('simsa_worker_runtime', 'users', 'SELECT', false),
         ('simsa_final_cleanup', 'final_object_orphans', 'UPDATE', true),
         ('simsa_final_cleanup', 'final_object_orphans', 'INSERT', false),
