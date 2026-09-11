@@ -112,7 +112,7 @@ describe('backend application profile', () => {
         ]);
     });
 
-    it('lets Express authorize an alternate configured origin and expose Retry-After', async () => {
+    it('lets Express authorize an alternate configured origin and expose retry and request references', async () => {
         const previousAdditionalOrigins = env.ADDITIONAL_TRUSTED_ORIGINS;
         const alternateOrigin = 'https://staging.simsa.example.go.id';
         env.ADDITIONAL_TRUSTED_ORIGINS = alternateOrigin;
@@ -124,7 +124,7 @@ describe('backend application profile', () => {
 
             expect(response.headers['access-control-allow-origin']).toBe(alternateOrigin);
             expect(response.headers['access-control-allow-credentials']).toBe('true');
-            expect(response.headers['access-control-expose-headers']).toBe('Retry-After');
+            expect(response.headers['access-control-expose-headers'].split(',')).toEqual(['Retry-After', 'X-Request-ID']);
         } finally {
             env.ADDITIONAL_TRUSTED_ORIGINS = previousAdditionalOrigins;
         }
@@ -170,6 +170,45 @@ describe('backend application profile', () => {
         ));
 
         expect(vercelConfig.headers).toBeUndefined();
+    });
+
+    it('preserves malformed JSON as a client error and returns a traceable request ID', async () => {
+        const response = await request(app).post('/api/surat-masuk')
+            .set('Content-Type', 'application/json').send('{"password":"secret-input",').expect(400);
+        expect(response.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+        expect(response.body.requestId).toBe(response.headers['x-request-id']);
+        expect(JSON.stringify(response.body)).not.toContain('secret-input');
+    });
+
+    it('returns 413 for the body parser size limit without echoing its input', () => {
+        const response = { locals: { requestId: 'server-id' }, status: vi.fn().mockReturnThis(), json: vi.fn() };
+        globalErrorHandler(Object.assign(new Error('secret-input'), { type: 'entity.too.large', status: 413 }),
+            { path: '/api/surat-masuk', method: 'POST' } as any, response as any, vi.fn());
+        expect(response.status).toHaveBeenCalledWith(413);
+        expect(JSON.stringify(response.json.mock.calls)).not.toContain('secret-input');
+    });
+
+    it('keeps unexpected exception details private even in development', () => {
+        const previous = env.NODE_ENV;
+        env.NODE_ENV = 'development';
+        try {
+            const response = { locals: { requestId: 'reference-id' }, status: vi.fn().mockReturnThis(), json: vi.fn() };
+            globalErrorHandler(new Error('postgresql://user:secret@host/db'),
+                { path: '/api/arsip/private-record', method: 'GET' } as any, response as any, vi.fn());
+            expect(response.status).toHaveBeenCalledWith(500);
+            expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'reference-id' }));
+            expect(JSON.stringify(response.json.mock.calls)).not.toMatch(/secret|postgresql|stack/);
+        } finally { env.NODE_ENV = previous; }
+    });
+
+    it('delegates errors after streaming starts without attempting a second response', () => {
+        const error = new Error('stream failed');
+        const response = { headersSent: true, status: vi.fn(), json: vi.fn() };
+        const next = vi.fn();
+        globalErrorHandler(error, {} as any, response as any, next);
+        expect(next).toHaveBeenCalledWith(error);
+        expect(response.status).not.toHaveBeenCalled();
+        expect(response.json).not.toHaveBeenCalled();
     });
 
     it.each([

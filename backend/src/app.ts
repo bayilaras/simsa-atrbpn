@@ -68,6 +68,8 @@ import retentionGovernanceRoutes from './routes/retention-governance.routes';
 import firebaseAuthRoutes from './routes/firebase-auth.routes.js';
 import gcsUploadRoutes from './routes/gcs-upload.routes.js';
 import { getReadiness } from './services/readiness.service.js';
+import { createHttpObservability } from './middlewares/http-observability.middleware.js';
+import operationsRoutes from './routes/operations.routes.js';
 
 // Vercel imports app.ts directly and never executes index.ts. Validate the
 // production environment during module cold-start as well, while unit tests
@@ -81,6 +83,9 @@ if (deployedRuntime) {
 
 const app = express();
 const publicAppMetadata = getPublicAppMetadata(env.APP_PROFILE, srikandiConfig.enabled);
+
+// Run before CORS, auth, and parsers so rejected requests can also be traced.
+app.use(createHttpObservability());
 
 // Trust first proxy (Vercel's load balancer) for X-Forwarded-For headers
 // Required for express-rate-limit to correctly identify users behind a proxy
@@ -107,7 +112,7 @@ app.use(cors({
         'X-CSRF-Token',
         'X-Firebase-AppCheck',
     ],
-    exposedHeaders: ['Retry-After'],
+    exposedHeaders: ['Retry-After', 'X-Request-ID'],
     credentials: true,
 }));
 
@@ -249,12 +254,12 @@ const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunctio
         const authHandler = await getBetterAuthHandler();
         await authHandler(req, res);
     } catch (error: any) {
-        console.error(`Auth handler error on ${req.method} ${req.path}:`, error.message, error.stack);
+        if (res.headersSent) return next(error);
+        logger.error({ event: 'http_auth_handler_failed', requestId: res.locals.requestId }, 'Authentication handler failed');
         res.status(500).json({
             error: 'Authentication Error',
-            message: deployedRuntime
-                ? 'Terjadi kesalahan pada proses autentikasi.'
-                : `Auth error: ${error.message}`,
+            message: 'Terjadi kesalahan pada proses autentikasi.',
+            requestId: res.locals.requestId,
         });
     }
 };
@@ -369,6 +374,7 @@ app.use('/api/layanan-arsip', layananArsipRoutes);
 app.use('/api/supervision', supervisionRoutes);
 app.use('/api/mapping', mappingRoutes);
 app.use('/api/security', securityRoutes); // Security utilities (password check, etc.)
+app.use('/api/operations', operationsRoutes);
 app.use('/api/import', googleDriveImportRoutes); // Public Google Sheets metadata import
 if (cloudPlatformConfig.storageProvider === 'gcs') {
     app.use('/api/object-uploads', gcsUploadRoutes);
@@ -391,24 +397,41 @@ app.use((req: Request, res: Response) => {
 
 // Global error handler — handles custom AppError instances and unexpected errors
 export function globalErrorHandler(err: Error, req: Request, res: Response, next: NextFunction) {
-    void next;
+    if (res.headersSent) return next(err);
+    const requestId = res.locals?.requestId;
+    const parserError = err as Error & { type?: string; status?: number };
+    if ((parserError.type === 'entity.parse.failed' && parserError.status === 400)
+        || (parserError.type === 'entity.too.large' && parserError.status === 413)) {
+        res.status(parserError.status).json({
+            success: false,
+            error: parserError.status === 413 ? 'Payload Too Large' : 'Bad Request',
+            message: parserError.status === 413 ? 'Ukuran data melebihi batas yang diizinkan.' : 'Format JSON tidak valid.',
+            requestId,
+        });
+        return;
+    }
     // Custom application errors carry their own status code
     if (err instanceof AppError) {
         res.status(err.statusCode).json({
             success: false,
             error: err.name,
             message: err.message,
-            ...(env.NODE_ENV === 'development' && { stack: err.stack }),
+            requestId,
         });
         return;
     }
 
     // Unexpected errors
-    logger.error({ err, path: req.path, method: req.method }, 'Unhandled error');
+    // Exception messages can contain SQL values, signed URLs or credentials.
+    // Keep operational classification and correlation, not raw exception data.
+    const errorType = err instanceof Error && ['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'AggregateError', 'AbortError'].includes(err.name)
+        ? err.name : 'Error';
+    logger.error({ event: 'http_unhandled_error', requestId, errorType }, 'Unhandled error');
     res.status(500).json({
         success: false,
         error: 'Internal Server Error',
-        message: env.NODE_ENV === 'development' ? err.message : 'Terjadi kesalahan pada server.',
+        message: 'Terjadi kesalahan pada server.',
+        requestId,
     });
 }
 

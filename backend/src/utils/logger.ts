@@ -1,5 +1,6 @@
-import pino from 'pino';
+import pino, { type LoggerOptions } from 'pino';
 import { env } from '../config/env';
+import { currentRequestId } from './request-context.js';
 
 const isProduction = env.NODE_ENV === 'production';
 
@@ -15,9 +16,27 @@ const isProduction = env.NODE_ENV === 'production';
  *   logger.info({ port: 3001 }, 'Server started');
  *   logger.error({ err }, 'Failed to process request');
  *   logger.warn('Deprecation warning');
- *   logger.debug({ query }, 'SQL query executed');
+ *   logger.debug({ event: 'query_completed', durationMs: 18 }, 'Query completed');
  */
+export const loggerPrivacyOptions: LoggerOptions = {
+    mixin: () => {
+        const requestId = currentRequestId();
+        return requestId ? { requestId } : {};
+    },
+    // Local development logs require the same credential protection as deployed
+    // logs. Request telemetry itself uses an allowlist and never passes bodies.
+    redact: {
+        paths: [
+            'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]',
+            'req.body', 'req.query', 'password', 'token', 'secret', 'accessToken', 'refreshToken',
+            '*.password', '*.token', '*.secret', '*.accessToken', '*.refreshToken',
+        ],
+        censor: '[REDACTED]',
+    },
+};
+
 export const logger = pino({
+    ...loggerPrivacyOptions,
     level: isProduction ? 'info' : 'debug',
     ...(isProduction
         ? {
@@ -26,10 +45,6 @@ export const logger = pino({
                 level(label: string) {
                     return { level: label };
                 },
-            },
-            redact: {
-                paths: ['req.headers.authorization', 'req.headers.cookie', 'password', 'token'],
-                censor: '[REDACTED]',
             },
         }
         : {
