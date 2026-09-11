@@ -1,5 +1,7 @@
 # Asesmen SIMSA terhadap ANRI, SRIKANDI, dan kesiapan pengguna
 
+**Pembaruan:** rekomendasi kode dalam asesmen awal ini telah ditindaklanjuti. Lihat [hasil perbaikan dan pengujian](HASIL_PERBAIKAN_KESIAPAN_2026-09-11.md) untuk keadaan aplikasi sesudah perbaikan. Isi berikut dipertahankan sebagai catatan asesmen awal.
+
 Tanggal: 11 September 2026. Kode yang diperiksa: `23a0b1b`, branch lokal `fix/user-readiness`, versi lengkap `frontend/` dan `backend/`. Edisi Spark tidak termasuk.
 
 ## Kesimpulan

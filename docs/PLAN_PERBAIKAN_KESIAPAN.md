@@ -11,8 +11,10 @@ Dimulai 11 September 2026 atas permintaan pemilik aplikasi setelah asesmen ANRI/
 - [x] Hentikan ekspor yang melampaui batas dengan penjelasan yang jelas; jangan menghasilkan file terpotong tanpa pemberitahuan.
 - [x] Sediakan pekerjaan pemeriksaan integritas berkala dengan batas sumber daya, audit, kegagalan yang terlihat, dan panduan penjadwalan.
 - [x] Periksa pengesahan instrumen, catatan preservasi, kesiapan skema/izin database, serta panduan akun dan uji penerimaan.
-- [ ] Jalankan pengujian regresi, build/lint, migrasi pada database uji, dan pemeriksaan browser atas perubahan.
-- [ ] Tinjau hasil secara independen dan perbarui laporan status akhir serta daftar kebutuhan lingkungan tujuan.
+- [x] Jalankan pengujian regresi, build/lint, migrasi pada database uji, dan pemeriksaan browser atas perubahan.
+- [x] Tinjau hasil secara independen dan perbarui laporan status akhir serta daftar kebutuhan lingkungan tujuan.
+
+Bukti dan batas kelulusan dicatat dalam [hasil perbaikan](HASIL_PERBAIKAN_KESIAPAN_2026-09-11.md).
 
 ## Bukti eksternal yang tetap diperlukan
 
