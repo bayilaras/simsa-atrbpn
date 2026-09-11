@@ -453,9 +453,8 @@ export const dashboardService = {
                 penyusutanStatusData,
                 // Vital/Terjaga Alerts
                 vitalUnprotectedResult,
-                terjagaUnreportedResult,
+                terjagaReportingData,
                 vitalTotalResult,
-                terjagaTotalResult,
                 // Media Breakdown
                 mediaData,
             ] = await Promise.all([
@@ -546,26 +545,22 @@ export const dashboardService = {
                         archiveClass,
                     )),
 
-                // 7. Terjaga — unreported
-                db.select({ count: count() }).from(arsipTerjaga)
+                // 7. Keep every reporting stage. Recorded status also covers legacy
+                // entries and cancellations; it does not identify a draft or receipt.
+                db.select({ status: arsipTerjaga.statusPelaporan, count: count() }).from(arsipTerjaga)
                     .innerJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
                     .where(and(
                         ...terjagaUnitFilter,
-                        eq(arsipTerjaga.statusPelaporan, 'belum_dilaporkan'),
                         archiveClass,
-                    )),
+                    ))
+                    .groupBy(arsipTerjaga.statusPelaporan),
 
                 // 8. Vital — total
                 db.select({ count: count() }).from(arsipVital)
                     .innerJoin(arsip, eq(arsipVital.arsipId, arsip.id))
                     .where(and(...vitalUnitFilter, archiveClass)),
 
-                // 9. Terjaga — total
-                db.select({ count: count() }).from(arsipTerjaga)
-                    .innerJoin(arsip, eq(arsipTerjaga.arsipId, arsip.id))
-                    .where(and(...terjagaUnitFilter, archiveClass)),
-
-                // 10. Media breakdown
+                // 9. Media breakdown
                 db.select({
                     mediaType: arsip.mediaType,
                     count: count(),
@@ -573,6 +568,17 @@ export const dashboardService = {
                     .where(and(...arsipUnitFilter, archiveClass))
                     .groupBy(arsip.mediaType),
             ]);
+
+            const terjagaReportingStages = {
+                belum_dilaporkan: 0, dicatat: 0, dikirim: 0, diterima: 0,
+                bukti_diverifikasi: 0, perlu_ditinjau: 0,
+            };
+            for (const row of terjagaReportingData) {
+                const stage = Object.hasOwn(terjagaReportingStages, row.status)
+                    ? row.status as keyof typeof terjagaReportingStages : 'perlu_ditinjau';
+                terjagaReportingStages[stage] += row.count;
+            }
+            const terjagaTotal = Object.values(terjagaReportingStages).reduce((sum, value) => sum + value, 0);
 
             // Compute storage capacity aggregates per gedung — single query instead of N+1 loop
             let storageCapacity: any[] = [];
@@ -693,8 +699,11 @@ export const dashboardService = {
                 vitalTerjagaAlerts: {
                     vitalUnprotected: vitalUnprotectedResult[0]?.count || 0,
                     vitalTotal: vitalTotalResult[0]?.count || 0,
-                    terjagaUnreported: terjagaUnreportedResult[0]?.count || 0,
-                    terjagaTotal: terjagaTotalResult[0]?.count || 0,
+                    // Legacy clients receive a conservative pending count. New
+                    // clients should display the explicit stages below.
+                    terjagaUnreported: terjagaTotal - terjagaReportingStages.bukti_diverifikasi,
+                    terjagaTotal,
+                    terjagaReportingStages,
                 },
                 mediaBreakdown: mediaData.map((m: any) => ({
                     type: m.mediaType || 'Lainnya',

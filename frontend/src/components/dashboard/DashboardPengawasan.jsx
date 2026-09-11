@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api } from '@/services/api';
 import { Line, Bar } from 'react-chartjs-2';
-import { AlertTriangle, Activity, CheckCircle2, Clock, FileWarning, GitCompareArrows, Scale, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, FileWarning, GitCompareArrows, Scale, ShieldAlert } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -20,7 +21,7 @@ const ISSUE_LABELS = {
     due_within_90_days: 'Jatuh tempo ≤90 hari',
 };
 
-const chartOptions = {
+const baseChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -29,7 +30,7 @@ const chartOptions = {
             labels: {
                 usePointStyle: true,
                 boxWidth: 8,
-                font: { size: 11, family: 'Inter' }
+                font: { size: 11, family: 'Inter Variable, sans-serif' }
             }
         },
         tooltip: {
@@ -61,7 +62,12 @@ const chartOptions = {
 };
 
 export default function DashboardPengawasan() {
+    const reducedMotion = useReducedMotion();
+    const chartOptions = { ...baseChartOptions, animation: reducedMotion ? false : undefined };
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
+    const [lastLoadedRange, setLastLoadedRange] = useState(null);
+    const requestId = useRef(0);
     const [activityStats, setActivityStats] = useState([]);
     const [userStats, setUserStats] = useState([]);
     const [complianceStats, setComplianceStats] = useState(null);
@@ -69,8 +75,10 @@ export default function DashboardPengawasan() {
     const [daysRange, setDaysRange] = useState('7');
 
     const loadData = useCallback(async () => {
+        const currentRequest = ++requestId.current;
         try {
             setLoading(true);
+            setLoadError(null);
             const [activityRes, userRes, complianceRes, issuesRes] = await Promise.all([
                 api.get('/api/supervision/stats/activity', { days: daysRange }),
                 api.get('/api/supervision/stats/users', { limit: '5' }),
@@ -78,26 +86,40 @@ export default function DashboardPengawasan() {
                 api.get('/api/supervision/stats/compliance/issues', { limit: '50' }),
             ]);
 
-            // Backend returns data directly (not wrapped in { data: ... })
-            setActivityStats(Array.isArray(activityRes) ? activityRes : (activityRes?.data || []));
-            setUserStats(Array.isArray(userRes) ? userRes : (userRes?.data || []));
-            setComplianceStats(activityRes && typeof complianceRes === 'object' ? complianceRes : (complianceRes?.data || null));
-            setQualityIssues(Array.isArray(issuesRes) ? issuesRes : (issuesRes?.data || []));
+            const unwrap = response => response?.data ?? response;
+            const activity = unwrap(activityRes);
+            const users = unwrap(userRes);
+            const compliance = unwrap(complianceRes);
+            const issues = unwrap(issuesRes);
+            if (!Array.isArray(activity) || !Array.isArray(users) || !Array.isArray(issues)
+                || !compliance || typeof compliance !== 'object' || Array.isArray(compliance)) {
+                throw new Error('Invalid supervision response');
+            }
+            if (currentRequest !== requestId.current) return;
+            setActivityStats(activity);
+            setUserStats(users);
+            setComplianceStats(compliance);
+            setQualityIssues(issues);
+            setLastLoadedRange(daysRange);
         } catch (error) {
+            if (currentRequest !== requestId.current) return;
             console.error('Failed to load supervision data:', error);
+            setLoadError('Gagal memuat data pengawasan.');
         } finally {
-            setLoading(false);
+            if (currentRequest === requestId.current) setLoading(false);
         }
     }, [daysRange]);
 
     useEffect(() => {
         loadData();
+        return () => { requestId.current += 1; };
     }, [loadData]);
 
-    if (loading) {
+    if (loading && !lastLoadedRange) {
         return (
-            <div className="flex justify-center items-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div role="status" className="flex justify-center items-center h-64 gap-2">
+                <Loader2 aria-hidden="true" className="h-8 w-8 animate-spin motion-reduce:animate-none text-primary" />
+                <span>Memuat data pengawasan…</span>
             </div>
         );
     }
@@ -107,7 +129,7 @@ export default function DashboardPengawasan() {
         labels: activityStats.map(s => s.date),
         datasets: [
             {
-                label: 'Create',
+                label: 'Pencatatan',
                 data: activityStats.map(s => s.create),
                 borderColor: '#10b981', // emerald-500
                 backgroundColor: 'rgba(16, 185, 129, 0.1)',
@@ -116,7 +138,7 @@ export default function DashboardPengawasan() {
                 pointBorderColor: '#10b981',
             },
             {
-                label: 'Update',
+                label: 'Perubahan',
                 data: activityStats.map(s => s.update),
                 borderColor: '#3b82f6', // blue-500
                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -125,7 +147,7 @@ export default function DashboardPengawasan() {
                 pointBorderColor: '#3b82f6',
             },
             {
-                label: 'Delete',
+                label: 'Penghapusan',
                 data: activityStats.map(s => s.delete),
                 borderColor: '#ef4444', // red-500
                 backgroundColor: 'rgba(239, 68, 68, 0.1)',
@@ -149,7 +171,7 @@ export default function DashboardPengawasan() {
     const qualityCards = [
         {
             label: 'Kandidat Lewat Retensi',
-            value: complianceStats?.overdueRetention || 0,
+            value: complianceStats?.overdueRetention ?? '—',
             description: 'Hanya JRA durasi terstruktur, Musnah, tanpa legal hold',
             Icon: AlertTriangle,
             border: 'border-l-red-500',
@@ -158,8 +180,8 @@ export default function DashboardPengawasan() {
         },
         {
             label: 'Antrean Dinilai Kembali',
-            value: complianceStats?.manualReviewBacklog || 0,
-            description: `${complianceStats?.masterManualRules || 0} butir master memerlukan keputusan manusia`,
+            value: complianceStats?.manualReviewBacklog ?? '—',
+            description: `${complianceStats?.masterManualRules ?? '—'} butir master memerlukan keputusan manusia`,
             Icon: Scale,
             border: 'border-l-violet-500',
             icon: 'text-violet-600 dark:text-violet-400',
@@ -167,7 +189,7 @@ export default function DashboardPengawasan() {
         },
         {
             label: 'Pemicu/Bukti Belum Lengkap',
-            value: complianceStats?.missingTriggerEvidence || 0,
+            value: complianceStats?.missingTriggerEvidence ?? '—',
             description: 'Tanggal jatuh tempo ditahan sampai bukti diverifikasi',
             Icon: FileWarning,
             border: 'border-l-amber-500',
@@ -176,7 +198,7 @@ export default function DashboardPengawasan() {
         },
         {
             label: 'Data Legacy Belum Rekonsiliasi',
-            value: complianceStats?.legacyUnverified || 0,
+            value: complianceStats?.legacyUnverified ?? '—',
             description: 'Tidak dapat masuk proses penyusutan',
             Icon: ShieldAlert,
             border: 'border-l-orange-500',
@@ -185,7 +207,7 @@ export default function DashboardPengawasan() {
         },
         {
             label: 'JRA Belum Dipilih',
-            value: complianceStats?.pendingJra || 0,
+            value: complianceStats?.pendingJra ?? '—',
             description: 'Pasangan klasifikasi–JRA belum lengkap',
             Icon: Clock,
             border: 'border-l-yellow-500',
@@ -194,7 +216,7 @@ export default function DashboardPengawasan() {
         },
         {
             label: 'Menggunakan Versi Lama',
-            value: complianceStats?.staleRuleVersion || 0,
+            value: complianceStats?.staleRuleVersion ?? '—',
             description: 'Perlu telaah dampak; snapshot tidak diubah otomatis',
             Icon: GitCompareArrows,
             border: 'border-l-blue-500',
@@ -203,7 +225,7 @@ export default function DashboardPengawasan() {
         },
         {
             label: 'Legal Hold Aktif',
-            value: complianceStats?.legalHolds || 0,
+            value: complianceStats?.legalHolds ?? '—',
             description: 'Seluruh tindakan retensi dan penyusutan ditangguhkan',
             Icon: AlertTriangle,
             border: 'border-l-slate-500',
@@ -212,8 +234,8 @@ export default function DashboardPengawasan() {
         },
         {
             label: 'Cakupan Aturan Terverifikasi',
-            value: `${complianceStats?.verifiedCoveragePercent ?? 100}%`,
-            description: `${complianceStats?.verified || 0} dari ${complianceStats?.totalArchives || 0} arsip`,
+            value: Number.isFinite(complianceStats?.verifiedCoveragePercent) ? `${complianceStats.verifiedCoveragePercent}%` : '—',
+            description: `${complianceStats?.verified ?? '—'} dari ${complianceStats?.totalArchives ?? '—'} arsip`,
             Icon: CheckCircle2,
             border: 'border-l-emerald-500',
             icon: 'text-emerald-600 dark:text-emerald-400',
@@ -222,14 +244,15 @@ export default function DashboardPengawasan() {
     ];
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="min-w-0 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 motion-reduce:animate-none">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h2 className="text-lg font-semibold tracking-tight">Monitoring Pengawasan</h2>
-                    <p className="text-sm text-muted-foreground">Analisis aktivitas user dan kepatuhan sistem</p>
+                    <h2 className="text-lg font-semibold tracking-tight">Pengawasan</h2>
+                    <p className="text-sm text-muted-foreground">Aktivitas pengguna dan kelengkapan data kearsipan</p>
                 </div>
-                <Select value={daysRange} onValueChange={setDaysRange}>
-                    <SelectTrigger className="w-[180px]">
+                <div className="flex flex-wrap items-center gap-2">
+                <Select value={daysRange} onValueChange={setDaysRange} disabled={loading}>
+                    <SelectTrigger aria-label="Rentang waktu pengawasan" className="w-[180px]">
                         <SelectValue placeholder="Pilih Rentang" />
                     </SelectTrigger>
                     <SelectContent>
@@ -238,14 +261,31 @@ export default function DashboardPengawasan() {
                         <SelectItem value="90">90 Hari Terakhir</SelectItem>
                     </SelectContent>
                 </Select>
+                <Button variant="outline" onClick={loadData} disabled={loading}>
+                    {loading ? 'Memperbarui…' : 'Perbarui data pengawasan'}
+                </Button>
+                </div>
             </div>
 
+            {loadError && (
+                <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+                    <p className="font-medium">{loadError}</p>
+                    <p className="mt-1 text-sm">
+                        {lastLoadedRange
+                            ? `Data terakhir yang berhasil dimuat masih ditampilkan. Grafik aktivitas mencakup ${lastLoadedRange} hari; data belum diperbarui.`
+                            : 'Data pengawasan belum tersedia. Periksa koneksi lalu muat ulang.'}
+                    </p>
+                    <Button variant="outline" className="mt-3" onClick={loadData} disabled={loading}>Coba lagi</Button>
+                </div>
+            )}
+
+            {lastLoadedRange && <>
             {/* Compliance Cards */}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {qualityCards.map((card) => {
                     const IconComponent = card.Icon;
                     return (
-                    <Card key={card.label} className={`card-hover border-l-4 shadow-sm ${card.border}`}>
+                    <Card key={card.label} className={`min-w-0 card-hover border-l-4 shadow-sm ${card.border}`}>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">{card.label}</CardTitle>
                             <div className={`rounded-full p-2 ${card.iconBg}`}>
@@ -261,14 +301,16 @@ export default function DashboardPengawasan() {
                 })}
             </div>
 
-            <Card className="shadow-sm">
+            <Card className="min-w-0 shadow-sm">
                 <CardHeader>
                     <CardTitle className="text-base">Antrean Kualitas Klasifikasi dan JRA</CardTitle>
                     <CardDescription>Daftar kerja prioritas; keputusan penyusutan tetap memerlukan telaah petugas.</CardDescription>
                 </CardHeader>
                 <CardContent className="px-0 sm:px-6">
                     {qualityIssues.length === 0 ? (
-                        <div className="py-10 text-center text-sm text-muted-foreground">Tidak ada masalah kualitas yang terbuka.</div>
+                        <div className="py-10 text-center text-sm text-muted-foreground">
+                            {loadError || loading ? 'Antrean kualitas belum diperbarui.' : 'Tidak ada masalah kualitas yang terbuka pada data yang dimuat.'}
+                        </div>
                     ) : (
                         <Table responsive>
                             <TableHeader>
@@ -311,28 +353,28 @@ export default function DashboardPengawasan() {
 
             {/* Charts */}
             <div className="grid gap-6 md:grid-cols-2">
-                <Card className="shadow-sm">
+                <Card className="min-w-0 shadow-sm">
                     <CardHeader>
                         <CardTitle className="text-base">Tren Aktivitas Sistem</CardTitle>
-                        <CardDescription>Frekuensi aksi Create, Update, Delete per hari</CardDescription>
+                        <CardDescription>Frekuensi pencatatan, perubahan, dan penghapusan per hari</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="h-[350px] w-full">
+                        <div className="min-w-0 h-[350px] w-full">
                             <Line role="img" aria-label="Grafik aktivitas pengguna dalam periode pengawasan" data={activityChartData} options={chartOptions} />
                         </div>
                     </CardContent>
                 </Card>
 
-                <Card className="shadow-sm">
+                <Card className="min-w-0 shadow-sm">
                     <CardHeader>
-                        <CardTitle className="text-base">User Paling Aktif</CardTitle>
-                        <CardDescription>Top 5 user berdasarkan total aktivitas</CardDescription>
+                        <CardTitle className="text-base">Pengguna Paling Aktif</CardTitle>
+                        <CardDescription>Lima pengguna dengan aktivitas terbanyak</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="h-[350px] w-full">
+                        <div className="min-w-0 h-[350px] w-full">
                             <Bar
                                 role="img"
-                                aria-label="Grafik perbandingan aktivitas berdasarkan unit kerja"
+                                aria-label="Grafik perbandingan aktivitas pengguna"
                                 data={userChartData}
                                 options={{
                                     ...chartOptions,
@@ -343,6 +385,7 @@ export default function DashboardPengawasan() {
                     </CardContent>
                 </Card>
             </div>
+            </>}
         </div>
     );
 }

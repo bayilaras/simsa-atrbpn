@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useReducedMotion } from '@/hooks/use-reduced-motion'
 import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -56,7 +57,7 @@ ChartJS.register(
     Filler
 )
 
-const chartOptions = {
+const baseChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -65,7 +66,7 @@ const chartOptions = {
             labels: {
                 usePointStyle: true,
                 boxWidth: 8,
-                font: { size: 11, family: 'Inter' }
+                font: { size: 11, family: 'Inter Variable, sans-serif' }
             }
         },
         tooltip: {
@@ -102,8 +103,15 @@ export default function Dashboard() {
     const { user, canWrite } = useAuth();
     const { capabilities } = useAppConfig();
     const isAdmin = canWrite();
+    const reducedMotion = useReducedMotion();
+    const chartOptions = { ...baseChartOptions, animation: reducedMotion ? false : undefined };
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [widgetError, setWidgetError] = useState(null);
+    const [refreshing, setRefreshing] = useState(false);
+    const [displayScope, setDisplayScope] = useState(null);
+    const requestGeneration = useRef(0);
+    const loadedScope = useRef(null);
     const [stats, setStats] = useState(null);
     const [expiring, setExpiring] = useState([]);
     const [recentActivity, setRecentActivity] = useState([]);
@@ -116,6 +124,9 @@ export default function Dashboard() {
 
     const isSuperAdmin = user?.role === 'super_admin';
     const effectiveUserUnitKerjaId = resolveEffectiveUnitKerjaId(user);
+    const requestedUnit = isSuperAdmin ? selectedUnitKerja : (effectiveUserUnitKerjaId || 'none');
+    const scopeKey = user && requestedUnit !== undefined
+        ? JSON.stringify([user.id, user.role, requestedUnit]) : null;
 
     const loadUnitKerjaList = useCallback(async () => {
         try {
@@ -130,47 +141,63 @@ export default function Dashboard() {
         }
     }, []);
 
-    // Shared data fetching logic
-    const fetchDashboardData = useCallback(async () => {
-        const unitKerjaId = (selectedUnitKerja === 'all' || selectedUnitKerja === 'none') ? null : selectedUnitKerja;
-
-        const [statsResult, expiringResult, comparisonResult, recentResult, widgetResult] = await Promise.all([
-            dashboardService.getStats(unitKerjaId),
-            dashboardService.getExpiringArchives(unitKerjaId, 90),
-            dashboardService.getUnitKerjaComparison(unitKerjaId),
-            dashboardService.getRecentActivity(unitKerjaId, 8),
-            dashboardService.getWidgetData(unitKerjaId).catch(() => null),
-        ]);
-
-        setStats(statsResult);
-        setExpiring(expiringResult);
-        setUnitKerjaStats(comparisonResult || []);
-        setRecentActivity(recentResult || []);
-        setWidgetData(widgetResult);
-    }, [selectedUnitKerja]);
-
-    // Full load with loading spinner (initial load or unit change)
-    const loadDashboardData = useCallback(async () => {
+    // Full loads and background refreshes share a generation. Only a complete
+    // response for the current user/unit may replace its displayed snapshot.
+    const loadDashboardData = useCallback(async (silent = false) => {
+        if (scopeKey === null) return;
+        const generation = ++requestGeneration.current;
+        const sameScope = loadedScope.current === scopeKey;
+        setLoading(!silent || !sameScope);
+        setRefreshing(true);
+        setError(null);
+        setWidgetError(null);
+        const unitKerjaId = (requestedUnit === 'all' || requestedUnit === 'none') ? null : requestedUnit;
         try {
-            setLoading(true);
-            setError(null);
-            await fetchDashboardData();
+            const [core, widgets] = await Promise.allSettled([
+                Promise.all([
+                    dashboardService.getStats(unitKerjaId),
+                    dashboardService.getExpiringArchives(unitKerjaId, 90),
+                    dashboardService.getUnitKerjaComparison(unitKerjaId),
+                    dashboardService.getRecentActivity(unitKerjaId, 8),
+                ]),
+                dashboardService.getWidgetData(unitKerjaId),
+            ]);
+            if (generation !== requestGeneration.current) return;
+            if (core.status === 'rejected') throw core.reason;
+            const [statsResult, expiringResult, comparisonResult, recentResult] = core.value;
+            setStats(statsResult);
+            setExpiring(expiringResult);
+            setUnitKerjaStats(comparisonResult || []);
+            setRecentActivity(recentResult || []);
+            if (widgets.status === 'fulfilled' && widgets.value) {
+                setWidgetData(widgets.value);
+            } else {
+                setWidgetData(previous => sameScope ? previous : null);
+                setWidgetError(sameScope
+                    ? 'Ringkasan tambahan gagal diperbarui. Data terakhir yang tersedia masih ditampilkan.'
+                    : 'Ringkasan tambahan belum tersedia. Muat ulang untuk melihat siklus, peminjaman, penyimpanan, dan pelaporan arsip.');
+            }
+            loadedScope.current = scopeKey;
+            setDisplayScope(scopeKey);
         } catch (err) {
+            if (generation !== requestGeneration.current) return;
             console.error('Failed to load dashboard data:', err);
-            setError('Gagal memuat data dashboard');
+            setError(sameScope
+                ? 'Pembaruan ringkasan gagal. Data terakhir yang berhasil dimuat masih ditampilkan dan belum diperbarui.'
+                : 'Gagal memuat data dashboard.');
+            if (!sameScope) {
+                setStats(null);
+                setWidgetData(null);
+            }
         } finally {
-            setLoading(false);
+            if (generation === requestGeneration.current) {
+                setLoading(false);
+                setRefreshing(false);
+            }
         }
-    }, [fetchDashboardData]);
+    }, [scopeKey, requestedUnit]);
 
-    // Silent refresh without loading spinner (navigation back, focus, etc)
-    const refreshData = useCallback(async () => {
-        try {
-            await fetchDashboardData();
-        } catch (err) {
-            console.error('Failed to refresh dashboard data:', err);
-        }
-    }, [fetchDashboardData]);
+    const refreshData = useCallback(() => loadDashboardData(true), [loadDashboardData]);
 
     // Load unit kerja list for super admin.
     useEffect(() => {
@@ -184,13 +211,15 @@ export default function Dashboard() {
         }
     }, [user, isSuperAdmin, effectiveUserUnitKerjaId, loadUnitKerjaList]);
 
-    // Load dashboard data when selectedUnitKerja is set.
+    // A new scope uses a full load. Cleanup invalidates even an older silent
+    // refresh, including requests that finish after unmount or a unit change.
     useEffect(() => {
-        if (user && selectedUnitKerja !== undefined) {
+        if (scopeKey !== null) {
             isInitializedRef.current = true;
             loadDashboardData();
         }
-    }, [user, selectedUnitKerja, loadDashboardData]);
+        return () => { requestGeneration.current += 1; };
+    }, [scopeKey, loadDashboardData]);
 
     // Re-fetch data only when a navigation creates a new location entry.
     useEffect(() => {
@@ -291,14 +320,14 @@ export default function Dashboard() {
         { label: 'Total Arsip', value: stats.totalArsip, change: null, icon: Archive, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100/50', trend: 'neutral' },
         { label: 'Arsip Masuk', value: stats.arsipMasuk || 0, change: null, icon: Inbox, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-100/50', trend: 'neutral' },
         { label: 'Arsip Keluar', value: stats.arsipKeluar || 0, change: null, icon: ArrowUpRight, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-100/50', trend: 'neutral' },
-        { label: 'Segera Musnah', value: expiringByUrgency.critical.length, change: null, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-100/50', trend: 'neutral' },
+        { label: 'Perlu Telaah Retensi', value: expiringByUrgency.critical.length, change: null, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-100/50', trend: 'neutral' },
     ] : [];
 
-    if (loading) {
+    if (loading || (stats && displayScope !== scopeKey)) {
         return <DashboardSkeleton />;
     }
 
-    if (error) {
+    if (error && !stats) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[400px] gap-6 animate-in fade-in zoom-in duration-500">
                 <div className="p-4 bg-red-50 dark:bg-red-500/15 rounded-full">
@@ -308,7 +337,7 @@ export default function Dashboard() {
                     <h3 className="font-semibold text-lg text-foreground">Gagal Memuat Data</h3>
                     <p className="text-muted-foreground max-w-[300px]">{error}</p>
                 </div>
-                <Button onClick={loadDashboardData} className="gap-2">
+                <Button onClick={() => loadDashboardData()} className="gap-2">
                     <Loader2 className="h-4 w-4" /> Coba Lagi
                 </Button>
             </div>
@@ -331,7 +360,7 @@ export default function Dashboard() {
                         </div>
                         {isSuperAdmin && unitKerjaList.length > 0 && (
                             <Select value={selectedUnitKerja} onValueChange={setSelectedUnitKerja}>
-                                <SelectTrigger className="h-9 w-full sm:w-[260px]">
+                                <SelectTrigger aria-label="Unit kerja Dashboard" className="h-9 w-full sm:w-[260px]">
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -354,6 +383,25 @@ export default function Dashboard() {
                 }
             />
 
+            <section aria-label="Tindakan utama" className="flex flex-wrap gap-2">
+                {isAdmin ? <>
+                    <Button onClick={() => navigate('/surat/masuk/tambah')}><MailOpen aria-hidden="true" className="mr-2 h-4 w-4" />Catat Surat Masuk</Button>
+                    <Button variant="outline" onClick={() => navigate('/surat/keluar/tambah')}><Send aria-hidden="true" className="mr-2 h-4 w-4" />Catat Surat Keluar</Button>
+                </> : <>
+                    <Button variant="outline" onClick={() => navigate('/surat/masuk')}><MailOpen aria-hidden="true" className="mr-2 h-4 w-4" />Lihat Surat Masuk</Button>
+                    <Button variant="outline" onClick={() => navigate('/surat/keluar')}><Send aria-hidden="true" className="mr-2 h-4 w-4" />Lihat Surat Keluar</Button>
+                </>}
+                <Button variant={isAdmin ? 'outline' : 'default'} onClick={() => navigate('/arsip/masuk')}><Archive aria-hidden="true" className="mr-2 h-4 w-4" />Cari Arsip</Button>
+                <Button variant="outline" onClick={() => navigate('/laporan')}><FileBarChart aria-hidden="true" className="mr-2 h-4 w-4" />Laporan</Button>
+                {isAdmin && capabilities.fileUploads && <Button variant="outline" onClick={() => navigate('/bulk-upload')}><FolderArchive aria-hidden="true" className="mr-2 h-4 w-4" />Unggah Massal</Button>}
+            </section>
+
+            {refreshing && <p role="status" className="text-sm text-muted-foreground">Memperbarui ringkasan unit kerja…</p>}
+            {(error || widgetError) && <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+                <p className="text-sm">{error || widgetError}</p>
+                <Button variant="outline" className="mt-3" disabled={refreshing} onClick={refreshData}>Coba lagi memuat ringkasan</Button>
+            </div>}
+
             <Tabs defaultValue="overview" className="space-y-6">
 
                 <TabsList className="bg-muted/50 p-1 rounded-xl">
@@ -365,14 +413,14 @@ export default function Dashboard() {
                     {/* Stats Grid */}
                     <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
                         {statCards.map((stat, i) => (
-                            <Card key={stat.label} className="card-hover border-transparent shadow-sm hover:shadow-lg transition-all" style={{ animationDelay: `${i * 80}ms` }}>
+                            <Card key={stat.label} className="min-w-0 card-hover border-transparent shadow-sm hover:shadow-lg transition-all" style={{ animationDelay: `${i * 80}ms` }}>
                                 <CardContent className="p-4 sm:p-5 lg:p-6">
-                                    <div className="flex items-center justify-between mb-3 sm:mb-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
                                         <div className={`p-2 sm:p-2.5 rounded-xl ${stat.bg}`}>
                                             <stat.icon className={`h-4 w-4 sm:h-5 sm:w-5 ${stat.color}`} />
                                         </div>
                                         {stat.change !== null && (
-                                            <Badge variant="outline" className={`font-normal text-[10px] sm:text-xs ${typeof stat.change === 'number' && stat.change > 0 ? 'text-green-600 bg-green-50 dark:bg-green-500/15 border-green-200' : 'text-muted-foreground'}`}>
+                                            <Badge variant="outline" className={`font-normal text-[10px] sm:text-xs ${typeof stat.change === 'number' && stat.change > 0 ? 'text-green-800 dark:text-green-200 bg-green-50 dark:bg-green-500/15 border-green-200' : 'text-muted-foreground'}`}>
                                                 {typeof stat.change === 'number' && stat.change > 0 ? '+' : ''}{stat.change} bln ini
                                             </Badge>
                                         )}
@@ -388,9 +436,9 @@ export default function Dashboard() {
 
                     <div className="grid gap-6 lg:grid-cols-5">
                         {/* Charts Area */}
-                        <div className="lg:col-span-3 space-y-6">
+                        <div className="min-w-0 lg:col-span-3 space-y-6">
                             {/* Monthly Trend Chart */}
-                            <Card className="shadow-sm border-border/60">
+                            <Card className="min-w-0 shadow-sm border-border/60">
                                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                                     <div>
                                         <CardTitle className="text-lg">Analisis Tren Surat</CardTitle>
@@ -398,7 +446,7 @@ export default function Dashboard() {
                                     </div>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="h-[250px] sm:h-[300px] w-full mt-4">
+                                    <div className="min-w-0 h-[250px] sm:h-[300px] w-full mt-4">
                                         {chartData && (
                                             <Line
                                                 role="img"
@@ -412,7 +460,7 @@ export default function Dashboard() {
                             </Card>
 
                             {/* Unit Kerja Comparison Chart */}
-                            <Card className="shadow-sm border-border/60">
+                            <Card className="min-w-0 shadow-sm border-border/60">
                                 <CardHeader>
                                     <CardTitle className="text-lg">Perbandingan Unit Kerja</CardTitle>
                                     <CardDescription>Volume surat per unit kerja bulan ini</CardDescription>
@@ -448,60 +496,18 @@ export default function Dashboard() {
                         </div>
 
                         {/* Right Sidebar - Actions & Notifications */}
-                        <div className="lg:col-span-2 space-y-6">
-                            {/* Quick Actions */}
-                            <Card className="shadow-sm border-border/60 bg-gradient-to-br from-background to-muted/20">
-                                <CardHeader>
-                                    <CardTitle className="text-base font-semibold">Aksi Cepat</CardTitle>
-                                </CardHeader>
-                                <CardContent className="grid grid-cols-2 gap-3">
-                                    {isAdmin ? (
-                                        <>
-                                            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/masuk/tambah')}>
-                                                <MailOpen className="h-5 w-5" />
-                                                <span className="text-xs">Surat Masuk</span>
-                                            </Button>
-                                            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/keluar/tambah')}>
-                                                <Send className="h-5 w-5" />
-                                                <span className="text-xs">Surat Keluar</span>
-                                            </Button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/masuk')}>
-                                                <MailOpen className="h-5 w-5" />
-                                                <span className="text-xs">Surat Masuk</span>
-                                            </Button>
-                                            <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/surat/keluar')}>
-                                                <Send className="h-5 w-5" />
-                                                <span className="text-xs">Surat Keluar</span>
-                                            </Button>
-                                        </>
-                                    )}
-                                    <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/laporan')}>
-                                        <FileBarChart className="h-5 w-5" />
-                                        <span className="text-xs">Laporan</span>
-                                    </Button>
-                                    {isAdmin && capabilities.fileUploads && (
-                                        <Button variant="outline" className="h-auto py-4 flex flex-col gap-2 hover:bg-primary/5 hover:border-primary/20 hover:text-primary transition-all" onClick={() => navigate('/bulk-upload')}>
-                                            <FolderArchive className="h-5 w-5" />
-                                            <span className="text-xs">Upload</span>
-                                        </Button>
-                                    )}
-                                </CardContent>
-                            </Card>
-
+                        <div className="min-w-0 lg:col-span-2 space-y-6">
                             {/* Expiring Archives */}
-                            <Card className="shadow-sm border-border/60 overflow-hidden flex flex-col min-h-[300px] lg:min-h-[400px]">
+                            <Card className="min-w-0 shadow-sm border-border/60 overflow-hidden flex flex-col min-h-[300px] lg:min-h-[400px]">
                                 <CardHeader className="bg-amber-50/50 dark:bg-amber-950/10 border-b border-amber-100 dark:border-amber-900/50 pb-4">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div className="flex items-center gap-2 text-amber-700 dark:text-amber-500">
                                             <AlertTriangle className="h-4 w-4" />
                                             <CardTitle className="text-base">Masa Retensi</CardTitle>
                                         </div>
-                                        <Badge variant="outline" className="text-xs border-amber-200 bg-amber-100/50 text-amber-700">{expiring.length} Arsip</Badge>
+                                        <Badge variant="outline" className="text-xs border-amber-200 bg-amber-100/50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200">{expiring.length} Arsip</Badge>
                                     </div>
-                                    <CardDescription className="text-xs mt-1">Arsip yang mendekati masa musnah (90 hari)</CardDescription>
+                                    <CardDescription className="text-xs mt-1">Batas retensi dalam 90 hari; bukan keputusan pemusnahan</CardDescription>
                                 </CardHeader>
                                 <CardContent className="p-0 flex-1 overflow-y-auto max-h-[400px]">
                                     {expiring.length > 0 ? (
@@ -540,22 +546,22 @@ export default function Dashboard() {
                                             <div className="bg-muted p-3 rounded-full mb-3">
                                                 <Clock className="h-6 w-6 text-muted-foreground/50" />
                                             </div>
-                                            <p className="text-sm font-medium text-muted-foreground">Aman! Tidak ada arsip kritis.</p>
+                                            <p className="text-sm font-medium text-muted-foreground">Tidak ada batas retensi terhitung dalam 90 hari pada cakupan ini.</p>
                                         </div>
                                     )}
                                 </CardContent>
-                                <CardFooter className="p-3 border-t bg-muted/20">
+                                {isAdmin && <CardFooter className="p-3 border-t bg-muted/20">
                                     <Button variant="ghost" size="sm" className="w-full text-xs h-8" onClick={() => navigate('/retention')}>
                                         Lihat Semua Jadwal Retensi <ArrowRight className="ml-1 h-3 w-3" />
                                     </Button>
-                                </CardFooter>
+                                </CardFooter>}
                             </Card>
                         </div>
                     </div>
 
                     {/* Recent Activity Section */}
                     {recentActivity.length > 0 && (
-                        <Card className="shadow-sm border-border/60">
+                        <Card className="min-w-0 shadow-sm border-border/60">
                             <CardHeader className="flex flex-row items-center justify-between pb-2">
                                 <div>
                                     <CardTitle className="text-lg">Aktivitas Terbaru</CardTitle>
@@ -602,7 +608,7 @@ export default function Dashboard() {
                             {/* Row 1: Archive Lifecycle + Media Breakdown + Peminjaman */}
                             <div className="grid gap-6 lg:grid-cols-3">
                                 {/* Archive Lifecycle Donut */}
-                                <Card className="shadow-sm border-border/60">
+                                <Card className="min-w-0 shadow-sm border-border/60">
                                     <CardHeader className="pb-2">
                                         <div className="flex items-center gap-2">
                                             <div className="p-2 bg-violet-100/50 rounded-xl">
@@ -618,7 +624,7 @@ export default function Dashboard() {
                                         <div className="h-[200px] flex items-center justify-center">
                                             <Doughnut
                                                 role="img"
-                                                aria-label="Grafik komposisi format arsip elektronik"
+                                                aria-label="Grafik status siklus arsip"
                                                 data={{
                                                     labels: ['Aktif', 'Inaktif', 'Kadaluarsa', 'Belum Ditentukan'],
                                                     datasets: [{
@@ -637,6 +643,7 @@ export default function Dashboard() {
                                                     responsive: true,
                                                     maintainAspectRatio: false,
                                                     cutout: '65%',
+                                                    animation: reducedMotion ? false : undefined,
                                                     plugins: {
                                                         legend: { display: false },
                                                         tooltip: {
@@ -671,7 +678,7 @@ export default function Dashboard() {
                                 </Card>
 
                                 {/* Media Type Breakdown */}
-                                <Card className="shadow-sm border-border/60">
+                                <Card className="min-w-0 shadow-sm border-border/60">
                                     <CardHeader className="pb-2">
                                         <div className="flex items-center gap-2">
                                             <div className="p-2 bg-cyan-100/50 rounded-xl">
@@ -741,7 +748,7 @@ export default function Dashboard() {
                                 </Card>
 
                                 {/* Peminjaman Overview */}
-                                <Card className="shadow-sm border-border/60">
+                                <Card className="min-w-0 shadow-sm border-border/60">
                                     <CardHeader className="pb-2">
                                         <div className="flex items-center gap-2">
                                             <div className="p-2 bg-orange-100/50 rounded-xl">
@@ -754,22 +761,22 @@ export default function Dashboard() {
                                         </div>
                                     </CardHeader>
                                     <CardContent className="space-y-4">
-                                        <div className="flex items-center gap-4 p-4 rounded-xl bg-orange-50/50 border border-orange-100">
+                                        <div className="flex items-center gap-4 p-4 rounded-xl bg-orange-50/50 dark:bg-orange-500/10 border border-orange-100 dark:border-orange-500/30">
                                             <div className="p-3 bg-orange-100 dark:bg-orange-500/15 rounded-full">
                                                 <BookOpen className="h-6 w-6 text-orange-600" />
                                             </div>
                                             <div>
                                                 <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">{widgetData.lendingOverview.borrowed}</p>
-                                                <p className="text-xs text-orange-600/80">Sedang Dipinjam</p>
+                                                <p className="text-xs text-orange-800 dark:text-orange-200">Sedang Dipinjam</p>
                                             </div>
                                         </div>
-                                        <div className={`flex items-center gap-4 p-4 rounded-xl border ${widgetData.lendingOverview.overdue > 0 ? 'bg-red-50/50 border-red-100' : 'bg-green-50/50 border-green-100'}`}>
+                                        <div className={`flex items-center gap-4 p-4 rounded-xl border ${widgetData.lendingOverview.overdue > 0 ? 'bg-red-50/50 dark:bg-red-500/10 border-red-100 dark:border-red-500/30' : 'bg-green-50/50 dark:bg-green-500/10 border-green-100 dark:border-green-500/30'}`}>
                                             <div className={`p-3 rounded-full ${widgetData.lendingOverview.overdue > 0 ? 'bg-red-100 dark:bg-red-500/15' : 'bg-green-100 dark:bg-green-500/15'}`}>
                                                 <BookX className={`h-6 w-6 ${widgetData.lendingOverview.overdue > 0 ? 'text-red-600' : 'text-green-600'}`} />
                                             </div>
                                             <div>
                                                 <p className={`text-2xl font-bold ${widgetData.lendingOverview.overdue > 0 ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'}`}>{widgetData.lendingOverview.overdue}</p>
-                                                <p className={`text-xs ${widgetData.lendingOverview.overdue > 0 ? 'text-red-600/80' : 'text-green-600/80'}`}>
+                                                <p className={`text-xs ${widgetData.lendingOverview.overdue > 0 ? 'text-red-800 dark:text-red-200' : 'text-green-800 dark:text-green-200'}`}>
                                                     {widgetData.lendingOverview.overdue > 0 ? 'Terlambat Dikembalikan!' : 'Tidak Ada yang Terlambat'}
                                                 </p>
                                             </div>
@@ -779,7 +786,7 @@ export default function Dashboard() {
                             </div>
 
                             {/* Row 2: Penyusutan Pipeline */}
-                            <Card className="shadow-sm border-border/60">
+                            <Card className="min-w-0 shadow-sm border-border/60">
                                 <CardHeader className="pb-3">
                                     <div className="flex items-center gap-2">
                                         <div className="p-2 bg-indigo-100/50 rounded-xl">
@@ -797,7 +804,7 @@ export default function Dashboard() {
                                             const stageConfig = {
                                                 draft: { label: 'Draft', icon: FileText, color: 'text-muted-foreground', bg: 'bg-muted', border: 'border-border', ring: 'ring-slate-300' },
                                                 proposed: { label: 'Diusulkan', icon: ArrowRightCircle, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-500/15', border: 'border-blue-200', ring: 'ring-blue-300' },
-                                                reviewed: { label: 'Ditinjau', icon: Eye, color: 'text-amber-600', bg: 'bg-amber-100', border: 'border-amber-200', ring: 'ring-amber-300' },
+                                                reviewed: { label: 'Ditinjau', icon: Eye, color: 'text-amber-800 dark:text-amber-300', bg: 'bg-amber-100 dark:bg-amber-500/15', border: 'border-amber-200', ring: 'ring-amber-300' },
                                                 approved: { label: 'Disetujui', icon: Stamp, color: 'text-emerald-600', bg: 'bg-emerald-100 dark:bg-emerald-500/15', border: 'border-emerald-200', ring: 'ring-emerald-300' },
                                                 executed: { label: 'Dilaksanakan', icon: Play, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-100 dark:bg-violet-500/15', border: 'border-violet-200', ring: 'ring-violet-300' },
                                             };
@@ -805,7 +812,7 @@ export default function Dashboard() {
                                             const StageIcon = config.icon;
                                             return (
                                                 <div key={stage.status} className="flex-1 flex items-center gap-2 sm:gap-0 sm:flex-col sm:items-center">
-                                                    <div className={`relative flex flex-col items-center gap-2 p-3 sm:p-4 rounded-xl border ${config.border} ${config.bg}/50 w-full text-center transition-all hover:shadow-sm`}>
+                                                    <div className={`relative flex flex-col items-center gap-2 p-3 sm:p-4 rounded-xl border ${config.border} ${config.bg} w-full text-center transition-all hover:shadow-sm`}>
                                                         <div className={`p-2 rounded-full ${config.bg}`}>
                                                             <StageIcon className={`h-4 w-4 ${config.color}`} />
                                                         </div>
@@ -825,7 +832,7 @@ export default function Dashboard() {
                             {/* Row 3: Storage Capacity + Vital/Terjaga */}
                             <div className="grid gap-6 md:grid-cols-2">
                                 {/* Storage Capacity */}
-                                <Card className="shadow-sm border-border/60">
+                                <Card className="min-w-0 shadow-sm border-border/60">
                                     <CardHeader className="pb-3">
                                         <div className="flex items-center gap-2">
                                             <div className="p-2 bg-teal-100/50 rounded-xl">
@@ -872,15 +879,15 @@ export default function Dashboard() {
                                             </div>
                                         )}
                                     </CardContent>
-                                    <CardFooter className="p-3 border-t bg-muted/20">
+                                    {isAdmin && <CardFooter className="p-3 border-t bg-muted/20">
                                         <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/storage-locations')}>
                                             Kelola Penyimpanan <ArrowRight className="ml-1 h-3 w-3" />
                                         </Button>
-                                    </CardFooter>
+                                    </CardFooter>}
                                 </Card>
 
                                 {/* Vital / Terjaga Alerts */}
-                                <Card className="shadow-sm border-border/60">
+                                <Card className="min-w-0 shadow-sm border-border/60">
                                     <CardHeader className="pb-3">
                                         <div className="flex items-center gap-2">
                                             <div className="p-2 bg-rose-100/50 rounded-xl">
@@ -895,8 +902,8 @@ export default function Dashboard() {
                                     <CardContent className="space-y-4">
                                         {/* Vital */}
                                         <div className={`p-4 rounded-xl border ${widgetData.vitalTerjagaAlerts.vitalUnprotected > 0
-                                                ? 'bg-red-50/50 border-red-200'
-                                                : 'bg-emerald-50/50 border-emerald-200'
+                                                ? 'bg-red-50/50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30'
+                                                : 'bg-emerald-50/50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30'
                                             }`}>
                                             <div className="flex items-center gap-3">
                                                 <div className={`p-2.5 rounded-full ${widgetData.vitalTerjagaAlerts.vitalUnprotected > 0 ? 'bg-red-100 dark:bg-red-500/15' : 'bg-emerald-100 dark:bg-emerald-500/15'
@@ -909,7 +916,7 @@ export default function Dashboard() {
                                                     <p className="text-xs text-muted-foreground">
                                                         {widgetData.vitalTerjagaAlerts.vitalUnprotected > 0
                                                             ? `${widgetData.vitalTerjagaAlerts.vitalUnprotected} dari ${widgetData.vitalTerjagaAlerts.vitalTotal} arsip belum diproteksi`
-                                                            : `Semua ${widgetData.vitalTerjagaAlerts.vitalTotal} arsip sudah diproteksi`}
+                                                            : widgetData.vitalTerjagaAlerts.vitalTotal > 0 ? `Proteksi tercatat untuk ${widgetData.vitalTerjagaAlerts.vitalTotal} arsip` : 'Belum ada arsip vital tercatat'}
                                                     </p>
                                                 </div>
                                                 <div className="text-right">
@@ -919,31 +926,21 @@ export default function Dashboard() {
                                             </div>
                                         </div>
 
-                                        {/* Terjaga */}
-                                        <div className={`p-4 rounded-xl border ${widgetData.vitalTerjagaAlerts.terjagaUnreported > 0
-                                                ? 'bg-amber-50/50 border-amber-200'
-                                                : 'bg-emerald-50/50 border-emerald-200'
-                                            }`}>
-                                            <div className="flex items-center gap-3">
-                                                <div className={`p-2.5 rounded-full ${widgetData.vitalTerjagaAlerts.terjagaUnreported > 0 ? 'bg-amber-100' : 'bg-emerald-100 dark:bg-emerald-500/15'
-                                                    }`}>
-                                                    <FileArchive className={`h-5 w-5 ${widgetData.vitalTerjagaAlerts.terjagaUnreported > 0 ? 'text-amber-600' : 'text-emerald-600'
-                                                        }`} />
-                                                </div>
-                                                <div className="flex-1">
-                                                    <p className="text-sm font-semibold">Arsip Terjaga</p>
-                                                    <p className="text-xs text-muted-foreground">
-                                                        {widgetData.vitalTerjagaAlerts.terjagaUnreported > 0
-                                                            ? `${widgetData.vitalTerjagaAlerts.terjagaUnreported} dari ${widgetData.vitalTerjagaAlerts.terjagaTotal} arsip belum dilaporkan ke ANRI`
-                                                            : `Semua ${widgetData.vitalTerjagaAlerts.terjagaTotal} arsip sudah dilaporkan ke ANRI`}
-                                                    </p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <p className={`text-xl font-bold ${widgetData.vitalTerjagaAlerts.terjagaUnreported > 0 ? 'text-amber-600' : 'text-emerald-600'
-                                                        }`}>{widgetData.vitalTerjagaAlerts.terjagaUnreported}</p>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <section aria-label="Pelaporan arsip terjaga" className="rounded-lg border bg-background p-4">
+                                            <h3 className="text-sm font-semibold">Pelaporan arsip terjaga</h3>
+                                            <p className="mt-1 text-xs text-muted-foreground">Tahap pencatatan dan bukti pada aplikasi. Verifikasi internal bukan konfirmasi dari layanan ANRI.</p>
+                                            {widgetData.vitalTerjagaAlerts.terjagaReportingStages ? <dl className="mt-3 space-y-2 text-sm">
+                                                {[
+                                                    ['belum_dilaporkan', 'Belum ada laporan'], ['dicatat', 'Dicatat; pelaporan perlu ditinjau'],
+                                                    ['dikirim', 'Bukti pengiriman dicatat'], ['diterima', 'Bukti penerimaan dicatat'],
+                                                    ['bukti_diverifikasi', 'Bukti diverifikasi internal'], ['perlu_ditinjau', 'Status lain perlu ditinjau'],
+                                                ].map(([stage, label]) => <div key={stage} className="flex items-start justify-between gap-3">
+                                                    <dt className="text-muted-foreground">{label}</dt>
+                                                    <dd className="font-semibold tabular-nums">{widgetData.vitalTerjagaAlerts.terjagaReportingStages[stage] ?? '—'}</dd>
+                                                </div>)}
+                                            </dl> : <p className="mt-3 text-sm text-muted-foreground">Ringkasan tahap pelaporan belum tersedia.</p>}
+                                            {isAdmin && <Button variant="link" className="mt-2 h-auto whitespace-normal px-0 text-left" onClick={() => navigate('/arsip-terjaga')}>Lihat pelaporan arsip terjaga</Button>}
+                                        </section>
                                     </CardContent>
                                 </Card>
                             </div>
