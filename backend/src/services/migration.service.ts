@@ -157,7 +157,7 @@ export const migrationService = {
                     : and(eq(suratKeluarTable.unitKerjaId, unitKerjaId), eq(suratKeluarTable.tanggalSurat, date), eq(suratKeluarTable.perihal, perihal), eq(suratKeluarTable.kepada, kepada))).limit(1),
                 create: () => suratKeluarService.create({
                     unitKerjaId, tahun: year, naskahDinas: row['Naskah Dinas'] || row['Jenis Surat'] || 'Surat Dinas',
-                    numberingMode: numbered ? 'manual' : 'auto', nomorSurat: nomorSurat || undefined,
+                    numberingMode: numbered ? 'manual' : 'auto', nomorSurat: numbered ? nomorSurat : undefined,
                     tanggalSurat: date, perihal, kepada, createdBy: auditContext.userId,
                 }, auditContext),
             };

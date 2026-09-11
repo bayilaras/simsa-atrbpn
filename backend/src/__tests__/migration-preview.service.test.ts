@@ -66,6 +66,16 @@ describe('CSV date fidelity and mutation-free preview', () => {
         expect(mocks.masuk).not.toHaveBeenCalled();
     });
 
+    it.each(['', '-'])('imports an unnumbered outgoing letter (%s) through automatic numbering', async number => {
+        const source = csv('Nomor Surat,Tanggal Surat,Perihal,Dari,Kepada', number, '2026-09-11');
+        const result = await migrationService.importSuratKeluar(source, 'unit-a', actor);
+        expect(result).toMatchObject({ success: true, imported: 1, skipped: 0 });
+        expect(mocks.keluar).toHaveBeenCalledWith(expect.objectContaining({
+            numberingMode: 'auto', nomorSurat: undefined, tanggalSurat: '2026-09-11',
+            perihal: 'Arsip sumber', kepada: 'Unit B', unitKerjaId: 'unit-a',
+        }), actor);
+    });
+
     it('preserves partial-import and failed-critical-audit counts with row diagnostics', async () => {
         mocks.masuk.mockRejectedValueOnce(new Error('audit unavailable')).mockResolvedValueOnce({ id: 'good' });
         const result = await migrationService.importSuratMasuk([
