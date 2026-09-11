@@ -38,15 +38,16 @@ Pembaruan dipisahkan dan diuji menggunakan Node 24:
 | --- | --- | --- | --- |
 | multer | 2.2.0 | 2.3.0 | [Rilis perbaikan multipart](https://github.com/expressjs/multer/releases/tag/v2.3.0) |
 | nodemailer | 9.0.5 | 9.1.1 | [Rilis perbaikan mailer](https://github.com/nodemailer/nodemailer/releases/tag/v9.1.1) |
-| js-yaml (transitif) | 4.3.1 | 4.3.2 | [Rilis parser](https://github.com/nodeca/js-yaml/releases/tag/4.3.2) |
+| js-yaml (transitif backend dan alat pengembangan frontend) | 4.3.1 | 4.3.2 | [Rilis parser](https://github.com/nodeca/js-yaml/releases/tag/4.3.2) |
 | qs (transitif) | 6.15.3 | 6.16.0 | [Changelog parser](https://github.com/ljharb/qs/blob/main/CHANGELOG.md) |
 
 Audit backend sesudah pembaruan: **0 high/critical**, 3 moderate (`csv-parse`,
 `vitest`, `@vitest/mocker`). Ketiganya membutuhkan evaluasi upgrade mayor;
 Vitest digunakan untuk pengujian, sedangkan jalur impor CSV perlu ditinjau
-sebelum diaktifkan untuk pengguna. Audit dependency frontend yang dijalankan
-pada tahap awal menghasilkan 0 temuan. Audit ini tidak menggantikan pengujian
-keamanan aplikasi dan perlu diulang pada kandidat rilis.
+sebelum diaktifkan untuk pengguna. Audit akhir frontend: **0 high/critical**,
+3 moderate pada alat pengembangan (`@humanfs/node`, `hono`, `qs`); audit
+dependency runtime frontend menghasilkan 0 temuan. Audit ini tidak menggantikan
+pengujian keamanan aplikasi dan perlu diulang pada kandidat rilis.
 
 ## Verifikasi lokal
 
@@ -64,7 +65,7 @@ yang hanya mendengarkan loopback. Tidak memakai data atau kredensial production.
 | Database | Bootstrap/grant convergence berhasil; 34 migrasi terverifikasi, ulang 0 applied. |
 | Seed ulang | Isi tabel tetap sama; sequence mapping dapat bertambah akibat upsert, tanpa duplikasi baris. |
 | Probe API | `/health` dan `/ready` HTTP 200 dalam profil development; storage tetap dilaporkan belum dikonfigurasi. |
-| Browser | Login, tambah surat, pencarian nomor, edit perihal, muat daftar arsip, dan Perbarui halaman pertama berhasil. Permintaan baru daftar/statistik arsip HTTP 200, tanpa console error pada alur final. |
+| Browser | Login, tambah surat, pencarian nomor, edit perihal, muat daftar arsip, Perbarui halaman pertama, dan logout berhasil. Permintaan baru daftar/statistik arsip HTTP 200, tanpa console error pada alur final. |
 | HTTP + PostgreSQL nyata | **32 langkah lulus**: surat → arsip Terbatas → persetujuan akses oleh akun berbeda → pembaruan metadata → pencarian → audit → logout. |
 
 Acceptance HTTP mempertahankan **14 field** keamanan/JRA/retensi setelah edit.
