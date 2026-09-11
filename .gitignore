@@ -83,3 +83,4 @@ __pycache__/
 /backend/dist-cloud-metadata/
 /frontend/dist-vercel-metadata/
 /backend/dist-vercel/
+/backend/native-clamav-assets/

@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, writeFile, readdir, cp, lstat, stat, chmod } from 'node:fs/promises';
 import { tmpdir, userInfo } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VERSION, SIGNER, parseDebData, assertPinnedSignature, runMeasured, childEnvironment, readCvdArtifact, assertCvdVerification } from './core.mjs';
 
 const root=dirname(fileURLToPath(import.meta.url));
 const releaseSha256='28d6efc5b4423e7830c3559339552eb53870a9eac51ac4efb37d60530d329886';
+// Build-time reuse only. Backend runtime never imports this POC directory.
+export async function buildClamavAssets({destination=join(root,'vendor'),includeUpdateTools=false}={}){
 if(process.platform!=='linux'||process.arch!=='x64'||Number(process.versions.node.split('.')[0])!==24)throw new Error('POC build requires Linux x64 Node24');
 const work=await mkdtemp(join(tmpdir(),'simsa-clamav-build-'));
 const env={PATH:'/usr/local/bin:/usr/bin:/bin',LANG:'C',LC_ALL:'C',HOME:work};
@@ -42,15 +44,24 @@ for(const name of ['main','daily','bytecode']){
  assertCvdVerification(verification,metadata.version);
  databases.push(metadata);console.log(JSON.stringify({phase:'cvd_verified',...metadata}));
 }
-const vendor=join(root,'vendor');await mkdir(vendor);await mkdir(join(vendor,'bin'));await mkdir(join(vendor,'lib'));await mkdir(join(vendor,'etc'));await cp(join(install,'etc/certs'),join(vendor,'etc/certs'),{recursive:true});
-await cp(join(install,'bin/clamscan'),join(vendor,'bin/clamscan'));
-await chmod(join(vendor,'bin/clamscan'),0o755);
+const vendor=resolve(destination);await mkdir(vendor);await mkdir(join(vendor,'bin'));await mkdir(join(vendor,'lib'));await mkdir(join(vendor,'etc'));await cp(join(install,'etc/certs'),join(vendor,'etc/certs'),{recursive:true});
+for(const binary of includeUpdateTools?['clamscan','freshclam','sigtool']:['clamscan']){
+ await cp(join(install,'bin',binary),join(vendor,'bin',binary));
+ await chmod(join(vendor,'bin',binary),0o755);
+}
 for(const entry of await readdir(join(install,'lib'))){if(/\.so(?:\.|$)/.test(entry))await cp(join(install,'lib',entry),join(vendor,'lib',entry),{verbatimSymlinks:true});}
 await mkdir(join(vendor,'database'));
 for(const metadata of databases){for(const name of [`${metadata.name}.cvd`,metadata.signatureFile])await cp(join(db,name),join(vendor,'database',name));}
 async function total(path){let n=0;for(const name of await readdir(path)){const p=join(path,name),s=await lstat(p);if(s.isDirectory())n+=await total(p);else if(s.isFile())n+=s.size;}return n;}
 const bundleBytes=await total(vendor);
-const report={poc:true,version:VERSION,releaseSha256,signer:SIGNER,verifiedAt:new Date().toISOString(),databases,bundleBytes,requiresLargeFunctions:bundleBytes>240*1024*1024,freshclamElapsedMs:update.elapsedMs,buildScanVerified:false};
+const report={poc:!includeUpdateTools,version:VERSION,releaseSha256,signer:SIGNER,verifiedAt:new Date().toISOString(),databases,bundleBytes,requiresLargeFunctions:bundleBytes>240*1024*1024,freshclamElapsedMs:update.elapsedMs,buildScanVerified:false,includesUpdateTools:includeUpdateTools};
 await writeFile(join(vendor,'manifest.json'),JSON.stringify(report,null,2));
 console.log(JSON.stringify(report));
 if(report.requiresLargeFunctions&&process.env.VERCEL_SUPPORT_LARGE_FUNCTIONS!=='1')throw new Error('POC requires explicit Vercel Large Functions opt-in; standard bundle too large');
+if(includeUpdateTools&&report.requiresLargeFunctions)throw new Error('Native antivirus assets exceed the standard function bundle budget');
+return report;
+}
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+ if(process.env.SIMSA_CLAMAV_NATIVE_POC_ENABLED==='1')await (await import('./native-build.mjs')).buildNativeProbe(buildClamavAssets);
+ else await buildClamavAssets();
+}
