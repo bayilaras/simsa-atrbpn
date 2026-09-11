@@ -1,11 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveNpmCli } from '../frontend/scripts/resolve-npm-cli.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const npm = process.env.npm_execpath || join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js');
-if (!existsSync(npm)) throw new Error('Jalankan npm run build:internal menggunakan Node.js 24 dan npm.');
+const npm = resolveNpmCli();
 
 const env = {
     ...process.env,
@@ -15,7 +13,7 @@ const env = {
 };
 for (const project of ['frontend', 'backend']) {
     const result = spawnSync(process.execPath, [npm, '--prefix', project, 'run', 'build'], {
-        cwd: root, env, stdio: 'inherit', windowsHide: true,
+        cwd: root, env, stdio: 'inherit', windowsHide: true, shell: false,
     });
     if (result.error || result.status !== 0) process.exit(result.status || 1);
 }

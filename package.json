@@ -15,7 +15,7 @@
     "start:cloud-metadata": "node scripts/start-cloud-metadata.mjs",
     "test:cloud-metadata": "node --test --test-concurrency=1 scripts/cloud-metadata-config.test.mjs scripts/neon-target.test.mjs scripts/neon-database.test.mjs scripts/neon-database-policy.test.mjs scripts/neon-first-admin.test.mjs",
     "test:cloud-access": "node --test scripts/verify-cloud-access.test.mjs",
-    "test:vercel-deployment": "node --test scripts/vercel-deployment.test.mjs",
+    "test:vercel-deployment": "node --test --test-concurrency=1 scripts/vercel-deployment.test.mjs scripts/vercel-build.test.mjs",
     "test:neon-backup": "node --test --test-concurrency=1 scripts/neon-backup.test.mjs scripts/neon-backup-policy.test.mjs",
     "db:neon": "node scripts/neon-database.mjs",
     "build:demo": "node scripts/build-demo.mjs",
