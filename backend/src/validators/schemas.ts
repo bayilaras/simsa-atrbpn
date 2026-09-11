@@ -128,7 +128,11 @@ export const createSuratMasukSchema = z.object({
     klasifikasiUraian: z.string().max(1000).optional(),
 });
 
-export const updateSuratMasukSchema = createSuratMasukSchema.partial().omit({ unitKerjaId: true });
+// Zod 4 applies inner defaults even through partial(). Creation defaults must
+// be removed explicitly so a metadata edit cannot reset existing workflow state.
+export const updateSuratMasukSchema = createSuratMasukSchema.partial()
+    .omit({ unitKerjaId: true })
+    .extend({ status: createSuratMasukSchema.shape.status.removeDefault().optional() });
 
 export const querySuratMasukSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -347,10 +351,32 @@ const baseArsipSchema = z.object({
 
 export const createArsipSchema = baseArsipSchema.superRefine(rejectDirectRetentionTrigger);
 
-export const updateArsipSchema = baseArsipSchema
-    .partial()
-    .omit({ unitKerjaId: true })
-    .superRefine(rejectDirectRetentionTrigger);
+// This is an edit command for actual arsip columns, independent of the legacy
+// registration DTO above. No omitted property may introduce a stored value.
+export const updateArsipSchema = z.object({
+    nomorBerkas: z.string().trim().min(1).max(100).optional(),
+    uraianBerkas: z.string().trim().min(1).max(2000).optional(),
+    nomorItem: z.string().trim().max(100).optional(),
+    uraianItem: z.string().trim().max(2000).optional(),
+    tingkatPerkembangan: z.enum(['Asli', 'Salinan', 'Tembusan']).optional(),
+    tanggalArsip: dateSchema.optional(),
+    kurunWaktu: z.string().trim().max(100).optional(),
+    jumlah: z.coerce.number().int().min(1).max(10000).optional(),
+    mediaType: z.string().trim().min(1).max(50).optional(),
+    lokasiFc: z.string().trim().max(50).optional(),
+    lokasiLaci: z.string().trim().max(50).optional(),
+    lokasiFolder: z.string().trim().max(50).optional(),
+    personInCharge: z.string().trim().max(255).optional(),
+    unitPengolah: z.string().trim().min(1).max(255).optional(),
+    keterangan: z.string().trim().max(4000).optional(),
+    klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional(),
+    // Retain explicit workflow guidance for attempted direct retention edits.
+    ...retentionMetadataFields,
+}).strict()
+    .superRefine(rejectDirectRetentionTrigger)
+    .refine(value => Object.values(value).some(field => field !== undefined), {
+        message: 'Sedikitnya satu metadata arsip harus diberikan',
+    });
 
 export const queryArsipSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -378,7 +404,9 @@ export const createArsipVitalSchema = z.object({
     penanggungJawab: z.string().max(255).optional(),
 });
 
-export const updateArsipVitalSchema = createArsipVitalSchema.partial().omit({ arsipId: true, unitKerjaId: true });
+export const updateArsipVitalSchema = createArsipVitalSchema.partial()
+    .omit({ arsipId: true, unitKerjaId: true })
+    .extend({ statusProteksi: createArsipVitalSchema.shape.statusProteksi.removeDefault().optional() });
 
 export const queryArsipVitalSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -405,7 +433,13 @@ export const createArsipTerjagaSchema = z.object({
     catatan: z.string().max(2000).optional(),
 });
 
-export const updateArsipTerjagaSchema = createArsipTerjagaSchema.partial().omit({ arsipId: true, unitKerjaId: true });
+export const updateArsipTerjagaSchema = createArsipTerjagaSchema.partial()
+    .omit({ arsipId: true, unitKerjaId: true })
+    .extend({
+        statusPelaporan: createArsipTerjagaSchema.shape.statusPelaporan.removeDefault().optional(),
+        periodePelaporanHari: createArsipTerjagaSchema.shape.periodePelaporanHari.removeDefault().optional(),
+        statusKepatuhan: createArsipTerjagaSchema.shape.statusKepatuhan.removeDefault().optional(),
+    });
 
 export const queryArsipTerjagaSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),

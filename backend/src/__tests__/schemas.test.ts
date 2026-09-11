@@ -297,7 +297,9 @@ describe('retention and legal hold schemas', () => {
     });
 
     it('allows legacy updates without a trigger and keeps them non-actionable', () => {
-        expect(updateArsipSchema.safeParse({ catatan: 'Koreksi metadata' }).success).toBe(true);
+        expect(updateArsipSchema.parse({ keterangan: 'Koreksi metadata' })).toEqual({
+            keterangan: 'Koreksi metadata',
+        });
     });
 
     it('requires a unit and a meaningful legal-hold reason', () => {
