@@ -25,11 +25,12 @@ import { assertLegacyPermanentTransferMutationAllowed } from '../utils/permanent
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import type { Role } from '../config/permissions.js';
-import { normalizeSecurityClassification, requiresExplicitAccessGrant, isAllowedForRecordUnit } from './record-access.service';
+import { normalizeSecurityClassification, requiresExplicitAccessGrant, isAllowedForRecordUnit, isAllowedForClassification } from './record-access.service';
 import { isFileReleased } from './file-release-policy';
 import { buildDestructionEvidenceSnapshot, destructionDocumentIds, parseDestructionEvidence } from './penyusutan-execution-evidence';
 import { recoverInactiveTransferSchema } from '../validators/penyusutan-evidence.schemas';
 import { fileAttachmentService } from './file-attachment.service';
+import { lockDispositionActor, type DispositionActor } from './penyusutan-authority';
 
 // Types
 interface PenyusutanFilters {
@@ -77,10 +78,9 @@ const protectedDesignation = sql<boolean>`EXISTS (
     SELECT 1 FROM arsip_terjaga protected_archive WHERE protected_archive.arsip_id = ${arsip.id}
 )`;
 
-type DispositionActor = { id: string; email?: string; role: string; unitKerjaId: string; ipAddress?: string };
-
 async function assertManageGrants(tx: any, rows: any[], actor: DispositionActor) {
     for (const row of rows) {
+        if (!isAllowedForClassification(actor, row.klasifikasiKeamanan)) throw new ForbiddenError('Kewenangan klasifikasi arsip terkini diperlukan.');
         if (!requiresExplicitAccessGrant(row.klasifikasiKeamanan)) continue;
         const [grant] = await tx.select({ id: recordAccessGrants.id })
             .from(recordAccessGrants).where(and(
@@ -649,7 +649,7 @@ class PenyusutanService {
     ) {
         if (!metadata?.user) throw new Error('Authenticated actor is required for a disposition transition');
 
-        return await db.transaction(async (tx: any) => {
+        const result = await db.transaction(async (tx: any) => {
             const batch = await tx.select().from(penyusutanArsip).where(and(
                 scopedRecordByIdWhere(
                     penyusutanArsip.id,
@@ -666,7 +666,8 @@ class PenyusutanService {
             const nextStatus = STATUS_FLOW[currentStatus];
             if (!nextStatus) throw new Error(`Cannot advance from status: ${currentStatus}`);
 
-            const { id: actorId, role, unitKerjaId } = metadata.user!;
+            const actor = await lockDispositionActor(tx, metadata.user!, id, batch[0].unitKerjaId);
+            const { id: actorId, role, unitKerjaId } = actor;
             const effectiveActorUnitKerjaId = resolveEffectiveUnitKerjaId(
                 role as Role,
                 unitKerjaId,
@@ -729,19 +730,37 @@ class PenyusutanService {
                 batch[0].jenisPenyusutan,
                 securityClassifications,
             );
-            await assertManageGrants(tx, lockedArchives, metadata.user!);
+            await assertManageGrants(tx, lockedArchives, actor);
 
             let execution: ReturnType<typeof buildDestructionEvidenceSnapshot> | null = null;
             if (destructionInput) {
                 const attachments = await tx.select().from(fileAttachments)
                     .where(inArray(fileAttachments.id, destructionDocumentIds(destructionInput)))
-                    .orderBy(asc(fileAttachments.id)).for('share');
+                    .orderBy(asc(fileAttachments.id)).for('update');
                 const witnesses = await tx.select().from(users)
                     .where(inArray(users.id, destructionInput.witnesses.map(w => w.userId)))
                     .orderBy(asc(users.id)).for('share');
                 execution = buildDestructionEvidenceSnapshot({ input: destructionInput,
                     batch: batch[0], archiveIds: lockedArchives.map((row: any) => row.id),
                     executorId: actorId, attachments, witnesses });
+                const checkedAttachments = [];
+                for (const attachment of attachments) {
+                    const checked = await fileAttachmentService.verifyIntegrity(attachment.id, tx);
+                    if (!checked?.matches || !isFileReleased(checked.attachment)) {
+                        // Commit the failed integrity state and its audit, never the disposition.
+                        await auditLogService.logActionOrThrow({ userId: actor.id, userEmail: actor.email, ipAddress: actor.ipAddress,
+                            action: 'update', entityType: 'penyusutan', entityId: id,
+                            changes: { operation: 'execution_evidence_rejected', attachmentId: attachment.id,
+                                expectedHash: checked?.expectedHash || attachment.sha256, actualHash: checked?.actualHash || null } }, tx);
+                        return { evidenceFailure: true as const };
+                    }
+                    checkedAttachments.push(checked.attachment);
+                }
+                // A grant can expire while the storage bytes are being read.
+                await assertManageGrants(tx, lockedArchives, actor);
+                execution = buildDestructionEvidenceSnapshot({ input: destructionInput,
+                    batch: batch[0], archiveIds: lockedArchives.map((row: any) => row.id),
+                    executorId: actorId, attachments: checkedAttachments, witnesses });
             }
 
             const updateData: Record<string, any> = {
@@ -824,8 +843,8 @@ class PenyusutanService {
 
             await auditLogService.logActionOrThrow({
                 userId: actorId,
-                userEmail: metadata.user?.email,
-                ipAddress: metadata.user?.ipAddress,
+                userEmail: actor.email,
+                ipAddress: actor.ipAddress,
                 action: 'status_change',
                 entityType: 'penyusutan',
                 entityId: id,
@@ -843,6 +862,8 @@ class PenyusutanService {
 
             return updated;
         });
+        if ('evidenceFailure' in result) throw new ConflictError('Integritas bukti gagal; pelaksanaan belum dicatat. Periksa lampiran bukti.');
+        return result;
     }
 
     /**
@@ -861,6 +882,8 @@ class PenyusutanService {
             if (batch.jenisPenyusutan !== 'pemusnahan' || batch.status !== 'approved') {
                 throw new ConflictError('Unggah bukti hanya tersedia untuk pemusnahan yang telah disetujui.');
             }
+            actor = await lockDispositionActor(tx, actor, id, batch.unitKerjaId);
+            if (actor.role !== 'super_admin') throw new ForbiddenError('Kewenangan administrator terkini diperlukan untuk unggah bukti.');
             const [archive] = await tx.select({ ...getTableColumns(arsip), isTerjaga: protectedDesignation }).from(arsip)
                 .innerJoin(penyusutanItems, eq(penyusutanItems.arsipId, arsip.id))
                 .where(and(eq(penyusutanItems.penyusutanId, id), eq(arsip.id, arsipId)))
@@ -892,6 +915,8 @@ class PenyusutanService {
         const archives = batch.items.map((item: any) => item.arsip);
         if (!archives.length) throw new ConflictError('Batch tidak memiliki arsip.');
         return db.transaction(async tx => {
+            actor = await lockDispositionActor(tx, actor, id, batch.unitKerjaId);
+            if (actor.role !== 'super_admin') throw new ForbiddenError('Kewenangan administrator terkini diperlukan untuk memilih bukti.');
             await assertManageGrants(tx, archives, actor);
             const attachments = await tx.select().from(fileAttachments).where(and(
                 eq(fileAttachments.entityType, 'arsip'), inArray(fileAttachments.entityId, archives.map((row: any) => row.id)),
@@ -923,6 +948,8 @@ class PenyusutanService {
                 || !batch.tanggalPelaksanaan || !batch.executedBy) {
                 throw new ConflictError('Hanya batch pemindahan lama dengan rekam pelaksanaan lengkap dapat ditinjau.');
             }
+            actor = await lockDispositionActor(tx, actor, id, batch.unitKerjaId);
+            if (actor.role !== 'super_admin') throw new ForbiddenError('Kewenangan administrator terkini diperlukan untuk pemulihan.');
             if (batch.executedBy === actor.id) throw new ForbiddenError('Peninjau harus berbeda dari pelaksana pemindahan lama.');
             const rows = await tx.select({ ...getTableColumns(arsip) }).from(arsip)
                 .innerJoin(penyusutanItems, eq(penyusutanItems.arsipId, arsip.id))

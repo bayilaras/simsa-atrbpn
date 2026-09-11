@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hashEvidenceSnapshot } from '../utils/evidence-hash';
 import { destructionExecutionEvidenceSchema } from '../validators/penyusutan-evidence.schemas';
 import { ValidationError } from '../utils/errors';
 import { isFileReleased } from './file-release-policy';
@@ -71,5 +71,5 @@ export function buildDestructionEvidenceSnapshot(options: {
         witnesses: witnessRecords,
         verificationScope: 'controlled_evidence_and_internal_actor_checks',
     };
-    return { snapshot, sha256: createHash('sha256').update(JSON.stringify(snapshot)).digest('hex') };
+    return { snapshot, sha256: hashEvidenceSnapshot(snapshot) };
 }

@@ -22,6 +22,10 @@ BA yang baru selesai dapat diunggah pada detail batch melalui `POST /api/penyusu
 
 Eksekusi menyimpan snapshot identitas dokumen, hash, saksi, metode, waktu, dan pernyataan penanganan salinan, dengan hash snapshot dan audit dalam transaksi yang sama. Kegagalan audit membatalkan transaksi. Database melarang pengubahan/penghapusan batch selesai serta penggantian/penghapusan metadata bitstream bukti; pemeriksaan integritas berikutnya tetap dapat mencatat kerusakan. Fungsi trigger pemeriksaan referensi memakai akses baca terbatas melalui `SECURITY DEFINER` dan `search_path=pg_catalog`, sehingga worker tidak memerlukan akses ke daftar penyusutan.
 
+Transisi, unggah bukti, dan pemulihan pemindahan memuat ulang akun aktif, peran, dan mandat unit setelah mengunci arsip dalam transaksi. Finalisasi membaca ulang byte setiap lampiran bukti unik dengan batas ukuran/waktu pemeriksaan integritas, lalu memeriksa kembali masa berlaku grant sebelum menyimpan snapshot. Hash snapshot memakai representasi JSON kanonis agar tetap cocok setelah disimpan sebagai JSONB.
+
+Jika byte berbeda, transaksi menyimpan status integritas `mismatch` beserta audit penolakan, sementara batch tetap disetujui dan belum dilaksanakan. Jika storage tidak tersedia, proses gagal tanpa menyatakan pemeriksaan baru berhasil. Jika audit tidak dapat disimpan, seluruh transaksi termasuk hasil pemeriksaan dibatalkan; perbaiki audit dan ulangi pemeriksaan. Pemeriksaan integritas terjadwal tetap diperlukan untuk memantau berkas setelah transaksi selesai.
+
 Pencatatan ini **tidak menjalankan penghapusan objek/replika/backup** dan tidak membuktikan isi dokumen benar secara hukum. Pelaksanaan fisik/digital, kebijakan salinan, jadwal backup, dan uji operasional harus dilaksanakan serta dibuktikan oleh petugas. Penyimpanan privat dan worker antivirus diperlukan agar bukti dapat keluar dari karantina. Tidak ada kredensial layanan atau bukti pelaksanaan yang dibuat secara sintetis untuk penggunaan nyata.
 
 ## Migrasi dan verifikasi

@@ -10,6 +10,7 @@ function enqueue(...results: any[]) { resultQueue.push(...results); }
 const auditMocks = vi.hoisted(() => ({
     logActionOrThrow: vi.fn(),
     createAttachment: vi.fn(),
+    verifyIntegrity: vi.fn(),
 }));
 
 const validJraProvenance = {
@@ -59,7 +60,9 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
-vi.mock('../services/file-attachment.service', () => ({ fileAttachmentService: { create: auditMocks.createAttachment } }));
+vi.mock('../services/file-attachment.service', () => ({ fileAttachmentService: { create: auditMocks.createAttachment, verifyIntegrity: auditMocks.verifyIntegrity } }));
+// Fresh DB authority is exercised independently by the PGlite integration suite.
+vi.mock('../services/penyusutan-authority', () => ({ lockDispositionActor: async (_tx: any, actor: any) => actor }));
 vi.mock('../services/arsip.service', () => ({
     arsipService: {
         getDisposalCandidates: vi.fn().mockResolvedValue({ data: [], pagination: { total: 0 } }),
@@ -374,6 +377,8 @@ describe('PenyusutanService', () => {
                 storageAccess: 'private', fileUrl: 'private/bukti.pdf', sha256: 'a'.repeat(64),
                 malwareScanStatus: 'clean', integrityStatus: 'verified', lastFixityCheckAt: new Date('2020-01-01') }));
             const witnesses = ids.slice(4).map(id => ({ id, name: 'Saksi', isActive: true, role: 'staff', unitKerjaId: 'u1' }));
+            auditMocks.verifyIntegrity.mockImplementation(async id => ({ matches: true, actualHash: 'a'.repeat(64),
+                attachment: attachments.find(attachment => attachment.id === id) }));
             return { input, attachments, witnesses };
         }
         it('stores controlled evidence and final archive status in the audited transaction', async () => {
