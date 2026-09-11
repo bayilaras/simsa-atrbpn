@@ -10,6 +10,7 @@
   "scripts": {
     "build": "npm run build:demo",
     "build:full": "npm run build:frontend && npm run build:backend",
+    "build:internal": "node scripts/build-internal.mjs",
     "build:demo": "node scripts/build-demo.mjs",
     "build:demo:local": "node scripts/build-demo.mjs --local-better-auth",
     "build:frontend": "npm --prefix frontend ci && npm --prefix frontend run build",
