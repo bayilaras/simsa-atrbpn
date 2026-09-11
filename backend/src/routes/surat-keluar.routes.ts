@@ -183,6 +183,10 @@ router.post('/',
                 return sendValidationFailure(res, bodyValidation.error.issues);
             }
 
+            if (!isAllowedForClassification(req.user, bodyValidation.data.klasifikasiKeamanan)) {
+                return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
+            }
+
             const unitScope = resolveRecordUnitScope(req);
             const serverUnitKerjaId = unitScope === null ? bodyValidation.data.unitKerjaId : unitScope;
 

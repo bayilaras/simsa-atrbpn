@@ -9,9 +9,14 @@ import {
     jraAppraisalDecisions,
     retentionTriggerEvents,
     retentionTriggerVerifications,
+    users,
+    recordAccessGrants,
 } from '../db/schema';
 import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns } from 'drizzle-orm';
-import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
+import { hasPermission, type Role } from '../config/permissions';
+import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
+import { isAllowedForClassification, recordAccessService } from './record-access.service';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -456,6 +461,11 @@ export class ArsipService {
     }
 
     async update(id: string, data: Partial<Arsip>, auditContext?: CriticalAuditContext) {
+        // HTTP callers supply this context on the server, never from the body.
+        // Retain the existing trusted internal, unaudited metadata API contract.
+        if (auditContext && !auditContext.userId) {
+            throw new ForbiddenError('Identitas aktor perubahan arsip wajib tersedia.');
+        }
         const requestedFields = Object.keys(data);
         const changesRuleAssignment = requestedFields.some(field =>
             RULE_ASSIGNMENT_FIELDS.has(field),
@@ -483,6 +493,7 @@ export class ArsipService {
         }
 
         return db.transaction(async (tx: any) => {
+            if (auditContext) await lockAuthorizationMandatesShared(tx);
             const [existing] = await tx
                 .select()
                 .from(arsip)
@@ -497,6 +508,39 @@ export class ArsipService {
                 );
             }
 
+            let actorAudit = auditContext;
+            let assertGrantCurrent = () => {};
+            if (auditContext) {
+                const [actor] = await tx.select({ id: users.id, email: users.email, role: users.role,
+                    unitKerjaId: users.unitKerjaId, isActive: users.isActive }).from(users)
+                    .where(eq(users.id, auditContext.userId!)).limit(1).for('update');
+                if (!actor?.isActive || !hasPermission(actor.role as Role, 'arsip', 'update')) {
+                    throw new ForbiddenError('Akun aktif dengan izin kelola arsip diperlukan.');
+                }
+                let access = await recordAccessService.check(actor, 'arsip', id, tx);
+                const lockedGrantId = access.grantId;
+                if (lockedGrantId) {
+                    await tx.select({ id: recordAccessGrants.id }).from(recordAccessGrants)
+                        .where(eq(recordAccessGrants.id, lockedGrantId)).for('update');
+                    // A revocation may have committed while the grant lock was pending.
+                    access = await recordAccessService.check(actor, 'arsip', id, tx);
+                }
+                if (!access.allowed || !access.mutable || access.grantId !== lockedGrantId || existing.disposalBatchId) {
+                    throw new ForbiddenError('Izin kelola arsip tidak tersedia atau arsip ditahan dalam penyusutan.');
+                }
+                assertGrantCurrent = () => {
+                    // Row locks cannot prevent a time-bounded mandate expiring.
+                    if (access.grantExpiresAt && access.grantExpiresAt <= new Date()) {
+                        throw new ForbiddenError('Izin akses kelola arsip telah berakhir.');
+                    }
+                };
+                assertGrantCurrent();
+                if (data.klasifikasiKeamanan !== undefined && !isAllowedForClassification(actor, data.klasifikasiKeamanan)) {
+                    throw new ForbiddenError('Klasifikasi keamanan melebihi kewenangan pengguna.');
+                }
+                actorAudit = { ...auditContext, userId: actor.id, userEmail: actor.email };
+            }
+
             const [result] = await tx
                 .update(arsip)
                 .set({ ...data, updatedAt: new Date() })
@@ -505,13 +549,15 @@ export class ArsipService {
 
             if (auditContext) {
                 await auditLogService.logActionOrThrow({
-                    ...auditContext,
+                    ...actorAudit,
                     action: 'update',
                     entityType: 'arsip',
                     entityId: id,
                     changes: { before: existing, after: result, fields: requestedFields },
                 }, tx);
             }
+
+            assertGrantCurrent();
 
             return result;
         });

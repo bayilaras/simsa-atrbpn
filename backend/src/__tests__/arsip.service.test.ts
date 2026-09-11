@@ -27,6 +27,7 @@ const mockChain: any = new Proxy({}, {
 });
 
 const mockDb = {
+    execute: vi.fn().mockResolvedValue([]),
     select: (..._a: any[]) => mockChain,
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
@@ -45,6 +46,10 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
+vi.mock('../services/record-access.service', () => ({
+    isAllowedForClassification: () => true,
+    recordAccessService: { check: vi.fn().mockResolvedValue({ allowed: true, mutable: true, grantId: null, grantExpiresAt: null }) },
+}));
 
 const canonicalAssignment = {
     snapshot: { schemaVersion: 1 },
@@ -374,6 +379,7 @@ describe('ArsipService', () => {
         it('rolls back an archive update when the critical audit insert fails', async () => {
             enqueue(
                 [{ id: '1', disposalStatus: 'active', disposalBatchId: null, legalHold: false }],
+                [{ id: 'user-1', email: 'operator@example.test', role: 'admin_dirjen', unitKerjaId: 'ditjen', isActive: true }],
                 [{ id: '1', keterangan: 'updated' }],
             );
             auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
