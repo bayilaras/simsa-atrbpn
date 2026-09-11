@@ -121,3 +121,24 @@ export function normalizeStoredObjectLocator(value: string | null | undefined): 
     }
     return null;
 }
+
+/** Names reserved by a durable bulk batch before any provider write. */
+export function assertReservedBulkObjectName(value: string): string {
+    if (!/^bulk-upload\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/(?:[0-9]|[1-4][0-9])\.pdf$/i.test(value)) {
+        throw new Error('Reserved bulk object name is outside its bounded namespace');
+    }
+    return value;
+}
+
+export function bulkUploadObjectName(batchId: string, index: number): string {
+    return assertReservedBulkObjectName(`bulk-upload/${batchId}/${index}.pdf`);
+}
+
+export function assertBulkObjectLocator(locator: string, objectName: string): void {
+    assertReservedBulkObjectName(objectName);
+    const normalized = normalizeStoredObjectLocator(locator);
+    const actualName = normalized?.startsWith('gs://')
+        ? parseGcsLocator(normalized).objectName
+        : normalized ? decodeURIComponent(new URL(normalized).pathname.slice(1)) : null;
+    if (actualName !== objectName) throw new Error('Provider object is outside the reserved bulk namespace');
+}

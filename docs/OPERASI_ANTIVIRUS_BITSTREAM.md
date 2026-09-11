@@ -128,6 +128,19 @@ setelah `MALWARE_SCAN_STALE_AFTER_MS`. Hasil dari worker lama ditolak dengan
 conditional update. Setiap transisi yang diterima ditulis atomik ke `audit_log`
 tanpa menyimpan locator object storage di bukti audit.
 
+Promosi objek GCS dari karantina ke bucket akhir dijalankan melalui child process
+`dist/workers/gcs-promotion.js`. Batas `MALWARE_SCAN_PROMOTION_TIMEOUT_MS` adalah
+45.000 ms secara default. Saat batas tercapai, parent menghentikan child dan
+menunggu proses tertutup sebelum melanjutkan. Environment child memuat kebutuhan
+GCS/ADC saja, tanpa kredensial database atau autentikasi aplikasi.
+
+Penghentian proses tidak membatalkan salinan yang mungkin sudah diterima GCS.
+Hasil yang belum pasti mempertahankan klaim `scanning`; pengambilan ulang klaim
+stale mengulangi tujuan deterministik dan memeriksa generation yang ada sebelum
+mencatat hasil. Jangan mengubahnya menjadi `clean` atau menghapus objek secara
+manual. Default `MALWARE_SCAN_STALE_AFTER_MS` menjadi 300.000 ms; nilainya harus
+melampaui gabungan batas download, koneksi ClamAV, scan, dan promosi GCS.
+
 Job CI `ClamAV Clean, EICAR & Restart Smoke` memakai implementasi `INSTREAM`
 aplikasi terhadap image ClamAV Linux yang dipatok digest, memverifikasi sampel
 bersih dan EICAR, me-restart container, lalu mengulangi kedua scan. Sebelum

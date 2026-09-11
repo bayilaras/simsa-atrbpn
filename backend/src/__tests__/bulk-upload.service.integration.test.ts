@@ -16,6 +16,7 @@ const storageMocks = vi.hoisted(() => ({
     getFile: vi.fn(),
     deleteFile: vi.fn(),
     deleteFileGeneration: vi.fn(),
+    getUntrustedFileByName: vi.fn(),
 }));
 const ocrMock = vi.hoisted(() => vi.fn());
 
@@ -26,8 +27,8 @@ vi.mock('../services/blob-storage.service.js', () => ({
         uploadUntrustedFile: storageMocks.uploadFile,
     },
 }));
-vi.mock('../services/ocr.service.js', () => ({
-    ocrService: { processPDF: ocrMock },
+vi.mock('../services/ocr-process.service.js', () => ({
+    ocrProcessService: { processPDF: ocrMock },
 }));
 vi.mock('../utils/logger.js', () => ({
     createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -93,8 +94,8 @@ beforeEach(async () => {
     vi.clearAllMocks();
     blobObjects.clear();
     blobSequence = 0;
-    storageMocks.uploadFile.mockImplementation(async ({ fileName, buffer }: any) => {
-        const url = `https://fixture.private.blob.vercel-storage.com/${++blobSequence}-${fileName}`;
+    storageMocks.uploadFile.mockImplementation(async ({ fileName, buffer, reservedObjectName }: any) => {
+        const url = `https://fixture.private.blob.vercel-storage.com/${reservedObjectName || `${++blobSequence}-${fileName}`}`;
         blobObjects.set(url, Buffer.from(buffer));
         return { url, id: url, downloadUrl: url, name: fileName, mimeType: 'application/pdf', size: buffer.length };
     });
@@ -112,6 +113,11 @@ beforeEach(async () => {
     });
     storageMocks.deleteFile.mockImplementation(async (url: string) => blobObjects.delete(url));
     storageMocks.deleteFileGeneration.mockImplementation(async (url: string) => blobObjects.delete(url));
+    storageMocks.getUntrustedFileByName.mockImplementation(async (name: string) => {
+        const url = `https://fixture.private.blob.vercel-storage.com/${name}`;
+        const buffer = blobObjects.get(url);
+        return buffer ? { url, size: buffer.length, mimeType: 'application/pdf', name: 'record.pdf' } : null;
+    });
     ocrMock.mockResolvedValue({
         success: true,
         text: 'Nomor: 1 Perihal: Arsip durable',
@@ -145,7 +151,111 @@ function pdfFile(name = 'record.pdf') {
     };
 }
 
+async function interruptedBatch() {
+    const batchId = '50000000-0000-4000-8000-000000000001';
+    await database.query(`INSERT INTO bulk_upload_batches (id, unit_kerja_id, created_by, total_files, expires_at)
+        VALUES ($1, 'unit-durable', '10000000-0000-4000-8000-000000000001', 1, now() - interval '1 minute')`, [batchId]);
+    const name = `bulk-upload/${batchId}/0.pdf`;
+    return { batchId, name, url: `https://fixture.private.blob.vercel-storage.com/${name}` };
+}
+
 describe('BulkUploadService durable lifecycle', () => {
+    it('persists an upload intent before provider I/O and recovers failed compensation without item rows', async () => {
+        const uploader = storageMocks.uploadFile.getMockImplementation()!;
+        storageMocks.uploadFile.mockImplementationOnce(async (input: any) => {
+            const rows = await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM bulk_upload_batches`);
+            expect(rows.rows[0].count).toBe(1);
+            return uploader(input);
+        });
+        const transaction = vi.spyOn(databaseHolder.db, 'transaction').mockRejectedValueOnce(new Error('database unavailable'));
+        storageMocks.deleteFile.mockResolvedValueOnce(false);
+        await expect(bulkUploadService.createBatch([pdfFile()], 'unit-durable',
+            '10000000-0000-4000-8000-000000000001')).rejects.toThrow('database unavailable');
+        transaction.mockRestore();
+        expect(blobObjects.size).toBe(1);
+        expect((await database.query('SELECT * FROM bulk_upload_items')).rows).toHaveLength(0);
+        const cleanup = await bulkUploadService.cleanupOldBatches(-1);
+        expect(cleanup.blobsDeleted).toBe(1);
+        expect(blobObjects.size).toBe(0);
+    });
+
+    it('recovers a provider write whose response failed before the object entered the item ledger', async () => {
+        const uploader = storageMocks.uploadFile.getMockImplementation()!;
+        storageMocks.uploadFile.mockImplementationOnce(async (input: any) => {
+            await uploader(input);
+            throw new Error('metadata response lost');
+        });
+        await expect(bulkUploadService.createBatch([pdfFile()], 'unit-durable',
+            '10000000-0000-4000-8000-000000000001')).rejects.toThrow('metadata response lost');
+        expect(blobObjects.size).toBe(1);
+        await bulkUploadService.cleanupOldBatches(-1);
+        expect(blobObjects.size).toBe(0);
+    });
+
+    it('recovers an abandoned pre-item intent after process restart', async () => {
+        const intent = await interruptedBatch();
+        blobObjects.set(intent.url, pdfFile().buffer);
+        const restarted = new BulkUploadServiceClass();
+        expect((await restarted.cleanupOldBatches()).blobsDeleted).toBe(1);
+        expect(blobObjects.size).toBe(0);
+    });
+
+    it('rejects a recovery lookup that returns an object outside the exact batch namespace', async () => {
+        await interruptedBatch();
+        storageMocks.getUntrustedFileByName.mockResolvedValueOnce({ url: 'https://fixture.private.blob.vercel-storage.com/other.pdf' });
+        expect((await bulkUploadService.cleanupOldBatches()).blobsFailed).toBe(1);
+        expect(storageMocks.deleteFile).not.toHaveBeenCalled();
+        expect(storageMocks.deleteFileGeneration).not.toHaveBeenCalled();
+    });
+
+    it('pins the recovered GCS object generation and never deletes the mutable live name', async () => {
+        const intent = await interruptedBatch();
+        const url = `gs://simsa-upload/${intent.name}`;
+        blobObjects.set(url, pdfFile().buffer);
+        storageMocks.getUntrustedFileByName.mockResolvedValueOnce({ url, generation: '1735689600123456' });
+        expect((await bulkUploadService.cleanupOldBatches()).blobsDeleted).toBe(1);
+        expect(storageMocks.deleteFileGeneration).toHaveBeenCalledWith(url, '1735689600123456');
+        expect(storageMocks.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('preserves a recovered object already referenced by a valid archive attachment', async () => {
+        const intent = await interruptedBatch();
+        blobObjects.set(intent.url, pdfFile().buffer);
+        const archiveId = '40000000-0000-4000-8000-000000000001';
+        await database.query(`INSERT INTO arsip (id, unit_kerja_id, jenis_arsip, tahun, created_by)
+            VALUES ($1, 'unit-durable', 'masuk', 2026, '10000000-0000-4000-8000-000000000001')`, [archiveId]);
+        await database.query(`INSERT INTO file_attachments (entity_type, entity_id, file_name, file_url, mime_type,
+            size_bytes, sha256, storage_access) VALUES ('arsip', $1, 'valid.pdf', $2, 'application/pdf', 28, repeat('a',64), 'private')`, [archiveId, intent.url]);
+        expect((await bulkUploadService.cleanupOldBatches()).blobsProtected).toBe(1);
+        expect(blobObjects.has(intent.url)).toBe(true);
+        expect(storageMocks.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('cannot process or commit an incomplete upload after cancellation wins', async () => {
+        const uploader = storageMocks.uploadFile.getMockImplementation()!;
+        let releaseUpload!: () => void;
+        const pending = new Promise<void>(resolve => { releaseUpload = resolve; });
+        let reserved!: () => void;
+        const reservationVisible = new Promise<void>(resolve => { reserved = resolve; });
+        storageMocks.uploadFile.mockImplementationOnce(async (input: any) => {
+            reserved();
+            await pending;
+            return uploader(input);
+        });
+        const creating = bulkUploadService.createBatch([pdfFile()], 'unit-durable',
+            '10000000-0000-4000-8000-000000000001');
+        const rejection = expect(creating).rejects.toThrow('dibatalkan');
+        await reservationVisible;
+        const batchId = (await database.query<{ id: string }>('SELECT id FROM bulk_upload_batches')).rows[0].id;
+        await expect(bulkUploadService.processBatch(batchId)).rejects.toThrow('belum selesai disimpan');
+        await bulkUploadService.cancelBatch(batchId);
+        releaseUpload();
+        await rejection;
+        expect(ocrMock).not.toHaveBeenCalled();
+        expect((await database.query('SELECT * FROM bulk_upload_items')).rows).toHaveLength(0);
+        expect(blobObjects.size).toBe(0);
+    });
+
     it('requires the PDF header at byte zero', () => {
         expect(bulkUploadService.validateFiles([{
             fileName: 'prepended.pdf',

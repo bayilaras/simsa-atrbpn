@@ -102,6 +102,11 @@ export class BlobStorageService {
         return this.untrustedUploadTarget().uploadFile(options);
     }
 
+    getUntrustedFileByName(objectName: string): Promise<StoredFile | null> {
+        const target = this.untrustedUploadTarget() as GcsStorageAdapter | VercelBlobAdapter;
+        return target.getFileByReservedName(objectName);
+    }
+
     async copyFile(options: CopyFileOptions): Promise<StoredFile> {
         const primary = this.primary();
         const source = this.adapterFor(options.sourceUrl);

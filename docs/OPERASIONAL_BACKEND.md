@@ -65,6 +65,60 @@ instance.
 4. **Pemulihan data:** gunakan prosedur backup dan verifikasi terpisah. Jangan
    melakukan reset atau menjalankan bootstrap untuk menangani masalah runtime.
 
+## Unggahan terputus dan pemrosesan OCR
+
+Batch unggahan dicatat di database sebelum penyimpanan objek dimulai. Setiap
+batch memiliki nama objek yang ditentukan server dan tidak boleh menimpa objek
+yang sudah ada. Jika provider menerima berkas tetapi respons hilang, intent
+batch tetap tersedia untuk rekonsiliasi. Cleanup batch kedaluwarsa membaca
+maksimal 50 nama objek yang sudah dicadangkan, memeriksa referensi arsip, lalu
+menghapus generation yang tepat. Proses ini mengikuti worker pembersihan dan
+retensi yang dikonfigurasi; kegagalan tidak dianggap sudah bersih.
+
+Pada bulk OCR, parent memeriksa berkas dan memegang lease kapasitas global di
+database. Ekstraksi PDF/render/Tesseract dijalankan di child
+`dist/workers/ocr-process.js`, tanpa kredensial database, autentikasi, atau object
+storage. PDF dikirim lewat stdin, tidak ditulis ke direktori kerja. Child memakai
+direktori sementara sendiri untuk cache model, yang dibersihkan setelah proses
+tertutup. `OCR_TESSDATA_PATH` tetap menunjuk model bahasa yang disiapkan pengelola;
+path relatif dinormalisasi sebelum direktori kerja berubah.
+
+Batas pengawas child OCR adalah 200 detik sejak parent memulai proses; parent
+memiliki batas tunggu tambahan 225 detik. Input dibatasi 50 MiB dan heap V8
+512 MiB. Batas heap
+bukan batas seluruh memori native; gunakan pembatasan memori/CPU pada deployment.
+Batas halaman/piksel/teks yang sudah ada tetap berlaku. Timeout atau kehilangan
+lease menghentikan child dan menunggu `close` sebelum slot kapasitas dilepas.
+Hasil dari klaim lama tidak boleh menimpa hasil klaim baru.
+
+Pengawas berjalan pada thread tersendiri sebelum mesin OCR dimuat. Ia tetap
+dapat menghentikan child saat thread OCR sibuk dan parent mati. Pengawas memeriksa
+kehidupan parent serta deadline monotonic yang tidak diperpanjang. Penggunaan
+ulang PID dapat menunda deteksi parent yang mati, tetapi deadline tetap membatasi
+proses agar tidak melewati anggaran lease minimum setelah download.
+
+Kontrak saat ini tetap `POST /api/bulk-upload/:batchId/process` untuk memproses
+satu item dan mengembalikan HTTP 200 beserta status aktual. `GET` hanya membaca
+status. Pemisahan child menjaga CPU utama tetap tersedia, tetapi permintaan
+POST masih menunggu hasil; ini belum antrean daemon yang mengembalikan 202.
+Pastikan batas request/proxy lingkungan file cukup untuk pekerjaan tersebut.
+Untuk penyebaran yang membutuhkan pekerjaan terus berjalan setelah request
+berakhir, diperlukan worker OCR persisten dan kontrak enqueue/polling tersendiri.
+
+Isolasi environment child bukan sandbox sistem operasi. Jalankan layanan dengan
+akun dan izin filesystem minimum pada lingkungan tujuan. Konfigurasi lokal
+saat ini tetap menonaktifkan unggahan/OCR karena storage dan antivirus belum
+disiapkan.
+
+## Backup aktual
+
+Ikuti [backup database lokal dan verifikasi pemulihan](BACKUP_LOKAL.md) untuk
+mencadangkan database aktif tanpa mengubah sumber serta memulihkan artefak pada
+cluster baru. `Cek-SIMSA.cmd` menampilkan ringkasan backup dan verifikasi untuk
+bundle yang sama. Perintah npm `backup:local-current`, `restore:local-current`,
+dan `test:local-current-backup` menyediakan entrypoint prosedur tersebut; lihat
+panduan untuk argumen Python, bundle, dan kunci yang diperlukan.
+
 Tidak ada pengiriman alarm ke pihak luar atau penjadwalan baru yang diaktifkan
 oleh perubahan ini. Batas waktu respons, jumlah pengguna bersamaan, toleransi
 kehilangan data, serta waktu pemulihan organisasi perlu ditetapkan bersama
