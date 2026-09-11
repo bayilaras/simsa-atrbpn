@@ -14,7 +14,7 @@ title: 👋 Selamat Datang
 Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar tanpa hambatan.
 
 :::important Profil aplikasi internal
-SIMSA adalah aplikasi internal/beta, bukan produk yang dinyatakan tersertifikasi atau sepenuhnya patuh. Pedoman ATR/BPN dan ANRI menjadi rujukan desain. Tanda tangan elektronik BSrE/PSrE berada di luar ruang lingkup produk. SRIKANDI, WORM, dan SIEM bersifat kondisional serta tetap nonaktif/deferred sampai diwajibkan kebijakan internal dan siap secara resmi. [Baca profil aplikasi internal](/profil-aplikasi-internal).
+SIMSA membantu pekerjaan internal; pencantuman pedoman ATR/BPN dan ANRI bukan sertifikasi kepatuhan. Inventaris metadata tidak menunggu konektor API SRIKANDI atau unggahan digital. Kewajiban instansi menerapkan SRIKANDI tetap terpisah dari konektor SIMSA. Gunakan instrumen instansi yang sudah berlaku. [Baca profil aplikasi internal](/profil-aplikasi-internal).
 :::
 
 ---
@@ -22,6 +22,10 @@ SIMSA adalah aplikasi internal/beta, bukan produk yang dinyatakan tersertifikasi
 ## 🚀 Mulai dari Sini
 
 <div className="feature-grid">
+  <a href="/mulai-inventaris-internal" className="feature-card">
+    <h3>Mulai Inventaris Internal</h3>
+    <p>Buka aplikasi, gunakan akun per unit, catat atau impor daftar, lalu temukan arsip fisik</p>
+  </a>
   <a href="/akses-simsa/wajib-baca" className="feature-card">
     <h3>⚠️ Wajib BACA!</h3>
     <p>Hal penting sebelum menggunakan SIMSA</p>

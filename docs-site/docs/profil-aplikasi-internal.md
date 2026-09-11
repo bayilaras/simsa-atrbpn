@@ -9,6 +9,10 @@ SIMSA adalah aplikasi internal/beta Direktorat Jenderal Pengadaan Tanah dan Peng
 
 Permen ATR/BPN Nomor 2 Tahun 2026 dan ketentuan ANRI dipakai sebagai **rujukan desain dan tata kelola**. Penggunaan rujukan tersebut bukan sertifikasi, opini hukum, akreditasi, atau pernyataan bahwa SIMSA sepenuhnya patuh.
 
+Gunakan instrumen ATR/BPN yang sudah berlaku untuk tata naskah dinas, klasifikasi, JRA, serta keamanan dan akses. Pemasangan SIMSA tidak dengan sendirinya memerlukan penerbitan ulang instrumen tersebut; pengaturan aplikasi mengikuti instrumen dan penugasan instansi. [Mulai Inventaris Internal](./mulai-inventaris-internal.md) menjelaskan alur metadata dan arsip fisik tanpa menunggu konektor atau lampiran digital.
+
+Kewajiban instansi menerapkan SRIKANDI dalam lingkup [Peraturan ANRI Nomor 4 Tahun 2021, Pasal 2–3](https://jdih.anri.go.id/storage/rules/January2024/GfOD5OlHAJWvwmMcHY4O.pdf) tetap berlaku dan dibedakan dari aktivasi konektor API pada aplikasi pendukung. SIMSA tidak menggantikan SRIKANDI; label internal tidak memberikan pengecualian. Integrasi atau migrasi mengikuti mekanisme resmi instansi.
+
 ## Prioritas
 
 1. Mempermudah pekerjaan harian pengguna Ditjen PTPP.
@@ -20,7 +24,7 @@ Kemudahan penggunaan tidak boleh menghapus pemeriksaan hak akses, isolasi unit, 
 
 ## Baseline internal
 
-Kontrol berikut tetap berlaku pada profil inti:
+Kontrol berikut berlaku sesuai fungsi yang digunakan. Inventaris metadata dan arsip fisik dapat berjalan tanpa unggahan; kontrol penyimpanan, pemindaian malware, dan fixity berlaku ketika menggunakan berkas digital:
 
 - akun terprovisi, least privilege, isolasi unit, dan akses kelas keamanan yang gagal-tertutup;
 - private storage dan gateway file terautentikasi;
@@ -33,7 +37,7 @@ Kontrol berikut tetap berlaku pada profil inti:
 
 | Kapabilitas | Status internal | Aturan aktivasi |
 |---|---|---|
-| SRIKANDI | Opsional/deferred; outbound nonaktif secara default | Aktifkan hanya bila diwajibkan kebijakan internal dan kontrak API, sandbox, pemetaan, worker, rekonsiliasi, serta persetujuan resmi tersedia |
+| Konektor API SRIKANDI di SIMSA | Outbound nonaktif secara default; bukan prasyarat teknis inventaris internal | Aktifkan bila mekanisme resmi instansi menetapkan konektor ini serta kontrak API, sandbox, pemetaan, worker, rekonsiliasi, dan persetujuan resmi tersedia |
 | Tanda tangan elektronik BSrE/PSrE | Di luar ruang lingkup produk | Tidak diaktifkan; endpoint legacy tetap gagal-tertutup dan artefak simulasi selalu tidak sah |
 | Object lock/WORM | Deferred/kondisional | Terapkan bila kelas data, retensi, arsitektur storage, atau keputusan risiko mensyaratkannya; jangan mengklaim WORM tanpa bukti |
 | SIEM/SOC eksternal | Deferred/kondisional | Terapkan bila kebijakan atau risiko mensyaratkannya; audit/log lokal, retensi, alert dasar, dan respons insiden tetap berjalan |

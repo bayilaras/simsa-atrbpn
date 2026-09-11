@@ -6,7 +6,9 @@ SIMSA adalah aplikasi internal Direktorat Jenderal Pengadaan Tanah dan Pengemban
 
 Permen ATR/BPN Nomor 2 Tahun 2026 dan ketentuan ANRI digunakan sebagai **rujukan desain dan tata kelola**. Dokumen tersebut bukan instruksi eksekusi bagi pengembang dan pencantumannya tidak berarti SIMSA telah disertifikasi atau dinyatakan sepenuhnya patuh oleh ATR/BPN, ANRI, BSSN, BSrE, atau lembaga lain.
 
-Profil ini bukan opini hukum, sertifikasi keamanan, akreditasi, pengganti SOP, atau pengganti keputusan pejabat yang berwenang. Ruang lingkup data, kelas keamanan, JRA, serta integrasi resmi tetap harus ditetapkan melalui kebijakan internal.
+Profil ini bukan opini hukum, sertifikasi keamanan, akreditasi, pengganti SOP, atau pengganti keputusan pejabat yang berwenang. Gunakan instrumen ATR/BPN yang sudah berlaku untuk tata naskah dinas, klasifikasi, JRA, serta keamanan dan akses; pemasangan SIMSA tidak dengan sendirinya memerlukan penerbitan ulang instrumen tersebut. Pengaturan dan pemetaan aplikasi mengikuti instrumen serta penugasan instansi.
+
+Untuk mulai mencatat metadata dan lokasi arsip fisik, ikuti [Mulai Inventaris Internal](../docs-site/docs/mulai-inventaris-internal.md). Alur ini tidak menunggu aktivasi konektor API SRIKANDI atau penyimpanan lampiran digital.
 
 ## Prioritas produk
 
@@ -30,11 +32,11 @@ Profil internal inti mencakup:
 - JRA, pemicu retensi berbasis peristiwa, legal hold, serta penyusutan dengan pemisahan tugas;
 - peminjaman, layanan arsip, lokasi simpan, arsip vital/terjaga, audit, dan laporan.
 
-SIMSA tidak diposisikan sebagai pengganti aplikasi umum atau layanan nasional yang ditetapkan pemerintah. Jika kebijakan internal menetapkan sistem lain sebagai sumber kebenaran resmi, SIMSA berperan sebagai aplikasi kerja substantif dan pertukaran data hanya dilakukan melalui mekanisme yang disahkan.
+SIMSA tidak diposisikan sebagai pengganti aplikasi umum atau layanan nasional yang ditetapkan pemerintah. Kewajiban instansi menerapkan SRIKANDI dalam lingkup [Peraturan ANRI Nomor 4 Tahun 2021, Pasal 2–3](https://jdih.anri.go.id/storage/rules/January2024/GfOD5OlHAJWvwmMcHY4O.pdf) tetap berlaku. Kewajiban tersebut dibedakan dari aktivasi konektor API pada setiap aplikasi pendukung. Label internal tidak memberikan pengecualian; integrasi atau migrasi mengikuti mekanisme resmi instansi.
 
 ## Baseline internal yang tidak boleh dihilangkan
 
-Kontrol berikut tetap wajib untuk operasi internal, terlepas dari ada atau tidaknya integrasi eksternal:
+Kontrol berikut berlaku sesuai fungsi yang digunakan, terlepas dari ada atau tidaknya integrasi eksternal. Inventaris metadata dan arsip fisik dapat berjalan tanpa unggahan; kontrol penyimpanan, pemindaian malware, dan fixity berikut berlaku ketika menggunakan berkas digital:
 
 - autentikasi, provisioning terkontrol, least privilege, isolasi unit, dan akses kelas keamanan yang gagal-tertutup;
 - penyimpanan objek privat dan akses file melalui gateway terautentikasi;
@@ -50,7 +52,7 @@ Jika suatu dependensi keamanan belum tersedia, fitur yang bergantung padanya har
 
 | Kapabilitas | Status pada profil internal | Kapan menjadi wajib | Aturan aman |
 |---|---|---|---|
-| SRIKANDI | Opsional/deferred dan outbound nonaktif secara default | Jika kebijakan internal menetapkan registrasi atau pertukaran data melalui SRIKANDI | Gunakan kontrak API, sandbox, kredensial, pemetaan data, worker, rekonsiliasi, dan persetujuan resmi; jangan mengklaim sinkronisasi hanya dari HTTP 2xx |
+| Konektor API SRIKANDI di SIMSA | Outbound nonaktif secara default; bukan prasyarat teknis inventaris internal | Jika mekanisme resmi instansi menetapkan pertukaran data SIMSA melalui konektor tersebut | Gunakan kontrak API, sandbox, kredensial, pemetaan data, worker, rekonsiliasi, dan persetujuan resmi; jangan mengklaim sinkronisasi hanya dari HTTP 2xx |
 | Tanda tangan elektronik BSrE/PSrE | Di luar ruang lingkup produk berdasarkan keputusan pemilik aplikasi | Tidak diaktifkan pada SIMSA | Pertahankan endpoint legacy dalam keadaan nonaktif; artefak simulasi tidak sah dan tidak boleh dipakai sebagai bukti |
 | Object lock/WORM | Deferred atau kondisional sesuai kelas data, retensi, arsitektur storage, dan keputusan risiko | Jika kebijakan internal atau klasifikasi data mensyaratkan immutability infrastruktur | Baseline tetap memakai objek privat, backup, fixity, pembatasan admin, dan audit; gunakan versioning bila tersedia dan jangan mengklaim WORM tanpa bukti konfigurasi |
 | SIEM/SOC eksternal | Deferred atau kondisional sesuai skala, risiko, dan kebijakan operasi | Jika diwajibkan kebijakan keamanan atau hasil asesmen risiko | Audit/log lokal, kontrol akses log, alert dasar, retensi, sinkronisasi waktu, dan respons insiden tetap harus berjalan |
@@ -61,7 +63,7 @@ KMS/HSM, DLP, content disarm, watermark dinamis, dan akreditasi juga diterapkan 
 
 ### Profil inti internal
 
-Gunakan fungsi operasional inti dengan baseline keamanan di atas. Penandatanganan BSrE/PSrE bukan bagian dari produk. Biarkan SRIKANDI dan konektor eksternal lain nonaktif bila belum diwajibkan atau belum siap.
+Gunakan fungsi operasional inti dengan baseline keamanan di atas. Penandatanganan BSrE/PSrE bukan bagian dari produk. Biarkan konektor API SRIKANDI di SIMSA dan konektor eksternal lain nonaktif bila belum ditetapkan untuk digunakan atau belum siap; hal ini tidak mengubah kewajiban penerapan SRIKANDI di tingkat instansi.
 
 Konfigurasi bawaan yang disarankan:
 

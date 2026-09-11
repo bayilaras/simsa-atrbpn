@@ -1,45 +1,16 @@
-# 🔒 Pembuatan Akun oleh Super Admin
+# Pembuatan akun oleh Super Admin
 
-Akun SIMSA **tidak dapat dibuat secara mandiri** oleh pengguna. Pembuatan akun hanya dilakukan oleh **Super Admin** melalui menu **User Management**.
+SIMSA tidak menyediakan pendaftaran mandiri. Super Admin menyiapkan akun pribadi melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**.
 
----
+## Mendapatkan akun
 
-## Mengapa Tidak Ada Pendaftaran Publik?
+1. Berikan nama, email, unit kerja, dan penugasan kepada Super Admin.
+2. Super Admin menetapkan peran dan unit, memastikan akun aktif, serta mengisi kata sandi untuk login email.
+3. Terima kata sandi awal melalui saluran internal yang disetujui. Masuk menggunakan email dan kata sandi tersebut.
+4. Periksa bahwa menu serta data yang dapat Anda lihat sesuai tugas dan unit kerja.
 
-SIMSA adalah **sistem internal pemerintah** (Kementerian ATR/BPN) yang mengelola surat dan arsip resmi negara. Untuk menjaga keamanan data:
+**Admin Dirjen** mengelola unit Ditjen; **Admin Sesditjen** mengelola unit Sesditjen. **Staf** membaca surat dan arsip pada unit penugasannya, bukan mencatat atau mengubahnya. Google hanya dapat digunakan bila integrasinya aktif dan email sesuai akun yang telah dibuat.
 
-- ✅ Hanya **Super Admin** yang dapat membuat akun baru
-- ✅ Setiap akun langsung diatur **role** dan **unit kerja**-nya
-- ✅ Tidak ada pengguna tanpa izin yang bisa mengakses sistem
+Jangan memakai akun uji bersama untuk pekerjaan resmi. Perubahan personel ditindaklanjuti dengan perubahan peran/unit atau penonaktifan akun oleh Super Admin.
 
----
-
-## Cara Mendapatkan Akun
-
-1. **Hubungi Super Admin** di unit kerja Anda.
-2. Berikan informasi berikut:
-   - **Nama lengkap** Anda
-   - **Email** yang akan digunakan untuk login
-   - **Unit kerja** Anda (Dirjen PTPP / Sesditjen)
-3. Super Admin akan **membuat akun** dan **mengatur role** Anda melalui menu User Management.
-4. Setelah akun dibuat, Anda dapat login menggunakan:
-   - **Email & Password** yang diberikan oleh Super Admin, atau
-   - **Google** (jika email Google Anda yang didaftarkan)
-
----
-
-## Alur Pembuatan Akun
-
-```
-Super Admin → Menu User Management → + Tambah User →
-Isi Nama, Email, Role, Unit Kerja → Simpan →
-Pengguna baru bisa Login
-```
-
----
-
-> 💡 **Tips:** Jika Anda sudah memiliki akun Google dinas, minta Super Admin untuk mendaftarkan email tersebut agar Anda bisa login langsung dengan tombol **Google** tanpa perlu mengingat password tambahan.
-
----
-
-[⬅️ Sebelumnya: Login dengan Email & Password](login-email-password.md) | [Selanjutnya: Login Dengan Google ➡️](login-google.md)
+[Login email dan kata sandi](login-email-password.md) · [Pengelolaan akun](../administrasi/user-management.md)

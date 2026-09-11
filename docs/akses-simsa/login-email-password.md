@@ -1,86 +1,22 @@
-# 🔑 Login dengan Email & Password
+# Login dengan email dan kata sandi
 
-Cara Login ke SIMSA menggunakan Email dan Password yang sudah didaftarkan oleh Super Admin.
+Gunakan akun pribadi yang dibuat Super Admin melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**. Akun harus aktif, memiliki kata sandi untuk login email, serta peran dan unit kerja sesuai penugasan.
 
----
+## Buka dan masuk
 
-## Syarat:
+1. Pada komputer Windows yang sudah disiapkan operator, jalankan **Mulai-SIMSA.cmd** dari folder SIMSA. Browser membuka `http://127.0.0.1:3000` setelah layanan siap. Untuk layanan bersama, gunakan alamat yang diberikan operator.
+2. Isi **Email kedinasan** dan **Kata sandi**.
+3. Klik **Masuk**. Setelah berhasil, periksa peran dan unit kerja Anda sebelum mencatat data.
 
-- ✅ Akun kamu sudah **dibuat oleh Super Admin** melalui User Management.
-- ✅ Kamu sudah menerima **email** dan **password** dari Super Admin.
+Login Google hanya digunakan jika integrasinya sudah dikonfigurasi. Aplikasi tidak menyediakan pendaftaran mandiri. Akun uji tidak digunakan sebagai akun bersama untuk pekerjaan resmi.
 
----
+## Jika gagal
 
-## Langkah 1: Buka Halaman Login
+- Periksa ejaan email, kata sandi, dan status akun bersama administrator. Jangan mengirim kata sandi atau tangkapan layar yang memperlihatkannya.
+- Jika muncul **Origin tidak diizinkan**, gunakan alamat yang dibuka launcher atau laporkan alamat halaman kepada operator. Mengganti kata sandi tidak memperbaiki kesalahan alamat ini.
+- Jika layanan lokal tidak dapat dibuka, jalankan **Cek-SIMSA.cmd** dan sampaikan hasil pemeriksaan kepada operator.
+- Jika akun belum memiliki peran/unit yang benar, minta Super Admin menyesuaikannya dengan penugasan.
 
-1. Buka browser kamu (Chrome, Firefox, atau Edge).
-2. Ketik alamat berikut di address bar:
+Setelah selesai, buka menu avatar dan pilih **Keluar**, terutama pada komputer bersama.
 
-```
-https://simsa-frontend.vercel.app/
-```
-
-3. Kamu akan melihat halaman login SIMSA dengan tampilan seperti berikut:
-
-```
-┌─────────────────────────────────────────┐
-│                                         │
-│            🏛️ Logo SIMSA               │
-│               SIMSA                     │
-│  Sistem Informasi Manajemen Surat &     │
-│              Arsip                      │
-│        ATR/BPN - Dirjen PTPP            │
-│                                         │
-│  ┌─────────────────────────────────┐    │
-│  │       Selamat Datang            │    │
-│  │  Silakan masuk untuk mengakses  │    │
-│  │           sistem                │    │
-│  │                                 │    │
-│  │  Email:    [_______________]    │    │
-│  │  Password: [_______________]    │    │
-│  │                                 │    │
-│  │      [  🔵 Masuk  ]            │    │
-│  │                                 │    │
-│  │  ── Atau lanjutkan dengan ──   │    │
-│  │                                 │    │
-│  │      [  🔷 Google  ]           │    │
-│  │                                 │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
----
-
-## Langkah 2: Isi Email dan Password
-
-1. Klik kolom **Email**, lalu ketik alamat email kamu.
-   - Contoh: `nama@email.com`
-2. Klik kolom **Password**, lalu ketik password kamu.
-   - Password akan ditampilkan sebagai titik-titik (••••••••) untuk keamanan.
-
----
-
-## Langkah 3: Klik Tombol "Masuk"
-
-1. Klik tombol **"Masuk"** berwarna biru di bawah form.
-2. Tunggu proses login (tombol akan berubah menjadi **"Memproses..."** dengan ikon loading).
-3. Kalau berhasil, kamu akan langsung diarahkan ke **halaman Dashboard**.
-
----
-
-## ❌ Jika Login Gagal
-
-Kalau login gagal, pesan error akan muncul di bagian atas form dengan ikon ⚠️ merah:
-
-| Pesan Error | Penyebab | Solusi |
-|-------------|----------|--------|
-| "Login gagal" | Email atau password salah | Periksa kembali email dan password kamu |
-| "Email tidak ditemukan" | Akun belum dibuat | Hubungi Super Admin untuk dibuatkan akun |
-| "Password salah" | Password tidak sesuai | Coba lagi atau hubungi Super Admin |
-
-> 💡 **Tips:** Jika kamu lupa password, hubungi **Super Admin** untuk mereset password akun kamu.
-
----
-
-[⬅️ Sebelumnya: Wajib BACA!](wajib-baca.md) | [Selanjutnya: Pembuatan Akun oleh Super Admin ➡️](daftar-email.md)
+[Pengelolaan akun](../administrasi/user-management.md) · [Login Google](login-google.md)

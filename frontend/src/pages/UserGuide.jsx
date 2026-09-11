@@ -58,6 +58,24 @@ const CATEGORIES = [
 
 const GUIDE_SECTIONS = [
     {
+        id: 'mulai-inventaris-internal',
+        category: 'dasar',
+        title: 'Mulai inventaris arsip internal',
+        summary: 'Catat metadata dan lokasi arsip fisik, lalu temukan kembali tanpa harus mengunggah hasil pindai.',
+        icon: Archive,
+        roles: ALL_ROLES,
+        keywords: ['mulai', 'inventaris', 'fisik', 'csv', 'impor', 'akun', 'unit kerja', 'srikandi'],
+        steps: [
+            'Masuk dengan email dan kata sandi dari administrator. Gunakan akun pribadi dengan peran dan unit kerja yang benar; staf membaca data, sedangkan admin mencatat dan mengubahnya.',
+            'Admin membuka Surat Masuk atau Surat Keluar, mencari nomor yang sama lebih dahulu, lalu mencatat metadata. Untuk daftar yang sudah tersedia, pilih satu unit kerja dan gunakan Impor CSV → Pratinjau → Impor data valid.',
+            'Untuk inventaris arsip yang sudah ada, admin membuka Arsip Aktif → Arsip Surat Masuk atau Arsip Surat Keluar lalu Impor CSV. Isi tanggal sumber yang benar; impor tidak otomatis memverifikasi klasifikasi atau JRA.',
+            'Saat mengarsipkan surat yang selesai diproses, isi klasifikasi/JRA yang sesuai serta No. Filing Cabinet, No. Laci, dan No. Folder pada dialog Arsipkan. Pada CSV arsip, catatan lokasi dapat dimasukkan ke Keterangan; kolom lokasi terstruktur belum dipetakan oleh impor.',
+            'Temukan kembali arsip melalui nomor atau uraian, filter unit/tahun, dan halaman detail. Cocokkan catatan lokasi dengan berkas fisik sebelum menyerahkannya kepada peminjam.',
+            'Pencatatan inventaris tidak memerlukan konektor API SRIKANDI atau lampiran digital. Gunakan instrumen ATR/BPN yang berlaku; kewajiban instansi menerapkan SRIKANDI tetap terpisah dari konektor SIMSA. Lampiran hanya tersedia setelah penyimpanan privat dan pemeriksaan file siap.',
+        ],
+        action: { label: 'Buka Arsip Aktif', to: '/arsip/masuk' },
+    },
+    {
         id: 'masuk-dan-navigasi',
         category: 'dasar',
         title: 'Masuk dan mengenali aplikasi',
@@ -66,7 +84,7 @@ const GUIDE_SECTIONS = [
         roles: ALL_ROLES,
         keywords: ['login', 'google', 'dashboard', 'sidebar', 'menu', 'navigasi', 'pencarian'],
         steps: [
-            'Buka alamat resmi SIMSA dan masuk dengan akun yang telah didaftarkan oleh administrator.',
+            'Buka alamat SIMSA yang diberikan operator dan masuk dengan email serta kata sandi akun pribadi. Login Google digunakan hanya jika telah diaktifkan administrator.',
             'Gunakan Dashboard untuk melihat ringkasan pekerjaan sesuai unit kerja dan kewenangan Anda.',
             'Buka sidebar untuk berpindah fitur. Di layar kecil, gunakan tombol menu pada bagian atas.',
             'Gunakan breadcrumb di atas halaman untuk mengetahui posisi dan kembali ke bagian sebelumnya.',
@@ -78,15 +96,16 @@ const GUIDE_SECTIONS = [
         id: 'surat-masuk-keluar',
         category: 'surat',
         title: 'Mengelola surat masuk dan keluar',
-        summary: 'Mencatat metadata surat, melampirkan berkas, dan menelusuri kembali surat.',
+        summary: 'Admin mencatat metadata surat melalui formulir atau impor CSV dan menelusurinya kembali.',
         icon: Mail,
-        roles: STAFF_AND_ADMIN,
-        keywords: ['surat masuk', 'surat keluar', 'distribusi', 'metadata', 'lampiran'],
+        roles: ADMIN_ROLES,
+        keywords: ['surat masuk', 'surat keluar', 'distribusi', 'metadata', 'lampiran', 'csv', 'impor'],
         steps: [
             'Pilih Surat Masuk atau Surat Keluar dari sidebar sesuai naskah yang akan dikelola.',
             'Cari dahulu berdasarkan nomor, perihal, pengirim, atau penerima untuk mencegah pencatatan ganda.',
             'Isi metadata dari dokumen sumber secara lengkap dan periksa kembali tanggal serta nomor surat.',
-            'Tambahkan lampiran hanya pada rekod yang tepat, lalu simpan dan pastikan detailnya dapat dibuka.',
+            'Untuk daftar CSV, pilih unit kerja konkret lalu Impor CSV, Pratinjau, dan Impor data valid. Perbaiki baris yang ditolak pada berkas sumber; periksa hasil karena sebagian baris dapat berhasil saat baris lain gagal.',
+            'Simpan metadata dan pastikan detailnya dapat dibuka. Tambahkan lampiran hanya bila fasilitas penyimpanan file tersedia dan berkasnya memang terkait; arsip fisik tidak memerlukan unggahan pengganti.',
             'Gunakan Distribusi bila menu tersebut tersedia dan tindak lanjut memang diperlukan.',
         ],
         action: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
@@ -218,8 +237,8 @@ const ROLE_FLOWS = [
     {
         role: 'staff',
         title: 'Staf',
-        description: 'Fokus pada pencatatan, pencarian, dan pemeriksaan surat/arsip sesuai unit kerja.',
-        flow: ['Cari rekod lebih dahulu', 'Catat atau periksa metadata', 'Buka detail arsip', 'Gunakan laporan/permintaan akses'],
+        description: 'Membaca, mencari, dan memeriksa surat/arsip sesuai unit kerja; perubahan data dilakukan admin yang berwenang.',
+        flow: ['Cari rekod', 'Periksa metadata', 'Buka detail arsip', 'Gunakan laporan/permintaan akses'],
     },
     {
         role: 'admin_dirjen',
@@ -262,12 +281,20 @@ const GLOSSARY = [
 
 const TROUBLESHOOTING = [
     {
+        problem: 'Tidak dapat login dengan email dan kata sandi',
+        answer: 'Gunakan alamat aplikasi dari operator dan akun yang aktif. Periksa ejaan email serta kata sandi. Jika tertulis Origin tidak diizinkan, gunakan alamat lokal yang dibuka Mulai-SIMSA.cmd atau laporkan alamat halaman kepada operator; mengganti kata sandi tidak memperbaiki kesalahan alamat tersebut.',
+    },
+    {
         problem: 'Tidak dapat login dengan Google',
         answer: 'Pastikan memakai akun dinas yang sudah diprovisikan, buka dari alamat resmi aplikasi, lalu coba kembali. Jika tetap gagal, kirimkan alamat email dan waktu kejadian kepada administrator—jangan mengirim kata sandi.',
     },
     {
         problem: 'Menu yang dibutuhkan tidak terlihat',
         answer: 'Menu mengikuti peran dan fitur yang diaktifkan. Pastikan Anda masuk dengan akun yang benar, lalu minta administrator memeriksa peran tanpa meminta perluasan akses yang tidak diperlukan.',
+    },
+    {
+        problem: 'Menu unggah tidak tersedia',
+        answer: 'Penyimpanan privat dan pemeriksaan file mungkin belum tersedia. Admin tetap dapat mencatat metadata atau mengimpor CSV untuk inventaris fisik. Jangan memasukkan tautan publik atau berkas kosong sebagai pengganti lampiran.',
     },
     {
         problem: 'Unggahan masih dikarantina atau tidak dapat dipilih',
@@ -421,7 +448,7 @@ export default function UserGuide() {
                         ['2', 'Baca Dashboard', 'Kenali ringkasan dan pekerjaan yang relevan.'],
                         ['3', 'Cari dahulu', 'Cegah duplikasi sebelum membuat rekod.'],
                         ['4', 'Periksa metadata', 'Cocokkan data dengan dokumen sumber.'],
-                        ['5', 'Simpan dan verifikasi', 'Pastikan detail serta status sudah benar.'],
+                        ['5', 'Periksa hasil', 'Admin memastikan hasil simpan; staf melaporkan koreksi kepada admin.'],
                     ].map(([number, title, description]) => (
                         <li key={number} className="rounded-lg border bg-card p-4 print:break-inside-avoid">
                             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground" aria-hidden="true">

@@ -3,6 +3,32 @@
 SIMSA mendukung pencatatan surat, pemberkasan, pencarian arsip, lokasi fisik,
 peminjaman, klasifikasi/JRA, dan pengendalian akses per unit kerja.
 
+## Gunakan pada komputer ini
+
+Untuk lingkungan Windows lokal yang sudah disiapkan, jalankan dari folder ini:
+
+- **Mulai-SIMSA.cmd** — menyalakan layanan lokal dan membuka `http://127.0.0.1:3000` setelah siap.
+- **Cek-SIMSA.cmd** — memeriksa status layanan.
+- **Hentikan-SIMSA.cmd** — menghentikan layanan lokal yang dikelola launcher.
+
+Launcher memakai SIMSA lengkap dalam mode **internal/full**, menggunakan data dan
+konfigurasi lingkungan yang sudah ada; proses mulai tidak membuat ulang database,
+mengulang seed, atau menjalankan migrasi. Alamat loopback ini untuk komputer ini
+saja. Penyimpanan berkas digital pada lingkungan lokal ini belum dikonfigurasi;
+mulai dengan pencatatan metadata, impor CSV, dan penelusuran arsip fisik.
+
+Ikuti [Mulai Inventaris Internal](docs-site/docs/mulai-inventaris-internal.md)
+untuk login, akun per unit, surat, impor, serta pencarian lokasi. Lampiran digital
+dan proses berbukti file digunakan setelah fasilitasnya siap; panduan ini tidak
+menyatakan seluruh fitur atau integrasi eksternal sudah operasional.
+
+Untuk membangun ulang setelah perubahan kode, operator dapat menjalankan
+`npm run build:internal` dengan dependensi yang sudah terpasang. Perintah ini
+membangun frontend mode full dengan Better Auth dan API pada origin yang sama,
+beserta backend. Perintah build dan launcher tidak menjalankan `npm ci` atau
+migrasi secara otomatis; penyiapan dependensi/database mengikuti petunjuk
+pengembangan di bawah.
+
 ## Pilih aplikasi
 
 | Jalur | Direktori | Cakupan |

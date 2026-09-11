@@ -1,10 +1,10 @@
 # Pengelolaan akun pengguna
 
-Hanya pengguna aktif dengan peran **Super Admin** dapat membuka **User Management** dan mengubah akun. Perubahan penting dicatat dalam audit. Hak aplikasi harus mengikuti penugasan instansi; gelar Super Admin tidak otomatis menjadi kewenangan menandatangani surat atau memusnahkan arsip.
+Hanya pengguna aktif dengan peran **Super Admin** dapat membuka **Manajemen Pengguna** dan mengubah akun. Perubahan penting dicatat dalam audit. Hak aplikasi harus mengikuti penugasan instansi; gelar Super Admin tidak otomatis menjadi kewenangan menandatangani surat atau memusnahkan arsip.
 
 ## Membuat akun
 
-1. Buka **Administrasi → User Management**, lalu **Tambah User**.
+1. Buka **Administrasi → Manajemen Pengguna**, lalu **Tambah Pengguna**.
 2. Isi nama, email unik, peran dan unit kerja yang sesuai penugasan. Jabatan dan NIP membantu identifikasi pejabat; mengisinya tidak membuat tanda tangan elektronik.
 3. Untuk akun email/kata sandi, isi kata sandi minimal 8 karakter. Berikan kata sandi awal melalui saluran internal yang disetujui.
 4. Simpan, lalu uji login serta akses menggunakan akun tersebut.

@@ -1,6 +1,8 @@
 # ☁️ Integrasi SRIKANDI
 
-Halaman **Integrasi SRIKANDI** adalah panel operasional outbox SIMSA. Sesuai [Profil Aplikasi Internal](/profil-aplikasi-internal), connector ini opsional/deferred dan bukan syarat operasi inti kecuali kebijakan internal mewajibkannya. Halaman ini tidak mengaktifkan integrasi secara otomatis dan tidak menggantikan SRIKANDI.
+Halaman **Integrasi SRIKANDI** adalah panel operasional outbox SIMSA. Halaman ini tidak mengaktifkan integrasi secara otomatis dan tidak menggantikan SRIKANDI.
+
+Inventaris metadata dan arsip fisik dapat digunakan tanpa mengaktifkan konektor API ini. Kewajiban instansi menerapkan SRIKANDI tetap berlaku dan dibedakan dari aktivasi konektor SIMSA; label internal bukan pengecualian. Integrasi atau migrasi mengikuti mekanisme resmi instansi. Lihat [Profil Aplikasi Internal](/profil-aplikasi-internal).
 
 > Outbound harus tetap nonaktif sampai endpoint, autentikasi, kontrak payload, field ACK, dan ID resmi telah disahkan serta diuji di sandbox bersama pengelola SRIKANDI.
 

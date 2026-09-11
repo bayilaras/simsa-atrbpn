@@ -8,8 +8,8 @@ Sebelum kamu mulai menggunakan **SIMSA**, ada beberapa hal penting yang harus ka
 
 Di SIMSA, akun kamu **terhubung ke email**. Artinya:
 
-- Kalau kamu **Login pakai Google** dengan Email A, lalu login lagi dengan **Email & Password** menggunakan Email A yang sama, kamu akan **masuk ke akun yang sama**.
-- Akun kamu dibuat oleh **Super Admin** melalui menu User Management.
+- Gunakan email yang didaftarkan administrator. Login Google hanya tersedia jika integrasinya aktif dan identitas email sesuai; gunakan email/kata sandi yang disiapkan admin untuk layanan lokal.
+- Akun kamu dibuat oleh **Super Admin** melalui menu Manajemen Pengguna.
 
 ---
 
@@ -20,28 +20,28 @@ SIMSA menggunakan sistem **Role-Based Access Control (RBAC)**. Artinya, menu dan
 | Role | Akses |
 |------|-------|
 | **Staff** | Lihat surat masuk/keluar (read-only), lihat arsip aktif (read-only), laporan |
-| **Admin Dirjen** | Semua fitur surat & arsip + distribusi, master data, lokasi simpan, arsip vital/terjaga |
-| **Admin Sesditjen** | Sama seperti Admin Dirjen |
-| **Super Admin** | Semua fitur + user management, settings, pengawasan, filter notifikasi unit kerja |
-| **Auditor** | Dashboard + audit log |
+| **Admin Dirjen** | Mengelola surat/arsip dan layanan pada unit Ditjen sesuai izin, status proses, serta kesiapan fitur |
+| **Admin Sesditjen** | Mengelola operasional pada unit Sesditjen dengan pemeriksaan akses dan proses yang sama |
+| **Super Admin** | Administrasi lintas unit, Manajemen Pengguna, pengaturan, dan pengawasan; akses rekod terkendali tetap diperiksa |
+| **Auditor** | Pengawasan/baca-saja sesuai mandat unit; Audit Log global hanya untuk Super Admin |
 
-> 💡 Kalau ada menu yang tidak muncul di sidebar kamu, kemungkinan besar role kamu tidak memiliki akses ke menu tersebut. Hubungi **Super Admin** untuk minta perubahan role.
+> 💡 Kalau ada menu yang tidak muncul di sidebar kamu, kemungkinan besar role kamu tidak memiliki akses ke menu tersebut. Hubungi **Super Admin** untuk memeriksa peran sesuai penugasan; sebagian fitur juga memerlukan layanan yang dikonfigurasi operator.
 
 ---
 
 ## 3️⃣ Data Difilter Berdasarkan Unit Kerja
 
 - Kamu **hanya bisa melihat data** dari unit kerja kamu sendiri.
-- Hanya **Super Admin** yang bisa melihat data **semua unit kerja** sekaligus.
+- **Super Admin** dapat memilih cakupan lintas unit; akses rekod terkendali tetap mengikuti izin per rekod dan klasifikasi keamanan.
 
 ---
 
 ## 4️⃣ URL Akses SIMSA
 
-Akses SIMSA di browser kamu melalui:
+Pada komputer Windows yang sudah disiapkan operator, jalankan **Mulai-SIMSA.cmd**. Layanan lokal dibuka pada alamat berikut; pengguna komputer lain menggunakan alamat yang diberikan operator:
 
 ```
-https://simsa-frontend.vercel.app/
+http://127.0.0.1:3000
 ```
 
 ---
