@@ -230,7 +230,7 @@ export default function Arsip() {
                         }}
                     />
 
-                    {isAdmin && capabilities.fileUploads && (
+                    {isAdmin && capabilities.fileUploads && capabilities.bulkOcr !== false && (
                         <Button asChild variant="default" size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
                             <Link to="/bulk-upload">
                                 <Upload className="mr-2 h-3.5 w-3.5" />

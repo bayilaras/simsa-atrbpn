@@ -1,7 +1,8 @@
 import express from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
-import { createFileStorageAccessMiddleware } from '../middlewares/file-storage-access.middleware.js';
+import { createFileStorageAccessMiddleware, createOptionalModuleAccessMiddleware } from '../middlewares/file-storage-access.middleware.js';
+import { getPublicCapabilities } from '../config/public-capabilities.js';
 
 function fixture(disabled = true) {
     const app = express();
@@ -89,5 +90,72 @@ describe('explicit disabled storage boundary', () => {
         const { app, domain } = fixture(false);
         expect((await request(app).get('/api/files/arsip/record')).status).toBe(200);
         expect(domain).toHaveBeenCalledOnce();
+    });
+});
+
+describe('optional modules independently of manual PDF capabilities', () => {
+    const disabledModules = { SIMSA_BULK_OCR_ENABLED: 'false', SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED: 'false' };
+    function optionalFixture(source: NodeJS.ProcessEnv = disabledModules, storageDisabled = false) {
+        const app = express();
+        const parser = vi.fn();
+        const domain = vi.fn();
+        app.use('/api', createOptionalModuleAccessMiddleware(source));
+        app.use((req, _res, next) => { parser(); next(); });
+        app.use(express.json());
+        app.use('/api', createFileStorageAccessMiddleware(storageDisabled));
+        app.use('/api', (_req, res) => { domain(); res.json({ success: true }); });
+        return { app, parser, domain };
+    }
+
+    it('defaults existing installations on, but closes explicit false, blank and misspelled flags', () => {
+        expect(getPublicCapabilities({}).capabilities).toMatchObject({ bulkOcr: true, advancedArchiveWorkflows: true });
+        for (const flag of ['false', '', 'flase', '0']) {
+            expect(getPublicCapabilities({ SIMSA_BULK_OCR_ENABLED: flag, SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED: flag }).capabilities)
+                .toMatchObject({ bulkOcr: false, advancedArchiveWorkflows: false });
+        }
+        expect(getPublicCapabilities({ SIMSA_APP_MODE: 'metadata-demo' }).capabilities)
+            .toMatchObject({ bulkOcr: false, advancedArchiveWorkflows: false });
+    });
+
+    it('preserves real file configuration and its scanner requirement', () => {
+        const source = { ...disabledModules, NODE_ENV: 'test', BLOB_READ_WRITE_TOKEN: 'synthetic-test-token-only', MALWARE_SCANNER_MODE: 'clamav' };
+        expect(getPublicCapabilities(source).capabilities).toMatchObject({ metadata: true, files: true, fileUploads: true, bulkOcr: false, advancedArchiveWorkflows: false });
+        expect(getPublicCapabilities({ ...source, MALWARE_SCAN_WORKER_ENABLED: 'false' }).capabilities.fileUploads).toBe(false);
+    });
+
+    it.each([
+        ['get', '/bulk-upload/batch'], ['post', '/bulk-upload'], ['post', '/BULK-UPLOAD/batch/process/'],
+        ['post', '/bulk-upload/batch/confirm'], ['delete', '/bulk-upload/batch'],
+        ['get', '/penyusutan'], ['post', '/penyusutan/batch/evidence'], ['put', '/penyusutan/batch/status'],
+        ['get', '/arsip-terjaga'], ['post', '/arsip-terjaga/record/reports/report/transitions'],
+        ['post', '/arsip-elektronik/record/preservasi'], ['get', '/arsip-elektronik/record/preservasi'],
+        ['get', '/arsip-elektronik/record/preservasi/options'],
+    ] as const)('rejects disabled %s %s before even malformed JSON can reach parsers or domain handlers', async (method, path) => {
+        const { app, parser, domain } = optionalFixture();
+        const response = await request(app)[method](`/api${path}?unitKerjaId=unit`).set('Content-Type', 'application/json').send('{invalid');
+        expect(response.status).toBe(503);
+        expect(response.body).toMatchObject({ success: false, code: 'OPTIONAL_MODULE_DISABLED' });
+        expect(response.headers['cache-control']).toBe('no-store');
+        expect(parser).not.toHaveBeenCalled();
+        expect(domain).not.toHaveBeenCalled();
+    });
+
+    it.each(['/surat-masuk', '/surat-keluar', '/upload/arsip/record', '/client-upload', '/object-uploads', '/arsip-elektronik', '/arsip-elektronik/record/verify', '/regulatory-rule-sets/record/activate'])('leaves existing authorization and validation in control for manual operation %s', async path => {
+        const { app, domain } = optionalFixture();
+        expect((await request(app).post(`/api${path}`).send({})).status).toBe(200);
+        expect(domain).toHaveBeenCalledOnce();
+    });
+
+    it('does not bypass the disabled-storage boundary for manual uploads', async () => {
+        const { app, domain } = optionalFixture(disabledModules, true);
+        expect((await request(app).post('/api/upload/arsip/record').send({})).body.code).toBe('FILE_STORAGE_DISABLED');
+        expect(domain).not.toHaveBeenCalled();
+    });
+
+    it('enables modules independently and preserves defaults', async () => {
+        const { app } = optionalFixture({ SIMSA_BULK_OCR_ENABLED: 'false' });
+        expect((await request(app).post('/api/bulk-upload').send({})).status).toBe(503);
+        expect((await request(app).post('/api/penyusutan').send({})).status).toBe(200);
+        expect((await request(optionalFixture({}).app).post('/api/bulk-upload').send({})).status).toBe(200);
     });
 });

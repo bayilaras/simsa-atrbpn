@@ -124,6 +124,19 @@ function SrikandiFeatureGuard({ children }) {
   return children
 }
 
+function OptionalModuleGuard({ capability, children }) {
+  const { capabilities, loading } = useAppConfig()
+  if (loading) return <PageLoader />
+  if (capabilities[capability] === false) return (
+    <section className="space-y-4 p-6" aria-label="Ketersediaan modul">
+      <h1 className="text-xl font-semibold">Modul belum diaktifkan</h1>
+      <p className="text-muted-foreground">Modul ini belum diaktifkan pada layanan ini. Surat dan arsip manual tetap tersedia.</p>
+      <Link className="inline-flex min-h-11 items-center text-sm text-primary underline" to="/arsip/masuk">Buka daftar arsip</Link>
+    </section>
+  )
+  return children
+}
+
 
 
 const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
@@ -239,7 +252,7 @@ const router = createBrowserRouter([
       { path: "/arsip", element: <Navigate to="/arsip/keluar" replace /> },
       { path: "/arsip/detail/:id", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><ArsipDetail /></RoleGuard> },
       { path: "/arsip/:tab", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Arsip /></RoleGuard> },
-      { path: "/bulk-upload", element: <FileCapabilityGuard upload><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard></FileCapabilityGuard> },
+      { path: "/bulk-upload", element: <OptionalModuleGuard capability="bulkOcr"><FileCapabilityGuard upload><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard></FileCapabilityGuard></OptionalModuleGuard> },
       { path: "/laporan", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Laporan /></RoleGuard> },
       { path: "/audit-log", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AuditLog /></RoleGuard> },
       { path: "/record-access-grants", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><RecordAccessGrants /></RoleGuard> },
@@ -264,9 +277,9 @@ const router = createBrowserRouter([
       { path: "/dosir/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><DosirDetail /></RoleGuard> },
       { path: "/retention", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><RetentionManagement /></RoleGuard> },
       { path: "/retention-governance", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><RetentionGovernance /></RoleGuard> },
-      { path: "/penyusutan", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><PenyusutanArsip /></RoleGuard> },
+      { path: "/penyusutan", element: <OptionalModuleGuard capability="advancedArchiveWorkflows"><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><PenyusutanArsip /></RoleGuard></OptionalModuleGuard> },
       { path: "/arsip-vital", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipVital /></RoleGuard> },
-      { path: "/arsip-terjaga", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipTerjaga /></RoleGuard> },
+      { path: "/arsip-terjaga", element: <OptionalModuleGuard capability="advancedArchiveWorkflows"><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipTerjaga /></RoleGuard></OptionalModuleGuard> },
       { path: "/arsip-elektronik", element: <FileCapabilityGuard><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipElektronik /></RoleGuard></FileCapabilityGuard> },
       { path: "/tunjuk-silang", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TunjukSilang /></RoleGuard> },
       { path: "/autentikasi", element: <FileCapabilityGuard><RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AutentikasiIndex /></RoleGuard></FileCapabilityGuard> },

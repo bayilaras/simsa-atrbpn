@@ -4,6 +4,16 @@ import { getObjectStorageConfigurationStatus } from './blob-storage.js';
 import { loadMalwareScanConfig, validateMalwareScanConfig } from './malware-scanner.js';
 import { buildGoogleOAuthConfig } from './google-oauth.js';
 
+/** Existing installs stay enabled only when the flag is absent. Typos fail closed. */
+export function getOptionalModuleCapabilities(source: NodeJS.ProcessEnv = process.env) {
+    const enabled = (value: string | undefined) => value === undefined || value.trim().toLowerCase() === 'true';
+    const full = !isMetadataDemo(source);
+    return {
+        bulkOcr: full && enabled(source.SIMSA_BULK_OCR_ENABLED),
+        advancedArchiveWorkflows: full && enabled(source.SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED),
+    };
+}
+
 /** Configuration availability only; no credentials or claims of live service health. */
 export function getPublicCapabilities(source: NodeJS.ProcessEnv = process.env) {
     const demo = isMetadataDemo(source);
@@ -27,6 +37,7 @@ export function getPublicCapabilities(source: NodeJS.ProcessEnv = process.env) {
         syntheticDataOnly: demo,
         capabilities: {
             metadata: true, files, fileUploads,
+            ...getOptionalModuleCapabilities(source),
             // Public Sheets metadata imports and source links do not require
             // the separate SRIKANDI connector or its credentials.
             externalIntegrations: !demo,

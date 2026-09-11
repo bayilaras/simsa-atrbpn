@@ -1,6 +1,24 @@
 import type { RequestHandler } from 'express';
+import { getOptionalModuleCapabilities } from '../config/public-capabilities.js';
 
 export const FILE_STORAGE_DISABLED_CODE = 'FILE_STORAGE_DISABLED';
+
+/** An availability gate, not authorization. Mount before body parsers/domain routers. */
+export function createOptionalModuleAccessMiddleware(source: NodeJS.ProcessEnv = process.env): RequestHandler {
+    return (req, res, next) => {
+        const capabilities = getOptionalModuleCapabilities(source);
+        const path = req.path.toLowerCase().replace(/\/+$/, '') || '/';
+        const bulk = /^\/bulk-upload(?:\/|$)/.test(path);
+        const advanced = /^\/(?:penyusutan|arsip-terjaga)(?:\/|$)/.test(path)
+            || /^\/arsip-elektronik\/[^/]+\/preservasi(?:\/|$)/.test(path);
+        const module = bulk && !capabilities.bulkOcr ? 'bulkOcr'
+            : advanced && !capabilities.advancedArchiveWorkflows ? 'advancedArchiveWorkflows' : null;
+        if (!module) { next(); return; }
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(503).json({ success: false, code: 'OPTIONAL_MODULE_DISABLED', module,
+            error: 'Modul ini belum diaktifkan pada layanan ini. Surat dan arsip manual tetap tersedia.' });
+    };
+}
 
 /** Mount before domain routers/Multer. Disabled storage is not a demo mode. */
 export function createFileStorageAccessMiddleware(disabled: boolean): RequestHandler {

@@ -393,7 +393,7 @@ export default function Dashboard() {
                 </>}
                 <Button variant={isAdmin ? 'outline' : 'default'} onClick={() => navigate('/arsip/masuk')}><Archive aria-hidden="true" className="mr-2 h-4 w-4" />Cari Arsip</Button>
                 <Button variant="outline" onClick={() => navigate('/laporan')}><FileBarChart aria-hidden="true" className="mr-2 h-4 w-4" />Laporan</Button>
-                {isAdmin && capabilities.fileUploads && <Button variant="outline" onClick={() => navigate('/bulk-upload')}><FolderArchive aria-hidden="true" className="mr-2 h-4 w-4" />Unggah Massal</Button>}
+                {isAdmin && capabilities.fileUploads && capabilities.bulkOcr !== false && <Button variant="outline" onClick={() => navigate('/bulk-upload')}><FolderArchive aria-hidden="true" className="mr-2 h-4 w-4" />Unggah Massal</Button>}
             </section>
 
             {refreshing && <p role="status" className="text-sm text-muted-foreground">Memperbarui ringkasan unit kerja…</p>}
@@ -939,7 +939,7 @@ export default function Dashboard() {
                                                     <dd className="font-semibold tabular-nums">{widgetData.vitalTerjagaAlerts.terjagaReportingStages[stage] ?? '—'}</dd>
                                                 </div>)}
                                             </dl> : <p className="mt-3 text-sm text-muted-foreground">Ringkasan tahap pelaporan belum tersedia.</p>}
-                                            {isAdmin && <Button variant="link" className="mt-2 h-auto whitespace-normal px-0 text-left" onClick={() => navigate('/arsip-terjaga')}>Lihat pelaporan arsip terjaga</Button>}
+                                            {isAdmin && capabilities.advancedArchiveWorkflows !== false && <Button variant="link" className="mt-2 h-auto whitespace-normal px-0 text-left" onClick={() => navigate('/arsip-terjaga')}>Lihat pelaporan arsip terjaga</Button>}
                                         </section>
                                     </CardContent>
                                 </Card>

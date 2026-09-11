@@ -22,6 +22,8 @@ const FULL_CAPABILITIES = Object.freeze({
     files: true,
     fileUploads: true,
     externalIntegrations: true,
+    bulkOcr: true,
+    advancedArchiveWorkflows: true,
 })
 
 export const RESTRICTED_CAPABILITIES = Object.freeze({
@@ -29,6 +31,8 @@ export const RESTRICTED_CAPABILITIES = Object.freeze({
     files: false,
     fileUploads: false,
     externalIntegrations: false,
+    bulkOcr: false,
+    advancedArchiveWorkflows: false,
 })
 
 export function parseBooleanFlag(value, fallback = false) {
@@ -100,7 +104,12 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
             && !(buildConfig.storageProvider === 'disabled' && backendCapabilities.files)
         return Object.freeze({
             compatible: Boolean(compatible), mode: 'full', syntheticDataOnly: false,
-            capabilities: Object.freeze(compatible ? { ...backendCapabilities }
+            capabilities: Object.freeze(compatible ? { ...backendCapabilities,
+                // Older full backends predate these switches. Explicit values
+                // are authoritative; malformed values never enable a module.
+                bulkOcr: backendCapabilities.bulkOcr === undefined || backendCapabilities.bulkOcr === true,
+                advancedArchiveWorkflows: backendCapabilities.advancedArchiveWorkflows === undefined || backendCapabilities.advancedArchiveWorkflows === true,
+            }
                 : { ...RESTRICTED_CAPABILITIES, metadata: payload == null }),
             authentication: Object.freeze(compatible ? {
                 provider: payload?.authentication?.provider,
@@ -134,6 +143,7 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
         mode: 'metadata-demo',
         syntheticDataOnly: true,
         capabilities: Object.freeze({
+            ...RESTRICTED_CAPABILITIES,
             metadata: true,
             files: false,
             fileUploads: false,

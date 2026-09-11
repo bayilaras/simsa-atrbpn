@@ -133,6 +133,7 @@ const menuGroups = [
             {
                 title: 'Penyusutan',
                 url: '/penyusutan',
+                optionalModule: 'advancedArchiveWorkflows',
                 icon: Scissors,
                 allowedRoles: ADMIN_ROLES,
             },
@@ -169,6 +170,7 @@ const menuGroups = [
             {
                 title: 'Arsip Terjaga',
                 url: '/arsip-terjaga',
+                optionalModule: 'advancedArchiveWorkflows',
                 icon: Lock,
                 allowedRoles: ADMIN_ROLES,
             },
@@ -272,6 +274,7 @@ export function AppSidebar() {
     const isAllowed = (item) => {
         if (item.feature && !features[item.feature]) return false
         if (item.capability && !capabilities[item.capability]) return false
+        if (item.optionalModule && capabilities[item.optionalModule] === false) return false
         if (!item.allowedRoles) return true
         return item.allowedRoles.includes(userRole)
     }

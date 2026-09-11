@@ -8,7 +8,7 @@ import { env, validateEnv, cloudPlatformConfig } from './config/env';
 import { getPublicAppMetadata } from './config/app-profile.js';
 import { isMetadataDemo } from './config/demo.js';
 import { isObjectStorageDisabled } from './config/demo.js';
-import { createFileStorageAccessMiddleware } from './middlewares/file-storage-access.middleware.js';
+import { createFileStorageAccessMiddleware, createOptionalModuleAccessMiddleware } from './middlewares/file-storage-access.middleware.js';
 import { getPublicCapabilities } from './config/public-capabilities.js';
 import { createDemoAccessMiddleware } from './middlewares/demo-access.middleware.js';
 import { installFrontendHosting } from './middlewares/frontend-hosting.middleware.js';
@@ -275,6 +275,7 @@ if (cloudPlatformConfig.authProvider === 'firebase') {
 }
 
 // Body parsing - AFTER Better Auth handler
+app.use('/api', createOptionalModuleAccessMiddleware());
 app.use(express.json({ limit: '10mb' }));  // Limit body size to prevent DoS
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

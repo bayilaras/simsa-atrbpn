@@ -12,6 +12,23 @@ Ini persiapan kompatibilitas, bukan pernyataan bahwa arsip digital lengkap siap 
 - Database runtime menggunakan akun `simsa_api`, endpoint Neon **direct**, dan `sslmode=verify-full`. Jangan memakai endpoint `-pooler`: aplikasi memakai lease koneksi dan session advisory lock. Siapkan schema, grants, serta admin awal secara terpisah mengikuti [panduan Neon](DEPLOY_RENDER_NEON.md); gunakan jalur ini hanya setelah target eksplisit lolos verifikasi.
 - Pool tetap dibagi per instance, maksimum bawaan Vercel tiga koneksi; `@vercel/functions` menangani idle pool sebelum suspension. Release koneksi dan transaksi aplikasi tetap wajib. Jumlah instance platform dapat menaikkan jumlah koneksi total; ukuran ini bukan jaminan kapasitas Neon.
 
+## Peluncuran awal surat dan arsip manual
+
+Target awal adalah 1–3 pengguna dengan dokumen PDF maksimum **10 MiB (10.485.760 byte)**. Backend memeriksa ekstensi `.pdf`, MIME `application/pdf`, signature `%PDF-`, dan ukuran byte sebenarnya. Surat masuk/keluar, lampiran arsip elektronik, bukti pelaporan, serta lampiran preservasi menggunakan unggah langsung privat dan finalisasi JSON pada Vercel; multipart arsip ditolak sebelum storage I/O. Finalisasi mengulang pemeriksaan akun, unit/grant, legal hold dan status arsip setelah verifikasi byte, lalu mencatat lease, lampiran dan audit dalam satu transaksi.
+
+Untuk menutup modul opsional yang belum selesai diuji pada hosting gratis, gunakan dua flag **backend** berikut; tidak perlu variabel `VITE_*`:
+
+```dotenv
+SIMSA_BULK_OCR_ENABLED=false
+SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED=false
+```
+
+Backend menerbitkan `bulkOcr` dan `advancedArchiveWorkflows` melalui `/api/capabilities`; sidebar, URL langsung, dan tombol aksi mengikuti nilai itu. API menolak modul yang nonaktif sebelum body parser/upload. Flag advanced menutup penyusutan, pelaporan arsip terjaga dan tindakan preservasi; surat/arsip manual, pencarian, klasifikasi/JRA, legal hold dan aturan retensi tetap berlaku. Tanpa flag, perilaku instalasi lama dipertahankan; nilai kosong/salah eja tidak mengaktifkan modul.
+
+Rilis unggah langsung arsip memakai migrasi `0038_arsip_direct_upload`, sehingga rantai yang ditinjau berjumlah **39 migrasi**. Perintah Neon/grant/backup memeriksa rantai serta hash yang sama. Ini tidak menerapkan migrasi saat build. Cadangan lama dengan 38 migrasi membutuhkan checkout/helper asalnya.
+
+Konfigurasi manual tersebut **masih memerlukan private Blob, database Production yang benar, serta antivirus cloud yang telah diuji**. Flag opsional tidak membuka berkas karantina dan bukan pengganti scanner. POC ClamAV terpisah hanya memvalidasi kelayakan runtime; tidak memperbarui status berkas aplikasi. Jangan mengaktifkan `SIMSA_VERCEL_METADATA_ENABLED` untuk mengklaim arsip digital aktif.
+
 ## Tahap metadata dengan login nyata
 
 Tahap terbatas ini menyimpan data nyata melalui Better Auth/PostgreSQL dan tetap memakai mode `full/internal`. Unggah/unduh berkas, OCR, dan integrasi SRIKANDI tidak dinyatakan aktif. Ini tidak memenuhi permintaan arsip digital lengkap hingga infrastrukturnya tersedia.
