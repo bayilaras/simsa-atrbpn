@@ -3,8 +3,10 @@ import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useAppConfig } from '@/context/app-config-context';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { suratKeluarService } from '@/services/surat-keluar.service';
 import { suratMasukService } from '@/services/surat-masuk.service';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
@@ -117,16 +119,22 @@ export default function TambahSuratKeluar() {
     const isEditMode = Boolean(id);
     const { user } = useAuth();
     const { capabilities } = useAppConfig();
+    const reducedMotion = useReducedMotion();
     const filesEnabled = capabilities.fileUploads;
     const navigate = useNavigate();
     const location = useLocation();
     const fileInputRef = useRef(null);
     const errorRef = useRef(null);
+    const saveLockedRef = useRef(false);
+    const navigationTimerRef = useRef(null);
+    const mountedRef = useRef(true);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [fieldErrors, setFieldErrors] = useState({});
     const [success, setSuccess] = useState(false);
+    const saveLocked = isSubmitting || success;
     const [selectedFile, setSelectedFile] = useState(null);
     const [existingFile, setExistingFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -137,6 +145,21 @@ export default function TambahSuratKeluar() {
         fixedUnitKerjaId: isEditMode ? recordUnitKerjaId : '',
     });
     const resolvedUnitKerjaId = isEditMode ? recordUnitKerjaId : unitScope.unitKerjaId;
+    const { setDirty, resetDirty } = useUnsavedChanges();
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            clearTimeout(navigationTimerRef.current);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!error || isLoading) return;
+        errorRef.current?.focus();
+        errorRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
+    }, [error, fieldErrors, isLoading, reducedMotion]);
 
     // State for surat masuk search
     const [suratMasukOptions, setSuratMasukOptions] = useState([]);
@@ -176,8 +199,9 @@ export default function TambahSuratKeluar() {
                 nomorSurat: replyTo.nomorSurat,
                 perihal: replyTo.perihal,
             });
+            setDirty();
         }
-    }, [location.state, isEditMode]);
+    }, [location.state, isEditMode, setDirty]);
 
     const fetchSuratData = useCallback(async () => {
         setIsLoading(true);
@@ -287,31 +311,39 @@ export default function TambahSuratKeluar() {
 
     // Handle input changes
     const handleChange = (field, value) => {
+        if (saveLockedRef.current) return;
         setFormData(prev => ({ ...prev, [field]: value }));
         setError(null);
+        setFieldErrors(prev => ({ ...prev, [field]: undefined }));
+        setDirty();
     };
 
     // Handle surat masuk selection
     const handleSelectSuratMasuk = (surat) => {
+        if (saveLockedRef.current) return;
         setSelectedSuratMasuk(surat);
         setFormData(prev => ({
             ...prev,
             balasanUntuk: surat.id,
         }));
         setSearchOpen(false);
+        setDirty();
     };
 
     // Clear surat masuk selection
     const clearSuratMasuk = () => {
+        if (saveLockedRef.current) return;
         setSelectedSuratMasuk(null);
         setFormData(prev => ({
             ...prev,
             balasanUntuk: null,
         }));
+        setDirty();
     };
 
     // Handle file selection
     const handleFileSelect = (e) => {
+        if (saveLockedRef.current) return;
         const file = e.target.files?.[0];
         if (file) {
             const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
@@ -325,12 +357,16 @@ export default function TambahSuratKeluar() {
             }
             setSelectedFile(file);
             setError(null);
+            setFieldErrors(prev => ({ ...prev, linkDokumen: undefined }));
+            setDirty();
         }
     };
 
     // Remove selected file
     const removeFile = () => {
+        if (saveLockedRef.current) return;
         setSelectedFile(null);
+        setDirty();
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -338,13 +374,13 @@ export default function TambahSuratKeluar() {
 
     // Validate form
     const validateForm = () => {
-        if (!resolvedUnitKerjaId) return 'Pilih unit kerja terlebih dahulu';
-        if (!formData.naskahDinas) return 'Naskah Dinas wajib diisi';
-        if (!formData.tanggalSurat) return 'Tanggal Surat wajib diisi';
-        if (!formData.perihal) return 'Perihal wajib diisi';
+        if (!resolvedUnitKerjaId) return { message: 'Pilih unit kerja terlebih dahulu' };
+        if (!formData.naskahDinas) return { field: 'naskahDinas', message: 'Naskah Dinas wajib diisi' };
+        if (!formData.tanggalSurat) return { message: 'Tanggal Surat wajib diisi' };
+        if (!formData.perihal) return { message: 'Perihal wajib diisi' };
         // For edit mode, allow existing file or link
         if (filesEnabled && !formData.linkDokumen && !selectedFile && !existingFile) {
-            return 'Link dokumen atau upload berkas wajib diisi (salah satu)';
+            return { field: 'linkDokumen', message: 'Link dokumen atau upload berkas wajib diisi (salah satu)' };
         }
         return null;
     };
@@ -352,19 +388,20 @@ export default function TambahSuratKeluar() {
     // Handle form submission
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (saveLockedRef.current) return;
 
         const validationError = validateForm();
         if (validationError) {
-            setError(validationError);
-            // Auto-scroll ke error agar user tahu field mana yang belum diisi
-            setTimeout(() => {
-                errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 100);
+            setError(validationError.message);
+            setFieldErrors(validationError.field ? { [validationError.field]: validationError.message } : {});
             return;
         }
 
+        // Lock synchronously: consecutive submit events can precede React's next render.
+        saveLockedRef.current = true;
         setIsSubmitting(true);
         setError(null);
+        setFieldErrors({});
 
         try {
             const dataToSubmit = buildSuratFormPayload(formData, resolvedUnitKerjaId, filesEnabled);
@@ -380,17 +417,21 @@ export default function TambahSuratKeluar() {
                     tahun: Number(formData.tanggalSurat?.slice(0, 4)) || new Date().getFullYear(),
                 }, filesEnabled ? selectedFile : null);
             }
+            if (!mountedRef.current) return;
+            resetDirty();
             setSuccess(true);
 
-            setTimeout(() => {
+            navigationTimerRef.current = setTimeout(() => {
                 navigate('/surat/keluar', {
                     state: { message: isEditMode ? 'Surat keluar berhasil diperbarui' : 'Surat keluar berhasil ditambahkan' }
                 });
             }, 1500);
         } catch (err) {
+            if (!mountedRef.current) return;
+            saveLockedRef.current = false;
             setError(err.message || 'Gagal menyimpan surat keluar');
         } finally {
-            setIsSubmitting(false);
+            if (mountedRef.current) setIsSubmitting(false);
         }
     };
 
@@ -516,12 +557,12 @@ export default function TambahSuratKeluar() {
 
             <RequiredUnitKerjaScope
                 scope={unitScope}
-                disabled={isEditMode || isSubmitting}
+                disabled={isEditMode || saveLocked}
             />
 
             {/* Error/Success Alerts */}
             {error && (
-                <Alert ref={errorRef} variant="destructive" className="animate-in slide-in-from-top-2">
+                <Alert ref={errorRef} tabIndex={-1} variant="destructive" className="animate-in slide-in-from-top-2">
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>{error}</AlertDescription>
                 </Alert>
@@ -538,6 +579,7 @@ export default function TambahSuratKeluar() {
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-6">
+                <fieldset disabled={saveLocked} className="min-w-0 space-y-6">
                 {/* Section 1: Balasan Surat (Optional) */}
                 <Card className="overflow-hidden border-border/50 shadow-sm transition-all hover:shadow-md">
                     <CardContent className="p-6 space-y-5">
@@ -574,8 +616,12 @@ export default function TambahSuratKeluar() {
                             <Popover open={searchOpen} onOpenChange={setSearchOpen}>
                                 <PopoverTrigger asChild>
                                     <Button
+                                        type="button"
                                         variant="outline"
                                         role="combobox"
+                                        aria-label="Surat masuk yang dibalas"
+                                        aria-expanded={searchOpen}
+                                        disabled={saveLocked}
                                         className="w-full h-12 justify-start text-muted-foreground border-dashed hover:border-solid hover:border-blue-300 hover:bg-blue-50/50"
                                     >
                                         <Search className="h-4 w-4 mr-2 text-muted-foreground/70" />
@@ -655,12 +701,16 @@ export default function TambahSuratKeluar() {
                             <SearchableSelect
                                 id="naskah-dinas"
                                 ariaLabel="Jenis naskah dinas"
+                                aria-invalid={Boolean(fieldErrors.naskahDinas)}
+                                aria-describedby={fieldErrors.naskahDinas ? 'naskah-dinas-error' : undefined}
+                                disabled={saveLocked}
                                 options={NASKAH_DINAS_OPTIONS}
                                 value={formData.naskahDinas}
                                 onValueChange={(v) => handleChange('naskahDinas', v)}
                                 placeholder="Pilih jenis naskah dinas..."
                                 searchPlaceholder="Cari jenis naskah dinas..."
                             />
+                            {fieldErrors.naskahDinas && <p id="naskah-dinas-error" className="text-sm text-destructive">{fieldErrors.naskahDinas}</p>}
                         </div>
                     </CardContent>
                 </Card>
@@ -779,12 +829,14 @@ export default function TambahSuratKeluar() {
                                     id="klasifikasi-surat-keluar"
                                     value={formData.klasifikasiFasilitatifKode}
                                     onChange={(kode, klasifikasi) => {
+                                        if (saveLockedRef.current) return;
                                         setFormData(prev => ({
                                             ...prev,
                                             klasifikasiFasilitatifKode: kode,
                                             klasifikasiFasilitatif: klasifikasi?.jenis || '',
                                         }));
                                         setError(null);
+                                        setDirty();
                                     }}
                                     label="Klik untuk memilih klasifikasi arsip..."
                                 />
@@ -838,6 +890,8 @@ export default function TambahSuratKeluar() {
                                 </Label>
                                 <Input
                                     id="link-dokumen-keluar"
+                                    aria-invalid={Boolean(fieldErrors.linkDokumen)}
+                                    aria-describedby={fieldErrors.linkDokumen ? 'link-dokumen-keluar-error' : undefined}
                                     value={formData.linkDokumen}
                                     onChange={(e) => handleChange('linkDokumen', e.target.value)}
                                     placeholder="https://drive.google.com/..."
@@ -845,6 +899,7 @@ export default function TambahSuratKeluar() {
                                 />
                             </div>
 
+                            {fieldErrors.linkDokumen && <p id="link-dokumen-keluar-error" className="text-sm text-destructive">{fieldErrors.linkDokumen}</p>}
                             <div className="relative">
                                 <div className="absolute inset-0 flex items-center">
                                     <span className="w-full border-t border-border/50" />
@@ -868,8 +923,11 @@ export default function TambahSuratKeluar() {
                                         }`}
                                     onClick={() => !selectedFile && fileInputRef.current?.click()}
                                     role={selectedFile ? undefined : 'button'}
-                                    tabIndex={selectedFile ? undefined : 0}
+                                    tabIndex={selectedFile || saveLocked ? undefined : 0}
                                     aria-label={selectedFile ? undefined : 'Pilih berkas untuk diunggah'}
+                                    aria-disabled={saveLocked}
+                                    aria-invalid={Boolean(fieldErrors.linkDokumen)}
+                                    aria-describedby={fieldErrors.linkDokumen ? 'link-dokumen-keluar-error' : undefined}
                                     onKeyDown={selectedFile ? undefined : (e) => {
                                         if (e.key === 'Enter' || e.key === ' ') {
                                             e.preventDefault();
@@ -894,20 +952,7 @@ export default function TambahSuratKeluar() {
                                         e.preventDefault();
                                         e.stopPropagation();
                                         setIsDragging(false);
-                                        const file = e.dataTransfer.files?.[0];
-                                        if (file) {
-                                            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
-                                            if (!allowedTypes.includes(file.type)) {
-                                                setError('Tipe file tidak didukung. Gunakan PDF, DOC, DOCX, JPG, atau PNG.');
-                                                return;
-                                            }
-                                            if (file.size > 10 * 1024 * 1024) {
-                                                setError('Ukuran file maksimal 10MB');
-                                                return;
-                                            }
-                                            setSelectedFile(file);
-                                            setError(null);
-                                        }
+                                        handleFileSelect({ target: { files: e.dataTransfer.files } });
                                     }}
                                 >
                                     <input
@@ -992,13 +1037,13 @@ export default function TambahSuratKeluar() {
 
                 {/* Floating Action Bar */}
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-                    <Button type="button" variant="outline" size="lg" disabled={isSubmitting} onClick={() => navigate('/surat/keluar')} className="rounded-full px-6">
+                    <Button type="button" variant="outline" size="lg" disabled={saveLocked} onClick={() => navigate('/surat/keluar')} className="rounded-full px-6">
                         Batal
                     </Button>
                     <Button
                         type="submit"
                         size="lg"
-                        disabled={isSubmitting || !resolvedUnitKerjaId || unitScope.loading}
+                        disabled={saveLocked || !resolvedUnitKerjaId || unitScope.loading}
                         className="min-w-[140px] bg-emerald-600 hover:bg-emerald-700 rounded-full px-8 shadow-lg shadow-emerald-600/20 hover:shadow-emerald-600/40 transition-all"
                     >
                         {isSubmitting ? (
@@ -1009,11 +1054,12 @@ export default function TambahSuratKeluar() {
                         ) : (
                             <>
                                 <Save className="h-4 w-4 mr-2" />
-                                {isEditMode ? 'Perbarui' : 'Simpan'}
+                                {success ? 'Tersimpan' : isEditMode ? 'Perbarui' : 'Simpan'}
                             </>
                         )}
                     </Button>
                 </div>
+                </fieldset>
             </form>
         </div>
     );

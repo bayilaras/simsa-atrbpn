@@ -24,6 +24,9 @@ export function MultiSelect({
     className,
     id,
     ariaLabel,
+    disabled = false,
+    'aria-invalid': ariaInvalid,
+    'aria-describedby': ariaDescribedBy,
     ...props
 }) {
     const [open, setOpen] = React.useState(false);
@@ -38,6 +41,9 @@ export function MultiSelect({
                     role="combobox"
                     aria-expanded={open}
                     aria-label={ariaLabel || placeholder}
+                    aria-invalid={ariaInvalid}
+                    aria-describedby={ariaDescribedBy}
+                    disabled={disabled}
                     className={cn(
                         "w-full justify-between min-h-[2.75rem] h-auto px-3 py-2 hover:bg-background",
                         className
