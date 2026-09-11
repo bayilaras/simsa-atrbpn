@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, date, integer, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, date, integer, timestamp, jsonb } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { arsip } from './arsip';
 import { unitKerja } from './unit-kerja';
@@ -30,6 +30,8 @@ export const penyusutanArsip = pgTable('penyusutan_arsip', {
     reviewedBy: uuid('reviewed_by').references(() => users.id),
     approvedBy: uuid('approved_by').references(() => users.id),
     executedBy: uuid('executed_by').references(() => users.id),
+    executionEvidence: jsonb('execution_evidence'),
+    executionEvidenceSha256: varchar('execution_evidence_sha256', { length: 64 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

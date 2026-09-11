@@ -253,6 +253,7 @@ export class FileAttachmentService {
     async create(
         data: CreateAttachmentData,
         auditContext: CriticalAuditContext,
+        executor?: Pick<typeof db, 'insert'>,
     ): Promise<FileAttachment & { hash: string }> {
         // Calculate hash
         const hash = crypto.createHash('sha256').update(data.buffer).digest('hex');
@@ -270,7 +271,7 @@ export class FileAttachmentService {
         );
 
         try {
-            return await db.transaction(async (tx) => {
+            const persist = async (tx: Pick<typeof db, 'insert'>) => {
                 const [attachment] = await tx
                     .insert(fileAttachments)
                     .values({
@@ -309,7 +310,8 @@ export class FileAttachmentService {
                 }, tx);
 
                 return { ...attachment, hash };
-            });
+            };
+            return executor ? await persist(executor) : await db.transaction(persist);
         } catch (error) {
             await deleteRequestCreatedBlob(blobFile.url, {
                 operation: 'file_attachment_create',

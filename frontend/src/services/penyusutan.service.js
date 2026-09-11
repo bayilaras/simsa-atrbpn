@@ -46,6 +46,23 @@ export const penyusutanService = {
         return response.data;
     },
 
+    async getExecutionOptions(id, unitKerjaId) {
+        const response = await api.get(`${BASE_URL}/${id}/execution-options`, { unitKerjaId: requireUnitKerjaId(unitKerjaId) });
+        return response.data;
+    },
+
+    async uploadExecutionEvidence(id, unitKerjaId, arsipId, file) {
+        const body = new FormData();
+        body.append('arsipId', arsipId);
+        body.append('file', file);
+        return api.post(scopedPath(`${BASE_URL}/${id}/evidence`, unitKerjaId), body);
+    },
+
+    async recoverInactiveTransfer(id, unitKerjaId, reason) {
+        const response = await api.post(scopedPath(`${BASE_URL}/${id}/recover-transfer`, unitKerjaId), { reason });
+        return response.data;
+    },
+
     // Add items to batch
     async addItems(id, unitKerjaId, arsipIds) {
         return api.post(scopedPath(`${BASE_URL}/${id}/items`, unitKerjaId), { arsipIds });

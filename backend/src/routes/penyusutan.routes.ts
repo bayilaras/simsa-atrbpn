@@ -1,17 +1,23 @@
 import { Router, Response } from 'express';
+import multer from 'multer';
+import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { canAccessUnit, Role } from '../config/permissions';
 import { penyusutanService } from '../services/penyusutan.service';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
-import { createPenyusutanSchema, updatePenyusutanStatusSchema, removePenyusutanItemsSchema } from '../validators/schemas';
-import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
+import { createPenyusutanSchema, removePenyusutanItemsSchema } from '../validators/schemas';
+import { advancePenyusutanSchema, recoverInactiveTransferSchema } from '../validators/penyusutan-evidence.schemas';
+import { sensitiveLimiter, uploadLimiter } from '../middlewares/rate-limiter.middleware';
 import { printTemplateService } from '../services/print-template.service';
 import { resolveEffectiveUnitKerjaId, resolveUnitKerjaId } from '../utils/resolve-unit-kerja';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 import { LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE } from '../utils/permanent-transfer-policy';
 
 const router = Router();
+const evidenceUpload = multer({ storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 2 },
+});
 
 router.use(authMiddleware);
 
@@ -177,13 +183,14 @@ router.post('/', canWriteMiddleware(), sensitiveLimiter, validateBody(createPeny
 });
 
 // PUT /api/penyusutan/:id/status - Advance workflow status
-router.put('/:id/status', canWriteMiddleware(), sensitiveLimiter, validateBody(updatePenyusutanStatusSchema), async (req: AuthRequest, res, next) => {
+router.put('/:id/status', canWriteMiddleware(), sensitiveLimiter, validateBody(advancePenyusutanSchema), async (req: AuthRequest, res, next) => {
     try {
-        const { catatan } = req.body;
+        const { catatan, executionEvidence } = req.body;
         const unitKerjaId = requireConcreteUnitScope(req, res);
         if (!unitKerjaId) return;
         const result = await penyusutanService.updateStatus(String(req.params.id), {
             catatan,
+            executionEvidence,
             user: req.user ? {
                 id: req.user.id,
                 email: req.user.email,
@@ -212,6 +219,62 @@ router.put('/:id/status', canWriteMiddleware(), sensitiveLimiter, validateBody(u
         next(error);
     }
 });
+
+router.get('/:id/execution-options', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
+    try {
+        const unitKerjaId = requireConcreteUnitScope(req, res);
+        if (!unitKerjaId || !req.user) return;
+        const data = await penyusutanService.getExecutionOptions(String(req.params.id), {
+            ...req.user, unitKerjaId: req.user.unitKerjaId || '',
+        }, unitKerjaId, allowedSecurityClassifications(req.user));
+        res.json({ success: true, data });
+    } catch (error) {
+        if (isBatchNotFound(error)) return res.status(404).json({ error: 'Batch not found' });
+        next(error);
+    }
+});
+
+router.post('/:id/evidence', canWriteMiddleware(), uploadLimiter, (req: AuthRequest, res, next) => {
+    if (req.user?.role !== 'super_admin') return res.status(403).json({ error: 'Akses pencatat pelaksanaan diperlukan.' });
+    next();
+}, evidenceUpload.single('file'), async (req: AuthRequest, res, next) => {
+    try {
+        const unitKerjaId = requireConcreteUnitScope(req, res);
+        if (!unitKerjaId || !req.user) return;
+        const archiveId = z.string().uuid().safeParse(req.body.arsipId);
+        const file = req.file;
+        const validPdf = file?.mimetype === 'application/pdf' && file.buffer.subarray(0, 4).toString('latin1') === '%PDF';
+        const validJpeg = file?.mimetype === 'image/jpeg' && file.buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]));
+        const validPng = file?.mimetype === 'image/png' && file.buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+        if (!archiveId.success || !file || !(validPdf || validJpeg || validPng)) {
+            return res.status(400).json({ error: 'Pilih arsip dan unggah bukti PDF, JPEG, atau PNG yang valid (maksimal 10 MB).' });
+        }
+        const attachment = await penyusutanService.uploadExecutionEvidence(String(req.params.id), archiveId.data, file, {
+            ...req.user, unitKerjaId: req.user.unitKerjaId || '', ipAddress: req.ip,
+        }, unitKerjaId, allowedSecurityClassifications(req.user));
+        res.status(201).json({ success: true, data: { id: attachment.id, fileName: attachment.fileName,
+            malwareScanStatus: attachment.malwareScanStatus, integrityStatus: attachment.integrityStatus },
+            message: 'Bukti masuk karantina dan dapat dipilih setelah pemeriksaan malware serta integritas selesai.' });
+    } catch (error) {
+        if (isBatchNotFound(error)) return res.status(404).json({ error: 'Batch not found' });
+        next(error);
+    }
+});
+
+router.post('/:id/recover-transfer', canWriteMiddleware(), sensitiveLimiter, validateBody(recoverInactiveTransferSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            const unitKerjaId = requireConcreteUnitScope(req, res);
+            if (!unitKerjaId || !req.user) return;
+            const data = await penyusutanService.recoverInactiveTransfer(String(req.params.id), req.body.reason, {
+                ...req.user, unitKerjaId: req.user.unitKerjaId || '', ipAddress: req.ip,
+            }, unitKerjaId, allowedSecurityClassifications(req.user));
+            res.json({ success: true, data });
+        } catch (error) {
+            if (isBatchNotFound(error)) return res.status(404).json({ error: 'Batch not found' });
+            next(error);
+        }
+    });
 
 // POST /api/penyusutan/:id/items - Add items to batch
 router.post('/:id/items', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
