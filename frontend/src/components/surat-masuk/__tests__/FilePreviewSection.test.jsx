@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { FilePreviewSection } from '../FilePreviewSection';
 import { AppConfigContext, DISABLED_FEATURES } from '@/context/app-config-context';
 
-vi.mock('@/lib/cloud-provider-config', () => ({ USE_FIREBASE_AUTH: true }));
+vi.mock('@/lib/cloud-provider-config', async (importOriginal) => ({
+    ...await importOriginal(),
+    USE_FIREBASE_AUTH: true,
+}));
 vi.mock('@/lib/firebase-client', () => ({
     getFirebaseAppCheckToken: vi.fn().mockResolvedValue('test-app-check'),
     getFirebaseLimitedUseAppCheckToken: vi.fn(),
