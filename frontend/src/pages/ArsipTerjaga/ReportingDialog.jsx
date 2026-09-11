@@ -8,7 +8,9 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 const LABELS = { draft: 'Draf tercatat', sent: 'Bukti pengiriman tercatat', received: 'Bukti penerimaan tercatat', verified: 'Bukti diverifikasi internal', cancelled: 'Dibatalkan' }
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date())
 
 export default function ReportingDialog({ open, onOpenChange, item, onSaved }) {
     const [ledger, setLedger] = useState(null)

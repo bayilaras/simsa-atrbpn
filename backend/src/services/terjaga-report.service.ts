@@ -13,6 +13,9 @@ export interface TerjagaReportingActor extends RecordUser { email?: string; ipAd
 type Executor = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const WRITERS = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff']);
 const VERIFIERS = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
+const jakartaCalendar = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
+});
 
 export async function lockTerjagaArchiveContext(tx: Executor, archiveId: string, actor: TerjagaReportingActor, mutation = true) {
     if (!actor.id) throw new ForbiddenError('Akun aktif diperlukan untuk mengakses bukti pelaporan.');
@@ -122,7 +125,7 @@ export const terjagaReportService = {
             let mirror = designation.statusPelaporan;
             if (input.action === 'send' || input.action === 'receive') {
                 if (report.status !== (input.action === 'send' ? 'draft' : 'sent')) throw new ConflictError('Urutan pelaporan harus dicatat, dikirim, lalu diterima.');
-                if (input.occurredOn < (input.action === 'send' ? report.tanggalPelaporan : report.sentOn!) || input.occurredOn > now.toISOString().slice(0, 10)) {
+                if (input.occurredOn < (input.action === 'send' ? report.tanggalPelaporan : report.sentOn!) || input.occurredOn > jakartaCalendar.format(now)) {
                     throw new ConflictError('Tanggal bukti harus berurutan dan tidak boleh di masa depan.');
                 }
                 const snapshot = await evidence(tx, input.attachmentId, designation.arsipId);

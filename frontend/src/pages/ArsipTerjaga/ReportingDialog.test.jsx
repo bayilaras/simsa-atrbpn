@@ -11,6 +11,16 @@ const open = (result) => {
 }
 beforeEach(() => vi.clearAllMocks())
 describe('reporting evidence dialog', () => {
+    it('uses the Jakarta date for evidence input after local midnight', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(new Date('2026-09-11T18:00:00Z'))
+        try {
+            open({ reports: [{ id: 'report', nomorLaporan: 'LAP-1', status: 'draft' }] })
+            const input = await screen.findByLabelText('Tanggal pengiriman')
+            expect(input).toHaveValue('2026-09-12')
+            expect(input).toHaveAttribute('max', '2026-09-12')
+        } finally { vi.useRealTimers() }
+    })
     it('creates only a draft and explains the scope of the record', async () => {
         service.createReport.mockResolvedValue({ success: true })
         open()

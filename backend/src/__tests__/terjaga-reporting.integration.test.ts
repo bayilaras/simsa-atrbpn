@@ -78,6 +78,18 @@ describe('controlled terjaga reporting', () => {
         const { rows } = await database.query<any>('SELECT status_pelaporan,status_kepatuhan FROM arsip_terjaga');
         expect(rows[0]).toEqual({ status_pelaporan: 'dicatat', status_kepatuhan: 'belum_dinilai' });
     });
+    it('accepts the current Jakarta calendar date after local midnight', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-09-11T18:00:00Z'));
+        try {
+            const report = await draft();
+            const sent = await service.transition(designationId, report.id, {
+                action: 'send', attachmentId: attachmentId(1), occurredOn: '2026-09-12', notes: 'Pengiriman pada pukul satu WIB.',
+            }, actor(1));
+            expect(sent.status).toBe('sent');
+            expect(sent.sentOn).toBe('2026-09-12');
+        } finally { vi.useRealTimers(); }
+    });
     it('requires evidence, valid order and independent verification, retaining history between cycles', async () => {
         const report = await draft();
         await expect(service.transition(designationId, report.id, { action: 'verify', notes: 'Pemeriksaan bukti dilakukan.' }, actor(2))).rejects.toThrow(/diterima/i);
