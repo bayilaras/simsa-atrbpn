@@ -53,10 +53,14 @@ CLAMAV_MAX_STREAM_BYTES=10485760
 SIMSA_BULK_OCR_ENABLED=false
 SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED=false
 SRIKANDI_ENABLED=false
-GOOGLE_OAUTH_ENABLED=false
+GOOGLE_OAUTH_ENABLED=true
 ```
 
 Flag `SIMSA_VERCEL_METADATA_ENABLED` harus tidak aktif. Simpan `DATABASE_URL` untuk `simsa_api`, `BETTER_AUTH_SECRET`, token **store Blob privat**, `MALWARE_WORKER_DATABASE_URL` untuk `simsa_worker`, dan `MALWARE_SCAN_DISPATCH_TOKEN` acak minimal 43 karakter base64url hanya pada environment Production backend. Akun API dan worker harus menunjuk database serta endpoint Neon direct yang sama. Jangan memberikan kredensial migrator/owner kepada runtime. `FRONTEND_URL` dan `BETTER_AUTH_URL` menunjuk origin frontend HTTPS yang sama; frontend memproksi API ke backend dan tidak menerima rahasia database/worker melalui `VITE_*`.
+
+Login Google tetap menggunakan **Better Auth**. Pertahankan `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET` yang valid pada backend, lalu aktifkan `GOOGLE_OAUTH_ENABLED=true` dan redeploy Production. Daftarkan **`https://simsa-frontend.vercel.app/api/auth/callback/google`** sebagai Authorized redirect URI pada klien OAuth Google yang sama; `FRONTEND_URL` dan `BETTER_AUTH_URL` tetap `https://simsa-frontend.vercel.app`. Tidak diperlukan kredensial Google pada frontend. Tombol mengikuti `/api/capabilities` saat halaman dimuat, sehingga halaman lama perlu dimuat ulang setelah aktivasi. Ikuti [konfigurasi Google Better Auth](https://better-auth.com/docs/authentication/google) ketika mengganti domain.
+
+Google hanya mengautentikasi pengguna yang sudah dibuat administrator SIMSA dengan email yang sama. Pendaftaran publik dan penggabungan akun dengan email berbeda tetap ditolak. Uji pengalihan ke Google serta callback sampai sesi SIMSA terbentuk; tampilnya tombol atau halaman pemilihan akun Google saja belum membuktikan login selesai. Konfigurasi tahap metadata tanpa OAuth di bawah adalah pilihan terpisah dan tidak menggantikan konfigurasi Production ini.
 
 Jika proyek masih memiliki `BLOB_READ_WRITE_TOKEN` dari store lama, sambungkan store privat dengan prefix `SIMSA_PRIVATE_BLOB`, khusus Production, dan aktifkan read/write token pada koneksi. Handler API dan worker memilih `SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN` sebelum mengimpor storage; alias yang kosong atau rusak ditolak tanpa memakai token lama sebagai pengganti. Preview membuang alias tanpa membaca nilainya. Store lama dan variabelnya tetap tersedia di pengaturan Vercel; penyesuaian hanya berlaku pada environment proses rilis baru.
 

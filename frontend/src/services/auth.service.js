@@ -69,10 +69,12 @@ export function createAuthService({
                     return await exchangeFirebaseUser(user);
                 }
 
-                return await legacyClient.signIn.social({
+                const result = await legacyClient.signIn.social({
                     provider: 'google',
                     callbackURL: window.location.origin,
                 });
+                if (result?.error) throw new Error(result.error.message || 'Login Google gagal. Silakan coba lagi.');
+                return result;
             } catch (error) {
                 console.error('Google sign in failed:', error);
                 throw error;
