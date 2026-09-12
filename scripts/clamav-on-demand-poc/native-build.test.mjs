@@ -3,10 +3,41 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 import { compileNativeProbeAdapter } from './native-build.mjs';
 import { buildClamavAssets } from './build.mjs';
 import { createPocHandler } from './api/index.mjs';
+
+test('bundled backend scanner resolves immutable assets beside its package, independently of cwd', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'simsa-native-package-test-'));
+    const requireBackend = createRequire(new URL('../../backend/package.json', import.meta.url));
+    const { build } = await import(pathToFileURL(requireBackend.resolve('esbuild')).href);
+    const entry = join(directory, 'backend/dist-vercel/workers/malware-scan-on-demand.js');
+    try {
+        await build({ entryPoints: [fileURLToPath(new URL('../../backend/src/services/native-clamav.service.ts', import.meta.url))],
+            outfile: entry, bundle: true, packages: 'external', platform: 'node', format: 'esm', target: 'node24' });
+        const { NativeClamAvScanner, nativeClamAvAssetsDirectory } = await import(pathToFileURL(entry).href);
+        const now = Date.now();
+        const evidence = { engineVersion: '1.5.4', definitionsVerifiedAt: new Date(now - 1000).toISOString(),
+            definitionsExpiresAt: new Date(now - 1000 + 86400000).toISOString(), definitionsDigest: 'a'.repeat(64),
+            databases: ['main', 'daily', 'bytecode'].map(name => ({ name, version: 1, sha256: 'b'.repeat(64), signatureSha256: 'c'.repeat(64) })) };
+        let observed;
+        const scanner = new NativeClamAvScanner({ assetsDirectory: nativeClamAvAssetsDirectory() }, {
+            definitions: { acquire: async () => ({ directory: '/verified-definitions', evidence }) },
+            run: async (command, _args, options) => {
+                observed = { command, assets: options.assetsDirectory };
+                return { code: 0, stdout: 'payload: OK\nScanned files: 1\nInfected files: 0\n', stderr: '', peakCombinedRssBytes: 1000 };
+            },
+        });
+        await scanner.healthCheck();
+        assert.equal(observed.assets, join(directory, 'backend/native-clamav-assets'));
+        assert.equal(observed.command, join(directory, 'backend/native-clamav-assets/bin/clamscan'));
+        assert.deepEqual(scanner.getEngineEvidence(), evidence);
+        const worker = await readFile(new URL('../../backend/src/workers/malware-scan-on-demand.ts', import.meta.url), 'utf8');
+        assert.match(worker, /assetsDirectory:\s*nativeClamAvAssetsDirectory\(import\.meta\.url\)/);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 test('native POC compiles actual backend modules without importing app, credentials, or downloading an engine', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'simsa-native-compile-test-'));

@@ -122,4 +122,15 @@ describe('native ClamAV fail-closed stream boundary', () => {
         expect(instance.getEngineEvidence()).toBeNull();
         await instance.healthCheck(); expect(instance.getEngineEvidence()).toEqual(evidence);
     });
+    it('reports a static definitions stage and safe OS code without exposing provider details', async () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const run = vi.fn(async () => clean);
+        const instance = new NativeClamAvScanner({ assetsDirectory: '/assets' }, { run,
+            definitions: { acquire: async () => { throw Object.assign(new Error('secret-token /private/source.pdf'), { code: 'ENOENT' }); }, getEvidence: () => null } });
+        await expect(instance.healthCheck()).rejects.toMatchObject({ code: 'scanner_error' });
+        expect(log).toHaveBeenCalledExactlyOnceWith('Native antivirus execution failed', { stage: 'definitions', errorCode: 'ENOENT' });
+        expect(JSON.stringify(log.mock.calls)).not.toContain('secret-token');
+        expect(JSON.stringify(log.mock.calls)).not.toContain('/private/');
+        expect(run).not.toHaveBeenCalled(); expect(instance.getEngineEvidence()).toBeNull();
+    });
 });

@@ -10,6 +10,18 @@ import { NativeClamAvDefinitions, NATIVE_CLAMAV_VERSION, nativeWorkspace, remove
 
 export const NATIVE_CLAMAV_LIMITS = Object.freeze({ maxBytes: 10 * 1024 * 1024, maxLifetimeMs: 200_000, maxCombinedRssBytes: 1800 * 1024 * 1024 });
 const failure = () => new MalwareScannerError('scanner_error', 'Native antivirus did not complete a verified scan', true);
+const diagnosticCodes = new Set(['ENOENT', 'EACCES', 'EPERM', 'scanner_error', 'timeout', 'size_limit', 'stream_error']);
+type NativeExecutionStage = 'workspace' | 'input' | 'definitions' | 'scan_command' | 'scan_verdict' | 'evidence';
+function reportNativeFailure(stage: NativeExecutionStage, error: unknown): void {
+    const code = error instanceof Error ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
+    console.error('Native antivirus execution failed', { stage,
+        ...(typeof code === 'string' && diagnosticCodes.has(code) ? { errorCode: code } : {}) });
+}
+
+/** Source and isolated worker bundles both sit two levels below backend. */
+export function nativeClamAvAssetsDirectory(moduleUrl = import.meta.url): string {
+    return fileURLToPath(new URL('../../native-clamav-assets/', moduleUrl)).replace(/[\\/]$/, '');
+}
 function healthPdf(): Buffer {
     const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
         '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>', '<< /Length 3 >>\nstream\nq Q\nendstream'];
@@ -146,11 +158,13 @@ export class NativeClamAvScanner implements MalwareScanner {
         signal.addEventListener('abort', destroyInput, { once: true });
         let work: string | null = null;
         let snapshot: NativeDefinitionSnapshot | null = null;
+        let stage: NativeExecutionStage = 'workspace';
         try {
             signal.throwIfAborted();
             if (knownSizeBytes != null && (!Number.isSafeInteger(knownSizeBytes) || knownSizeBytes < 1 || knownSizeBytes > this.maxBytes)) throw new MalwareScannerError('size_limit', 'Antivirus input size is invalid', false);
             work = await nativeWorkspace('scan');
             const file = join(work, 'payload.bin');
+            stage = 'input';
             if (stream) {
                 const handle = await open(file, 'wx', 0o600); let bytes = 0;
                 try {
@@ -169,18 +183,23 @@ export class NativeClamAvScanner implements MalwareScanner {
                 await writeFile(file, healthPdf(), { flag: 'wx', mode: 0o600 });
             }
             signal.throwIfAborted();
+            stage = 'definitions';
             snapshot = await this.definitions.acquire(deadlineAtMs, signal);
+            stage = 'scan_command';
             const result = await this.run(join(this.assetsDirectory, 'bin/clamscan'), [
                 `--database=${snapshot.directory}`, `--cvdcertsdir=${join(this.assetsDirectory, 'etc/certs')}`, '--fips-limits',
                 '--max-filesize=11M', '--max-scansize=30M', '--max-recursion=10', '--max-files=100', '--max-scantime=60000',
                 '--alert-exceeds-max=yes', '--alert-encrypted=yes', `--tempdir=${work}`, file,
             ], this.commandOptions(work, deadlineAtMs, signal));
             signal.throwIfAborted();
+            stage = 'scan_verdict';
             const verdict = assessNativeScan(result);
+            stage = 'evidence';
             if (!isCurrentMalwareEngineEvidence(snapshot.evidence) || snapshot.evidence.engineVersion !== NATIVE_CLAMAV_VERSION || Date.now() >= deadlineAtMs) throw failure();
             this.evidence = structuredClone(snapshot.evidence);
             return { ...verdict, engineEvidence: structuredClone(snapshot.evidence) };
         } catch (error) {
+            reportNativeFailure(stage, error);
             stream?.destroy(); this.evidence = null;
             if (error instanceof MalwareScannerError) throw error;
             throw failure();
