@@ -10,7 +10,7 @@ Alamat aplikasi: **https://simsa-frontend.vercel.app**. Backend: **https://simsa
 
 | Bagian | Hasil |
 | --- | --- |
-| Vercel Production | Frontend `AexUrmK7MJuQfKvoznVxJRBJ4pNc` (sumber `11959d1`) dan backend `CWnJz48FByoFLTcQtf62bZTTkX6n` (sumber `087c8fe`) aktif pada domain utama. Backend dideploy ulang untuk mengaktifkan Google OAuth; pemeriksaan readiness 12 September 2026 pukul 12.12 WIB memberi HTTP 200. Manifest frontend HTTP 200, mode `full`, API same-origin. |
+| Vercel Production | Frontend `Aqd25jwGpT7N3c4tJP1yzEpG4J5s` (sumber `2b686a9`) dan backend `CWnJz48FByoFLTcQtf62bZTTkX6n` (sumber `087c8fe`) aktif pada domain utama. Backend dideploy ulang untuk mengaktifkan Google OAuth. Pemeriksaan terakhir 12 September 2026 pukul 12.21 WIB: health/readiness dan manifest HTTP 200, mode `full`, Better Auth, storage privat serta API same-origin. Bundle publik memuat penanganan error Google yang baru. |
 | Neon baru | PostgreSQL 18, **39 migrasi** sudah diterapkan dan diverifikasi melalui akun runtime. Administrator awal serta login antivirus `simsa_worker` terpisah sudah dibuat; verifikasi langsung worker dan API lulus. Grant tabel tidak diperluas. Data lama belum diimpor. |
 | Kompatibilitas Vercel baru | Mode `full`, API same-origin, Better Auth dan Vercel Blob privat aktif. Masalah interoperabilitas ESM Node 24 serta lokasi aset native sudah diperbaiki dan diverifikasi pada fungsi Production. Isolasi Preview tetap berlaku. |
 | Pemeriksaan login cloud | **13/13 pemeriksaan lulus**: origin, cookie Secure/HttpOnly, penolakan akses anonim, login, akses unit, logout dan penolakan sesi lama. Login browser serta pencatatan surat juga berhasil. |
@@ -42,6 +42,8 @@ Kredensial **Production proyek Vercel `simsa-backend`** yang telah dipasang: `DA
 
 ## Bukti pengujian kode
 
+Pemulihan Google lulus **17 tes** konfigurasi/provider backend dan **8 tes** layanan autentikasi frontend, termasuk empat kasus Google. Lint terarah serta review independen lulus. Build Production frontend pada Vercel lulus dalam 49 detik. Uji browser pada origin staging yang tidak diizinkan menampilkan pesan penolakan dan memulihkan tombol; pembatasan origin tidak dilonggarkan. Setelah promosi domain, lima pemeriksaan manifest, capability Google, bundle error, health dan readiness lulus. Uji ini tidak menggantikan penyelesaian login Google oleh pengguna.
+
 Perbaikan transaksi audit lulus **40/40 tes** SQL dan unit, termasuk reproduksi izin worker tanpa `SELECT` audit serta rollback audit atomik. Perbaikan supervisor native lulus **35/35 tes**, termasuk proses cepat yang selesai sebelum pengukuran memori, kegagalan pengukuran, batas memori dan tenggat. Typecheck serta build backend Vercel pada sumber `087c8fe` lulus, dan dua peninjauan independen tidak menemukan penghalang rilis.
 
 Rilis antivirus lulus 65 pemeriksaan gate/dispatch/recovery, 24 pemeriksaan rute PDF sumber instrumen, 31 pemeriksaan status karantina/akses berkas, serta 34 pemeriksaan UI pemindaian. Konfigurasi, readiness dan transaksi worker lulus 99 pemeriksaan terarah, termasuk 10 pemeriksaan SQL; role/backup worker lulus sembilan tes. Perbaikan diagnosis runtime lulus 96 tes Vitest dan enam tes Node; aset native lulus 31 tes terarah, dan interoperabilitas Node lulus dua tes nyata. Typecheck serta build backend/frontend lulus. Artefak frontend mencatat `syntheticDataOnly=false` dan API same-origin. Bukti ini dibedakan dari uji cloud di tabel di atas.
@@ -58,6 +60,8 @@ Laporan tersanitasi tersedia pada workspace operator dan tidak dilacak Git:
 - `output/production-smoke/file-acceptance-1789184240316.json`: alur berkas 16/16.
 - `output/production-smoke/private-object-acceptance-1789184528136.json`: Blob langsung anonim ditolak.
 - `output/production-smoke/attachment-readonly-proof.json`: metadata dan audit 8/8.
+- `output/google-login-production-proof.json`: aktivasi Google dan pengalihan browser sampai pemilihan akun.
+- `output/google-login-frontend-production-proof.json`: lima pemeriksaan cloud setelah frontend Google dipromosikan.
 
 PDF sintetis berukuran 10.485.760 byte memiliki SHA-256 `ca87828927753d05a7f5e522544a4a066ba0d600e15f3b9b163df513f29bfa62`. Percobaan sebelumnya yang gagal tetap disimpan sebagai riwayat diagnosis. Pengujian pratinjau memverifikasi respons HTTP dan byte PDF; tampilan PDF bawaan bergantung pada dukungan browser.
 
