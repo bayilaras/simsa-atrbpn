@@ -86,6 +86,56 @@ describe('native ClamAV fail-closed stream boundary', () => {
         child.emit('close', 0);
         expect(await pending).toMatchObject({ code: 'scanner_error' });
     });
+    it.each(['deadline', 'rss_limit', 'rss_unavailable', 'missing_measurement', 'spawn_failure', 'invalid_control', 'child_exit'])(
+        'preserves the bounded supervisor reason %s only after the supervisor closes', async reason => {
+            const child = Object.assign(new EventEmitter(), { connected: true, send: vi.fn((_message, callback) => callback?.(null)), kill: vi.fn() });
+            const run = createNativeCommandRunner(vi.fn(() => child) as unknown as typeof fork);
+            let settled = false;
+            const observed = run('/assets/bin/sigtool', [], { assetsDirectory: '/assets', workDirectory: '/tmp', deadlineAtMs: Date.now() + 10000, maxCombinedRssBytes: 500 })
+                .catch(error => { settled = true; return error; });
+            child.emit('message', { ok: false, reason });
+            await Promise.resolve(); expect(settled).toBe(false);
+            child.emit('close', 1);
+            expect(await observed).toMatchObject({ code: 'scanner_error', nativeReason: reason });
+        });
+    it('discards arbitrary or accessor-backed supervisor reason values', async () => {
+        for (const reason of ['secret-token /private/source.pdf', { path: '/private/source.pdf' }]) {
+            const child = Object.assign(new EventEmitter(), { connected: true, send: vi.fn((_message, callback) => callback?.(null)), kill: vi.fn() });
+            const run = createNativeCommandRunner(vi.fn(() => child) as unknown as typeof fork);
+            const observed = run('/assets/bin/sigtool', [], { assetsDirectory: '/assets', workDirectory: '/tmp', deadlineAtMs: Date.now() + 10000, maxCombinedRssBytes: 500 }).catch(error => error);
+            child.emit('message', { ok: false, reason }); child.emit('close', 1);
+            const error = await observed;
+            expect(error).toMatchObject({ code: 'scanner_error', nativeReason: 'invalid_result' });
+            expect(JSON.stringify(error)).not.toContain('private'); expect(JSON.stringify(error)).not.toContain('secret-token');
+        }
+        const child = Object.assign(new EventEmitter(), { connected: true, send: vi.fn((_message, callback) => callback?.(null)), kill: vi.fn() });
+        const run = createNativeCommandRunner(vi.fn(() => child) as unknown as typeof fork);
+        const observed = run('/assets/bin/sigtool', [], { assetsDirectory: '/assets', workDirectory: '/tmp', deadlineAtMs: Date.now() + 10000, maxCombinedRssBytes: 500 }).catch(error => error);
+        const getter = vi.fn(() => { throw new Error('secret-token'); });
+        child.emit('message', Object.defineProperty({ ok: false }, 'reason', { get: getter })); child.emit('close', 1);
+        expect(await observed).toMatchObject({ nativeReason: 'invalid_result' }); expect(getter).not.toHaveBeenCalled();
+    });
+    it('logs only the allowlisted supervisor reason at the definitions boundary', async () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const instance = new NativeClamAvScanner({ assetsDirectory: '/assets' }, { run: vi.fn(async () => clean),
+            definitions: { acquire: async () => { throw Object.assign(new Error('secret-token /private/source.pdf'), { code: 'scanner_error', nativeReason: 'missing_measurement' }); }, getEvidence: () => null } });
+        await expect(instance.healthCheck()).rejects.toMatchObject({ code: 'scanner_error' });
+        expect(log).toHaveBeenCalledExactlyOnceWith('Native antivirus execution failed', { stage: 'definitions', errorCode: 'scanner_error', reason: 'missing_measurement' });
+        expect(JSON.stringify(log.mock.calls)).not.toContain('secret-token'); expect(JSON.stringify(log.mock.calls)).not.toContain('/private/');
+    });
+    it.each([0, 1])('classifies supervisor exit %i without a result and never accepts it', async code => {
+        const child = Object.assign(new EventEmitter(), { connected: true, send: vi.fn((_message, callback) => callback?.(null)), kill: vi.fn() });
+        const run = createNativeCommandRunner(vi.fn(() => child) as unknown as typeof fork);
+        const observed = run('/assets/bin/sigtool', [], { assetsDirectory: '/assets', workDirectory: '/tmp', deadlineAtMs: Date.now() + 10000, maxCombinedRssBytes: 500 }).catch(error => error);
+        child.emit('close', code);
+        expect(await observed).toMatchObject({ code: 'scanner_error', nativeReason: code === 0 ? 'missing_result' : 'child_exit' });
+    });
+    it('classifies a synchronous supervisor spawn error without copying its details', async () => {
+        const run = createNativeCommandRunner(vi.fn(() => { throw new Error('secret-token /private/supervisor'); }) as unknown as typeof fork);
+        const error = await run('/assets/bin/sigtool', [], { assetsDirectory: '/assets', workDirectory: '/tmp', deadlineAtMs: Date.now() + 10000, maxCombinedRssBytes: 500 }).catch(error => error);
+        expect(error).toMatchObject({ code: 'scanner_error', nativeReason: 'spawn_failure' });
+        expect(error.message).not.toContain('secret-token'); expect(JSON.stringify(error)).not.toContain('/private/');
+    });
     it('bounds a stalled stream by the same total deadline and does not start any process', async () => {
         const run = vi.fn(async () => clean);
         const instance = new NativeClamAvScanner({ assetsDirectory: '/assets', timeoutMs: 20 }, { run, definitions: { acquire: async () => ({ directory: '/defs', evidence }), getEvidence: () => evidence } });

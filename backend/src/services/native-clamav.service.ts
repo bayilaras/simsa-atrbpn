@@ -9,13 +9,25 @@ import { MalwareScannerError, isCurrentMalwareEngineEvidence, type MalwareScanne
 import { NativeClamAvDefinitions, NATIVE_CLAMAV_VERSION, nativeWorkspace, removeNativeWorkspace, type NativeCommandResult, type NativeCommandRunner, type NativeCommandOptions, type NativeDefinitionStore, type NativeDefinitionSnapshot } from './native-clamav-definitions.js';
 
 export const NATIVE_CLAMAV_LIMITS = Object.freeze({ maxBytes: 10 * 1024 * 1024, maxLifetimeMs: 200_000, maxCombinedRssBytes: 1800 * 1024 * 1024 });
-const failure = () => new MalwareScannerError('scanner_error', 'Native antivirus did not complete a verified scan', true);
+const nativeFailureReasons = ['deadline', 'cancelled', 'rss_limit', 'rss_unavailable', 'missing_measurement', 'spawn_failure',
+    'invalid_control', 'invalid_executable', 'watchdog_failure', 'output_limit', 'child_exit', 'invalid_result', 'missing_result'] as const;
+type NativeFailureReason = typeof nativeFailureReasons[number];
+function nativeFailureReason(value: unknown, property: string): NativeFailureReason | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const reason = Object.getOwnPropertyDescriptor(value, property)?.value;
+    return typeof reason === 'string' && (nativeFailureReasons as readonly string[]).includes(reason) ? reason as NativeFailureReason : undefined;
+}
+const failure = (reason?: NativeFailureReason) => Object.assign(
+    new MalwareScannerError('scanner_error', 'Native antivirus did not complete a verified scan', true),
+    reason ? { nativeReason: reason } : {},
+);
 const diagnosticCodes = new Set(['ENOENT', 'EACCES', 'EPERM', 'scanner_error', 'timeout', 'size_limit', 'stream_error']);
 type NativeExecutionStage = 'workspace' | 'input' | 'definitions' | 'scan_command' | 'scan_verdict' | 'evidence';
 function reportNativeFailure(stage: NativeExecutionStage, error: unknown): void {
     const code = error instanceof Error ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
+    const reason = nativeFailureReason(error, 'nativeReason');
     console.error('Native antivirus execution failed', { stage,
-        ...(typeof code === 'string' && diagnosticCodes.has(code) ? { errorCode: code } : {}) });
+        ...(typeof code === 'string' && diagnosticCodes.has(code) ? { errorCode: code } : {}), ...(reason ? { reason } : {}) });
 }
 
 /** Source and isolated worker bundles both sit two levels below backend. */
@@ -51,7 +63,7 @@ export function assessNativeScan(result: NativeCommandResult): MalwareScanVerdic
 export function createNativeCommandRunner(launch: typeof fork = fork): NativeCommandRunner {
     return async (command, args, options) => {
         options.signal?.throwIfAborted();
-        if (options.deadlineAtMs <= Date.now() || options.deadlineAtMs > Date.now() + NATIVE_CLAMAV_LIMITS.maxLifetimeMs) throw failure();
+        if (options.deadlineAtMs <= Date.now() || options.deadlineAtMs > Date.now() + NATIVE_CLAMAV_LIMITS.maxLifetimeMs) throw failure('deadline');
         const sourceMode = import.meta.url.endsWith('.ts');
         const name = `native-clamav-process.${sourceMode ? 'ts' : 'js'}`;
         const normal = new URL(`../workers/${name}`, import.meta.url);
@@ -67,15 +79,19 @@ export function createNativeCommandRunner(launch: typeof fork = fork): NativeCom
                 execArgv: [...(sourceMode ? ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href] : []), '--max-old-space-size=96'],
                 stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
             };
-            const child = launch(fileURLToPath(entry), [], launchOptions);
+            let child: ReturnType<typeof fork>;
+            try { child = launch(fileURLToPath(entry), [], launchOptions); }
+            catch { reject(failure('spawn_failure')); return; }
             let result: NativeCommandResult | null = null;
             let stopped = false;
+            let reason: NativeFailureReason | undefined;
             let fallback: ReturnType<typeof setTimeout> | undefined;
             const killGroup = () => {
                 if (child.pid && process.platform !== 'win32') { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* Already gone. */ } }
                 child.kill('SIGKILL');
             };
-            const stop = () => {
+            const stop = (cause: NativeFailureReason) => {
+                reason ??= cause;
                 if (stopped) return; stopped = true;
                 if (child.connected) { try { child.send({ cancel: true }, () => undefined); } catch { killGroup(); } }
                 else killGroup();
@@ -83,18 +99,19 @@ export function createNativeCommandRunner(launch: typeof fork = fork): NativeCom
                 // This fallback kills the entire owned group, never just Node.
                 fallback = setTimeout(killGroup, 250);
             };
-            const timer = setTimeout(stop, Math.max(1, options.deadlineAtMs - Date.now()));
-            const onAbort = () => stop();
-            child.once('error', stop);
+            const timer = setTimeout(() => stop('deadline'), Math.max(1, options.deadlineAtMs - Date.now()));
+            const onAbort = () => stop('cancelled');
+            child.once('error', () => stop('spawn_failure'));
             child.on('message', (value: unknown) => {
                 if (stopped) return;
                 const message = value as { ok?: unknown; result?: NativeCommandResult } | null;
+                if (message?.ok === false) { stop(nativeFailureReason(message, 'reason') ?? 'invalid_result'); return; }
                 const candidate = message?.result;
                 if (message?.ok !== true || result || !candidate || !Number.isInteger(candidate.code)
                     || typeof candidate.stdout !== 'string' || typeof candidate.stderr !== 'string'
                     || Buffer.byteLength(candidate.stdout) > 65536 || Buffer.byteLength(candidate.stderr) > 65536
                     || !Number.isFinite(candidate.peakCombinedRssBytes) || candidate.peakCombinedRssBytes <= 0
-                    || candidate.peakCombinedRssBytes > options.maxCombinedRssBytes) { stop(); return; }
+                    || candidate.peakCombinedRssBytes > options.maxCombinedRssBytes) { stop('invalid_result'); return; }
                 result = candidate;
             });
             child.once('close', code => {
@@ -103,12 +120,14 @@ export function createNativeCommandRunner(launch: typeof fork = fork): NativeCom
                 // a residual helper cannot outlive the completed supervisor.
                 killGroup();
                 if (!stopped && code === 0 && result) accept(result);
-                else reject(failure());
+                else reject(failure(reason ?? (code === 0 && !result ? 'missing_result' : 'child_exit')));
             });
             options.signal?.addEventListener('abort', onAbort, { once: true });
-            if (options.signal?.aborted) stop();
-            else child.send({ command, args, assetsDirectory: options.assetsDirectory, workDirectory: options.workDirectory,
-                deadlineAtMs: options.deadlineAtMs, maxCombinedRssBytes: options.maxCombinedRssBytes }, error => { if (error) stop(); });
+            if (options.signal?.aborted) stop('cancelled');
+            else try {
+                child.send({ command, args, assetsDirectory: options.assetsDirectory, workDirectory: options.workDirectory,
+                    deadlineAtMs: options.deadlineAtMs, maxCombinedRssBytes: options.maxCombinedRssBytes }, error => { if (error) stop('invalid_control'); });
+            } catch { stop('invalid_control'); }
         });
     };
 }
