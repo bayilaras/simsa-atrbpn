@@ -67,6 +67,10 @@ Upload yang telah commit membangunkan worker melalui `waitUntil`. Antrean tetap 
 
 Build Production native memasukkan paket ClamAV yang dipatok dan diverifikasi, sertifikat serta tiga definisi resmi. Proses terisolasi membatasi waktu, memori, output dan environment. Definisi diverifikasi ulang oleh Freshclam setelah 24 jam; kegagalan pembaruan mempertahankan karantina. Bukti readiness memakai verifikasi engine/definisi nyata, sehingga idle worker tidak diwajibkan mengirim heartbeat setiap menit. Uji sintetis terpisah tidak mengubah status berkas aplikasi dan tidak menggantikan uji login–unggah–pindai–unduh privat di Production.
 
+Untuk kegagalan startup atau pemindaian, log menjawab dua pertanyaan: tahap mana yang gagal, dan apakah penyebabnya konfigurasi, impor paket, koneksi database, atau engine. Buka Runtime Logs pada deployment yang melayani request, lalu pilih Request ID dari respons gagal. Log bootstrap memuat `stage` serta tipe/kode/alasan yang berasal dari daftar tetap; pesan error, stack lengkap, URL database, token, dan isi dokumen tidak dicatat. Respons publik tetap generik.
+
+Jika `/health` mengembalikan `application_initialization_failed`, periksa log `application_import` dan konfigurasi atau paket yang ditunjuk kode terkontrol. Jika worker mengembalikan `unavailable`, periksa tahap `environment_validation`, `dependency_import`, `database_connect`, `role_check`, `queue_process`, `engine_health`, atau `heartbeat`. Koreksi penyebab lalu jalankan ulang pemeriksaan; jangan mengubah status karantina secara manual atau menonaktifkan perlindungan akses untuk mengatasi error.
+
 ## Tahap metadata dengan login nyata
 
 Tahap terbatas ini menyimpan data nyata melalui Better Auth/PostgreSQL dan tetap memakai mode `full/internal`. Unggah/unduh berkas, OCR, dan integrasi SRIKANDI tidak dinyatakan aktif. Ini tidak memenuhi permintaan arsip digital lengkap hingga infrastrukturnya tersedia.

@@ -1,3 +1,5 @@
+import { runtimeFailureDetails } from './runtime-diagnostics.mjs';
+
 const PREVIEW_ENABLE_FLAG = 'SIMSA_PREVIEW_ENABLED';
 
 const REQUIRED_PREVIEW_ENVIRONMENT = Object.freeze({
@@ -354,12 +356,9 @@ export function createUnprovisionedPreviewHandler(now = () => new Date()) {
 }
 
 function createInitializationErrorHandler(error) {
-    const candidateType = error instanceof Error ? error.name : 'UnknownError';
-    const errorType = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(candidateType)
-        ? candidateType
-        : 'Error';
     console.error('FATAL: Failed to initialize Express app', {
-        errorType,
+        stage: 'application_import',
+        ...runtimeFailureDetails(error),
     });
     return function initializationErrorHandler(request, response) {
         writeJson(response, 503, {
