@@ -1,6 +1,7 @@
 import { initializeVercelHandler } from './preview-runtime.mjs';
 import { validateNeonTarget } from '../../scripts/neon-target.mjs';
 import { cloudMetadataEnvironment } from '../../scripts/cloud-metadata-config.mjs';
+import { normalizeVercelPrivateBlobAlias, stripPreviewPrivateBlobAliases } from './vercel-private-blob.mjs';
 
 const resources = ['DATABASE_URL', 'BETTER_AUTH_SECRET', 'BETTER_AUTH_URL', 'FRONTEND_URL'];
 const previewDisabledMail = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER',
@@ -70,6 +71,11 @@ export function configureVercelMetadata(source) {
 }
 
 export async function initializeSimsaVercelHandler({ environment = process.env, loadApp, now } = {}) {
+    stripPreviewPrivateBlobAliases(environment);
+    const loadSelectedApp = async () => {
+        normalizeVercelPrivateBlobAlias(environment);
+        return loadApp();
+    };
     // Only the separate, authenticated worker function may activate this login.
     delete environment.MALWARE_WORKER_DATABASE_URL;
     delete environment.PREVIEW_MALWARE_WORKER_DATABASE_URL;
@@ -79,7 +85,7 @@ export async function initializeSimsaVercelHandler({ environment = process.env, 
     }
     const optIn = environment.SIMSA_VERCEL_METADATA_ENABLED;
     if (optIn === undefined || optIn === '' || optIn === 'false') {
-        return initializeVercelHandler({ environment, loadApp, now });
+        return initializeVercelHandler({ environment, loadApp: loadSelectedApp, now });
     }
     try {
         const configured = configureVercelMetadata(environment);
@@ -91,7 +97,7 @@ export async function initializeSimsaVercelHandler({ environment = process.env, 
             // credentials. This restricted profile does not provision email.
             for (const key of previewDisabledMail) environment[key] = '';
         }
-        const module = await loadApp();
+        const module = await loadSelectedApp();
         if (typeof module?.default !== 'function') throw new Error('Missing request handler');
         return module.default;
     } catch {
