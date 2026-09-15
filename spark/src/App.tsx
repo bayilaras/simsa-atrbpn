@@ -22,12 +22,14 @@ import {
 import type { Firestore } from "firebase/firestore";
 import { SparkRepository } from "./lib/repository";
 import {
+  DomainValidationError,
   exportMetadataCsv,
   toRecordInput,
   validateRecordInput,
   type Classification,
   type HistoryEntry,
   type RecordCursor,
+  type RecordCreateAttempt,
   type RecordInput,
   type RecordRow,
   type SparkProfile,
@@ -68,14 +70,20 @@ function isPermissionError(error: unknown) {
     "firestore/permission-denied",
   ].includes(codeOf(error));
 }
-function operationMessage(error: unknown) {
+function operationMessage(error: unknown, creating = false) {
+  if (error instanceof DomainValidationError && error.field === "createAttempt")
+    return `${error.message} Jangan membuat ulang metadata sebelum memeriksa daftar dan riwayat.`;
   if (
     error instanceof Error &&
     ["RecordConflictError", "ArchivedRecordError"].includes(error.name)
   )
     return "Data sudah berubah atau diarsipkan oleh pengguna lain. Muat ulang halaman, lalu periksa versi terbaru.";
   if (codeOf(error) === "unavailable")
-    return "Koneksi ke database belum tersedia. Perubahan belum dikonfirmasi; periksa koneksi dan muat ulang.";
+    return creating
+      ? "Koneksi ke database belum tersedia. Hasil simpan belum dikonfirmasi; periksa koneksi lalu coba simpan lagi di dialog ini."
+      : "Koneksi ke database belum tersedia. Perubahan belum dikonfirmasi; periksa koneksi dan muat ulang.";
+  if (creating)
+    return "Hasil simpan belum dikonfirmasi. Coba simpan lagi dengan isian awal di dialog ini sebelum membuat ulang metadata.";
   return "Operasi belum berhasil. Tidak ada konfirmasi penyimpanan. Muat ulang data sebelum mencoba kembali.";
 }
 function dateLabel(value: string) {
@@ -212,6 +220,7 @@ function RecordEditor({
   locations,
   busy,
   error,
+  retryInput,
   onClose,
   onSave,
 }: {
@@ -220,6 +229,7 @@ function RecordEditor({
   locations: StorageLocation[];
   busy: boolean;
   error: string;
+  retryInput?: RecordInput;
   onClose(): void;
   onSave(input: RecordInput): Promise<void>;
 }) {
@@ -227,6 +237,7 @@ function RecordEditor({
     record ? toRecordInput(record) : { ...emptyInput },
   );
   const [validation, setValidation] = useState("");
+  const retryLocked = Boolean(!record && error && retryInput);
   const field = (name: keyof RecordInput, value: string) =>
     setInput((current) => ({ ...current, [name]: value }));
   async function submit(event: FormEvent) {
@@ -269,8 +280,19 @@ function RecordEditor({
       {(error || validation) && (
         <Notice kind="error">{error || validation}</Notice>
       )}
+      {!record && error && retryInput && (
+        <Notice>
+          <p>
+            Isian percobaan awal dikunci. Coba simpan kembali di dialog ini untuk
+            memeriksa hasil dengan identitas percobaan yang sama. Menutup dialog
+            atau memuat ulang halaman mengakhiri identitas percobaan, bukan
+            membatalkan data yang mungkin sudah tersimpan. Periksa daftar dan
+            riwayat sebelum membuat ulang metadata.
+          </p>
+        </Notice>
+      )}
       <form onSubmit={submit} className="record-form">
-        <fieldset disabled={busy}>
+        <fieldset disabled={busy || retryLocked}>
           <label>
             Judul arsip
             <input
@@ -456,6 +478,9 @@ export default function App({
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
+  const [logoutStatus, setLogoutStatus] = useState<
+    "idle" | "pending" | "failed"
+  >("idle");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [email, setEmail] = useState("");
@@ -478,6 +503,8 @@ export default function App({
   const [refresh, setRefresh] = useState(0);
   const [view, setView] = useState<View>("records");
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogReady, setCatalogReady] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [dataError, setDataError] = useState("");
   const [accessError, setAccessError] = useState("");
@@ -494,6 +521,12 @@ export default function App({
   const recordRequest = useRef(0);
   const historyRequest = useRef(0);
   const authRequest = useRef(0);
+  const logoutIntent = useRef(false);
+  const logoutPhase = useRef<"idle" | "pending" | "failed">("idle");
+  const createAttempt = useRef<{
+    token: RecordCreateAttempt;
+    input: RecordInput;
+  } | null>(null);
   const repository = useMemo(
     () =>
       services && !configError && session
@@ -504,11 +537,14 @@ export default function App({
   const active = Boolean(
     session?.verified && profile?.active && repository && !accessError,
   );
-  const writable = active && profile?.role !== "viewer";
+  const canManage = active && profile?.role !== "viewer";
+  const writable = canManage && catalogReady;
+  const loginDisabled = authBusy || logoutStatus !== "idle";
 
   const clearPage = useCallback(() => {
     recordRequest.current++;
     setRecords([]);
+    setRecordsLoading(false);
     setNextCursor(null);
     setHasMore(false);
     setDataError("");
@@ -526,6 +562,7 @@ export default function App({
     setFilter("");
     setSearch("");
     setEditor(null);
+    createAttempt.current = null;
     setArchive(null);
     setHistoryRecord(null);
     setHistory([]);
@@ -533,6 +570,8 @@ export default function App({
     setOperationError("");
     setOperationBusy(false);
     setCatalogLoading(false);
+    setCatalogReady(false);
+    setCatalogError("");
     setRecordsLoading(false);
     setHistoryLoading(false);
     setAccessError("");
@@ -550,12 +589,16 @@ export default function App({
     setProfileReady(false);
     setSession(null);
     setAuthReady(false);
+    logoutIntent.current = false;
+    logoutPhase.current = "idle";
+    setLogoutStatus("idle");
+    setAuthBusy(false);
     if (!services || configError) return;
     let mounted = true;
     const unsubscribe = onAuthStateChanged(
       services.auth,
       (user) => {
-        if (!mounted) return;
+        if (!mounted || logoutIntent.current) return;
         authRequest.current++;
         clearContext();
         setProfile(null);
@@ -568,7 +611,7 @@ export default function App({
         setAuthBusy(false);
       },
       () => {
-        if (mounted) {
+        if (mounted && !logoutIntent.current) {
           clearContext();
           setProfile(null);
           setProfileReady(false);
@@ -622,6 +665,8 @@ export default function App({
     const epoch = contextEpoch.current;
     let mounted = true;
     setCatalogLoading(true);
+    setCatalogReady(false);
+    setCatalogError("");
     Promise.all([
       repository.getUnit(profile.unitId),
       repository.listClassifications(profile.unitId),
@@ -636,9 +681,20 @@ export default function App({
         setUnit(nextUnit);
         setClassifications(nextClassifications);
         setLocations(nextLocations);
+        setCatalogReady(true);
       })
-      .catch(() => {
-        if (mounted && epoch === contextEpoch.current) accessFailure();
+      .catch((error) => {
+        if (!mounted || epoch !== contextEpoch.current) return;
+        if (isPermissionError(error)) accessFailure();
+        else {
+          clearPage();
+          setUnit(null);
+          setClassifications([]);
+          setLocations([]);
+          setCatalogError(
+            "Referensi unit belum dapat dimuat. Periksa koneksi dan coba lagi. Jika masalah berulang, hubungi pengelola.",
+          );
+        }
       })
       .finally(() => {
         if (mounted && epoch === contextEpoch.current) setCatalogLoading(false);
@@ -646,10 +702,17 @@ export default function App({
     return () => {
       mounted = false;
     };
-  }, [active, profile?.unitId, repository, contextVersion, accessFailure]);
+  }, [
+    active,
+    profile?.unitId,
+    repository,
+    contextVersion,
+    accessFailure,
+    clearPage,
+  ]);
 
   useEffect(() => {
-    if (!active || !profile || !repository) return;
+    if (!active || !profile || !repository || !catalogReady) return;
     const epoch = contextEpoch.current,
       request = ++recordRequest.current;
     let mounted = true;
@@ -702,6 +765,7 @@ export default function App({
     };
   }, [
     active,
+    catalogReady,
     profile?.unitId,
     repository,
     contextVersion,
@@ -714,7 +778,8 @@ export default function App({
 
   async function authenticate(kind: "email" | "google", event?: FormEvent) {
     event?.preventDefault();
-    if (!services || authBusy) return;
+    if (!services || authBusy || logoutPhase.current !== "idle") return;
+    logoutIntent.current = false;
     setAuthBusy(true);
     setAuthError("");
     setAuthNotice("");
@@ -741,18 +806,32 @@ export default function App({
     }
   }
   async function logout() {
-    if (!services) return;
-    authRequest.current++;
+    if (!services || logoutPhase.current === "pending") return;
+    const request = ++authRequest.current;
+    // Clear immediately and fence observer callbacks until an explicit new login.
+    // A rejected signOut must never revive the old session or race another login.
+    logoutIntent.current = true;
+    logoutPhase.current = "pending";
+    setLogoutStatus("pending");
+    setAuthBusy(false);
     clearContext();
     setProfile(null);
     setProfileReady(false);
     setSession(null);
+    setPassword("");
     setAuthError("");
+    setAuthNotice("");
     try {
       await signOut(services.auth);
+      if (request !== authRequest.current) return;
+      logoutPhase.current = "idle";
+      setLogoutStatus("idle");
     } catch {
+      if (request !== authRequest.current) return;
+      logoutPhase.current = "failed";
+      setLogoutStatus("failed");
       setAuthError(
-        "Keluar dari akun belum berhasil. Coba lagi atau tutup tab ini.",
+        "Keluar dari akun belum berhasil. Data tetap disembunyikan. Coba keluar lagi sebelum masuk ke akun lain, atau tutup tab ini.",
       );
     }
   }
@@ -795,13 +874,27 @@ export default function App({
     setRefresh((value) => value + 1);
   }
   async function save(input: RecordInput) {
-    if (!repository || !profile || !writable || operationBusy) return;
+    if (!repository || !profile || !editor || !writable || operationBusy) return;
     const epoch = contextEpoch.current;
     setOperationBusy(true);
     setOperationError("");
     try {
-      await repository.saveRecord(profile.unitId, input, editor?.record);
+      if (editor.record) {
+        await repository.saveRecord(profile.unitId, input, editor.record);
+      } else {
+        createAttempt.current ??= {
+          token: repository.createRecordAttempt(profile.unitId, input),
+          input: { ...input },
+        };
+        await repository.saveRecord(
+          profile.unitId,
+          input,
+          undefined,
+          createAttempt.current.token,
+        );
+      }
       if (epoch !== contextEpoch.current) return;
+      createAttempt.current = null;
       setEditor(null);
       reloadRecords();
       setNotice("Metadata tersimpan dan dikonfirmasi server.");
@@ -809,7 +902,7 @@ export default function App({
       if (epoch === contextEpoch.current) {
         if (isPermissionError(error)) accessFailure();
         else {
-          setOperationError(operationMessage(error));
+          setOperationError(operationMessage(error, !editor.record));
           clearPage();
           setDataError(
             "Daftar perlu dimuat ulang setelah operasi yang belum berhasil.",
@@ -952,6 +1045,18 @@ export default function App({
             Gunakan akun yang sudah disiapkan oleh pengelola.
           </p>
           {authError && <Notice kind="error">{authError}</Notice>}
+          {logoutStatus === "pending" && (
+            <Notice>Sedang keluar dari akun…</Notice>
+          )}
+          {logoutStatus === "failed" && (
+            <button
+              className="button secondary full"
+              type="button"
+              onClick={() => void logout()}
+            >
+              Coba keluar lagi
+            </button>
+          )}
           <form onSubmit={(event) => void authenticate("email", event)}>
             <label>
               Email
@@ -961,7 +1066,7 @@ export default function App({
                 autoComplete="username"
                 maxLength={254}
                 value={email}
-                disabled={authBusy}
+                disabled={loginDisabled}
                 onChange={(event) => setEmail(event.target.value)}
               />
             </label>
@@ -972,14 +1077,14 @@ export default function App({
                 required
                 autoComplete="current-password"
                 value={password}
-                disabled={authBusy}
+                disabled={loginDisabled}
                 onChange={(event) => setPassword(event.target.value)}
               />
             </label>
             <button
               className="button primary full"
               type="submit"
-              disabled={authBusy}
+              disabled={loginDisabled}
             >
               {authBusy ? "Memproses…" : "Masuk dengan email"}
             </button>
@@ -991,7 +1096,7 @@ export default function App({
             type="button"
             className="button secondary full"
             onClick={() => void authenticate("google")}
-            disabled={authBusy}
+            disabled={loginDisabled}
           >
             <span className="google-mark" aria-hidden="true">
               G
@@ -1157,16 +1262,18 @@ export default function App({
                   : "Referensi dikelola oleh pengelola. Perubahan tidak tersedia dari aplikasi ini."}
               </p>
             </div>
-            {view === "records" && writable && (
+            {view === "records" && canManage && (
               <button
                 className="button primary"
                 disabled={
+                  !catalogReady ||
                   catalogLoading ||
                   !classifications.some((row) => row.active) ||
                   !locations.some((row) => row.active)
                 }
                 onClick={() => {
                   setOperationError("");
+                  createAttempt.current = null;
                   setEditor({});
                 }}
               >
@@ -1175,6 +1282,21 @@ export default function App({
             )}
           </div>
           {notice && <Notice kind="success">{notice}</Notice>}
+          {catalogError && (
+            <Notice kind="error">
+              <p>{catalogError}</p>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  clearContext();
+                  setContextVersion((version) => version + 1);
+                }}
+              >
+                Coba muat referensi lagi
+              </button>
+            </Notice>
+          )}
           {view === "records" ? (
             <>
               <div className="summary-strip">
@@ -1188,7 +1310,7 @@ export default function App({
                 <div>
                   <span>Hak akses Anda</span>
                   <strong className="summary-word">
-                    {writable ? "Kelola metadata" : "Hanya baca"}
+                    {canManage ? "Kelola metadata" : "Hanya baca"}
                   </strong>
                 </div>
                 <div>
@@ -1247,7 +1369,7 @@ export default function App({
                   <div className="toolbar-actions">
                     <button
                       className="button secondary"
-                      disabled={recordsLoading}
+                      disabled={recordsLoading || !catalogReady}
                       onClick={reloadRecords}
                     >
                       Muat ulang
@@ -1270,7 +1392,19 @@ export default function App({
                     Nomor referensi persis: <strong>{filter}</strong>
                   </p>
                 )}
-                {dataError ? (
+                {!catalogReady ? (
+                  <div className="empty-state" role="status">
+                    <h2>
+                      {catalogLoading
+                        ? "Memuat referensi unit…"
+                        : "Referensi unit belum tersedia"}
+                    </h2>
+                    <p>
+                      Daftar arsip akan dimuat setelah referensi unit berhasil
+                      diperiksa.
+                    </p>
+                  </div>
+                ) : dataError ? (
                   <div className="panel-message">
                     <Notice kind="error">{dataError}</Notice>
                   </div>
@@ -1354,6 +1488,7 @@ export default function App({
                                       aria-label={`Edit ${record.title}`}
                                       onClick={() => {
                                         setOperationError("");
+                                        createAttempt.current = null;
                                         setEditor({ record });
                                       }}
                                     >
@@ -1486,7 +1621,11 @@ export default function App({
           locations={locations}
           busy={operationBusy}
           error={operationError}
-          onClose={() => setEditor(null)}
+          retryInput={createAttempt.current?.input}
+          onClose={() => {
+            createAttempt.current = null;
+            setEditor(null);
+          }}
           onSave={save}
         />
       )}

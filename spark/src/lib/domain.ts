@@ -50,6 +50,11 @@ declare const cursorBrand: unique symbol;
 export interface RecordCursor {
   readonly [cursorBrand]: true;
 }
+declare const createAttemptBrand: unique symbol;
+/** Keep one opaque attempt for a new draft across retries; never serialize it. */
+export interface RecordCreateAttempt {
+  readonly [createAttemptBrand]: true;
+}
 export interface RecordPage {
   records: RecordRow[];
   cursor: RecordCursor | null;
