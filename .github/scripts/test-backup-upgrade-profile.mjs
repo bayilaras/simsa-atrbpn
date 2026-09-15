@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { isAbsolute, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadMigrations, migrateDatabase } from '../../backend/scripts/migrate-database.mjs';
+import { expectedContainerServer, assertUpgradeTestIdentity } from './backup-upgrade-target.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const { Client } = createRequire(join(root, 'backend/package.json'))('pg');
@@ -19,6 +20,16 @@ const postgresImage = process.env.TEST_POSTGRES_IMAGE;
 assert(Boolean(psqlBinary) !== Boolean(postgresImage), 'Choose one test psql executable or pinned container');
 if (psqlBinary) assert(isAbsolute(psqlBinary));
 if (postgresImage) assert(/^postgres:(16|17|18)[^@]*@sha256:[a-f0-9]{64}$/.test(postgresImage));
+let expectedServer = { host: '127.0.0.1', port: Number(url.port) };
+if (postgresImage) {
+  const containerId = process.env.TEST_POSTGRES_CONTAINER_ID;
+  assert.match(containerId || '', /^[a-f0-9]{64}$/, 'Exact CI service container ID required');
+  const format = '{"id":{{json .Id}},"image":{{json .Config.Image}},"running":{{json .State.Running}},"ports":{{json .NetworkSettings.Ports}},"networks":{{json .NetworkSettings.Networks}}}';
+  const inspected = spawnSync('docker', ['inspect', '--type', 'container', '--format', format, containerId],
+    { encoding: 'utf8', timeout: 10000, maxBuffer: 256 * 1024, windowsHide: true });
+  assert.equal(inspected.status, 0, 'CI service container inspection failed');
+  expectedServer = expectedContainerServer(JSON.parse(inspected.stdout), { containerId, image: postgresImage, hostPort: Number(url.port) });
+}
 const admin = decodeURIComponent(url.username), adminPassword = decodeURIComponent(url.password);
 const suffix = randomBytes(4).toString('hex');
 const database = `simsa_backup_upgrade_test_${suffix}`;
@@ -67,9 +78,7 @@ await cluster.connect();
 let pg;
 try {
   const identity = (await cluster.query("SELECT current_database() AS database, host(inet_server_addr()) AS host, inet_server_port() AS port")).rows[0];
-  assert.equal(identity.database, url.pathname.slice(1));
-  assert.equal(identity.host, '127.0.0.1');
-  assert.equal(String(identity.port), url.port);
+  assertUpgradeTestIdentity(identity, { database: url.pathname.slice(1), server: expectedServer });
   // CREATE without IF NOT EXISTS prevents reuse of any existing database.
   await cluster.query(`CREATE DATABASE ${database} TEMPLATE template0`);
   for (const role of principals) await cluster.query(`CREATE ROLE "${role}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '${passwords[role]}'`);
