@@ -3,16 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export function DashboardSkeleton() {
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div className="space-y-2">
+        <div role="status" aria-label="Memuat dasbor" className="min-w-0 space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-4" aria-hidden="true">
+                <div className="min-w-0 max-w-full space-y-2">
                     <Skeleton className="h-8 w-[200px]" />
-                    <Skeleton className="h-4 w-[300px]" />
+                    <Skeleton className="h-4 w-[300px] max-w-full" />
                 </div>
                 <Skeleton className="h-10 w-[120px]" />
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" aria-hidden="true">
                 {Array.from({ length: 4 }).map((_, i) => (
                     <Card key={i}>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -27,9 +27,9 @@ export function DashboardSkeleton() {
                 ))}
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-                <Skeleton className="col-span-4 h-[350px] rounded-xl" />
-                <Skeleton className="col-span-3 h-[350px] rounded-xl" />
+            <div className="grid min-w-0 gap-4 md:grid-cols-2 lg:grid-cols-7" aria-hidden="true">
+                <Skeleton className="min-w-0 h-[350px] rounded-xl lg:col-span-4" />
+                <Skeleton className="min-w-0 h-[350px] rounded-xl lg:col-span-3" />
             </div>
         </div>
     )

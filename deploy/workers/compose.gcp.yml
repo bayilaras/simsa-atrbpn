@@ -74,8 +74,8 @@ services:
         condition: service_healthy
         restart: true
 
-  blob-reconciler:
-    environment:
+  blob-reconciler: &gcp-maintenance-worker
+    environment: &gcp-maintenance-environment
       DATABASE_URL: ""
       CLOUD_SQL_UNIX_SOCKET: /cloudsql/${CLOUD_SQL_INSTANCE_CONNECTION_NAME:?Cloud SQL connection name is required}
       DB_HOST: ""
@@ -98,6 +98,12 @@ services:
       cloud-sql-proxy:
         condition: service_healthy
         restart: true
+
+  file-fixity:
+    <<: *gcp-maintenance-worker
+    environment:
+      <<: *gcp-maintenance-environment
+      DB_APPLICATION_NAME: simsa-file-fixity
 
 volumes:
   clamav-signatures:

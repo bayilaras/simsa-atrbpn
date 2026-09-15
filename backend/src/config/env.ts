@@ -10,6 +10,7 @@ import {
 } from './cloud-platform.js';
 import { loadFinalObjectRetentionPolicy } from './final-object-retention.js';
 import { isMetadataDemo, validateDemoEnvironment } from './demo.js';
+import { assertValidGoogleOAuthEnvironment } from './google-oauth.js';
 
 dotenv.config();
 
@@ -49,7 +50,7 @@ export const env = {
     COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || '',
 };
 
-export type SimsaRuntime = 'api' | 'malware-worker' | 'srikandi-worker';
+export type SimsaRuntime = 'api' | 'malware-worker' | 'malware-on-demand' | 'srikandi-worker';
 
 function validateFrontendUrl(source: NodeJS.ProcessEnv): void {
     const raw = source.FRONTEND_URL?.trim() || 'http://localhost:3000';
@@ -168,19 +169,12 @@ export function validateRuntimeEnv(
         );
     }
 
+    // Google remains mandatory by default in deployed Better Auth APIs. Only
+    // an explicit internal password-only configuration may omit the provider.
+    if (runtime === 'api') assertValidGoogleOAuthEnvironment(source);
+
     // Production safety checks
     if (runtime === 'api' && deployedRuntime) {
-        // Better Auth owns OAuth credentials. Firebase Authentication instead
-        // obtains its provider configuration from the Firebase control plane.
-        const oauthRequired = cloudConfig.authProvider === 'better-auth'
-            ? ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET']
-            : [];
-        const oauthMissing = oauthRequired.filter(key => !source[key]);
-
-        if (oauthMissing.length > 0) {
-            throw new Error(`Missing Google OAuth credentials in production: ${oauthMissing.join(', ')}`);
-        }
-
         // Warn if DATABASE_URL points to localhost in production
         const dbUrl = source.DATABASE_URL || '';
         if (dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1')) {
@@ -200,7 +194,7 @@ export function validateRuntimeEnv(
     }
 
     const runtimeProfile = loadAppProfile(source);
-    if (runtime !== 'malware-worker') {
+    if (runtime !== 'malware-worker' && runtime !== 'malware-on-demand') {
         validateAppProfileEnvironment(runtimeProfile, source);
     }
 
@@ -232,12 +226,15 @@ export function validateRuntimeEnv(
         },
     );
 
-    if (runtime === 'malware-worker') {
-        if (source.VERCEL) {
+    if (runtime === 'malware-worker' || runtime === 'malware-on-demand') {
+        if (runtime === 'malware-worker' && source.VERCEL) {
             throw new Error('The malware scan worker requires a persistent runtime and cannot run as a Vercel function');
         }
-        if (runtimeMalwareConfig.worker.runtime !== 'external') {
+        if (runtime === 'malware-worker' && runtimeMalwareConfig.worker.runtime !== 'external') {
             throw new Error('Set MALWARE_SCAN_WORKER_RUNTIME=external for the dedicated worker process');
+        }
+        if (runtime === 'malware-on-demand' && (runtimeMalwareConfig.worker.runtime !== 'on-demand' || runtimeMalwareConfig.transport !== 'native')) {
+            throw new Error('The on-demand entrypoint requires native ClamAV and MALWARE_SCAN_WORKER_RUNTIME=on-demand');
         }
         if (runtimeMalwareConfig.mode !== 'clamav' || !runtimeMalwareConfig.workerEnabled) {
             throw new Error(
@@ -258,6 +255,7 @@ export function validateRuntimeEnv(
     if (
         runtimeProfile === 'internal'
         && !isMetadataDemo(source)
+        && cloudConfig.storageProvider !== 'disabled'
         && runtimeMalwareConfig.mode === 'disabled'
         && deployedRuntime
     ) {

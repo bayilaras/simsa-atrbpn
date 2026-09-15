@@ -1,17 +1,22 @@
-import * as rateLimitModule from 'express-rate-limit';
-const rateLimit = (rateLimitModule as any).default || rateLimitModule;
+import { rateLimit } from 'express-rate-limit';
 import { env } from '../config/env';
 import type { AuthRequest } from './auth.middleware';
+import { createRateLimiterStore, usesSharedRateLimits } from '../config/rate-limits.js';
+import { createAuthAttemptLimiter } from './auth-attempt-limiter.middleware.js';
+
+const shared = usesSharedRateLimits();
 
 /**
  * Rate Limiter Configuration
  * Protects against brute force attacks and abuse
  * Rate limiting is relaxed in development/test to avoid blocking automated tests.
  */
-const isDev = env.NODE_ENV === 'development' || env.NODE_ENV === 'test';
+const isDev = !shared && (env.NODE_ENV === 'development' || env.NODE_ENV === 'test');
 
-// General API rate limiter - 100 requests per 15 minutes
+// Every deployed instance uses the same database-backed policy counters.
 export const generalLimiter = rateLimit({
+    store: createRateLimiterStore('general'),
+    passOnStoreError: false,
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: isDev ? 1000 : 500, // Reasonable in dev; 500 per window in production
     message: {
@@ -23,20 +28,16 @@ export const generalLimiter = rateLimit({
 });
 
 // Strict rate limiter for authentication endpoints - 5 attempts per 15 minutes
-export const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDev ? 50 : 5, // 50 in dev (testable); 5 per window in production
-    message: {
-        error: 'Too Many Attempts',
-        message: 'Too many login attempts from this IP, please try again after 15 minutes',
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    skipSuccessfulRequests: true, // Don't count successful logins
+export const authLimiter = createAuthAttemptLimiter({
+    store: createRateLimiterStore('auth'),
+    shared,
+    maximum: isDev ? 50 : 5,
 });
 
 // Rate limiter for signup - 3 attempts per hour
 export const signupLimiter = rateLimit({
+    store: createRateLimiterStore('signup'),
+    passOnStoreError: false,
     windowMs: 60 * 60 * 1000, // 1 hour
     max: isDev ? 50 : 3, // 50 in dev (testable); 3 per hour in production
     message: {
@@ -49,6 +50,8 @@ export const signupLimiter = rateLimit({
 
 // Rate limiter for sensitive operations (e.g., delete, export) - 20 per 15 minutes
 export const sensitiveLimiter = rateLimit({
+    store: createRateLimiterStore('sensitive'),
+    passOnStoreError: false,
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 20,
     message: {
@@ -61,6 +64,8 @@ export const sensitiveLimiter = rateLimit({
 
 // Export rate limiter - 5 exports per minute (prevents data dumping)
 export const exportLimiter = rateLimit({
+    store: createRateLimiterStore('export'),
+    passOnStoreError: false,
     windowMs: 60 * 1000, // 1 minute
     max: 5,
     message: {
@@ -73,6 +78,8 @@ export const exportLimiter = rateLimit({
 
 // Upload rate limiter - 10 uploads per minute (prevents disk abuse)
 export const uploadLimiter = rateLimit({
+    store: createRateLimiterStore('upload'),
+    passOnStoreError: false,
     windowMs: 60 * 1000, // 1 minute
     max: 10,
     message: {
@@ -90,6 +97,8 @@ export const OCR_RATE_LIMIT_MAX = 3;
 // route authenticates before this middleware, so quota is isolated per user
 // rather than shared by every workstation behind the same office NAT.
 export const ocrLimiter = rateLimit({
+    store: createRateLimiterStore('ocr'),
+    passOnStoreError: false,
     windowMs: OCR_RATE_LIMIT_WINDOW_MS,
     max: OCR_RATE_LIMIT_MAX,
     keyGenerator: (req: AuthRequest) => req.user?.id || 'unauthenticated',
@@ -100,3 +109,26 @@ export const ocrLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+
+// Keep each bounded Sheets phase at three requests/minute, with independent
+// counters so discovery and preview cannot consume the write quota.
+function createImportPhaseLimiter(bucket: string, phase: string) { return rateLimit({
+    store: createRateLimiterStore(bucket),
+    passOnStoreError: false,
+    windowMs: 60_000,
+    max: 3,
+    keyGenerator: (req: AuthRequest) => req.user?.id || 'unauthenticated',
+    handler: (req, res) => {
+        const resetTime = (req as AuthRequest & { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime;
+        const retryAfterSeconds = Math.max(1, Math.ceil(((resetTime?.getTime() ?? Date.now() + 60_000) - Date.now()) / 1000));
+        res.setHeader('Retry-After', retryAfterSeconds);
+        res.status(429).json({ error: 'Too Many Requests', code: 'RATE_LIMITED', retryAfterSeconds,
+            message: `Terlalu banyak permintaan ${phase}. Coba lagi setelah ${retryAfterSeconds} detik.` });
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+}); }
+
+export const importLimiter = createImportPhaseLimiter('import', 'impor');
+export const importDiscoveryLimiter = createImportPhaseLimiter('import-discovery', 'daftar sheet');
+export const importPreviewLimiter = createImportPhaseLimiter('import-preview', 'pratinjau');

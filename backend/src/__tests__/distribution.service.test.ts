@@ -92,7 +92,7 @@ describe('DistributionService', () => {
                 suratMasukId: 'sm-1',
                 sourceUnitId: 'ditjen',
                 targetUnitId: 'unit-1',
-            })).rejects.toThrow('Surat sudah didistribusikan ke unit ini');
+            })).rejects.toMatchObject({ statusCode: 400, message: 'Surat sudah didistribusikan ke unit ini' });
         });
 
         it('should fail closed when the source unit does not own the letter', async () => {
@@ -101,7 +101,7 @@ describe('DistributionService', () => {
                 suratMasukId: 'foreign-letter',
                 sourceUnitId: 'unit-a',
                 targetUnitId: 'unit-b',
-            })).rejects.toThrow('Surat not found');
+            })).rejects.toMatchObject({ statusCode: 404, message: 'Data not found' });
         });
     });
 

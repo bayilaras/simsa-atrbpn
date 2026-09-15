@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import type { Readable } from 'node:stream';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../config/database';
 import { fileAttachments, suratKeluar, suratMasuk } from '../db/schema';
@@ -7,7 +8,7 @@ import { validateIdParam } from '../middlewares/validate.middleware';
 import { auditLogService } from '../services/audit-log.service';
 import { blobStorageService } from '../services/blob-storage.service';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
-import { isFileReleased } from '../services/file-release-policy.js';
+import { isAttachmentAvailable, requiresAttachmentInspection, quarantinedFileScanState } from '../services/file-release-policy.js';
 import { createLogger } from '../utils/logger';
 import {
     normalizeStoredObjectLocator,
@@ -64,27 +65,58 @@ async function streamAuthorizedFile(
         }
     }
 
-    const objectGeneration = requireImmutableObjectGeneration(
-        details.locator,
-        details.objectGeneration,
-    );
-    const stored = await blobStorageService.downloadFile(details.locator, {
-        generation: objectGeneration || undefined,
-    });
-    if (!stored) {
-        return res.status(404).json({ error: 'File not found' });
-    }
-
-    const disposition = download ? 'attachment' : 'inline';
-    const fileName = safeFileName(details.fileName, stored.fileName);
-
-    res.setHeader('Content-Type', stored.mimeType);
-    res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-
+    const controller = new AbortController();
+    let stream: Readable | undefined;
+    let streaming = false;
+    const cleanup = () => {
+        res.off('close', disconnected);
+        res.off('finish', cleanup);
+    };
+    const disconnected = () => {
+        if (!res.writableFinished) {
+            controller.abort();
+            stream?.destroy();
+        }
+        cleanup();
+    };
+    const responseClosed = () => controller.signal.aborted || res.destroyed || res.writableEnded;
+    res.once('close', disconnected);
+    res.once('finish', cleanup);
     try {
+        if (responseClosed()) return;
+        const objectGeneration = requireImmutableObjectGeneration(
+            details.locator,
+            details.objectGeneration,
+        );
+        const stored = await blobStorageService.downloadFile(details.locator, {
+            generation: objectGeneration || undefined,
+            abortSignal: controller.signal,
+        });
+        stream = stored?.stream;
+        stream?.on('error', (error) => {
+            // A cancelled provider request can still report an asynchronous
+            // stream error. Keep it handled without writing to a closed socket.
+            if (responseClosed()) return;
+            log.error({ err: error, entityId: details.auditEntityId }, 'Blob stream failed');
+            stream?.destroy();
+            if (!res.headersSent) res.status(502).end();
+            else res.destroy(error);
+        });
+        if (responseClosed()) {
+            // A provider may resolve after cancellation instead of rejecting.
+            stream?.destroy();
+            return;
+        }
+        if (!stored) return res.status(404).json({ error: 'File not found' });
+
+        const disposition = download ? 'attachment' : 'inline';
+        const fileName = safeFileName(details.fileName, stored.fileName);
+        res.setHeader('Content-Type', stored.mimeType);
+        res.setHeader('Content-Disposition', `${disposition}; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+        res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+
         await auditLogService.logActionOrThrow({
             userId: req.user?.id,
             userEmail: req.user?.email,
@@ -107,20 +139,24 @@ async function streamAuthorizedFile(
             },
             ipAddress: req.ip,
         });
+        if (responseClosed()) {
+            stored.stream.destroy();
+            return;
+        }
+        streaming = true;
+        stored.stream.pipe(res);
     } catch (error) {
         // The storage stream may already hold a provider connection. Close it
         // before failing the request so an unavailable audit trail cannot leak
         // either protected bytes or transport resources.
-        stored.stream.destroy();
+        stream?.destroy();
+        if (responseClosed()) return;
         throw error;
+    } finally {
+        // While piping, finish/close owns cleanup. Every early exit releases
+        // the listeners even if storage or audit rejects before piping starts.
+        if (!streaming) cleanup();
     }
-
-    stored.stream.on('error', (error) => {
-        log.error({ err: error, entityId: details.auditEntityId }, 'Blob stream failed');
-        if (!res.headersSent) res.status(502).end();
-        else res.destroy(error);
-    });
-    stored.stream.pipe(res);
 }
 
 router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => {
@@ -145,9 +181,13 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 return res.status(404).json({ error: 'File not found' });
             }
 
-            if (!isFileReleased(attachment)) {
+            if (!isAttachmentAvailable(attachment)) {
+                if (!requiresAttachmentInspection(attachment.entityType, attachment.fileUrl || attachment.driveFileId)) {
+                    return res.status(423).json({ error: 'File unavailable', message: 'Dokumen belum tersedia. Periksa kembali lampiran surat.' });
+                }
                 return res.status(423).json({
                     error: 'File quarantined',
+                    scanState: quarantinedFileScanState(attachment),
                     message: 'Bitstream belum dinyatakan bersih dan utuh oleh kontrol ingest.',
                 });
             }
@@ -155,7 +195,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             const locator = normalizeBlobLocator(attachment.fileUrl || attachment.driveFileId);
             if (!locator) return res.status(404).json({ error: 'File not found' });
 
-            return streamAuthorizedFile(req, res, {
+            return await streamAuthorizedFile(req, res, {
                 locator,
                 objectGeneration: attachment.objectGeneration,
                 fileName: attachment.fileName || 'lampiran',
@@ -189,9 +229,8 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
         const locator = normalizeBlobLocator(record?.filePath);
         if (!locator) return res.status(404).json({ error: 'File not found' });
 
-        // Legacy surat locators did not carry malware/fixity state. They are
-        // therefore not released merely because a URL exists: an ingest worker
-        // must register the same bitstream and mark it clean first.
+        // Keep the registered private object tied to this exact parent and
+        // locator. Private Blob letter access does not depend on inspection.
         const registrations = await db
             .select()
             .from(fileAttachments)
@@ -199,20 +238,26 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 eq(fileAttachments.entityType, entityType),
                 eq(fileAttachments.entityId, entityId),
             ));
-        const releasedRegistration = registrations.find((registration) => {
+        const matchingRegistrations = registrations.filter((registration) => {
             const registeredLocator = normalizeBlobLocator(
                 registration.fileUrl || registration.driveFileId,
             );
-            return registeredLocator === locator && isFileReleased(registration);
+            return registeredLocator === locator;
         });
+        const releasedRegistration = matchingRegistrations.find(isAttachmentAvailable);
         if (!releasedRegistration) {
+            if (requiresAttachmentInspection(entityType, locator)) {
+                return res.status(423).json({ error: 'File quarantined',
+                    scanState: matchingRegistrations.length === 1 ? quarantinedFileScanState(matchingRegistrations[0]) : 'unavailable',
+                    message: 'Dokumen belum tersedia untuk dibuka.' });
+            }
             return res.status(423).json({
-                error: 'File quarantined',
-                message: 'Bitstream harus diregistrasi, dipindai malware, dan memiliki baseline hash.',
+                error: 'File unavailable',
+                message: 'Dokumen belum terdaftar sebagai lampiran privat surat ini. Periksa kembali lampiran surat.',
             });
         }
 
-        return streamAuthorizedFile(req, res, {
+        return await streamAuthorizedFile(req, res, {
             locator,
             objectGeneration: releasedRegistration.objectGeneration,
             fileName: record?.fileName || 'dokumen',

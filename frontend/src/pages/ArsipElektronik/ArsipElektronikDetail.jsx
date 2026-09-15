@@ -1,4 +1,6 @@
 import { Button } from '@/components/ui/button'
+import { useState } from 'react'
+import { useAppConfig } from '@/context/app-config-context'
 import { Textarea } from '@/components/ui/textarea'
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -12,6 +14,9 @@ import { formatFileSize } from './constants'
 export default function ArsipElektronikDetail({
     open, onOpenChange, selectedItem, verifyNote, setVerifyNote, onVerify
 }) {
+    const [preservationRevision, setPreservationRevision] = useState(0)
+    const { capabilities } = useAppConfig()
+    const advancedWorkflowsEnabled = capabilities.advancedArchiveWorkflows !== false
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-2xl">
@@ -19,10 +24,10 @@ export default function ArsipElektronikDetail({
                     <DialogTitle>Detail & Verifikasi Dokumen</DialogTitle>
                 </DialogHeader>
                 {selectedItem && (
-                    <Tabs defaultValue="detail" className="w-full">
-                        <TabsList className="grid w-full grid-cols-2">
+                    <Tabs key={advancedWorkflowsEnabled ? 'full' : 'manual'} defaultValue="detail" className="w-full">
+                        <TabsList className={`grid w-full ${advancedWorkflowsEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
                             <TabsTrigger value="detail">Detail & Verifikasi</TabsTrigger>
-                            <TabsTrigger value="preservasi">Preservasi Digital</TabsTrigger>
+                            {advancedWorkflowsEnabled && <TabsTrigger value="preservasi">Preservasi Digital</TabsTrigger>}
                         </TabsList>
 
                         <TabsContent value="detail" className="space-y-4 pt-4">
@@ -73,7 +78,7 @@ export default function ArsipElektronikDetail({
                             </DialogFooter>
                         </TabsContent>
 
-                        <TabsContent value="preservasi" className="space-y-4 pt-4">
+                        {advancedWorkflowsEnabled && <TabsContent value="preservasi" className="space-y-4 pt-4">
                             <div className="flex justify-between items-center bg-muted/30 p-4 rounded-lg">
                                 <div className="space-y-1">
                                     <h4 className="text-sm font-medium">Tindakan Preservasi</h4>
@@ -82,14 +87,15 @@ export default function ArsipElektronikDetail({
                                     </p>
                                 </div>
                                 <PreservationActionForm
+                                    key={selectedItem.id}
                                     arsipId={selectedItem.id}
-                                    onSuccess={() => { }}
+                                    onSuccess={() => setPreservationRevision(value => value + 1)}
                                 />
                             </div>
                             <div className="max-h-[400px] overflow-auto pr-1">
-                                <PreservationHistory arsipId={selectedItem.id} />
+                                <PreservationHistory arsipId={selectedItem.id} refreshVersion={preservationRevision} />
                             </div>
-                        </TabsContent>
+                        </TabsContent>}
                     </Tabs>
                 )}
             </DialogContent>

@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import { dosirService } from '../services/dosir.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
@@ -24,7 +24,7 @@ router.use(authMiddleware);
 /**
  * Collection endpoints may honor an explicit unit selected by a super admin.
  * Every other role remains pinned to the authoritative scope returned by
- * resolveUnitKerjaId; a missing assigned scope must fail closed.
+ * resolveRecordUnitScope; a missing assigned scope must fail closed.
  */
 function resolveDosirCollectionUnitScope(
     req: AuthRequest,
@@ -33,7 +33,7 @@ function resolveDosirCollectionUnitScope(
     const requestedUnit = typeof req.query.unitKerjaId === 'string'
         ? req.query.unitKerjaId.trim()
         : '';
-    const unitKerjaId = resolveUnitKerjaId(req);
+    const unitKerjaId = resolveRecordUnitScope(req);
 
     if (req.user?.role === 'super_admin') {
         return requestedUnit || null;
@@ -352,7 +352,7 @@ router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (r
  *       200:
  *         description: Updated dosir
  */
-router.put('/:id', canWriteMiddleware(), validateBody(updateDosirSchema), async (req: AuthRequest, res: Response) => {
+router.put('/:id', canWriteMiddleware(), validateBody(updateDosirSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const user = req.user;
         const { id } = req.params;
@@ -372,8 +372,7 @@ router.put('/:id', canWriteMiddleware(), validateBody(updateDosirSchema), async 
 
         res.json({ success: true, data });
     } catch (error) {
-        log.error({ err: error }, 'Error updating dosir:');
-        res.status(500).json({ success: false, error: 'Failed to update dosir' });
+        next(error);
     }
 });
 

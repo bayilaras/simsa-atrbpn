@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
+import { EXPORT_ROW_LIMIT, requireCompleteExport } from './export-completeness.js';
 import { suratMasukService, SuratMasukFilters } from './surat-masuk.service';
 import { suratKeluarService, SuratKeluarFilters } from './surat-keluar.service';
 import { arsipService, ArsipFilters } from './arsip.service';
@@ -40,11 +41,12 @@ export class ExportService {
      *          Perihal, Dari, Kepada, Status, Disposisi, Timestamp, Status Arsip
      */
     async generateExcelSuratMasuk(filters: SuratMasukFilters): Promise<Buffer> {
-        const { data } = await suratMasukService.findAll({
+        const result = await suratMasukService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'SIMSA ATR/BPN';
@@ -129,11 +131,12 @@ export class ExportService {
      *          Klasifikasi Arsip, Klasifikasi Kode, Klasifikasi Jenis
      */
     async generateExcelSuratKeluar(filters: SuratKeluarFilters): Promise<Buffer> {
-        const { data } = await suratKeluarService.findAll({
+        const result = await suratKeluarService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'SIMSA ATR/BPN';
@@ -221,11 +224,12 @@ export class ExportService {
      * Tingkat Perkembangan, Lokasi Simpan, Tingkat Klasifikasi Keamanan & Akses, Ket.
      */
     async generateExcelArsip(filters: ArsipFilters, formulirType: string = 'formulir4'): Promise<Buffer> {
-        const { data } = await arsipService.findAll({
+        const result = await arsipService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'SIMSA ATR/BPN';
@@ -559,11 +563,12 @@ export class ExportService {
     // ============== PDF EXPORTS ==============
 
     async generatePdfSuratMasuk(filters: SuratMasukFilters): Promise<Buffer> {
-        const { data } = await suratMasukService.findAll({
+        const result = await suratMasukService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });
@@ -630,11 +635,12 @@ export class ExportService {
     }
 
     async generatePdfSuratKeluar(filters: SuratKeluarFilters): Promise<Buffer> {
-        const { data } = await suratKeluarService.findAll({
+        const result = await suratKeluarService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });
@@ -702,11 +708,12 @@ export class ExportService {
      * Export Arsip to PDF — Formulir 4 or 6 format
      */
     async generatePdfArsip(filters: ArsipFilters, formulirType: string = 'formulir4'): Promise<Buffer> {
-        const { data } = await arsipService.findAll({
+        const result = await arsipService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });

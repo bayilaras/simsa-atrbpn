@@ -35,7 +35,7 @@ export function allowedSecurityClassifications(
     // filters and accidentally expose records containing malformed/unknown
     // classifications.
     if (user?.role === 'super_admin') return [...RECOGNIZED_CLASSIFICATIONS];
-    if (['admin_dirjen', 'admin_sesditjen'].includes(user?.role || '')) {
+    if (['admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role || '')) {
         return ['biasa', 'terbatas'];
     }
     if (['staff', 'auditor'].includes(user?.role || '')) return ['biasa'];
@@ -69,6 +69,7 @@ export function normalizeSecurityClassification(
 export function isAllowedForRecordUnit(user: RecordUser | undefined, unitKerjaId: string): boolean {
     if (!user?.role) return false;
     if (user.role === 'super_admin') return true;
+    if (user.role === 'admin_unit') return Boolean(user.unitKerjaId?.trim()) && user.unitKerjaId === unitKerjaId;
     if (user.role === 'admin_dirjen') return unitKerjaId === 'ditjen';
     if (user.role === 'admin_sesditjen') return unitKerjaId === 'sesditjen';
     if (user.role === 'staff') return Boolean(user.unitKerjaId) && user.unitKerjaId === unitKerjaId;
@@ -97,6 +98,7 @@ export function requiresExplicitAccessGrant(
 async function findAccessMetadata(
     entityType: RecordEntityType,
     entityId: string,
+    executor: Pick<typeof db, 'select'> = db,
 ): Promise<{
     unitKerjaId: string;
     classification: string | null;
@@ -104,7 +106,7 @@ async function findAccessMetadata(
     mutable: boolean;
 } | null> {
     if (entityType === 'surat_masuk') {
-        const [record] = await db
+        const [record] = await executor
             .select({
                 unitKerjaId: suratMasuk.unitKerjaId,
                 classification: suratMasuk.sifatSurat,
@@ -123,7 +125,7 @@ async function findAccessMetadata(
     }
 
     if (entityType === 'surat_keluar') {
-        const [record] = await db
+        const [record] = await executor
             .select({
                 unitKerjaId: suratKeluar.unitKerjaId,
                 classification: suratKeluar.klasifikasiKeamanan,
@@ -143,7 +145,7 @@ async function findAccessMetadata(
         } : null;
     }
 
-    const [record] = await db
+    const [record] = await executor
         .select({
             unitKerjaId: arsip.unitKerjaId,
             classification: arsip.klasifikasiKeamanan,
@@ -187,8 +189,9 @@ export const recordAccessService = {
         user: RecordUser | undefined,
         entityType: RecordEntityType,
         entityId: string,
+        executor: Pick<typeof db, 'select'> = db,
     ): Promise<RecordAccessResult> {
-        const metadata = await findAccessMetadata(entityType, entityId);
+        const metadata = await findAccessMetadata(entityType, entityId, executor);
         const unitKerjaId = metadata?.unitKerjaId || null;
         const normalizedClassification = normalizeSecurityClassification(
             metadata?.classification,
@@ -208,7 +211,7 @@ export const recordAccessService = {
             user?.id &&
             requiresExplicitAccessGrant(normalizedClassification)
         ) {
-            const [activeGrant] = await db
+            const [activeGrant] = await executor
                 .select({
                     id: recordAccessGrants.id,
                     purpose: recordAccessGrants.purpose,

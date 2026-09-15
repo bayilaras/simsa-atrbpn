@@ -4,13 +4,20 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { fetchPrivateFile } from '@/services/private-file.service';
 import { useAppConfig } from '@/context/app-config-context';
+import { FileScanStatus } from '@/components/FileScanStatus';
+import { STORAGE_PROVIDER } from '@/lib/cloud-provider-config';
 
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const SCAN_STATES = { pending: 'not_scanned', blocked: 'scan_error' };
 
 function PrivateFilePreview({ surat, entityType }) {
+    const inspectionRequired = STORAGE_PROVIDER !== 'vercel-blob'
+        || (entityType !== 'surat_masuk' && entityType !== 'surat_keluar');
     const [file, setFile] = useState(null);
     const [loading, setLoading] = useState(null);
     const [error, setError] = useState('');
+    const [quarantined, setQuarantined] = useState(false);
+    const [scanStatus, setScanStatus] = useState(null);
     const request = useRef(null);
     const objectUrl = useRef(null);
     const downloadUrls = useRef(new Map());
@@ -39,10 +46,18 @@ function PrivateFilePreview({ surat, entityType }) {
             });
             if (controller.signal.aborted) return;
             const url = URL.createObjectURL(blob);
+            setQuarantined(false);
+            setScanStatus(null);
             objectUrl.current = url;
             setFile({ url, type: blob.type.split(';', 1)[0].toLowerCase() });
         } catch (failure) {
-            if (!controller.signal.aborted) setError(failure.message || 'Dokumen belum dapat dimuat.');
+            if (!controller.signal.aborted) {
+                setQuarantined(inspectionRequired && failure.status === 423 && failure.data?.error === 'File quarantined');
+                setScanStatus(SCAN_STATES[failure.data?.scanState] || null);
+                setError(!inspectionRequired && failure.status === 423
+                    ? 'Dokumen belum dapat diakses. Coba muat ulang dokumen.'
+                    : failure.message || 'Dokumen belum dapat dimuat.');
+            }
         } finally {
             if (!controller.signal.aborted) {
                 request.current = null;
@@ -62,6 +77,8 @@ function PrivateFilePreview({ surat, entityType }) {
             // explicit download on the server instead of reusing preview bytes.
             const blob = await fetchPrivateFile(`${endpoint}?download=1`, { signal: controller.signal });
             if (controller.signal.aborted) return;
+            setQuarantined(false);
+            setScanStatus(null);
             const url = URL.createObjectURL(blob);
             // Keep the bytes alive long enough for the browser to start saving.
             // The timeout and unmount cleanup both release the object URL.
@@ -80,7 +97,13 @@ function PrivateFilePreview({ surat, entityType }) {
                 link.remove();
             }
         } catch (failure) {
-            if (!controller.signal.aborted) setError(failure.message || 'Dokumen belum dapat diunduh.');
+            if (!controller.signal.aborted) {
+                setQuarantined(inspectionRequired && failure.status === 423 && failure.data?.error === 'File quarantined');
+                setScanStatus(SCAN_STATES[failure.data?.scanState] || null);
+                setError(!inspectionRequired && failure.status === 423
+                    ? 'Dokumen belum dapat diakses. Coba muat ulang dokumen.'
+                    : failure.message || 'Dokumen belum dapat diunduh.');
+            }
         } finally {
             if (!controller.signal.aborted) {
                 request.current = null;
@@ -104,10 +127,13 @@ function PrivateFilePreview({ surat, entityType }) {
             </CardHeader>
             <CardContent className="p-0">
                 {error && <p role="alert" className="p-4 text-sm text-destructive">{error}</p>}
+                {quarantined && <div className="px-4 pb-4"><FileScanStatus entityType={entityType} entityId={surat.id} status={scanStatus} onRefresh={loadFile} /></div>}
                 <div className="border-t bg-muted/20">
                     {!file ? (
                         <div className="flex flex-col items-center gap-3 p-8">
-                            <p className="text-sm text-muted-foreground">Muat pratinjau atau langsung unduh dokumen. Maksimum 50 MB.</p>
+                            <p className="text-sm text-muted-foreground">{inspectionRequired
+                                ? 'Muat pratinjau atau unduh dokumen yang telah lolos pemeriksaan.'
+                                : 'Muat pratinjau atau unduh dokumen.'}</p>
                             <Button type="button" variant="outline" onClick={loadFile} disabled={Boolean(loading)}>
                                 {loading === 'preview' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                 {loading === 'preview' ? 'Memuat dokumen...' : 'Muat dokumen'}

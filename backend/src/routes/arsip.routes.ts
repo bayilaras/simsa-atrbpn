@@ -8,6 +8,12 @@ import {
     queryArsipSchema,
     reconcileArchiveRulesSchema,
 } from '../validators/schemas';
+import {
+    archiveFulltextQuerySchema,
+    archiveSuggestionsQuerySchema,
+    archiveKeywordsQuerySchema,
+    archiveRelatedQuerySchema,
+} from '../validators/arsip-search.schemas';
 import { fullTextSearchService } from '../services/fulltext-search.service';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import {
@@ -95,14 +101,10 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 });
 
 // GET /api/arsip/search/fulltext - Full-text search across document content
-router.get('/search/fulltext', async (req: AuthRequest, res, next) => {
+router.get('/search/fulltext', validateQuery(archiveFulltextQuerySchema), async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
-        const { q, jenisArsip, tahun, page, limit } = req.query;
-
-        if (!q || typeof q !== 'string') {
-            return res.status(400).json({ error: 'Query parameter "q" is required' });
-        }
+        const { q, jenisArsip, tahun, page, limit } = res.locals.validatedQuery;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -111,11 +113,11 @@ router.get('/search/fulltext', async (req: AuthRequest, res, next) => {
         const result = await fullTextSearchService.search({
             query: q,
             unitKerjaId,
-            jenisArsip: typeof jenisArsip === 'string' ? jenisArsip : undefined,
-            tahun: tahun ? Number(tahun) : undefined,
+            jenisArsip,
+            tahun,
             securityClassifications: allowedSecurityClassifications(req.user),
-            page: page ? Number(page) : 1,
-            limit: limit ? Number(limit) : 20
+            page,
+            limit,
         });
 
         res.json({ success: true, ...result });
@@ -125,14 +127,10 @@ router.get('/search/fulltext', async (req: AuthRequest, res, next) => {
 });
 
 // GET /api/arsip/search/suggestions - Autocomplete suggestions
-router.get('/search/suggestions', async (req: AuthRequest, res, next) => {
+router.get('/search/suggestions', validateQuery(archiveSuggestionsQuerySchema), async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
-        const { q, limit } = req.query;
-
-        if (!q || typeof q !== 'string') {
-            return res.status(400).json({ error: 'Query parameter "q" is required' });
-        }
+        const { q, limit } = res.locals.validatedQuery;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -141,7 +139,7 @@ router.get('/search/suggestions', async (req: AuthRequest, res, next) => {
         const suggestions = await fullTextSearchService.getSuggestions(
             q,
             unitKerjaId,
-            limit ? Number(limit) : 10,
+            limit,
             allowedSecurityClassifications(req.user),
         );
 
@@ -152,34 +150,21 @@ router.get('/search/suggestions', async (req: AuthRequest, res, next) => {
 });
 
 // GET /api/arsip/search/keywords - Search by keywords
-router.get('/search/keywords', async (req: AuthRequest, res, next) => {
+router.get('/search/keywords', validateQuery(archiveKeywordsQuerySchema), async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
-        const { keywords, page, limit } = req.query;
-
-        if (!keywords || typeof keywords !== 'string') {
-            return res.status(400).json({ error: 'Keywords parameter is required' });
-        }
+        const { keywords, page, limit } = res.locals.validatedQuery;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
         }
 
-        const keywordList = keywords.split(',').map(k => k.trim()).filter(k => k.length > 0);
-
-        if (keywordList.length === 0) {
-            return res.status(400).json({ error: 'At least one keyword is required' });
-        }
-
-        const pageNum = page ? Number(page) : 1;
-        const limitNum = limit ? Number(limit) : 20;
-
         const result = await fullTextSearchService.searchByKeywords(
-            keywordList,
+            keywords,
             unitKerjaId,
             {
-                limit: limitNum,
-                offset: (pageNum - 1) * limitNum,
+                limit,
+                offset: (page - 1) * limit,
                 securityClassifications: allowedSecurityClassifications(req.user),
             }
         );
@@ -188,8 +173,8 @@ router.get('/search/keywords', async (req: AuthRequest, res, next) => {
             success: true,
             data: result.data,
             total: result.total,
-            page: pageNum,
-            totalPages: Math.ceil(result.total / limitNum)
+            page,
+            totalPages: Math.ceil(result.total / limit)
         });
     } catch (error) {
         next(error);
@@ -197,11 +182,11 @@ router.get('/search/keywords', async (req: AuthRequest, res, next) => {
 });
 
 // GET /api/arsip/:id/related - Get related documents
-router.get('/:id/related', async (req: AuthRequest, res, next) => {
+router.get('/:id/related', validateIdParam(), validateQuery(archiveRelatedQuerySchema), async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
-        const { limit } = req.query;
+        const { limit } = res.locals.validatedQuery;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -215,7 +200,7 @@ router.get('/:id/related', async (req: AuthRequest, res, next) => {
         const related = await fullTextSearchService.getRelatedDocuments(
             id as string,
             unitKerjaId,
-            limit ? Number(limit) : 5,
+            limit,
             allowedSecurityClassifications(req.user),
         );
 

@@ -11,31 +11,51 @@ Panduan ini membantu pegawai mempelajari **Sistem Informasi Manajemen Surat & Ar
 
 ## 1. Akses cepat untuk pengguna baru
 
-Alamat aplikasi: [https://simsa-frontend.vercel.app](https://simsa-frontend.vercel.app)
+Gunakan **alamat SIMSA yang diberikan operator** untuk lingkungan yang Anda gunakan. Pastikan alamatnya benar sebelum memasukkan kata sandi; alamat cloud dapat berbeda dari aplikasi lokal.
 
 Sebelum mulai, pastikan Super Admin sudah:
 
-- mendaftarkan alamat email kedinasan/Google Anda dengan ejaan yang tepat;
+- mendaftarkan alamat email Anda dengan ejaan yang tepat dan menyiapkan cara masuk;
 - menetapkan role dan unit kerja Anda; serta
 - mengaktifkan akun Anda.
 
 Alur belajar yang disarankan untuk hari pertama:
 
-1. Masuk dengan Google menggunakan email yang telah didaftarkan.
+1. Masuk dengan email dan kata sandi akun pribadi yang telah dibuat administrator.
 2. Kenali Dashboard, sidebar, pencarian, notifikasi, dan menu pengguna.
 3. Cari satu surat atau arsip contoh dan baca halaman detailnya.
 4. Pelajari pekerjaan harian sesuai role pada bagian [alur per peran](#4-alur-belajar-berdasarkan-peran).
 5. Coba input hanya pada data latihan yang disetujui admin.
 6. Keluar dari aplikasi setelah selesai, terutama pada komputer bersama.
 
-### Login Google internal
+### Login email dan kata sandi
+
+1. Buka alamat aplikasi yang diberikan operator.
+2. Isi email dan kata sandi akun yang telah dibuat, lalu klik **Masuk**.
+3. Setelah Dashboard terbuka, periksa peran dan unit kerja pada akun Anda.
+
+Administrator pertama memakai akun yang sudah dibuat pada lingkungan tersebut. Akun uji atau akun dari aplikasi lokal tidak otomatis tersedia di cloud. Aplikasi tidak menyediakan pendaftaran mandiri; hubungi Super Admin jika belum memiliki akun atau tidak dapat masuk.
+
+### Login Google, jika diaktifkan
+
+Gunakan langkah ini hanya jika tombol **Masuk dengan Google** tersedia dan operator telah mengaktifkan layanan tersebut. Pada deployment cloud metadata Render/Neon, login Google dinonaktifkan; gunakan email dan kata sandi.
 
 1. Buka alamat aplikasi.
 2. Klik tombol **Masuk dengan Google** di bawah pemisah **atau**.
 3. Pilih akun Google dengan email yang sama seperti akun yang diprovisi Super Admin.
 4. Selesaikan autentikasi Google. Setelah berhasil, Anda kembali ke Dashboard SIMSA.
 
-Login Google **tidak membuat akun baru secara otomatis**. Jika email belum diprovisi, salah penulisan, dinonaktifkan, atau belum diberi role, hubungi Super Admin. Form email dan password hanya digunakan untuk akun yang memang dikelola admin; aplikasi tidak menyediakan pendaftaran mandiri.
+Login Google **tidak membuat akun baru secara otomatis**. Jika email belum diprovisi, salah penulisan, dinonaktifkan, atau belum diberi role, hubungi Super Admin.
+
+### Fitur yang tersedia pada lingkungan Anda
+
+Pada cloud metadata, pengguna dapat mengelola metadata surat/arsip, pencarian, lokasi fisik, dan laporan sesuai kewenangannya serta prasyarat tiap modul. Unggah atau akses dokumen digital, OCR, serta tahapan yang memerlukan bukti berkas belum tersedia sampai penyimpanan privat dan pemeriksaan keamanan berkas diaktifkan. Pesan **Layanan penyimpanan berkas belum tersedia** menjelaskan batas ini; jangan mengunggah berulang-ulang untuk mengatasinya. Ekspor laporan yang dibuat dari metadata tetap dapat digunakan pada modul yang menyediakannya.
+
+Alur berkas digital dalam panduan ini berlaku hanya pada lingkungan yang sudah menyediakan layanannya. Kebutuhan bukti dan persetujuan tetap berlaku; pencatatan metadata tidak menggantikan bukti yang diwajibkan suatu proses.
+
+Database cloud baru belum memiliki klasifikasi dan JRA aktif. Registrasi arsip yang mensyaratkannya belum dapat diselesaikan sampai operator menyiapkan aturan yang berlaku. Aktivasi aturan dengan PDF sumber terverifikasi juga menunggu layanan berkas tersedia.
+
+Database cloud baru tidak otomatis berisi data, file, akun, atau konfigurasi dari aplikasi lokal. Periksa lingkungan dan unit kerja sebelum menyimpulkan bahwa data hilang. Pemindahan data lama perlu direncanakan dan diperiksa oleh operator; lihat [panduan deployment Render/Neon](DEPLOY_RENDER_NEON.md).
 
 ### Sesi dan keluar aplikasi
 
@@ -153,14 +173,14 @@ Untuk admin:
 
 1. Buka **Surat > Surat Masuk** lalu klik **Tambah Surat Masuk**.
 2. Isi nomor, tanggal surat, tanggal diterima, pengirim, tujuan/perihal, naskah atau sifat surat, klasifikasi, dan metadata lain yang tersedia.
-3. Lampirkan dokumen bila diperlukan. PDF dianjurkan untuk salinan final.
-4. Periksa nomor, tanggal, pengirim, perihal, unit, dan file sebelum menyimpan.
+3. Lampirkan dokumen bila diperlukan dan layanan berkas telah tersedia. Pada cloud metadata, lanjutkan pencatatan metadata tanpa unggahan pengganti.
+4. Periksa nomor, tanggal, pengirim, perihal, unit, dan lampiran yang tersedia sebelum menyimpan.
 5. Buka detail untuk mengedit, membalas, mendistribusikan, atau mengarsipkan sesuai tombol dan kewenangan.
 
 ### Surat keluar
 
 1. Buka **Surat > Surat Keluar** lalu klik **Tambah Surat Keluar**.
-2. Isi jenis naskah dinas, nomor, tanggal, tujuan, perihal, klasifikasi, serta dokumen final.
+2. Isi jenis naskah dinas, nomor, tanggal, tujuan, perihal, dan klasifikasi. Lampirkan dokumen final bila layanan berkas telah tersedia.
 3. Untuk membalas surat masuk, buka detail surat masuk dan pilih **Balas Surat** agar referensi asal tetap terhubung.
 4. Simpan surat sebagai draft, lalu buka halaman detail dan periksa seluruh metadata.
 5. Klik **Ajukan Persetujuan**, pilih administrator aktif lain sebagai penyetuju, isi catatan bila perlu, lalu kirim.
@@ -179,7 +199,9 @@ Jangan menghapus surat hanya untuk memperbaiki kesalahan kecil. Gunakan fungsi e
 
 ### Unggah massal dan OCR PDF
 
-Untuk menyiapkan beberapa draft arsip dari PDF sekaligus:
+Alur ini hanya tersedia setelah layanan penyimpanan dan pemeriksaan keamanan berkas diaktifkan. **Unggah massal dan OCR tidak tersedia pada cloud metadata.** Untuk mencatat daftar yang sudah tersedia, gunakan formulir metadata atau impor CSV sesuai kewenangan; CSV tidak menghasilkan lampiran digital.
+
+Pada lingkungan yang mendukungnya, siapkan beberapa draft arsip dari PDF sekaligus:
 
 1. Buka **Unggah Massal & OCR** dari Dashboard.
 2. Pilih satu unit kerja yang konkret. Super Admin juga wajib memilih unit tujuan sebelum unggah.
@@ -234,6 +256,8 @@ Arsip lama berstatus aturan belum terverifikasi dapat dibaca tetapi tidak boleh 
 
 Versi aktif tidak diedit langsung. Alur yang benar:
 
+Tahapan yang membutuhkan PDF sumber terverifikasi belum dapat diselesaikan pada cloud metadata. Siapkan metadata draft sesuai kewenangan, lalu minta operator menyiapkan layanan berkas sebelum melanjutkan tahapan tersebut. Jangan mengganti bukti sumber dengan keterangan bahwa file telah tersedia.
+
 1. Super Admin membuka **Master Data > Versi Aturan** dan membuat draft revisi dari versi aktif.
 2. Lengkapi identitas versi, tanggal berlaku, dasar hukum, URL sumber resmi, dan PDF sumber.
 3. Sistem menghitung informasi dokumen sumber dan SHA-256; jangan mengganti bukti itu dengan nilai yang diketik sendiri.
@@ -242,7 +266,7 @@ Versi aktif tidak diedit langsung. Alur yang benar:
 6. Laksanakan tahapan **Ajukan > Telaah > Setujui > Aktifkan** dengan akun berbeda sesuai pemisahan tugas.
 7. Setelah aktif, aturan lama tetap melekat pada arsip lama; jangan melakukan perubahan massal tanpa rekonsiliasi yang dapat diaudit.
 
-Auditor dapat membaca versi, PDF sumber yang tersedia, validasi, dan jejak audit. Aktivasi versi hanya dilakukan Super Admin.
+Auditor dapat membaca versi, validasi, dan jejak audit; akses PDF sumber mengikuti ketersediaan layanan berkas dan izin rekod. Aktivasi versi hanya dilakukan Super Admin.
 
 ## 9. Retensi, appraisal, pemicu, dan legal hold
 
@@ -305,6 +329,8 @@ Tab **Penyerahan (Riwayat)** hanya untuk membaca/mencetak batch lama. Penyerahan
 
 Pada **Tata Kelola Retensi > Penyerahan Permanen**:
 
+Manifest yang mensyaratkan objek digital dan berita acara terverifikasi belum dapat diselesaikan pada cloud metadata. Alur di bawah berlaku setelah layanan berkas dan seluruh prasyaratnya tersedia.
+
 1. Pastikan setiap arsip memiliki keputusan appraisal **Permanen** yang disetujui.
 2. Pastikan objek digital/lampiran sudah bersih dan pemeriksaan fixity berhasil.
 3. Klik **Buat manifest**, isi nomor, tujuan, keterangan, arsip, keputusan appraisal, dan objek digital terverifikasi.
@@ -330,8 +356,8 @@ Fitur ini mencatat sirkulasi secara langsung; pastikan kewenangan peminjaman tel
 
 - **Layanan Arsip:** catat dan pantau permintaan layanan internal.
 - **Arsip Vital / Arsip Terjaga:** tandai dan kelola arsip yang memerlukan perlindungan khusus sesuai kewenangan.
-- **Arsip Elektronik:** kelola media digital dan metadata teknis.
-- **Autentikasi:** catat proses autentikasi arsip.
+- **Arsip Elektronik:** telusuri catatan media digital dan metadata teknis; pembuatan serta verifikasi yang memerlukan berkas hanya tersedia jika layanan berkas aktif.
+- **Autentikasi:** jalankan proses autentikasi arsip jika layanan berkas dan bukti yang disyaratkan tersedia.
 - **Tunjuk Silang:** hubungkan rekod yang berkaitan tanpa menggandakan arsip.
 - **Formulir:** galeri ini berisi format referensi kosong. Untuk dokumen berbasis data, gunakan tombol cetak/unduh pada modul Peminjaman, Penyusutan, Arsip Vital/Terjaga, atau Laporan agar isi berasal dari rekod aplikasi.
 
@@ -376,7 +402,7 @@ Khusus Super Admin:
 
 1. Buka **Manajemen Pengguna** dan klik **Tambah Pengguna**.
 2. Isi email yang tepat, nama, role, unit kerja, jabatan, NIP, dan kredensial bila digunakan.
-3. Untuk Google, email yang diprovisi harus sama dengan akun Google pengguna.
+3. Siapkan kata sandi untuk akun yang masuk melalui email/sandi. Jika login Google diaktifkan, email yang diprovisi harus sama dengan akun Google pengguna.
 4. Gunakan edit untuk mengubah role, unit, jabatan, NIP, atau status.
 5. Nonaktifkan akun segera saat pegawai mutasi/berhenti atau akses tidak lagi diperlukan.
 6. Hindari menghapus akun yang memiliki histori; nonaktifkan bila tujuan utamanya menghentikan akses.
@@ -400,9 +426,9 @@ Gunakan **Pengaturan** untuk konfigurasi yang memang tersedia bagi Super Admin, 
 - Jangan membagikan password, OTP, tautan autentikasi, atau sesi browser.
 - Pastikan domain aplikasi benar sebelum masuk.
 - Gunakan klasifikasi keamanan yang sesuai dan asas need-to-know.
-- Jangan mengunggah file yang tidak berhubungan dengan pekerjaan.
-- File umum dibatasi maksimum 10 MiB dan isi file diperiksa terhadap jenis yang dinyatakan. PDF, Word, Excel, JPG, PNG, dan GIF didukung pada alur lampiran umum; tampilan form tertentu dapat membatasi lebih ketat.
-- Lampiran tetap dikarantina sampai pemeriksaan keamanan menyatakan bersih. Bila terlalu lama, jangan mengunggah berulang-ulang; laporkan kepada admin.
+- Unggah hanya jika layanan berkas tersedia dan file berhubungan dengan pekerjaan.
+- Pada lingkungan dengan unggahan aktif, file umum dibatasi maksimum 10 MiB dan isi file diperiksa terhadap jenis yang dinyatakan. PDF, Word, Excel, JPG, PNG, dan GIF didukung pada alur lampiran umum; tampilan form tertentu dapat membatasi lebih ketat.
+- Pada lingkungan tersebut, lampiran tetap dikarantina sampai pemeriksaan keamanan menyatakan bersih. Bila terlalu lama, jangan mengunggah berulang-ulang; laporkan kepada admin.
 - Penghapusan langsung bitstream/lampiran dinonaktifkan. Gunakan workflow penyusutan yang menjaga persetujuan dan bukti.
 - Keluar setelah bekerja di komputer bersama dan jangan menyimpan password di browser publik.
 - Laporkan salah akses, file mencurigakan, kehilangan perangkat, atau aktivitas tidak dikenal secepatnya.
@@ -411,16 +437,19 @@ Gunakan **Pengaturan** untuk konfigurasi yang memang tersedia bagi Super Admin, 
 
 | Gejala | Pemeriksaan dan tindakan |
 |---|---|
-| Tombol **Masuk dengan Google** kembali ke login/gagal | Pastikan akun Google yang dipilih sama dengan email yang diprovisi. Coba jendela privat, izinkan cookie/redirect untuk domain aplikasi, lalu hubungi Super Admin bila tetap gagal. |
+| Email/kata sandi tidak dapat digunakan | Pastikan alamat aplikasi, ejaan email, dan kata sandi sesuai akun pada lingkungan tersebut. Akun lokal tidak otomatis berlaku di cloud. Hubungi Super Admin bila tetap gagal; jangan kirim kata sandi dalam laporan. |
+| Tombol **Masuk dengan Google** tidak ada | Login Google belum diaktifkan; pada cloud metadata kondisi ini memang diharapkan. Gunakan email dan kata sandi akun yang disediakan administrator. |
+| Tombol **Masuk dengan Google** tersedia tetapi login gagal | Pastikan akun Google yang dipilih sama dengan email yang diprovisi. Coba jendela privat, izinkan cookie/redirect untuk domain aplikasi, lalu hubungi Super Admin bila tetap gagal. |
+| Aplikasi cloud lambat saat pertama dibuka | Jika operator memakai Render Free, layanan dapat tidur ketika tidak digunakan dan membutuhkan sekitar satu menit untuk bangun. Tunggu lalu muat ulang sekali; laporkan jika tetap gagal. Paket gratis tidak menjamin waktu respons tetap. |
 | Berhasil login tetapi menu sangat sedikit | Role atau unit kerja belum ditetapkan/diaktifkan. Lihat role pada menu avatar dan hubungi Super Admin. |
 | Menu tertentu tidak ada atau kembali ke Dashboard | Role tidak memiliki kewenangan atau fitur dinonaktifkan pada profil internal. Jangan mencoba memakai URL langsung. |
 | Sesi tiba-tiba berakhir | Kemungkinan idle sekitar 30 menit atau sesi tidak valid. Masuk kembali dan periksa apakah perubahan terakhir sudah tersimpan. |
-| Pencarian tidak menemukan data | Ketik minimal dua karakter, periksa ejaan/filter/unit, lalu cari melalui daftar khusus. Data terkendali tetap tersembunyi tanpa akses. |
-| Unggah ditolak | Periksa ukuran maksimum, ekstensi, jenis MIME, isi file, dan apakah file rusak. Simpan ulang dari aplikasi sumber bila perlu. |
-| File ada tetapi tidak dapat dibuka | File mungkin masih dikarantina, terdeteksi bermasalah, atau memerlukan persetujuan akses. Hubungi admin dengan ID rekod dan waktu unggah, tanpa mengirim file lewat kanal pribadi. |
+| Pencarian tidak menemukan data | Ketik minimal dua karakter, periksa ejaan/filter/unit dan lingkungan yang dibuka, lalu cari melalui daftar khusus. Cloud baru tidak otomatis memuat data lokal. Data terkendali tetap tersembunyi tanpa akses. |
+| Unggah ditolak | Baca pemberitahuan layanan berkas terlebih dahulu. Cloud metadata memang menonaktifkan unggahan. Jika layanan aktif, periksa ukuran maksimum, ekstensi, jenis MIME, isi file, dan apakah file rusak. |
+| File ada tetapi tidak dapat dibuka | Periksa ketersediaan layanan berkas. Jika layanan aktif, file mungkin masih dikarantina, terdeteksi bermasalah, atau memerlukan persetujuan akses. Hubungi admin dengan ID rekod dan waktu unggah, tanpa mengirim file lewat kanal pribadi. |
 | Arsip tidak masuk kandidat penyusutan | Periksa jatuh tempo, pemicu terverifikasi, keputusan appraisal, legal hold, provenance versi aturan, reservasi manifest, dan batch aktif. |
 | Tidak dapat menelaah/menyetujui | Sistem mencegah self-review. Minta akun pejabat lain yang berwenang melakukan tahap tersebut. |
-| Manifest permanen tidak dapat dibuat | Pastikan keputusan Permanen telah disetujui serta objek digital bersih dan lolos fixity; pastikan arsip belum direservasi/dieksekusi. |
+| Manifest permanen tidak dapat dibuat | Proses ini memerlukan layanan berkas dan bukti digital, sehingga belum tersedia pada cloud metadata. Pada lingkungan yang mendukungnya, pastikan keputusan Permanen telah disetujui, objek digital bersih dan lolos fixity, serta arsip belum direservasi/dieksekusi. |
 | Data tampak tidak sesuai | Muat ulang sekali, catat URL/ID rekod, waktu, langkah, pesan kesalahan, dan tangkapan layar yang tidak membocorkan data; kirim ke admin. |
 | Indikator offline muncul | Hentikan input, tunggu koneksi pulih, kemudian muat ulang. SIMSA tidak menyimpan data arsip untuk kerja offline. |
 
@@ -457,7 +486,7 @@ Saat melapor, sertakan role, unit kerja, waktu kejadian, halaman/menu, ID atau n
 - [ ] Butir JRA dan rumusan pemicu sudah dibaca.
 - [ ] Item, jumlah, kurun waktu, serta lokasi fisik cocok.
 - [ ] Klasifikasi keamanan dan PIC sudah tepat.
-- [ ] Lampiran dapat dibuka, merupakan versi final, dan tidak berisi file yang tidak perlu.
+- [ ] Jika layanan berkas aktif dan lampiran digunakan, lampiran dapat dibuka, merupakan versi final, dan tidak berisi file yang tidak perlu. Proses yang mewajibkan bukti berkas tidak dilanjutkan sebelum bukti tersedia.
 
 ### Sebelum appraisal atau verifikasi pemicu
 

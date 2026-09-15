@@ -8,6 +8,7 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
     const [serverData, setServerData] = useState([])
     const [serverTotal, setServerTotal] = useState(0)
     const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState(null)
 
     // Check mode
     const isServerSide = typeof dataInput === 'function'
@@ -60,6 +61,7 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
         let isMounted = true;
         const fetchData = async () => {
             setIsLoading(true);
+            setError(null);
             try {
                 const result = await dataInputRef.current(currentPage, pageSize);
                 if (isMounted) {
@@ -68,6 +70,11 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
                 }
             } catch (error) {
                 console.error("Error fetching data in useDataTable:", error);
+                if (isMounted) {
+                    setError(error);
+                    setServerData([]);
+                    setServerTotal(0);
+                }
             } finally {
                 if (isMounted) setIsLoading(false);
             }
@@ -126,6 +133,7 @@ export function useDataTable(dataInput, { pageSize = 10, defaultSort = null, dep
         requestSort,
         totalItems,
         setPage: goToPage,
-        isLoading
+        isLoading,
+        error
     }
 }

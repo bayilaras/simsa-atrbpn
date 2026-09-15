@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useAppConfig } from '@/context/app-config-context'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
-import { Link, useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Archive, RefreshCw, Search, Eye, Clock, Upload, ChevronUp, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ExportButton } from '@/components/ExportButton'
+import ImportCsvDialog from '@/components/ImportCsvDialog'
 import { ArchiveLifecycleWidget } from '@/components/ArchiveLifecycleWidget'
 import {
     Select,
@@ -44,7 +45,10 @@ import {
     TabsTrigger,
 } from "@/components/ui/tabs"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { useDataTable } from '@/hooks/use-data-table'
+import { useArchiveList } from '@/hooks/use-archive-list'
+import { readArchiveListQuery, writeArchiveListQuery } from '@/lib/archive-list-query'
+import { ArchivePreviewPanel } from '@/components/archives/ArchivePreviewPanel'
+import { SavedArchiveFilters } from '@/components/archives/SavedArchiveFilters'
 import {
     Pagination,
     PaginationContent,
@@ -63,17 +67,30 @@ export default function Arsip() {
     const { capabilities } = useAppConfig()
     const isAdmin = canWrite()
     const isSuperAdmin = user?.role === 'super_admin'
+    const [searchParams, setSearchParams] = useSearchParams()
+    const query = readArchiveListQuery(searchParams)
+    const { search: searchTerm, tahun: tahunFilter, page: currentPage, pageSize } = query
+    const selectedUnitKerja = isSuperAdmin ? query.unitKerjaId : (resolveEffectiveUnitKerjaId(user) || 'all')
+    const updateQuery = (changes, replace = true) => setSearchParams(
+        writeArchiveListQuery({ ...query, ...changes }), { replace },
+    )
+    const setSearchTerm = search => updateQuery({ search, page: 1 })
+    const setTahunFilter = tahun => updateQuery({ tahun, page: 1 })
+    const setPage = useCallback((page, replace = false) => {
+        setSearchParams(previous => writeArchiveListQuery({ ...readArchiveListQuery(previous), page }), { replace })
+    }, [setSearchParams])
 
     // Valid tabs
     const activeTab = VALID_TABS.includes(tab) ? tab : 'keluar'
 
-    const [searchTerm, setSearchTerm] = useState('')
-    const [arsipStats, setArsipStats] = useState({ total: 0, arsipMasuk: 0, arsipKeluar: 0 })
-    const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
+    const [refreshVersion, setRefreshVersion] = useState(0)
+    const [statsSnapshot, setStatsSnapshot] = useState({ scope: null, status: 'loading', data: null })
+    const [isAdvancedOpen, setIsAdvancedOpen] = useState(tahunFilter !== 'all')
+    const [selection, setSelection] = useState(null)
+    const previewTrigger = useRef(null)
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([])
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined))
 
     // Load unit kerja list for super admin
     useEffect(() => {
@@ -88,86 +105,66 @@ export default function Arsip() {
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined)
+    const statsScope = JSON.stringify([user?.id, user?.role, resolvedUnitKerjaId])
+    const statsLoading = statsSnapshot.scope !== statsScope || statsSnapshot.status === 'loading'
+    const arsipStats = !statsLoading && statsSnapshot.status === 'success' ? statsSnapshot.data : null
 
     // Fetch arsip stats
     useEffect(() => {
+        let active = true
         const fetchArsipStats = async () => {
+            setStatsSnapshot({ scope: statsScope, status: 'loading', data: null })
             try {
                 const result = await arsipService.getStats({ unitKerjaId: resolvedUnitKerjaId })
-                if (result) {
-                    setArsipStats(result)
+                if (!active) return
+                if (!['total', 'arsipMasuk', 'arsipKeluar'].every(key => Number.isSafeInteger(result?.[key]) && result[key] >= 0)) {
+                    throw new Error('Statistik arsip tidak lengkap.')
                 }
+                setStatsSnapshot({ scope: statsScope, status: 'success', data: result })
             } catch (error) {
+                if (!active) return
                 console.error('Error fetching arsip stats:', error)
+                setStatsSnapshot({ scope: statsScope, status: 'error', data: null })
             }
         }
         fetchArsipStats()
-    }, [activeTab, resolvedUnitKerjaId])
-
-    // Filter state
-    const [tahunFilter, setTahunFilter] = useState('all')
+        return () => { active = false }
+    }, [activeTab, resolvedUnitKerjaId, refreshVersion, statsScope])
 
     // Redirect if tab is invalid
     useEffect(() => {
         if (!VALID_TABS.includes(tab)) {
-            navigate('/arsip/keluar', { replace: true })
+            navigate({ pathname: '/arsip/keluar', search: searchParams.toString() }, { replace: true })
         }
-    }, [tab, navigate])
+    }, [tab, navigate, searchParams])
 
     const handleTabChange = (value) => {
-        navigate(`/arsip/${value}`)
-        setSearchTerm('')
-        setTahunFilter('all')
+        navigate({ pathname: `/arsip/${value}`, search: writeArchiveListQuery({ ...query, page: 1 }).toString() })
     }
 
-    // Data fetching using useDataTable
-    const {
-        currentData,
-        totalPages,
-        currentPage,
-        nextPage,
-        prevPage,
-        canNext,
-        canPrev,
-        setPage,
-        isLoading
-    } = useDataTable(
-        async (page, limit) => {
-            if (activeTab === 'retensi') return { data: [], total: 0 }
-
-            try {
-                const response = await arsipService.getAll({
-                    page,
-                    limit,
-                    unitKerjaId: resolvedUnitKerjaId,
-                    jenisArsip: activeTab,
-                    search: searchTerm,
-                    tahun: tahunFilter !== 'all' ? parseInt(tahunFilter) : undefined,
-                })
-                return {
-                    data: response.data,
-                    total: response.pagination.total,
-                }
-            } catch (error) {
-                console.error('Failed to fetch arsip:', error)
-                return { data: [], total: 0 }
-            }
-        },
-        {
-            pageSize: 10,
-            dependencies: [activeTab, searchTerm, tahunFilter, user, resolvedUnitKerjaId]
-        }
-    )
+    const list = useArchiveList({
+        scope: statsScope, tab: activeTab, search: searchTerm, tahun: tahunFilter,
+        unitKerjaId: resolvedUnitKerjaId, page: currentPage, pageSize,
+        revision: refreshVersion, onPageChange: setPage,
+    })
+    const { rows: currentData, totalPages, total: totalItems, loading: isLoading, error: loadError } = list
+    const selectedArchiveId = selection?.key === list.key ? selection.id : null
+    const closePreview = () => {
+        setSelection(null)
+        if (previewTrigger.current?.isConnected) previewTrigger.current.focus()
+    }
+    const applySavedFilters = filters => navigate({
+        pathname: `/arsip/${filters.tab}`,
+        search: writeArchiveListQuery({ ...filters, unitKerjaId: isSuperAdmin ? filters.unitKerjaId : 'all', page: 1 }).toString(),
+    })
 
     // Action handlers
     const handleViewDetail = (row) => navigate(`/arsip/detail/${row.id}`)
 
-    const hasActiveFilters = tahunFilter !== 'all' || searchTerm
+    const hasActiveFilters = tahunFilter !== 'all' || searchTerm || (isSuperAdmin && selectedUnitKerja !== 'all')
 
     const clearAllFilters = () => {
-        setSearchTerm('')
-        setTahunFilter('all')
-        setPage(1)
+        updateQuery({ search: '', tahun: 'all', unitKerjaId: 'all', page: 1 })
     }
 
     return (
@@ -187,10 +184,12 @@ export default function Arsip() {
                 </div>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex w-full items-center gap-2 sm:w-auto">
-                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPage(1); }}>
-                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
+                    <div className="w-full space-y-1.5 sm:w-auto">
+                        <label htmlFor="arsip-unit-kerja" className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                            <Building2 className="h-4 w-4" aria-hidden="true" /> Unit kerja
+                        </label>
+                        <Select value={selectedUnitKerja} onValueChange={unitKerjaId => updateQuery({ unitKerjaId, page: 1 })}>
+                            <SelectTrigger id="arsip-unit-kerja" className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
@@ -203,21 +202,24 @@ export default function Arsip() {
                     </div>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="outline" onClick={() => setPage(1)} size="sm" className="h-9">
+                    <Button variant="outline" onClick={() => setRefreshVersion(version => version + 1)} disabled={isLoading} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                         Perbarui
                     </Button>
+
+                    {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="arsip" unitKerjaId={resolvedUnitKerjaId} onImportComplete={() => setRefreshVersion(version => version + 1)} />}
 
                     <ExportButton
                         type="arsip"
                         filters={{
                             jenisArsip: activeTab === 'masuk' ? 'masuk' : activeTab === 'keluar' ? 'keluar' : undefined,
                             unitKerjaId: resolvedUnitKerjaId,
+                            search: searchTerm || undefined,
                             tahun: tahunFilter !== 'all' ? tahunFilter : undefined,
                         }}
                     />
 
-                    {isAdmin && capabilities.files && (
+                    {isAdmin && capabilities.fileUploads && capabilities.bulkOcr !== false && (
                         <Button asChild variant="default" size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
                             <Link to="/bulk-upload">
                                 <Upload className="mr-2 h-3.5 w-3.5" />
@@ -234,7 +236,7 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Arsip</p>
-                            <p className="text-2xl font-bold">{arsipStats.total}</p>
+                            <p className="text-2xl font-bold">{arsipStats?.total ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600 dark:text-blue-400">
                             <FolderArchive className="h-5 w-5" />
@@ -245,7 +247,7 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Arsip Masuk</p>
-                            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{arsipStats.arsipMasuk}</p>
+                            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{arsipStats?.arsipMasuk ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-full text-emerald-600 dark:text-emerald-400">
                             <Inbox className="h-5 w-5" />
@@ -256,7 +258,7 @@ export default function Arsip() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Arsip Keluar</p>
-                            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{arsipStats.arsipKeluar}</p>
+                            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{arsipStats?.arsipKeluar ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-yellow-100 dark:bg-yellow-500/15 rounded-full text-yellow-600 dark:text-yellow-400">
                             <Upload className="h-5 w-5" />
@@ -265,18 +267,25 @@ export default function Arsip() {
                 </Card>
             </div>
 
+            {statsLoading ? <p role="status" className="text-sm text-muted-foreground">Memuat statistik…</p> : !arsipStats && (
+                <div role="alert" className="rounded-lg border border-destructive/40 p-3">
+                    <p className="text-sm">Statistik belum tersedia. Periksa koneksi dan coba lagi.</p>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => setRefreshVersion(version => version + 1)}>Coba lagi statistik</Button>
+                </div>
+            )}
+
             {/* Main Content with Tabs */}
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <TabsList className="bg-muted/50 p-1">
+                    <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1 sm:flex sm:w-fit">
                         <TabsTrigger value="keluar" className="gap-2">
-                            <Upload className="h-4 w-4" /> Arsip Surat Keluar
+                            <Upload className="h-4 w-4" /><span className="sm:hidden">Keluar</span><span className="hidden sm:inline">Arsip Surat Keluar</span>
                         </TabsTrigger>
                         <TabsTrigger value="masuk" className="gap-2">
-                            <Inbox className="h-4 w-4" /> Arsip Surat Masuk
+                            <Inbox className="h-4 w-4" /><span className="sm:hidden">Masuk</span><span className="hidden sm:inline">Arsip Surat Masuk</span>
                         </TabsTrigger>
                         <TabsTrigger value="retensi" className="gap-2">
-                            <Clock className="h-4 w-4" /> Status Retensi
+                            <Clock className="h-4 w-4" /><span className="sm:hidden">Retensi</span><span className="hidden sm:inline">Status Retensi</span>
                         </TabsTrigger>
                     </TabsList>
                 </div>
@@ -336,18 +345,25 @@ export default function Arsip() {
                 {/* Shared Content for Masuk/Keluar Tabs */}
                 {(activeTab === 'masuk' || activeTab === 'keluar') && (
                     <TabsContent value={activeTab} className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                        <Card className="shadow-sm border-border/60">
+                        <div className={selectedArchiveId ? 'grid min-w-0 items-start gap-4 xl:grid-cols-2' : 'min-w-0'}>
+                        <Card className={`min-w-0 shadow-sm border-border/60 ${selectedArchiveId ? 'order-2 xl:order-1' : ''}`}>
                             <CardHeader className="pb-4">
                                 <div className="flex flex-col space-y-4">
-                                    <div className="flex flex-col md:flex-row gap-3">
-                                        <div className="relative flex-1">
-                                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                            <Input
-                                                placeholder={`Cari arsip surat ${activeTab}...`}
-                                                className="pl-9 bg-background/50 border-input/60 focus:bg-background transition-colors"
-                                                value={searchTerm}
-                                                onChange={(e) => setSearchTerm(e.target.value)}
-                                            />
+                                    <div className="flex flex-col md:flex-row gap-3 md:items-end">
+                                        <div className="min-w-0 flex-1 space-y-1.5">
+                                            <label htmlFor="arsip-search" className="text-sm font-medium">Cari arsip</label>
+                                            <div className="relative">
+                                                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                                <Input
+                                                    id="arsip-search"
+                                                    type="search"
+                                                    maxLength={255}
+                                                    placeholder="Nomor berkas, nomor surat, atau perihal…"
+                                                    className="pl-9 bg-background/50 border-input/60 focus:bg-background transition-colors"
+                                                    value={searchTerm}
+                                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                                />
+                                            </div>
                                         </div>
                                         <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen} className="flex-none">
                                             <CollapsibleTrigger asChild>
@@ -367,24 +383,25 @@ export default function Arsip() {
                                             </Button>
                                         )}
                                     </div>
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <p className="text-xs text-muted-foreground">Pilih uraian berkas untuk melihat pratinjau dan informasi arsip.</p>
+                                        <SavedArchiveFilters userId={user?.id} filters={{ ...query, tab: activeTab, unitKerjaId: selectedUnitKerja }} onApply={applySavedFilters} />
+                                    </div>
+                                    {hasActiveFilters && <div aria-label="Filter aktif" className="flex flex-wrap gap-2">
+                                        {searchTerm && <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal break-all text-left" onClick={() => setSearchTerm('')} aria-label="Hapus filter pencarian">Pencarian: {searchTerm}<X className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" /></Button>}
+                                        {tahunFilter !== 'all' && <Button variant="secondary" size="sm" onClick={() => setTahunFilter('all')} aria-label="Hapus filter tahun">Tahun: {tahunFilter}<X className="ml-2 h-3.5 w-3.5" aria-hidden="true" /></Button>}
+                                        {isSuperAdmin && selectedUnitKerja !== 'all' && <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal text-left" onClick={() => updateQuery({ unitKerjaId: 'all', page: 1 })} aria-label="Hapus filter unit">Unit: {unitKerjaList.find(unit => unit.id === selectedUnitKerja)?.name || selectedUnitKerja}<X className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" /></Button>}
+                                    </div>}
 
                                     <Collapsible open={isAdvancedOpen}>
                                         <CollapsibleContent className="pt-2">
                                             <div className="bg-muted/30 p-4 rounded-lg border border-border/50 flex flex-col md:flex-row gap-4 items-start md:items-end">
                                                 <div className="space-y-1.5 w-full md:w-[200px]">
-                                                    <label className="text-xs font-semibold text-muted-foreground uppercase">Tahun Arsip</label>
-                                                    <Select value={tahunFilter} onValueChange={setTahunFilter}>
-                                                        <SelectTrigger className="h-9 bg-background">
-                                                            <SelectValue placeholder="Tahun" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="all">Semua Tahun</SelectItem>
-                                                            <SelectItem value="2026">2026</SelectItem>
-                                                            <SelectItem value="2025">2025</SelectItem>
-                                                            <SelectItem value="2024">2024</SelectItem>
-                                                            <SelectItem value="2023">2023</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
+                                                    <label htmlFor="arsip-tahun" className="text-xs font-semibold text-muted-foreground uppercase">Tahun Arsip</label>
+                                                    <select id="arsip-tahun" value={tahunFilter} onChange={event => setTahunFilter(event.target.value)} className="min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                                        <option value="all">Semua Tahun</option>
+                                                        {Array.from({ length: 101 }, (_, index) => String(2100 - index)).map(year => <option key={year} value={year}>{year}</option>)}
+                                                    </select>
                                                 </div>
                                             </div>
                                         </CollapsibleContent>
@@ -395,7 +412,16 @@ export default function Arsip() {
                                 <div className="border-t border-border/60">
                                     {isLoading ? (
                                         <div className="p-4">
-                                            <TableSkeleton rows={5} columns={7} />
+                                            <TableSkeleton rows={5} columns={9} />
+                                        </div>
+                                    ) : loadError ? (
+                                        <div role="alert" className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                                            <AlertCircle className="h-8 w-8 text-destructive" aria-hidden="true" />
+                                            <p className="font-medium">Gagal memuat daftar arsip</p>
+                                            <p className="text-sm text-muted-foreground">Periksa koneksi Anda lalu coba lagi.</p>
+                                            <Button variant="outline" onClick={() => setRefreshVersion(version => version + 1)}>
+                                                <RefreshCw className="h-4 w-4" aria-hidden="true" /> Coba lagi
+                                            </Button>
                                         </div>
                                     ) : (
                                         <Table responsive>
@@ -405,22 +431,23 @@ export default function Arsip() {
                                                     <TableHead className="w-[120px]">No. Berkas</TableHead>
                                                     <TableHead className="w-[100px]">Klasifikasi</TableHead>
                                                     <TableHead className="min-w-[200px]">Uraian Berkas</TableHead>
+                                                    <TableHead className="w-[130px]">Tanggal / Unit</TableHead>
                                                     <TableHead className="w-[150px]">Lokasi</TableHead>
                                                     <TableHead className="w-[120px]">Retensi</TableHead>
-                                                    <TableHead className="w-[100px]">Status</TableHead>
+                                                    <TableHead className="w-[100px]">Nasib Akhir</TableHead>
                                                     <TableHead className="w-[80px] text-right">Aksi</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
                                                 {currentData.length === 0 ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={8} className="text-center py-16 text-muted-foreground">
+                                                        <TableCell colSpan={9} className="text-center py-16 text-muted-foreground">
                                                             <div className="flex flex-col items-center justify-center gap-2">
                                                                 <div className="p-3 bg-muted rounded-full">
                                                                     <FolderArchive className="h-8 w-8 opacity-50" />
                                                                 </div>
                                                                 <p className="font-medium">Belum ada data arsip {activeTab}</p>
-                                                                <p className="text-sm opacity-70">
+                                                                <p className="text-sm text-muted-foreground">
                                                                     {searchTerm || hasActiveFilters
                                                                         ? 'Coba sesuaikan filter pencarian Anda'
                                                                         : 'Gunakan menu Arsip di Surat Masuk/Keluar untuk menambahkan data'
@@ -431,9 +458,9 @@ export default function Arsip() {
                                                     </TableRow>
                                                 ) : (
                                                     currentData.map((row, index) => (
-                                                        <TableRow key={row.id} className="group hover:bg-muted/30 transition-colors">
+                                                        <TableRow key={row.id} data-state={selectedArchiveId === row.id ? 'selected' : undefined} className="group hover:bg-muted/30 transition-colors">
                                                             <TableCell data-label="No." className="text-center font-medium text-muted-foreground text-xs">
-                                                                {(currentPage - 1) * 10 + index + 1}
+                                                                {(currentPage - 1) * pageSize + index + 1}
                                                             </TableCell>
                                                             <TableCell data-label="No. Berkas">
                                                                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">{row.nomorBerkas || '-'}</code>
@@ -441,18 +468,26 @@ export default function Arsip() {
                                                             <TableCell data-label="Klasifikasi">
                                                                 <div className="flex flex-col">
                                                                     <span className="font-mono text-xs font-semibold">{row.kodeKlasifikasi || '-'}</span>
-                                                                    <span className="text-[10px] text-muted-foreground hidden lg:inline-block truncate max-w-[100px]">{row.klasifikasi || ''}</span>
+                                                                    <span className="text-[10px] text-muted-foreground truncate max-w-[180px]" title={row.klasifikasiArsip || row.klasifikasi || ''}>{row.klasifikasiArsip || row.klasifikasi || ''}</span>
                                                                 </div>
                                                             </TableCell>
                                                             <TableCell data-label="Uraian Berkas">
                                                                 <div className="flex flex-col gap-1 max-w-[300px]">
-                                                                    <span className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
+                                                                    <button type="button" className="min-h-9 rounded-sm text-left text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-expanded={selectedArchiveId === row.id} onClick={event => {
+                                                                        previewTrigger.current = event.currentTarget
+                                                                        setSelection({ key: list.key, id: row.id })
+                                                                    }}>
                                                                         {row.uraianBerkas || row.perihalOriginal || '-'}
-                                                                    </span>
+                                                                    </button>
+                                                                    {row.nomorSuratOriginal && <span className="text-xs text-muted-foreground">{row.nomorSuratOriginal}</span>}
                                                                     {row.jumlahBerkas && (
                                                                         <span className="text-[10px] text-muted-foreground">{row.jumlahBerkas} berkas</span>
                                                                     )}
                                                                 </div>
+                                                            </TableCell>
+                                                            <TableCell data-label="Tanggal / Unit" className="text-xs">
+                                                                <p>{row.tanggalArsip || row.tanggalSuratOriginal || '—'}</p>
+                                                                <p className="mt-1 text-muted-foreground">{row.unitPengolah || unitKerjaList.find(unit => unit.id === row.unitKerjaId)?.name || row.unitKerjaId || '—'}</p>
                                                             </TableCell>
                                                             <TableCell data-label="Lokasi" className="text-xs text-muted-foreground">
                                                                 {row.lokasiFc || row.lokasiLaci || row.lokasiFolder ? (
@@ -474,7 +509,7 @@ export default function Arsip() {
                                                                     </div>
                                                                 </div>
                                                             </TableCell>
-                                                            <TableCell data-label="Status">
+                                                            <TableCell data-label="Nasib Akhir">
                                                                 <Badge variant={row.hasilAkhir === 'Permanen' ? 'default' : row.hasilAkhir === 'Musnah' ? 'destructive' : 'secondary'} className="text-[10px] px-2">
                                                                     {row.hasilAkhir || '-'}
                                                                 </Badge>
@@ -500,21 +535,26 @@ export default function Arsip() {
                                         </Table>
                                     )}
                                 </div>
-                                {totalPages > 1 && (
-                                    <div className="border-t border-border/60 p-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
-                                        <p className="text-sm text-muted-foreground order-2 sm:order-1">
-                                            Halaman <span className="font-medium text-foreground">{currentPage}</span> dari <span className="font-medium text-foreground">{totalPages}</span>
+                                    <div className="border-t border-border/60 p-4 flex flex-wrap items-center justify-between gap-3">
+                                        <p role="status" className="text-sm text-muted-foreground">
+                                            {isLoading ? 'Memuat daftar…' : loadError ? 'Daftar belum tersedia.' : `${totalItems} arsip · Halaman ${currentPage} dari ${totalPages}`}
                                         </p>
-                                        <div className="order-1 sm:order-2">
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <label htmlFor="arsip-page-size" className="text-xs text-muted-foreground">Baris</label>
+                                                <select id="arsip-page-size" value={pageSize} onChange={event => updateQuery({ pageSize: Number(event.target.value), page: 1 })} className="min-h-10 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                                    {[10, 25, 50].map(size => <option key={size} value={size}>{size}</option>)}
+                                                </select>
+                                            </div>
                                             <Pagination>
                                                 <PaginationContent>
                                                     <PaginationItem>
-                                                        <Button variant="outline" size="sm" aria-label="Halaman sebelumnya" onClick={prevPage} disabled={!canPrev} className="h-10 w-10 p-0">
+                                                        <Button variant="outline" size="sm" aria-label="Halaman sebelumnya" onClick={() => setPage(currentPage - 1)} disabled={isLoading || currentPage <= 1} className="h-10 w-10 p-0">
                                                             <ChevronUp aria-hidden="true" className="h-4 w-4 rotate-[-90deg]" />
                                                         </Button>
                                                     </PaginationItem>
                                                     <PaginationItem>
-                                                        <Button variant="outline" size="sm" aria-label="Halaman berikutnya" onClick={nextPage} disabled={!canNext} className="h-10 w-10 p-0">
+                                                        <Button variant="outline" size="sm" aria-label="Halaman berikutnya" onClick={() => setPage(currentPage + 1)} disabled={isLoading || Boolean(loadError) || currentPage >= totalPages} className="h-10 w-10 p-0">
                                                             <ChevronUp aria-hidden="true" className="h-4 w-4 rotate-90" />
                                                         </Button>
                                                     </PaginationItem>
@@ -522,9 +562,12 @@ export default function Arsip() {
                                             </Pagination>
                                         </div>
                                     </div>
-                                )}
                             </CardContent>
                         </Card>
+                        {selectedArchiveId && <div className="order-1 min-w-0 xl:order-2">
+                            <ArchivePreviewPanel key={`${list.key}:${selectedArchiveId}`} archiveId={selectedArchiveId} onClose={closePreview} />
+                        </div>}
+                        </div>
                     </TabsContent>
                 )}
             </Tabs>

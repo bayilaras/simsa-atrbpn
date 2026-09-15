@@ -286,7 +286,7 @@ function VerifiedAttachmentPicker({ archiveIds, value, onChange, label }) {
 export default function RetentionGovernance() {
     const { toast } = useToast();
     const { user } = useAuth();
-    const canOperate = ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
+    const canOperate = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
     const [tab, setTab] = useState('appraisals');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);

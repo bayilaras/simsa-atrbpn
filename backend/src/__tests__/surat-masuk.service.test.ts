@@ -236,7 +236,7 @@ describe('SuratMasukService', () => {
                     entityType: 'surat_masuk',
                     mimeType: 'application/pdf',
                     sizeBytes: 8,
-                    sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+                    sha256: null,
                 }),
                 expect.objectContaining({ insert: expect.any(Function) }),
             );
@@ -244,7 +244,7 @@ describe('SuratMasukService', () => {
             registration.mockRestore();
         });
 
-        it('downloads and hashes a direct Blob before opening the numbering transaction', async () => {
+        it('validates direct Blob PDF bytes before opening the numbering transaction', async () => {
             const events: string[] = [];
             const locator = 'blob:https://store.private.blob.vercel-storage.com/surat-masuk/direct.pdf';
             const claim = {
@@ -496,6 +496,24 @@ describe('SuratMasukService', () => {
 
     // ── getStats ──
     describe('getStats', () => {
+        it.each([0, 3])('propagates a failed count query at index %s instead of returning zero statistics', async failedIndex => {
+            const failure = new Error('database unavailable');
+            vi.spyOn(console, 'error').mockImplementation(() => {});
+            for (let index = 0; index < 4; index++) {
+                enqueue(index === failedIndex
+                    ? { then: (_resolve: unknown, reject: (error: Error) => void) => reject(failure) }
+                    : [{ count: 7 }]);
+            }
+            await expect(svc.getStats('u1', 2026, ['biasa'])).rejects.toBe(failure);
+        });
+
+        it('returns zero statistics when every count query succeeds with no matching records', async () => {
+            for (let index = 0; index < 4; index++) enqueue([{ count: 0 }]);
+            await expect(svc.getStats('u1', 2026, ['biasa'])).resolves.toEqual({
+                total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0,
+            });
+        });
+
         it('should return statistics for unit', async () => {
             // getStats uses Promise.all with 4 parallel count queries
             enqueue([{ count: 10 }]);  // total

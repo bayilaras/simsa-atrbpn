@@ -40,7 +40,7 @@ router.use(authMiddleware);
  *       200:
  *         description: List of klasifikasi arsip
  */
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response, next) => {
     try {
         const { tipe, search, format, ruleSetId, scope } = req.query;
         const organizationalScope = (scope === 'kanwil' || scope === 'kantah')
@@ -66,7 +66,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         res.json({ success: true, data });
     } catch (error) {
         log.error({ err: error }, 'Error fetching klasifikasi:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
@@ -82,13 +82,13 @@ router.get('/', async (req: AuthRequest, res: Response) => {
  *       200:
  *         description: Statistics of klasifikasi arsip
  */
-router.get('/stats', async (req: AuthRequest, res: Response) => {
+router.get('/stats', async (req: AuthRequest, res: Response, next) => {
     try {
         const stats = await klasifikasiService.getStats(req.query.ruleSetId as string);
         res.json({ success: true, data: stats });
     } catch (error) {
         log.error({ err: error }, 'Error fetching stats:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
@@ -112,7 +112,7 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
  *       404:
  *         description: Not found
  */
-router.get('/:kode', async (req: AuthRequest, res: Response) => {
+router.get('/:kode', async (req: AuthRequest, res: Response, next) => {
     try {
         const kode = req.params.kode as string;
         const ruleSetId = req.query.ruleSetId as string;
@@ -131,7 +131,7 @@ router.get('/:kode', async (req: AuthRequest, res: Response) => {
         res.json({ success: true, data: { ...item, children } });
     } catch (error) {
         log.error({ err: error }, 'Error fetching klasifikasi:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 

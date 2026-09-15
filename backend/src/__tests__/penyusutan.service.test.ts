@@ -9,6 +9,8 @@ function enqueue(...results: any[]) { resultQueue.push(...results); }
 
 const auditMocks = vi.hoisted(() => ({
     logActionOrThrow: vi.fn(),
+    createAttachment: vi.fn(),
+    verifyIntegrity: vi.fn(),
 }));
 
 const validJraProvenance = {
@@ -58,6 +60,9 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
+vi.mock('../services/file-attachment.service', () => ({ fileAttachmentService: { create: auditMocks.createAttachment, verifyIntegrity: auditMocks.verifyIntegrity } }));
+// Fresh DB authority is exercised independently by the PGlite integration suite.
+vi.mock('../services/penyusutan-authority', () => ({ lockDispositionActor: async (_tx: any, actor: any) => actor }));
 vi.mock('../services/arsip.service', () => ({
     arsipService: {
         getDisposalCandidates: vi.fn().mockResolvedValue({ data: [], pagination: { total: 0 } }),
@@ -362,6 +367,97 @@ describe('PenyusutanService', () => {
 
     // ── updateStatus ──
     describe('updateStatus', () => {
+        function executionFixture() {
+            const ids = Array.from({ length: 6 }, (_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`);
+            const input = { beritaAcaraAttachmentId: ids[0], decisionAttachmentId: ids[1], executionProofAttachmentId: ids[2],
+                performedAt: '2020-01-02T00:00:00Z', method: 'Pencacahan yang disaksikan petugas',
+                copiesStatement: 'Salinan dan backup telah diperiksa sesuai lampiran keputusan.',
+                witnesses: [{ userId: ids[4], authorityAttachmentId: ids[3] }, { userId: ids[5], authorityAttachmentId: ids[3] }] };
+            const attachments = ids.slice(0, 4).map(id => ({ id, entityType: 'arsip', entityId: 'a1',
+                storageAccess: 'private', fileUrl: 'private/bukti.pdf', sha256: 'a'.repeat(64),
+                malwareScanStatus: 'clean', integrityStatus: 'verified', lastFixityCheckAt: new Date('2020-01-01') }));
+            const witnesses = ids.slice(4).map(id => ({ id, name: 'Saksi', isActive: true, role: 'staff', unitKerjaId: 'u1' }));
+            auditMocks.verifyIntegrity.mockImplementation(async id => ({ matches: true, actualHash: 'a'.repeat(64),
+                attachment: attachments.find(attachment => attachment.id === id) }));
+            return { input, attachments, witnesses };
+        }
+        it('stores controlled evidence and final archive status in the audited transaction', async () => {
+            const { input, attachments, witnesses } = executionFixture();
+            enqueue([{ id: 'p-destroy', status: 'approved', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1', tanggalPersetujuan: '2020-01-01' }],
+                [{ id: 'a1', legalHold: false, hasilAkhir: 'Musnah', ...validJraProvenance }],
+                attachments, witnesses, [{ id: 'p-destroy', status: 'executed' }], [{ arsipId: 'a1' }], []);
+            await penyusutanService.updateStatus('p-destroy', { executionEvidence: input,
+                user: { id: 'executor', role: 'super_admin', unitKerjaId: '' } }, null);
+            const writes = chainCalls.filter(call => call.method === 'set').map(call => call.args[0]);
+            expect(writes[0]).toMatchObject({ status: 'executed', executionEvidence: {
+                archiveIds: ['a1'], witnesses: expect.any(Array), documents: expect.any(Object) }, executionEvidenceSha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+            expect(writes[1]).toMatchObject({ disposalStatus: 'executed' });
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({
+                changes: expect.objectContaining({ executionEvidenceSha256: writes[0].executionEvidenceSha256 }),
+            }), mockDb);
+        });
+        it('rolls back completed evidence when its critical audit cannot persist', async () => {
+            const { input, attachments, witnesses } = executionFixture();
+            enqueue([{ id: 'p-destroy', status: 'approved', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1', tanggalPersetujuan: '2020-01-01' }],
+                [{ id: 'a1', legalHold: false, hasilAkhir: 'Musnah', ...validJraProvenance }],
+                attachments, witnesses, [{ id: 'p-destroy', status: 'executed' }], [{ arsipId: 'a1' }], []);
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+            await expect(penyusutanService.updateStatus('p-destroy', { executionEvidence: input,
+                user: { id: 'executor', role: 'super_admin', unitKerjaId: '' } }, null)).rejects.toThrow('audit unavailable');
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+        });
+        it('requires a current manage grant even for a super administrator on controlled archives', async () => {
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemindahan', unitKerjaId: 'u1' }],
+                [{ id: 'a1', unitKerjaId: 'u1', klasifikasiKeamanan: 'Terbatas', legalHold: false, hasilAkhir: 'Musnah', ...validJraProvenance }], []);
+            await expect(penyusutanService.updateStatus('p1', {
+                user: { id: 'executor', role: 'super_admin', unitKerjaId: '' } }, null)).rejects.toThrow(/Akses kelola/);
+            expect(chainCalls.some(call => call.method === 'set')).toBe(false);
+        });
+        it('blocks a newly designated terjaga record before destruction transition', async () => {
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1' }],
+                [{ id: 'a1', isTerjaga: true, legalHold: false, hasilAkhir: 'Musnah', ...validJraProvenance }]);
+            await expect(penyusutanService.updateStatus('p1', {
+                user: { id: 'executor', role: 'super_admin', unitKerjaId: '' } }, null)).rejects.toThrow(/arsip terjaga/);
+        });
+        it('releases a completed inactive transfer for a later final disposition', async () => {
+            enqueue([{ id: 'p-transfer', status: 'approved', jenisPenyusutan: 'pemindahan', unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'a1', unitKerjaId: 'u1', disposalStatus: 'approved', disposalBatchId: 'p-transfer',
+                legalHold: false, hasilAkhir: 'Musnah', ...validJraProvenance }]);
+            enqueue([{ id: 'p-transfer', status: 'executed' }], [{ arsipId: 'a1' }], []);
+            await penyusutanService.updateStatus('p-transfer', {
+                user: { id: 'executor-1', role: 'super_admin', unitKerjaId: '' },
+            }, null);
+            const archiveUpdate = chainCalls.filter(call => call.method === 'set').at(-1)?.args[0];
+            expect(archiveUpdate).toMatchObject({ disposalStatus: 'active', disposalBatchId: null,
+                inactiveTransferBatchId: 'p-transfer', inactiveTransferredAt: expect.any(Date) });
+            enqueue([{ id: 'a1', unitKerjaId: 'u1', legalHold: false, hasilAkhir: 'Musnah',
+                ...validJraProvenance, ...archiveUpdate }], [{ id: 'p-final' }], [], []);
+            await expect(penyusutanService.create({ unitKerjaId: 'u1', jenisPenyusutan: 'pemusnahan', arsipIds: ['a1'] }))
+                .resolves.toMatchObject({ id: 'p-final' });
+        });
+
+        it('does not make an alih-media operation a terminal disposition', async () => {
+            enqueue([{ id: 'p-media', status: 'approved', jenisPenyusutan: 'alih_media', unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'a1', legalHold: false, ...validJraProvenance }]);
+            enqueue([{ id: 'p-media', status: 'executed' }], [{ arsipId: 'a1' }], []);
+            await penyusutanService.updateStatus('p-media', {
+                user: { id: 'executor-1', role: 'super_admin', unitKerjaId: '' },
+            }, null);
+            expect(chainCalls.filter(call => call.method === 'set').at(-1)?.args[0])
+                .toMatchObject({ disposalStatus: 'active', disposalBatchId: null });
+        });
+
+        it('rejects final destruction when controlled execution evidence is missing', async () => {
+            enqueue([{ id: 'p-destroy', status: 'approved', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'a1', legalHold: false, hasilAkhir: 'Musnah', ...validJraProvenance }]);
+            enqueue([{ id: 'p-destroy', status: 'executed' }], [{ arsipId: 'a1' }], []);
+            await expect(penyusutanService.updateStatus('p-destroy', {
+                user: { id: 'executor-1', role: 'super_admin', unitKerjaId: '' },
+            }, null)).rejects.toThrow(/bukti pelaksanaan/i);
+            expect(transactionCommits).toBe(0);
+        });
+
         it('should keep a grandfathered transfer batch read-only', async () => {
             enqueue([{ id: 'p1', status: 'approved', jenisPenyusutan: 'penyerahan', unitKerjaId: 'u1' }]);
             await expect(penyusutanService.updateStatus('p1', {
@@ -488,6 +584,56 @@ describe('PenyusutanService', () => {
         });
     });
 
+    describe('recoverInactiveTransfer', () => {
+        const reviewer = { id: 'reviewer', role: 'super_admin', unitKerjaId: '' };
+        const reason = 'Berita acara pemindahan lama telah ditinjau kembali.';
+        it('repairs only archives still owned by an executed inactive-transfer batch and audits the repair', async () => {
+            enqueue([{ id: 'old-transfer', jenisPenyusutan: 'pemindahan', status: 'executed', unitKerjaId: 'u1',
+                tanggalPelaksanaan: '2020-01-01', executedBy: 'old-executor' }]);
+            enqueue([{ id: 'a1', disposalStatus: 'executed', disposalBatchId: 'old-transfer', legalHold: false, unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'a1' }]);
+            await expect(penyusutanService.recoverInactiveTransfer('old-transfer', reason, reviewer, 'u1')).resolves.toEqual({ recovered: 1 });
+            expect(chainCalls.find(call => call.method === 'set')?.args[0]).toMatchObject({
+                disposalStatus: 'active', disposalBatchId: null, inactiveTransferBatchId: 'old-transfer' });
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({
+                entityId: 'old-transfer', changes: expect.objectContaining({ operation: 'recover_inactive_transfer', reason }),
+            }), mockDb);
+        });
+        it.each(['pemusnahan', 'alih_media', 'penyerahan'])('never reopens terminal or unrelated %s batches', async jenisPenyusutan => {
+            enqueue([{ id: 'old-transfer', jenisPenyusutan, status: 'executed', unitKerjaId: 'u1' }]);
+            await expect(penyusutanService.recoverInactiveTransfer('old-transfer', reason, reviewer, 'u1')).rejects.toThrow(/pemindahan/);
+        });
+        it.each([{ legalHold: true }, { disposalBatchId: 'newer-batch' }, { inactiveTransferBatchId: 'old-transfer' }])(
+            'rejects unsafe recovery state %j', async override => {
+                enqueue([{ id: 'old-transfer', jenisPenyusutan: 'pemindahan', status: 'executed', unitKerjaId: 'u1',
+                    tanggalPelaksanaan: '2020-01-01', executedBy: 'old-executor' }]);
+                enqueue([{ id: 'a1', disposalStatus: 'executed', disposalBatchId: 'old-transfer', legalHold: false, unitKerjaId: 'u1', ...override }]);
+                await expect(penyusutanService.recoverInactiveTransfer('old-transfer', reason, reviewer, 'u1')).rejects.toThrow(/dipulihkan/);
+                expect(transactionCommits).toBe(0);
+            });
+    });
+
+    describe('uploadExecutionEvidence', () => {
+        const actor = { id: 'executor', role: 'super_admin', unitKerjaId: '' };
+        const file = { originalname: 'berita-acara.pdf', mimetype: 'application/pdf', buffer: Buffer.from('%PDF-1.7') };
+        it('uses the locked batch transaction for evidence creation and its audit', async () => {
+            enqueue([{ id: 'batch-1', jenisPenyusutan: 'pemusnahan', status: 'approved', unitKerjaId: 'u1' }],
+                [{ id: 'a1', disposalBatchId: 'batch-1', disposalStatus: 'approved', unitKerjaId: 'u1', legalHold: false }]);
+            auditMocks.createAttachment.mockResolvedValueOnce({ id: 'attachment-1', malwareScanStatus: 'not_scanned' });
+            await expect(penyusutanService.uploadExecutionEvidence('batch-1', 'a1', file, actor, 'u1'))
+                .resolves.toMatchObject({ malwareScanStatus: 'not_scanned' });
+            expect(auditMocks.createAttachment).toHaveBeenCalledWith(expect.objectContaining({ suratId: 'a1', suratType: 'arsip' }),
+                expect.objectContaining({ userId: 'executor' }), mockDb);
+        });
+        it('rejects archives belonging to another batch before any storage write', async () => {
+            auditMocks.createAttachment.mockClear();
+            enqueue([{ id: 'batch-1', jenisPenyusutan: 'pemusnahan', status: 'approved', unitKerjaId: 'u1' }],
+                [{ id: 'a1', disposalBatchId: 'other-batch', disposalStatus: 'approved', unitKerjaId: 'u1', legalHold: false }]);
+            await expect(penyusutanService.uploadExecutionEvidence('batch-1', 'a1', file, actor, 'u1')).rejects.toThrow(/Arsip tidak tersedia/);
+            expect(auditMocks.createAttachment).not.toHaveBeenCalled();
+        });
+    });
+
     // ── addItems ──
     describe('addItems', () => {
         it('should block adding items to a grandfathered transfer batch', async () => {
@@ -539,6 +685,14 @@ describe('PenyusutanService', () => {
     });
 
     describe('getCandidates', () => {
+        it('excludes previously transferred archives from repeated inactive transfer', async () => {
+            enqueue([{ id: 'transferred', disposalStatus: 'active', legalHold: false,
+                hasilAkhir: 'Musnah', ...validJraProvenance,
+                inactiveTransferredAt: new Date('2020-01-01'), inactiveTransferBatchId: 'old-transfer' }]);
+            vi.mocked(arsipService.getArchiveStatus).mockReturnValue('inaktif');
+            expect(await penyusutanService.getCandidates('u1', 'pemindahan')).toEqual([]);
+        });
+
         it('should exclude held archives and archives without a retention trigger', async () => {
             enqueue([
                 {

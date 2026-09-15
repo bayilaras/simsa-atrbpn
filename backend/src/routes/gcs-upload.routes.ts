@@ -9,33 +9,20 @@ import { firebaseReplayProtectedAppCheckMiddleware } from '../middlewares/fireba
 import { uploadLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 import { clientBlobUploadService, type ClientBlobPurpose } from '../services/client-blob-upload.service.js';
-import regulatoryRuleSetService, {
-    REGULATORY_SOURCE_MAX_BYTES,
-} from '../services/regulatory-rule-set.service.js';
+import regulatoryRuleSetService from '../services/regulatory-rule-set.service.js';
 import { GcsStorageAdapter } from '../storage/gcs.adapter.js';
 import { toGcsLocator } from '../storage/locator.js';
 import { createLogger } from '../utils/logger.js';
+import { ARCHIVE_UPLOAD_MAX_BYTES, REGULATORY_SOURCE_MAX_BYTES, isPdfUploadMetadata } from '../config/archive-upload.js';
 
 const router = Router();
 const log = createLogger('GcsUploadRoutes');
-
-const ALLOWED_TYPES = new Set([
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'image/webp',
-]);
 
 const initiateSchema = z.object({
     purpose: z.enum(['surat_masuk', 'surat_keluar', 'regulatory_source']),
     fileName: z.string().min(1).max(240),
     contentType: z.string().min(3).max(160),
-    sizeBytes: z.number().int().positive().max(REGULATORY_SOURCE_MAX_BYTES),
+    sizeBytes: z.number().int().positive(),
     ruleSetId: z.string().uuid().optional(),
 });
 
@@ -81,8 +68,14 @@ router.post(
             return;
         }
         const input = parsed.data;
-        if (!ALLOWED_TYPES.has(input.contentType)) {
+        if (!isPdfUploadMetadata(input.fileName, input.contentType)) {
             res.status(415).json({ error: 'Content-Type is not allowed' });
+            return;
+        }
+        const maximumBytes = input.purpose === 'regulatory_source'
+            ? REGULATORY_SOURCE_MAX_BYTES : ARCHIVE_UPLOAD_MAX_BYTES;
+        if (input.sizeBytes > maximumBytes) {
+            res.status(413).json({ error: `PDF exceeds ${maximumBytes / (1024 * 1024)} MiB` });
             return;
         }
         if (input.purpose === 'regulatory_source') {
@@ -91,9 +84,6 @@ router.post(
                 return;
             }
             await regulatoryRuleSetService.assertSourceDocumentUploadAllowed(input.ruleSetId);
-        } else if (input.sizeBytes > 10 * 1024 * 1024) {
-            res.status(413).json({ error: 'Letter attachment exceeds 10 MiB' });
-            return;
         }
 
         const config = buildCloudPlatformConfig();

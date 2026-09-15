@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import TambahSuratMasuk from './TambahSuratMasuk';
 import TambahSuratKeluar from './TambahSuratKeluar';
+import { clearOfflineStorage } from '../lib/offline-storage';
 
 const services = vi.hoisted(() => ({
-    masuk: { create: vi.fn(), getNextNumber: vi.fn(), getBelumDibalas: vi.fn() },
+    masuk: { create: vi.fn(), getById: vi.fn(), getNextNumber: vi.fn(), getBelumDibalas: vi.fn() },
     keluar: { create: vi.fn(), getNextNumber: vi.fn() },
 }));
 
@@ -48,9 +49,35 @@ describe('surat date field state', () => {
         services.keluar.getNextNumber.mockResolvedValue({ nomorSurat: '001/ND/2026' });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         cleanup();
+        await clearOfflineStorage();
+        vi.useRealTimers();
         vi.restoreAllMocks();
+    });
+
+    it('does not restore an edited incoming letter as a new letter draft', async () => {
+        services.masuk.getById.mockResolvedValue({
+            id: 'existing-letter', unitKerjaId: 'unit-a', perihal: 'Surat yang sudah tercatat',
+        });
+        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        const editRouter = createMemoryRouter([
+            { path: '/edit/:id', element: <TambahSuratMasuk /> },
+        ], { initialEntries: ['/edit/existing-letter'] });
+        const editedPage = render(<RouterProvider router={editRouter} />);
+        await screen.findByDisplayValue('Surat yang sudah tercatat');
+        vi.useFakeTimers();
+        fireEvent.change(screen.getByLabelText(/^Perihal/), { target: { value: 'Perubahan surat lama' } });
+        await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+        editedPage.unmount();
+        editRouter.dispose();
+        vi.useRealTimers();
+
+        const createRouter = createMemoryRouter([{ path: '/', element: <TambahSuratMasuk /> }]);
+        render(<RouterProvider router={createRouter} />);
+        expect(screen.getByLabelText(/^Perihal/)).toHaveValue('');
+        expect(confirm).not.toHaveBeenCalled();
+        createRouter.dispose();
     });
 
     it.each([

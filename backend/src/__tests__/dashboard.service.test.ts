@@ -219,9 +219,8 @@ describe('DashboardService', () => {
             enqueue([{ count: 0 }]); // lending overdue
             enqueue([]); // penyusutan statuses
             enqueue([{ count: 0 }]); // vital unprotected
-            enqueue([{ count: 0 }]); // terjaga unreported
+            enqueue([]); // terjaga reporting stages
             enqueue([{ count: 0 }]); // vital total
-            enqueue([{ count: 0 }]); // terjaga total
             enqueue([]); // media breakdown
 
             const result = await dashboardService.getWidgetData('u1');

@@ -34,25 +34,9 @@ DECLARE
   resolved_profile text;
   actual_migration_timestamps bigint[];
   expected_migration_timestamps bigint[];
-  pre_migration_timestamps constant bigint[] := ARRAY[
-    1770462071943, 1770467682567, 1770475430259, 1770690071422,
-    1770730418226, 1770786354179, 1771073695820, 1771074259749,
-    1771074300000, 1771074400000, 1787619600000, 1787620200000,
-    1787620800000, 1787621400000, 1787622000000, 1787622600000,
-    1787706000000, 1787965200000, 1787965800000, 1787966400000,
-    1787967000000
-  ]::bigint[];
-  post_migration_timestamps constant bigint[] := ARRAY[
-    1770462071943, 1770467682567, 1770475430259, 1770690071422,
-    1770730418226, 1770786354179, 1771073695820, 1771074259749,
-    1771074300000, 1771074400000, 1787619600000, 1787620200000,
-    1787620800000, 1787621400000, 1787622000000, 1787622600000,
-    1787706000000, 1787965200000, 1787965800000, 1787966400000,
-    1787967000000, 1787967600000, 1787968200000, 1787968800000,
-    1787969400000, 1787970000000, 1787970600000, 1787971200000,
-    1787971800000, 1787972400000, 1788058800000, 1788059400000,
-    1788060000000, 1788060600000
-  ]::bigint[];
+  pre_migration_timestamps bigint[];
+  pre_upgrade_timestamps bigint[];
+  post_migration_timestamps bigint[];
   expected_code_manifest jsonb := current_setting('simsa.expected_migrations_json')::jsonb;
   checkout_migration_indices integer[];
   checkout_migration_timestamps bigint[];
@@ -61,9 +45,11 @@ BEGIN
     RAISE EXCEPTION 'backup evidence must be collected in a read-only transaction';
   END IF;
 
-  IF jsonb_typeof(expected_code_manifest) <> 'array'
-     OR jsonb_array_length(expected_code_manifest) <> 34 THEN
-    RAISE EXCEPTION 'checkout migration manifest must contain exactly 34 entries';
+  IF jsonb_typeof(expected_code_manifest) IS DISTINCT FROM 'array'
+     OR jsonb_array_length(expected_code_manifest) < 39
+     OR expected_code_manifest->20->>'tag' IS DISTINCT FROM '0020_permanent_transfer_lifecycle'
+     OR expected_code_manifest->38->>'tag' IS DISTINCT FROM '0038_arsip_direct_upload' THEN
+    RAISE EXCEPTION 'checkout migration manifest must include the reviewed historical baselines';
   END IF;
   IF EXISTS (
     SELECT 1
@@ -97,14 +83,23 @@ BEGIN
     array_agg((value->>'created_at')::bigint ORDER BY (value->>'idx')::integer)
   INTO checkout_migration_indices, checkout_migration_timestamps
   FROM jsonb_array_elements(expected_code_manifest) AS manifest_entry(value);
-  IF checkout_migration_indices IS DISTINCT FROM ARRAY[
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-    10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-    20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-    30, 31, 32, 33
-  ]::integer[] OR checkout_migration_timestamps IS DISTINCT FROM post_migration_timestamps THEN
-    RAISE EXCEPTION 'checkout migration journal differs from the canonical 0000-0033 sequence';
+  IF checkout_migration_indices IS DISTINCT FROM ARRAY(
+    SELECT generate_series(0, jsonb_array_length(expected_code_manifest) - 1)
+  ) OR EXISTS (
+    SELECT 1 FROM jsonb_array_elements(expected_code_manifest) WITH ORDINALITY AS entry(value, position)
+    WHERE (value->>'idx')::integer IS DISTINCT FROM position - 1
+       OR (value->>'tag') !~ ('^' || lpad((position - 1)::text, 4, '0') || '_[a-z0-9_]+$')
+       OR (position > 1 AND (value->>'created_at')::bigint <=
+           (expected_code_manifest->(position::integer - 2)->>'created_at')::bigint)
+  ) THEN
+    RAISE EXCEPTION 'checkout migration manifest is not an exact ordered chain';
   END IF;
+  post_migration_timestamps := checkout_migration_timestamps;
+  pre_migration_timestamps := checkout_migration_timestamps[1:21];
+  -- This is the explicitly reviewed 0038 source for the 0039 upgrade, never
+  -- an arbitrary prefix or an automatically accepted previous release.
+  pre_upgrade_timestamps := checkout_migration_timestamps[1:39];
+
 
   SELECT string_agg(
     required.schema_name || '.' || required.table_name,
@@ -220,6 +215,9 @@ BEGIN
     WHEN 'post_migration' THEN
       resolved_profile := 'post_migration';
       expected_migration_timestamps := post_migration_timestamps;
+    WHEN 'pre_upgrade_0038' THEN
+      resolved_profile := 'pre_upgrade_0038';
+      expected_migration_timestamps := pre_upgrade_timestamps;
     WHEN 'auto' THEN
       IF actual_migration_timestamps IS NOT DISTINCT FROM pre_migration_timestamps THEN
         resolved_profile := 'pre_migration';
@@ -227,9 +225,12 @@ BEGIN
       ELSIF actual_migration_timestamps IS NOT DISTINCT FROM post_migration_timestamps THEN
         resolved_profile := 'post_migration';
         expected_migration_timestamps := post_migration_timestamps;
+      ELSIF actual_migration_timestamps IS NOT DISTINCT FROM pre_upgrade_timestamps THEN
+        resolved_profile := 'pre_upgrade_0038';
+        expected_migration_timestamps := pre_upgrade_timestamps;
       ELSE
         RAISE EXCEPTION
-          'migration history matches neither the pre_migration nor post_migration profile';
+          'migration history matches none of the reviewed backup profiles';
       END IF;
     ELSE
       RAISE EXCEPTION 'unknown backup schema profile: %', requested_profile;
@@ -265,7 +266,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'migration history contains duplicate timestamps';
   END IF;
-  IF resolved_profile = 'post_migration' THEN
+  IF resolved_profile IN ('pre_upgrade_0038', 'post_migration') THEN
     IF (
       SELECT count(*)
       FROM pg_roles
@@ -294,10 +295,23 @@ BEGIN
         ('simsa_api_runtime', 'users', 'SELECT', true),
         ('simsa_api_runtime', 'audit_log', 'INSERT', true),
         ('simsa_api_runtime', 'audit_log', 'UPDATE', false),
+        ('simsa_api_runtime', 'file_fixity_jobs', 'SELECT', true),
+        ('simsa_api_runtime', 'file_fixity_jobs', 'INSERT', false),
+        ('simsa_api_runtime', 'file_fixity_jobs', 'UPDATE', false),
+        ('simsa_api_runtime', 'file_fixity_jobs', 'DELETE', false),
+        ('simsa_api_runtime', 'arsip_terjaga_reports', 'INSERT', true),
+        ('simsa_api_runtime', 'arsip_terjaga_reports', 'UPDATE', true),
+        ('simsa_api_runtime', 'arsip_terjaga_reports', 'DELETE', false),
+        ('simsa_api_runtime', 'preservasi_track', 'UPDATE', false),
+        ('simsa_api_runtime', 'preservasi_track', 'DELETE', false),
         ('simsa_event_runtime', 'client_blob_uploads', 'UPDATE', true),
         ('simsa_event_runtime', 'users', 'SELECT', false),
         ('simsa_worker_runtime', 'operational_heartbeats', 'DELETE', true),
         ('simsa_worker_runtime', 'srikandi_outbox', 'UPDATE', true),
+        ('simsa_worker_runtime', 'file_fixity_jobs', 'SELECT', true),
+        ('simsa_worker_runtime', 'file_fixity_jobs', 'INSERT', true),
+        ('simsa_worker_runtime', 'file_fixity_jobs', 'UPDATE', true),
+        ('simsa_worker_runtime', 'file_fixity_jobs', 'DELETE', false),
         ('simsa_worker_runtime', 'users', 'SELECT', false),
         ('simsa_final_cleanup', 'final_object_orphans', 'UPDATE', true),
         ('simsa_final_cleanup', 'final_object_orphans', 'INSERT', false),
@@ -652,13 +666,13 @@ SELECT concat_ws(
   'database_role_acl',
   current_setting('simsa.backup_profile_resolved'),
   CASE
-    WHEN current_setting('simsa.backup_profile_resolved') = 'post_migration'
+    WHEN current_setting('simsa.backup_profile_resolved') IN ('pre_upgrade_0038', 'post_migration')
       THEN count(*)::text
     ELSE '0'
   END,
   encode(sha256(convert_to(
     CASE
-      WHEN current_setting('simsa.backup_profile_resolved') = 'post_migration'
+      WHEN current_setting('simsa.backup_profile_resolved') IN ('pre_upgrade_0038', 'post_migration')
         THEN COALESCE(string_agg(item, E'\n' ORDER BY item COLLATE "C"), '')
       ELSE 'not-applicable-before-0032'
     END,

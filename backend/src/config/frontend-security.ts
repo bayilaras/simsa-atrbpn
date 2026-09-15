@@ -1,5 +1,12 @@
-/** CSP additions apply only when this API also serves the compiled Firebase UI. */
+import { internalRuntimeConfig } from './internal-runtime.js';
+
+/** CSP additions are scoped to the hosted frontend and its validated runtime. */
 export function frontendSecurityDirectives(source: NodeJS.ProcessEnv = process.env) {
+    if (source.SIMSA_FRONTEND_DIST?.trim() && source.SIMSA_INTERNAL_LOCAL === 'true') {
+        internalRuntimeConfig(source);
+        // HTTP loopback must not upgrade asset requests to an absent TLS server.
+        return { upgradeInsecureRequests: null };
+    }
     if (!source.SIMSA_FRONTEND_DIST?.trim() || source.AUTH_PROVIDER?.trim().toLowerCase() !== 'firebase') {
         return {};
     }

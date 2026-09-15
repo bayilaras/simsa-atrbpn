@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     getDemoListenHost,
-    getPublicCapabilities,
     loadAppMode,
     validateDemoEnvironment,
 } from '../config/demo.js';
+import { getPublicCapabilities } from '../config/public-capabilities.js';
 import { validateRuntimeEnv } from '../config/env.js';
 import { assertValidCloudPlatformEnvironment } from '../config/cloud-platform.js';
 import { getObjectStorageConfigurationStatus } from '../config/blob-storage.js';
@@ -37,7 +37,9 @@ describe('isolated metadata demo configuration', () => {
         expect(() => loadAppMode({ SIMSA_APP_MODE: 'demoo' })).toThrow();
         expect(getPublicCapabilities(localDemo)).toEqual({
             mode: 'metadata-demo', syntheticDataOnly: true,
-            capabilities: { metadata: true, files: false, externalIntegrations: false },
+            capabilities: { metadata: true, files: false, fileUploads: false, letterFileUploads: false, bulkOcr: false,
+                advancedArchiveWorkflows: false, externalIntegrations: false },
+            authentication: { provider: 'better-auth', googleSignIn: false, pendingGoogleSignup: false },
         });
     });
     it('binds only a local Better Auth metadata demo to loopback', () => {
@@ -87,8 +89,8 @@ describe('isolated metadata demo configuration', () => {
     ])('preserves deployed Firebase and GCP protections %j', override => {
         expect(() => validateRuntimeEnv('api', { ...gcpDemo, ...override })).toThrow();
     });
-    it('does not permit disabled storage in full mode even when a worker filters storage errors', () => {
-        expect(() => assertValidCloudPlatformEnvironment({ OBJECT_STORAGE_PROVIDER: 'disabled' }, {
+    it('does not permit disabled storage in integrated full mode even when a worker filters storage errors', () => {
+        expect(() => assertValidCloudPlatformEnvironment({ APP_PROFILE: 'integrated', SIMSA_APP_MODE: 'full', OBJECT_STORAGE_PROVIDER: 'disabled' }, {
             requireAuth: false, requireStorage: false,
         })).toThrow(/only permitted/);
     });

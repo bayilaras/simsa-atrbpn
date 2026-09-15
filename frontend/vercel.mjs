@@ -20,6 +20,54 @@ const PRODUCTION_BACKEND_HOSTS = new Set([
 ])
 const PRODUCTION_GIT_BRANCHES = new Set(['main', 'master', 'production'])
 const KNOWN_DEPLOYMENT_ENVIRONMENTS = new Set(['production', 'preview', 'development'])
+// Keep API/file responses under backend policy: its PDF responses must remain
+// embeddable by this SPA. This pattern covers direct index.html and deep links.
+// Probe proxies match only /health and /ready exactly. Their unmatched subpaths
+// fall through to HTML and must receive the same policy as every other SPA path.
+const FRONTEND_PATH = '/((?!api(?:/|$)|health$|ready$|uploads(?:/|$)).*)'
+const FRONTEND_ROUTE = '^' + FRONTEND_PATH + '$'
+const PREVIEW_SCRIPT_HASH = "'sha256-UJuKwoqlC+F7kA0boK+uzhdPCF/csE9eCe8rJ3SZQhs='"
+
+function frontendSecurityHeaders(firebaseAuthDomain = '', unavailable = false) {
+  const authDomain = firebaseAuthDomain.trim()
+  if (authDomain && (!/^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/i.test(authDomain)
+    || authDomain.includes('..'))) {
+    throw new Error('VITE_FIREBASE_AUTH_DOMAIN must be a hostname without scheme, path, or port.')
+  }
+  const authOrigin = authDomain ? ` https://${authDomain.toLowerCase()}` : ''
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    unavailable ? `script-src 'self' ${PREVIEW_SCRIPT_HASH}`
+      : "script-src 'self' https://apis.google.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/",
+    // Radix positioning, chart sizing, and the maintenance shell use inline styles.
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
+    "img-src 'self' data: blob: https:",
+    unavailable ? "connect-src 'self'"
+      // Blob's client SDK uses both the exact endpoint and paths beneath it.
+      // CSP without the trailing slash matches only the exact path.
+      : "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.google.com/recaptcha/ https://vercel.com/api/blob https://vercel.com/api/blob/ https://*.blob.vercel-storage.com https://storage.googleapis.com https://www.googleapis.com" + authOrigin,
+    unavailable ? "frame-src 'none'"
+      : "frame-src 'self' blob: https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/" + authOrigin,
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+    "media-src 'self' blob:",
+  ].join('; ')
+  return {
+    'Content-Security-Policy': csp,
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    // Preserve Firebase signInWithPopup's window relationship.
+    'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    'Strict-Transport-Security': 'max-age=31536000',
+  }
+}
 const PROTECTED_SPA_FALLBACK = Object.freeze({
   // Low-level routes run before filesystem lookup. Exclude the rewrite
   // destination and every static path emitted/copied by Vite/PWA so assets are
@@ -90,6 +138,12 @@ function isManagedSimsaVercelPreview(origin) {
     && hostname.endsWith('-bayilaras-projects.vercel.app')
 }
 
+function isManagedSimsaVercelCandidate(origin) {
+  // Only this project's immutable deployment hosts may receive the backend
+  // credential. Canonical aliases and unrelated origins never receive it.
+  return /^simsa-backend-[a-z0-9]{9,32}-bayilaras-projects\.vercel\.app$/.test(new URL(origin).hostname)
+}
+
 function proxyRewrite(source, destination, useProtectionBypass) {
   if (!useProtectionBypass) return routes.rewrite(source, destination)
 
@@ -103,6 +157,7 @@ function proxyRewrite(source, destination, useProtectionBypass) {
 }
 
 function unprovisionedPreviewConfig() {
+  const securityHeaders = frontendSecurityHeaders('', true)
   const noStoreHeaders = {
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
@@ -113,6 +168,7 @@ function unprovisionedPreviewConfig() {
     ...DEPLOYMENT_BUILD,
     buildCommand: 'node scripts/build-preview-unavailable.mjs',
     routes: [
+      { src: FRONTEND_ROUTE, headers: securityHeaders, continue: true },
       {
         src: '^/sw\\.js$',
         headers: {
@@ -153,7 +209,25 @@ export function createVercelConfig({
   proxyOrigin = process.env.API_PROXY_ORIGIN?.trim() ?? '',
   gitCommitRef = process.env.VERCEL_GIT_COMMIT_REF?.trim() ?? '',
   protectionBypassConfigured = Boolean(process.env[PROTECTION_BYPASS_ENV]?.trim()),
+  metadataMode = process.env.SIMSA_VERCEL_METADATA_ENABLED ?? '',
+  firebaseAuthDomain = process.env.VITE_FIREBASE_AUTH_DOMAIN ?? '',
+  verifyCandidateSource = process.env.SIMSA_VERIFY_CANDIDATE_SOURCE ?? '',
 } = {}) {
+  if (!['', '1'].includes(verifyCandidateSource)) {
+    throw new Error('SIMSA_VERIFY_CANDIDATE_SOURCE must be empty or 1.')
+  }
+  if (!['', 'false', 'true'].includes(metadataMode)) {
+    throw new Error('SIMSA_VERCEL_METADATA_ENABLED must be true or false.')
+  }
+  const ordinaryBuild = metadataMode === 'true' ? {
+    ...DEPLOYMENT_BUILD,
+    buildCommand: 'node scripts/build-vercel-metadata.mjs',
+    outputDirectory: 'dist-vercel-metadata',
+  } : DEPLOYMENT_BUILD
+  const deploymentBuild = verifyCandidateSource === '1' ? {
+    ...ordinaryBuild,
+    buildCommand: 'node ../scripts/verify-candidate-source.mjs frontend && ' + ordinaryBuild.buildCommand,
+  } : ordinaryBuild
   if (!KNOWN_DEPLOYMENT_ENVIRONMENTS.has(deploymentEnvironment)) {
     return unprovisionedPreviewConfig()
   }
@@ -170,11 +244,12 @@ export function createVercelConfig({
     throw new Error('Non-Production deployment cannot proxy to the production SIMSA backend.')
   }
 
-  const useProtectionBypass = deploymentEnvironment === 'preview'
-    && isManagedSimsaVercelPreview(apiOrigin)
+  const useProtectionBypass = (deploymentEnvironment === 'preview'
+    && isManagedSimsaVercelPreview(apiOrigin))
+    || (deploymentEnvironment === 'production' && isManagedSimsaVercelCandidate(apiOrigin))
 
   if (useProtectionBypass && !protectionBypassConfigured) {
-    throw new Error(`Preview deployment targeting a protected Vercel backend requires ${PROTECTION_BYPASS_ENV}.`)
+    throw new Error(`Deployment targeting a protected Vercel backend requires ${PROTECTION_BYPASS_ENV}.`)
   }
 
   const proxyRules = [
@@ -184,22 +259,25 @@ export function createVercelConfig({
     proxyRewrite('/uploads/:path*', `${apiOrigin}/uploads/:path*`, useProtectionBypass),
   ]
   const spaFallback = routes.rewrite('/(.*)', '/index.html')
+  const securityHeaders = frontendSecurityHeaders(firebaseAuthDomain)
 
   if (useProtectionBypass) {
     // Header transforms require the low-level routes format. The fallback's
     // negative lookahead leaves Vite/PWA asset paths to normal filesystem
     // serving instead of rewriting them to index.html.
     return {
-      ...DEPLOYMENT_BUILD,
+      ...deploymentBuild,
       routes: [
         ...proxyRules,
+        { src: FRONTEND_ROUTE, headers: securityHeaders, continue: true },
         PROTECTED_SPA_FALLBACK,
       ],
     }
   }
 
   return {
-    ...DEPLOYMENT_BUILD,
+    ...deploymentBuild,
+    headers: [routes.header(FRONTEND_PATH, Object.entries(securityHeaders).map(([key, value]) => ({ key, value })))],
     rewrites: [...proxyRules, spaFallback],
   }
 }

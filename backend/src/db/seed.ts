@@ -3,8 +3,10 @@ import { unitKerja } from '../db/schema';
 import { seedKlasifikasiArsip } from './seed-klasifikasi';
 import { seedJadwalRetensiArsip } from './seed-jra';
 import { seedKlasifikasiJraMapping } from './seed-mapping';
+import { assertLocalRegulatorySeed } from '../config/regulatory-bootstrap';
 
 async function seed() {
+    assertLocalRegulatorySeed();
     console.log('🌱 Seeding database...');
 
     // Seed Unit Kerja

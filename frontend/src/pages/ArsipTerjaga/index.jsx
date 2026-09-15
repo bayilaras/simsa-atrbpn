@@ -3,15 +3,10 @@ import { useAuth } from '@/context/AuthContext'
 import { arsipTerjagaService } from '@/services/arsip-terjaga.service'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table'
-import {
-    Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
-} from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import {
@@ -21,6 +16,7 @@ import { KATEGORI_CONFIG, STATUS_PELAPORAN_CONFIG, STATUS_KEPATUHAN_CONFIG } fro
 import ArsipTerjagaTable from './ArsipTerjagaTable'
 import ArsipTerjagaForm from './ArsipTerjagaForm'
 import ArsipTerjagaDetail from './ArsipTerjagaDetail'
+import ReportingDialog from './ReportingDialog'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
@@ -64,10 +60,6 @@ export default function ArsipTerjaga() {
     // Forms
     const [selectedItem, setSelectedItem] = useState(null)
     const [form, setForm] = useState(INITIAL_FORM)
-    const [reportForm, setReportForm] = useState({
-        nomorLaporan: '',
-        tanggalPelaporan: new Date().toISOString().split('T')[0]
-    })
 
     // Load Data
     const loadData = useCallback(async () => {
@@ -78,7 +70,7 @@ export default function ArsipTerjaga() {
                 unitKerjaId, page, limit: 10, search,
                 kategoriTerjaga: filterKategori, statusPelaporan: filterPelaporan
             })
-            if (res.success) { setData(res.data); setTotalPages(res.pagination.totalPages) }
+            if (res.success) { setData(res.data); setTotalPages(res.totalPages || 1) }
         } catch (err) {
             console.error(err)
             toast({ title: 'Gagal memuat data', description: err.message, variant: 'destructive' })
@@ -114,7 +106,9 @@ export default function ArsipTerjaga() {
 
     const handleUpdate = async () => {
         try {
-            await arsipTerjagaService.update(selectedItem.id, form)
+            const { arsipId: _arsipId, ...metadata } = form
+            if (metadata.kategoriTerjaga === selectedItem.kategoriTerjaga && KATEGORI_CONFIG[metadata.kategoriTerjaga]?.legacy) delete metadata.kategoriTerjaga
+            await arsipTerjagaService.update(selectedItem.id, metadata)
             toast({ title: 'Berhasil', description: 'Data berhasil diperbarui' })
             setShowDetailDialog(false); setIsEditing(false); loadData()
         } catch (err) { toast({ title: 'Gagal', description: err.message, variant: 'destructive' }) }
@@ -126,18 +120,6 @@ export default function ArsipTerjaga() {
             await arsipTerjagaService.delete(id)
             toast({ title: 'Berhasil', description: 'Penetapan dihapus' })
             loadData(); loadStats()
-        } catch (err) { toast({ title: 'Gagal', description: err.message, variant: 'destructive' }) }
-    }
-
-    const handleReport = async () => {
-        if (!reportForm.nomorLaporan) {
-            toast({ title: 'Validasi', description: 'Nomor laporan wajib diisi', variant: 'destructive' })
-            return
-        }
-        try {
-            await arsipTerjagaService.markAsReported(selectedItem.id, reportForm.nomorLaporan, reportForm.tanggalPelaporan)
-            toast({ title: 'Berhasil', description: 'Status berhasil diubah menjadi dilaporkan' })
-            setShowReportDialog(false); loadData(); loadStats()
         } catch (err) { toast({ title: 'Gagal', description: err.message, variant: 'destructive' }) }
     }
 
@@ -155,7 +137,6 @@ export default function ArsipTerjaga() {
 
     const openReport = (item) => {
         setSelectedItem(item)
-        setReportForm({ nomorLaporan: '', tanggalPelaporan: new Date().toISOString().split('T')[0] })
         setShowReportDialog(true)
     }
 
@@ -219,9 +200,9 @@ export default function ArsipTerjaga() {
                 <Card>
                     <CardContent className="p-6 flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-muted-foreground">Sudah Dilaporkan</p>
+                            <p className="text-sm font-medium text-muted-foreground">Bukti Diverifikasi Internal</p>
                             <p className="text-3xl font-bold mt-2 text-emerald-600">
-                                {(getStatValue(stats?.byPelaporan, 'dilaporkan') + getStatValue(stats?.byPelaporan, 'terverifikasi'))}
+                                {getStatValue(stats?.byPelaporan, 'bukti_diverifikasi')}
                             </p>
                         </div>
                         <div className="p-3 bg-emerald-100 dark:bg-emerald-500/15 rounded-full"><FileCheck className="h-6 w-6 text-emerald-600" /></div>
@@ -230,8 +211,8 @@ export default function ArsipTerjaga() {
                 <Card>
                     <CardContent className="p-6 flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-muted-foreground">Belum Dilaporkan</p>
-                            <p className="text-3xl font-bold mt-2 text-red-600">{getStatValue(stats?.byPelaporan, 'belum_dilaporkan')}</p>
+                            <p className="text-sm font-medium text-muted-foreground">Belum Ada Bukti Pengiriman</p>
+                            <p className="text-3xl font-bold mt-2 text-red-600">{getStatValue(stats?.byPelaporan, 'belum_dilaporkan') + getStatValue(stats?.byPelaporan, 'dicatat')}</p>
                         </div>
                         <div className="p-3 bg-red-100 dark:bg-red-500/15 rounded-full"><FileWarning className="h-6 w-6 text-red-600" /></div>
                     </CardContent>
@@ -288,7 +269,7 @@ export default function ArsipTerjaga() {
                         <CardHeader>
                             <CardTitle className="text-lg flex items-center gap-2 text-red-700 dark:text-red-300">
                                 <FileWarning className="h-5 w-5" />
-                                Arsip Terjaga Belum Dilaporkan ({dueReporting.length})
+                                Jadwal Review Pelaporan ({dueReporting.length})
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -297,8 +278,8 @@ export default function ArsipTerjaga() {
                                     <div className="p-3 bg-emerald-100 dark:bg-emerald-500/15 rounded-full w-fit mx-auto mb-3">
                                         <FileCheck className="h-6 w-6 text-emerald-600" />
                                     </div>
-                                    <p className="font-medium text-emerald-700 dark:text-emerald-300">Semua Terkendali!</p>
-                                    <p className="text-muted-foreground text-sm">Semua arsip terjaga sudah dilaporkan ke ANRI sesuai jadwal.</p>
+                                    <p className="font-medium">Tidak ada jadwal pada daftar ini</p>
+                                    <p className="text-muted-foreground text-sm">Daftar jadwal tidak menyatakan kelengkapan bukti pelaporan atau kepatuhan.</p>
                                 </div>
                             ) : (
                                 <Table responsive>
@@ -393,46 +374,10 @@ export default function ArsipTerjaga() {
                 form={form} setForm={setForm} onUpdate={handleUpdate} onOpenReport={openReport}
             />
 
-            {/* Report to ANRI Dialog (kept inline - small) */}
-            <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Lapor ke ANRI</DialogTitle>
-                        <DialogDescription>
-                            Pastikan Anda telah melaporkan arsip ini ke ANRI dan mendapatkan nomor tanda terima.
-                        </DialogDescription>
-                    </DialogHeader>
-                    {selectedItem && (
-                        <div className="space-y-4">
-                            <div className="p-3 bg-muted rounded-md text-sm">
-                                <span className="font-semibold">{selectedItem.nomorBerkas}</span> - {selectedItem.uraianBerkas}
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Nomor Laporan/Tanda Terima ANRI *</Label>
-                                <Input
-                                    value={reportForm.nomorLaporan}
-                                    onChange={e => setReportForm(f => ({ ...f, nomorLaporan: e.target.value }))}
-                                    placeholder="Contoh: LAP-ANRI/2026/001"
-                                    autoFocus
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Tanggal Pelaporan *</Label>
-                                <Input type="date"
-                                    value={reportForm.tanggalPelaporan}
-                                    onChange={e => setReportForm(f => ({ ...f, tanggalPelaporan: e.target.value }))}
-                                />
-                            </div>
-                        </div>
-                    )}
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowReportDialog(false)}>Batal</Button>
-                        <Button onClick={handleReport} className="bg-primary hover:bg-primary">
-                            <Send className="h-4 w-4 mr-2" /> Konfirmasi Pelaporan
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            {showReportDialog && selectedItem && <ReportingDialog
+                key={selectedItem.id} open={showReportDialog} onOpenChange={setShowReportDialog}
+                item={selectedItem} onSaved={() => { loadData(); loadStats() }}
+            />}
         </div>
     )
 }

@@ -191,6 +191,18 @@ describe('tunjuk silang route policy', () => {
         expect(mocks.audit.logAction).not.toHaveBeenCalled();
     });
 
+    it('returns a safe conflict response for a nested driver duplicate without SQL details', async () => {
+        mocks.service.create.mockRejectedValue(new Error('private SQL and parameters', {
+            cause: Object.assign(new Error('private row detail'), { code: '23505' }),
+        }));
+        const response = await request(app).post('/tunjuk-silang').send({
+            sourceType: 'arsip', sourceId: SOURCE_ID,
+            targetType: 'arsip', targetId: TARGET_ID,
+            jenisRelasi: 'referensi',
+        }).expect(409);
+        expect(response.body).toEqual({ error: 'Tunjuk silang aktif tersebut sudah tercatat' });
+    });
+
     it('rejects malformed IDs, invalid pagination, and self-references before service calls', async () => {
         await request(app).post('/tunjuk-silang').send({
             sourceType: 'arsip', sourceId: 'not-a-uuid',

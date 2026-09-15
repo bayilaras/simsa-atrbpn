@@ -1,6 +1,8 @@
 import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AppError, ValidationError } from '../utils/errors.js';
+import { publicErrorResponse, publicErrorStatus } from '../utils/public-error.js';
 
 const mocks = vi.hoisted(() => ({
     user: {
@@ -82,8 +84,8 @@ const app = express();
 app.use(express.json());
 app.use('/distributions', distributionRouter);
 app.use('/layanan-arsip', layananRouter);
-app.use((error: any, _req: any, res: any, _next: any) => {
-    res.status(error?.statusCode || 500).json({ error: error?.message || 'Request failed' });
+app.use((error: unknown, _req: any, res: any, _next: any) => {
+    res.status(publicErrorStatus(error)).json(publicErrorResponse(error, 'distribution-fault-test'));
 });
 
 describe('distribution route unit scoping', () => {
@@ -169,19 +171,43 @@ describe('distribution route unit scoping', () => {
 
     it('rejects processing when the service reports an invalid previous state', async () => {
         mocks.distribution.process.mockRejectedValue(
-            new Error('Distribution hanya dapat diproses setelah diterima'),
+            new ValidationError('Distribution hanya dapat diproses setelah diterima'),
         );
 
         await request(app).put('/distributions/dist-1/process').expect(400);
     });
 
-    it('returns 404 and an empty scope for a non-super user without a unit', async () => {
+    it.each(['distribute', 'receive', 'process', 'reject'] as const)('sanitizes %s errors regardless of misleading domain keywords', async action => {
+        mocks.recordAccess.check.mockResolvedValue({ exists: true, allowed: true, mutable: true, unitKerjaId: 'unit-a' });
+        for (const keyword of ['Invalid', 'sudah didistribusikan sudah diproses tidak bisa', 'not found']) {
+            const marker = `${keyword}: SYNTHETIC_DISTRIBUTION_DATABASE_SECRET`;
+            mocks.distribution[action].mockRejectedValueOnce(new Error(marker));
+            const response = action === 'distribute' ? await request(app).post('/distributions').send({ suratMasukId: 'surat-1', sourceUnitId: 'unit-a', targetUnitId: 'unit-b' })
+                : await request(app).put(`/distributions/dist-1/${action}`).send({ reason: 'Bukan unit tujuan' });
+            expect(response.status).toBe(500);
+            expect(response.body).toMatchObject({ code: 'INTERNAL_ERROR', requestId: 'distribution-fault-test' });
+            expect(response.text).not.toContain(marker);
+        }
+    });
+
+    it('preserves typed missing-record and workflow failures after the route preflight', async () => {
+        mocks.distribution.receive.mockRejectedValueOnce(new AppError('Distribution not found', 404));
+        const missing = await request(app).put('/distributions/dist-1/receive');
+        expect(missing.status).toBe(404);
+        expect(missing.body).toMatchObject({ code: 'NOT_FOUND', message: 'Distribution not found' });
+        mocks.distribution.reject.mockRejectedValueOnce(new ValidationError('Distribution tidak bisa ditolak'));
+        const conflict = await request(app).put('/distributions/dist-1/reject').send({ reason: 'Bukan unit tujuan' });
+        expect(conflict.status).toBe(400);
+        expect(conflict.body).toMatchObject({ code: 'VALIDATION_ERROR', message: 'Distribution tidak bisa ditolak' });
+    });
+
+    it('hides record existence and denies writes for a non-super user without a unit', async () => {
         Object.assign(mocks.user, { role: 'auditor', unitKerjaId: null });
         mocks.distribution.findById.mockResolvedValue(null);
-        mocks.distribution.process.mockRejectedValue(new Error('Distribution not found'));
+        mocks.distribution.process.mockRejectedValue(new AppError('Distribution not found', 404));
 
         await request(app).get('/distributions/dist-1?unitKerjaId=unit-b').expect(404);
-        await request(app).put('/distributions/dist-1/process?unitKerjaId=unit-b').expect(404);
+        await request(app).put('/distributions/dist-1/process?unitKerjaId=unit-b').expect(403);
 
         expect(mocks.distribution.findById).toHaveBeenCalledWith('dist-1', '');
         expect(mocks.distribution.process).not.toHaveBeenCalled();

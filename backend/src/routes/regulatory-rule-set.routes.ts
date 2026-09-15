@@ -10,6 +10,7 @@ import {
     uuidParamValidator,
 } from '../middlewares/validate.middleware';
 import auditLogService from '../services/audit-log.service';
+import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
 import regulatoryRuleSetService, {
     RegulatoryRuleSetValidationError,
 } from '../services/regulatory-rule-set.service';
@@ -29,8 +30,8 @@ import {
 
 const router = Router();
 const superAdminOnly = roleMiddleware(['super_admin']);
-const governanceReviewer = roleMiddleware(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
-const governanceReader = roleMiddleware(['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor']);
+const governanceReviewer = superAdminOnly;
+const governanceReader = superAdminOnly;
 const sourceDocumentUpload = multer({
     storage: multer.memoryStorage(),
     // Large PDFs use the rule-set-bound direct private Blob path. Keeping this
@@ -62,7 +63,9 @@ function receiveSourceDocument(req: AuthRequest, res: Response, next: NextFuncti
     });
 }
 
-router.use(authMiddleware);
+// Operational record pickers consume the separate classification/JRA catalog
+// routes. Edition preparation, source evidence and publication are global.
+router.use(authMiddleware, superAdminOnly);
 router.param('id', uuidParamValidator);
 
 function ipAddress(req: AuthRequest): string | undefined {
@@ -232,6 +235,9 @@ router.post(
                 req.user?.id,
                 auditContext(req),
             );
+            // The service has committed a quarantined source; wake is only an
+            // accelerator and cannot turn ingest evidence into a clean verdict.
+            scheduleMalwareScanWake();
             res.json({ success: true, data });
         } catch (error) {
             next(error);
@@ -252,6 +258,7 @@ router.post(
                 req.user?.id,
                 auditContext(req),
             );
+            scheduleMalwareScanWake();
             res.json({ success: true, data });
         } catch (error) {
             next(error);
@@ -425,7 +432,7 @@ router.post(
             const result = await regulatoryRuleSetService.activate(
                 req.params.id as string,
                 req.user?.id,
-                auditContext(req, 'Mengaktifkan edisi aturan yang telah disetujui.'),
+                auditContext(req, 'Superadmin mengesahkan dan mengaktifkan edisi aturan yang telah tervalidasi.'),
             );
 
             res.json({ success: true, data: result });

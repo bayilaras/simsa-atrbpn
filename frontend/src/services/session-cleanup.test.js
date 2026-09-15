@@ -36,8 +36,24 @@ describe('session cleanup', () => {
         mocks.signOut.mockRejectedValueOnce(new Error('network failure'));
         vi.spyOn(console, 'error').mockImplementation(() => { });
 
-        await authService.signOut();
+        await expect(authService.signOut()).rejects.toThrow('network failure');
 
+        expect(mocks.clearOfflineStorage).toHaveBeenCalledOnce();
+    });
+
+    it('starts local cleanup while remote sign-out is still pending', async () => {
+        let complete;
+        mocks.signOut.mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
+        const pending = authService.signOut();
+        expect(mocks.clearOfflineStorage).toHaveBeenCalledOnce();
+        complete({ data: { success: true }, error: null });
+        await pending;
+    });
+
+    it('propagates a resolved Better Auth error while still clearing local drafts', async () => {
+        mocks.signOut.mockResolvedValueOnce({ data: null, error: { message: 'Origin ditolak', status: 403 } });
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        await expect(authService.signOut()).rejects.toThrow('Origin ditolak');
         expect(mocks.clearOfflineStorage).toHaveBeenCalledOnce();
     });
 

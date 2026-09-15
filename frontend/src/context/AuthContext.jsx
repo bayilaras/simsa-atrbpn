@@ -1,3 +1,4 @@
+import { canManageUnit } from '@/lib/role-access';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { authService } from '../services/auth.service';
 import { clearOfflineStorage } from '../lib/offline-storage';
@@ -15,6 +16,10 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [idleWarning, setIdleWarning] = useState(false);
+    const [signingOut, setSigningOut] = useState(false);
+    const [logoutError, setLogoutError] = useState(null);
+    const signingOutRef = useRef(false);
+    const authEpochRef = useRef(0);
 
     const idleTimerRef = useRef(null);
     const warningTimerRef = useRef(null);
@@ -68,25 +73,31 @@ export function AuthProvider({ children }) {
     // Check authentication on mount
     useEffect(() => {
         checkAuth();
+        return () => { authEpochRef.current += 1; };
     }, []);
 
     async function checkAuth() {
+        if (signingOutRef.current) return;
+        const epoch = ++authEpochRef.current;
+        const isCurrent = () => epoch === authEpochRef.current && !signingOutRef.current;
         try {
             setLoading(true);
             const session = await authService.getSession();
+            if (!isCurrent()) return;
 
             if (session?.user) {
                 setUser(normalizeAuthenticatedUserUnitScope(session.user));
             } else {
                 await clearOfflineStorage();
-                setUser(null);
+                if (isCurrent()) setUser(null);
             }
         } catch (err) {
+            if (!isCurrent()) return;
             console.error('Auth check failed:', err);
             await clearOfflineStorage();
-            setUser(null);
+            if (isCurrent()) setUser(null);
         } finally {
-            setLoading(false);
+            if (isCurrent()) setLoading(false);
         }
     }
 
@@ -94,6 +105,7 @@ export function AuthProvider({ children }) {
         try {
             setLoading(true);
             setError(null);
+            setLogoutError(null);
             const session = await authService.signInWithGoogle();
             if (session?.user) {
                 // Firebase popup flow exchanges the ID token immediately. The
@@ -112,6 +124,7 @@ export function AuthProvider({ children }) {
         try {
             setLoading(true);
             setError(null);
+            setLogoutError(null);
             await authService.signInWithEmail(email, password);
             await checkAuth();
         } catch (err) {
@@ -139,6 +152,13 @@ export function AuthProvider({ children }) {
     }
 
     async function signOut() {
+        if (signingOutRef.current) return;
+        signingOutRef.current = true;
+        authEpochRef.current += 1;
+        setLoading(true);
+        setSigningOut(true);
+        setError(null);
+        setLogoutError(null);
         try {
             if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
             if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
@@ -150,6 +170,13 @@ export function AuthProvider({ children }) {
         } catch (err) {
             console.error('Sign out failed:', err);
             setUser(null); // Force clear user even on error
+            const message = 'Penutupan sesi server belum terkonfirmasi. Periksa koneksi dan coba keluar lagi.';
+            setError(message);
+            setLogoutError(message);
+        } finally {
+            signingOutRef.current = false;
+            setSigningOut(false);
+            setLoading(false);
         }
     }
 
@@ -173,9 +200,8 @@ export function AuthProvider({ children }) {
     }
 
     // Check if user can write (create/update/delete)
-    function canWrite() {
-        if (!user) return false;
-        return ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(user.role);
+    function canWrite(unitKerjaId = '') {
+        return canManageUnit(user, unitKerjaId);
     }
 
     const value = {
@@ -184,6 +210,8 @@ export function AuthProvider({ children }) {
         error,
         isAuthenticated: !!user,
         idleWarning,
+        signingOut,
+        logoutError,
         signInWithGoogle,
         signInWithEmail,
         signUp,

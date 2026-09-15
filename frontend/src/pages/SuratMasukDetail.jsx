@@ -21,9 +21,9 @@ export default function SuratMasukDetail() {
     const navigate = useNavigate()
     const { toast } = useToast()
     const { canWrite, user } = useAuth()
-    const isAdmin = canWrite()
 
     const [surat, setSurat] = useState(null)
+    const isAdmin = Boolean(surat && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
@@ -158,12 +158,7 @@ export default function SuratMasukDetail() {
                 open={archiveDialogOpen}
                 onOpenChange={setArchiveDialogOpen}
                 suratType="masuk"
-                suratData={{
-                    id: surat.id,
-                    nomorSurat: surat.nomorSurat,
-                    perihal: surat.perihal,
-                    tanggalSurat: surat.tanggalSurat,
-                }}
+                suratData={surat}
                 onArchive={handleArchive}
             />
 

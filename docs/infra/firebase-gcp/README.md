@@ -246,7 +246,11 @@ penyesuaian organisasi:
    Cloud SQL Auth Proxy `--private-ip --auto-iam-authn` dan identitas WIF
    terpisah untuk urutan bootstrap awal -> `npm run db:migrate` -> bootstrap
    final (mencabut database `CREATE` migrator) ->
-   `npm run db:grants:converge` -> `npm run seed:all` -> evidence read-only.
+   `npm run db:grants:converge` -> `npm run seed:deployment` -> evidence read-only.
+   Seed deployment hanya menambah unit yang belum ada dan memverifikasi
+   instrumen aktif yang telah disahkan. `GOVERNANCE_REQUIRED` pada setup pertama
+   harus diselesaikan melalui alur administrasi terautentikasi/private storage
+   lingkungan tujuan sesuai runbook, tanpa mengaktifkan seed lokal.
    Simpan image/artifact digest, commit, exact journal/ACL/seed, waktu,
    approval, dan operator. Target maintenance tidak menerima traffic dan
    principal runtime tidak memperoleh DDL. Jangan gunakan `db:push` pada

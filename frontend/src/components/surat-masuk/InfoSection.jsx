@@ -5,6 +5,7 @@ import { Separator } from '@/components/ui/separator';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { useAppConfig } from '@/context/app-config-context';
+import { SuratRetentionSummary } from '@/components/SuratRetentionSummary';
 
 export function InfoSection({ surat }) {
     const { capabilities } = useAppConfig();
@@ -101,9 +102,12 @@ export function InfoSection({ surat }) {
                     </div>
                     <div className="space-y-1 col-span-2 sm:col-span-1">
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi</label>
-                        <p className="text-sm font-medium">{surat.klasifikasi || '-'}</p>
+                        <p className="text-sm font-medium">{surat.klasifikasiKode || surat.klasifikasi || '-'}</p>
+                        {surat.klasifikasiUraian && <p className="text-sm text-muted-foreground">{surat.klasifikasiUraian}</p>}
                     </div>
                 </div>
+
+                <SuratRetentionSummary surat={surat} />
 
                 {/* Link Dokumen */}
                 {capabilities.files && surat.linkDokumen && (

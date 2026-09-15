@@ -1,13 +1,28 @@
 {
     "version": 2,
+    "framework": null,
+    "fluid": true,
     "git": {
         "deploymentEnabled": {
             "main": false
         }
     },
-    "buildCommand": "npm run build",
+    "buildCommand": "node scripts/build-vercel.mjs",
     "installCommand": "npm ci --include=dev",
+    "functions": {
+        "api/index.js": {
+            "includeFiles": "{node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs,node_modules/@napi-rs/canvas*/**}"
+        },
+        "api/internal-malware-scan.js": {
+            "maxDuration": 300,
+            "includeFiles": "{dist-vercel/workers,native-clamav-assets}/**"
+        }
+    },
     "rewrites": [
+        {
+            "source": "/api/internal-malware-scan",
+            "destination": "/api/internal-malware-scan.js"
+        },
         {
             "source": "/(.*)",
             "destination": "/api/index.js"

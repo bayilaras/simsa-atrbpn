@@ -1,6 +1,13 @@
 # Operasi Antivirus Bitstream SIMSA
 
-SIMSA memakai protokol resmi ClamAV `clamd` TCP `INSTREAM`. Berkas tetap berada
+SIMSA mendukung worker ClamAV TCP untuk instalasi persisten dan adaptor native
+sesuai permintaan untuk Vercel. Konfigurasi, isolasi akun dan recovery Vercel ada
+di [panduan Vercel dan Neon](DEPLOY_VERCEL_NEON.md#antivirus-native-sesuai-permintaan).
+Adaptor native memakai executable resmi, definisi bertanda tangan yang diperbarui
+setelah 24 jam, deadline serta batas memori; Preview aplikasi tidak menjalankannya.
+Aktivasi Production memerlukan hasil uji cloud lengkap, bukan hanya unit test.
+
+Bagian TCP berikut memakai protokol resmi ClamAV `clamd` `INSTREAM`. Berkas tetap berada
 dalam karantina sampai `clamd` mengembalikan respons persis `stream: OK` dan
 SHA-256 serta ukuran hasil baca ulang cocok dengan baseline ingest. Respons
 ambigu, timeout, object storage gagal, hash berubah, atau scanner nonaktif tidak
@@ -110,9 +117,16 @@ serta menjalankan worker Node 24 langsung dari artifact commit backend yang
 sama dengan API. Image produksi dipatok dengan digest dan seluruh container memiliki batas
 CPU/memori serta rotasi log; perubahan digest wajib disertai uji ulang.
 
-Cold-start produksi akan gagal bila Vercel dikonfigurasi `embedded`, scanner
-dinonaktifkan, worker dinonaktifkan, token Blob hilang, atau pengakuan jaringan
-tepercaya belum diberikan. Worker terpisah juga menolak dijalankan di Vercel.
+Untuk produksi dengan ClamAV aktif, worker wajib diaktifkan dan API pada Vercel
+atau Cloud Run memakai runtime `external`. Token Blob diperlukan bagi provider
+Blob; GCS memakai konfigurasinya sendiri. Host scanner eksplisit dan pengakuan
+jaringan tepercaya wajib pada proses yang benar-benar membuka koneksi ClamAV.
+Worker terpisah juga menolak dijalankan sebagai fungsi Vercel.
+
+Profil `internal` mengizinkan scanner dan worker sama-sama nonaktif dalam mode
+karantina tertutup. Pengecualian ini memungkinkan pengelolaan metadata sebelum
+fasilitas berkas tersedia; berkas tidak dianggap bersih dan tidak dilepas oleh
+gateway. Profil terintegrasi tetap memerlukan scanner sesuai validasi runtime.
 
 ## Status dan pemulihan
 
@@ -127,6 +141,19 @@ Jika proses mati setelah klaim, worker lain mengambil ulang status `scanning`
 setelah `MALWARE_SCAN_STALE_AFTER_MS`. Hasil dari worker lama ditolak dengan
 conditional update. Setiap transisi yang diterima ditulis atomik ke `audit_log`
 tanpa menyimpan locator object storage di bukti audit.
+
+Promosi objek GCS dari karantina ke bucket akhir dijalankan melalui child process
+`dist/workers/gcs-promotion.js`. Batas `MALWARE_SCAN_PROMOTION_TIMEOUT_MS` adalah
+45.000 ms secara default. Saat batas tercapai, parent menghentikan child dan
+menunggu proses tertutup sebelum melanjutkan. Environment child memuat kebutuhan
+GCS/ADC saja, tanpa kredensial database atau autentikasi aplikasi.
+
+Penghentian proses tidak membatalkan salinan yang mungkin sudah diterima GCS.
+Hasil yang belum pasti mempertahankan klaim `scanning`; pengambilan ulang klaim
+stale mengulangi tujuan deterministik dan memeriksa generation yang ada sebelum
+mencatat hasil. Jangan mengubahnya menjadi `clean` atau menghapus objek secara
+manual. Default `MALWARE_SCAN_STALE_AFTER_MS` menjadi 300.000 ms; nilainya harus
+melampaui gabungan batas download, koneksi ClamAV, scan, dan promosi GCS.
 
 Job CI `ClamAV Clean, EICAR & Restart Smoke` memakai implementasi `INSTREAM`
 aplikasi terhadap image ClamAV Linux yang dipatok digest, memverifikasi sampel

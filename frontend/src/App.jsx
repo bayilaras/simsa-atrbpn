@@ -1,3 +1,5 @@
+import { FileCapabilityGuard } from '@/components/FileCapabilityGuard'
+import { AppServiceNotice } from '@/components/AppServiceNotice'
 import { lazy, Suspense, useEffect } from 'react'
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, Link, useLocation } from 'react-router-dom'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
@@ -13,7 +15,7 @@ import { useAuth } from './context/AuthContext'
 import Login from '@/pages/Login' // Eager: first page users see
 import PrintLayout from '@/layouts/PrintLayout'
 import appConfig from '@/lib/app-config'
-import { PROVISIONED_ROLES } from '@/lib/provisioning-access'
+import { PROVISIONED_ROLES, hasProvisionedAccess } from '@/lib/provisioning-access'
 import { useAppConfig } from '@/context/app-config-context'
 import './index.css'
 
@@ -27,10 +29,12 @@ const Arsip = lazy(() => import('@/pages/Arsip'))
 const ArsipDetail = lazy(() => import('@/pages/ArsipDetail'))
 const UserManagement = lazy(() => import('@/pages/UserManagement'))
 const AuditLog = lazy(() => import('@/pages/AuditLog'))
+const OperationsMonitoring = lazy(() => import('@/pages/OperationsMonitoring'))
 const KlasifikasiArsip = lazy(() => import('@/pages/KlasifikasiArsip'))
 const JadwalRetensi = lazy(() => import('@/pages/JadwalRetensi'))
 const RegulatoryRuleSets = lazy(() => import('@/pages/RegulatoryRuleSets'))
 const StorageLocations = lazy(() => import('@/pages/StorageLocations'))
+const StorageLocationDetail = lazy(() => import('@/pages/StorageLocationDetail'))
 const ArchiveLending = lazy(() => import('@/pages/ArchiveLending'))
 const Dosir = lazy(() => import('@/pages/Dosir'))
 const DosirDetail = lazy(() => import('@/pages/DosirDetail'))
@@ -64,26 +68,10 @@ const SrikandiIntegration = appConfig.features.srikandi
 // Suspense loading fallback
 function PageLoader() {
   return (
-    <div role="status" aria-live="polite" className="flex items-center justify-center min-h-[60vh] animate-in fade-in zoom-in duration-300">
-      <div className="flex flex-col items-center gap-4">
-        <div className="relative">
-          <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full animate-pulse"></div>
-          <img
-            src="/logo-simsa.png"
-            alt=""
-            className="h-16 w-16 relative z-10 animate-bounce"
-            style={{ animationDuration: '2s' }}
-          />
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <h3 className="font-semibold text-lg text-primary tracking-tight">{appConfig.shortName}</h3>
-          <span className="sr-only">Memuat halaman…</span>
-          <div className="flex items-center gap-1">
-            <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.3s]"></div>
-            <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.15s]"></div>
-            <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce"></div>
-          </div>
-        </div>
+    <div role="status" aria-live="polite" className="flex min-h-[40vh] items-center justify-center p-6">
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <img src="/logo-simsa.png" alt="" className="h-9 w-9" />
+        <span>Memuat halaman…</span>
       </div>
     </div>
   )
@@ -138,20 +126,26 @@ function SrikandiFeatureGuard({ children }) {
   return children
 }
 
-function FileCapabilityGuard({ children }) {
+function OptionalModuleGuard({ capability, children }) {
   const { capabilities, loading } = useAppConfig()
-
   if (loading) return <PageLoader />
-  if (!capabilities.files) return <Navigate to="/not-found" replace />
-
+  if (capabilities[capability] === false) return (
+    <section className="space-y-4 p-6" aria-label="Ketersediaan modul">
+      <h1 className="text-xl font-semibold">Modul belum diaktifkan</h1>
+      <p className="text-muted-foreground">Modul ini belum diaktifkan pada layanan ini. Surat dan arsip manual tetap tersedia.</p>
+      <Link className="inline-flex min-h-11 items-center text-sm text-primary underline" to="/arsip/masuk">Buka daftar arsip</Link>
+    </section>
+  )
   return children
 }
 
-const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+
+
+const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
 const SUPER_ADMIN_ONLY = ['super_admin'];
-const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
-const ALL_ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
-const STAFF_AND_ABOVE = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff'];
+const ADMIN_AND_AUDITOR = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
+const ALL_ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
+const STAFF_AND_ABOVE = ALL_ADMIN_ROLES;
 const ALL_PROVISIONED_ROLES = PROVISIONED_ROLES;
 
 function AppLayout() {
@@ -169,6 +163,7 @@ function AppLayout() {
         <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 px-4 py-5 outline-none sm:px-6 sm:py-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1600px] space-y-5 sm:space-y-6">
             <Breadcrumbs />
+            <AppServiceNotice />
             <ErrorBoundary fallbackMessage="Terjadi kesalahan saat memuat halaman. Silakan coba lagi.">
               <Suspense fallback={<PageLoader />}>
                 <Outlet />
@@ -185,14 +180,10 @@ function AppLayout() {
 }
 
 function GuideLayout() {
-  const { isAuthenticated, loading, user, checkAuth, signOut } = useAuth()
+  const { isAuthenticated, loading, user } = useAuth()
 
-  if (!loading && isAuthenticated) {
-    return (
-      <ProvisionedAccessGate user={user} onRefresh={checkAuth} onSignOut={signOut}>
-        <AppLayout />
-      </ProvisionedAccessGate>
-    )
+  if (!loading && isAuthenticated && hasProvisionedAccess(user)) {
+    return <AppLayout />
   }
 
   return (
@@ -209,15 +200,18 @@ function GuideLayout() {
             </div>
           </Link>
           <Link
-            to="/login"
+            to={isAuthenticated ? '/' : '/login'}
             className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="sm:hidden">Login</span>
-            <span className="hidden sm:inline">Kembali ke login</span>
+            {isAuthenticated ? <span>Kembali ke status akses</span> : <>
+              <span className="sm:hidden">Login</span>
+              <span className="hidden sm:inline">Kembali ke login</span>
+            </>}
           </Link>
         </div>
       </header>
       <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-5 outline-none sm:px-6 sm:py-6 lg:px-8">
+        <div className="mb-5"><AppServiceNotice /></div>
         <Suspense fallback={<PageLoader />}>
           <Outlet />
         </Suspense>
@@ -258,9 +252,10 @@ const router = createBrowserRouter([
       { path: "/arsip", element: <Navigate to="/arsip/keluar" replace /> },
       { path: "/arsip/detail/:id", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><ArsipDetail /></RoleGuard> },
       { path: "/arsip/:tab", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Arsip /></RoleGuard> },
-      { path: "/bulk-upload", element: <FileCapabilityGuard><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard></FileCapabilityGuard> },
+      { path: "/bulk-upload", element: <OptionalModuleGuard capability="bulkOcr"><FileCapabilityGuard upload><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard></FileCapabilityGuard></OptionalModuleGuard> },
       { path: "/laporan", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Laporan /></RoleGuard> },
       { path: "/audit-log", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AuditLog /></RoleGuard> },
+      { path: "/monitoring-operasional", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><OperationsMonitoring /></RoleGuard> },
       { path: "/record-access-grants", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><RecordAccessGrants /></RoleGuard> },
       {
         path: "/integrations/srikandi",
@@ -274,18 +269,19 @@ const router = createBrowserRouter([
       },
       { path: "/settings", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Settings /></RoleGuard> },
       { path: "/users", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><UserManagement /></RoleGuard> },
-      { path: "/master/klasifikasi", element: <RoleGuard allowedRoles={ADMIN_ROLES}><KlasifikasiArsip /></RoleGuard> },
-      { path: "/master/jra", element: <RoleGuard allowedRoles={ADMIN_ROLES}><JadwalRetensi /></RoleGuard> },
-      { path: "/master/regulatory-rules", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><RegulatoryRuleSets /></RoleGuard> },
+      { path: "/master/klasifikasi", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><KlasifikasiArsip /></RoleGuard> },
+      { path: "/master/jra", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><JadwalRetensi /></RoleGuard> },
+      { path: "/master/regulatory-rules", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><RegulatoryRuleSets /></RoleGuard> },
       { path: "/storage-locations", element: <RoleGuard allowedRoles={ADMIN_ROLES}><StorageLocations /></RoleGuard> },
+      { path: "/storage-locations/:id", element: <RoleGuard allowedRoles={ADMIN_ROLES}><StorageLocationDetail /></RoleGuard> },
       { path: "/archive-lending", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArchiveLending /></RoleGuard> },
       { path: "/dosir", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><Dosir /></RoleGuard> },
       { path: "/dosir/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><DosirDetail /></RoleGuard> },
       { path: "/retention", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><RetentionManagement /></RoleGuard> },
       { path: "/retention-governance", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><RetentionGovernance /></RoleGuard> },
-      { path: "/penyusutan", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><PenyusutanArsip /></RoleGuard> },
+      { path: "/penyusutan", element: <OptionalModuleGuard capability="advancedArchiveWorkflows"><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><PenyusutanArsip /></RoleGuard></OptionalModuleGuard> },
       { path: "/arsip-vital", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipVital /></RoleGuard> },
-      { path: "/arsip-terjaga", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipTerjaga /></RoleGuard> },
+      { path: "/arsip-terjaga", element: <OptionalModuleGuard capability="advancedArchiveWorkflows"><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipTerjaga /></RoleGuard></OptionalModuleGuard> },
       { path: "/arsip-elektronik", element: <FileCapabilityGuard><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArsipElektronik /></RoleGuard></FileCapabilityGuard> },
       { path: "/tunjuk-silang", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TunjukSilang /></RoleGuard> },
       { path: "/autentikasi", element: <FileCapabilityGuard><RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AutentikasiIndex /></RoleGuard></FileCapabilityGuard> },
@@ -322,4 +318,3 @@ function App() {
 }
 
 export default App
-

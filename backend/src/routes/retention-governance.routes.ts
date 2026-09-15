@@ -28,6 +28,7 @@ import {
 const router = Router();
 const reviewerMiddleware = roleMiddleware([
     'super_admin',
+    'admin_unit',
     'admin_dirjen',
     'admin_sesditjen',
 ]);

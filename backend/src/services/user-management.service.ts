@@ -16,6 +16,8 @@ import {
 } from '../utils/errors.js';
 import { lockAuthorizationMandatesExclusive } from '../utils/authorization-mandate-lock.js';
 import { createLogger } from '../utils/logger.js';
+import { publicErrorStatus } from '../utils/public-error.js';
+import { ASSIGNABLE_ROLES, KNOWN_ROLES } from '../config/permissions.js';
 
 const log = createLogger('UserManagementService');
 
@@ -55,7 +57,7 @@ export interface CreateUserData {
 }
 
 // Valid roles
-export const VALID_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user'] as const;
+export const VALID_ROLES = KNOWN_ROLES;
 export type Role = typeof VALID_ROLES[number];
 
 // Admin roles that can access user management
@@ -69,13 +71,16 @@ export function normalizeUserUnitAssignment(
     // A super administrator is deliberately cross-unit. Persisting a nominal
     // unit would disagree with the runtime resolver and mislead administrators.
     if (role === 'super_admin') return null;
+    if (role === 'admin_unit' && !unitKerjaId?.trim()) {
+        throw new ValidationError('Unit kerja wajib untuk admin unit.');
+    }
 
     const mandatedUnit = ROLE_MANDATED_UNIT_KERJA[role];
-    if (!mandatedUnit) return unitKerjaId?.trim() || null;
+    if (typeof mandatedUnit !== 'string') return unitKerjaId?.trim() || null;
 
     const normalized = unitKerjaId?.trim() || null;
     if (explicitUnit && normalized !== mandatedUnit) {
-        throw new Error(`Invalid unitKerjaId for ${role}: expected ${mandatedUnit}`);
+        throw new ValidationError(`Invalid unitKerjaId for ${role}: expected ${mandatedUnit}`);
     }
 
     return mandatedUnit;
@@ -178,7 +183,7 @@ async function validateCreatePrerequisites(
         .where(ilike(users.email, normalizedEmail))
         .limit(1);
     if (existingUser) {
-        if (duplicatePolicy === 'legacy') throw new Error('Email sudah terdaftar');
+        if (duplicatePolicy === 'legacy') throw new ValidationError('Email sudah terdaftar');
         throw new ConflictError('Identitas pengguna tersebut sudah digunakan.');
     }
 
@@ -284,9 +289,10 @@ async function compensateFirebaseCreate(firebaseUid: string, cause: unknown): Pr
         // the identity:firebase:plan reconciliation command reports the
         // verified unmatched Firebase identity for operator cleanup.
         log.error({
-            err: compensationError,
+            event: 'firebase_provisioning_compensation_failed',
+            status: publicErrorStatus(compensationError),
             firebaseUid,
-            originalError: cause,
+            originalStatus: publicErrorStatus(cause),
         }, 'Firebase provisioning compensation failed; unmatched identity requires reconciliation');
         throw new ServiceUnavailableError(
             'Provisioning pengguna belum dapat dipastikan. Jalankan rekonsiliasi identitas sebelum mencoba lagi.',
@@ -308,7 +314,7 @@ async function synchronizeFirebaseAuthorizationState(
         await firebaseAuth.updateUser(firebaseUid, { disabled: !isActive });
         if (revokeSessions) await firebaseAuth.revokeRefreshTokens(firebaseUid);
     } catch (error) {
-        log.error({ err: error, firebaseUid, desiredActiveState: isActive },
+        log.error({ event: 'firebase_authorization_reconciliation_failed', status: publicErrorStatus(error), firebaseUid, desiredActiveState: isActive },
             'Database user state committed but Firebase authorization reconciliation failed');
         throw new ServiceUnavailableError(
             'Perubahan pengguna tersimpan, tetapi sinkronisasi sesi belum selesai. Ulangi permintaan ini.',
@@ -323,8 +329,8 @@ export const userManagementService = {
     async createUser(data: CreateUserData, auditContext: CriticalAuditContext) {
         const normalizedEmail = data.email.trim().toLowerCase();
         // Validate role
-        if (!VALID_ROLES.includes(data.role as Role)) {
-            throw new Error(`Invalid role: ${data.role}`);
+        if (!(ASSIGNABLE_ROLES as readonly string[]).includes(data.role)) {
+            throw new ValidationError(`Invalid role: ${data.role}`);
         }
         const normalizedUnitKerjaId = normalizeUserUnitAssignment(
             data.role as Role,
@@ -498,8 +504,8 @@ export const userManagementService = {
         auditContext: CriticalAuditContext,
     ) {
         // Validate role if provided
-        if (data.role && !VALID_ROLES.includes(data.role as Role)) {
-            throw new Error(`Invalid role: ${data.role}`);
+        if (data.role !== undefined && !(ASSIGNABLE_ROLES as readonly string[]).includes(data.role)) {
+            throw new ValidationError(`Invalid role: ${data.role}`);
         }
 
         const updateData: any = {
@@ -528,6 +534,17 @@ export const userManagementService = {
                 .limit(1)
                 .for('update'))[0];
         if (!existingUser) return null;
+
+        // Approving a pending identity is an explicit mandate decision. Never
+        // infer the role from a supplied unit or reuse a legacy pending unit.
+        if (existingUser.role === 'user') {
+            if (data.role === undefined && data.unitKerjaId?.trim()) {
+                throw new ValidationError('Pilih peran untuk menyetujui akses pengguna.');
+            }
+            if (data.role === 'admin_unit' && !data.unitKerjaId?.trim()) {
+                throw new ValidationError('Unit kerja wajib dipilih saat menyetujui Admin Unit.');
+            }
+        }
 
         if (auditContext?.userId === userId) {
             if (data.isActive === false && existingUser.isActive) {
@@ -607,7 +624,7 @@ export const userManagementService = {
                 .from(unitKerja)
                 .where(eq(unitKerja.id, nextUnitKerjaId))
                 .limit(1);
-            if (!unit) throw new Error(`Invalid unitKerjaId: ${nextUnitKerjaId}`);
+            if (!unit) throw new ValidationError(`Invalid unitKerjaId: ${nextUnitKerjaId}`);
         }
 
         const [updatedUser] = await tx
@@ -684,7 +701,7 @@ export const userManagementService = {
      * Get available roles
      */
     getRoles() {
-        return VALID_ROLES.map(role => ({
+        return ASSIGNABLE_ROLES.map(role => ({
             value: role,
             label: this.getRoleLabel(role),
         }));
@@ -696,6 +713,7 @@ export const userManagementService = {
     getRoleLabel(role: string): string {
         const labels: Record<string, string> = {
             'super_admin': 'Super Admin',
+            'admin_unit': 'Admin Unit Kerja',
             'admin_dirjen': 'Admin Dirjen PTPP',
             'admin_sesditjen': 'Admin Sesditjen',
             'staff': 'Staff',

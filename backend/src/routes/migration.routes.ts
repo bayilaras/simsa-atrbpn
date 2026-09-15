@@ -5,8 +5,18 @@ import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { canAccessUnit, Role } from '../config/permissions';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja';
+import { ValidationError } from '../utils/errors.js';
+import { importLimiter } from '../middlewares/rate-limiter.middleware.js';
 
 const router = Router();
+
+function importOptions(req: AuthRequest) {
+    const value = req.body?.dryRun;
+    if (value !== undefined && value !== 'true' && value !== 'false') {
+        throw new ValidationError('dryRun harus true atau false.');
+    }
+    return { dryRun: value === 'true' };
+}
 const CSV_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
 const CSV_MIME_TYPES = new Set([
     'text/csv',
@@ -38,6 +48,7 @@ function resolveMigrationUnit(req: AuthRequest): string | null {
 
 // All routes require authentication and write permission
 router.use(authMiddleware);
+router.use(importLimiter);
 
 /**
  * POST /api/migration/surat-masuk
@@ -83,6 +94,7 @@ router.post('/surat-masuk',
                     userEmail: req.user?.email,
                     ipAddress: req.ip,
                 },
+                importOptions(req),
             );
 
             res.json({
@@ -140,6 +152,7 @@ router.post('/surat-keluar',
                     userEmail: req.user?.email,
                     ipAddress: req.ip,
                 },
+                importOptions(req),
             );
 
             res.json({
@@ -197,6 +210,7 @@ router.post('/arsip',
                     userEmail: req.user?.email,
                     ipAddress: req.ip,
                 },
+                importOptions(req),
             );
 
             res.json({

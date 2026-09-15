@@ -7,29 +7,43 @@ const state = vi.hoisted(() => ({
         id: '11111111-1111-4111-8111-111111111111',
         email: 'publisher@example.go.id',
         role: 'super_admin',
+        unitKerjaId: null as string | null,
     },
     tokenOptions: null as Record<string, any> | null,
     assertUploadAllowed: vi.fn(),
+    assertArsipUploadAllowed: vi.fn(),
     recordCompletedUpload: vi.fn(),
     cleanupExpired: vi.fn(),
+    getReadiness: vi.fn(),
+    authenticated: true,
     authCalls: 0,
     limiterCalls: 0,
     rejectLimiter: false,
 }));
 
 vi.mock('../middlewares/auth.middleware.js', () => ({
-    authMiddleware: (req: any, _res: any, next: any) => {
+    authMiddleware: (req: any, res: any, next: any) => {
         state.authCalls += 1;
+        if (!state.authenticated) return res.status(401).json({ error: 'Unauthorized' });
         req.user = { ...state.user };
         next();
     },
 }));
 
 vi.mock('../services/client-blob-upload.service.js', () => ({
+    parseArsipUploadPath: (pathname: string) => {
+        const match = /^arsip-attachments\/([0-9a-f-]{36})\/([^/\\]+\.pdf)$/.exec(pathname);
+        return match && !pathname.includes('..') ? { arsipId: match[1], fileName: match[2] } : null;
+    },
     clientBlobUploadService: {
         recordCompletedUpload: state.recordCompletedUpload,
         cleanupExpired: state.cleanupExpired,
+        getReadiness: state.getReadiness,
     },
+}));
+
+vi.mock('../services/arsip-attachment-upload.service.js', () => ({
+    arsipAttachmentUploadService: { assertUploadAllowed: state.assertArsipUploadAllowed },
 }));
 
 vi.mock('../middlewares/rate-limiter.middleware.js', () => ({
@@ -65,6 +79,9 @@ const { default: router } = await import('../routes/client-upload.routes');
 const app = express();
 app.use(express.json());
 app.use('/client-upload', router);
+app.use((error: any, _req: any, res: any, _next: any) => {
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Internal server error' });
+});
 
 const ruleSetId = '22222222-2222-4222-8222-222222222222';
 
@@ -81,16 +98,100 @@ function uploadBody(overrides: Record<string, unknown> = {}) {
 }
 
 describe('rule-set-bound direct Blob upload tokens', () => {
+    it('authorizes an existing archive and signs a distinct, non-overwritable PDF namespace', async () => {
+        const pathname = `arsip-attachments/${ruleSetId}/bukti.pdf`;
+        await request(app).post('/client-upload').send(uploadBody({ pathname, clientPayload: null })).expect(200);
+        expect(state.assertArsipUploadAllowed).toHaveBeenCalledWith(ruleSetId, { userId: state.user.id });
+        expect(state.tokenOptions).toMatchObject({ allowedContentTypes: ['application/pdf'], maximumSizeInBytes: 10_485_760, addRandomSuffix: true, allowOverwrite: false });
+        expect(JSON.parse(state.tokenOptions!.tokenPayload)).toEqual({ purpose: 'arsip', arsipId: ruleSetId, userId: state.user.id });
+    });
+    it('refuses archive token generation after current target authority is denied', async () => {
+        state.assertArsipUploadAllowed.mockRejectedValueOnce(new Error('record not mutable'));
+        await request(app).post('/client-upload').send(uploadBody({ pathname: `arsip-attachments/${ruleSetId}/bukti.pdf`, clientPayload: null })).expect(400);
+        expect(state.tokenOptions).toBeNull();
+    });
+    it.each(['missing', 'wrong', 'invalid-path'])('rejects %s archive binding in a completed callback', async variant => {
+        const pathname = variant === 'invalid-path' ? 'arsip-attachments/bukti.pdf' : `arsip-attachments/${ruleSetId}/bukti-random.pdf`;
+        await request(app).post('/client-upload').send({ type: 'blob.upload-completed', payload: {
+            blob: { url: `https://store.private.blob.vercel-storage.com/${pathname}`, pathname },
+            tokenPayload: JSON.stringify({ purpose: 'arsip', userId: state.user.id, ...(variant === 'missing' ? {} : { arsipId: '33333333-3333-4333-8333-333333333333' }) }),
+        } }).expect(400);
+        expect(state.recordCompletedUpload).not.toHaveBeenCalled();
+    });
+    it('records a completed archive lease with the signed uploader and target', async () => {
+        const pathname = `arsip-attachments/${ruleSetId}/bukti-random.pdf`;
+        const blobUrl = `https://store.private.blob.vercel-storage.com/${pathname}`;
+        await request(app).post('/client-upload').send({ type: 'blob.upload-completed', payload: {
+            blob: { url: blobUrl, pathname }, tokenPayload: JSON.stringify({ purpose: 'arsip', arsipId: ruleSetId, userId: state.user.id }),
+        } }).expect(200);
+        expect(state.recordCompletedUpload).toHaveBeenCalledWith({ blobUrl, pathname, purpose: 'arsip', uploadedBy: state.user.id });
+        expect(state.authCalls).toBe(0);
+    });
+    it('issues letter upload tokens only for PDF and at most 10 MiB', async () => {
+        await request(app).post('/client-upload').send(uploadBody({ pathname: 'surat-masuk/letter.pdf', clientPayload: null })).expect(200);
+        expect(state.tokenOptions).toMatchObject({ allowedContentTypes: ['application/pdf'], maximumSizeInBytes: 10_485_760 });
+        await request(app).post('/client-upload').send(uploadBody({ pathname: 'surat-masuk/letter.docx', clientPayload: null })).expect(400);
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         state.user.role = 'super_admin';
+        state.user.unitKerjaId = null;
+        state.authenticated = true;
         state.tokenOptions = null;
         state.authCalls = 0;
         state.limiterCalls = 0;
         state.rejectLimiter = false;
         state.assertUploadAllowed.mockResolvedValue(undefined);
+        state.assertArsipUploadAllowed.mockResolvedValue(undefined);
         state.recordCompletedUpload.mockResolvedValue({ id: 'lease-1' });
         state.cleanupExpired.mockResolvedValue({ inspected: 0, deleted: 0, failed: 0 });
+        state.getReadiness.mockResolvedValue({ status: 'waiting' });
+    });
+
+    it.each(['waiting', 'ready', 'unavailable'])('returns uncached owner-bound %s readiness without mutation or upload token consumption', async status => {
+        const result = status === 'ready' ? { status, expiresAt: '2026-09-14T00:00:00.000Z' } : { status };
+        state.getReadiness.mockResolvedValue(result);
+        const blobUrl = 'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf';
+        const response = await request(app).get('/client-upload/status').query({ blobUrl, purpose: 'surat_masuk' }).expect(200);
+        expect(response.body).toEqual(result);
+        expect(response.headers['cache-control']).toBe('private, no-store');
+        expect(state.getReadiness).toHaveBeenCalledWith({ blobUrl, purpose: 'surat_masuk', uploadedBy: state.user.id });
+        expect(state.authCalls).toBe(1);
+        expect(state.limiterCalls).toBe(0);
+        expect(state.recordCompletedUpload).not.toHaveBeenCalled();
+        expect(state.cleanupExpired).not.toHaveBeenCalled();
+    });
+
+    it.each(['surat_masuk', 'surat_keluar', 'regulatory_source', 'arsip'])('supports the existing %s upload purpose', async purpose => {
+        await request(app).get('/client-upload/status').query({ blobUrl: 'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf', purpose }).expect(200);
+        expect(state.getReadiness).toHaveBeenCalledWith(expect.objectContaining({ purpose, uploadedBy: state.user.id }));
+    });
+
+    it('denies unauthenticated, readonly, unknown and unassigned roles before readiness queries', async () => {
+        const query = { blobUrl: 'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf', purpose: 'surat_masuk' };
+        state.authenticated = false;
+        await request(app).get('/client-upload/status').query(query).expect(401);
+        state.authenticated = true;
+        for (const role of ['staff', 'auditor', 'user', 'unknown', 'admin_unit']) {
+            state.user.role = role;
+            await request(app).get('/client-upload/status').query(query).expect(403);
+        }
+        expect(state.getReadiness).not.toHaveBeenCalled();
+        state.user.unitKerjaId = 'ditjen';
+        await request(app).get('/client-upload/status').query(query).expect(200);
+        await request(app).get('/client-upload/status').query({ ...query, purpose: 'regulatory_source' }).expect(403);
+        expect(state.getReadiness).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([{}, { blobUrl: 'a' }, { blobUrl: 'a', purpose: 'other' }, { blobUrl: ['a', 'b'], purpose: 'surat_masuk' }, { blobUrl: 'a'.repeat(2049), purpose: 'surat_masuk' }])('rejects malformed readiness queries before lookup', async query => {
+        await request(app).get('/client-upload/status').query(query).expect(400);
+        expect(state.getReadiness).not.toHaveBeenCalled();
+    });
+
+    it('propagates unexpected readiness errors without reporting ready or exposing details', async () => {
+        state.getReadiness.mockRejectedValueOnce(new Error('private database detail'));
+        const response = await request(app).get('/client-upload/status').query({ blobUrl: 'a', purpose: 'surat_masuk' }).expect(500);
+        expect(response.body).toEqual({ error: 'Internal server error' });
     });
 
     it('issues a non-overwritable private-PDF token scoped to one draft rule set', async () => {

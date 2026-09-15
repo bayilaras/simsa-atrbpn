@@ -1,6 +1,9 @@
+import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
+import { requiresAttachmentInspection } from '../services/file-release-policy.js';
 import { Router, Response } from 'express';
 import multer from 'multer';
-import path from 'path';
+import { ARCHIVE_UPLOAD_MAX_BYTES, isPdfUploadMetadata } from '../config/archive-upload.js';
+import { ValidationError } from '../utils/errors.js';
 import { suratKeluarService } from '../services/surat-keluar.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
@@ -32,14 +35,12 @@ const log = createLogger('SuratKeluarRoutes');
 // Keep uploads in memory until the private Blob ingest path accepts them.
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    limits: { fileSize: ARCHIVE_UPLOAD_MAX_BYTES },
     fileFilter: (req, file, cb) => {
-        const allowedTypes = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'];
-        const ext = path.extname(file.originalname).toLowerCase();
-        if (allowedTypes.includes(ext)) {
+        if (isPdfUploadMetadata(file.originalname, file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type'));
+            cb(new ValidationError('Hanya PDF yang diperbolehkan (maks. 10 MiB).'));
         }
     }
 });
@@ -183,6 +184,10 @@ router.post('/',
                 return sendValidationFailure(res, bodyValidation.error.issues);
             }
 
+            if (!isAllowedForClassification(req.user, bodyValidation.data.klasifikasiKeamanan)) {
+                return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
+            }
+
             const unitScope = resolveRecordUnitScope(req);
             const serverUnitKerjaId = unitScope === null ? bodyValidation.data.unitKerjaId : unitScope;
 
@@ -272,6 +277,7 @@ router.post('/',
 
             requestCreatedBlobUrl = null;
 
+            if (filePath && requiresAttachmentInspection('surat_keluar', filePath)) scheduleMalwareScanWake();
             res.status(201).json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error) {
             await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
@@ -431,6 +437,7 @@ router.put('/:id', validateIdParam(),
 
             requestCreatedBlobUrl = null;
 
+            if (shouldRegisterAttachment && requiresAttachmentInspection('surat_keluar', updateData.filePath)) scheduleMalwareScanWake();
             res.json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error: any) {
             await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
@@ -613,4 +620,3 @@ router.get('/:id/with-links', async (req: AuthRequest, res, next) => {
 });
 
 export default router;
-

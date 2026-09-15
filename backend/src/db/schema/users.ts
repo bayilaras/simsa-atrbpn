@@ -7,7 +7,7 @@ export const users = pgTable('users', {
     email: varchar('email', { length: 255 }).unique().notNull(),
     name: varchar('name', { length: 255 }),
     image: text('image'),
-    role: varchar('role', { length: 50 }).default('user').notNull(), // super_admin, admin_dirjen, admin_sesditjen, staff, user
+    role: varchar('role', { length: 50 }).default('user').notNull(), // super_admin/admin_unit; legacy roles remain readable
     unitKerjaId: varchar('unit_kerja_id', { length: 50 }).references(() => unitKerja.id),
     jabatan: varchar('jabatan', { length: 100 }),  // Job title/position (e.g. 'Arsiparis')
     nip: varchar('nip', { length: 30 }),           // Nomor Induk Pegawai
@@ -21,6 +21,7 @@ export const users = pgTable('users', {
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
+    check('users_admin_unit_assignment_check', sql`${table.role} <> 'admin_unit' OR (${table.unitKerjaId} IS NOT NULL AND length(btrim(${table.unitKerjaId})) > 0)`),
     uniqueIndex('users_firebase_uid_unique').on(table.firebaseUid),
     check(
         'users_identity_provider_check',

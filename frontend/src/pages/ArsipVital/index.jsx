@@ -96,7 +96,7 @@ export default function ArsipVital() {
             if (seq !== loadSeq.current) return
             if (res.success) {
                 setData(res.data)
-                setTotalPages(res.pagination.totalPages)
+                setTotalPages(res.totalPages)
             }
         } catch (err) {
             if (seq !== loadSeq.current) return

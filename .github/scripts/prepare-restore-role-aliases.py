@@ -86,7 +86,7 @@ def read_metadata(path: Path, limit: int) -> str:
 def select_toc(text: str, database: str, schema_profile: str = "post_migration") -> str:
     """Select exactly one DATABASE PROPERTIES entry, never omit it at restore."""
     database_name(database)
-    require(schema_profile in {"pre_migration", "post_migration"}, "invalid schema profile")
+    require(schema_profile in {"pre_migration", "pre_upgrade_0038", "post_migration"}, "invalid schema profile")
     require(text.endswith("\n"), "truncated TOC metadata")
     counts = re.findall(r"^;\s+TOC Entries: ([1-9][0-9]*)$", text, re.MULTILINE)
     names = re.findall(r"^;\s+dbname: (.+)$", text, re.MULTILINE)
@@ -127,7 +127,7 @@ def parse_properties(text: str, database: str, target_admin: str,
                      properties_present: bool = True) -> dict:
     database_name(database)
     role_name(target_admin)
-    require(schema_profile in {"pre_migration", "post_migration"}, "invalid schema profile")
+    require(schema_profile in {"pre_migration", "pre_upgrade_0038", "post_migration"}, "invalid schema profile")
     require(properties_present or schema_profile == "pre_migration",
             "only pre_migration may omit database role properties")
     require(len(target_roles) == 7 and len(set(target_roles)) == 7,
@@ -377,12 +377,12 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     toc = commands.add_parser("select-toc")
     toc.add_argument("--database", required=True)
-    toc.add_argument("--schema-profile", required=True, choices=["pre_migration", "post_migration"])
+    toc.add_argument("--schema-profile", required=True, choices=["pre_migration", "pre_upgrade_0038", "post_migration"])
     toc.add_argument("--input", required=True, type=Path)
     toc.add_argument("--output", required=True, type=Path)
     prepare = commands.add_parser("prepare")
     prepare.add_argument("--database", required=True)
-    prepare.add_argument("--schema-profile", required=True, choices=["pre_migration", "post_migration"])
+    prepare.add_argument("--schema-profile", required=True, choices=["pre_migration", "pre_upgrade_0038", "post_migration"])
     prepare.add_argument("--target-admin", required=True)
     prepare.add_argument("--target-role", required=True, action="append")
     prepare.add_argument("--input", required=True, type=Path)

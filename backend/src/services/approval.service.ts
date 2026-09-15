@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import { db } from '../config/database.js';
 import {
     approvalHistory,
@@ -20,7 +20,7 @@ import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-
 
 const log = createLogger('ApprovalService');
 
-const ADMIN_ROLES = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
+const ADMIN_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
 const RESUBMITTABLE_REQUEST_STATES = ['rejected', 'cancelled'] as const;
 const SUBMITTABLE_SURAT_STATES = ['draft', 'rejected'] as const;
 
@@ -185,11 +185,12 @@ export class ApprovalService {
             .from(users)
             .where(and(
                 eq(users.isActive, true),
-                inArray(users.role, eligibleRoles),
+                or(inArray(users.role, eligibleRoles), and(eq(users.role, 'admin_unit'), eq(users.unitKerjaId, surat.unitKerjaId))),
             ))
             .orderBy(users.name);
 
-        return candidates.filter(candidate => candidate.id !== actor.id);
+        return candidates.filter(candidate => candidate.id !== actor.id
+            && (candidate.role !== 'admin_unit' || candidate.unitKerjaId === surat.unitKerjaId));
     }
 
     async getPending(actor: ApprovalActor) {

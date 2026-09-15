@@ -267,6 +267,16 @@ describe('TunjukSilangService', () => {
             } as any)).rejects.toMatchObject({ statusCode: 409 });
         });
 
+        it('maps a nested Drizzle PostgreSQL unique violation to a safe conflict', async () => {
+            const cause = Object.assign(new Error('database detail must stay private'), { code: '23505' });
+            enqueue([mutableEndpoint(SOURCE_ID)], [mutableEndpoint(TARGET_ID)],
+                new Error('query parameters stay private', { cause: new Error('wrapper', { cause }) }));
+            await expect(tunjukSilangService.create({
+                sourceType: 'arsip', sourceId: SOURCE_ID, targetType: 'arsip', targetId: TARGET_ID,
+                jenisRelasi: 'referensi', createdBy: USER_ID,
+            } as any)).rejects.toMatchObject({ statusCode: 409, message: 'Tunjuk silang aktif tersebut sudah tercatat.' });
+        });
+
         it('locks and revalidates endpoint eligibility and unit before insert', async () => {
             enqueue(
                 [mutableEndpoint(SOURCE_ID, 'unit-a')],

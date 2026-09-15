@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { archiveUploadError } from '@/lib/archive-upload'
 import { Loader2, Search, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,12 +12,17 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import api from '@/services/api'
+import { uploadArsipAttachment } from '@/services/arsip-attachment-upload.service'
 import { arsipService } from '@/services/arsip.service'
 import { MEDIA_OPTIONS } from './constants'
+import { useAppConfig } from '@/context/app-config-context'
+import { FileAvailabilityNotice } from '@/components/FileAvailabilityNotice'
+import { FileScanStatus } from '@/components/FileScanStatus'
 
 const MINIMUM_DPI = { paper: 300, cartographic: 400, photo: 600 }
 
 export default function ArsipElektronikForm({ open, onOpenChange, form, setForm, onSubmit }) {
+    const { capabilities } = useAppConfig()
     const [pickerOpen, setPickerOpen] = useState(false)
     const [search, setSearch] = useState('')
     const [archives, setArchives] = useState([])
@@ -26,6 +32,12 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
     const [loadingAttachments, setLoadingAttachments] = useState(false)
     const [uploading, setUploading] = useState(false)
     const [error, setError] = useState('')
+    const attachmentRequest = useRef(null)
+
+    const cancelAttachmentRequest = useCallback(() => {
+        attachmentRequest.current?.controller.abort()
+        attachmentRequest.current = null
+    }, [])
 
     useEffect(() => {
         if (!open || form.arsipId) return
@@ -50,41 +62,61 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
         return () => window.clearTimeout(timer)
     }, [pickerOpen, search])
 
-    const loadAttachments = async (arsipId) => {
+    const loadAttachments = useCallback(async (arsipId) => {
+        cancelAttachmentRequest()
+        const request = { controller: new AbortController() }
+        attachmentRequest.current = request
+        const current = () => attachmentRequest.current === request && !request.controller.signal.aborted
         setLoadingAttachments(true)
+        setError('')
         try {
-            const result = await api.get(`/api/upload/arsip/${arsipId}`)
+            const result = await api.get(`/api/upload/arsip/${encodeURIComponent(arsipId)}`, {}, { signal: request.controller.signal })
+            if (!current()) return
             setAttachments(result.data || [])
         } catch (requestError) {
+            if (!current()) return
             setError(requestError.message || 'Gagal memuat lampiran arsip')
-            setAttachments([])
         } finally {
-            setLoadingAttachments(false)
+            if (current()) {
+                attachmentRequest.current = null
+                setLoadingAttachments(false)
+            }
         }
-    }
+    }, [cancelAttachmentRequest])
 
-    const chooseArchive = async (archive) => {
+    useEffect(() => {
+        setAttachments([])
+        setLoadingAttachments(false)
+        if (open && form.arsipId) void loadAttachments(form.arsipId)
+        // Each archive/dialog lifetime owns its requests, including later status
+        // refreshes. Late results must never populate the next archive's picker.
+        return cancelAttachmentRequest
+    }, [open, form.arsipId, loadAttachments, cancelAttachmentRequest])
+
+    const chooseArchive = (archive) => {
         setSelectedArchive(archive)
         setForm(current => ({ ...current, arsipId: archive.id, fileAttachmentId: '' }))
         setPickerOpen(false)
         setError('')
-        await loadAttachments(archive.id)
     }
 
     const uploadControlledAttachment = async (event) => {
         const file = event.target.files?.[0]
         event.target.value = ''
-        if (!file || !form.arsipId) return
+        if (!file || !form.arsipId || uploading || !capabilities.fileUploads) return
+        const validationError = archiveUploadError(file)
+        if (validationError) { setError(validationError); return }
 
         setUploading(true)
         setError('')
         try {
-            const payload = new FormData()
-            payload.append('file', file)
-            const result = await api.post(`/api/upload/arsip/${form.arsipId}`, payload)
+            const arsipId = form.arsipId
+            const result = await uploadArsipAttachment(arsipId, file)
             const attachment = result.data
+            cancelAttachmentRequest()
+            setLoadingAttachments(false)
             setAttachments(current => [attachment, ...current.filter(item => item.id !== attachment.id)])
-            setForm(current => ({ ...current, fileAttachmentId: attachment.id }))
+            setForm(current => current.arsipId === arsipId ? { ...current, fileAttachmentId: attachment.id } : current)
         } catch (requestError) {
             setError(requestError.message || 'Unggah lampiran gagal')
         } finally {
@@ -93,10 +125,11 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
     }
 
     const minimumDpi = MINIMUM_DPI[form.scanCategory] || 300
+    const selectedAttachment = attachments.find(item => item.id === form.fileAttachmentId)
 
     return (
         <>
-            <Dialog open={open} onOpenChange={onOpenChange}>
+            <Dialog open={open} onOpenChange={value => { if (!uploading) onOpenChange(value) }}>
                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
                     <DialogHeader>
                         <DialogTitle>Registrasi Arsip Elektronik Terkendali</DialogTitle>
@@ -115,7 +148,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                         <p className="text-muted-foreground">Belum ada arsip dipilih</p>
                                     )}
                                 </div>
-                                <Button type="button" variant="outline" onClick={() => setPickerOpen(true)}>
+                                <Button type="button" variant="outline" disabled={uploading} onClick={() => setPickerOpen(true)}>
                                     <Search className="mr-2 h-4 w-4" /> Cari
                                 </Button>
                             </div>
@@ -124,6 +157,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                         {form.arsipId && (
                             <div className="space-y-2 rounded-lg border p-3">
                                 <Label>Bitstream/lampiran terkendali *</Label>
+                                <FileAvailabilityNotice />
                                 <Select
                                     value={form.fileAttachmentId || ''}
                                     onValueChange={(value) => setForm(current => ({ ...current, fileAttachmentId: value }))}
@@ -139,17 +173,25 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                         ))}
                                     </SelectContent>
                                 </Select>
+                                {selectedAttachment && <FileScanStatus
+                                    key={selectedAttachment.id}
+                                    entityType="arsip"
+                                    entityId={form.arsipId}
+                                    status={selectedAttachment.malwareScanStatus}
+                                    onRefresh={() => loadAttachments(form.arsipId)}
+                                />}
                                 <div className="flex items-center gap-2">
                                     <Input
                                         type="file"
-                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif"
-                                        disabled={uploading}
+                                        aria-label="Unggah lampiran arsip PDF"
+                                        accept=".pdf,application/pdf"
+                                        disabled={uploading || !capabilities.fileUploads}
                                         onChange={uploadControlledAttachment}
                                     />
                                     {uploading && <Loader2 className="h-4 w-4 animate-spin" />}
                                 </div>
                                 <p className="text-xs text-muted-foreground">
-                                    Format, ukuran, dan SHA-256 dihitung otomatis dari byte yang tersimpan; nilai tersebut tidak dapat diketik manual.
+                                    PDF maksimal 10 MB. Dokumen diperiksa otomatis sebelum dapat dibuka atau diunduh.
                                 </p>
                             </div>
                         )}
@@ -242,7 +284,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                         {error && <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => onOpenChange(false)}>Batal</Button>
+                        <Button variant="outline" disabled={uploading} onClick={() => onOpenChange(false)}>Batal</Button>
                         <Button onClick={onSubmit} disabled={!form.fileAttachmentId || uploading}>
                             <Upload className="mr-2 h-4 w-4" /> Registrasikan
                         </Button>

@@ -14,31 +14,39 @@ Panduan ini membantu pegawai mempelajari **Sistem Informasi Manajemen Surat & Ar
 
 ## 1. Akses cepat untuk pengguna baru
 
-Alamat aplikasi: [https://simsa-frontend.vercel.app](https://simsa-frontend.vercel.app)
+Untuk langkah praktis pertama, ikuti [Mulai Inventaris Internal](./mulai-inventaris-internal.md). Pada komputer Windows yang sudah disiapkan operator, jalankan **Mulai-SIMSA.cmd**; browser membuka `http://127.0.0.1:3000` setelah layanan siap. Untuk layanan bersama, gunakan alamat yang diberikan operator.
 
 Sebelum mulai, pastikan Super Admin sudah:
 
-- mendaftarkan alamat email kedinasan/Google Anda dengan ejaan yang tepat;
+- mendaftarkan alamat email Anda dengan ejaan yang tepat dan menyiapkan kata sandi untuk login email;
 - menetapkan role dan unit kerja Anda; serta
 - mengaktifkan akun Anda.
 
 Alur belajar yang disarankan untuk hari pertama:
 
-1. Masuk dengan Google menggunakan email yang telah didaftarkan.
+1. Masuk dengan email dan kata sandi akun pribadi yang telah didaftarkan.
 2. Kenali Dashboard, sidebar, pencarian, notifikasi, dan menu pengguna.
 3. Cari satu surat atau arsip contoh dan baca halaman detailnya.
 4. Pelajari pekerjaan harian sesuai role pada bagian [alur per peran](#4-alur-belajar-berdasarkan-peran).
-5. Coba input hanya pada data latihan yang disetujui admin.
+5. Admin mencatat metadata atau mengimpor daftar pada unit yang benar; staf mencari dan memeriksa data. Untuk latihan, gunakan data latihan yang ditetapkan operator.
 6. Keluar dari aplikasi setelah selesai, terutama pada komputer bersama.
 
-### Login Google internal
+### Login email dan kata sandi
+
+1. Buka alamat aplikasi yang diberikan operator.
+2. Isi **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**.
+3. Setelah masuk, periksa peran dan unit kerja Anda sebelum mencatat data.
+
+Aplikasi tidak menyediakan pendaftaran mandiri. Super Admin membuat akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**. Jangan membagikan akun uji untuk pekerjaan resmi.
+
+### Login Google bila tersedia
 
 1. Buka alamat aplikasi.
 2. Klik tombol **Masuk dengan Google** di bawah pemisah **atau**.
 3. Pilih akun Google dengan email yang sama seperti akun yang diprovisi Super Admin.
 4. Selesaikan autentikasi Google. Setelah berhasil, Anda kembali ke Dashboard SIMSA.
 
-Login Google **tidak membuat akun baru secara otomatis**. Jika email belum diprovisi, salah penulisan, dinonaktifkan, atau belum diberi role, hubungi Super Admin. Form email dan password hanya digunakan untuk akun yang memang dikelola admin; aplikasi tidak menyediakan pendaftaran mandiri.
+Login Google hanya digunakan ketika integrasinya sudah dikonfigurasi dan **tidak membuat akun baru secara otomatis**. Jika email belum diprovisi, salah penulisan, dinonaktifkan, atau belum diberi role, hubungi Super Admin.
 
 ### Sesi dan keluar aplikasi
 
@@ -82,7 +90,7 @@ Gunakan filter lokal pada halaman Surat, Arsip, Laporan, Peminjaman, atau Audit 
 | **Admin Dirjen** | Mengelola operasional surat, arsip, distribusi, dosir, klasifikasi/JRA, retensi, penyusutan, layanan fisik, media, laporan, dan tahapan tata kelola sesuai pemisahan tugas. |
 | **Admin Sesditjen** | Kewenangan operasional setara Admin Dirjen, dengan lingkup unit kerja yang ditetapkan. |
 | **Super Admin** | Seluruh kewenangan admin, pengelolaan pengguna dan pengaturan, keputusan akses, filter lintas unit, serta aktivasi versi aturan. |
-| **Auditor** | Dashboard, Audit Log, Persetujuan Akses miliknya, Versi Aturan, dan Tata Kelola Retensi dalam mode pengawasan/baca-saja. |
+| **Auditor** | Dashboard, Persetujuan Akses miliknya, Versi Aturan, dan Tata Kelola Retensi dalam cakupan pengawasan/baca-saja. Audit Log global saat ini hanya tersedia bagi Super Admin. |
 
 Prinsip yang harus selalu dipakai:
 
@@ -120,12 +128,12 @@ Prinsip yang harus selalu dipakai:
 5. Terapkan legal hold bila ada sengketa, audit, pemeriksaan, atau kebutuhan lain yang sah.
 6. Buat usulan penyusutan atau manifest permanen hanya setelah semua prasyarat terpenuhi.
 
-### Reviewer/auditor
+### Penelaah dan auditor
 
 1. Periksa sumber, identitas rekod, alasan, bukti, checksum, tanggal, dan jejak pelaku.
-2. Tolak atau kembalikan pekerjaan yang bukti/alasan belum memadai.
+2. Petugas penelaah yang ditunjuk dan memiliki izin keputusan dapat menolak atau mengembalikan pekerjaan yang bukti/alasannya belum memadai. Peran auditor sendiri tidak memberi hak mengubah rekod sumber.
 3. Jangan menelaah pekerjaan yang Anda buat sendiri.
-4. Gunakan Audit Log dan jejak versi untuk menelusuri perubahan, bukan hanya tampilan terakhir.
+4. Gunakan riwayat dan jejak versi yang tersedia dalam cakupan akses; Audit Log global saat ini hanya tersedia bagi Super Admin.
 
 ### Super Admin
 
@@ -156,14 +164,14 @@ Untuk admin:
 
 1. Buka **Surat > Surat Masuk** lalu klik **Tambah Surat Masuk**.
 2. Isi nomor, tanggal surat, tanggal diterima, pengirim, tujuan/perihal, naskah atau sifat surat, klasifikasi, dan metadata lain yang tersedia.
-3. Lampirkan dokumen bila diperlukan. PDF dianjurkan untuk salinan final.
+3. Lampirkan dokumen bila diperlukan dan fasilitas penyimpanan file tersedia. Untuk pencatatan inventaris fisik, metadata dapat disimpan tanpa lampiran.
 4. Periksa nomor, tanggal, pengirim, perihal, unit, dan file sebelum menyimpan.
 5. Buka detail untuk mengedit, membalas, mendistribusikan, atau mengarsipkan sesuai tombol dan kewenangan.
 
 ### Surat keluar
 
 1. Buka **Surat > Surat Keluar** lalu klik **Tambah Surat Keluar**.
-2. Isi jenis naskah dinas, nomor, tanggal, tujuan, perihal, klasifikasi, serta dokumen final.
+2. Isi jenis naskah dinas, nomor, tanggal, tujuan, perihal, dan klasifikasi sesuai dokumen sumber. Lampiran digital digunakan bila fasilitas penyimpanan file tersedia.
 3. Untuk membalas surat masuk, buka detail surat masuk dan pilih **Balas Surat** agar referensi asal tetap terhubung.
 4. Simpan surat sebagai draft, lalu buka halaman detail dan periksa seluruh metadata.
 5. Klik **Ajukan Persetujuan**, pilih administrator aktif lain sebagai penyetuju, isi catatan bila perlu, lalu kirim.
@@ -180,7 +188,17 @@ Pembuat tidak dapat menyetujui suratnya sendiri. Selama status **Menunggu Perset
 
 Jangan menghapus surat hanya untuk memperbaiki kesalahan kecil. Gunakan fungsi edit/koreksi yang tersedia agar jejak aktivitas tetap dapat ditelusuri. Penghapusan hanya dilakukan oleh petugas berwenang setelah memastikan dampaknya.
 
+### Impor daftar CSV
+
+Admin dapat memilih **Impor CSV** pada daftar Surat Masuk, Surat Keluar, atau Arsip Aktif. Super Admin memilih satu unit kerja terlebih dahulu. Pilih CSV lalu **Pratinjau**, koreksi baris yang ditolak pada sumbernya, dan klik **Impor data valid** setelah memeriksa hasil.
+
+Kolom utama surat: `Nomor Surat`, `Tanggal Surat`, `Perihal`, `Dari`, `Kepada`. Kolom utama arsip: `Nomor Berkas`, `Tanggal`, `Uraian`, `Jenis Arsip` (`masuk` atau `keluar`). Gunakan tanggal `YYYY-MM-DD` atau `DD/MM/YYYY`, maksimal 1.000 rekod dan 10 MiB per CSV. Baris yang berhasil tetap tersimpan bila baris lain gagal; periksa hasil sebelum mengulang.
+
+Impor ini mencatat metadata, bukan mengunggah berkas digital. Impor arsip belum memetakan kolom lokasi terstruktur; catatan lokasi dapat ditempatkan pada `Keterangan`. Klasifikasi/JRA hasil impor perlu dicocokkan melalui rekonsiliasi, tidak otomatis terverifikasi. Lihat [langkah inventaris fisik](./mulai-inventaris-internal.md).
+
 ### Unggah massal dan OCR PDF
+
+Gunakan fitur ini hanya ketika penyimpanan privat dan pemeriksaan file telah dikonfigurasi operator. Bila menu unggah tidak tersedia, pencatatan manual atau impor metadata tetap dapat digunakan. Jangan membuat unggahan kosong atau tautan publik untuk mengganti bukti.
 
 Untuk menyiapkan beberapa draft arsip dari PDF sekaligus:
 

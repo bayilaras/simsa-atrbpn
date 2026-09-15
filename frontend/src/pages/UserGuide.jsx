@@ -32,14 +32,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/context/AuthContext'
 
-const ALL_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']
-const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen']
-const STAFF_AND_ADMIN = [...ADMIN_ROLES, 'staff']
+const ALL_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']
+const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']
+const STAFF_AND_ADMIN = ADMIN_ROLES
 const ADMIN_AND_AUDITOR = [...ADMIN_ROLES, 'auditor']
 
 const ROLE_LABELS = {
     semua: 'Semua peran',
     super_admin: 'Super Admin',
+    admin_unit: 'Admin Unit Kerja',
     admin_dirjen: 'Admin Dirjen',
     admin_sesditjen: 'Admin Sesditjen',
     staff: 'Staf',
@@ -58,6 +59,24 @@ const CATEGORIES = [
 
 const GUIDE_SECTIONS = [
     {
+        id: 'mulai-inventaris-internal',
+        category: 'dasar',
+        title: 'Mulai inventaris arsip internal',
+        summary: 'Catat metadata dan lokasi arsip fisik, lalu temukan kembali tanpa harus mengunggah hasil pindai.',
+        icon: Archive,
+        roles: ALL_ROLES,
+        keywords: ['mulai', 'inventaris', 'fisik', 'csv', 'impor', 'akun', 'unit kerja', 'srikandi'],
+        steps: [
+            'Masuk dengan email dan kata sandi dari administrator. Gunakan akun pribadi dengan peran dan unit kerja yang benar; staf membaca data, sedangkan admin mencatat dan mengubahnya.',
+            'Admin membuka Surat Masuk atau Surat Keluar, mencari nomor yang sama lebih dahulu, lalu mencatat metadata. Untuk daftar yang sudah tersedia, pilih satu unit kerja dan gunakan Impor CSV → Pratinjau → Impor data valid.',
+            'Untuk inventaris arsip yang sudah ada, admin membuka Arsip Aktif → Arsip Surat Masuk atau Arsip Surat Keluar lalu Impor CSV. Isi tanggal sumber yang benar; impor tidak otomatis memverifikasi klasifikasi atau JRA.',
+            'Saat mengarsipkan surat yang selesai diproses, isi klasifikasi/JRA yang sesuai serta No. Filing Cabinet, No. Laci, dan No. Folder pada dialog Arsipkan. Pada CSV arsip, catatan lokasi dapat dimasukkan ke Keterangan; kolom lokasi terstruktur belum dipetakan oleh impor.',
+            'Temukan kembali arsip melalui nomor atau uraian, filter unit/tahun, dan halaman detail. Cocokkan catatan lokasi dengan berkas fisik sebelum menyerahkannya kepada peminjam.',
+            'SIMSA mengelola surat dan arsip secara mandiri; koneksi atau akun SRIKANDI tidak diperlukan. Inventaris dapat dicatat tanpa lampiran digital. Gunakan instrumen ATR/BPN yang berlaku; tambahkan lampiran setelah penyimpanan privat dan pemeriksaan file siap.',
+        ],
+        action: { label: 'Buka Arsip Aktif', to: '/arsip/masuk' },
+    },
+    {
         id: 'masuk-dan-navigasi',
         category: 'dasar',
         title: 'Masuk dan mengenali aplikasi',
@@ -66,7 +85,7 @@ const GUIDE_SECTIONS = [
         roles: ALL_ROLES,
         keywords: ['login', 'google', 'dashboard', 'sidebar', 'menu', 'navigasi', 'pencarian'],
         steps: [
-            'Buka alamat resmi SIMSA dan masuk dengan akun yang telah didaftarkan oleh administrator.',
+            'Buka alamat SIMSA yang diberikan operator dan masuk dengan email serta kata sandi akun pribadi. Login Google digunakan hanya jika telah diaktifkan administrator.',
             'Gunakan Dashboard untuk melihat ringkasan pekerjaan sesuai unit kerja dan kewenangan Anda.',
             'Buka sidebar untuk berpindah fitur. Di layar kecil, gunakan tombol menu pada bagian atas.',
             'Gunakan breadcrumb di atas halaman untuk mengetahui posisi dan kembali ke bagian sebelumnya.',
@@ -78,15 +97,16 @@ const GUIDE_SECTIONS = [
         id: 'surat-masuk-keluar',
         category: 'surat',
         title: 'Mengelola surat masuk dan keluar',
-        summary: 'Mencatat metadata surat, melampirkan berkas, dan menelusuri kembali surat.',
+        summary: 'Admin mencatat metadata surat melalui formulir atau impor CSV dan menelusurinya kembali.',
         icon: Mail,
-        roles: STAFF_AND_ADMIN,
-        keywords: ['surat masuk', 'surat keluar', 'distribusi', 'metadata', 'lampiran'],
+        roles: ADMIN_ROLES,
+        keywords: ['surat masuk', 'surat keluar', 'distribusi', 'metadata', 'lampiran', 'csv', 'impor'],
         steps: [
             'Pilih Surat Masuk atau Surat Keluar dari sidebar sesuai naskah yang akan dikelola.',
             'Cari dahulu berdasarkan nomor, perihal, pengirim, atau penerima untuk mencegah pencatatan ganda.',
             'Isi metadata dari dokumen sumber secara lengkap dan periksa kembali tanggal serta nomor surat.',
-            'Tambahkan lampiran hanya pada rekod yang tepat, lalu simpan dan pastikan detailnya dapat dibuka.',
+            'Untuk daftar CSV, pilih unit kerja konkret lalu Impor CSV, Pratinjau, dan Impor data valid. Perbaiki baris yang ditolak pada berkas sumber; periksa hasil karena sebagian baris dapat berhasil saat baris lain gagal.',
+            'Simpan metadata dan pastikan detailnya dapat dibuka. Tambahkan lampiran hanya bila fasilitas penyimpanan file tersedia dan berkasnya memang terkait; arsip fisik tidak memerlukan unggahan pengganti.',
             'Gunakan Distribusi bila menu tersebut tersedia dan tindak lanjut memang diperlukan.',
         ],
         action: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
@@ -134,11 +154,16 @@ const GUIDE_SECTIONS = [
         steps: [
             'Cari klasifikasi berdasarkan fungsi atau kegiatan yang menghasilkan arsip.',
             'Cocokkan uraian JRA; jangan menentukan retensi hanya dari judul dokumen.',
-            'Gunakan Versi Aturan untuk menyiapkan perubahan sumber klasifikasi/JRA melalui alur pemeriksaan.',
-            'Aktifkan versi baru hanya setelah sumber, periode berlaku, dan hasil pemeriksaan lengkap.',
+            'Admin Unit Kerja memilih klasifikasi dan JRA aktif saat mencatat surat atau arsip. Katalog berlaku untuk seluruh unit.',
+            'Super Admin menyiapkan PDF resmi, manifest, dan analisis dampak, lalu memvalidasi dan langsung mengaktifkan versi baru.',
             'Jangan mengubah histori aturan lama untuk menyesuaikan aturan baru.',
         ],
-        action: { label: 'Buka Jadwal Retensi', to: '/master/jra' },
+        actionByRole: {
+            super_admin: { label: 'Kelola Katalog Aturan', to: '/master/regulatory-rules' },
+            admin_unit: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
+            admin_dirjen: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
+            admin_sesditjen: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
+        },
     },
     {
         id: 'tata-kelola-retensi',
@@ -207,6 +232,7 @@ const GUIDE_SECTIONS = [
         actionByRole: {
             super_admin: { label: 'Buka Audit Log', to: '/audit-log' },
             auditor: { label: 'Buka Tata Kelola Retensi', to: '/retention-governance' },
+            admin_unit: { label: 'Buka Laporan', to: '/laporan' },
             admin_dirjen: { label: 'Buka Laporan', to: '/laporan' },
             admin_sesditjen: { label: 'Buka Laporan', to: '/laporan' },
             staff: { label: 'Buka Laporan', to: '/laporan' },
@@ -216,34 +242,16 @@ const GUIDE_SECTIONS = [
 
 const ROLE_FLOWS = [
     {
-        role: 'staff',
-        title: 'Staf',
-        description: 'Fokus pada pencatatan, pencarian, dan pemeriksaan surat/arsip sesuai unit kerja.',
-        flow: ['Cari rekod lebih dahulu', 'Catat atau periksa metadata', 'Buka detail arsip', 'Gunakan laporan/permintaan akses'],
-    },
-    {
-        role: 'admin_dirjen',
-        title: 'Admin Ditjen',
-        description: 'Mengelola proses operasional arsip dan surat pada lingkup kewenangannya.',
-        flow: ['Validasi metadata', 'Klasifikasikan dan berkas-kan', 'Kelola retensi', 'Dokumentasikan penyusutan/layanan'],
-    },
-    {
-        role: 'admin_sesditjen',
-        title: 'Admin Sesditjen',
-        description: 'Mengelola proses operasional dengan prinsip pemeriksaan dan jejak bukti yang sama.',
-        flow: ['Validasi metadata', 'Klasifikasikan dan berkas-kan', 'Kelola retensi', 'Dokumentasikan penyusutan/layanan'],
-    },
-    {
         role: 'super_admin',
         title: 'Super Admin',
-        description: 'Menjaga akun, konfigurasi, aturan, dan pengawasan teknis aplikasi.',
-        flow: ['Provisikan pengguna', 'Kelola konfigurasi/aturan', 'Pisahkan pengusul dan pemeriksa', 'Pantau audit dan anomali'],
+        description: 'Mengelola seluruh unit, pengguna, konfigurasi, katalog aturan, dan pengawasan aplikasi.',
+        flow: ['Kelola pengguna dan unit', 'Siapkan sumber dan manifest aturan', 'Validasi dan aktifkan katalog', 'Pantau seluruh unit dan audit'],
     },
     {
-        role: 'auditor',
-        title: 'Auditor',
-        description: 'Menelaah bukti, histori aturan, keputusan, dan aktivitas sesuai akses baca/pemeriksaan.',
-        flow: ['Tentukan ruang lingkup', 'Filter data dan audit', 'Periksa bukti serta pelaku', 'Catat temuan di luar perubahan rekod sumber'],
+        role: 'admin_unit',
+        title: 'Admin Unit Kerja',
+        description: 'Mengelola surat, arsip, retensi, penyimpanan, template, dan layanan pada unit yang ditetapkan Super Admin.',
+        flow: ['Kelola surat unit', 'Klasifikasikan dan berkas-kan', 'Kelola retensi dan layanan', 'Pantau laporan unit'],
     },
 ]
 
@@ -262,12 +270,20 @@ const GLOSSARY = [
 
 const TROUBLESHOOTING = [
     {
+        problem: 'Tidak dapat login dengan email dan kata sandi',
+        answer: 'Gunakan alamat aplikasi dari operator dan akun yang aktif. Periksa ejaan email serta kata sandi. Jika tertulis Origin tidak diizinkan, gunakan alamat lokal yang dibuka Mulai-SIMSA.cmd atau laporkan alamat halaman kepada operator; mengganti kata sandi tidak memperbaiki kesalahan alamat tersebut.',
+    },
+    {
         problem: 'Tidak dapat login dengan Google',
         answer: 'Pastikan memakai akun dinas yang sudah diprovisikan, buka dari alamat resmi aplikasi, lalu coba kembali. Jika tetap gagal, kirimkan alamat email dan waktu kejadian kepada administrator—jangan mengirim kata sandi.',
     },
     {
         problem: 'Menu yang dibutuhkan tidak terlihat',
         answer: 'Menu mengikuti peran dan fitur yang diaktifkan. Pastikan Anda masuk dengan akun yang benar, lalu minta administrator memeriksa peran tanpa meminta perluasan akses yang tidak diperlukan.',
+    },
+    {
+        problem: 'Menu unggah tidak tersedia',
+        answer: 'Penyimpanan privat dan pemeriksaan file mungkin belum tersedia. Admin tetap dapat mencatat metadata atau mengimpor CSV untuk inventaris fisik. Jangan memasukkan tautan publik atau berkas kosong sebagai pengganti lampiran.',
     },
     {
         problem: 'Unggahan masih dikarantina atau tidak dapat dipilih',
@@ -344,7 +360,7 @@ export default function UserGuide() {
                 <AlertTitle>Panduan ini mengikuti kewenangan pengguna</AlertTitle>
                 <AlertDescription>
                     {user ? (
-                        <>Anda masuk sebagai <strong>{ROLE_LABELS[currentRole] || 'Pengguna'}</strong>. Menu dan tindakan di aplikasi dapat berbeda menurut peran, unit kerja, dan status proses.</>
+                        <>Anda masuk sebagai <strong>{ROLE_LABELS[currentRole] || 'Pengguna'}</strong>. Dua peran utama adalah Super Admin dan Admin Unit Kerja. Akun lama tetap mengikuti akses yang sudah diberikan sampai ditetapkan ulang oleh Super Admin.</>
                     ) : (
                         <>Panduan ini dapat dipelajari sebelum login dan tidak memuat data operasional. Pilih peran untuk melihat alur yang relevan.</>
                     )}
@@ -381,7 +397,7 @@ export default function UserGuide() {
                                 className="flex min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                                 <option value="semua">Semua peran</option>
-                                {ALL_ROLES.map((role) => (
+                                {['super_admin', 'admin_unit', ...(!['super_admin', 'admin_unit'].includes(currentRole) && ALL_ROLES.includes(currentRole) ? [currentRole] : [])].map((role) => (
                                     <option key={role} value={role}>{ROLE_LABELS[role]}</option>
                                 ))}
                             </select>
@@ -421,7 +437,7 @@ export default function UserGuide() {
                         ['2', 'Baca Dashboard', 'Kenali ringkasan dan pekerjaan yang relevan.'],
                         ['3', 'Cari dahulu', 'Cegah duplikasi sebelum membuat rekod.'],
                         ['4', 'Periksa metadata', 'Cocokkan data dengan dokumen sumber.'],
-                        ['5', 'Simpan dan verifikasi', 'Pastikan detail serta status sudah benar.'],
+                        ['5', 'Periksa hasil', 'Admin memastikan hasil simpan; staf melaporkan koreksi kepada admin.'],
                     ].map(([number, title, description]) => (
                         <li key={number} className="rounded-lg border bg-card p-4 print:break-inside-avoid">
                             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground" aria-hidden="true">
@@ -485,7 +501,7 @@ export default function UserGuide() {
                                         </ol>
                                         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 print:hidden">
                                             <div className="flex flex-wrap gap-1.5" aria-label="Peran yang dapat mengakses fitur">
-                                                {section.roles.map((role) => (
+                                                {section.roles.filter(role => ['super_admin', 'admin_unit'].includes(role)).map((role) => (
                                                     <Badge key={role} variant="secondary">{ROLE_LABELS[role]}</Badge>
                                                 ))}
                                             </div>

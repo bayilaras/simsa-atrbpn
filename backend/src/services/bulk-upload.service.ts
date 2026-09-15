@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { ARCHIVE_UPLOAD_MAX_BYTES } from '../config/archive-upload.js';
 import { Readable } from 'node:stream';
 import { db } from '../config/database.js';
 import {
@@ -11,7 +12,8 @@ import {
     type BulkUploadItemRow,
 } from '../db/schema/index.js';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
-import { ocrService, type ExtractedMetadata } from './ocr.service.js';
+import type { ExtractedMetadata } from './ocr.service.js';
+import { ocrProcessService } from './ocr-process.service.js';
 import { blobStorageService } from './blob-storage.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../utils/logger.js';
@@ -21,13 +23,13 @@ import {
     type OcrCapacityCoordinator,
     type OcrCapacityLease,
 } from './ocr-capacity.service.js';
-import { requireImmutableObjectGeneration } from '../storage/locator.js';
+import { requireImmutableObjectGeneration, bulkUploadObjectName, assertBulkObjectLocator } from '../storage/locator.js';
 
 const log = createLogger('BulkUploadService');
 
 export const BULK_UPLOAD_LIMITS = Object.freeze({
     maxFiles: 50,
-    maxFileBytes: 50 * 1024 * 1024,
+    maxFileBytes: ARCHIVE_UPLOAD_MAX_BYTES,
     maxBatchBytes: 100 * 1024 * 1024,
 });
 
@@ -182,11 +184,11 @@ export class BulkUploadService {
         }
 
         files.forEach((file) => {
-            if (file.mimeType !== 'application/pdf') {
+            if (file.mimeType !== 'application/pdf' || !/\.pdf$/i.test(file.fileName)) {
                 errors.push(`File "${file.fileName}" bukan PDF. Hanya file PDF yang diperbolehkan.`);
             }
             if (!file.buffer.length || file.buffer.length > this.MAX_FILE_BYTES) {
-                errors.push(`Ukuran file "${file.fileName}" harus antara 1 byte dan 50 MB.`);
+                errors.push(`Ukuran file "${file.fileName}" harus antara 1 byte dan 10 MiB.`);
             }
             if (file.fileName.length > 255) {
                 errors.push(`Nama file "${file.fileName}" melebihi 255 karakter.`);
@@ -231,15 +233,23 @@ export class BulkUploadService {
         }> = [];
 
         try {
+            // Reserve the bounded object namespace before provider I/O. Even
+            // if no item row commits, the reconciler can discover exact names.
+            await db.insert(bulkUploadBatches).values({
+                id: batchId, unitKerjaId, createdBy, status: 'pending',
+                totalFiles: files.length, processedFiles: 0, expiresAt,
+                createdAt, updatedAt: createdAt,
+            });
             // Persist every source bitstream before returning a batch ID. OCR is
             // subsequently recoverable from Blob even if this process exits.
-            for (const file of files) {
+            for (const [index, file] of files.entries()) {
                 const itemId = uuidv4();
                 const stored = await blobStorageService.uploadUntrustedFile({
                     fileName: `${itemId}-${safeBlobFileName(file.fileName)}`,
                     mimeType: file.mimeType,
                     buffer: file.buffer,
                     folder: `bulk-upload/${batchId}`,
+                    reservedObjectName: bulkUploadObjectName(batchId, index),
                 });
                 storedItems.push({
                     id: itemId,
@@ -254,17 +264,11 @@ export class BulkUploadService {
             }
 
             await db.transaction(async (tx) => {
-                await tx.insert(bulkUploadBatches).values({
-                    id: batchId,
-                    unitKerjaId,
-                    createdBy,
-                    status: 'pending',
-                    totalFiles: storedItems.length,
-                    processedFiles: 0,
-                    expiresAt,
-                    createdAt,
-                    updatedAt: createdAt,
-                });
+                const [intent] = await tx.select().from(bulkUploadBatches)
+                    .where(eq(bulkUploadBatches.id, batchId)).for('update');
+                if (!intent || intent.status !== 'pending' || intent.expiresAt <= new Date()) {
+                    throw new BulkUploadError('Batch unggahan telah dibatalkan atau kedaluwarsa', 409);
+                }
                 await tx.insert(bulkUploadItems).values(storedItems.map(({
                     id,
                     file,
@@ -291,6 +295,13 @@ export class BulkUploadService {
                 locator: blobUrl,
                 objectGeneration,
             })), 'batch creation');
+            try {
+                await db.update(bulkUploadBatches).set({ status: 'expired', updatedAt: new Date() })
+                    .where(and(eq(bulkUploadBatches.id, batchId), eq(bulkUploadBatches.status, 'pending')));
+            } catch (cleanupError) {
+                // The pre-existing intent still expires normally if DB is down.
+                log.error({ err: cleanupError, batchId }, 'Upload intent remains available for scheduled cleanup');
+            }
             if (isActiveBatchUniqueConflict(error)) {
                 const active = await this.getLatestActiveBatch(createdBy, unitKerjaId);
                 throw new BulkUploadError(
@@ -388,6 +399,11 @@ export class BulkUploadService {
         if (!batch) throw new BulkUploadError('Batch not found', 404);
         if (batch.status === 'confirmed' || batch.status === 'expired' || batch.expiresAt <= new Date()) {
             throw new BulkUploadError('Batch tidak dapat diproses lagi', 409);
+        }
+        const [{ count: persistedItems }] = await db.select({ count: sql<number>`count(*)::int` })
+            .from(bulkUploadItems).where(eq(bulkUploadItems.batchId, batchId));
+        if (persistedItems !== batch.totalFiles) {
+            throw new BulkUploadError('Unggahan belum selesai disimpan; coba kembali setelah unggahan selesai', 409, batchId, 5);
         }
 
         const leaseCutoff = new Date(Date.now() - this.PROCESSING_LEASE_MS);
@@ -491,7 +507,7 @@ export class BulkUploadService {
                         async (signal) => {
                             const buffer = await this.readAndVerifyBlob(claimed, signal);
                             if (signal.aborted) throw signal.reason;
-                            return ocrService.processPDF(buffer, signal);
+                            return ocrProcessService.processPDF(buffer, signal);
                         },
                     );
                     const completedAt = new Date();
@@ -625,6 +641,11 @@ export class BulkUploadService {
             if (!batch) throw new BulkUploadError('Batch not found', 404);
             if (batch.status === 'confirmed' || batch.status === 'expired' || batch.expiresAt <= new Date()) {
                 throw new BulkUploadError('Batch sudah dikonfirmasi atau kedaluwarsa', 409);
+            }
+            const [{ count: persistedItems }] = await tx.select({ count: sql<number>`count(*)::int` })
+                .from(bulkUploadItems).where(eq(bulkUploadItems.batchId, batchId));
+            if (persistedItems !== batch.totalFiles) {
+                throw new BulkUploadError('Unggahan belum selesai disimpan', 409);
             }
 
             const lockedItems = await tx
@@ -810,55 +831,91 @@ export class BulkUploadService {
     }
 
     private async cleanupBatchBlobs(batchId: string): Promise<Omit<BulkUploadCleanupResult, 'batchesExpired'>> {
-        const result = { blobsDeleted: 0, blobsFailed: 0, blobsProtected: 0 };
-        const items = await db.select().from(bulkUploadItems)
-            .where(eq(bulkUploadItems.batchId, batchId));
-        const locators = [...new Set(items.map(({ blobUrl }) => blobUrl))];
-        const referenced = locators.length === 0 ? [] : await db
-            .select({ fileUrl: fileAttachments.fileUrl, driveFileId: fileAttachments.driveFileId })
-            .from(fileAttachments)
-            .where(or(
-                inArray(fileAttachments.fileUrl, locators),
-                inArray(fileAttachments.driveFileId, locators),
-            ));
-        const protectedLocators = new Set(
-            referenced.flatMap(row => [row.fileUrl, row.driveFileId]).filter(Boolean) as string[],
-        );
-        const leasedItems = items.length === 0 ? [] : await db
-            .select({ itemId: ocrProcessingLeases.itemId })
-            .from(ocrProcessingLeases)
-            .where(and(
-                inArray(ocrProcessingLeases.itemId, items.map(item => item.id)),
-                gt(ocrProcessingLeases.leaseExpiresAt, sql`now()`),
-            ));
-        const leasedItemIds = new Set(leasedItems.map(({ itemId }) => itemId));
-        for (const item of items) {
-            const locator = item.blobUrl;
-            if (leasedItemIds.has(item.id) || protectedLocators.has(locator)) {
-                result.blobsProtected++;
-                continue;
-            }
-            if (item.blobDeletedAt) continue;
-            const objectGeneration = requireImmutableObjectGeneration(
-                locator,
-                item.objectGeneration,
+        return db.transaction(async tx => {
+            const result = { blobsDeleted: 0, blobsFailed: 0, blobsProtected: 0 };
+            const [batch] = await tx.select().from(bulkUploadBatches)
+                .where(eq(bulkUploadBatches.id, batchId)).for('update');
+            if (!batch || batch.status !== 'expired') return result;
+            const items = await tx.select().from(bulkUploadItems)
+                .where(eq(bulkUploadItems.batchId, batchId));
+            const locators = [...new Set(items.map(({ blobUrl }) => blobUrl))];
+            const referenced = locators.length === 0 ? [] : await tx
+                .select({ fileUrl: fileAttachments.fileUrl, driveFileId: fileAttachments.driveFileId })
+                .from(fileAttachments)
+                .where(or(
+                    inArray(fileAttachments.fileUrl, locators),
+                    inArray(fileAttachments.driveFileId, locators),
+                ));
+            const protectedLocators = new Set(
+                referenced.flatMap(row => [row.fileUrl, row.driveFileId]).filter(Boolean) as string[],
             );
-            const deleted = objectGeneration
-                ? await blobStorageService.deleteFileGeneration(locator, objectGeneration)
-                : await blobStorageService.deleteFile(locator);
-            if (deleted) {
-                result.blobsDeleted++;
-                await db.update(bulkUploadItems)
-                    .set({ blobDeletedAt: new Date(), updatedAt: new Date() })
-                    .where(and(
-                        eq(bulkUploadItems.id, item.id),
-                        isNull(bulkUploadItems.blobDeletedAt),
-                    ));
-            } else {
-                result.blobsFailed++;
+            const leasedItems = items.length === 0 ? [] : await tx
+                .select({ itemId: ocrProcessingLeases.itemId })
+                .from(ocrProcessingLeases)
+                .where(and(
+                    inArray(ocrProcessingLeases.itemId, items.map(item => item.id)),
+                    gt(ocrProcessingLeases.leaseExpiresAt, sql`now()`),
+                ));
+            const leasedItemIds = new Set(leasedItems.map(({ itemId }) => itemId));
+            for (const item of items) {
+                const locator = item.blobUrl;
+                if (leasedItemIds.has(item.id) || protectedLocators.has(locator)) {
+                    result.blobsProtected++;
+                    continue;
+                }
+                if (item.blobDeletedAt) continue;
+                const objectGeneration = requireImmutableObjectGeneration(
+                    locator,
+                    item.objectGeneration,
+                );
+                const deleted = objectGeneration
+                    ? await blobStorageService.deleteFileGeneration(locator, objectGeneration)
+                    : await blobStorageService.deleteFile(locator);
+                if (deleted) {
+                    result.blobsDeleted++;
+                    await tx.update(bulkUploadItems)
+                        .set({ blobDeletedAt: new Date(), updatedAt: new Date() })
+                        .where(and(
+                            eq(bulkUploadItems.id, item.id),
+                            isNull(bulkUploadItems.blobDeletedAt),
+                        ));
+                } else {
+                    result.blobsFailed++;
+                }
             }
-        }
-        return result;
+            // Interrupted uploads can have provider objects but no item rows. A
+            // persisted batch owns at most 50 exact names; never enumerate storage.
+            if (items.length < batch.totalFiles) {
+                for (let index = 0; index < batch.totalFiles; index++) {
+                    try {
+                        const objectName = bulkUploadObjectName(batchId, index);
+                        const stored = await blobStorageService.getUntrustedFileByName(objectName);
+                        if (!stored) continue;
+                        assertBulkObjectLocator(stored.url, objectName);
+                        if (locators.includes(stored.url)) continue;
+                        const references = await tx.select({ id: fileAttachments.id }).from(fileAttachments)
+                            .where(or(eq(fileAttachments.fileUrl, stored.url), eq(fileAttachments.driveFileId, stored.url)))
+                            .limit(1);
+                        const linkedItems = await tx.select({ id: bulkUploadItems.id }).from(bulkUploadItems)
+                            .where(eq(bulkUploadItems.blobUrl, stored.url)).limit(1);
+                        if (references.length || linkedItems.length) {
+                            result.blobsProtected++;
+                            continue;
+                        }
+                        const generation = requireImmutableObjectGeneration(stored.url, stored.generation);
+                        const deleted = generation
+                            ? await blobStorageService.deleteFileGeneration(stored.url, generation)
+                            : await blobStorageService.deleteFile(stored.url);
+                        if (deleted) result.blobsDeleted++;
+                        else result.blobsFailed++;
+                    } catch (error) {
+                        result.blobsFailed++;
+                        log.error({ err: error, batchId, index }, 'Reserved bulk object cleanup will retry');
+                    }
+                }
+            }
+            return result;
+        });
     }
 
     private async refreshBatchProgress(batchId: string): Promise<void> {

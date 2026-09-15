@@ -122,6 +122,18 @@ evidence_text = (ROOT / ".github" / "scripts" / "collect-backup-evidence.sql").r
     encoding="utf-8"
 )
 require(
+    text.count('pre_migration|pre_upgrade_0038|post_migration)') == 3
+    and '"$SCHEMA_PROFILE" = pre_upgrade_0038' in restore_job
+    and '--emit-profile-manifest "$SCHEMA_PROFILE"' in restore_job
+    and '--set expected_migrations_json="$RESTORE_MIGRATIONS_JSON"' in restore_job,
+    "the reviewed 0038 upgrade backup must retain exact profile-specific restore grants",
+)
+require(
+    evidence_text.count("IN ('pre_upgrade_0038', 'post_migration')") == 3
+    and "expected_code_manifest->38->>'tag' IS DISTINCT FROM '0038_arsip_direct_upload'" in evidence_text,
+    "the reviewed 0038 baseline must verify the same mature role/ACL policy as current schema",
+)
+require(
     "database_role_acl" in evidence_text and "SECURITY DEFINER execution privilege is unsafe" in evidence_text,
     "source/restore evidence does not verify the fixed-role ACL policy",
 )
@@ -187,6 +199,7 @@ for forbidden in (
 # Already invoked by the required CI safety-gate step, so new helper regressions
 # cannot be omitted merely because the cloud workflow is not dispatched locally.
 for helper in (
+    "test-migration-manifest.py",
     "check-postgres-workflow-images.py",
     "test-postgres-workflow-images.py",
     "test-prepare-restore-role-aliases.py",

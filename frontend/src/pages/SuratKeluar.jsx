@@ -12,6 +12,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ExportButton } from '@/components/ExportButton';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
+import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
 import {
     Select,
@@ -86,8 +87,10 @@ export default function SuratKeluar() {
     // Data state
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
-    const [stats, setStats] = useState({ total: 0, diarsipkan: 0 });
+    const [statsSnapshot, setStatsSnapshot] = useState({ scope: null, status: 'loading', data: null });
+    const statsSeqRef = useRef(0);
     const [pendingApprovals, setPendingApprovals] = useState([]);
 
     // Unit kerja filter for super admin
@@ -121,6 +124,9 @@ export default function SuratKeluar() {
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined);
+    const statsScope = JSON.stringify([user?.id, user?.role, resolvedUnitKerjaId]);
+    const statsLoading = statsSnapshot.scope !== statsScope || statsSnapshot.status === 'loading';
+    const stats = !statsLoading && statsSnapshot.status === 'success' ? statsSnapshot.data : null;
 
     // Guards against out-of-order responses overwriting newer results
     const fetchSeqRef = useRef(0);
@@ -128,7 +134,9 @@ export default function SuratKeluar() {
     // Fetch data from API
     const fetchData = useCallback(async () => {
         const seq = ++fetchSeqRef.current;
+        let changingPage = false;
         setLoading(true);
+        setLoadError(false);
         try {
             const params = {
                 page: pagination.page,
@@ -143,16 +151,24 @@ export default function SuratKeluar() {
 
             const response = await suratKeluarService.getAll(params);
             if (seq !== fetchSeqRef.current) return;
+            if (!response.success) throw new Error('Daftar surat keluar tidak dapat dimuat.');
             if (response.success) {
+                const totalPages = Math.max(1, response.pagination?.totalPages || 1);
+                if (pagination.page > totalPages) {
+                    changingPage = true;
+                    setPagination(prev => ({ ...prev, page: totalPages }));
+                    return; // The page effect fetches the last remaining page.
+                }
                 setData(response.data || []);
                 setPagination(prev => ({
                     ...prev,
                     total: response.pagination?.total || 0,
-                    totalPages: response.pagination?.totalPages || 1,
+                    totalPages,
                 }));
             }
         } catch (error) {
             if (seq !== fetchSeqRef.current) return;
+            setLoadError(true);
             console.error('Error fetching surat keluar:', error);
             toast({
                 title: 'Error',
@@ -160,21 +176,28 @@ export default function SuratKeluar() {
                 variant: 'destructive',
             });
         } finally {
-            if (seq === fetchSeqRef.current) setLoading(false);
+            if (seq === fetchSeqRef.current && !changingPage) setLoading(false);
         }
     }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, naskahDinas, tanggalDari, tanggalSampai, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
+        const seq = ++statsSeqRef.current;
+        setStatsSnapshot({ scope: statsScope, status: 'loading', data: null });
         try {
             const result = await suratKeluarService.getStats({ unitKerjaId: resolvedUnitKerjaId });
-            if (result) {
-                setStats(result);
+            if (seq !== statsSeqRef.current) return;
+            if (!['total', 'diarsipkan'].every(key => Number.isSafeInteger(result?.[key]) && result[key] >= 0)
+                || result.diarsipkan > result.total) {
+                throw new Error('Statistik surat keluar tidak lengkap.');
             }
+            setStatsSnapshot({ scope: statsScope, status: 'success', data: result });
         } catch (error) {
+            if (seq !== statsSeqRef.current) return;
             console.error('Error fetching stats:', error);
+            setStatsSnapshot({ scope: statsScope, status: 'error', data: null });
         }
-    }, [resolvedUnitKerjaId]);
+    }, [resolvedUnitKerjaId, statsScope]);
 
     const fetchPendingApprovals = useCallback(async () => {
         if (!isAdmin) {
@@ -191,8 +214,15 @@ export default function SuratKeluar() {
 
     useEffect(() => {
         fetchData();
+        return () => { fetchSeqRef.current += 1; };
+    }, [fetchData]);
+
+    useEffect(() => {
         fetchStats();
-    }, [fetchData, fetchStats]);
+        return () => { statsSeqRef.current += 1; };
+    }, [fetchStats]);
+
+    const refreshAll = () => { fetchData(); fetchStats(); };
 
     useEffect(() => {
         fetchPendingApprovals();
@@ -230,12 +260,7 @@ export default function SuratKeluar() {
     const handleEdit = (surat) => navigate(`/surat/keluar/edit/${surat.id}`);
 
     const handleOpenArchiveDialog = (surat) => {
-        setSelectedSurat({
-            id: surat.id,
-            nomorSurat: surat.nomorSurat,
-            perihal: surat.perihal,
-            tanggalSurat: surat.tanggalSurat,
-        });
+        setSelectedSurat(surat);
         setArchiveDialogOpen(true);
     };
 
@@ -306,10 +331,12 @@ export default function SuratKeluar() {
                 </div>
                 {/* Unit Kerja Selector for Super Admin */}
                 {isSuperAdmin && unitKerjaList.length > 0 && (
-                    <div className="flex w-full items-center gap-2 sm:w-auto">
-                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="w-full space-y-1.5 sm:w-auto">
+                        <label htmlFor="surat-keluar-unit-kerja" className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                            <Building2 className="h-4 w-4" aria-hidden="true" /> Unit kerja
+                        </label>
                         <Select value={selectedUnitKerja} onValueChange={(val) => { setSelectedUnitKerja(val); setPagination(prev => ({ ...prev, page: 1 })); }}>
-                            <SelectTrigger className="h-9 w-full sm:w-[220px]">
+                            <SelectTrigger id="surat-keluar-unit-kerja" className="h-9 w-full sm:w-[220px]">
                                 <SelectValue placeholder="Pilih Unit Kerja" />
                             </SelectTrigger>
                             <SelectContent>
@@ -322,7 +349,7 @@ export default function SuratKeluar() {
                     </div>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="outline" onClick={fetchData} disabled={loading} size="sm" className="h-9">
+                    <Button variant="outline" onClick={refreshAll} disabled={loading} size="sm" className="h-9">
                         <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />
                         Refresh
                     </Button>
@@ -335,10 +362,13 @@ export default function SuratKeluar() {
                         />
                     )}
 
+                    {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="surat-keluar" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
+
                     <ExportButton
                         type="surat-keluar"
                         filters={{
                             unitKerjaId: resolvedUnitKerjaId,
+                            search: debouncedSearchTerm || undefined,
                             tahun: tahun !== 'all' ? tahun : undefined,
                             naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
                             tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
@@ -383,7 +413,7 @@ export default function SuratKeluar() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Surat</p>
-                            <p className="text-2xl font-bold">{stats.total}</p>
+                            <p className="text-2xl font-bold">{stats?.total ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/15 rounded-full text-emerald-600 dark:text-emerald-400">
                             <Send className="h-5 w-5" />
@@ -394,7 +424,7 @@ export default function SuratKeluar() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Belum Diarsipkan</p>
-                            <p className="text-2xl font-bold text-orange-600">{stats.total - stats.diarsipkan}</p>
+                            <p className="text-2xl font-bold text-orange-600">{stats ? stats.total - stats.diarsipkan : '—'}</p>
                         </div>
                         <div className="p-2.5 bg-orange-100 dark:bg-orange-500/15 rounded-full text-orange-600">
                             <AlertCircle className="h-5 w-5" />
@@ -405,7 +435,7 @@ export default function SuratKeluar() {
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Diarsipkan</p>
-                            <p className="text-2xl font-bold text-blue-600">{stats.diarsipkan}</p>
+                            <p className="text-2xl font-bold text-blue-600">{stats?.diarsipkan ?? '—'}</p>
                         </div>
                         <div className="p-2.5 bg-blue-100 dark:bg-blue-500/15 rounded-full text-blue-600">
                             <FolderArchive className="h-5 w-5" />
@@ -414,20 +444,31 @@ export default function SuratKeluar() {
                 </Card>
             </div>
 
+            {statsLoading ? <p role="status" className="text-sm text-muted-foreground">Memuat statistik…</p> : !stats && (
+                <div role="alert" className="rounded-lg border border-destructive/40 p-3">
+                    <p className="text-sm">Statistik belum tersedia. Periksa koneksi dan coba lagi.</p>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={fetchStats}>Coba lagi statistik</Button>
+                </div>
+            )}
+
             {/* Main Content Area */}
             <Card className="shadow-sm border-border/60">
                 <CardHeader className="pb-4">
                     <div className="flex flex-col space-y-4">
                         {/* Search & Filter Controls */}
-                        <div className="flex flex-col md:flex-row gap-3">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                <Input
-                                    placeholder="Cari nomor surat, perihal, atau tujuan..."
-                                    className="pl-9 bg-background/50 border-input/60 focus:bg-background transition-colors"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                />
+                        <div className="flex flex-col md:flex-row gap-3 md:items-end">
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                                <label htmlFor="surat-keluar-search" className="text-sm font-medium">Cari surat keluar</label>
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id="surat-keluar-search"
+                                        placeholder="Cari nomor surat, perihal, atau tujuan..."
+                                        className="pl-9 bg-background/50 border-input/60 focus:bg-background transition-colors"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
+                                </div>
                             </div>
                             <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen} className="flex-none">
                                 <CollapsibleTrigger asChild>
@@ -456,9 +497,9 @@ export default function SuratKeluar() {
                                 <div className="bg-muted/30 p-4 rounded-lg border border-border/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                     {/* Tahun */}
                                     <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Tahun</label>
+                                        <label htmlFor="surat-keluar-tahun" className="text-xs font-semibold text-muted-foreground uppercase">Tahun</label>
                                         <Select value={tahun} onValueChange={applyFilter(setTahun)}>
-                                            <SelectTrigger className="h-9 bg-background">
+                                            <SelectTrigger id="surat-keluar-tahun" className="h-9 bg-background">
                                                 <SelectValue placeholder="Semua Tahun" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -472,8 +513,10 @@ export default function SuratKeluar() {
 
                                     {/* Naskah Dinas */}
                                     <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Naskah Dinas</label>
+                                        <label htmlFor="surat-keluar-jenis" className="text-xs font-semibold text-muted-foreground uppercase">Naskah Dinas</label>
                                         <SearchableSelect
+                                            id="surat-keluar-jenis"
+                                            ariaLabel="Naskah Dinas"
                                             options={[
                                                 { value: 'all', label: 'Semua Naskah' },
                                                 'Keputusan', 'Surat Tugas', 'Surat Perintah', 'Nota Dinas', 'Memorandum',
@@ -493,24 +536,29 @@ export default function SuratKeluar() {
                                     </div>
 
                                     {/* Filter Tanggal */}
-                                    <div className="space-y-1.5 sm:col-span-2">
-                                        <label className="text-xs font-semibold text-muted-foreground uppercase">Rentang Tanggal</label>
-                                        <div className="flex items-center gap-2">
-                                            <DatePicker
-                                                date={tanggalDari}
-                                                onDateChange={applyFilter(setTanggalDari)}
-                                                placeholder="Dari tanggal"
-                                                className="h-9 bg-background flex-1"
-                                            />
-                                            <span className="text-muted-foreground">-</span>
-                                            <DatePicker
-                                                date={tanggalSampai}
-                                                onDateChange={applyFilter(setTanggalSampai)}
-                                                placeholder="Sampai tanggal"
-                                                className="h-9 bg-background flex-1"
-                                            />
+                                    <fieldset className="min-w-0 space-y-1.5 sm:col-span-2">
+                                        <legend className="text-xs font-semibold text-muted-foreground uppercase">Rentang Tanggal</legend>
+                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                            <label className="min-w-0 space-y-1.5">
+                                                <span className="text-xs text-muted-foreground">Tanggal dari</span>
+                                                <DatePicker
+                                                    date={tanggalDari}
+                                                    onDateChange={applyFilter(setTanggalDari)}
+                                                    placeholder="Pilih tanggal awal"
+                                                    className="h-9 bg-background"
+                                                />
+                                            </label>
+                                            <label className="min-w-0 space-y-1.5">
+                                                <span className="text-xs text-muted-foreground">Tanggal sampai</span>
+                                                <DatePicker
+                                                    date={tanggalSampai}
+                                                    onDateChange={applyFilter(setTanggalSampai)}
+                                                    placeholder="Pilih tanggal akhir"
+                                                    className="h-9 bg-background"
+                                                />
+                                            </label>
                                         </div>
-                                    </div>
+                                    </fieldset>
                                 </div>
                             </CollapsibleContent>
                         </Collapsible>
@@ -522,6 +570,15 @@ export default function SuratKeluar() {
                         {loading ? (
                             <div className="p-4">
                                 <TableSkeleton columns={7} rows={5} />
+                            </div>
+                        ) : loadError ? (
+                            <div role="alert" className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                                <AlertCircle className="h-8 w-8 text-destructive" aria-hidden="true" />
+                                <p className="font-medium">Gagal memuat daftar surat keluar</p>
+                                <p className="text-sm text-muted-foreground">Periksa koneksi Anda lalu coba lagi.</p>
+                                <Button variant="outline" onClick={refreshAll}>
+                                    <RefreshCw className="h-4 w-4" aria-hidden="true" /> Coba lagi
+                                </Button>
                             </div>
                         ) : (
                             <Table responsive>
@@ -544,7 +601,7 @@ export default function SuratKeluar() {
                                                         <Inbox className="h-8 w-8 opacity-50" />
                                                     </div>
                                                     <p className="font-medium">Tidak ada surat keluar ditemukan</p>
-                                                    <p className="text-sm opacity-70">
+                                                    <p className="text-sm text-muted-foreground">
                                                         {searchTerm || hasActiveFilters ? 'Coba sesuaikan filter pencarian Anda' : 'Belum ada data surat di sistem'}
                                                     </p>
                                                 </div>
@@ -562,9 +619,9 @@ export default function SuratKeluar() {
                                                     </div>
                                                 </TableCell>
                                                 <TableCell data-label="Nomor Surat">
-                                                    <Badge variant="outline" className="font-mono text-xs bg-background">
+                                                    <span className="rounded-md border bg-background px-2 py-0.5 font-mono text-xs" style={{ overflowWrap: 'anywhere' }}>
                                                         {row.nomorSurat}
-                                                    </Badge>
+                                                    </span>
                                                 </TableCell>
                                                 <TableCell data-label="Perihal">
                                                     <div className="flex flex-col gap-1 max-w-[400px]">
@@ -652,7 +709,7 @@ export default function SuratKeluar() {
                     </div>
 
                     {/* Footer Pagination */}
-                    {pagination.totalPages > 1 && (
+                    {!loading && !loadError && pagination.totalPages > 1 && (
                         <div className="border-t border-border/60 p-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
                             <p className="text-sm text-muted-foreground order-2 sm:order-1">
                                 Menampilkan <span className="font-medium text-foreground">{data.length}</span> dari <span className="font-medium text-foreground">{pagination.total}</span> surat

@@ -87,7 +87,7 @@ describe('resolveUnitKerjaId', () => {
 
         it('should return null if staff has no unitKerjaId', () => {
             const req = createMockReq({ role: 'staff', unitKerjaId: null });
-            expect(resolveUnitKerjaId(req)).toBeNull();
+            expect(() => resolveUnitKerjaId(req)).toThrow(/mandat unit kerja/);
         });
     });
 
@@ -106,12 +106,12 @@ describe('resolveUnitKerjaId', () => {
     describe('user (default/no access)', () => {
         it('should return the user unitKerjaId (even though user has no read permissions)', () => {
             const req = createMockReq({ role: 'user', unitKerjaId: 'ditjen' });
-            expect(resolveUnitKerjaId(req)).toBe('ditjen');
+            expect(() => resolveUnitKerjaId(req)).toThrow(/mandat unit kerja/);
         });
 
         it('should return null when user has no unitKerjaId', () => {
             const req = createMockReq({ role: 'user', unitKerjaId: null });
-            expect(resolveUnitKerjaId(req)).toBeNull();
+            expect(() => resolveUnitKerjaId(req)).toThrow(/mandat unit kerja/);
         });
     });
 });

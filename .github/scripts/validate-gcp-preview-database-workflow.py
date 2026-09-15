@@ -208,6 +208,7 @@ def main() -> int:
     terraform_workflow = TERRAFORM_WORKFLOW.read_text(encoding="utf-8")
     require("validate-gcp-preview-database-workflow.py" in terraform_workflow,
             "PR/push validation workflow does not execute the Preview policy validator")
+    subprocess.run([sys.executable, str(ROOT / ".github/scripts/build-migration-manifest.py"), "--check-bindings"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, str(SOURCE_GATE), "--self-test"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, str(EVIDENCE_GATE), "--self-test"], cwd=ROOT, check=True)
     print("GCP Preview database workflow validation: ok")

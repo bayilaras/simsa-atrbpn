@@ -279,8 +279,8 @@ BEGIN
     IF pg_catalog.to_regclass('drizzle.__drizzle_migrations') IS NULL THEN
         RAISE EXCEPTION 'grant convergence requires the Drizzle migration journal';
     END IF;
-    IF pg_catalog.jsonb_typeof(expected_manifest) <> 'array'
-       OR pg_catalog.jsonb_array_length(expected_manifest) <> 34
+    IF pg_catalog.jsonb_typeof(expected_manifest) IS DISTINCT FROM 'array'
+       OR pg_catalog.jsonb_array_length(expected_manifest) = 0
        OR EXISTS (
            SELECT 1
            FROM pg_catalog.jsonb_array_elements(expected_manifest) AS entry(value)
@@ -308,20 +308,22 @@ BEGIN
            )
     INTO expected_indices, expected_timestamps
     FROM pg_catalog.jsonb_array_elements(expected_manifest) AS entry(value);
-    IF expected_indices IS DISTINCT FROM ARRAY[
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-        10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-        20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-        30, 31, 32, 33
-    ]::integer[] THEN
-        RAISE EXCEPTION 'expected migration manifest is not the exact 0000-0033 chain';
+    IF expected_indices IS DISTINCT FROM ARRAY(
+        SELECT pg_catalog.generate_series(0, pg_catalog.jsonb_array_length(expected_manifest) - 1)
+    ) OR EXISTS (
+        SELECT 1 FROM pg_catalog.jsonb_array_elements(expected_manifest) WITH ORDINALITY AS entry(value, position)
+        WHERE (value->>'idx')::integer IS DISTINCT FROM position - 1
+           OR (position > 1 AND (value->>'created_at')::bigint <=
+               (expected_manifest->(position::integer - 2)->>'created_at')::bigint)
+    ) THEN
+        RAISE EXCEPTION 'expected migration manifest is not an exact ordered chain';
     END IF;
     SELECT pg_catalog.array_agg(created_at ORDER BY created_at)
     INTO actual_timestamps
     FROM drizzle.__drizzle_migrations;
-    IF pg_catalog.cardinality(actual_timestamps) <> 34
-       OR (SELECT pg_catalog.count(*) FROM drizzle.__drizzle_migrations) <> 34
-       OR (SELECT pg_catalog.count(DISTINCT created_at) FROM drizzle.__drizzle_migrations) <> 34
+    IF pg_catalog.cardinality(actual_timestamps) <> pg_catalog.jsonb_array_length(expected_manifest)
+       OR (SELECT pg_catalog.count(*) FROM drizzle.__drizzle_migrations) <> pg_catalog.jsonb_array_length(expected_manifest)
+       OR (SELECT pg_catalog.count(DISTINCT created_at) FROM drizzle.__drizzle_migrations) <> pg_catalog.jsonb_array_length(expected_manifest)
        OR actual_timestamps IS DISTINCT FROM expected_timestamps
        OR EXISTS (
            SELECT 1
@@ -333,6 +335,8 @@ BEGIN
         RAISE EXCEPTION 'applied migration history differs from the exact accepted manifest';
     END IF;
     IF pg_catalog.to_regclass('public.final_object_orphans') IS NULL
+       OR pg_catalog.to_regclass('public.file_fixity_jobs') IS NULL
+       OR pg_catalog.to_regclass('public.arsip_terjaga_reports') IS NULL
        OR pg_catalog.to_regprocedure(
            'public.simsa_mark_final_object_reference_candidate(uuid,text,text,text,text,timestamp with time zone)'
        ) IS NULL
@@ -345,7 +349,7 @@ BEGIN
        OR pg_catalog.to_regprocedure(
            'public.simsa_mark_api_final_object_referenced(uuid,text,text)'
        ) IS NULL THEN
-        RAISE EXCEPTION 'grant convergence requires the complete 0033 schema';
+        RAISE EXCEPTION 'grant convergence requires the complete 0038 schema';
     END IF;
 
     SELECT candidate.* INTO unexpected
@@ -522,6 +526,12 @@ REVOKE UPDATE, DELETE ON TABLE
     public.regulatory_rule_events,
     public.srikandi_outbox_audit
     FROM simsa_api_runtime;
+
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.file_fixity_jobs FROM simsa_api_runtime;
+REVOKE DELETE ON TABLE public.arsip_terjaga_reports FROM simsa_api_runtime;
+REVOKE UPDATE, DELETE ON TABLE public.preservasi_track FROM simsa_api_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.file_fixity_jobs TO simsa_worker_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.file_fixity_jobs TO simsa_maintenance;
 
 GRANT SELECT, UPDATE ON TABLE public.client_blob_uploads
     TO simsa_event_runtime;

@@ -239,6 +239,90 @@
       "when": 1788060600000,
       "tag": "0033_final_object_orphan_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788061200000,
+      "tag": "0034_scheduled_file_fixity",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788061800000,
+      "tag": "0035_disposition_lifecycle_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788062400000,
+      "tag": "0036_terjaga_reporting_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788063000000,
+      "tag": "0037_preservation_activity_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788063600000,
+      "tag": "0038_arsip_direct_upload",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788064200000,
+      "tag": "0039_shared_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789250400000,
+      "tag": "0040_surat_rule_selection",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789279200000,
+      "tag": "0041_super_admin_catalog_activation",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789300800000,
+      "tag": "0042_attachment_identity_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1789397414667,
+      "tag": "0043_retention_event_business_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1789397415667,
+      "tag": "0044_storage_location_business_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1789397416667,
+      "tag": "0045_dosir_date_order",
+      "breakpoints": true
     }
   ]
 }

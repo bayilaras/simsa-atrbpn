@@ -4,6 +4,15 @@ import { validateRuntimeEnv } from '../config/env.js';
 const database = { DATABASE_URL: 'postgresql://db.example.test/simsa' };
 
 describe('runtime-specific environment validation', () => {
+    const nativeWorker = { ...database, NODE_ENV: 'production', VERCEL: '1', APP_PROFILE: 'internal',
+        OBJECT_STORAGE_PROVIDER: 'vercel-blob', BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_worker_test_value',
+        MALWARE_SCANNER_MODE: 'clamav', CLAMAV_TRANSPORT: 'native', MALWARE_SCAN_WORKER_RUNTIME: 'on-demand' };
+    it('validates the distinct native on-demand worker without API secrets', () => {
+        expect(() => validateRuntimeEnv('malware-on-demand', nativeWorker)).not.toThrow();
+    });
+    it('does not allow the persistent timer entrypoint to start an on-demand deployment', () => {
+        expect(() => validateRuntimeEnv('malware-worker', nativeWorker)).toThrow();
+    });
     afterEach(() => {
         vi.unstubAllEnvs();
         vi.resetModules();

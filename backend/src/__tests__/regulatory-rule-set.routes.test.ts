@@ -32,6 +32,7 @@ const state = vi.hoisted(() => ({
         activate: vi.fn(),
     },
     audit: vi.fn(),
+    wake: vi.fn(),
 }));
 
 vi.mock('../middlewares/auth.middleware', () => ({
@@ -58,6 +59,7 @@ vi.mock('../services/regulatory-rule-set.service', () => {
 vi.mock('../services/audit-log.service', () => ({
     default: { logActionOrThrow: state.audit },
 }));
+vi.mock('../services/malware-scan-dispatch.service.js', () => ({ scheduleMalwareScanWake: state.wake }));
 
 const { default: router } = await import('../routes/regulatory-rule-set.routes');
 
@@ -83,6 +85,14 @@ const draftRuleSet = {
     status: 'draft',
     effectiveFrom: '2026-08-26',
 };
+
+function uploadSource(mode: 'multipart' | 'blob') {
+    return mode === 'multipart'
+        ? request(app).post(`/regulatory-rule-sets/${ruleSetId}/source-document/verify`)
+            .attach('file', Buffer.from('%PDF-1.7\n%%EOF'), { filename: 'peraturan.pdf', contentType: 'application/pdf' })
+        : request(app).post(`/regulatory-rule-sets/${ruleSetId}/source-document/verify-blob`)
+            .send({ blobUrl: `https://store.private.blob.vercel-storage.com/regulatory-sources/${ruleSetId}/peraturan-abc.pdf`, originalFileName: 'peraturan.pdf' });
+}
 
 describe('regulatory rule-set routes', () => {
     beforeEach(() => {
@@ -127,10 +137,11 @@ describe('regulatory rule-set routes', () => {
             validation: { valid: true },
         });
         state.audit.mockResolvedValue(undefined);
+        state.wake.mockReset().mockReturnValue(true);
     });
 
-    it('allows authenticated readers to list and get the active edition', async () => {
-        state.user.role = 'staff';
+    it('allows superadmin to list and get the active governance edition', async () => {
+        state.user.role = 'super_admin';
 
         await request(app)
             .get('/regulatory-rule-sets?instrumentType=klasifikasi&status=active')
@@ -146,8 +157,9 @@ describe('regulatory rule-set routes', () => {
         expect(state.service.getActive).toHaveBeenCalledWith('klasifikasi');
     });
 
-    it('restricts cloning and activation to super_admin', async () => {
-        state.user.role = 'admin_dirjen';
+    it.each(['admin_unit', 'admin_dirjen', 'admin_sesditjen', 'auditor', 'staff'])(
+        'rejects global catalog management by %s', async (role) => {
+        state.user.role = role;
 
         await request(app)
             .post('/regulatory-rule-sets/klasifikasi/clone-active')
@@ -165,10 +177,20 @@ describe('regulatory rule-set routes', () => {
         expect(state.service.cloneActive).not.toHaveBeenCalled();
         expect(state.service.activate).not.toHaveBeenCalled();
         expect(state.service.replaceDraftItems).not.toHaveBeenCalled();
+        for (const action of ['submit', 'review', 'approve', 'return-to-draft']) {
+            await request(app).post(`/regulatory-rule-sets/${ruleSetId}/${action}`)
+                .send({ note: 'Percobaan pengelolaan katalog global.' }).expect(403);
+        }
+        await request(app).get(`/regulatory-rule-sets/${ruleSetId}`).expect(403);
+        await request(app).get('/regulatory-rule-sets?instrumentType=klasifikasi').expect(403);
+        await request(app).get('/regulatory-rule-sets/active/klasifikasi').expect(403);
+        expect(state.service.submit).not.toHaveBeenCalled();
+        expect(state.service.review).not.toHaveBeenCalled();
+        expect(state.service.approve).not.toHaveBeenCalled();
     });
 
-    it('allows governance admins to review, approve, return, and inspect audit evidence', async () => {
-        state.user.role = 'admin_dirjen';
+    it('allows superadmin to access historical workflow actions and audit evidence', async () => {
+        state.user.role = 'super_admin';
         const note = { note: 'Catatan pemeriksaan independen sudah lengkap.' };
 
         await request(app).post(`/regulatory-rule-sets/${ruleSetId}/review`)
@@ -189,8 +211,8 @@ describe('regulatory rule-set routes', () => {
         expect(state.service.verifyEventIntegrity).toHaveBeenCalledOnce();
     });
 
-    it('streams a private source PDF to governance readers without exposing its locator', async () => {
-        state.user.role = 'auditor';
+    it('streams a private source PDF to superadmin without exposing its locator', async () => {
+        state.user.role = 'super_admin';
         const response = await request(app)
             .get(`/regulatory-rule-sets/${ruleSetId}/source-document`)
             .buffer(true)
@@ -230,7 +252,7 @@ describe('regulatory rule-set routes', () => {
         expect(destroy).toHaveBeenCalledOnce();
     });
 
-    it('restricts source PDF streaming to governance admins and auditors', async () => {
+    it('restricts source PDF streaming to superadmin', async () => {
         state.user.role = 'staff';
         await request(app)
             .get(`/regulatory-rule-sets/${ruleSetId}/source-document`)
@@ -301,6 +323,13 @@ describe('regulatory rule-set routes', () => {
             expect.objectContaining({ actorEmail: state.user.email }),
         );
         expect(state.audit).not.toHaveBeenCalled();
+    });
+
+    it('does not accept a caller-selected publisher or fabricated workflow evidence', async () => {
+        await request(app).post(`/regulatory-rule-sets/${ruleSetId}/activate`)
+            .send({ publishedBy: 'other-user', approvedBy: state.user.id, reviewedAt: new Date().toISOString() })
+            .expect(400);
+        expect(state.service.activate).not.toHaveBeenCalled();
     });
 
     it('delegates typed manifest import and domain audit atomically to the service', async () => {
@@ -374,6 +403,7 @@ describe('regulatory rule-set routes', () => {
             .expect(400);
 
         expect(state.service.verifySourceDocument).not.toHaveBeenCalled();
+        expect(state.wake).not.toHaveBeenCalled();
     });
 
     it('verifies a rule-set-bound private Blob through the server', async () => {
@@ -389,6 +419,48 @@ describe('regulatory rule-set routes', () => {
             state.user.id,
             expect.objectContaining({ actorEmail: state.user.email }),
         );
+    });
+
+    it.each(['multipart', 'blob'] as const)('wakes the durable queue only after %s source registration commits without declaring it clean', async (mode) => {
+        let finish!: () => void;
+        let started!: () => void;
+        const entered = new Promise<void>(resolve => { started = resolve; });
+        const committed = new Promise<void>(resolve => { finish = resolve; });
+        const service = mode === 'multipart' ? state.service.verifySourceDocument : state.service.verifySourceDocumentFromBlob;
+        service.mockImplementationOnce(async () => {
+            started();
+            await committed;
+            return { ruleSet: { ...draftRuleSet, sourceDocumentVerifiedAt: null }, sourceDocument: { malwareScanStatus: 'not_scanned' } };
+        });
+        const pending = uploadSource(mode).then(response => response);
+        await entered;
+        expect(state.wake).not.toHaveBeenCalled();
+        finish();
+        const response = await pending;
+        expect(response.status).toBe(200);
+        expect(state.wake).toHaveBeenCalledExactlyOnceWith();
+        expect(response.body.data).toMatchObject({ ruleSet: { sourceDocumentVerifiedAt: null }, sourceDocument: { malwareScanStatus: 'not_scanned' } });
+    });
+
+    it.each(['multipart', 'blob'] as const)('retains successful %s registration when on-demand wake is unavailable', async (mode) => {
+        state.wake.mockReturnValue(false);
+        const response = await uploadSource(mode).expect(200);
+        expect(response.body).toMatchObject({ success: true, data: { ruleSet: draftRuleSet } });
+        expect(state.wake).toHaveBeenCalledOnce();
+    });
+
+    it.each(['multipart', 'blob'] as const)('never wakes the queue when %s source registration rejects', async (mode) => {
+        const service = mode === 'multipart' ? state.service.verifySourceDocument : state.service.verifySourceDocumentFromBlob;
+        service.mockRejectedValueOnce(new Error('Source registration rejected'));
+        await uploadSource(mode).expect(500);
+        expect(state.wake).not.toHaveBeenCalled();
+    });
+
+    it('rejects an invalid Blob command before registration or queue wake', async () => {
+        await request(app).post(`/regulatory-rule-sets/${ruleSetId}/source-document/verify-blob`)
+            .send({ blobUrl: 'not-a-url', originalFileName: 'peraturan.pdf' }).expect(400);
+        expect(state.service.verifySourceDocumentFromBlob).not.toHaveBeenCalled();
+        expect(state.wake).not.toHaveBeenCalled();
     });
 
     it('reports audit-chain integrity through a read-only endpoint', async () => {

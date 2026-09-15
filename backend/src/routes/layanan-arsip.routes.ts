@@ -11,8 +11,8 @@ import { allowedSecurityClassifications } from '../services/record-access.servic
 const router = Router();
 
 // Roles allowed to see archive-service requests other than their own
-const LAYANAN_REVIEWER_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
-const LAYANAN_STATUS_MUTATOR_ROLES: Role[] = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+const LAYANAN_REVIEWER_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
+const LAYANAN_STATUS_MUTATOR_ROLES: Role[] = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
 
 // Allowed status transitions — a closed request (selesai/ditolak) cannot be reopened
 const LAYANAN_STATUS_TRANSITIONS: Record<string, string[]> = {

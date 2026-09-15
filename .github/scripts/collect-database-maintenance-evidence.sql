@@ -49,9 +49,6 @@ DECLARE
     ownership_violations integer;
     journal_count integer;
     latest_migration bigint;
-    seed_classifications integer;
-    seed_retention_rows integer;
-    seed_mappings integer;
     expected_migrations jsonb := pg_catalog.current_setting(
         'simsa_evidence.expected_migrations_json'
     )::jsonb;
@@ -98,13 +95,30 @@ BEGIN
     SELECT count(*), max(created_at)
       INTO journal_count, latest_migration
       FROM drizzle.__drizzle_migrations;
-    IF journal_count <> 34 OR latest_migration <> 1788060600000 THEN
-        RAISE EXCEPTION 'journal is not complete through 0033: count %, latest %',
+    IF pg_catalog.jsonb_typeof(expected_migrations) IS DISTINCT FROM 'array'
+       OR pg_catalog.jsonb_array_length(expected_migrations) = 0 THEN
+        RAISE EXCEPTION 'reviewed migration manifest must be a non-empty array';
+    END IF;
+    IF journal_count <> pg_catalog.jsonb_array_length(expected_migrations)
+       OR latest_migration IS DISTINCT FROM (expected_migrations->-1->>'created_at')::bigint THEN
+        RAISE EXCEPTION 'journal differs from the reviewed migration manifest: count %, latest %',
             journal_count, latest_migration;
     END IF;
-    IF pg_catalog.jsonb_typeof(expected_migrations) <> 'array'
-       OR pg_catalog.jsonb_array_length(expected_migrations) <> 34
-       OR EXISTS (
+    IF EXISTS (
+           SELECT 1
+             FROM pg_catalog.jsonb_array_elements(expected_migrations) WITH ORDINALITY AS entry(value, position)
+            WHERE (value->>'idx')::integer IS DISTINCT FROM position - 1
+               OR value->>'tag' IS NULL OR value->>'sha256' IS NULL OR value->>'created_at' IS NULL
+               OR (value->>'tag') !~ ('^' || pg_catalog.lpad((position - 1)::text, 4, '0') || '_[a-z0-9_]+$')
+               OR (value->>'sha256') !~ '^[0-9a-f]{64}$'
+               OR pg_catalog.jsonb_typeof(value->'accepted_sha256') IS DISTINCT FROM 'array'
+               OR NOT (value->'accepted_sha256' ? (value->>'sha256'))
+               OR pg_catalog.jsonb_array_length(value->'accepted_sha256') <> CASE WHEN position <= 10 THEN 2 ELSE 1 END
+               OR EXISTS (SELECT 1 FROM pg_catalog.jsonb_array_elements_text(value->'accepted_sha256') AS accepted(hash)
+                          WHERE accepted.hash !~ '^[0-9a-f]{64}$')
+               OR (position > 1 AND (value->>'created_at')::bigint <=
+                   (expected_migrations->(position::integer - 2)->>'created_at')::bigint)
+       ) OR EXISTS (
            SELECT 1
              FROM pg_catalog.jsonb_array_elements(expected_migrations) expected
             WHERE NOT EXISTS (
@@ -332,31 +346,10 @@ BEGIN
        OR NOT EXISTS (SELECT 1 FROM public.unit_kerja WHERE id = 'sesditjen') THEN
         RAISE EXCEPTION 'canonical unit seed rows are missing';
     END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM public.regulatory_rule_sets
-         WHERE id = '10102018-1010-4010-8010-000000000010'::uuid
-           AND instrument_type = 'klasifikasi' AND status = 'active'
-    ) OR NOT EXISTS (
-        SELECT 1 FROM public.regulatory_rule_sets
-         WHERE id = '08002020-0800-4080-8080-000000000008'::uuid
-           AND instrument_type = 'jra' AND status = 'active'
-    ) THEN
-        RAISE EXCEPTION 'canonical regulatory seed editions are not active';
-    END IF;
-    SELECT count(*) INTO seed_classifications FROM public.klasifikasi_arsip
-     WHERE rule_set_id = '10102018-1010-4010-8010-000000000010'::uuid AND is_active;
-    SELECT count(*) INTO seed_retention_rows FROM public.jadwal_retensi_arsip
-     WHERE rule_set_id = '08002020-0800-4080-8080-000000000008'::uuid AND is_active;
-    SELECT count(*) INTO seed_mappings FROM public.klasifikasi_jra_mapping
-     WHERE klasifikasi_rule_set_id = '10102018-1010-4010-8010-000000000010'::uuid
-       AND jra_rule_set_id = '08002020-0800-4080-8080-000000000008'::uuid
-       AND is_active;
-    IF seed_classifications < 1 OR seed_retention_rows < 1 OR seed_mappings < 1 THEN
-        RAISE EXCEPTION 'canonical seed data is empty: classification %, retention %, mapping %',
-            seed_classifications, seed_retention_rows, seed_mappings;
-    END IF;
 END
 $evidence_assertions$;
+
+\ir deployment-regulatory-evidence.sql
 
 WITH journal AS (
     SELECT count(*)::integer AS migration_count,
@@ -367,12 +360,12 @@ WITH journal AS (
     SELECT
         (SELECT count(*)::integer FROM public.unit_kerja WHERE id IN ('ditjen', 'sesditjen')) AS units,
         (SELECT count(*)::integer FROM public.klasifikasi_arsip
-          WHERE rule_set_id = '10102018-1010-4010-8010-000000000010'::uuid AND is_active) AS classifications,
+          WHERE rule_set_id IN (SELECT id FROM public.regulatory_rule_sets WHERE instrument_type = 'klasifikasi' AND status = 'active') AND is_active) AS classifications,
         (SELECT count(*)::integer FROM public.jadwal_retensi_arsip
-          WHERE rule_set_id = '08002020-0800-4080-8080-000000000008'::uuid AND is_active) AS retention_rows,
+          WHERE rule_set_id IN (SELECT id FROM public.regulatory_rule_sets WHERE instrument_type = 'jra' AND status = 'active') AND is_active) AS retention_rows,
         (SELECT count(*)::integer FROM public.klasifikasi_jra_mapping
-          WHERE klasifikasi_rule_set_id = '10102018-1010-4010-8010-000000000010'::uuid
-            AND jra_rule_set_id = '08002020-0800-4080-8080-000000000008'::uuid
+          WHERE klasifikasi_rule_set_id IN (SELECT id FROM public.regulatory_rule_sets WHERE instrument_type = 'klasifikasi' AND status = 'active')
+            AND jra_rule_set_id IN (SELECT id FROM public.regulatory_rule_sets WHERE instrument_type = 'jra' AND status = 'active')
             AND is_active) AS mappings
 ), acl_entries AS (
     SELECT 'schema:' || namespace.nspname || ':' || coalesce(namespace.nspacl::text, '<default>') AS entry
@@ -472,6 +465,8 @@ SELECT pg_catalog.jsonb_pretty(pg_catalog.jsonb_build_object(
     'migration_manifest_verified', true,
     'seed', pg_catalog.jsonb_build_object(
         'verified', true,
+        'governance_verified', true,
+        'active_rule_set_ids', (SELECT jsonb_object_agg(instrument_type, id) FROM public.regulatory_rule_sets WHERE status = 'active'),
         'canonical_units', seed.units,
         'active_classifications', seed.classifications,
         'active_retention_rows', seed.retention_rows,

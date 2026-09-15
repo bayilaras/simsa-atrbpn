@@ -1,16 +1,20 @@
+import { AppError, ValidationError, ConflictError } from '../utils/errors';
 import { db } from '../config/database';
 import { archiveLending, arsip, storageLocations, users } from '../db/schema';
-import { eq, and, desc, sql, lt, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql, lt, inArray, or, ilike, gte } from 'drizzle-orm';
 import type { RecordUnitScope } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
+import { jakartaDate } from '../utils/jakarta-date.js';
 
 export interface LendingFilters {
     unitKerjaId: RecordUnitScope;
+    securityClassifications?: string[];
     status?: 'borrowed' | 'returned' | 'overdue';
     lendingType?: 'arsip' | 'box';
     borrowerId?: string;
     arsipId?: string;
     storageLocationId?: string;
+    search?: string;
     page?: number;
     limit?: number;
 }
@@ -45,13 +49,35 @@ export class ArchiveLendingService {
         return allConditions.length > 0 ? and(...allConditions) : undefined;
     }
 
+    private readableWhere(unitKerjaId: RecordUnitScope, securityClassifications: string[], ...conditions: any[]) {
+        // Match the archive catalog's role policy before filtering, counting,
+        // or paging. Redacting the join alone would still expose a protected
+        // archive's existence through search, borrower names and totals.
+        const archiveClassification = securityClassifications.length > 0
+            ? inArray(sql<string>`lower(coalesce(a.klasifikasi_keamanan, 'biasa'))`, securityClassifications)
+            : sql`false`;
+        const readableTarget = sql`(
+            ${archiveLending.lendingType} = 'box'
+            OR (${archiveLending.lendingType} = 'arsip' AND EXISTS (
+                SELECT 1 FROM arsip a
+                WHERE a.id = ${archiveLending.arsipId} AND ${archiveClassification}
+            ))
+        )`;
+        return this.scopedWhere(unitKerjaId, readableTarget, ...conditions);
+    }
+
     async findAll(filters: LendingFilters) {
-        const { unitKerjaId, status, lendingType, borrowerId, arsipId, storageLocationId, page = 1, limit = 20 } = filters;
+        const { unitKerjaId, securityClassifications = [], status, lendingType, borrowerId, arsipId, storageLocationId, search, page = 1, limit = 20 } = filters;
         const offset = (page - 1) * limit;
+        const today = jakartaDate();
 
         const conditions: any[] = [];
 
-        if (status) {
+        if (status === 'overdue') {
+            conditions.push(inArray(archiveLending.status, ['borrowed', 'overdue']), lt(archiveLending.dueDate, today));
+        } else if (status === 'borrowed') {
+            conditions.push(inArray(archiveLending.status, ['borrowed', 'overdue']), gte(archiveLending.dueDate, today));
+        } else if (status) {
             conditions.push(eq(archiveLending.status, status));
         }
         if (lendingType) {
@@ -66,7 +92,21 @@ export class ArchiveLendingService {
         if (storageLocationId) {
             conditions.push(eq(archiveLending.storageLocationId, storageLocationId));
         }
-        const whereClause = this.scopedWhere(unitKerjaId, ...conditions);
+        if (search?.trim()) {
+            const pattern = `%${search.trim().replace(/[\\%_]/g, '\\$&')}%`;
+            conditions.push(or(
+                ilike(archiveLending.borrowerName, pattern),
+                sql`(${archiveLending.lendingType} = 'arsip' AND EXISTS (
+                    SELECT 1 FROM arsip a WHERE a.id = ${archiveLending.arsipId}
+                    AND (a.nomor_berkas ILIKE ${pattern} OR a.uraian_berkas ILIKE ${pattern})
+                ))`,
+                sql`(${archiveLending.lendingType} = 'box' AND EXISTS (
+                    SELECT 1 FROM storage_locations sl WHERE sl.id = ${archiveLending.storageLocationId}
+                    AND (sl.code ILIKE ${pattern} OR sl.name ILIKE ${pattern})
+                ))`,
+            ));
+        }
+        const whereClause = this.readableWhere(unitKerjaId, securityClassifications, ...conditions);
 
         const [{ count }] = await db
             .select({ count: sql<number>`count(*)::int` })
@@ -81,16 +121,20 @@ export class ArchiveLendingService {
                     name: users.name,
                     email: users.email,
                 },
+                arsip: { id: arsip.id, noArsip: arsip.nomorBerkas, nomorBerkas: arsip.nomorBerkas, uraianBerkas: arsip.uraianBerkas },
+                storageLocation: { id: storageLocations.id, code: storageLocations.code, name: storageLocations.name },
             })
             .from(archiveLending)
             .leftJoin(users, eq(archiveLending.borrowerId, users.id))
+            .leftJoin(arsip, and(eq(archiveLending.lendingType, 'arsip'), eq(archiveLending.arsipId, arsip.id), unitKerjaId === null ? undefined : eq(arsip.unitKerjaId, unitKerjaId)))
+            .leftJoin(storageLocations, and(eq(archiveLending.lendingType, 'box'), eq(archiveLending.storageLocationId, storageLocations.id), unitKerjaId === null ? undefined : eq(storageLocations.unitKerjaId, unitKerjaId)))
             .where(whereClause)
             .orderBy(desc(archiveLending.createdAt))
             .limit(limit)
             .offset(offset);
 
         return {
-            data: data.map(d => ({ ...d.lending, borrower: d.borrower })),
+            data: data.map(d => ({ ...d.lending, status: d.lending.status !== 'returned' && d.lending.dueDate < today ? 'overdue' : d.lending.status, borrower: d.borrower, arsip: d.arsip, storageLocation: d.storageLocation })),
             pagination: {
                 page,
                 limit,
@@ -100,29 +144,29 @@ export class ArchiveLendingService {
         };
     }
 
-    async findById(id: string, unitKerjaId: RecordUnitScope) {
+    async findById(id: string, unitKerjaId: RecordUnitScope, securityClassifications: string[] = []) {
         const [result] = await db
             .select()
             .from(archiveLending)
-            .where(this.scopedWhere(unitKerjaId, eq(archiveLending.id, id)))
+            .where(this.readableWhere(unitKerjaId, securityClassifications, eq(archiveLending.id, id)))
             .limit(1);
 
         return result || null;
     }
 
-    async getHistoryByArsipId(arsipId: string, unitKerjaId: RecordUnitScope) {
+    async getHistoryByArsipId(arsipId: string, unitKerjaId: RecordUnitScope, securityClassifications: string[] = []) {
         return await db
             .select()
             .from(archiveLending)
-            .where(this.scopedWhere(unitKerjaId, eq(archiveLending.arsipId, arsipId)))
+            .where(this.readableWhere(unitKerjaId, securityClassifications, eq(archiveLending.arsipId, arsipId)))
             .orderBy(desc(archiveLending.borrowDate));
     }
 
-    async getHistoryByLocationId(locationId: string, unitKerjaId: RecordUnitScope) {
+    async getHistoryByLocationId(locationId: string, unitKerjaId: RecordUnitScope, securityClassifications: string[] = []) {
         return await db
             .select()
             .from(archiveLending)
-            .where(this.scopedWhere(unitKerjaId, eq(archiveLending.storageLocationId, locationId)))
+            .where(this.readableWhere(unitKerjaId, securityClassifications, eq(archiveLending.storageLocationId, locationId)))
             .orderBy(desc(archiveLending.borrowDate));
     }
 
@@ -138,14 +182,14 @@ export class ArchiveLendingService {
         approvedBy?: string;
         createdBy?: string;
     }, unitKerjaId: string, auditContext?: CriticalAuditContext) {
-        const borrowDate = new Date().toISOString().split('T')[0];
+        const borrowDate = jakartaDate();
 
         // Validate type-specific IDs
         if (data.lendingType === 'arsip' && !data.arsipId) {
-            throw new Error('arsipId is required for per-arsip lending');
+            throw new ValidationError('arsipId is required for per-arsip lending');
         }
         if (data.lendingType === 'box' && !data.storageLocationId) {
-            throw new Error('storageLocationId is required for per-box lending');
+            throw new ValidationError('storageLocationId is required for per-box lending');
         }
 
         return await db.transaction(async (tx: any) => {
@@ -162,10 +206,10 @@ export class ArchiveLendingService {
                     .for('update');
 
                 if (!existingArsip) {
-                    throw new Error('Arsip not found');
+                    throw new AppError('Arsip not found', 404);
                 }
                 if (existingArsip.lendingStatus === 'borrowed') {
-                    throw new Error('Arsip is already borrowed');
+                    throw new ConflictError('Arsip is already borrowed');
                 }
             }
 
@@ -184,7 +228,7 @@ export class ArchiveLendingService {
                     .for('update');
 
                 if (!box) {
-                    throw new Error('Storage box not found');
+                    throw new AppError('Storage box not found', 404);
                 }
 
                 const [openBoxLending] = await tx
@@ -197,7 +241,7 @@ export class ArchiveLendingService {
                     .limit(1);
 
                 if (openBoxLending) {
-                    throw new Error('Box is already borrowed');
+                    throw new ConflictError('Box is already borrowed');
                 }
             }
 
@@ -265,7 +309,7 @@ export class ArchiveLendingService {
         notes?: string,
         auditContext?: CriticalAuditContext,
     ) {
-        const returnDate = new Date().toISOString().split('T')[0];
+        const returnDate = jakartaDate();
 
         return await db.transaction(async (tx: any) => {
             // Lock and scope the authoritative lending row inside the same
@@ -278,10 +322,10 @@ export class ArchiveLendingService {
                 .for('update');
 
             if (!lending) {
-                throw new Error('Lending record not found');
+                throw new AppError('Lending record not found', 404);
             }
             if (lending.status === 'returned') {
-                throw new Error('Already returned');
+                throw new ConflictError('Already returned');
             }
 
             // Update lending record
@@ -301,7 +345,7 @@ export class ArchiveLendingService {
                 .returning();
 
             if (!updated) {
-                throw new Error('Lending record changed before it could be returned');
+                throw new ConflictError('Lending record changed before it could be returned');
             }
 
             // Update arsip lending status
@@ -365,10 +409,10 @@ export class ArchiveLendingService {
                 .for('update');
 
             if (!lending) {
-                throw new Error('Lending record not found');
+                throw new AppError('Lending record not found', 404);
             }
             if (lending.status === 'returned') {
-                throw new Error('Cannot extend returned item');
+                throw new ConflictError('Cannot extend returned item');
             }
 
             const [updated] = await tx
@@ -386,7 +430,7 @@ export class ArchiveLendingService {
                 .returning();
 
             if (!updated) {
-                throw new Error('Lending record changed before it could be extended');
+                throw new ConflictError('Lending record changed before it could be extended');
             }
 
             if (auditContext) {
@@ -406,8 +450,8 @@ export class ArchiveLendingService {
         });
     }
 
-    async getOverdue(unitKerjaId: RecordUnitScope) {
-        const todayStr = new Date().toISOString().split('T')[0];
+    async getOverdue(unitKerjaId: RecordUnitScope, securityClassifications: string[] = []) {
+        const todayStr = jakartaDate();
 
         const overdue = await db
             .select({
@@ -417,11 +461,16 @@ export class ArchiveLendingService {
                     name: users.name,
                     email: users.email,
                 },
+                arsip: { id: arsip.id, noArsip: arsip.nomorBerkas, nomorBerkas: arsip.nomorBerkas, uraianBerkas: arsip.uraianBerkas },
+                storageLocation: { id: storageLocations.id, code: storageLocations.code, name: storageLocations.name },
             })
             .from(archiveLending)
             .leftJoin(users, eq(archiveLending.borrowerId, users.id))
-            .where(this.scopedWhere(
+            .leftJoin(arsip, and(eq(archiveLending.lendingType, 'arsip'), eq(archiveLending.arsipId, arsip.id), unitKerjaId === null ? undefined : eq(arsip.unitKerjaId, unitKerjaId)))
+            .leftJoin(storageLocations, and(eq(archiveLending.lendingType, 'box'), eq(archiveLending.storageLocationId, storageLocations.id), unitKerjaId === null ? undefined : eq(storageLocations.unitKerjaId, unitKerjaId)))
+            .where(this.readableWhere(
                 unitKerjaId,
+                securityClassifications,
                 inArray(archiveLending.status, ['borrowed', 'overdue']),
                 lt(archiveLending.dueDate, todayStr),
             ))
@@ -433,12 +482,14 @@ export class ArchiveLendingService {
             ...d.lending,
             status: 'overdue' as const,
             borrower: d.borrower,
-            daysOverdue: Math.ceil((new Date().getTime() - new Date(d.lending.dueDate).getTime()) / (1000 * 60 * 60 * 24)),
+            arsip: d.arsip,
+            storageLocation: d.storageLocation,
+            daysOverdue: Math.max(0, Math.round((Date.parse(todayStr) - Date.parse(d.lending.dueDate)) / (1000 * 60 * 60 * 24))),
         }));
     }
 
-    async getStats(unitKerjaId: RecordUnitScope) {
-        const todayStr = new Date().toISOString().split('T')[0];
+    async getStats(unitKerjaId: RecordUnitScope, securityClassifications: string[] = []) {
+        const todayStr = jakartaDate();
 
         const stats = await db
             .select({
@@ -448,7 +499,7 @@ export class ArchiveLendingService {
                 returned: sql<number>`count(*) filter (where ${archiveLending.status} = 'returned')::int`,
             })
             .from(archiveLending)
-            .where(this.scopedWhere(unitKerjaId));
+            .where(this.readableWhere(unitKerjaId, securityClassifications));
 
         return stats[0];
     }

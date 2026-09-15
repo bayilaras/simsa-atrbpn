@@ -8,7 +8,7 @@ import {
     regulatoryRuleSets,
 } from '../db/schema';
 import { eq, and, like, or } from 'drizzle-orm';
-import { ConflictError, NotFoundError } from '../utils/errors';
+import { CatalogNotReadyError, ConflictError, NotFoundError } from '../utils/errors';
 import {
     appendRegulatoryEvents,
     type GovernanceAuditContext,
@@ -47,7 +47,10 @@ async function resolveRuleSet(
     let query = executor.select().from(regulatoryRuleSets).where(and(...conditions)).limit(1);
     if (lock) query = query.for('update');
     const [ruleSet] = await query;
-    if (!ruleSet) throw new NotFoundError(`Versi ${instrumentType}`);
+    if (!ruleSet) {
+        if (!ruleSetId) throw new CatalogNotReadyError();
+        throw new NotFoundError(`Versi ${instrumentType}`);
+    }
     return ruleSet;
 }
 
@@ -94,14 +97,25 @@ async function invalidateGovernanceEvidence(tx: any, ruleSetId: string) {
 }
 
 function presentMasterRuleSet(ruleSet: any) {
-    const {
-        sourceDocumentBlobUrl,
-        sourceDocumentObjectGeneration: _sourceDocumentObjectGeneration,
-        ...visibleRuleSet
-    } = ruleSet;
+    // Catalog rows repeat this summary. Full publication evidence belongs to
+    // the rule-set detail endpoint; repeating its impact report for every item
+    // makes the seeded catalogs exceed the serverless response-size limit.
+    const identifierSemantics = ruleSet.metadata?.identifierSemantics;
     return {
-        ...visibleRuleSet,
-        sourceDocumentStored: Boolean(sourceDocumentBlobUrl),
+        id: ruleSet.id,
+        instrumentType: ruleSet.instrumentType,
+        version: ruleSet.version,
+        name: ruleSet.name,
+        legalBasis: ruleSet.legalBasis,
+        regulationNumber: ruleSet.regulationNumber,
+        status: ruleSet.status,
+        effectiveFrom: ruleSet.effectiveFrom,
+        effectiveTo: ruleSet.effectiveTo,
+        sourceDocumentSha256: ruleSet.sourceDocumentSha256,
+        sourceDocumentStored: Boolean(ruleSet.sourceDocumentBlobUrl),
+        metadata: typeof identifierSemantics === 'string' && identifierSemantics.length <= 1000
+            ? { identifierSemantics }
+            : {},
     };
 }
 

@@ -19,6 +19,9 @@ const mocks = vi.hoisted(() => ({
         getCandidates: vi.fn(),
         findAll: vi.fn(),
         create: vi.fn(),
+        recoverInactiveTransfer: vi.fn(),
+        getExecutionOptions: vi.fn(),
+        uploadExecutionEvidence: vi.fn(),
     },
     print: {
         generateDaftarArsipAktif: vi.fn(),
@@ -53,6 +56,7 @@ vi.mock('../middlewares/validate.middleware.js', () => ({
 
 vi.mock('../middlewares/rate-limiter.middleware.js', () => ({
     sensitiveLimiter: (_req: any, _res: any, next: any) => next(),
+    uploadLimiter: (_req: any, _res: any, next: any) => next(),
 }));
 
 vi.mock('../services/penyusutan.service.js', () => ({
@@ -130,6 +134,36 @@ describe('penyusutan batch unit scoping', () => {
         expect(mocks.service.deleteBatch).toHaveBeenCalledWith(
             'batch-1', 'unit-a', ['biasa'], auditContext,
         );
+    });
+
+    it('passes execution evidence and manual recovery reasons with the assigned unit', async () => {
+        const executionEvidence = { performedAt: '2026-09-11T00:00:00Z' };
+        await request(app).put('/penyusutan/batch-1/status').send({ executionEvidence }).expect(200);
+        expect(mocks.service.updateStatus).toHaveBeenCalledWith('batch-1', expect.objectContaining({ executionEvidence }), 'unit-a', ['biasa']);
+        await request(app).post('/penyusutan/batch-1/recover-transfer?unitKerjaId=unit-b').send({ reason: 'Reviewed historical transfer proof.' }).expect(200);
+        expect(mocks.service.recoverInactiveTransfer).toHaveBeenCalledWith('batch-1', 'Reviewed historical transfer proof.',
+            expect.objectContaining({ id: 'user-1' }), 'unit-a', ['biasa']);
+    });
+
+    it('rejects an unauthorized or forged evidence upload before storage', async () => {
+        const archiveId = '00000000-0000-4000-8000-000000000001';
+        await request(app).post('/penyusutan/batch-1/evidence').field('arsipId', archiveId)
+            .attach('file', Buffer.from('%PDF-1.7 test'), { filename: 'bukti.pdf', contentType: 'application/pdf' }).expect(403);
+        mocks.user.role = 'super_admin';
+        await request(app).post('/penyusutan/batch-1/evidence?unitKerjaId=unit-a').field('arsipId', archiveId)
+            .attach('file', Buffer.from('not a PDF'), { filename: 'bukti.pdf', contentType: 'application/pdf' }).expect(400);
+        expect(mocks.service.uploadExecutionEvidence).not.toHaveBeenCalled();
+    });
+
+    it('uploads signed evidence into quarantine without exposing storage locators', async () => {
+        mocks.user.role = 'super_admin';
+        mocks.service.uploadExecutionEvidence.mockResolvedValue({ id: 'att-1', fileName: 'bukti.pdf',
+            malwareScanStatus: 'not_scanned', integrityStatus: 'baseline_recorded', fileUrl: 'private-secret-locator' });
+        const result = await request(app).post('/penyusutan/batch-1/evidence?unitKerjaId=unit-a')
+            .field('arsipId', '00000000-0000-4000-8000-000000000001')
+            .attach('file', Buffer.from('%PDF-1.7 test'), { filename: 'bukti.pdf', contentType: 'application/pdf' }).expect(201);
+        expect(result.body.data).toMatchObject({ malwareScanStatus: 'not_scanned' });
+        expect(result.body.data).not.toHaveProperty('fileUrl');
     });
 
     it('fails closed before creating a legacy permanent-transfer batch', async () => {
@@ -215,8 +249,8 @@ describe('penyusutan batch unit scoping', () => {
 
     it('fails closed for a non-super user without an assigned unit', async () => {
         Object.assign(mocks.user, { role: 'auditor', unitKerjaId: null });
-        await request(app).get('/penyusutan/batch-1?unitKerjaId=unit-b').expect(400);
-        await request(app).get('/penyusutan/batch-1/print/usul-musnah?unitKerjaId=unit-b').expect(400);
+        await request(app).get('/penyusutan/batch-1?unitKerjaId=unit-b').expect(403);
+        await request(app).get('/penyusutan/batch-1/print/usul-musnah?unitKerjaId=unit-b').expect(403);
 
         expect(mocks.service.findById).not.toHaveBeenCalled();
         expect(mocks.print.generateDaftarUsulMusnah).not.toHaveBeenCalled();

@@ -1,6 +1,7 @@
 import { and, eq, type AnyColumn, type SQL } from 'drizzle-orm';
 import type { AuthRequest } from '../middlewares/auth.middleware.js';
 import { resolveUnitKerjaId } from './resolve-unit-kerja.js';
+import { isNoAccessRole, type Role } from '../config/permissions.js';
 
 /**
  * Scope used by record-by-ID queries.
@@ -16,11 +17,12 @@ export function resolveRecordUnitScope(req: AuthRequest): RecordUnitScope {
     if (req.user?.role === 'super_admin') {
         return null;
     }
+    if (isNoAccessRole((req.user?.role || 'user') as Role)) return NO_RECORD_UNIT_ACCESS;
 
     // Keep this explicit so future changes to the list resolver cannot silently
     // broaden by-ID access for auditors.
-    if (req.user?.role === 'auditor') {
-        return req.user.unitKerjaId || NO_RECORD_UNIT_ACCESS;
+    if (['admin_unit', 'staff', 'auditor'].includes(req.user?.role || '')) {
+        return req.user?.unitKerjaId?.trim() || NO_RECORD_UNIT_ACCESS;
     }
 
     return resolveUnitKerjaId(req)

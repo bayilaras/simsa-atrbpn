@@ -10,6 +10,7 @@ import { getSrikandiConfigurationStatus, srikandiConfig } from '../config/srikan
 import type { OperationalWorker } from '../db/schema/operational-heartbeats.js';
 import { blobStorageService } from './blob-storage.service.js';
 import { createLogger } from '../utils/logger.js';
+import { isCurrentMalwareEngineEvidence } from './malware-scanner.service.js';
 
 const log = createLogger('ReadinessService');
 
@@ -17,6 +18,10 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
     WITH RECURSIVE required_columns(table_name, column_name) AS (
         VALUES
             ('users', 'role'),
+            ('shared_rate_limits', 'bucket'),
+            ('shared_rate_limits', 'key_hash'),
+            ('shared_rate_limits', 'hits'),
+            ('shared_rate_limits', 'reset_at'),
             ('users', 'unit_kerja_id'),
             ('users', 'is_active'),
             ('users', 'jabatan'),
@@ -38,6 +43,24 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
             ('file_attachments', 'uploaded_by'),
             ('file_attachments', 'integrity_status'),
             ('file_attachments', 'malware_scan_status'),
+            ('file_fixity_jobs', 'next_check_at'),
+            ('file_fixity_jobs', 'claim_token'),
+            ('file_fixity_jobs', 'lease_expires_at'),
+            ('file_fixity_jobs', 'last_result'),
+            ('arsip', 'inactive_transferred_at'),
+            ('arsip', 'inactive_transfer_batch_id'),
+            ('penyusutan_arsip', 'execution_evidence'),
+            ('penyusutan_arsip', 'execution_evidence_sha256'),
+            ('arsip_terjaga', 'legacy_reporting'),
+            ('arsip_terjaga_reports', 'sent_evidence'),
+            ('arsip_terjaga_reports', 'received_evidence'),
+            ('arsip_terjaga_reports', 'verified_by'),
+            ('preservasi_track', 'recording_mode'),
+            ('preservasi_track', 'source_attachment_id'),
+            ('preservasi_track', 'output_attachment_id'),
+            ('preservasi_track', 'evidence_attachment_id'),
+            ('preservasi_track', 'evidence_snapshot'),
+            ('preservasi_track', 'evidence_snapshot_sha256'),
             ('client_blob_uploads', 'blob_url'),
             ('client_blob_uploads', 'purpose'),
             ('client_blob_uploads', 'uploaded_by'),
@@ -113,6 +136,20 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
     required_constraints(table_name, constraint_name) AS (
         VALUES
             ('users', 'users_role_unit_mandate_check'),
+            ('shared_rate_limits', 'shared_rate_limits_bucket_check'),
+            ('shared_rate_limits', 'shared_rate_limits_key_check'),
+            ('shared_rate_limits', 'shared_rate_limits_hits_check'),
+            ('file_fixity_jobs', 'file_fixity_jobs_claim_check'),
+            ('file_fixity_jobs', 'file_fixity_jobs_result_check'),
+            ('preservasi_track', 'preservation_activity_evidence_check'),
+            ('arsip', 'arsip_inactive_transfer_pair_check'),
+            ('penyusutan_arsip', 'penyusutan_execution_evidence_pair_check'),
+            ('arsip_terjaga', 'arsip_terjaga_reporting_state_check'),
+            ('arsip_terjaga', 'arsip_terjaga_compliance_state_check'),
+            ('arsip_terjaga_reports', 'arsip_terjaga_reports_sent_check'),
+            ('arsip_terjaga_reports', 'arsip_terjaga_reports_received_check'),
+            ('arsip_terjaga_reports', 'arsip_terjaga_reports_verified_check'),
+            ('arsip_terjaga_reports', 'arsip_terjaga_reports_cancelled_check'),
             ('users', 'users_identity_provider_check'),
             ('users', 'users_firebase_identity_check'),
             ('client_blob_uploads', 'client_blob_uploads_status_check'),
@@ -146,6 +183,27 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
                   AND relation.relname = required.table_name
                   AND constraint_record.conname = required.constraint_name
                   AND constraint_record.convalidated
+            )
+        ) AS ready
+    ),
+    trigger_state AS (
+        SELECT NOT EXISTS (
+            SELECT 1 FROM (VALUES
+                ('penyusutan_arsip', 'penyusutan_execution_evidence_guard'),
+                ('file_attachments', 'disposition_evidence_attachment_guard'),
+                ('preservasi_track', 'preservation_activity_immutable_guard'),
+                ('file_attachments', 'preservation_attachment_guard'),
+                ('file_attachments', 'terjaga_reporting_attachment_guard'),
+                ('arsip_terjaga_reports', 'arsip_terjaga_reports_immutable')
+            ) AS required(table_name, trigger_name)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_trigger AS trigger_record
+                JOIN pg_catalog.pg_class AS relation ON relation.oid = trigger_record.tgrelid
+                JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+                WHERE namespace.nspname = 'public' AND relation.relname = required.table_name
+                  AND trigger_record.tgname = required.trigger_name
+                  AND trigger_record.tgenabled IN ('O','A')
+                  AND NOT trigger_record.tgisinternal
             )
         ) AS ready
     ),
@@ -194,6 +252,16 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
             AND has_table_privilege(current_user, 'public.audit_log', 'INSERT')
             AND NOT has_table_privilege(current_user, 'public.audit_log', 'UPDATE')
             AND NOT has_table_privilege(current_user, 'public.audit_log', 'DELETE')
+            AND has_table_privilege(current_user, 'public.file_fixity_jobs', 'SELECT')
+            AND NOT has_table_privilege(current_user, 'public.file_fixity_jobs', 'INSERT')
+            AND NOT has_table_privilege(current_user, 'public.file_fixity_jobs', 'UPDATE')
+            AND NOT has_table_privilege(current_user, 'public.file_fixity_jobs', 'DELETE')
+            AND has_table_privilege(current_user, 'public.arsip_terjaga_reports', 'SELECT')
+            AND has_table_privilege(current_user, 'public.arsip_terjaga_reports', 'INSERT')
+            AND has_table_privilege(current_user, 'public.arsip_terjaga_reports', 'UPDATE')
+            AND NOT has_table_privilege(current_user, 'public.arsip_terjaga_reports', 'DELETE')
+            AND NOT has_table_privilege(current_user, 'public.preservasi_track', 'UPDATE')
+            AND NOT has_table_privilege(current_user, 'public.preservasi_track', 'DELETE')
             AND NOT has_table_privilege(current_user, 'public.final_object_orphans', 'SELECT')
             AND NOT has_table_privilege(current_user, 'public.final_object_orphans', 'UPDATE')
             AND NOT has_table_privilege(current_user, 'public.final_object_orphans', 'DELETE')
@@ -226,9 +294,10 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
     )
     SELECT column_state.ready
         AND constraint_state.ready
+        AND trigger_state.ready
         AND membership_state.ready
         AND privilege_state.ready AS schema_ready
-    FROM column_state, constraint_state, membership_state, privilege_state
+    FROM column_state, constraint_state, trigger_state, membership_state, privilege_state
 `;
 
 type RuntimeState = 'ready' | 'not_ready' | 'disabled';
@@ -290,7 +359,7 @@ const defaultDependencies: ReadinessDependencies = {
                 }
             }
             // The runtime login intentionally cannot read the migration journal.
-            // Validate the complete migration-0033 schema/constraint contract
+            // Validate the complete migration-0037 schema/constraint contract
             // instead of weakening least privilege for a timestamp probe.
             const result = await client.query<{ schema_ready: boolean }>(
                 DATABASE_SCHEMA_READINESS_SQL,
@@ -406,15 +475,34 @@ export function evaluateWorkerReadiness(
     };
 }
 
+export function evaluateOnDemandMalwareReadiness(rows: HeartbeatRow[], now: number) {
+    const candidates = rows.filter(row => row.worker === 'malware-scan')
+        .sort((left, right) => new Date(right.last_seen_at).getTime() - new Date(left.last_seen_at).getTime());
+    const row = candidates[0];
+    const seen = row ? new Date(row.last_seen_at).getTime() : NaN;
+    const proof = row?.details?.engineEvidence;
+    if (!row || row.status !== 'running' || row.details?.runtime !== 'on-demand'
+        || !Number.isFinite(seen) || seen > now || !isCurrentMalwareEngineEvidence(proof, now)
+        || Date.parse(proof.definitionsVerifiedAt) > seen) {
+        return { required: true, state: 'not_ready' as RuntimeState, reason: 'on_demand_verification_missing_or_expired' };
+    }
+    return { required: true, state: 'ready' as RuntimeState, runtime: 'on-demand',
+        lastSeenAt: new Date(seen).toISOString(), definitionsExpiresAt: proof.definitionsExpiresAt };
+}
+
 export async function collectReadiness(
     dependencies: ReadinessDependencies = defaultDependencies,
 ) {
     const blobConfiguration = getObjectStorageConfigurationStatus();
     const emailConfiguration = getEmailConfigurationStatus();
     const srikandiConfiguration = getSrikandiConfigurationStatus();
-    const firebaseIdentityRequired = buildCloudPlatformConfig().authProvider === 'firebase';
+    const cloud = buildCloudPlatformConfig();
+    const firebaseIdentityRequired = cloud.authProvider === 'firebase';
+    const storageDisabled = cloud.storageProvider === 'disabled';
+    const disabledStorageValid = !storageDisabled || (cloud.validationErrors.length === 0
+        && malwareScanConfig.mode === 'disabled' && !malwareScanConfig.workerEnabled);
 
-    const embeddedScannerRequired = malwareScanConfig.mode === 'clamav'
+    const embeddedScannerRequired = !storageDisabled && malwareScanConfig.mode === 'clamav'
         && malwareScanConfig.workerEnabled
         && malwareScanConfig.worker.runtime === 'embedded';
     let heartbeatRows: HeartbeatRow[] = [];
@@ -442,7 +530,8 @@ export async function collectReadiness(
                 dependencies.probeEmbeddedScanner || defaultDependencies.probeEmbeddedScanner!,
             )
             : Promise.resolve({ ready: true, skipped: true }),
-        isMetadataDemo() ? Promise.resolve({ ready: true, skipped: true }) : timedProbe('worker_heartbeats', async (signal) => {
+        isMetadataDemo() || (storageDisabled && !srikandiConfig.enabled)
+            ? Promise.resolve({ ready: true, skipped: true }) : timedProbe('worker_heartbeats', async (signal) => {
             const rows = await dependencies.readHeartbeats(signal);
             // A non-cooperative injected dependency may settle after timeout;
             // never let that late result mutate the readiness snapshot.
@@ -454,11 +543,13 @@ export async function collectReadiness(
         ? null
         : ('reason' in heartbeatRuntime && heartbeatRuntime.reason) || 'heartbeat query failed';
 
-    const malwareRequired = malwareScanConfig.mode === 'clamav'
+    const malwareRequired = !storageDisabled && malwareScanConfig.mode === 'clamav'
         && malwareScanConfig.workerEnabled
-        && malwareScanConfig.worker.runtime === 'external';
+        && ['external', 'on-demand'].includes(malwareScanConfig.worker.runtime);
     const malwareWorker = heartbeatError && malwareRequired
         ? { required: true, state: 'not_ready' as RuntimeState, reason: 'heartbeat_query_failed' }
+        : malwareRequired && malwareScanConfig.worker.runtime === 'on-demand'
+            ? evaluateOnDemandMalwareReadiness(heartbeatRows, dependencies.now())
         : evaluateWorkerReadiness(
             heartbeatRows,
             'malware-scan',
@@ -476,7 +567,7 @@ export async function collectReadiness(
             dependencies.now(),
         );
 
-    const requiredReady = database.ready
+    const requiredReady = database.ready && disabledStorageValid
         && (!blobConfiguration.required || blobConfiguration.ready)
         && blobStorage.ready
         && firebaseIdentity.ready
@@ -500,6 +591,8 @@ export async function collectReadiness(
                 ? { state: 'disabled', runtime: embeddedScanner }
                 : malwareScanConfig.worker.runtime === 'external'
                     ? { state: 'delegated_to_worker' }
+                    : malwareScanConfig.worker.runtime === 'on-demand'
+                        ? { state: 'on_demand', runtime: malwareWorker }
                     : { state: embeddedScanner.ready ? 'ready' : 'not_ready', runtime: embeddedScanner },
             malwareWorker,
             srikandiWorker,

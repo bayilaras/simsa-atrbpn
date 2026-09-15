@@ -32,8 +32,76 @@ vi.mock('../services/blob-storage.service.js', () => ({
 }));
 
 const { collectReadiness, evaluateWorkerReadiness } = await import('../services/readiness.service.js');
+const { evaluateOnDemandMalwareReadiness } = await import('../services/readiness.service.js');
+
+describe('on-demand native scanner readiness', () => {
+    const now = Date.parse('2026-09-12T10:00:00.000Z');
+    const row = () => ({ worker: 'malware-scan' as const, status: 'running' as const,
+        last_seen_at: new Date(now - 3_600_000), details: { runtime: 'on-demand', engineEvidence: {
+            engineVersion: '1.4.3', definitionsVerifiedAt: new Date(now - 3_600_000).toISOString(),
+            definitionsExpiresAt: new Date(now - 3_600_000 + 86_400_000).toISOString(), definitionsDigest: 'a'.repeat(64),
+            databases: ['main', 'daily', 'bytecode'].map(name => ({ name, version: 1, sha256: 'b'.repeat(64), signatureSha256: 'c'.repeat(64) })),
+        } } });
+    it('accepts real verification until its definition lease expires without a 60-second timer heartbeat', () => {
+        expect(evaluateOnDemandMalwareReadiness([row()], now)).toMatchObject({ required: true, state: 'ready' });
+    });
+    it.each(['missing', 'expired', 'future', 'wrong-runtime', 'newer-failure'])('rejects %s proof without invoking an engine', variant => {
+        const candidate = row();
+        if (variant === 'expired') candidate.details.engineEvidence.definitionsExpiresAt = new Date(now - 1).toISOString();
+        if (variant === 'future') candidate.details.engineEvidence.definitionsVerifiedAt = new Date(now + 1000).toISOString();
+        if (variant === 'wrong-runtime') candidate.details.runtime = 'external';
+        const rows = variant === 'missing' ? [] : [candidate];
+        if (variant === 'newer-failure') rows.push({ ...row(), status: 'degraded' as never, last_seen_at: new Date(now - 1000) });
+        expect(evaluateOnDemandMalwareReadiness(rows, now)).toMatchObject({ state: 'not_ready' });
+    });
+});
 
 describe('collectReadiness', () => {
+    it('requires on-demand verification while never invoking the embedded scanner probe', async () => {
+        const { malwareScanConfig } = await import('../config/env.js');
+        const prior = { mode: malwareScanConfig.mode, workerEnabled: malwareScanConfig.workerEnabled,
+            runtime: malwareScanConfig.worker.runtime, transport: malwareScanConfig.transport };
+        const now = Date.now();
+        const proof = { engineVersion: '1.4.3', definitionsVerifiedAt: new Date(now - 1000).toISOString(),
+            definitionsExpiresAt: new Date(now - 1000 + 86_400_000).toISOString(), definitionsDigest: 'a'.repeat(64),
+            databases: ['main', 'daily', 'bytecode'].map(name => ({ name, version: 1, sha256: 'b'.repeat(64), signatureSha256: 'c'.repeat(64) })) };
+        try {
+            malwareScanConfig.mode = 'clamav'; malwareScanConfig.workerEnabled = true;
+            malwareScanConfig.worker.runtime = 'on-demand'; malwareScanConfig.transport = 'native';
+            vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'vercel-blob');
+            const embedded = vi.fn().mockRejectedValue(new Error('must not initialize native engine'));
+            const dependencies = { probeDatabase: async () => {}, probeBlob: async () => {}, probeEmbeddedScanner: embedded,
+                readHeartbeats: async () => [{ worker: 'malware-scan' as const, status: 'running' as const, last_seen_at: new Date(now), details: { runtime: 'on-demand', engineEvidence: proof } }], now: () => now };
+            const ready = await collectReadiness(dependencies);
+            expect(ready.status).toBe('ready'); expect(ready.dependencies.malwareScanner.state).toBe('on_demand');
+            expect((await collectReadiness({ ...dependencies, readHeartbeats: async () => [] })).status).toBe('not_ready');
+            expect(embedded).not.toHaveBeenCalled();
+        } finally {
+            malwareScanConfig.mode = prior.mode; malwareScanConfig.workerEnabled = prior.workerEnabled;
+            malwareScanConfig.worker.runtime = prior.runtime; malwareScanConfig.transport = prior.transport;
+        }
+    });
+    it('probes only the database for full internal mode with explicitly disabled storage and workers', async () => {
+        vi.stubEnv('SIMSA_APP_MODE', 'full');
+        vi.stubEnv('APP_PROFILE', 'internal');
+        vi.stubEnv('AUTH_PROVIDER', 'better-auth');
+        vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'disabled');
+        blobStatus.mockReturnValue({ provider: 'disabled', required: false, configured: false,
+            ready: false, validationErrors: [] });
+        const probeDatabase = vi.fn().mockResolvedValue(undefined);
+        const probeBlob = vi.fn().mockRejectedValue(new Error('must not access storage'));
+        const probeEmbeddedScanner = vi.fn().mockRejectedValue(new Error('must not access scanner'));
+        const readHeartbeats = vi.fn().mockRejectedValue(new Error('must not poll workers'));
+        const result = await collectReadiness({ probeDatabase, probeBlob, probeEmbeddedScanner,
+            readHeartbeats, now: Date.now });
+        expect(result.status).toBe('ready');
+        expect(probeDatabase).toHaveBeenCalledOnce();
+        expect(probeBlob).not.toHaveBeenCalled();
+        expect(probeEmbeddedScanner).not.toHaveBeenCalled();
+        expect(readHeartbeats).not.toHaveBeenCalled();
+        expect(result.dependencies.blobStorage).toMatchObject({ provider: 'disabled', ready: false,
+            runtime: { ready: true, skipped: true } });
+    });
     afterEach(() => {
         vi.unstubAllEnvs();
     });
@@ -98,7 +166,7 @@ describe('collectReadiness', () => {
         expect(JSON.stringify(result)).not.toContain('permission denied');
     });
 
-    it('requires the complete 0033 least-privilege schema contract in the default database probe', async () => {
+    it('requires the complete 0037 least-privilege schema contract in the default database probe', async () => {
         const databaseQuery = vi.fn().mockResolvedValue({ rows: [{ schema_ready: true }] });
         const databaseRelease = vi.fn();
         const heartbeatRelease = vi.fn();
@@ -117,7 +185,7 @@ describe('collectReadiness', () => {
         const [query, parameters] = databaseQuery.mock.calls[0] as [string, undefined?];
         expect(parameters).toBeUndefined();
         // Runtime identities deliberately cannot read the Drizzle journal.
-        // Readiness proves the resulting 0033 contract from public catalogs.
+        // Readiness proves the resulting 0037 contract from public catalogs.
         expect(query).not.toContain('drizzle.__drizzle_migrations');
         expect(query).toContain('pg_catalog.pg_attribute');
         expect(query).toContain('FROM pg_constraint AS constraint_record');

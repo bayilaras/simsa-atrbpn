@@ -9,6 +9,7 @@ export interface VerifiedRequestIdentity {
     email?: string;
     emailVerified?: boolean;
     name?: string;
+    signInProvider?: string;
     tokenKind: 'better-auth-session' | 'firebase-id-token' | 'firebase-session-cookie';
 }
 
@@ -29,6 +30,7 @@ function fromFirebaseToken(
         email: token.email,
         emailVerified: token.email_verified,
         name: typeof token.name === 'string' ? token.name : undefined,
+        signInProvider: token.firebase?.sign_in_provider,
         tokenKind,
     };
 }

@@ -73,7 +73,7 @@ printf '%s\n' "$final_retention_margin_seconds" | grep -Eq '^[0-9]+$' \
     || fail 'final retention margin must be between five minutes and one day'
 
 [ -d "$compose_directory" ] || fail "Compose directory does not exist: $compose_directory"
-for file in compose.yml compose.gcp.yml preflight-worker-image.sh simsa-blob-reconciler.service simsa-blob-reconciler.timer; do
+for file in compose.yml compose.gcp.yml preflight-worker-image.sh simsa-blob-reconciler.service simsa-blob-reconciler.timer simsa-file-fixity.service simsa-file-fixity.timer; do
     [ -f "$compose_directory/$file" ] || fail "missing reviewed worker bundle file: $file"
 done
 
@@ -204,7 +204,13 @@ install -o root -g root -m 0644 \
 install -o root -g root -m 0644 \
     "$compose_directory/simsa-blob-reconciler.timer" \
     /etc/systemd/system/simsa-blob-reconciler.timer
+install -o root -g root -m 0644 \
+    "$compose_directory/simsa-file-fixity.service" \
+    /etc/systemd/system/simsa-file-fixity.service
+install -o root -g root -m 0644 \
+    "$compose_directory/simsa-file-fixity.timer" \
+    /etc/systemd/system/simsa-file-fixity.timer
 systemctl daemon-reload
-systemctl enable --now simsa-blob-reconciler.timer
+systemctl enable --now simsa-blob-reconciler.timer simsa-file-fixity.timer
 
 compose ps

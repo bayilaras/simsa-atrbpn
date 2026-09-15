@@ -1,4 +1,10 @@
+import { ServiceUnavailableError } from '../utils/errors.js';
+
 export type SimsaAppMode = 'full' | 'metadata-demo';
+
+export function isObjectStorageDisabled(source: NodeJS.ProcessEnv = process.env): boolean {
+    return source.OBJECT_STORAGE_PROVIDER?.trim().toLowerCase() === 'disabled';
+}
 
 export function loadAppMode(source: NodeJS.ProcessEnv = process.env): SimsaAppMode {
     const value = source.SIMSA_APP_MODE?.trim().toLowerCase() || 'full';
@@ -25,19 +31,6 @@ export function getDemoListenHost(source: NodeJS.ProcessEnv = process.env): stri
         || Boolean(source.VERCEL);
     const authProvider = source.AUTH_PROVIDER?.trim().toLowerCase() || 'better-auth';
     return !deployed && authProvider === 'better-auth' ? '127.0.0.1' : undefined;
-}
-
-export function getPublicCapabilities(source: NodeJS.ProcessEnv = process.env) {
-    const demo = isMetadataDemo(source);
-    return {
-        mode: demo ? 'metadata-demo' : 'full',
-        syntheticDataOnly: demo,
-        capabilities: {
-            metadata: true,
-            files: !demo,
-            externalIntegrations: !demo && source.SRIKANDI_ENABLED?.trim().toLowerCase() === 'true',
-        },
-    } as const;
 }
 
 /** The demo is a distinct deployment, never a switch on a live archive DB. */
@@ -89,7 +82,10 @@ export function validateDemoEnvironment(
 }
 
 export function assertDemoStorageUnavailable(source: NodeJS.ProcessEnv = process.env): void {
-    if (isMetadataDemo(source) || source.OBJECT_STORAGE_PROVIDER?.trim().toLowerCase() === 'disabled') {
-        throw new Error('Object storage is disabled in metadata demo');
+    if (isMetadataDemo(source)) {
+        throw new ServiceUnavailableError('Object storage is disabled in metadata demo');
+    }
+    if (isObjectStorageDisabled(source)) {
+        throw new ServiceUnavailableError('Penyimpanan berkas digital dinonaktifkan pada layanan ini. Metadata arsip tetap tersedia.');
     }
 }

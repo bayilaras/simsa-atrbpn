@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 const resultQueue: any[] = [];
 const mocks = vi.hoisted(() => ({
@@ -7,11 +8,13 @@ const mocks = vi.hoisted(() => ({
     update: vi.fn(),
     deleteFileGeneration: vi.fn(),
     transaction: vi.fn(),
+    where: vi.fn(),
 }));
 
 function chain(): any {
     return new Proxy({}, {
         get(_target, property) {
+            if (property === 'where') return (predicate: unknown) => { mocks.where(predicate); return chain(); };
             if (property === 'then') {
                 const value = resultQueue.shift() ?? [];
                 return (resolve: (result: any) => void) => resolve(value);
@@ -52,6 +55,92 @@ describe('ClientBlobUploadService', () => {
             update: mocks.update,
         }));
         mocks.deleteFileGeneration.mockResolvedValue(true);
+        vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'vercel_blob_rw_store_synthetic');
+    });
+    afterEach(() => vi.unstubAllEnvs());
+
+    const readinessNow = new Date('2026-09-13T09:05:15.223Z');
+    const readinessClaim = {
+        blobUrl: 'https://store.private.blob.vercel-storage.com/surat-masuk/receipt-random.pdf',
+        purpose: 'surat_masuk' as const,
+        uploadedBy: '11111111-1111-4111-8111-111111111111',
+    };
+    it('waits before callback commit and becomes ready without claiming or fetching the object', async () => {
+        const service = new ClientBlobUploadService();
+        resultQueue.push([], [{ status: 'pending', expiresAt: new Date(readinessNow.getTime() + 86_400_000) }]);
+        await expect(service.getReadiness(readinessClaim, readinessNow)).resolves.toEqual({ status: 'waiting' });
+        await expect(service.getReadiness(readinessClaim, readinessNow)).resolves.toEqual({
+            status: 'ready', expiresAt: '2026-09-14T09:05:15.223Z',
+        });
+        expect(mocks.insert).not.toHaveBeenCalled();
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(mocks.transaction).not.toHaveBeenCalled();
+        expect(mocks.deleteFileGeneration).not.toHaveBeenCalled();
+    });
+
+    it('queries only the exact normalized URL, purpose, owner and Vercel provider without exposing another lease', async () => {
+        resultQueue.push([]);
+        const claim = { ...readinessClaim, blobUrl: 'blob:' + readinessClaim.blobUrl };
+        await expect(new ClientBlobUploadService().getReadiness(claim, readinessNow)).resolves.toEqual({ status: 'waiting' });
+        const query = new PgDialect().sqlToQuery(mocks.where.mock.calls[0][0]);
+        expect(query.params).toEqual([readinessClaim.blobUrl, readinessClaim.purpose, readinessClaim.uploadedBy, 'vercel_blob']);
+        for (const field of ['blob_url', 'purpose', 'uploaded_by', 'provider']) expect(query.sql).toContain(`"client_blob_uploads"."${field}" =`);
+    });
+
+    it('accepts a canonical URL-encoded filename containing spaces and parentheses without changing its immutable URL', async () => {
+        const blobUrl = 'https://store.private.blob.vercel-storage.com/surat-masuk/58%20UND%20(26%20Agustus%202026)_TTE-random.pdf';
+        resultQueue.push([{ status: 'pending', expiresAt: new Date(readinessNow.getTime() + 86_400_000) }]);
+        await expect(new ClientBlobUploadService().getReadiness({ ...readinessClaim, blobUrl }, readinessNow))
+            .resolves.toMatchObject({ status: 'ready' });
+        expect(new PgDialect().sqlToQuery(mocks.where.mock.calls[0][0]).params[0]).toBe(blobUrl);
+    });
+
+    it.each(['authorized', 'claimed', 'cleanup_started', 'release_cleanup', 'deleted'])(
+        'does not report an owned %s lease as ready', async status => {
+            resultQueue.push([{ status, expiresAt: new Date(readinessNow.getTime() + 86_400_000) }]);
+            await expect(new ClientBlobUploadService().getReadiness(readinessClaim, readinessNow)).resolves.toEqual({ status: 'unavailable' });
+        },
+    );
+
+    it.each([[-1, 'unavailable'], [0, 'unavailable'], [1, 'ready']] as const)(
+        'enforces the letter preflight margin at boundary offset %i ms', async (offset, status) => {
+            resultQueue.push([{ status: 'pending', expiresAt: new Date(readinessNow.getTime() + 35_000 + offset) }]);
+            await expect(new ClientBlobUploadService().getReadiness(readinessClaim, readinessNow)).resolves.toMatchObject({ status });
+        },
+    );
+
+    it('reserves the existing ten-minute regulatory PDF preflight window', async () => {
+        const claim = { ...readinessClaim, purpose: 'regulatory_source' as const,
+            blobUrl: 'https://store.private.blob.vercel-storage.com/regulatory-sources/22222222-2222-4222-8222-222222222222/source.pdf' };
+        resultQueue.push([{ status: 'pending', expiresAt: new Date(readinessNow.getTime() + 600_000) }],
+            [{ status: 'pending', expiresAt: new Date(readinessNow.getTime() + 600_001) }]);
+        await expect(new ClientBlobUploadService().getReadiness(claim, readinessNow)).resolves.toEqual({ status: 'unavailable' });
+        await expect(new ClientBlobUploadService().getReadiness(claim, readinessNow)).resolves.toMatchObject({ status: 'ready' });
+    });
+
+    it.each([
+        'https://other.private.blob.vercel-storage.com/surat-masuk/file.pdf',
+        'https://store.public.blob.vercel-storage.com/surat-masuk/file.pdf',
+        'http://store.private.blob.vercel-storage.com/surat-masuk/file.pdf',
+        'https://store.private.blob.vercel-storage.com:444/surat-masuk/file.pdf',
+        'https://name@store.private.blob.vercel-storage.com/surat-masuk/file.pdf',
+        'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf?token=private',
+        'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf#fragment',
+        'https://store.private.blob.vercel-storage.com/surat-keluar/file.pdf',
+        'https://store.private.blob.vercel-storage.com/surat-masuk/file.txt',
+        'https://store.private.blob.vercel-storage.com/surat-masuk/%00file.pdf',
+    ])('rejects an untrusted or cross-purpose readiness locator before any query: %s', async blobUrl => {
+        await expect(new ClientBlobUploadService().getReadiness({ ...readinessClaim, blobUrl }, readinessNow)).rejects.toMatchObject({ statusCode: 400 });
+        expect(mocks.select).not.toHaveBeenCalled();
+    });
+
+    it('fails closed for missing storage configuration and database failures', async () => {
+        vi.stubEnv('BLOB_READ_WRITE_TOKEN', '');
+        await expect(new ClientBlobUploadService().getReadiness(readinessClaim, readinessNow)).rejects.toThrow(/not configured/);
+        expect(mocks.select).not.toHaveBeenCalled();
+        vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'vercel_blob_rw_store_synthetic');
+        mocks.select.mockImplementationOnce(() => { throw new Error('database offline'); });
+        await expect(new ClientBlobUploadService().getReadiness(readinessClaim, readinessNow)).rejects.toThrow('database offline');
     });
 
     it('records only a callback-proven canonical private Blob locator', async () => {

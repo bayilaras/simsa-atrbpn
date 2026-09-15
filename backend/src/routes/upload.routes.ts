@@ -3,12 +3,18 @@ import multer from 'multer';
 import { fileAttachmentService } from '../services/file-attachment.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
-import { uploadLimiter } from '../middlewares/rate-limiter.middleware';
-import { createLogger } from '../utils/logger';
+import { uploadLimiter, sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
+import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
+import { publicErrorResponse, publicErrorStatus } from '../utils/public-error.js';
 import { uuidParamValidator } from '../middlewares/validate.middleware';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
+import { ARCHIVE_UPLOAD_MAX_BYTES, assertPdfUpload, isPdfUploadMetadata } from '../config/archive-upload.js';
+import { AppError, ValidationError } from '../utils/errors.js';
+import { arsipAttachmentUploadService } from '../services/arsip-attachment-upload.service.js';
+import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
+import { isLetterAttachmentType, requiresAttachmentInspection } from '../services/file-release-policy.js';
 
-const log = createLogger('UploadRoutes');
+
 
 const router = Router();
 
@@ -41,59 +47,16 @@ function publicAttachment(attachment: any) {
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB limit
+        fileSize: ARCHIVE_UPLOAD_MAX_BYTES,
     },
     fileFilter: (req, file, cb) => {
-        // Allow common document and image types
-        const allowedTypes = [
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'image/jpeg',
-            'image/png',
-            'image/gif',
-        ];
-
-        if (allowedTypes.includes(file.mimetype)) {
+        if (isPdfUploadMetadata(file.originalname, file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type. Only PDF, Word, Excel, and images are allowed.'));
+            cb(new ValidationError('Hanya PDF yang diperbolehkan (maks. 10 MiB).'));
         }
     },
 });
-
-// Magic-byte family each accepted MIME type must resolve to. Legacy Office formats
-// share the OLE2 container and the OOXML formats share the ZIP container, so they
-// can only be distinguished down to the family level.
-type ContentFamily = 'pdf' | 'ole' | 'ooxml' | 'jpeg' | 'png' | 'gif';
-
-const EXPECTED_CONTENT_FAMILY: Record<string, ContentFamily> = {
-    'application/pdf': 'pdf',
-    'application/msword': 'ole',
-    'application/vnd.ms-excel': 'ole',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'ooxml',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'ooxml',
-    'image/jpeg': 'jpeg',
-    'image/png': 'png',
-    'image/gif': 'gif',
-};
-
-const OLE_SIGNATURE = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
-const ZIP_SIGNATURE = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-
-function detectContentFamily(buffer: Buffer): ContentFamily | null {
-    if (buffer.length < 8) return null;
-    if (buffer.subarray(0, 4).toString('latin1') === '%PDF') return 'pdf';
-    if (buffer.subarray(0, 8).equals(OLE_SIGNATURE)) return 'ole';
-    if (buffer.subarray(0, 4).equals(ZIP_SIGNATURE)) return 'ooxml';
-    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'jpeg';
-    if (buffer.subarray(0, 8).equals(PNG_SIGNATURE)) return 'png';
-    if (buffer.subarray(0, 4).toString('latin1') === 'GIF8') return 'gif';
-    return null;
-}
 
 // multer's fileFilter can only see the client-supplied Content-Type, so the stored
 // bytes are checked here before anything is persisted.
@@ -102,8 +65,9 @@ function verifyFileContent(req: Request, res: Response, next: NextFunction) {
         return next();
     }
 
-    const expected = EXPECTED_CONTENT_FAMILY[req.file.mimetype];
-    if (!expected || detectContentFamily(req.file.buffer) !== expected) {
+    try {
+        assertPdfUpload(req.file.originalname, req.file.mimetype, req.file.buffer.length, req.file.buffer);
+    } catch {
         return res.status(400).json({
             error: 'File content does not match the declared file type.',
         });
@@ -117,18 +81,40 @@ router.post(
     '/:suratType/:suratId',
     authMiddleware,
     canWriteMiddleware(),
+    (req: Request, res: Response, next: NextFunction) => {
+        if (req.params.suratType === 'arsip' && !req.is('application/json')
+            && buildCloudPlatformConfig().storageProvider === 'vercel-blob') {
+            return res.status(400).json({
+                error: 'Gunakan unggah langsung dari formulir lampiran arsip, lalu registrasikan berkas.',
+                code: 'DIRECT_ARCHIVE_UPLOAD_REQUIRED',
+            });
+        }
+        next();
+    },
     upload.single('file'),
     verifyFileContent,
-    async (req: AuthRequest, res: Response) => {
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
         try {
             const suratType = req.params.suratType as string;
             const suratId = req.params.suratId as string;
-            const { folderId } = req.body;
+            const { folderId } = req.body || {};
 
             // Validate surat type
             const entityType = toRecordEntityType(suratType);
             if (!entityType) {
                 return res.status(400).json({ error: 'Invalid surat type' });
+            }
+
+            if (req.is('application/json')) {
+                if (entityType !== 'arsip' || req.file) throw new ValidationError('Registrasi langsung ini hanya tersedia untuk lampiran arsip.');
+                const result = await arsipAttachmentUploadService.finalize(suratId, req.body, {
+                    userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
+                });
+                scheduleMalwareScanWake();
+                return res.status(result.reused ? 200 : 201).json({
+                    success: true, data: publicAttachment(result.attachment), hash: result.attachment.sha256,
+                    reused: result.reused, message: 'Lampiran tercatat dalam karantina. Tunggu pemeriksaan malware dan integritas.',
+                });
             }
 
             const access = await recordAccessService.check(req.user, entityType, suratId);
@@ -154,21 +140,55 @@ router.post(
                 ipAddress: req.ip,
             });
 
+            if (requiresAttachmentInspection(entityType, attachment.fileUrl || attachment.driveFileId)) scheduleMalwareScanWake();
             res.status(201).json({
                 success: true,
                 data: publicAttachment(attachment),
                 hash: (attachment as any).hash, // Return hash to client
                 message: 'File uploaded successfully',
             });
-        } catch (error: any) {
-            log.error({ err: error }, 'Upload error:');
-            res.status(500).json({ error: 'Gagal menyimpan lampiran', code: 'ATTACHMENT_UPLOAD_FAILED' });
+        } catch (error) {
+            if (error instanceof AppError && 'code' in error && error.code === 'UPLOAD_COMPLETION_PENDING') {
+                return res.status(publicErrorStatus(error)).json({
+                    ...publicErrorResponse(error, res.locals.requestId), code: 'UPLOAD_COMPLETION_PENDING',
+                });
+            }
+            next(error);
         }
     }
 );
 
+// Recovery wakes the durable queue, never a client-selected job or locator.
+router.post('/:suratType/:suratId/scan', authMiddleware, canWriteMiddleware(), sensitiveLimiter,
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+        try {
+            const entityType = toRecordEntityType(req.params.suratType as string);
+            if (!entityType || Object.keys(req.query).length || (req.body != null
+                && (typeof req.body !== 'object' || Array.isArray(req.body) || Object.keys(req.body).length))) {
+                return res.status(400).json({ success: false, code: 'INVALID_SCAN_RECOVERY_REQUEST' });
+            }
+            const access = await recordAccessService.check(req.user, entityType, req.params.suratId as string);
+            if (!access.exists || !access.allowed) return res.status(404).json({ error: 'Record not found' });
+            if (isLetterAttachmentType(entityType)) {
+                const attachments = await fileAttachmentService.findBySurat(req.params.suratId as string, req.params.suratType as string);
+                if (attachments.length > 0 && attachments.every(attachment =>
+                    !requiresAttachmentInspection(entityType, attachment.fileUrl || attachment.driveFileId))) {
+                    return res.status(200).json({ success: true, status: 'not_required',
+                        message: 'Lampiran surat dapat dibuka langsung setelah tersimpan.' });
+                }
+            }
+            if (!scheduleMalwareScanWake()) return res.status(503).json({ success: false,
+                code: 'MALWARE_SCAN_WAKE_UNAVAILABLE', message: 'Pemindaian belum dapat dijadwalkan. Berkas tetap menunggu pemeriksaan.' });
+            return res.status(202).json({ success: true, status: 'pending',
+                message: 'Pemindaian dijadwalkan. Status berkas akan diperbarui setelah pemeriksaan selesai.' });
+        } catch {
+            return res.status(503).json({ success: false, code: 'MALWARE_SCAN_WAKE_UNAVAILABLE',
+                message: 'Pemindaian belum dapat dijadwalkan. Berkas tetap menunggu pemeriksaan.' });
+        }
+    });
+
 // Get attachments for a surat
-router.get('/:suratType/:suratId', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/:suratType/:suratId', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const suratType = req.params.suratType as string;
         const suratId = req.params.suratId as string;
@@ -186,10 +206,7 @@ router.get('/:suratType/:suratId', authMiddleware, async (req: AuthRequest, res:
             success: true,
             data: attachments.map(publicAttachment),
         });
-    } catch (error: any) {
-        log.error({ err: error }, 'Get attachments error:');
-        res.status(500).json({ error: error.message || 'Failed to get attachments' });
-    }
+    } catch (error) { next(error); }
 });
 
 // Direct bitstream deletion is forbidden. Disposal must preserve approvals,

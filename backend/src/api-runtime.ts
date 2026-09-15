@@ -2,7 +2,7 @@ import app from './app';
 import { env, malwareScanConfig } from './config/env';
 import { logger } from './utils/logger';
 import { malwareScanWorker } from './services/malware-scan.worker.js';
-import { getDemoListenHost, isMetadataDemo } from './config/demo.js';
+import { getDemoListenHost, isMetadataDemo, isObjectStorageDisabled } from './config/demo.js';
 
 // index.ts validates configuration before dynamically importing this module.
 // Keep the listener, worker startup, and shutdown hooks behind that boundary.
@@ -28,6 +28,8 @@ const server = app.listen({
 // quarantine because only an actual clean verdict changes release state.
 if (isMetadataDemo()) {
     logger.info('Metadata demo serves no file uploads and starts no background workers');
+} else if (isObjectStorageDisabled()) {
+    logger.info('Digital storage is disabled; the full internal API starts no file background workers');
 } else if (malwareScanConfig.worker.runtime === 'embedded') {
     malwareScanWorker.start();
 } else {

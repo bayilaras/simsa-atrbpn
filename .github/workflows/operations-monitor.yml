@@ -1,0 +1,34 @@
+name: SIMSA Operations Monitor
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simsa-operations-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    name: Operational Health
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    environment: production-monitor
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Verify monitor contract
+        run: node --test scripts/check-operations.test.mjs
+      - name: Check deployed operational state
+        env:
+          OPERATIONS_MONITOR_TOKEN: ${{ secrets.OPERATIONS_MONITOR_TOKEN }}
+        run: node scripts/check-operations.mjs

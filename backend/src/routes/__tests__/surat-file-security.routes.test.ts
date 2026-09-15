@@ -9,6 +9,7 @@ import {
 } from '../../utils/errors.js';
 
 const mocks = vi.hoisted(() => ({
+    role: 'admin_sesditjen',
     suratKeluar: {
         findAll: vi.fn(),
         findById: vi.fn(),
@@ -56,7 +57,7 @@ vi.mock('../../middlewares/auth.middleware', () => ({
         req.user = {
             id: '550e8400-e29b-41d4-a716-446655440001',
             email: 'admin@example.test',
-            role: 'admin_sesditjen',
+            role: mocks.role,
             unitKerjaId: 'ditjen',
         };
         next();
@@ -69,6 +70,7 @@ vi.mock('../../middlewares/role.middleware', () => ({
 
 vi.mock('../../middlewares/rate-limiter.middleware', () => ({
     uploadLimiter: (_req: any, _res: any, next: any) => next(),
+    sensitiveLimiter: (_req: any, _res: any, next: any) => next(),
 }));
 
 vi.mock('../../middlewares/validate.middleware', () => ({
@@ -93,11 +95,9 @@ vi.mock('../../services/file-attachment.service', () => ({
     fileAttachmentService: mocks.attachment,
 }));
 
-vi.mock('../../services/record-access.service', () => ({
+vi.mock('../../services/record-access.service', async importOriginal => ({
+    ...await importOriginal<typeof import('../../services/record-access.service')>(),
     recordAccessService: mocks.recordAccess,
-    allowedSecurityClassifications: () => ['biasa', 'terbatas'],
-    isAllowedForClassification: (_user: any, value?: string | null) =>
-        !['rahasia', 'sangat_rahasia'].includes((value || 'biasa').toLowerCase()),
 }));
 
 vi.mock('../../services/blob-storage.service', () => ({
@@ -149,8 +149,31 @@ const validSuratMasuk = {
 };
 
 describe('surat and attachment route security policy', () => {
+    it('accepts exactly 10 MiB multipart and rejects one byte more before storage', async () => {
+        mocks.attachment.create.mockResolvedValue({ id: 'attachment-boundary', hash: 'hash' });
+        const exact = Buffer.alloc(10_485_760); exact.write('%PDF-1.7');
+        const url = '/api/upload/masuk/550e8400-e29b-41d4-a716-446655440010';
+        const accepted = await request(app).post(url).attach('file', exact, { filename: 'boundary.pdf', contentType: 'application/pdf' });
+        expect(accepted.status).toBe(201);
+        expect(mocks.attachment.create).toHaveBeenCalledOnce();
+        mocks.attachment.create.mockClear();
+        const rejected = await request(app).post(url).attach('file', Buffer.concat([exact, Buffer.from([0])]), { filename: 'boundary.pdf', contentType: 'application/pdf' });
+        expect(rejected.status).toBe(400);
+        expect(mocks.attachment.create).not.toHaveBeenCalled();
+    });
+    it.each([['picture.png', 'image/png', '\x89PNG\r\n\x1a\n'], ['fake.pdf', 'application/pdf', 'not a pdf'], ['truncated.pdf', 'application/pdf', '%PDF']])(
+        'rejects non-PDF multipart %s before storage', async (filename, contentType, content) => {
+            for (const url of ['/api/surat-masuk', '/api/surat-keluar', '/api/upload/masuk/550e8400-e29b-41d4-a716-446655440010']) {
+                const response = await request(app).post(url).attach('file', Buffer.from(content), { filename, contentType });
+                expect(response.status).toBe(400);
+            }
+            expect(mocks.blobUpload).not.toHaveBeenCalled();
+            expect(mocks.attachment.create).not.toHaveBeenCalled();
+        },
+    );
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.role = 'admin_sesditjen';
         mocks.audit.mockResolvedValue(undefined);
         mocks.blobDelete.mockResolvedValue(true);
         mocks.blobDeleteGeneration.mockResolvedValue(true);
@@ -163,6 +186,28 @@ describe('surat and attachment route security policy', () => {
             grantId: '550e8400-e29b-41d4-a716-446655440099',
             grantAccessMode: 'manage',
         });
+    });
+
+    it.each(['admin_dirjen', 'admin_sesditjen'])('rejects outgoing secret classification beyond %s authority before storage or create', async role => {
+        mocks.role = role;
+        const response = await request(app).post('/api/surat-keluar')
+            .field({ ...validSuratKeluar, klasifikasiKeamanan: 'sangat_rahasia' })
+            .attach('file', Buffer.from('%PDF-1.7\nclassification test'), { filename: 'test.pdf', contentType: 'application/pdf' });
+        expect(response.status).toBe(403);
+        expect(mocks.blobUpload).not.toHaveBeenCalled();
+        expect(mocks.suratKeluar.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a super administrator to assign a recognized secret classification on creation', async () => {
+        mocks.role = 'super_admin';
+        mocks.suratKeluar.create.mockImplementation(async (data: any) => ({ id: '550e8400-e29b-41d4-a716-446655440010', ...data }));
+        const response = await request(app).post('/api/surat-keluar')
+            .send({ ...validSuratKeluar, klasifikasiKeamanan: 'sangat_rahasia' });
+        expect(response.status).toBe(201);
+        expect(mocks.suratKeluar.create).toHaveBeenCalledWith(
+            expect.objectContaining({ klasifikasiKeamanan: 'sangat_rahasia', unitKerjaId: 'ditjen' }),
+            expect.any(Object), undefined, undefined,
+        );
     });
 
     it('validates surat keluar against DB fields and forces the authenticated unit', async () => {

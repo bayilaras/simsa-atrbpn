@@ -117,7 +117,7 @@ describe('ArchiveRuleAssignmentService', () => {
         service = new ArchiveRuleAssignmentService();
     });
 
-    it('resolves only active, selectable Ministry classification and active selectable JRA', async () => {
+    it('resolves active selectable classification by exact identity and active selectable JRA', async () => {
         const { executor, calls } = createExecutor(
             [classification],
             [retention],
@@ -137,9 +137,9 @@ describe('ArchiveRuleAssignmentService', () => {
         expect(classificationQuery.sql).toContain('"regulatory_rule_sets"."instrument_type"');
         expect(classificationQuery.sql).toContain('"regulatory_rule_sets"."status"');
         expect(classificationQuery.sql).toContain('"klasifikasi_arsip"."is_selectable"');
-        expect(classificationQuery.sql).toContain('"klasifikasi_arsip"."organizational_scope"');
+        expect(classificationQuery.sql).not.toContain('"klasifikasi_arsip"."organizational_scope"');
         expect(classificationQuery.params).toEqual(expect.arrayContaining([
-            'klasifikasi', 'active', true, 'kementerian', 10,
+            'klasifikasi', 'active', true, 10,
         ]));
 
         const retentionQuery = dialect.sqlToQuery(whereCalls[1].args[0]);
@@ -167,6 +167,52 @@ describe('ArchiveRuleAssignmentService', () => {
         expect(result.cache.retentionDecisionHash).toMatch(/^[a-f0-9]{64}$/);
     });
 
+    it.each([
+        { name: 'no active mappings', mappings: [] },
+        { name: 'only another classification prefix', mappings: [{ ...validMapping, klasifikasiPrefix: 'PTX' }] },
+    ])('accepts validated active rules with $name and records the absent mapping honestly', async ({ mappings }) => {
+        const { executor, calls } = createExecutor([classification], [retention], mappings);
+        const result = await service.resolveActive(executor, { klasifikasiItemId: 10, jraItemId: 20 });
+
+        expect(result.snapshot.mapping).toBeNull();
+        expect(result.cache).toMatchObject({
+            klasifikasiArsipId: 10, klasifikasiRuleSetId: 'classification-set',
+            jraItemId: 20, jraRuleSetId: 'retention-set', ruleProvenanceStatus: 'verified',
+        });
+        expect(result.snapshotSha256).toBe(canonicalSha256(result.snapshot));
+        expect(result.cache.klasifikasiSnapshotHash).toBe(canonicalSha256(result.snapshot.classification));
+        expect(result.cache.retentionDecisionHash).toBe(canonicalSha256(result.snapshot.retention));
+        expect(result.snapshot.classification.contentHash).toBe(classification.item.contentHash);
+        expect(result.snapshot.retention.contentHash).toBe(retention.item.contentHash);
+        const mappingQuery = new PgDialect().sqlToQuery(calls.filter(call => call.method === 'where')[2].args[0]);
+        expect(mappingQuery.params).toEqual(['classification-set', 'retention-set', true]);
+
+        const evidence = {
+            archiveId: 'archive-1', currentSnapshotId: 'snapshot-1', snapshotId: 'snapshot-1',
+            snapshotArsipId: 'archive-1', snapshotStatus: 'verified', snapshot: result.snapshot,
+            snapshotSha256: result.snapshotSha256, classificationItemId: 10,
+            classificationRuleSetId: 'classification-set', classificationSnapshotHash: result.cache.klasifikasiSnapshotHash,
+        };
+        expect(service.readClassificationSnapshot(evidence)).toEqual({ title: 'Pengadaan Tanah', type: 'substantif' });
+        expect(service.readClassificationSnapshot({ ...evidence, snapshot: { ...result.snapshot, mapping: validMapping } })).toBeNull();
+        expect(service.readClassificationSnapshot({ ...evidence, snapshotArsipId: 'another-archive' })).toBeNull();
+
+        const snapshotWrite = createExecutor([{ id: 'snapshot-1' }], [{ id: 'archive-1' }]);
+        await service.attachInitialSnapshot(snapshotWrite.executor, 'archive-1', result, 'actor-1');
+        expect(snapshotWrite.calls.find(call => call.method === 'values')?.args[0]).toMatchObject({
+            arsipId: 'archive-1', klasifikasiItemId: 10, jraItemId: 20,
+            snapshot: { mapping: null }, snapshotSha256: result.snapshotSha256,
+        });
+    });
+
+    it.each(['classification', 'retention'])('still rejects an unavailable active %s before considering absent mappings', async missing => {
+        const { executor, calls } = missing === 'classification'
+            ? createExecutor([]) : createExecutor([classification], []);
+        await expect(service.resolveActive(executor, { klasifikasiItemId: 10, jraItemId: 20 }))
+            .rejects.toThrow(/tidak ditemukan pada versi aktif/i);
+        expect(calls.filter(call => call.method === 'select')).toHaveLength(missing === 'classification' ? 1 : 2);
+    });
+
     it('rejects an ambiguous official classification code and requires item identity', async () => {
         const duplicate = {
             ...classification,
@@ -185,6 +231,27 @@ describe('ArchiveRuleAssignmentService', () => {
 
         expect(calls.filter(call => call.method === 'select')).toHaveLength(1);
         expect(calls.find(call => call.method === 'limit')?.args[0]).toBe(2);
+        expect(new PgDialect().sqlToQuery(calls.find(call => call.method === 'where')!.args[0]).params)
+            .toContain('kementerian');
+    });
+
+    it.each(['kanwil', 'kantah'])('accepts an exact selected official %s item without changing code-only scope', async organizationalScope => {
+        const selected = { ...classification, item: { ...classification.item, organizationalScope } };
+        const { executor, calls } = createExecutor([selected]);
+        expect(await service.resolveClassification(executor, { klasifikasiItemId: 10 })).toEqual(selected);
+        expect(new PgDialect().sqlToQuery(calls.find(call => call.method === 'where')!.args[0]).sql)
+            .not.toContain('organizational_scope');
+    });
+
+    it('reads a verified classification label before a retention trigger exists, while rejecting altered snapshots', () => {
+        const snapshot = { classification: { itemId: 10, ruleSetId: 'classification-set', title: 'Pengadaan Tanah', type: 'substantif' } };
+        const evidence = { archiveId: 'archive', currentSnapshotId: 'snapshot', snapshotId: 'snapshot', snapshotArsipId: 'archive',
+            snapshotStatus: 'verified', snapshot, snapshotSha256: canonicalSha256(snapshot), classificationItemId: 10,
+            classificationRuleSetId: 'classification-set', classificationSnapshotHash: canonicalSha256(snapshot.classification) };
+        expect(service.readClassificationSnapshot(evidence)).toEqual({ title: 'Pengadaan Tanah', type: 'substantif' });
+        expect(service.readClassificationSnapshot({ ...evidence, snapshot: { classification: { ...snapshot.classification, title: 'Changed' } } })).toBeNull();
+        expect(service.readClassificationSnapshot({ ...evidence, classificationItemId: 11 })).toBeNull();
+        expect(service.readClassificationSnapshot({ ...evidence, snapshotArsipId: 'other-archive' })).toBeNull();
     });
 
     it('rejects a classification and JRA pair outside the versioned thematic mapping', async () => {
