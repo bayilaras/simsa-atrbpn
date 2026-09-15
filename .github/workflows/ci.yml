@@ -37,6 +37,14 @@ jobs:
         run: npm ci
         working-directory: backend
 
+      - name: Test operations monitoring, recovery, and integrity contracts
+        run: >-
+          node --test
+          scripts/check-operations.test.mjs
+          scripts/operations-recovery.test.mjs
+          scripts/operations-recovery-documents.test.mjs
+          scripts/check-file-integrity.test.mjs
+
       - name: Install frontend dependencies
         run: npm ci
         working-directory: frontend
