@@ -17,6 +17,8 @@ import fileAttachmentService, {
     type RegisterSuratAttachmentData,
 } from './file-attachment.service.js';
 import { settingsService } from './settings.service.js';
+import { hasSuratRuleSelection, hydrateSuratRuleSelections, prepareSuratRuleSelection } from './surat-rule-selection.service';
+import { assertImportConnected, DuplicateSuratImportError, suratImportIdentity, type SuratImportOptions } from './surat-import-identity.js';
 import {
     resolveSuratCalendar,
     type SuratNumberContext,
@@ -121,7 +123,7 @@ export class SuratMasukService {
             .offset(offset);
 
         return {
-            data: data || [],
+            data: await hydrateSuratRuleSelections(db, data || [], 'masuk'),
             pagination: {
                 page,
                 limit,
@@ -148,7 +150,11 @@ export class SuratMasukService {
             .where(and(...conditions))
             .limit(1);
 
-        return result || null;
+        return result ? (await hydrateSuratRuleSelections(db, [result], 'masuk'))[0] : null;
+    }
+
+    async createImported(data: NewSuratMasuk, auditContext: CriticalAuditContext, options: SuratImportOptions = {}) {
+        return this.create(data, auditContext, undefined, undefined, options);
     }
 
     async create(
@@ -156,12 +162,14 @@ export class SuratMasukService {
         auditContext?: CriticalAuditContext,
         clientBlobClaim?: ClaimClientBlobUpload,
         attachment?: RegisterSuratAttachmentData,
+        importOptions?: SuratImportOptions,
     ) {
         const calendar = resolveSuratCalendar({
             tahun: data.tahun,
             tanggalSurat: data.tanggalSurat,
         });
         const tahun = calendar.tahun;
+        const importIdentity = importOptions ? suratImportIdentity('masuk', { ...data, tahun }) : undefined;
         if (
             attachment
             && (
@@ -186,6 +194,12 @@ export class SuratMasukService {
                 // The unit template row is the numbering mutex. Unlike locking
                 // the last surat row, this also serializes an empty sequence.
                 const templates = await settingsService.lockSuratTemplates(tx, data.unitKerjaId);
+                if (importIdentity) {
+                    assertImportConnected(importOptions);
+                    const [existing] = await tx.select({ id: suratMasuk.id }).from(suratMasuk).where(importIdentity).limit(1);
+                    assertImportConnected(importOptions);
+                    if (existing) throw new DuplicateSuratImportError();
+                }
                 const [lastSurat] = await tx
                     .select({ noUrut: suratMasuk.noUrut })
                     .from(suratMasuk)
@@ -212,9 +226,11 @@ export class SuratMasukService {
                 // fallback for numberless registrations/imports.
                 const nomorSurat = data.nomorSurat?.trim() || generatedNomorSurat;
 
+                assertImportConnected(importOptions);
+                const ruleSelection = await prepareSuratRuleSelection(tx, 'masuk', data);
                 const [inserted] = await tx
                     .insert(suratMasuk)
-                    .values({ ...data, nomorSurat, noUrut, tahun })
+                    .values({ ...data, ...ruleSelection, nomorSurat, noUrut, tahun })
                     .returning();
 
                 if (clientBlobClaim) {
@@ -245,6 +261,8 @@ export class SuratMasukService {
                                 nomorSurat: inserted.nomorSurat,
                                 perihal: inserted.perihal,
                                 unitKerjaId: inserted.unitKerjaId,
+                                klasifikasiItemId: inserted.klasifikasiItemId,
+                                jraItemId: inserted.jraItemId,
                             },
                         },
                     }, tx);
@@ -260,7 +278,7 @@ export class SuratMasukService {
                     createdAt: inserted.createdAt,
                 }, auditContext?.userId || data.createdBy || undefined);
 
-                return inserted;
+                return (await hydrateSuratRuleSelections(tx, [inserted], 'masuk'))[0];
             });
 
             return result;
@@ -311,9 +329,14 @@ export class SuratMasukService {
             : undefined;
 
         return db.transaction(async (tx) => {
+            const current = hasSuratRuleSelection(data)
+                ? (await tx.select().from(suratMasuk).where(and(...conditions)).limit(1).for('update'))[0]
+                : undefined;
+            if (hasSuratRuleSelection(data) && !current) return undefined;
+            const ruleSelection = await prepareSuratRuleSelection(tx, 'masuk', data, current);
             const [result] = await tx
                 .update(suratMasuk)
-                .set({ ...data, updatedAt: new Date() })
+                .set({ ...data, ...ruleSelection, updatedAt: new Date() })
                 .where(and(...conditions))
                 .returning();
 
@@ -352,10 +375,11 @@ export class SuratMasukService {
                             hasFile: Boolean(result.filePath),
                         },
                         fields: Object.keys(data),
+                        ruleSelection,
                     },
                 }, tx);
             }
-            return result;
+            return result ? (await hydrateSuratRuleSelections(tx, [result], 'masuk'))[0] : result;
         });
     }
 

@@ -32,6 +32,10 @@ export interface ClaimClientBlobUpload {
     uploadedBy: string;
 }
 
+export type ClientBlobUploadReadiness =
+    | { status: 'waiting' | 'unavailable' }
+    | { status: 'ready'; expiresAt: string };
+
 export interface AuthorizedGcsUpload {
     id: string;
     blobUrl: string;
@@ -149,6 +153,51 @@ function assertCallbackOwnedLocator(input: CompletedClientBlobUpload): string {
 }
 
 export class ClientBlobUploadService {
+    /** Callback receipt is independent of the browser SDK upload response. */
+    async getReadiness(
+        input: ClaimClientBlobUpload,
+        now = new Date(),
+    ): Promise<ClientBlobUploadReadiness> {
+        const blobUrl = normalizeBlobLocator(input.blobUrl);
+        let parsed: URL;
+        let pathname: string;
+        try {
+            parsed = new URL(blobUrl);
+            pathname = decodeURIComponent(parsed.pathname.slice(1));
+        } catch {
+            throw new ValidationError('Locator unggahan tidak valid.');
+        }
+        // The installed Blob SDK uses this token component as its store ID.
+        // No network request or unsigned callback reconstruction is performed.
+        const storeId = process.env.BLOB_READ_WRITE_TOKEN?.trim().split('_')[3];
+        if (!storeId || !/^[a-z0-9]+$/i.test(storeId)) {
+            throw new Error('Private Blob storage is not configured for upload status');
+        }
+        if (blobUrl.length > 2048 || /[\u0000-\u0020\u007f]/.test(blobUrl)
+            || parsed.hostname !== `${storeId.toLowerCase()}.private.blob.vercel-storage.com`
+            || parsed.port || !/\.pdf$/i.test(pathname)
+            || /[\u0000-\u001f\u007f]/.test(pathname)
+            || !['surat_masuk', 'surat_keluar', 'regulatory_source', 'arsip'].includes(input.purpose)) {
+            throw new ValidationError('Locator unggahan tidak sesuai dengan penyimpanan atau tujuan unggahan.');
+        }
+        assertCallbackOwnedLocator({ ...input, blobUrl, pathname });
+        const [lease] = await db.select({ status: clientBlobUploads.status, expiresAt: clientBlobUploads.expiresAt })
+            .from(clientBlobUploads).where(and(
+                eq(clientBlobUploads.blobUrl, blobUrl),
+                eq(clientBlobUploads.purpose, input.purpose),
+                eq(clientBlobUploads.uploadedBy, input.uploadedBy),
+                eq(clientBlobUploads.provider, 'vercel_blob'),
+            )).limit(1);
+        // Never disclose another user's lease, even to a super administrator.
+        if (!lease) return { status: 'waiting' };
+        // Match the existing claim preflights, including the longer PDF source check.
+        const minimumRemainingMs = input.purpose === 'regulatory_source' ? 10 * 60 * 1000 : 35_000;
+        if (lease.status !== 'pending' || lease.expiresAt.getTime() <= now.getTime() + minimumRemainingMs) {
+            return { status: 'unavailable' };
+        }
+        return { status: 'ready', expiresAt: lease.expiresAt.toISOString() };
+    }
+
     async authorizeGcsUpload(
         input: AuthorizedGcsUpload,
         now = new Date(),

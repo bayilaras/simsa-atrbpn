@@ -3,6 +3,7 @@ import { suratDistributions, NewSuratDistribution, SuratDistribution, suratMasuk
 import { eq, and, desc, sql, or, notInArray, inArray } from 'drizzle-orm';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
+import { AppError, ValidationError } from '../utils/errors.js';
 
 export interface DistributionFilters {
     unitKerjaId?: string;
@@ -47,7 +48,7 @@ export class DistributionService {
             ))
             .limit(1);
         if (!sourceSurat) {
-            throw new Error('Surat not found');
+            throw new AppError('Data not found', 404);
         }
 
         // Check if already distributed to this target
@@ -61,7 +62,7 @@ export class DistributionService {
             .limit(1);
 
         if (existing) {
-            throw new Error('Surat sudah didistribusikan ke unit ini');
+            throw new ValidationError('Surat sudah didistribusikan ke unit ini');
         }
 
         const [result] = await tx
@@ -267,10 +268,10 @@ export class DistributionService {
             .limit(1);
 
         if (!distribution) {
-            throw new Error('Distribution not found');
+            throw new AppError('Distribution not found', 404);
         }
         if (distribution.status !== 'sent') {
-            throw new Error('Distribution sudah diterima atau diproses');
+            throw new ValidationError('Distribution sudah diterima atau diproses');
         }
 
         const [result] = await tx
@@ -289,7 +290,7 @@ export class DistributionService {
             .returning();
 
         if (!result) {
-            throw new Error('Distribution sudah diterima atau diproses');
+            throw new ValidationError('Distribution sudah diterima atau diproses');
         }
 
         if (auditContext) {
@@ -322,10 +323,10 @@ export class DistributionService {
             .limit(1);
 
         if (!distribution) {
-            throw new Error('Distribution not found');
+            throw new AppError('Distribution not found', 404);
         }
         if (distribution.status !== 'received') {
-            throw new Error('Distribution hanya dapat diproses setelah diterima');
+            throw new ValidationError('Distribution hanya dapat diproses setelah diterima');
         }
 
         const [result] = await tx
@@ -344,7 +345,7 @@ export class DistributionService {
             .returning();
 
         if (!result) {
-            throw new Error('Distribution hanya dapat diproses setelah diterima');
+            throw new ValidationError('Distribution hanya dapat diproses setelah diterima');
         }
 
         if (auditContext) {
@@ -378,10 +379,10 @@ export class DistributionService {
             .limit(1);
 
         if (!distribution) {
-            throw new Error('Distribution not found');
+            throw new AppError('Distribution not found', 404);
         }
         if (distribution.status === 'processed' || distribution.status === 'rejected') {
-            throw new Error('Distribution tidak bisa ditolak');
+            throw new ValidationError('Distribution tidak bisa ditolak');
         }
 
         const [result] = await tx
@@ -399,7 +400,7 @@ export class DistributionService {
             .returning();
 
         if (!result) {
-            throw new Error('Distribution tidak bisa ditolak');
+            throw new ValidationError('Distribution tidak bisa ditolak');
         }
 
         if (auditContext) {

@@ -32,14 +32,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/context/AuthContext'
 
-const ALL_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']
-const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen']
-const STAFF_AND_ADMIN = [...ADMIN_ROLES, 'staff']
+const ALL_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']
+const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']
+const STAFF_AND_ADMIN = ADMIN_ROLES
 const ADMIN_AND_AUDITOR = [...ADMIN_ROLES, 'auditor']
 
 const ROLE_LABELS = {
     semua: 'Semua peran',
     super_admin: 'Super Admin',
+    admin_unit: 'Admin Unit Kerja',
     admin_dirjen: 'Admin Dirjen',
     admin_sesditjen: 'Admin Sesditjen',
     staff: 'Staf',
@@ -71,7 +72,7 @@ const GUIDE_SECTIONS = [
             'Untuk inventaris arsip yang sudah ada, admin membuka Arsip Aktif → Arsip Surat Masuk atau Arsip Surat Keluar lalu Impor CSV. Isi tanggal sumber yang benar; impor tidak otomatis memverifikasi klasifikasi atau JRA.',
             'Saat mengarsipkan surat yang selesai diproses, isi klasifikasi/JRA yang sesuai serta No. Filing Cabinet, No. Laci, dan No. Folder pada dialog Arsipkan. Pada CSV arsip, catatan lokasi dapat dimasukkan ke Keterangan; kolom lokasi terstruktur belum dipetakan oleh impor.',
             'Temukan kembali arsip melalui nomor atau uraian, filter unit/tahun, dan halaman detail. Cocokkan catatan lokasi dengan berkas fisik sebelum menyerahkannya kepada peminjam.',
-            'Pencatatan inventaris tidak memerlukan konektor API SRIKANDI atau lampiran digital. Gunakan instrumen ATR/BPN yang berlaku; kewajiban instansi menerapkan SRIKANDI tetap terpisah dari konektor SIMSA. Lampiran hanya tersedia setelah penyimpanan privat dan pemeriksaan file siap.',
+            'SIMSA mengelola surat dan arsip secara mandiri; koneksi atau akun SRIKANDI tidak diperlukan. Inventaris dapat dicatat tanpa lampiran digital. Gunakan instrumen ATR/BPN yang berlaku; tambahkan lampiran setelah penyimpanan privat dan pemeriksaan file siap.',
         ],
         action: { label: 'Buka Arsip Aktif', to: '/arsip/masuk' },
     },
@@ -153,11 +154,16 @@ const GUIDE_SECTIONS = [
         steps: [
             'Cari klasifikasi berdasarkan fungsi atau kegiatan yang menghasilkan arsip.',
             'Cocokkan uraian JRA; jangan menentukan retensi hanya dari judul dokumen.',
-            'Gunakan Versi Aturan untuk menyiapkan perubahan sumber klasifikasi/JRA melalui alur pemeriksaan.',
-            'Aktifkan versi baru hanya setelah sumber, periode berlaku, dan hasil pemeriksaan lengkap.',
+            'Admin Unit Kerja memilih klasifikasi dan JRA aktif saat mencatat surat atau arsip. Katalog berlaku untuk seluruh unit.',
+            'Super Admin menyiapkan PDF resmi, manifest, dan analisis dampak, lalu memvalidasi dan langsung mengaktifkan versi baru.',
             'Jangan mengubah histori aturan lama untuk menyesuaikan aturan baru.',
         ],
-        action: { label: 'Buka Jadwal Retensi', to: '/master/jra' },
+        actionByRole: {
+            super_admin: { label: 'Kelola Katalog Aturan', to: '/master/regulatory-rules' },
+            admin_unit: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
+            admin_dirjen: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
+            admin_sesditjen: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
+        },
     },
     {
         id: 'tata-kelola-retensi',
@@ -226,6 +232,7 @@ const GUIDE_SECTIONS = [
         actionByRole: {
             super_admin: { label: 'Buka Audit Log', to: '/audit-log' },
             auditor: { label: 'Buka Tata Kelola Retensi', to: '/retention-governance' },
+            admin_unit: { label: 'Buka Laporan', to: '/laporan' },
             admin_dirjen: { label: 'Buka Laporan', to: '/laporan' },
             admin_sesditjen: { label: 'Buka Laporan', to: '/laporan' },
             staff: { label: 'Buka Laporan', to: '/laporan' },
@@ -235,34 +242,16 @@ const GUIDE_SECTIONS = [
 
 const ROLE_FLOWS = [
     {
-        role: 'staff',
-        title: 'Staf',
-        description: 'Membaca, mencari, dan memeriksa surat/arsip sesuai unit kerja; perubahan data dilakukan admin yang berwenang.',
-        flow: ['Cari rekod', 'Periksa metadata', 'Buka detail arsip', 'Gunakan laporan/permintaan akses'],
-    },
-    {
-        role: 'admin_dirjen',
-        title: 'Admin Ditjen',
-        description: 'Mengelola proses operasional arsip dan surat pada lingkup kewenangannya.',
-        flow: ['Validasi metadata', 'Klasifikasikan dan berkas-kan', 'Kelola retensi', 'Dokumentasikan penyusutan/layanan'],
-    },
-    {
-        role: 'admin_sesditjen',
-        title: 'Admin Sesditjen',
-        description: 'Mengelola proses operasional dengan prinsip pemeriksaan dan jejak bukti yang sama.',
-        flow: ['Validasi metadata', 'Klasifikasikan dan berkas-kan', 'Kelola retensi', 'Dokumentasikan penyusutan/layanan'],
-    },
-    {
         role: 'super_admin',
         title: 'Super Admin',
-        description: 'Menjaga akun, konfigurasi, aturan, dan pengawasan teknis aplikasi.',
-        flow: ['Provisikan pengguna', 'Kelola konfigurasi/aturan', 'Pisahkan pengusul dan pemeriksa', 'Pantau audit dan anomali'],
+        description: 'Mengelola seluruh unit, pengguna, konfigurasi, katalog aturan, dan pengawasan aplikasi.',
+        flow: ['Kelola pengguna dan unit', 'Siapkan sumber dan manifest aturan', 'Validasi dan aktifkan katalog', 'Pantau seluruh unit dan audit'],
     },
     {
-        role: 'auditor',
-        title: 'Auditor',
-        description: 'Menelaah bukti, histori aturan, keputusan, dan aktivitas sesuai akses baca/pemeriksaan.',
-        flow: ['Tentukan ruang lingkup', 'Filter data dan audit', 'Periksa bukti serta pelaku', 'Catat temuan di luar perubahan rekod sumber'],
+        role: 'admin_unit',
+        title: 'Admin Unit Kerja',
+        description: 'Mengelola surat, arsip, retensi, penyimpanan, template, dan layanan pada unit yang ditetapkan Super Admin.',
+        flow: ['Kelola surat unit', 'Klasifikasikan dan berkas-kan', 'Kelola retensi dan layanan', 'Pantau laporan unit'],
     },
 ]
 
@@ -371,7 +360,7 @@ export default function UserGuide() {
                 <AlertTitle>Panduan ini mengikuti kewenangan pengguna</AlertTitle>
                 <AlertDescription>
                     {user ? (
-                        <>Anda masuk sebagai <strong>{ROLE_LABELS[currentRole] || 'Pengguna'}</strong>. Menu dan tindakan di aplikasi dapat berbeda menurut peran, unit kerja, dan status proses.</>
+                        <>Anda masuk sebagai <strong>{ROLE_LABELS[currentRole] || 'Pengguna'}</strong>. Dua peran utama adalah Super Admin dan Admin Unit Kerja. Akun lama tetap mengikuti akses yang sudah diberikan sampai ditetapkan ulang oleh Super Admin.</>
                     ) : (
                         <>Panduan ini dapat dipelajari sebelum login dan tidak memuat data operasional. Pilih peran untuk melihat alur yang relevan.</>
                     )}
@@ -408,7 +397,7 @@ export default function UserGuide() {
                                 className="flex min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                                 <option value="semua">Semua peran</option>
-                                {ALL_ROLES.map((role) => (
+                                {['super_admin', 'admin_unit', ...(!['super_admin', 'admin_unit'].includes(currentRole) && ALL_ROLES.includes(currentRole) ? [currentRole] : [])].map((role) => (
                                     <option key={role} value={role}>{ROLE_LABELS[role]}</option>
                                 ))}
                             </select>
@@ -512,7 +501,7 @@ export default function UserGuide() {
                                         </ol>
                                         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 print:hidden">
                                             <div className="flex flex-wrap gap-1.5" aria-label="Peran yang dapat mengakses fitur">
-                                                {section.roles.map((role) => (
+                                                {section.roles.filter(role => ['super_admin', 'admin_unit'].includes(role)).map((role) => (
                                                     <Badge key={role} variant="secondary">{ROLE_LABELS[role]}</Badge>
                                                 ))}
                                             </div>

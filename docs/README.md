@@ -6,7 +6,7 @@ Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar t
 
 **Pengguna baru:** ikuti [Mulai Inventaris Internal](../docs-site/docs/mulai-inventaris-internal.md) untuk membuka aplikasi Windows, memakai akun per unit, mencatat surat, mengimpor CSV, dan menemukan arsip fisik.
 
-> **Profil aplikasi:** SIMSA membantu pekerjaan internal; pencantuman pedoman ATR/BPN dan ANRI bukan sertifikasi kepatuhan. Inventaris metadata tidak menunggu konektor API SRIKANDI atau unggahan digital. Kewajiban instansi menerapkan SRIKANDI tetap terpisah dari konektor SIMSA. Gunakan instrumen instansi yang sudah berlaku. Baca [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md) untuk batas fungsi dan kontrolnya.
+> **Profil aplikasi:** SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi prasyarat fitur inti dan tetap nonaktif pada penerapan saat ini. Mulai dengan metadata dan arsip fisik; fitur digital digunakan setelah penyimpanan serta pemeriksaan berkas siap. Gunakan instrumen instansi yang berlaku. Baca [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md) untuk konfigurasi, kontrol, dan batas klaim produk.
 
 ---
 

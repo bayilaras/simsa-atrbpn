@@ -14,6 +14,7 @@ import {
     type ClientBlobPurpose,
 } from '../services/client-blob-upload.service.js';
 import { arsipAttachmentUploadService } from '../services/arsip-attachment-upload.service.js';
+import { ValidationError } from '../utils/errors.js';
 
 const log = createLogger('ClientUploadRoutes');
 
@@ -88,6 +89,29 @@ function limitTokenGeneration(req: AuthRequest, res: Response, next: NextFunctio
     if ((req.body as HandleUploadBody)?.type === 'blob.upload-completed') return next();
     return uploadLimiter(req, res, next);
 }
+
+// Read-only receipt check: uploading bytes does not imply the signed callback
+// has committed its owner-bound lease yet. Never claim or fetch the object here.
+router.get('/status', authMiddleware as any, writeGuard, async (req: AuthRequest, res, next) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    try {
+        const { blobUrl, purpose } = req.query;
+        if (typeof blobUrl !== 'string' || !blobUrl || blobUrl.length > 2048
+            || typeof purpose !== 'string'
+            || !['surat_masuk', 'surat_keluar', 'regulatory_source', 'arsip'].includes(purpose)) {
+            throw new ValidationError('Locator dan tujuan unggahan diperlukan.');
+        }
+        if (purpose === 'regulatory_source' && req.user?.role !== 'super_admin') {
+            return res.status(403).json({ error: 'Regulatory source upload requires super_admin.' });
+        }
+        const status = await clientBlobUploadService.getReadiness({
+            blobUrl, purpose: purpose as ClientBlobPurpose, uploadedBy: req.user!.id,
+        });
+        return res.json(status);
+    } catch (error) {
+        return next(error);
+    }
+});
 
 // A scheduler can call this authenticated endpoint. Deletion is limited to
 // expired callback-proven leases atomically reserved by the reconciler.

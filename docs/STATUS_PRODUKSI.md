@@ -6,12 +6,16 @@ Diperiksa pada 12 September 2026. Target adalah 1–3 pengguna aplikasi arsip in
 
 Alamat aplikasi: **https://simsa-frontend.vercel.app**. Backend: **https://simsa-backend.vercel.app**. Keduanya berjalan di cloud dan tidak bergantung pada komputer operator.
 
+**Pembaruan database 12 September 2026 pukul 19.18–19.20 WIB:** migrasi `0039_shared_rate_limits` berhasil diterapkan, sehingga journal Neon berisi 40 migrasi yang hash-nya cocok. Izin API/backup/worker, probe CRUD counter yang di-rollback, dan SQL readiness source terbaru lulus. Empat endpoint health/readiness/capability cloud tetap HTTP 200. Versi aplikasi Vercel belum dideploy ulang. [Bukti migrasi dan backup](MIGRASI_0039_2026-09-12.md).
+
+SIMSA digunakan sebagai aplikasi mandiri. Integrasi SRIKANDI tidak diperlukan; profil cloud terverifikasi `internal` dengan SRIKANDI nonaktif. SRIKANDI menjadi acuan kemampuan dan pengalaman penggunaan, bukan prasyarat koneksi atau klaim kesetaraan yang telah dibuktikan.
+
 ## Kondisi yang sudah diperiksa
 
 | Bagian | Hasil |
 | --- | --- |
 | Vercel Production | Frontend `Aqd25jwGpT7N3c4tJP1yzEpG4J5s` (sumber `2b686a9`) dan backend `CWnJz48FByoFLTcQtf62bZTTkX6n` (sumber `087c8fe`) aktif pada domain utama. Backend dideploy ulang untuk mengaktifkan Google OAuth. Pemeriksaan terakhir 12 September 2026 pukul 12.21 WIB: health/readiness dan manifest HTTP 200, mode `full`, Better Auth, storage privat serta API same-origin. Bundle publik memuat penanganan error Google yang baru. |
-| Neon baru | PostgreSQL 18, **39 migrasi** sudah diterapkan dan diverifikasi melalui akun runtime. Administrator awal serta login antivirus `simsa_worker` terpisah sudah dibuat; verifikasi langsung worker dan API lulus. Grant tabel tidak diperluas. Data lama belum diimpor. |
+| Neon | PostgreSQL 18, **40 migrasi**: journal aktual, timestamp, dan hash diverifikasi melalui akun migrasi pada 12 September 2026 pukul 19.18 WIB. `0039` menambah tabel counter dengan DML API dan pembacaan backup; izin data bisnis tetap mengikuti kebijakan versi. Verifikasi API dan login antivirus `simsa_worker` lulus. Tidak melakukan seed atau impor data dalam migrasi ini. |
 | Kompatibilitas Vercel baru | Mode `full`, API same-origin, Better Auth dan Vercel Blob privat aktif. Masalah interoperabilitas ESM Node 24 serta lokasi aset native sudah diperbaiki dan diverifikasi pada fungsi Production. Isolasi Preview tetap berlaku. |
 | Pemeriksaan login cloud | **13/13 pemeriksaan lulus**: origin, cookie Secure/HttpOnly, penolakan akses anonim, login, akses unit, logout dan penolakan sesi lama. Login browser serta pencatatan surat juga berhasil. |
 | Login Google Better Auth | `GOOGLE_OAUTH_ENABLED=true` dipulihkan pada backend Production memakai kredensial Google yang sudah tersedia. `/api/capabilities` HTTP 200 menerbitkan `provider=better-auth`, `googleSignIn=true`; tombol muncul setelah reload. Klik browser berhasil membuka pemilihan akun Google dengan callback `https://simsa-frontend.vercel.app/api/auth/callback/google`. Sesi Google pada browser belum masuk; penyelesaian callback sampai sesi SIMSA terbentuk menunggu pengguna masuk sendiri. Akun SIMSA harus sudah diprovisikan dengan email Google yang sama. |
@@ -21,7 +25,7 @@ Alamat aplikasi: **https://simsa-frontend.vercel.app**. Backend: **https://simsa
 | Integrasi antivirus | Worker aplikasi berhasil memindai PDF uji menggunakan ClamAV 1.5.4. Kueri audit diperbaiki pada `f54f80d`; supervisor menunggu pengukuran memori yang sedang berjalan pada `087c8fe`. Lampiran dilepas melalui worker, tanpa perubahan status manual atau perluasan grant. Verifikasi audit baca-saja **8/8 lulus**: pemindaian ketiga menghasilkan `clean`, integritas `verified`, dan bukti tiga definisi bertanda tangan dengan digest cocok, berlaku sampai 13 September 2026 pukul 10.35 WIB. Definisi kedaluwarsa diperbarui saat worker berjalan; kegagalan tetap mengarantina berkas. |
 | Aktivasi Vercel | Operator telah menyetujui dan empat kredensial sudah dipasang khusus **Production `simsa-backend`**. Store baru **`simsa-arsip-private`**, privat, Singapura, terhubung hanya ke backend Production dengan prefix `SIMSA_PRIVATE_BLOB`. Store lama tidak diubah. |
 | Render | Percobaan membuat layanan Free meminta verifikasi kartu. Layanan belum dibuat dan paket berbayar tidak diaktifkan. |
-| Cadangan Neon nyata | Snapshot terbaru **12 September 2026 pukul 01.05 WIB**, setelah 39 migrasi dan verifikasi akun worker, berhasil dienkripsi. Snapshot lama tetap disimpan. Bundle serta kunci terpisah disimpan privat pada workstation. `restore_verified=false`: pemulihan sumber Neon belum terbukti; salinan di luar workstation belum tersedia. |
+| Cadangan Neon nyata | Snapshot pra-upgrade **12 September 2026 pukul 19.12.15 WIB** (39 migrasi) dan pasca-upgrade **19.20.03 WIB** (40 migrasi) berhasil dienkripsi memakai helper yang cocok. Snapshot lama tetap tersedia. Bundle serta kunci terpisah disimpan privat di luar repository pada workstation. `restore_verified=false`: pemulihan sumber Neon belum terbukti; salinan di luar workstation belum tersedia. |
 
 ## Pekerjaan yang masih diperlukan untuk arsip lengkap
 
@@ -30,11 +34,11 @@ Alamat aplikasi: **https://simsa-frontend.vercel.app**. Backend: **https://simsa
 3. **Cadangan di luar workstation dan uji pemulihan berkala.** Cadangan Neon terenkripsi sudah dibuat, tetapi pemulihan sumber sebenarnya pada Linux, jadwal cloud dan salinan di luar workstation belum tersedia. Backup database tidak mencakup isi berkas object storage.
 4. **Data operasional dan penerimaan pengguna.** Klasifikasi serta JRA pada database baru perlu sumber yang benar dan aktivasi melalui alur aplikasi. Hasil smoke administrator tidak membuktikan seluruh peran atau seluruh alur retensi; pengelola perlu mengisi referensi dan memberikan akun sesuai kewenangan pengguna.
 
-Integrasi resmi SRIKANDI belum diaktifkan atau dinyatakan terbukti. Aktivasi aplikasi tidak sama dengan pengesahan instrumen instansi atau bukti kesesuaian menyeluruh dengan ANRI.
+Integrasi resmi SRIKANDI tidak diperlukan sesuai arahan pengguna dan tetap nonaktif. Aktivasi aplikasi tidak sama dengan pengesahan instrumen instansi atau bukti kesesuaian menyeluruh dengan ANRI.
 
 ## Penggunaan awal dan data referensi
 
-Database baru berisi satu administrator, dua unit kerja dan satu surat/lampiran sintetis bertanda `UJI-PRODUCTION`; data lama belum diimpor. Belum ada klasifikasi atau JRA aktif. Pengguna dapat mulai mencatat surat dan mengunggah PDF maksimum 10 MiB. Berkas tersedia setelah pemindaian dan integritas lulus. Registrasi menjadi arsip memerlukan klasifikasi dan retensi yang sudah aktif.
+Pada pemeriksaan migrasi 12 September 2026 pukul 19.18 WIB, database berisi 4 pengguna, 1 surat masuk, 0 surat keluar, 0 arsip, dan 1 lampiran; jumlah ini sama sebelum dan sesudah migrasi. Pemeriksaan migrasi tidak meninjau ulang status aktivasi seluruh instrumen. Pengguna dapat mencatat surat dan mengunggah PDF maksimum 10 MiB. Berkas tersedia setelah pemindaian dan integritas lulus. Registrasi menjadi arsip memerlukan klasifikasi dan retensi yang sudah aktif.
 
 Draf instrumen awal tersedia untuk diperiksa melalui aplikasi, tetapi tidak otomatis disahkan sebagai instrumen instansi. Alur aktivasi memisahkan pembuat/pengaju, pemeriksa, dan pemberi persetujuan menjadi **tiga akun berwenang yang berbeda**. Ini sesuai batas atas tiga pengguna yang diminta; jangan memakai satu akun bersama atau membuat persetujuan fiktif untuk melewati pemisahan peran. PDF sumber instrumen juga tetap dikarantina sampai hasil pemindaian dan pemeriksaan integritas lulus.
 

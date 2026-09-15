@@ -7,20 +7,24 @@ const state = vi.hoisted(() => ({
         id: '11111111-1111-4111-8111-111111111111',
         email: 'publisher@example.go.id',
         role: 'super_admin',
+        unitKerjaId: null as string | null,
     },
     tokenOptions: null as Record<string, any> | null,
     assertUploadAllowed: vi.fn(),
     assertArsipUploadAllowed: vi.fn(),
     recordCompletedUpload: vi.fn(),
     cleanupExpired: vi.fn(),
+    getReadiness: vi.fn(),
+    authenticated: true,
     authCalls: 0,
     limiterCalls: 0,
     rejectLimiter: false,
 }));
 
 vi.mock('../middlewares/auth.middleware.js', () => ({
-    authMiddleware: (req: any, _res: any, next: any) => {
+    authMiddleware: (req: any, res: any, next: any) => {
         state.authCalls += 1;
+        if (!state.authenticated) return res.status(401).json({ error: 'Unauthorized' });
         req.user = { ...state.user };
         next();
     },
@@ -34,6 +38,7 @@ vi.mock('../services/client-blob-upload.service.js', () => ({
     clientBlobUploadService: {
         recordCompletedUpload: state.recordCompletedUpload,
         cleanupExpired: state.cleanupExpired,
+        getReadiness: state.getReadiness,
     },
 }));
 
@@ -50,7 +55,7 @@ vi.mock('../middlewares/rate-limiter.middleware.js', () => ({
 }));
 
 vi.mock('../services/regulatory-rule-set.service.js', () => ({
-    REGULATORY_SOURCE_MAX_BYTES: 10 * 1024 * 1024,
+    REGULATORY_SOURCE_MAX_BYTES: 50 * 1024 * 1024,
     default: { assertSourceDocumentUploadAllowed: state.assertUploadAllowed },
 }));
 
@@ -74,6 +79,9 @@ const { default: router } = await import('../routes/client-upload.routes');
 const app = express();
 app.use(express.json());
 app.use('/client-upload', router);
+app.use((error: any, _req: any, res: any, _next: any) => {
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Internal server error' });
+});
 
 const ruleSetId = '22222222-2222-4222-8222-222222222222';
 
@@ -127,6 +135,8 @@ describe('rule-set-bound direct Blob upload tokens', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         state.user.role = 'super_admin';
+        state.user.unitKerjaId = null;
+        state.authenticated = true;
         state.tokenOptions = null;
         state.authCalls = 0;
         state.limiterCalls = 0;
@@ -135,6 +145,53 @@ describe('rule-set-bound direct Blob upload tokens', () => {
         state.assertArsipUploadAllowed.mockResolvedValue(undefined);
         state.recordCompletedUpload.mockResolvedValue({ id: 'lease-1' });
         state.cleanupExpired.mockResolvedValue({ inspected: 0, deleted: 0, failed: 0 });
+        state.getReadiness.mockResolvedValue({ status: 'waiting' });
+    });
+
+    it.each(['waiting', 'ready', 'unavailable'])('returns uncached owner-bound %s readiness without mutation or upload token consumption', async status => {
+        const result = status === 'ready' ? { status, expiresAt: '2026-09-14T00:00:00.000Z' } : { status };
+        state.getReadiness.mockResolvedValue(result);
+        const blobUrl = 'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf';
+        const response = await request(app).get('/client-upload/status').query({ blobUrl, purpose: 'surat_masuk' }).expect(200);
+        expect(response.body).toEqual(result);
+        expect(response.headers['cache-control']).toBe('private, no-store');
+        expect(state.getReadiness).toHaveBeenCalledWith({ blobUrl, purpose: 'surat_masuk', uploadedBy: state.user.id });
+        expect(state.authCalls).toBe(1);
+        expect(state.limiterCalls).toBe(0);
+        expect(state.recordCompletedUpload).not.toHaveBeenCalled();
+        expect(state.cleanupExpired).not.toHaveBeenCalled();
+    });
+
+    it.each(['surat_masuk', 'surat_keluar', 'regulatory_source', 'arsip'])('supports the existing %s upload purpose', async purpose => {
+        await request(app).get('/client-upload/status').query({ blobUrl: 'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf', purpose }).expect(200);
+        expect(state.getReadiness).toHaveBeenCalledWith(expect.objectContaining({ purpose, uploadedBy: state.user.id }));
+    });
+
+    it('denies unauthenticated, readonly, unknown and unassigned roles before readiness queries', async () => {
+        const query = { blobUrl: 'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf', purpose: 'surat_masuk' };
+        state.authenticated = false;
+        await request(app).get('/client-upload/status').query(query).expect(401);
+        state.authenticated = true;
+        for (const role of ['staff', 'auditor', 'user', 'unknown', 'admin_unit']) {
+            state.user.role = role;
+            await request(app).get('/client-upload/status').query(query).expect(403);
+        }
+        expect(state.getReadiness).not.toHaveBeenCalled();
+        state.user.unitKerjaId = 'ditjen';
+        await request(app).get('/client-upload/status').query(query).expect(200);
+        await request(app).get('/client-upload/status').query({ ...query, purpose: 'regulatory_source' }).expect(403);
+        expect(state.getReadiness).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([{}, { blobUrl: 'a' }, { blobUrl: 'a', purpose: 'other' }, { blobUrl: ['a', 'b'], purpose: 'surat_masuk' }, { blobUrl: 'a'.repeat(2049), purpose: 'surat_masuk' }])('rejects malformed readiness queries before lookup', async query => {
+        await request(app).get('/client-upload/status').query(query).expect(400);
+        expect(state.getReadiness).not.toHaveBeenCalled();
+    });
+
+    it('propagates unexpected readiness errors without reporting ready or exposing details', async () => {
+        state.getReadiness.mockRejectedValueOnce(new Error('private database detail'));
+        const response = await request(app).get('/client-upload/status').query({ blobUrl: 'a', purpose: 'surat_masuk' }).expect(500);
+        expect(response.body).toEqual({ error: 'Internal server error' });
     });
 
     it('issues a non-overwritable private-PDF token scoped to one draft rule set', async () => {
@@ -146,7 +203,7 @@ describe('rule-set-bound direct Blob upload tokens', () => {
         expect(state.assertUploadAllowed).toHaveBeenCalledWith(ruleSetId);
         expect(state.tokenOptions).toMatchObject({
             allowedContentTypes: ['application/pdf'],
-            maximumSizeInBytes: 10 * 1024 * 1024,
+            maximumSizeInBytes: 50 * 1024 * 1024,
             addRandomSuffix: true,
             allowOverwrite: false,
         });

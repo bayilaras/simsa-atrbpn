@@ -20,7 +20,8 @@ dan identitas database benar-benar disediakan.
 - backup manual dari commit yang sama harus sudah sukses melewati independent
   restore drill. Metadata artifact diperiksa melalui GitHub API, artifact
   terenkripsi diunduh tanpa recovery identity, lalu manifest plaintext harus
-  menyatakan `schema_profile=pre_migration`, commit dan run/attempt yang sama,
+  menyatakan `schema_profile=pre_migration` (baseline 0020) atau
+  `schema_profile=pre_upgrade_0038` (baseline 0038), commit dan run/attempt yang sama,
   nama file aman, serta SHA-256 yang cocok untuk dump dan source evidence.
   Sebelum gate ini, workflow me-resolve target Production dari Environment dan
   menghitung SHA-256 format kanonis
@@ -34,8 +35,8 @@ dan identitas database benar-benar disediakan.
   `CREATE` database sementara untuk kompatibilitas bootstrap lama; bootstrap
   final wajib mencabutnya. Runner `db:migrate` tidak memerlukan grant tersebut
   dan tidak menjalankan `CREATE SCHEMA IF NOT EXISTS drizzle`;
-- evidence serializable/read-only mencocokkan seluruh 38 timestamp/hash journal
-  dengan manifest kode yang direview, terakhir `0037`, kepemilikan aplikasi,
+- evidence serializable/read-only mencocokkan seluruh timestamp/hash journal
+  dengan manifest dari journal checkout yang direview, kepemilikan aplikasi,
   exact direct/transitive membership closure, pasangan empat runtime login ke
   service account Terraform kanonis, fingerprint ACL/membership,
   `CREATE=false` untuk migrator, serta
@@ -175,7 +176,10 @@ variable. Satu-satunya secret yang dibaca workflow adalah ephemeral
    ulang pada exact merge SHA.
 2. Dari exact SHA/default branch itu, jalankan manual
    `Cloud SQL PostgreSQL Backup and Restore Drill` dengan profile
-   `pre_migration`. Tunggu seluruh run, termasuk independent restore, sukses.
+   `pre_migration` untuk sumber tepat sampai 0020, atau `pre_upgrade_0038`
+   untuk sumber tepat sampai 0038 sebelum migrasi 0039. Kedua baseline memeriksa
+   urutan dan hash lengkap; jumlah migrasi di antaranya tidak diterima.
+   Tunggu seluruh run, termasuk independent restore, sukses.
 3. Catat workflow run ID, encrypted artifact ID, dan digest `sha256:...` dari
    output/artifact API, serta cocokkan `source_identity_sha256` dengan target
    Production yang akan dimutasi. Jangan menyalin age recovery identity ke
@@ -199,7 +203,7 @@ variable. Satu-satunya secret yang dibaca workflow adalah ephemeral
 
 Kegagalan fase mana pun menghentikan fase berikutnya dan tidak memberi traffic
 Cloud Run. Jangan mengulang dengan SHA lain atau artifact lain tanpa backup
-`pre_migration` baru. Bila migration telah commit, pilih forward-fix ter-review
+pra-upgrade baru pada baseline yang telah direview. Bila migration telah commit, pilih forward-fix ter-review
 atau restore independen dari encrypted artifact sesuai incident decision;
 jangan memakai schema push atau rollback SQL ad-hoc. Rollback traffic aplikasi
 tidak dengan sendirinya membatalkan perubahan database, sehingga revision lama

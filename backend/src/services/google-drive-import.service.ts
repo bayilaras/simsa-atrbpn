@@ -1,11 +1,16 @@
-import { db } from '../config/database';
-import { suratMasuk, type NewSuratMasuk } from '../db/schema/surat-masuk';
-import { suratKeluar, type NewSuratKeluar } from '../db/schema/surat-keluar';
-import { eq, and } from 'drizzle-orm';
+import { type NewSuratMasuk } from '../db/schema/surat-masuk';
+import { type NewSuratKeluar } from '../db/schema/surat-keluar';
 import { createLogger } from '../utils/logger';
 import { suratMasukService } from './surat-masuk.service.js';
 import { suratKeluarService } from './surat-keluar.service.js';
 import type { CriticalAuditContext } from './audit-log.service.js';
+import { AppError, PayloadTooLargeError, ValidationError } from '../utils/errors.js';
+import { publicErrorResponse } from '../utils/public-error.js';
+import { currentRequestId } from '../utils/request-context.js';
+import { GOOGLE_SHEETS_LIMITS, GoogleSheetsAccessError, GoogleSheetsSource, assertSheetName, assertSpreadsheetId, parseBoundedSheetCsv, type GoogleSheetsRequestOptions } from './google-sheets-source.js';
+
+import { resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
+import { DuplicateSuratImportError } from './surat-import-identity.js';
 
 const log = createLogger('GoogleDriveImportService');
 
@@ -83,176 +88,104 @@ export class GoogleDriveImportService {
     /**
      * Extract spreadsheet ID from various Google Sheets URL formats
      */
-    extractSpreadsheetId(url: string): string | null {
-        // Match: /spreadsheets/d/{ID}/
-        const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-        return match ? match[1] : null;
+    extractSpreadsheetId(value: string): string | null {
+        if (typeof value !== 'string' || value.length > 2048) return null;
+        try {
+            const url = new URL(value);
+            if (url.protocol !== 'https:' || url.hostname !== 'docs.google.com' || url.port || url.username || url.password) return null;
+            return /^\/spreadsheets\/d\/([a-zA-Z0-9_-]{1,200})(?:\/|$)/.exec(url.pathname)?.[1] || null;
+        } catch { return null; }
     }
-
     /**
      * Fetch a spreadsheet sheet as CSV using public export URL
      */
-    async fetchSheetAsCSV(spreadsheetId: string, sheetName?: string, gid?: string): Promise<string> {
-        let url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv`;
-        if (gid) {
-            url += `&gid=${gid}`;
-        } else if (sheetName) {
-            url += `&sheet=${encodeURIComponent(sheetName)}`;
+    async fetchSheetAsCSV(spreadsheetId: string, sheetName?: string, gid?: string, options: GoogleSheetsRequestOptions = {}): Promise<string> {
+        assertSpreadsheetId(spreadsheetId);
+        assertSheetName(sheetName);
+        if (gid !== undefined && !/^\d{1,20}$/.test(gid)) throw new ValidationError('GID sheet tidak valid.');
+        const url = new URL(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq`);
+        url.searchParams.set('tqx', 'out:csv');
+        if (gid) url.searchParams.set('gid', gid);
+        else if (sheetName) url.searchParams.set('sheet', sheetName);
+        const source = new GoogleSheetsSource(options);
+        try {
+            const text = await source.text(url.toString());
+            if (/^\s*(?:<!doctype html|<html)/i.test(text)) throw new GoogleSheetsAccessError();
+            return text;
         }
-
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch spreadsheet: ${response.status} ${response.statusText}`);
-        }
-
-        return await response.text();
+        finally { source.close(); }
     }
-
     /**
      * List available sheets in a spreadsheet by parsing the HTML
      */
-    async listSheets(spreadsheetId: string): Promise<SheetInfo[]> {
-        // We try to get sheet list from the spreadsheet HTML page
-        const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+    async listSheets(spreadsheetId: string, options: GoogleSheetsRequestOptions = {}): Promise<SheetInfo[]> {
+        assertSpreadsheetId(spreadsheetId);
+        const source = new GoogleSheetsSource(options);
         try {
-            const response = await fetch(url);
-            const html = await response.text();
-
-            // Extract sheet names from HTML - look for sheet tabs
+            const html = await source.text(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`, GOOGLE_SHEETS_LIMITS.htmlBytes);
             const sheets: SheetInfo[] = [];
-            // Google Sheets puts sheet info in a JavaScript object on the page
-            // Try to extract from the rendered HTML
-            const sheetMatches = html.matchAll(/gid=(\d+)[^"]*"[^>]*>([^<]+)</g);
-            for (const match of sheetMatches) {
-                sheets.push({
-                    gid: match[1],
-                    name: match[2].trim(),
-                });
+            for (const match of html.matchAll(/gid=(\d{1,20})[^"]*"[^>]*>([^<]+)</g)) {
+                if (!sheets.some(sheet => sheet.gid === match[1])) sheets.push({ gid: match[1], name: match[2].trim().slice(0, 100) });
+                if (sheets.length >= GOOGLE_SHEETS_LIMITS.sheets) break;
             }
-
             if (sheets.length === 0) {
-                // Fallback: try common sheet names
                 const commonNames = ['Sheet1', 'Surat Masuk 2021', 'Surat Masuk 2022', 'Surat Masuk 2023',
                     'Surat Masuk 2024', 'Surat Masuk 2025', 'Surat Masuk 2026',
                     'Surat Keluar 2023', 'Surat Keluar 2024', 'Surat Keluar 2025', 'Surat Keluar 2026'];
-
                 for (const name of commonNames) {
                     try {
-                        const testUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}&range=A1`;
-                        const testResp = await fetch(testUrl);
-                        if (testResp.ok) {
-                            sheets.push({ gid: '0', name });
-                        }
-                    } catch (_e) {
-                        // Sheet doesn't exist, skip
+                        const probe = await source.text(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}&range=A1`, 64 * 1024);
+                        if (probe.trim() && !/^\s*</.test(probe)) sheets.push({ gid: '0', name });
+                    } catch (error) {
+                        // Only an inaccessible/missing sheet is skippable; limits,
+                        // cancellation, redirects and upstream faults end the operation.
+                        if (error instanceof GoogleSheetsAccessError) continue;
+                        throw error;
                     }
                 }
             }
-
             return sheets;
-        } catch (error) {
-            log.error({ err: error }, 'Error listing sheets:');
-            return [{ gid: '0', name: 'Sheet1' }];
-        }
+        } finally { source.close(); }
     }
-
     /**
      * Parse CSV text into array of arrays
      * Handles quoted fields with commas and newlines
      */
     parseCSV(csvText: string): string[][] {
-        const rows: string[][] = [];
-        let currentRow: string[] = [];
-        let currentField = '';
-        let inQuotes = false;
-
-        for (let i = 0; i < csvText.length; i++) {
-            const char = csvText[i];
-            const nextChar = csvText[i + 1];
-
-            if (inQuotes) {
-                if (char === '"' && nextChar === '"') {
-                    // Escaped quote
-                    currentField += '"';
-                    i++;
-                } else if (char === '"') {
-                    // End of quoted field
-                    inQuotes = false;
-                } else {
-                    currentField += char;
-                }
-            } else {
-                if (char === '"') {
-                    inQuotes = true;
-                } else if (char === ',') {
-                    currentRow.push(currentField.trim());
-                    currentField = '';
-                } else if (char === '\n' || (char === '\r' && nextChar === '\n')) {
-                    currentRow.push(currentField.trim());
-                    if (currentRow.some(f => f !== '')) {
-                        rows.push(currentRow);
-                    }
-                    currentRow = [];
-                    currentField = '';
-                    if (char === '\r') i++; // Skip \n after \r
-                } else {
-                    currentField += char;
-                }
-            }
-        }
-
-        // Last field
-        if (currentField || currentRow.length > 0) {
-            currentRow.push(currentField.trim());
-            if (currentRow.some(f => f !== '')) {
-                rows.push(currentRow);
-            }
-        }
-
-        return rows;
+        return parseBoundedSheetCsv(csvText);
     }
 
+    private assertDataRows(rows: string[][]): void {
+        if (rows.length > GOOGLE_SHEETS_LIMITS.dataRows) throw new PayloadTooLargeError('Maksimal 1.000 baris data per impor. Pecah spreadsheet sebelum mencoba lagi.');
+    }
+
+    private rowError(error: unknown, row: number): string {
+        const failure = publicErrorResponse(error, currentRequestId());
+        log.warn({ event: 'google_sheets_row_rejected', row, publicCode: failure.code }, 'Import row rejected');
+        return `Row ${row}: ${failure.message} (${failure.code})`;
+    }
     /**
      * Preview first N rows from a spreadsheet
      */
-    async previewData(spreadsheetId: string, sheetName: string, maxRows: number = 10): Promise<{
-        headers: string[];
-        rows: string[][];
-        totalRows: number;
+    async previewData(spreadsheetId: string, sheetName: string, maxRows: number = 10,
+        options: GoogleSheetsRequestOptions = {}, importType: GoogleSheetsImportType = 'surat-masuk'): Promise<{
+        headers: string[]; rows: string[][]; totalRows: number;
+        importType: GoogleSheetsImportType; headerRow: number; mapping: SheetColumnMapping[];
     }> {
-        const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName);
+        if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > GOOGLE_SHEETS_LIMITS.previewRows) throw new ValidationError('maxRows harus bilangan bulat antara 1 dan 100.');
+        const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName, undefined, options);
         const allRows = this.parseCSV(csvText);
-
-        if (allRows.length === 0) {
-            return { headers: [], rows: [], totalRows: 0 };
-        }
-
-        // Try to detect header row - might be at row 0 or row 3 (Google Sheets format uses row 4)
-        let headerRowIndex = 0;
-        // Check if row has typical header keywords
-        const headerKeywords = ['no', 'jenis', 'nomor', 'tanggal', 'perihal', 'id', 'surat', 'dari', 'kepada', 'status'];
-        for (let i = 0; i < Math.min(5, allRows.length); i++) {
-            const rowLower = allRows[i].map(f => f.toLowerCase());
-            const matchCount = rowLower.filter(f => headerKeywords.some(kw => f.includes(kw))).length;
-            if (matchCount >= 3) {
-                headerRowIndex = i;
-                break;
-            }
-        }
-
-        const headers = allRows[headerRowIndex];
+        if (allRows.length === 0) return { headers: [], rows: [], totalRows: 0, importType, headerRow: 0, mapping: [] };
+        const { headers, headerRowIndex, mapping } = resolveSheetMapping(allRows, importType);
         const dataRows = allRows.slice(headerRowIndex + 1);
-
-        return {
-            headers,
-            rows: dataRows.slice(0, maxRows),
-            totalRows: dataRows.length,
-        };
+        this.assertDataRows(dataRows);
+        return { headers, rows: dataRows.slice(0, maxRows), totalRows: dataRows.length,
+            importType, headerRow: headerRowIndex + 1, mapping };
     }
 
     /**
      * Import Surat Masuk from Google Spreadsheet
-     * Expected columns (matched by position or header name):
+     * Expected columns (exact normalized header aliases; never inferred by position):
      * ID, No, Jenis Surat, Sifat Surat, Nomor Surat, Tanggal Surat,
      * Perihal, Dari, Kepada, Status, Disposisi, Timestamp, Status Arsip
      */
@@ -261,43 +194,18 @@ export class GoogleDriveImportService {
         sheetName: string,
         unitKerjaId: string,
         auditContext: CriticalAuditContext,
+        options: GoogleSheetsRequestOptions = {},
     ): Promise<ImportResult> {
-        const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName);
+        const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName, undefined, options);
         const allRows = this.parseCSV(csvText);
 
         if (allRows.length < 2) {
             return { success: false, totalRows: 0, importedRows: 0, skippedRows: 0, duplicateRows: 0, errors: ['No data found'] };
         }
 
-        // Detect header row
-        let headerRowIndex = 0;
-        const headerKeywords = ['no', 'jenis', 'nomor', 'tanggal', 'perihal', 'dari', 'kepada'];
-        for (let i = 0; i < Math.min(5, allRows.length); i++) {
-            const rowLower = allRows[i].map(f => f.toLowerCase());
-            const matchCount = rowLower.filter(f => headerKeywords.some(kw => f.includes(kw))).length;
-            if (matchCount >= 3) {
-                headerRowIndex = i;
-                break;
-            }
-        }
-
-        const headers = allRows[headerRowIndex].map(h => h.toLowerCase().trim());
+        const { headerRowIndex, columnMap: colMap } = resolveSheetMapping(allRows, 'surat-masuk');
         const dataRows = allRows.slice(headerRowIndex + 1);
-
-        // Map column indices
-        const colMap = this.buildColumnMap(headers, {
-            'id': ['id'],
-            'no': ['no', 'no.', 'nomor urut', 'no urut'],
-            'jenisSurat': ['jenis surat', 'jenis naskah', 'jenis'],
-            'sifatSurat': ['sifat surat', 'sifat', 'urgency'],
-            'nomorSurat': ['nomor surat', 'no surat', 'nomor'],
-            'tanggalSurat': ['tanggal surat', 'tanggal', 'tgl'],
-            'perihal': ['perihal', 'subject', 'hal'],
-            'dari': ['dari', 'asal', 'pengirim', 'from'],
-            'kepada': ['kepada', 'tujuan', 'penerima', 'to'],
-            'status': ['status', 'disposisi status'],
-            'disposisi': ['disposisi'],
-        });
+        this.assertDataRows(dataRows);
 
         const errors: string[] = [];
         let importedRows = 0;
@@ -305,6 +213,7 @@ export class GoogleDriveImportService {
         let duplicateRows = 0;
 
         for (let i = 0; i < dataRows.length; i++) {
+            if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan; baris yang sudah selesai tetap tercatat.', 499);
             const row = dataRows[i];
             try {
                 const nomorSurat = this.getField(row, colMap, 'nomorSurat');
@@ -315,52 +224,12 @@ export class GoogleDriveImportService {
                     continue;
                 }
 
-                const noUrut = parseInt(this.getField(row, colMap, 'no') || String(i + 1)) || (i + 1);
+                const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
                 const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
                 const parsedDate = this.parseDate(tanggalStr);
                 const dari = this.getField(row, colMap, 'dari');
                 const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
                 const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
-
-                // Smart duplicate check:
-                // - If nomor surat is valid: check by nomorSurat + tahun + unitKerjaId
-                // - If the official number is absent: use a stable business
-                //   fingerprint. The source row number is not durable because
-                //   canonical creation allocates its own sequence.
-                let existing;
-                const hasValidNomor = nomorSurat && nomorSurat !== '-';
-                if (hasValidNomor) {
-                    existing = await db.select({ id: suratMasuk.id })
-                        .from(suratMasuk)
-                        .where(and(
-                            eq(suratMasuk.nomorSurat, nomorSurat),
-                            eq(suratMasuk.tahun, effectiveTahun),
-                            eq(suratMasuk.unitKerjaId, unitKerjaId),
-                        ))
-                        .limit(1);
-                } else {
-                    if (!parsedDate || !perihal || !dari) {
-                        errors.push(
-                            `Row ${i + 1}: nomor surat kosong memerlukan tanggal, perihal, dan pengirim untuk identitas impor yang stabil`,
-                        );
-                        skippedRows++;
-                        continue;
-                    }
-                    existing = await db.select({ id: suratMasuk.id })
-                        .from(suratMasuk)
-                        .where(and(
-                            eq(suratMasuk.unitKerjaId, unitKerjaId),
-                            eq(suratMasuk.tanggalSurat, parsedDate),
-                            eq(suratMasuk.perihal, perihal),
-                            eq(suratMasuk.dari, dari),
-                        ))
-                        .limit(1);
-                }
-
-                if (existing.length > 0) {
-                    duplicateRows++;
-                    continue;
-                }
 
                 const disposisiRaw = this.getField(row, colMap, 'disposisi');
                 const disposisiArr = disposisiRaw ? disposisiRaw.split(/[,;]/).map(d => d.trim()).filter(Boolean) : [];
@@ -385,10 +254,12 @@ export class GoogleDriveImportService {
                 // gated SRIKANDI outbox in one transaction. A failed audit or
                 // producer therefore rolls this row back instead of creating an
                 // unaudited import.
-                await suratMasukService.create(newSurat, auditContext);
+                if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan.', 499);
+                await suratMasukService.createImported(newSurat, auditContext, options);
                 importedRows++;
-            } catch (error: any) {
-                errors.push(`Row ${i + 1}: ${error.message}`);
+            } catch (error) {
+                if (error instanceof DuplicateSuratImportError) { duplicateRows++; continue; }
+                if (errors.length < 20) errors.push(this.rowError(error, i + 1));
                 skippedRows++;
             }
         }
@@ -411,42 +282,18 @@ export class GoogleDriveImportService {
         sheetName: string,
         unitKerjaId: string,
         auditContext: CriticalAuditContext,
+        options: GoogleSheetsRequestOptions = {},
     ): Promise<ImportResult> {
-        const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName);
+        const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName, undefined, options);
         const allRows = this.parseCSV(csvText);
 
         if (allRows.length < 2) {
             return { success: false, totalRows: 0, importedRows: 0, skippedRows: 0, duplicateRows: 0, errors: ['No data found'] };
         }
 
-        // Detect header row
-        let headerRowIndex = 0;
-        const headerKeywords = ['no', 'nomor', 'tanggal', 'perihal', 'tujuan', 'kepada', 'link'];
-        for (let i = 0; i < Math.min(5, allRows.length); i++) {
-            const rowLower = allRows[i].map(f => f.toLowerCase());
-            const matchCount = rowLower.filter(f => headerKeywords.some(kw => f.includes(kw))).length;
-            if (matchCount >= 3) {
-                headerRowIndex = i;
-                break;
-            }
-        }
-
-        const headers = allRows[headerRowIndex].map(h => h.toLowerCase().trim());
+        const { headerRowIndex, columnMap: colMap } = resolveSheetMapping(allRows, 'surat-keluar');
         const dataRows = allRows.slice(headerRowIndex + 1);
-
-        const colMap = this.buildColumnMap(headers, {
-            'id': ['id'],
-            'noUrut': ['no urut', 'no.', 'no'],
-            'naskahDinas': ['jenis surat', 'naskah dinas', 'jenis naskah', 'jenis'],
-            'nomorSurat': ['nomor surat', 'no surat', 'nomor'],
-            'tanggalSurat': ['tanggal surat', 'tanggal', 'tgl'],
-            'perihal': ['perihal', 'subject', 'hal'],
-            'kepada': ['kepada', 'tujuan', 'penerima'],
-            'linkDokumen': ['link dokumen', 'link', 'url'],
-            'klasifikasiArsip': ['klasifikasi arsip', 'klasifikasi'],
-            'klasifikasiKode': ['klasifikasi kode', 'kode klasifikasi', 'kode'],
-            'klasifikasiJenis': ['klasifikasi jenis', 'jenis klasifikasi'],
-        });
+        this.assertDataRows(dataRows);
 
         const errors: string[] = [];
         let importedRows = 0;
@@ -454,6 +301,7 @@ export class GoogleDriveImportService {
         let duplicateRows = 0;
 
         for (let i = 0; i < dataRows.length; i++) {
+            if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan; baris yang sudah selesai tetap tercatat.', 499);
             const row = dataRows[i];
             try {
                 const nomorSurat = this.getField(row, colMap, 'nomorSurat');
@@ -470,42 +318,6 @@ export class GoogleDriveImportService {
                 const kepada = this.getField(row, colMap, 'kepada');
                 const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
                 const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
-
-                // Smart duplicate check
-                let existing;
-                const hasValidNomor = nomorSurat && nomorSurat !== '-';
-                if (hasValidNomor) {
-                    existing = await db.select({ id: suratKeluar.id })
-                        .from(suratKeluar)
-                        .where(and(
-                            eq(suratKeluar.nomorSurat, nomorSurat),
-                            eq(suratKeluar.tahun, effectiveTahun),
-                            eq(suratKeluar.unitKerjaId, unitKerjaId),
-                        ))
-                        .limit(1);
-                } else {
-                    if (!parsedDate || !perihal || !kepada) {
-                        errors.push(
-                            `Row ${i + 1}: nomor surat kosong memerlukan tanggal, perihal, dan tujuan untuk identitas impor yang stabil`,
-                        );
-                        skippedRows++;
-                        continue;
-                    }
-                    existing = await db.select({ id: suratKeluar.id })
-                        .from(suratKeluar)
-                        .where(and(
-                            eq(suratKeluar.unitKerjaId, unitKerjaId),
-                            eq(suratKeluar.tanggalSurat, parsedDate),
-                            eq(suratKeluar.perihal, perihal),
-                            eq(suratKeluar.kepada, kepada),
-                        ))
-                        .limit(1);
-                }
-
-                if (existing.length > 0) {
-                    duplicateRows++;
-                    continue;
-                }
 
                 const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
                 const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
@@ -529,10 +341,12 @@ export class GoogleDriveImportService {
                     createdBy: auditContext.userId,
                 };
 
-                await suratKeluarService.create(newSurat, auditContext);
+                if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan.', 499);
+                await suratKeluarService.createImported(newSurat, auditContext, options);
                 importedRows++;
-            } catch (error: any) {
-                errors.push(`Row ${i + 1}: ${error.message}`);
+            } catch (error) {
+                if (error instanceof DuplicateSuratImportError) { duplicateRows++; continue; }
+                if (errors.length < 20) errors.push(this.rowError(error, i + 1));
                 skippedRows++;
             }
         }
@@ -545,40 +359,6 @@ export class GoogleDriveImportService {
             duplicateRows,
             errors: errors.slice(0, 20),
         };
-    }
-
-    /**
-     * Build a column mapping from header names to column indices
-     */
-    private buildColumnMap(headers: string[], mapping: Record<string, string[]>): Record<string, number> {
-        const result: Record<string, number> = {};
-
-        for (const [fieldName, aliases] of Object.entries(mapping)) {
-            for (const alias of aliases) {
-                const idx = headers.findIndex(h => h.includes(alias));
-                if (idx !== -1) {
-                    result[fieldName] = idx;
-                    break;
-                }
-            }
-        }
-
-        // Fallback: positional mapping for known Google Spreadsheet format
-        // Column order: ID, No, Jenis, Sifat, Nomor, Tanggal, Perihal, Dari, Kepada, Status, Disposisi, Timestamp, Status Arsip
-        if (Object.keys(result).length < 5 && headers.length >= 8) {
-            const posMap: Record<string, number> = {
-                'id': 0, 'no': 1, 'jenisSurat': 2, 'sifatSurat': 3,
-                'nomorSurat': 4, 'tanggalSurat': 5, 'perihal': 6, 'dari': 7,
-                'kepada': 8, 'status': 9, 'disposisi': 10,
-            };
-            for (const [k, v] of Object.entries(posMap)) {
-                if (!(k in result) && v < headers.length) {
-                    result[k] = v;
-                }
-            }
-        }
-
-        return result;
     }
 
     /**

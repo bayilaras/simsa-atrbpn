@@ -1,0 +1,51 @@
+name: Verify private file integrity
+
+on:
+  schedule:
+    - cron: '45 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simsa-production-file-integrity
+  cancel-in-progress: false
+
+jobs:
+  fixity:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.OPERATIONS_FIXITY_ENABLED == 'true'
+    environment: production-integrity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Install locked dependencies before loading operational credentials
+        run: npm ci --prefix backend --ignore-scripts
+      - name: Verify fixity worker boundaries and existing service contract
+        run: node --test scripts/check-file-integrity.test.mjs
+      - name: Schedule and inspect one bounded batch using the existing worker role
+        env:
+          NEON_WORKER_DATABASE_URL: ${{ secrets.NEON_WORKER_DATABASE_URL }}
+          NEON_WORKER_EXPECTED_HOST: ${{ vars.NEON_WORKER_EXPECTED_HOST }}
+          NEON_WORKER_EXPECTED_DATABASE: ${{ vars.NEON_WORKER_EXPECTED_DATABASE }}
+          SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN: ${{ secrets.SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN }}
+          OPERATIONS_RECOVERY_EXPECTED_BLOB_HOSTNAME: ${{ vars.OPERATIONS_RECOVERY_EXPECTED_BLOB_HOSTNAME }}
+          FIXITY_BATCH_SIZE: '10'
+          FIXITY_TIMEOUT_MS: '60000'
+          OPERATIONS_FIXITY_REPORT: ${{ runner.temp }}/simsa-file-integrity-result.json
+        run: node scripts/check-file-integrity.mjs run
+      - name: Preserve sanitized execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: simsa-file-integrity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/simsa-file-integrity-result.json
+          if-no-files-found: warn
+          retention-days: 90

@@ -3,6 +3,13 @@
 SIMSA mendukung pencatatan surat, pemberkasan, pencarian arsip, lokasi fisik,
 peminjaman, klasifikasi/JRA, dan pengendalian akses per unit kerja.
 
+SIMSA digunakan sebagai aplikasi mandiri dengan profil **internal/full**.
+Pengelolaan surat dan arsip tidak memerlukan koneksi, akun, atau sinkronisasi
+SRIKANDI. Pengembangan difokuskan pada kemudahan alur kerja, pencarian, dan
+ketertelusuran di SIMSA; hasilnya dinilai melalui pengujian dan UAT pengguna.
+Lihat [profil aplikasi](docs/PROFIL_APLIKASI_INTERNAL.md) untuk konfigurasi dan
+prasyarat masing-masing fitur.
+
 ## Uji coba cloud gratis dengan Render dan Neon
 
 Jalur [Render Free + Neon Free](docs/DEPLOY_RENDER_NEON.md) menyiapkan aplikasi

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { ObjectStorageAdapter } from '../storage/types.js';
 import { BitstreamInspectionError, inspectBitstream, type BitstreamBaseline } from './bitstream-integrity.js';
+import { PRIVATE_LETTER_BLOB_SQL_PATTERN } from './file-release-policy.js';
 
 export interface FixityConfig {
     batchSize: number;
@@ -46,6 +47,8 @@ export class FileFixityService {
             SELECT f.id FROM file_attachments f
             LEFT JOIN file_fixity_jobs j ON j.attachment_id=f.id
             WHERE j.attachment_id IS NULL AND f.storage_access='private'
+              AND NOT (f.entity_type IN ('surat_masuk', 'surat_keluar')
+                AND coalesce(nullif(f.file_url, ''), f.drive_file_id, '') ~* '${PRIVATE_LETTER_BLOB_SQL_PATTERN}')
               AND f.malware_scan_status='clean' AND f.sha256 IS NOT NULL
               AND f.integrity_status <> 'mismatch'
             ORDER BY f.created_at, f.id LIMIT $1
@@ -80,6 +83,8 @@ export class FileFixityService {
                 SELECT j.attachment_id FROM file_fixity_jobs j
                 JOIN file_attachments f ON f.id=j.attachment_id
                 WHERE j.next_check_at <= now()
+                  AND NOT (f.entity_type IN ('surat_masuk', 'surat_keluar')
+                    AND coalesce(nullif(f.file_url, ''), f.drive_file_id, '') ~* '${PRIVATE_LETTER_BLOB_SQL_PATTERN}')
                   AND (j.claim_token IS NULL OR j.lease_expires_at <= now())
                   AND f.storage_access='private' AND f.malware_scan_status='clean'
                   AND f.sha256 IS NOT NULL AND f.integrity_status <> 'mismatch'

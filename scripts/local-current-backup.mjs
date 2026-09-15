@@ -10,6 +10,7 @@ import { createWriteStream } from 'node:fs';
 import { lstat, realpath, readFile, writeFile, mkdir, mkdtemp, appendFile, open, rename } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
+import { assertReviewedMigrationManifest } from './migration-manifest.mjs';
 import { MAX_ARCHIVE_BYTES, MAX_EVIDENCE_BYTES, sha256, requireCondition, strictPath, sterileEnvironment,
   createEncryptor, encryptBuffer, normalizeEvidence, extractBackupGuard,
   WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl, LOCAL_POSTGRES_ISOLATION_CONFIG,
@@ -24,7 +25,8 @@ const repository = resolve(import.meta.dirname, '..');
 const runtime = join(repository, 'output/local-runtime');
 const helpers = ['.github/scripts/build-migration-manifest.py', '.github/scripts/collect-backup-evidence.sql',
   '.github/scripts/prepare-restore-role-aliases.py', '.github/workflows/backup-cloud-sql.yml',
-  'backend/src/db/grants/0001_bootstrap_cloud_sql_roles.sql', 'backend/src/db/grants/0002_converge_application_grants.sql'];
+  'backend/src/db/grants/0001_bootstrap_cloud_sql_roles.sql', 'backend/src/db/grants/0002_converge_application_grants.sql',
+  'scripts/migration-manifest.mjs', 'backend/scripts/migrate-database.mjs'];
 const sourceProofScript = `$ErrorActionPreference='Stop'; . (Join-Path $env:SIMSA_BACKUP_REPOSITORY 'scripts/windows/local-runtime.ps1');
   $c=Read-LauncherConfiguration $env:SIMSA_BACKUP_REPOSITORY; $s=Get-DatabaseStatus $c;
   if(-not $s.running){throw 'Pinned source is not running'};
@@ -196,7 +198,7 @@ export async function runCurrentBackup(options) {
       requireCondition(/\(PostgreSQL\) 18(?:\.|\s|$)/.test(await command(`${name}-version`, binary(name), ['--version'])), 'All PostgreSQL tools must be version 18');
     }
     const migrations = JSON.parse((await command('migration-manifest', options.python, ['-I', join(repository, helpers[0])])).trim());
-    requireCondition(migrations.length === 39, 'Expected reviewed migration manifest 0000-0038');
+    assertReviewedMigrationManifest(migrations);
     const hashes = await helperHashes();
     const collector = await readFile(join(repository, helpers[1]), 'utf8');
     if (options.action === 'backup') {

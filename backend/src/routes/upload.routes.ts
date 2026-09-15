@@ -5,15 +5,16 @@ import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { uploadLimiter, sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
-import { createLogger } from '../utils/logger';
+import { publicErrorResponse, publicErrorStatus } from '../utils/public-error.js';
 import { uuidParamValidator } from '../middlewares/validate.middleware';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
 import { ARCHIVE_UPLOAD_MAX_BYTES, assertPdfUpload, isPdfUploadMetadata } from '../config/archive-upload.js';
 import { AppError, ValidationError } from '../utils/errors.js';
 import { arsipAttachmentUploadService } from '../services/arsip-attachment-upload.service.js';
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
+import { isLetterAttachmentType, requiresAttachmentInspection } from '../services/file-release-policy.js';
 
-const log = createLogger('UploadRoutes');
+
 
 const router = Router();
 
@@ -92,7 +93,7 @@ router.post(
     },
     upload.single('file'),
     verifyFileContent,
-    async (req: AuthRequest, res: Response) => {
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
         try {
             const suratType = req.params.suratType as string;
             const suratId = req.params.suratId as string;
@@ -139,26 +140,27 @@ router.post(
                 ipAddress: req.ip,
             });
 
-            scheduleMalwareScanWake();
+            if (requiresAttachmentInspection(entityType, attachment.fileUrl || attachment.driveFileId)) scheduleMalwareScanWake();
             res.status(201).json({
                 success: true,
                 data: publicAttachment(attachment),
                 hash: (attachment as any).hash, // Return hash to client
                 message: 'File uploaded successfully',
             });
-        } catch (error: any) {
-            log.error({ err: error }, 'Upload error:');
-            if (error instanceof AppError) return res.status(error.statusCode).json({
-                error: error.message, code: 'code' in error && error.code === 'UPLOAD_COMPLETION_PENDING' ? error.code : 'ATTACHMENT_UPLOAD_REJECTED',
-            });
-            res.status(500).json({ error: 'Gagal menyimpan lampiran', code: 'ATTACHMENT_UPLOAD_FAILED' });
+        } catch (error) {
+            if (error instanceof AppError && 'code' in error && error.code === 'UPLOAD_COMPLETION_PENDING') {
+                return res.status(publicErrorStatus(error)).json({
+                    ...publicErrorResponse(error, res.locals.requestId), code: 'UPLOAD_COMPLETION_PENDING',
+                });
+            }
+            next(error);
         }
     }
 );
 
 // Recovery wakes the durable queue, never a client-selected job or locator.
 router.post('/:suratType/:suratId/scan', authMiddleware, canWriteMiddleware(), sensitiveLimiter,
-    async (req: AuthRequest, res: Response) => {
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
         try {
             const entityType = toRecordEntityType(req.params.suratType as string);
             if (!entityType || Object.keys(req.query).length || (req.body != null
@@ -167,6 +169,14 @@ router.post('/:suratType/:suratId/scan', authMiddleware, canWriteMiddleware(), s
             }
             const access = await recordAccessService.check(req.user, entityType, req.params.suratId as string);
             if (!access.exists || !access.allowed) return res.status(404).json({ error: 'Record not found' });
+            if (isLetterAttachmentType(entityType)) {
+                const attachments = await fileAttachmentService.findBySurat(req.params.suratId as string, req.params.suratType as string);
+                if (attachments.length > 0 && attachments.every(attachment =>
+                    !requiresAttachmentInspection(entityType, attachment.fileUrl || attachment.driveFileId))) {
+                    return res.status(200).json({ success: true, status: 'not_required',
+                        message: 'Lampiran surat dapat dibuka langsung setelah tersimpan.' });
+                }
+            }
             if (!scheduleMalwareScanWake()) return res.status(503).json({ success: false,
                 code: 'MALWARE_SCAN_WAKE_UNAVAILABLE', message: 'Pemindaian belum dapat dijadwalkan. Berkas tetap menunggu pemeriksaan.' });
             return res.status(202).json({ success: true, status: 'pending',
@@ -178,7 +188,7 @@ router.post('/:suratType/:suratId/scan', authMiddleware, canWriteMiddleware(), s
     });
 
 // Get attachments for a surat
-router.get('/:suratType/:suratId', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/:suratType/:suratId', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const suratType = req.params.suratType as string;
         const suratId = req.params.suratId as string;
@@ -196,10 +206,7 @@ router.get('/:suratType/:suratId', authMiddleware, async (req: AuthRequest, res:
             success: true,
             data: attachments.map(publicAttachment),
         });
-    } catch (error: any) {
-        log.error({ err: error }, 'Get attachments error:');
-        res.status(500).json({ error: error.message || 'Failed to get attachments' });
-    }
+    } catch (error) { next(error); }
 });
 
 // Direct bitstream deletion is forbidden. Disposal must preserve approvals,

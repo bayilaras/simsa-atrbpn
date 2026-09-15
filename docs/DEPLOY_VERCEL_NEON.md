@@ -25,7 +25,7 @@ SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED=false
 
 Backend menerbitkan `bulkOcr` dan `advancedArchiveWorkflows` melalui `/api/capabilities`; sidebar, URL langsung, dan tombol aksi mengikuti nilai itu. API menolak modul yang nonaktif sebelum body parser/upload. Flag advanced menutup penyusutan, pelaporan arsip terjaga dan tindakan preservasi; surat/arsip manual, pencarian, klasifikasi/JRA, legal hold dan aturan retensi tetap berlaku. Tanpa flag, perilaku instalasi lama dipertahankan; nilai kosong/salah eja tidak mengaktifkan modul.
 
-Rilis unggah langsung arsip memakai migrasi `0038_arsip_direct_upload`, sehingga rantai yang ditinjau berjumlah **39 migrasi**. Perintah Neon/grant/backup memeriksa rantai serta hash yang sama. Ini tidak menerapkan migrasi saat build. Cadangan lama dengan 38 migrasi membutuhkan checkout/helper asalnya.
+Unggah langsung arsip memerlukan `0038_arsip_direct_upload`; pembatasan request bersama memerlukan `0039_shared_rate_limits`. Perintah Neon/grant/backup memeriksa **seluruh journal checkout** beserta urutan, timestamp, dan hash SQL yang sama. Jumlah migrasi tidak diketik ulang pada gate rilis. Ini tidak menerapkan migrasi saat build. Cadangan dari rantai terdahulu membutuhkan checkout/helper asalnya.
 
 Konfigurasi manual tersebut **masih memerlukan private Blob, database Production yang benar, serta antivirus cloud yang telah diuji**. Flag opsional tidak membuka berkas karantina dan bukan pengganti scanner. POC ClamAV terpisah hanya memvalidasi kelayakan runtime; tidak memperbarui status berkas aplikasi. Jangan mengaktifkan `SIMSA_VERCEL_METADATA_ENABLED` untuk mengklaim arsip digital aktif.
 

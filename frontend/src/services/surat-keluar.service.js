@@ -53,7 +53,7 @@ export const suratKeluarService = {
                 fileOriginalName = file.name;
             } catch (uploadError) {
                 console.error('Blob upload failed:', uploadError);
-                throw new Error('Gagal mengunggah file. Silakan coba lagi.');
+                throw uploadError instanceof Error ? uploadError : new Error('Gagal mengunggah file. Silakan coba lagi.', { cause: uploadError });
             }
         }
 
@@ -64,7 +64,8 @@ export const suratKeluarService = {
             ...(fileOriginalName && { fileOriginalName }),
         };
 
-        const response = await api.post('/api/surat-keluar', payload);
+        // Registering a file includes server-side streaming and hash checks.
+        const response = await api.post('/api/surat-keluar', payload, ...(payload.filePath ? [{ timeoutMs: 60_000 }] : []));
         return response;
     },
 
@@ -80,7 +81,7 @@ export const suratKeluarService = {
                 fileOriginalName = file.name;
             } catch (uploadError) {
                 console.error('Blob upload failed:', uploadError);
-                throw new Error('Gagal mengunggah file. Silakan coba lagi.');
+                throw uploadError instanceof Error ? uploadError : new Error('Gagal mengunggah file. Silakan coba lagi.', { cause: uploadError });
             }
         }
 
@@ -90,7 +91,7 @@ export const suratKeluarService = {
             ...(fileOriginalName && { fileOriginalName }),
         };
 
-        const response = await api.put(`/api/surat-keluar/${id}`, payload);
+        const response = await api.put(`/api/surat-keluar/${id}`, payload, ...(payload.filePath ? [{ timeoutMs: 60_000 }] : []));
         return response.data;
     },
 

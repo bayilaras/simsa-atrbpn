@@ -217,14 +217,7 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
         });
 
         res.status(201).json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message.includes('not found')) {
-            return res.status(404).json({ error: 'Data not found' });
-        }
-
-        if (error.message.includes('sudah didistribusikan')) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -249,13 +242,7 @@ router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, n
         );
 
         res.json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message.includes('not found')) {
-            return res.status(404).json({ error: 'Distribution not found' });
-        }
-        if (error.message.includes('sudah')) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -279,13 +266,7 @@ router.put('/:id/process', canWriteMiddleware(), async (req: AuthRequest, res, n
         );
 
         res.json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message.includes('not found')) {
-            return res.status(404).json({ error: 'Distribution not found' });
-        }
-        if (error.message.includes('sudah') || error.message.includes('diproses')) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -316,13 +297,7 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
         );
 
         res.json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message.includes('not found')) {
-            return res.status(404).json({ error: 'Distribution not found' });
-        }
-        if (error.message.includes('tidak bisa')) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });

@@ -132,6 +132,22 @@ describe('record route unit scoping', () => {
         expect(mocks.arsipTerjaga.findById).toHaveBeenCalledWith('record-1', 'unit-a', ['biasa']);
     });
 
+    it('keeps admin_unit list/detail/create requests inside its assigned unit', async () => {
+        Object.assign(mocks.user, { role: 'admin_unit', unitKerjaId: 'unit-a' });
+        await request(app).get('/dosir').expect(200);
+        expect(mocks.dosir.getAll).toHaveBeenCalledWith(expect.objectContaining({ unitKerjaId: 'unit-a' }));
+        await request(app).get('/surat-keluar/record-1?unitKerjaId=unit-b').expect(200);
+        expect(mocks.suratKeluar.findById).toHaveBeenCalledWith('record-1', 'unit-a');
+        await request(app).post('/dosir').send({ judul: 'Own unit', unitKerjaId: 'unit-b' }).expect(201);
+        expect(mocks.dosir.create).toHaveBeenCalledWith(
+            expect.objectContaining({ unitKerjaId: 'unit-a', judul: 'Own unit' }),
+            expect.any(Object),
+        );
+        mocks.suratKeluar.findById.mockResolvedValue(null);
+        await request(app).get('/surat-keluar/cross-unit-record').expect(404);
+        expect(mocks.suratKeluar.findById).toHaveBeenLastCalledWith('cross-unit-record', 'unit-a');
+    });
+
     it('fails closed on dosir list/statistics when the unit mandate is missing', async () => {
         Object.assign(mocks.user, { role: 'auditor', unitKerjaId: null });
 

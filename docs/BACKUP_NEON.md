@@ -1,5 +1,7 @@
 # Backup Neon terenkripsi dan uji pemulihan
 
+**Status 12 September 2026:** database aktif sudah dimigrasikan menjadi 40 entri. Backup 39 sebelum upgrade dan backup 40 sesudahnya tersimpan dengan helper masing-masing. Gunakan helper sumber yang cocok dengan manifest; jangan memakai helper39 untuk backup database40. Detail snapshot, pengujian, dan bukti ada pada [laporan migrasi 0039](MIGRASI_0039_2026-09-12.md).
+
 Perintah ini membuat **backup database sesuai permintaan operator**. Tidak ada jadwal otomatis, unggahan ke object storage, secret GitHub, atau perubahan layanan hosting. Komputer cukup hidup selama perintah berjalan; hal ini belum memenuhi kebutuhan backup cloud otomatis tanpa operator.
 
 Backup mencakup database SIMSA, termasuk akun dan hash kata sandi, sesi, audit, serta referensi berkas. **Isi berkas di object storage, rahasia hosting, dan konfigurasi akun provider tidak termasuk.** Simpan bundle dan kunci secara privat dan terpisah. Salinan pada disk yang sama belum melindungi dari kehilangan disk.
@@ -7,11 +9,19 @@ Backup mencakup database SIMSA, termasuk akun dan hash kata sandi, sesi, audit, 
 ## Prasyarat
 
 - Node.js 24, dependency backend sesuai lockfile, dan executable PostgreSQL 18 lengkap (`pg_dump`, `pg_restore`, `psql`, `initdb`, `pg_ctl`, `pg_controldata`).
-- Target Neon direct yang telah melalui bootstrap/migrasi SIMSA; 39 migrasi harus cocok dengan checkout. URL pooler ditolak. Tidak ada perubahan skema oleh perintah backup. Bundle terdahulu dengan 38 migrasi harus dipulihkan memakai checkout/helper yang cocok dengan bundle tersebut.
+- Target Neon direct yang telah melalui bootstrap/migrasi SIMSA; seluruh migrasi dan hash harus cocok dengan journal checkout. URL pooler ditolak. Tidak ada perubahan skema oleh perintah backup. Bundle dari rantai migrasi terdahulu harus dipulihkan memakai checkout/helper yang cocok dengan bundle tersebut.
 - Direktori output dan kunci yang dipilih operator, sebaiknya di luar repository. CLI membuat subdirektori baru. Pada Windows, ACL hanya untuk pengguna saat ini dipasang dan diperiksa **sebelum** menulis data; SID pemilik juga harus sama dengan pengguna yang menjalankan perintah. Bundle/kunci yang sudah ada dengan pemilik berbeda ditolak, tanpa mengubah kepemilikannya diam-diam. `mode: 0600` saja tidak dipakai sebagai bukti privasi. Pada Linux, direktori harus dimiliki pengguna dan tidak terbuka untuk grup/pengguna lain.
 - Pemulihan membutuhkan PostgreSQL 18 dengan dukungan locale/ICU yang cocok dengan sumber. Perbedaan locale atau fingerprint menggagalkan verifikasi; jangan menghapus pemeriksaannya agar hasil terlihat lulus. Untuk sumber Neon Linux, gunakan lingkungan pemulihan yang mendukung locale sumber. Jalankan `initdb` sebagai pengguna biasa, bukan root.
 
 Pemeriksaan target pada 11 September 2026 menemukan locale Neon `datcollate=C.UTF-8`, `datctype=C.UTF-8`, provider `builtin`, dan `datlocale=C.UTF-8`. PostgreSQL 18 Windows pada workstation menolak nama `LC_COLLATE` tersebut. Menggunakan `BUILTIN_LOCALE` dengan `LC_COLLATE=C` bukan replika identik dari konfigurasi sumber. Uji fixture Windows hanya membuktikan mekanisme pada locale fixture; penerimaan pemulihan Neon memerlukan PostgreSQL 18 Linux yang cocok.
+
+### Backup sebelum upgrade 0039
+
+Checkout yang memuat `0039_shared_rate_limits` mensyaratkan rantai penuh 40 migrasi untuk adapter runtime Neon. Untuk membuat atau memulihkan backup sumber yang masih mempunyai 39 migrasi, gunakan checkout bersih versi sumber beserta dependency/helper yang cocok, **sebelum** menjalankan migrasi baru. Jangan mengubah `verifyNeonRuntime` agar menerima schema lama sebagai runtime aplikasi baru.
+
+Setelah upgrade berhasil, backup berikutnya memakai checkout baru. Profil `pre_upgrade_0038` pada workflow Cloud SQL adalah jalur GCP terpisah, bukan opsi CLI Neon ini.
+
+Bundle 39 migrasi yang diperiksa secara lokal pada 12 September 2026 cocok dengan commit `b25b418a41c88c4a913b148032f8e3dfa4934a69`: rantai migrasi dan sembilan hash helper cocok, serta hash payload terenkripsi cocok dengan manifest. Pemeriksaan lanjutan memakai helper asli juga meluluskan ACL, autentikasi manifest, GCM kedua payload, dan header PGDMP di RAM tanpa menulis plaintext atau menghubungi Neon. Hasil ini belum membuktikan restore database. Commit tersebut dapat digunakan sebagai acuan checkout terpisah untuk bundle itu; bundle lain harus dicocokkan dengan manifestnya sendiri. Simpan checkout sumber bersama prosedur pemulihan, dan lakukan restore pada PostgreSQL 18 Linux yang cocok sebelum menyatakan backup siap dipulihkan.
 
 Batas awal: archive `pg_dump` terkompresi maksimal **64 MiB** dan bukti fingerprint maksimal **2 MiB**. Archive sementara berada di memori, tidak ditulis sebagai plaintext dump. Database yang melewati batas memerlukan jalur backup berkapasitas lebih besar; batas tidak boleh dilewati dengan menghilangkan tabel.
 

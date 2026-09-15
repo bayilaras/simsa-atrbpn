@@ -35,7 +35,7 @@ export function allowedSecurityClassifications(
     // filters and accidentally expose records containing malformed/unknown
     // classifications.
     if (user?.role === 'super_admin') return [...RECOGNIZED_CLASSIFICATIONS];
-    if (['admin_dirjen', 'admin_sesditjen'].includes(user?.role || '')) {
+    if (['admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role || '')) {
         return ['biasa', 'terbatas'];
     }
     if (['staff', 'auditor'].includes(user?.role || '')) return ['biasa'];
@@ -69,6 +69,7 @@ export function normalizeSecurityClassification(
 export function isAllowedForRecordUnit(user: RecordUser | undefined, unitKerjaId: string): boolean {
     if (!user?.role) return false;
     if (user.role === 'super_admin') return true;
+    if (user.role === 'admin_unit') return Boolean(user.unitKerjaId?.trim()) && user.unitKerjaId === unitKerjaId;
     if (user.role === 'admin_dirjen') return unitKerjaId === 'ditjen';
     if (user.role === 'admin_sesditjen') return unitKerjaId === 'sesditjen';
     if (user.role === 'staff') return Boolean(user.unitKerjaId) && user.unitKerjaId === unitKerjaId;

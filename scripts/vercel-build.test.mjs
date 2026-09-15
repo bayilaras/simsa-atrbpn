@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { resolveNpmCli } from '../frontend/scripts/resolve-npm-cli.mjs';
@@ -37,10 +38,35 @@ test('Windows PATH npm.cmd layout resolves its sibling CLI without launching cmd
 });
 
 const repository = new URL('../', import.meta.url);
+function copyPdfRuntime(directory) {
+    const requireBackend = createRequire(new URL('backend/package.json', repository));
+    for (const file of ['pdfjs-dist/package.json', 'pdfjs-dist/legacy/build/pdf.mjs', 'pdfjs-dist/legacy/build/pdf.worker.mjs']) {
+        const target = path.join(directory, 'backend/node_modules', file);
+        mkdirSync(path.dirname(target), { recursive: true });
+        copyFileSync(requireBackend.resolve(file), target);
+    }
+    // Run the unchanged PDF verifier with the installed parser and genuine
+    // platform binding. Only the npm lifecycle and bundler remain synthetic.
+    requireBackend('@napi-rs/canvas');
+    const bindings = Object.keys(requireBackend.cache).filter(file =>
+        /[/\\]@napi-rs[/\\]canvas(?:[/\\-])/.test(file) && file.endsWith('.node'));
+    assert.ok(bindings.length > 0, 'fixture requires the installed native canvas binding');
+    const packages = new Set([path.dirname(requireBackend.resolve('@napi-rs/canvas/package.json')),
+        ...bindings.map(file => path.dirname(file))]);
+    for (const source of packages) {
+        const { name } = JSON.parse(readFileSync(path.join(source, 'package.json'), 'utf8'));
+        assert.match(name, /^@napi-rs\/canvas(?:-[a-z0-9-]+)?$/);
+        cpSync(source, path.join(directory, 'backend/node_modules', name), { recursive: true });
+    }
+}
 const fixtureScript = `const fs=require('node:fs'); const path=require('node:path'); const assert=require('node:assert/strict');
 const phase=process.argv[2]; assert.equal(process.versions.node.split('.')[0],'24');
 fs.appendFileSync('lifecycle.log',phase+'\\n');
 if(phase==='prebuild'&&process.env.FAIL_PREBUILD==='true') process.exit(19);
+if(phase==='prebuild'&&process.env.EXPECT_CANDIDATE_CHECKS==='true') {
+  assert.equal(fs.readFileSync('candidate-checks.log','utf8'),'typecheck\\ntests\\n');
+  assert.equal(process.env.SYNTHETIC_BUILD_SECRET,'build-environment-preserved');
+}
 if(phase==='build') {
   assert.equal(fs.readFileSync('lifecycle.log','utf8'),'prebuild\\nbuild\\n');
   for(const [key,value] of Object.entries({VITE_APP_MODE:'full',VITE_APP_PROFILE:'internal',VITE_AUTH_PROVIDER:'better-auth',VITE_API_URL:'',VITE_FEATURE_SRIKANDI:'false'})) assert.equal(process.env[key],value);
@@ -53,8 +79,10 @@ if(phase==='build') {
 function withFixture(action) {
     const directory = mkdtempSync(path.join(tmpdir(), 'simsa-vercel-build-'));
     try {
-        for (const file of ['backend/scripts/build-vercel.mjs', 'frontend/scripts/build-vercel-metadata.mjs',
-            'frontend/scripts/resolve-npm-cli.mjs', 'scripts/build-cloud-metadata.mjs', 'scripts/build-internal.mjs']) {
+        for (const file of ['backend/scripts/build-vercel.mjs', 'backend/scripts/verify-pdf-runtime.mjs', 'backend/vercel.json',
+            'frontend/scripts/build-vercel-metadata.mjs',
+            'frontend/scripts/resolve-npm-cli.mjs', 'scripts/build-cloud-metadata.mjs', 'scripts/build-internal.mjs',
+            'scripts/verify-candidate-source.mjs']) {
             const target = path.join(directory, file); mkdirSync(path.dirname(target), { recursive: true });
             copyFileSync(new URL(file, repository), target);
         }
@@ -66,11 +94,27 @@ function withFixture(action) {
             } }));
             writeFileSync(path.join(directory, project, 'fixture.cjs'), fixtureScript);
         }
+        copyPdfRuntime(directory);
         // The bundler is unrelated to npm discovery; keep this proof small while
         // running the exact wrappers and real npm lifecycle, including failure.
         const bundler = path.join(directory, 'backend/node_modules/esbuild'); mkdirSync(bundler, { recursive: true });
         writeFileSync(path.join(bundler, 'package.json'), '{"type":"module","exports":"./index.js"}');
         writeFileSync(path.join(bundler, 'index.js'), `import{writeFileSync,readFileSync,mkdirSync}from'node:fs';import{dirname,join,basename}from'node:path';import assert from'node:assert/strict';export async function build(options){const root=options.outdir?join(options.outdir,'../..'):join(dirname(options.outfile),'..');assert.equal(readFileSync(join(root,'lifecycle.log'),'utf8'),'prebuild\\nbuild\\npostbuild\\n');const outputs=options.outfile?[options.outfile]:options.entryPoints.map(entry=>join(options.outdir,basename(entry).replace(/\\.ts$/,'.js')));for(const file of outputs){mkdirSync(dirname(file),{recursive:true});writeFileSync(file,'// fixture bundled after npm lifecycle');}}`);
+        for (const [phase, file] of [['typecheck', 'typescript/bin/tsc'], ['tests', 'vitest/vitest.mjs']]) {
+            const target = path.join(directory, 'backend/node_modules', file);
+            mkdirSync(path.dirname(target), { recursive: true });
+            const imports = file.endsWith('.mjs')
+                ? "import fs from 'node:fs'; import assert from 'node:assert/strict';"
+                : "const fs=require('node:fs'); const assert=require('node:assert/strict');";
+            writeFileSync(target, imports + `
+                assert.equal(process.env.NODE_ENV,'test');
+                assert.equal(process.env.SYNTHETIC_BUILD_SECRET,undefined);
+                assert.equal(process.env.SIMSA_VERIFY_CANDIDATE_SOURCE,undefined);
+                assert.equal(fs.existsSync('lifecycle.log'),false);
+                fs.appendFileSync('candidate-checks.log',${JSON.stringify(phase + '\n')});
+                if(fs.existsSync('candidate-${phase}.fail'))process.exit(17);
+            `);
+        }
         const environment = { PATH: [path.dirname(process.execPath), process.env.PATH ?? process.env.Path ?? ''].join(path.delimiter),
             HOME: directory, USERPROFILE: directory, APPDATA: directory, LOCALAPPDATA: directory,
             TEMP: directory, TMP: directory, NPM_CONFIG_USERCONFIG: path.join(directory, 'empty.npmrc'),
@@ -99,12 +143,13 @@ for (const [wrapper, args, projects, output] of [
     ['scripts/build-internal.mjs', [], ['frontend', 'backend'], 'dist'],
 ]) test(`raw-node ${wrapper} runs real npm prebuild/build/postbuild without npm_execpath`, () => withFixture(({ directory, environment, run }) => {
     if (wrapper.endsWith('build-internal.mjs')) environment.EXPECTED_STORAGE = 'vercel-blob';
-    run(wrapper, args);
+    const log = run(wrapper, args);
     for (const project of projects) {
         assert.equal(readFileSync(path.join(directory, project, 'lifecycle.log'), 'utf8'), 'prebuild\nbuild\npostbuild\n');
         assert.equal(existsSync(path.join(directory, project, output, 'app.js')), true);
     }
     if (wrapper.startsWith('backend/')) {
+        assert.match(log, /"pdfRuntime":\{"pageCount":1,"workerIncluded":true,"nativeCanvasIncluded":true\}/);
         for (const artifact of ['vercel-runtime.js', 'internal-malware-scan-runtime.js',
             'workers/malware-scan-on-demand.js', 'workers/native-clamav-process.js']) {
             assert.equal(existsSync(path.join(directory, 'backend/dist-vercel', artifact)), true);
@@ -112,6 +157,19 @@ for (const [wrapper, args, projects, output] of [
         assert.equal(existsSync(path.join(directory, 'backend/native-clamav-assets')), false,
             'default build must not provision native assets');
     }
+}));
+
+for (const [asset, includeFiles] of [
+    ['PDF worker', 'node_modules/@napi-rs/canvas*/**'],
+    ['native canvas', 'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'],
+]) test(`missing ${asset} packaging stops the backend before npm or bundling`, () => withFixture(({ directory, run }) => {
+    const file = path.join(directory, 'backend/vercel.json');
+    const config = JSON.parse(readFileSync(file, 'utf8'));
+    config.functions['api/index.js'].includeFiles = includeFiles;
+    writeFileSync(file, JSON.stringify(config));
+    assert.throws(() => run('backend/scripts/build-vercel.mjs'), /PDF runtime packaging verification failed/);
+    assert.equal(existsSync(path.join(directory, 'backend/lifecycle.log')), false);
+    assert.equal(existsSync(path.join(directory, 'backend/dist-vercel')), false);
 }));
 test('a failing npm prebuild aborts the wrapper before build or manifest verification', () => withFixture(({ directory, environment, run }) => {
     environment.FAIL_PREBUILD = 'true';
@@ -123,4 +181,31 @@ test('the metadata wrapper still requires opt-in before invoking npm', () => wit
     delete environment.SIMSA_VERCEL_METADATA_ENABLED;
     assert.throws(() => run('frontend/scripts/build-vercel-metadata.mjs'));
     assert.equal(existsSync(path.join(directory, 'frontend/lifecycle.log')), false);
+}));
+
+test('the canonical backend builder runs isolated candidate checks before the real npm lifecycle', () => withFixture(({ directory, environment, run }) => {
+    environment.SIMSA_VERIFY_CANDIDATE_SOURCE = '1';
+    environment.EXPECT_CANDIDATE_CHECKS = 'true';
+    environment.SYNTHETIC_BUILD_SECRET = 'build-environment-preserved';
+    const log = run('backend/scripts/build-vercel.mjs');
+    assert.match(log, /SIMSA candidate backend: source checks passed/);
+    assert.equal(readFileSync(path.join(directory, 'backend/candidate-checks.log'), 'utf8'), 'typecheck\ntests\n');
+    assert.equal(readFileSync(path.join(directory, 'backend/lifecycle.log'), 'utf8'), 'prebuild\nbuild\npostbuild\n');
+    assert.equal(existsSync(path.join(directory, 'backend/dist-vercel/app.js')), true);
+}));
+
+for (const phase of ['typecheck', 'tests']) test(`a candidate ${phase} failure stops the canonical backend before npm or bundling`, () => withFixture(({ directory, environment, run }) => {
+    environment.SIMSA_VERIFY_CANDIDATE_SOURCE = '1';
+    writeFileSync(path.join(directory, `backend/candidate-${phase}.fail`), 'synthetic fixture failure');
+    assert.throws(() => run('backend/scripts/build-vercel.mjs'));
+    assert.equal(readFileSync(path.join(directory, 'backend/candidate-checks.log'), 'utf8'), phase === 'typecheck' ? 'typecheck\n' : 'typecheck\ntests\n');
+    assert.equal(existsSync(path.join(directory, 'backend/lifecycle.log')), false);
+    assert.equal(existsSync(path.join(directory, 'backend/dist-vercel')), false);
+}));
+
+test('candidate verification requires the exact deployment opt-in value', () => withFixture(({ directory, environment, run }) => {
+    environment.SIMSA_VERIFY_CANDIDATE_SOURCE = 'true';
+    run('backend/scripts/build-vercel.mjs');
+    assert.equal(existsSync(path.join(directory, 'backend/candidate-checks.log')), false);
+    assert.equal(readFileSync(path.join(directory, 'backend/lifecycle.log'), 'utf8'), 'prebuild\nbuild\npostbuild\n');
 }));

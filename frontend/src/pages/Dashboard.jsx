@@ -32,7 +32,7 @@ import {
     Filler,
 } from 'chart.js'
 import { Line, Bar, Doughnut } from 'react-chartjs-2'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import dashboardService from '@/services/dashboard.service'
 import settingsService from '@/services/settings.service'
 import { DashboardSkeleton } from '@/components/skeletons'
@@ -125,6 +125,11 @@ export default function Dashboard() {
     const isSuperAdmin = user?.role === 'super_admin';
     const effectiveUserUnitKerjaId = resolveEffectiveUnitKerjaId(user);
     const requestedUnit = isSuperAdmin ? selectedUnitKerja : (effectiveUserUnitKerjaId || 'none');
+    const actionUnit = isSuperAdmin ? (selectedUnitKerja === 'all' ? '' : selectedUnitKerja) : effectiveUserUnitKerjaId;
+    const overdueParams = new URLSearchParams({ status: 'overdue' });
+    if (actionUnit) overdueParams.set('unitKerjaId', actionUnit);
+    const overdueCount = widgetData?.lendingOverview?.overdue;
+    const hasOverdueCount = !error && !widgetError && Number.isFinite(overdueCount) && overdueCount >= 0;
     const scopeKey = user && requestedUnit !== undefined
         ? JSON.stringify([user.id, user.role, requestedUnit]) : null;
 
@@ -410,6 +415,29 @@ export default function Dashboard() {
                 </TabsList>
 
                 <TabsContent value="overview" className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+                    {isAdmin && <section aria-labelledby="dashboard-priority-title" className="rounded-lg border bg-card p-4 sm:p-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0 space-y-1">
+                                <h2 id="dashboard-priority-title" className="text-base font-semibold">Perlu ditindaklanjuti</h2>
+                                <p className="text-sm flex items-start gap-2">
+                                    <Clock aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                    {hasOverdueCount ? overdueCount > 0
+                                        ? `${overdueCount.toLocaleString('id-ID')} peminjaman terlambat`
+                                        : 'Tidak ada peminjaman terlambat'
+                                        : 'Data peminjaman belum tersedia'}
+                                </p>
+                                <p className="text-xs text-muted-foreground">{isSuperAdmin && !actionUnit
+                                    ? 'Semua unit kerja · pilih satu unit untuk meninjau daftar.'
+                                    : 'Sesuai cakupan unit kerja yang sedang ditampilkan.'}</p>
+                            </div>
+                            <Button asChild variant="outline" className="w-full sm:w-auto whitespace-normal text-left h-auto min-h-9 py-2">
+                                <Link to={`/archive-lending?${overdueParams}`}>
+                                    {isSuperAdmin && !actionUnit ? 'Pilih unit dan tinjau keterlambatan' : 'Tinjau peminjaman terlambat'}
+                                    <ArrowRight aria-hidden="true" className="ml-2 h-4 w-4 shrink-0" />
+                                </Link>
+                            </Button>
+                        </div>
+                    </section>}
                     {/* Stats Grid */}
                     <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
                         {statCards.map((stat, i) => (

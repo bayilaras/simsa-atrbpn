@@ -6,7 +6,8 @@ import dashboardService from '@/services/dashboard.service'
 
 const mocks = vi.hoisted(() => ({ user: {}, navigate: vi.fn(), widgets: {}, motionChanged: null }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user,
-    canWrite: () => ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(mocks.user.role) }) }))
+    canWrite: () => ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(mocks.user.role) }) }))
+vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: vi.fn(async () => [{ id: 'unit-a', name: 'Unit A' }]) } }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false, fileUploads: false } }) }))
 vi.mock('react-router-dom', async importOriginal => ({ ...await importOriginal(), useNavigate: () => mocks.navigate }))
 vi.mock('react-chartjs-2', () => {
@@ -35,6 +36,33 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 async function show() { render(<MemoryRouter><Dashboard /></MemoryRouter>); await screen.findByRole('heading', { name: 'Halo, Siti' }) }
 
 describe('dashboard daily workflow', () => {
+    it('puts the overdue action before charts and preserves the assigned unit in its destination', async () => {
+        mocks.user.role = 'admin_unit'
+        mocks.widgets.lendingOverview = { borrowed: 7, overdue: 4 }
+        await show()
+        const priority = screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })
+        expect(priority).toHaveTextContent('4 peminjaman terlambat')
+        expect(priority.compareDocumentPosition(screen.getByText('Analisis Tren Surat')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(within(priority).getByRole('link', { name: 'Tinjau peminjaman terlambat' })).toHaveAttribute('href', '/archive-lending?status=overdue&unitKerjaId=unit-a')
+    })
+    it('labels all-unit totals and asks a super administrator to select a unit at the destination', async () => {
+        mocks.user.role = 'super_admin'
+        mocks.widgets.lendingOverview = { borrowed: 7, overdue: 4 }
+        await show()
+        const priority = screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })
+        expect(priority).toHaveTextContent('Semua unit kerja')
+        expect(within(priority).getByRole('link', { name: 'Pilih unit dan tinjau keterlambatan' })).toHaveAttribute('href', '/archive-lending?status=overdue')
+    })
+    it('distinguishes no overdue loans from unavailable lending data', async () => {
+        mocks.user.role = 'admin_unit'
+        mocks.widgets.lendingOverview = { borrowed: 1, overdue: 0 }
+        await show()
+        expect(screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })).toHaveTextContent('Tidak ada peminjaman terlambat')
+        dashboardService.getWidgetData.mockRejectedValueOnce(new Error('Peminjaman belum tersedia'))
+        fireEvent.focus(window)
+        await waitFor(() => expect(screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })).toHaveTextContent('Data peminjaman belum tersedia'))
+        expect(screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })).not.toHaveTextContent('Tidak ada peminjaman terlambat')
+    })
     it.each(['staff', 'auditor'])('gives %s a primary archive action without inaccessible management links', async role => {
         mocks.user.role = role
         await show()
@@ -42,6 +70,7 @@ describe('dashboard daily workflow', () => {
         fireEvent.click(within(actions).getByRole('button', { name: 'Cari Arsip' }))
         expect(mocks.navigate).toHaveBeenCalledWith('/arsip/masuk')
         expect(screen.queryByRole('button', { name: /Catat Surat/ })).not.toBeInTheDocument()
+        expect(screen.queryByRole('region', { name: 'Perlu ditindaklanjuti' })).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: /Lihat Semua Jadwal Retensi|Kelola Penyimpanan/ })).not.toBeInTheDocument()
         const chartHeading = screen.getByText('Analisis Tren Surat')
         expect(actions.compareDocumentPosition(chartHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

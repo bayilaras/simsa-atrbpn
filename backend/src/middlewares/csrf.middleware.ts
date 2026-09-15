@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
 import { verifyFirebaseSessionCsrfToken } from '../services/firebase-session.service.js';
 import { hasBearerCredential } from '../services/request-identity.service.js';
+import { usesSharedRateLimits } from '../config/rate-limits.js';
 
 /**
  * CSRF Protection Middleware — Double-Submit Cookie Pattern
@@ -24,6 +25,10 @@ const CSRF_COOKIE_NAME = 'csrf-token';
 const CSRF_HEADER_NAME = 'x-csrf-token';
 const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
+function isCsrfToken(value: unknown): value is string {
+    return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+}
+
 // Generate a cryptographically random token
 function generateToken(): string {
     return crypto.randomBytes(32).toString('hex');
@@ -41,14 +46,15 @@ export function csrfCookieSetter(req: Request, res: Response, next: NextFunction
         next();
         return;
     }
-    // Only set cookie if it doesn't already exist
-    if (!req.cookies?.[CSRF_COOKIE_NAME]) {
+    // Replace malformed cookies too; otherwise a bad cookie survives refresh.
+    if (!isCsrfToken(req.cookies?.[CSRF_COOKIE_NAME])) {
         const token = generateToken();
+        const deployedRuntime = usesSharedRateLimits();
         res.cookie(CSRF_COOKIE_NAME, token, {
             httpOnly: false,   // Must be readable by JavaScript
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-            partitioned: process.env.NODE_ENV === 'production', // Required for cross-domain cookies
+            secure: deployedRuntime,
+            sameSite: deployedRuntime ? 'none' : 'strict',
+            partitioned: deployedRuntime, // Required for cross-domain cookies
             path: '/',
             maxAge: 8 * 60 * 60 * 1000, // 8 hours — tighter security for CSRF tokens
         } as any);
@@ -104,7 +110,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     }
 
     const cookieToken = req.cookies?.[CSRF_COOKIE_NAME];
-    const headerToken = req.headers[CSRF_HEADER_NAME] as string;
+    const headerToken = req.headers[CSRF_HEADER_NAME];
 
     if (!cookieToken || !headerToken) {
         res.status(403).json({
@@ -114,8 +120,9 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
         return;
     }
 
-    // Timing-safe comparison to prevent timing attacks
-    if (cookieToken.length !== headerToken.length) {
+    // Character counts do not imply equal byte lengths (for example Unicode).
+    // Reject malformed types/encodings before constructing fixed-length buffers.
+    if (!isCsrfToken(cookieToken) || !isCsrfToken(headerToken)) {
         res.status(403).json({
             error: 'CSRF Validation Failed',
             message: 'Invalid CSRF token. Please refresh the page and try again.',
@@ -123,10 +130,10 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
         return;
     }
 
-    const valid = crypto.timingSafeEqual(
-        Buffer.from(cookieToken),
-        Buffer.from(headerToken)
-    );
+    const cookieBytes = Buffer.from(cookieToken, 'ascii');
+    const headerBytes = Buffer.from(headerToken, 'ascii');
+    const valid = cookieBytes.length === headerBytes.length
+        && crypto.timingSafeEqual(cookieBytes, headerBytes);
 
     if (!valid) {
         res.status(403).json({

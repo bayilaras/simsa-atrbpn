@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { notificationService } from '../services/notification.service'
 import settingsService, { PREFERENCES_CHANGED_EVENT } from '../services/settings.service'
 import { notificationMatchesFilter } from '../lib/notification-routing'
@@ -33,6 +33,17 @@ export function useNotifications({ unitKerjaId = '', limit = 20, refreshInterval
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [notificationsEnabled, setNotificationsEnabled] = useState(null)
+    const scope = useMemo(() => ({ unitKerjaId, limit, notificationsEnabled }), [unitKerjaId, limit, notificationsEnabled])
+    const activeScope = useRef(null)
+    const requestVersion = useRef(0)
+    const [loadedScope, setLoadedScope] = useState(null)
+    const visibleNotifications = loadedScope === scope ? notifications : []
+    const visibleCounts = loadedScope === scope ? counts : EMPTY_COUNTS
+
+    useEffect(() => {
+        activeScope.current = scope
+        return () => { activeScope.current = null; requestVersion.current += 1 }
+    }, [scope])
 
     useEffect(() => {
         let active = true
@@ -59,6 +70,9 @@ export function useNotifications({ unitKerjaId = '', limit = 20, refreshInterval
     }, [])
 
     const fetchNotifications = useCallback(async () => {
+        if (activeScope.current !== scope) return
+        const version = ++requestVersion.current
+        const current = () => activeScope.current === scope && version === requestVersion.current
         if (!unitKerjaId) {
             setNotifications([])
             setCounts(EMPTY_COUNTS)
@@ -76,17 +90,21 @@ export function useNotifications({ unitKerjaId = '', limit = 20, refreshInterval
             return
         }
         try {
+            setLoading(true)
             setError(null)
             const data = await notificationService.getAll({ unitKerjaId, limit })
+            if (!current()) return
             setNotifications(data.notifications || [])
             setCounts(data.counts || EMPTY_COUNTS)
+            setLoadedScope(scope)
         } catch (err) {
+            if (!current()) return
             console.error('Error fetching notifications:', err)
             setError(err.message)
         } finally {
-            setLoading(false)
+            if (current()) setLoading(false)
         }
-    }, [unitKerjaId, limit, notificationsEnabled])
+    }, [unitKerjaId, limit, notificationsEnabled, scope])
 
     // Initial fetch
     useEffect(() => {
@@ -110,11 +128,14 @@ export function useNotifications({ unitKerjaId = '', limit = 20, refreshInterval
     }, [fetchNotifications])
 
     const markAsRead = useCallback(async (id) => {
+        if (activeScope.current !== scope) return
         if (!unitKerjaId) {
             setError('Pilih unit kerja sebelum mengelola notifikasi')
             return
         }
         // Optimistic update - find the notification to update counts properly
+        if (loadedScope !== scope) return
+        requestVersion.current += 1
         const notif = notifications.find(n => n.id === id)
         setNotifications(prev => prev.filter(n => n.id !== id))
         if (notif) {
@@ -133,28 +154,33 @@ export function useNotifications({ unitKerjaId = '', limit = 20, refreshInterval
 
         try {
             await notificationService.markAsRead(id, unitKerjaId)
+            if (activeScope.current !== scope) return
 
             // Sync accurate counts
             fetchNotifications()
         } catch (err) {
+            if (activeScope.current !== scope) return
             console.error('Error marking notification as read:', err)
             // Re-sync first so the optimistic removal is rolled back, then surface the error
             await fetchNotifications()
-            setError(err.message || 'Gagal menandai notifikasi sebagai dibaca')
+            if (activeScope.current === scope) setError(err.message || 'Gagal menandai notifikasi sebagai dibaca')
         }
-    }, [notifications, fetchNotifications, unitKerjaId])
+    }, [notifications, fetchNotifications, unitKerjaId, scope, loadedScope])
 
     const markAllAsRead = useCallback(async (categoryFilter) => {
+        if (activeScope.current !== scope) return
         if (!unitKerjaId) {
             setError('Pilih unit kerja sebelum mengelola notifikasi')
             return
         }
+        if (loadedScope !== scope) return
         // If categoryFilter provided, only mark visible category as read
         const targetNotifications = categoryFilter
             ? notifications.filter(n => notificationMatchesFilter(n, categoryFilter))
             : notifications
         const ids = targetNotifications.map(n => n.id)
         if (ids.length === 0) return
+        requestVersion.current += 1
 
         // Optimistic update
         if (categoryFilter) {
@@ -177,39 +203,41 @@ export function useNotifications({ unitKerjaId = '', limit = 20, refreshInterval
 
         try {
             await notificationService.markAllAsRead(ids, unitKerjaId)
+            if (activeScope.current !== scope) return
 
             fetchNotifications()
         } catch (err) {
+            if (activeScope.current !== scope) return
             console.error('Error marking all as read:', err)
             // Re-sync first so the optimistic removal is rolled back, then surface the error
             await fetchNotifications()
-            setError(err.message || 'Gagal menandai semua notifikasi sebagai dibaca')
+            if (activeScope.current === scope) setError(err.message || 'Gagal menandai semua notifikasi sebagai dibaca')
         }
-    }, [notifications, fetchNotifications, unitKerjaId])
+    }, [notifications, fetchNotifications, unitKerjaId, scope, loadedScope])
 
     // Helper to get notifications filtered by category
     const getByCategory = useCallback((category) => {
-        return notifications.filter(n => notificationMatchesFilter(n, category))
-    }, [notifications])
+        return loadedScope === scope ? notifications.filter(n => notificationMatchesFilter(n, category)) : []
+    }, [notifications, loadedScope, scope])
 
     return {
-        notifications,
-        counts,
+        notifications: visibleNotifications,
+        counts: visibleCounts,
         loading,
         error,
         refresh,
         markAsRead,
         markAllAsRead,
         getByCategory,
-        hasNotifications: counts.total > 0,
-        hasUrgent: counts.urgent > 0,
+        hasNotifications: visibleCounts.total > 0,
+        hasUrgent: visibleCounts.urgent > 0,
         notificationsEnabled: notificationsEnabled !== false,
-        suratCount: counts.suratMasuk,
-        arsipCount: counts.arsipRetensi,
-        workflowCount: (counts.distribusi || 0)
-            + (counts.verifikasiRetensi || 0)
-            + (counts.appraisal || 0)
-            + (counts.penyusutan || 0)
-            + (counts.penyerahanPermanen || 0),
+        suratCount: visibleCounts.suratMasuk,
+        arsipCount: visibleCounts.arsipRetensi,
+        workflowCount: (visibleCounts.distribusi || 0)
+            + (visibleCounts.verifikasiRetensi || 0)
+            + (visibleCounts.appraisal || 0)
+            + (visibleCounts.penyusutan || 0)
+            + (visibleCounts.penyerahanPermanen || 0),
     }
 }

@@ -15,7 +15,7 @@ import { useAuth } from './context/AuthContext'
 import Login from '@/pages/Login' // Eager: first page users see
 import PrintLayout from '@/layouts/PrintLayout'
 import appConfig from '@/lib/app-config'
-import { PROVISIONED_ROLES } from '@/lib/provisioning-access'
+import { PROVISIONED_ROLES, hasProvisionedAccess } from '@/lib/provisioning-access'
 import { useAppConfig } from '@/context/app-config-context'
 import './index.css'
 
@@ -29,10 +29,12 @@ const Arsip = lazy(() => import('@/pages/Arsip'))
 const ArsipDetail = lazy(() => import('@/pages/ArsipDetail'))
 const UserManagement = lazy(() => import('@/pages/UserManagement'))
 const AuditLog = lazy(() => import('@/pages/AuditLog'))
+const OperationsMonitoring = lazy(() => import('@/pages/OperationsMonitoring'))
 const KlasifikasiArsip = lazy(() => import('@/pages/KlasifikasiArsip'))
 const JadwalRetensi = lazy(() => import('@/pages/JadwalRetensi'))
 const RegulatoryRuleSets = lazy(() => import('@/pages/RegulatoryRuleSets'))
 const StorageLocations = lazy(() => import('@/pages/StorageLocations'))
+const StorageLocationDetail = lazy(() => import('@/pages/StorageLocationDetail'))
 const ArchiveLending = lazy(() => import('@/pages/ArchiveLending'))
 const Dosir = lazy(() => import('@/pages/Dosir'))
 const DosirDetail = lazy(() => import('@/pages/DosirDetail'))
@@ -139,11 +141,11 @@ function OptionalModuleGuard({ capability, children }) {
 
 
 
-const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
 const SUPER_ADMIN_ONLY = ['super_admin'];
-const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
-const ALL_ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
-const STAFF_AND_ABOVE = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff'];
+const ADMIN_AND_AUDITOR = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'auditor'];
+const ALL_ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
+const STAFF_AND_ABOVE = ALL_ADMIN_ROLES;
 const ALL_PROVISIONED_ROLES = PROVISIONED_ROLES;
 
 function AppLayout() {
@@ -178,14 +180,10 @@ function AppLayout() {
 }
 
 function GuideLayout() {
-  const { isAuthenticated, loading, user, checkAuth, signOut } = useAuth()
+  const { isAuthenticated, loading, user } = useAuth()
 
-  if (!loading && isAuthenticated) {
-    return (
-      <ProvisionedAccessGate user={user} onRefresh={checkAuth} onSignOut={signOut}>
-        <AppLayout />
-      </ProvisionedAccessGate>
-    )
+  if (!loading && isAuthenticated && hasProvisionedAccess(user)) {
+    return <AppLayout />
   }
 
   return (
@@ -202,11 +200,13 @@ function GuideLayout() {
             </div>
           </Link>
           <Link
-            to="/login"
+            to={isAuthenticated ? '/' : '/login'}
             className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="sm:hidden">Login</span>
-            <span className="hidden sm:inline">Kembali ke login</span>
+            {isAuthenticated ? <span>Kembali ke status akses</span> : <>
+              <span className="sm:hidden">Login</span>
+              <span className="hidden sm:inline">Kembali ke login</span>
+            </>}
           </Link>
         </div>
       </header>
@@ -255,6 +255,7 @@ const router = createBrowserRouter([
       { path: "/bulk-upload", element: <OptionalModuleGuard capability="bulkOcr"><FileCapabilityGuard upload><RoleGuard allowedRoles={ALL_ADMIN_ROLES}><BulkUpload /></RoleGuard></FileCapabilityGuard></OptionalModuleGuard> },
       { path: "/laporan", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Laporan /></RoleGuard> },
       { path: "/audit-log", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><AuditLog /></RoleGuard> },
+      { path: "/monitoring-operasional", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><OperationsMonitoring /></RoleGuard> },
       { path: "/record-access-grants", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><RecordAccessGrants /></RoleGuard> },
       {
         path: "/integrations/srikandi",
@@ -268,10 +269,11 @@ const router = createBrowserRouter([
       },
       { path: "/settings", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><Settings /></RoleGuard> },
       { path: "/users", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><UserManagement /></RoleGuard> },
-      { path: "/master/klasifikasi", element: <RoleGuard allowedRoles={ADMIN_ROLES}><KlasifikasiArsip /></RoleGuard> },
-      { path: "/master/jra", element: <RoleGuard allowedRoles={ADMIN_ROLES}><JadwalRetensi /></RoleGuard> },
-      { path: "/master/regulatory-rules", element: <RoleGuard allowedRoles={ADMIN_AND_AUDITOR}><RegulatoryRuleSets /></RoleGuard> },
+      { path: "/master/klasifikasi", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><KlasifikasiArsip /></RoleGuard> },
+      { path: "/master/jra", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><JadwalRetensi /></RoleGuard> },
+      { path: "/master/regulatory-rules", element: <RoleGuard allowedRoles={SUPER_ADMIN_ONLY}><RegulatoryRuleSets /></RoleGuard> },
       { path: "/storage-locations", element: <RoleGuard allowedRoles={ADMIN_ROLES}><StorageLocations /></RoleGuard> },
+      { path: "/storage-locations/:id", element: <RoleGuard allowedRoles={ADMIN_ROLES}><StorageLocationDetail /></RoleGuard> },
       { path: "/archive-lending", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><ArchiveLending /></RoleGuard> },
       { path: "/dosir", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><Dosir /></RoleGuard> },
       { path: "/dosir/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><DosirDetail /></RoleGuard> },
@@ -316,4 +318,3 @@ function App() {
 }
 
 export default App
-

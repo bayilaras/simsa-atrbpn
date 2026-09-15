@@ -37,8 +37,9 @@ describe('isolated metadata demo configuration', () => {
         expect(() => loadAppMode({ SIMSA_APP_MODE: 'demoo' })).toThrow();
         expect(getPublicCapabilities(localDemo)).toEqual({
             mode: 'metadata-demo', syntheticDataOnly: true,
-            capabilities: { metadata: true, files: false, fileUploads: false, externalIntegrations: false },
-            authentication: { provider: 'better-auth', googleSignIn: false },
+            capabilities: { metadata: true, files: false, fileUploads: false, letterFileUploads: false, bulkOcr: false,
+                advancedArchiveWorkflows: false, externalIntegrations: false },
+            authentication: { provider: 'better-auth', googleSignIn: false, pendingGoogleSignup: false },
         });
     });
     it('binds only a local Better Auth metadata demo to loopback', () => {

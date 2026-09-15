@@ -18,7 +18,9 @@ const requireBackend = createRequire(new URL('../backend/package.json',import.me
 const { Client } = requireBackend('pg');
 const root=resolve(import.meta.dirname,'..');
 const helperFiles=['scripts/neon-backup.mjs','scripts/neon-backup-core.mjs','scripts/neon-backup-runtime.mjs','scripts/neon-backup-role.mjs',
-  'scripts/neon-database-policy.mjs','scripts/neon-worker-role.mjs','scripts/local-backup-drill-core.mjs','.github/scripts/collect-backup-evidence.sql','backend/src/db/grants/0002_converge_application_grants.sql'];
+  'scripts/neon-database-policy.mjs','scripts/neon-worker-role.mjs','scripts/local-backup-drill-core.mjs',
+  'scripts/local-current-backup-core.mjs','scripts/migration-manifest.mjs','backend/scripts/migrate-database.mjs',
+  '.github/scripts/collect-backup-evidence.sql','backend/src/db/grants/0002_converge_application_grants.sql'];
 export async function neonBackupHelperHashes(){return Object.fromEntries(await Promise.all(helperFiles.map(async file=>[file,sha256((await readFile(join(root,file),'utf8')).replaceAll('\r\n','\n'))])));}
 const helperHashes=neonBackupHelperHashes;
 const ident=v=>{check(/^[A-Za-z][A-Za-z0-9_.@-]{0,62}$/.test(v),'Invalid authenticated database identifier');return `"${v}"`;};
@@ -36,7 +38,7 @@ export async function captureNeonSnapshot({client,command,environment,source,sig
     await assertNeonRoleBoundaries(client,{database:source.database,role:'simsa_backup'});
     await assertNeonBackupRole(client,{database:source.database,requireIdentity:true});
     const applied=(await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id')).rows;
-    check(applied.length===39 && validateAppliedMigrations(loadMigrations(),applied).length===0,'Source migration history differs from this release');
+    check(validateAppliedMigrations(loadMigrations(),applied).length===0,'Source migration history differs from this release');
     const snapshot=(await client.query('SELECT pg_export_snapshot() AS id,clock_timestamp() AS taken_at')).rows[0];
     check(/^[0-9A-F]+-[0-9A-F]+-[0-9]+$/.test(snapshot.id),'Unsafe snapshot identifier');
     const collector=await loadNeonEvidenceSql();

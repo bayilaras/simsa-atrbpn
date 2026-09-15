@@ -127,6 +127,8 @@ export default function DosirDetail() {
     const [editing, setEditing] = useState(false)
     const [editForm, setEditForm] = useState({})
     const [saveLoading, setSaveLoading] = useState(false)
+    const [saveError, setSaveError] = useState('')
+    const invalidDateRange = Boolean(editForm.tanggalMulai && editForm.tanggalSelesai && editForm.tanggalSelesai < editForm.tanggalMulai)
 
     // Data fetching
     const fetchData = useCallback(async () => {
@@ -159,13 +161,16 @@ export default function DosirDetail() {
 
     // Handlers
     const handleSave = async () => {
+        if (saveLoading || invalidDateRange || !editForm.judul?.trim()) return
         try {
+            setSaveError('')
             setSaveLoading(true)
             await dosirService.update(id, editForm)
             setEditing(false)
             fetchData()
         } catch (error) {
             console.error('Error updating dosir:', error)
+            setSaveError(error.message || 'Perubahan belum tersimpan. Silakan coba lagi.')
         } finally {
             setSaveLoading(false)
         }
@@ -275,7 +280,7 @@ export default function DosirDetail() {
                         </div>
 
                         <div className="flex flex-row md:flex-col gap-3 w-full md:w-auto shrink-0">
-                            <Dialog open={editing} onOpenChange={setEditing}>
+                            <Dialog open={editing} onOpenChange={open => { setEditing(open); setSaveError('') }}>
                                 <DialogTrigger asChild>
                                     <Button className="bg-card text-indigo-700 dark:text-indigo-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 w-full md:w-auto shadow-lg hover:shadow-xl transition-all">
                                         <Edit2 className="mr-2 h-4 w-4" />
@@ -339,6 +344,9 @@ export default function DosirDetail() {
                                                     <Input
                                                         id="tglSelesai"
                                                         type="date"
+                                                        min={editForm.tanggalMulai || undefined}
+                                                        aria-invalid={invalidDateRange}
+                                                        aria-describedby={invalidDateRange ? 'dosir-date-error' : undefined}
                                                         value={editForm.tanggalSelesai}
                                                         onChange={(e) => setEditForm(p => ({ ...p, tanggalSelesai: e.target.value }))}
                                                     />
@@ -357,9 +365,11 @@ export default function DosirDetail() {
                                             </div>
                                         </div>
                                     </div>
+                                    {invalidDateRange && <p id="dosir-date-error" role="alert" className="text-sm text-destructive">Tanggal selesai tidak boleh sebelum tanggal mulai.</p>}
+                                    {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
                                     <DialogFooter>
                                         <Button variant="outline" onClick={() => setEditing(false)}>Batal</Button>
-                                        <Button onClick={handleSave} disabled={saveLoading} className="bg-indigo-600 hover:bg-indigo-700">
+                                        <Button onClick={handleSave} disabled={saveLoading || invalidDateRange || !editForm.judul?.trim()} className="bg-indigo-600 hover:bg-indigo-700">
                                             {saveLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                             Simpan Perubahan
                                         </Button>

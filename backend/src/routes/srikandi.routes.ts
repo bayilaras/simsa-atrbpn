@@ -14,7 +14,7 @@ import {
 } from '../validators/srikandi.schemas.js';
 
 const router = Router();
-const ADMIN_ROLES: Role[] = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+const ADMIN_ROLES: Role[] = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
 
 type ResolvedScope = { scope: RecordUnitScope };
 

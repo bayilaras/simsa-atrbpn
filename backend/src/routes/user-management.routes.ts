@@ -3,10 +3,6 @@ import userManagementService from '../services/user-management.service';
 import { listUsersSchema, updateUserSchema, userIdParamSchema, createUserSchema } from '../validations/user-management.validation';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
-import { createLogger } from '../utils/logger';
-import { AppError } from '../utils/errors.js';
-
-const log = createLogger('UserManagementRoutes');
 
 const router = Router();
 
@@ -52,7 +48,7 @@ router.use(requireSuperAdmin);
  *         name: role
  *         schema:
  *           type: string
- *           enum: [super_admin, admin_dirjen, admin_sesditjen, user]
+ *           enum: [super_admin, admin_unit]
  *       - in: query
  *         name: unitKerjaId
  *         schema:
@@ -75,7 +71,7 @@ router.use(requireSuperAdmin);
  *       200:
  *         description: List of users with pagination
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const parseResult = listUsersSchema.safeParse(req.query);
         if (!parseResult.success) {
@@ -88,8 +84,7 @@ router.get('/', async (req: Request, res: Response) => {
         const result = await userManagementService.listUsers(parseResult.data);
         res.json({ success: true, ...result });
     } catch (error) {
-        log.error({ err: error }, 'List users error:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
@@ -115,7 +110,7 @@ router.get('/', async (req: Request, res: Response) => {
  *                 type: string
  *               role:
  *                 type: string
- *                 enum: [super_admin, admin_dirjen, admin_sesditjen, user]
+ *                 enum: [super_admin, admin_unit]
  *               unitKerjaId:
  *                 type: string
  *                 nullable: true
@@ -140,7 +135,7 @@ router.get('/', async (req: Request, res: Response) => {
  *       503:
  *         description: External identity reconciliation must be retried
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const bodyResult = createUserSchema.safeParse(req.body);
         if (!bodyResult.success) {
@@ -158,15 +153,8 @@ router.post('/', async (req: Request, res: Response) => {
         });
 
         res.status(201).json({ success: true, data: newUser });
-    } catch (error: any) {
-        if (error instanceof AppError) {
-            return res.status(error.statusCode).json({ error: error.message });
-        }
-        if (error.message?.includes('Email sudah terdaftar') || error.message?.includes('Invalid')) {
-            return res.status(400).json({ error: error.message });
-        }
-        log.error({ err: error }, 'Create user error:');
-        res.status(500).json({ error: 'Internal server error' });
+    } catch (error) {
+        next(error);
     }
 });
 
@@ -182,13 +170,12 @@ router.post('/', async (req: Request, res: Response) => {
  *       200:
  *         description: List of available roles
  */
-router.get('/roles', async (req: Request, res: Response) => {
+router.get('/roles', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const roles = userManagementService.getRoles();
         res.json({ success: true, data: roles });
     } catch (error) {
-        log.error({ err: error }, 'Get roles error:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
@@ -204,13 +191,12 @@ router.get('/roles', async (req: Request, res: Response) => {
  *       200:
  *         description: List of unit kerja
  */
-router.get('/unit-kerja', async (req: Request, res: Response) => {
+router.get('/unit-kerja', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const unitKerjaList = await userManagementService.listUnitKerja();
         res.json({ success: true, data: unitKerjaList });
     } catch (error) {
-        log.error({ err: error }, 'Get unit kerja error:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
@@ -235,7 +221,7 @@ router.get('/unit-kerja', async (req: Request, res: Response) => {
  *       404:
  *         description: User not found
  */
-router.get('/:userId', async (req: Request, res: Response) => {
+router.get('/:userId', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);
         if (!parseResult.success) {
@@ -252,8 +238,7 @@ router.get('/:userId', async (req: Request, res: Response) => {
 
         res.json({ success: true, data: user });
     } catch (error) {
-        log.error({ err: error }, 'Get user error:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
@@ -280,7 +265,7 @@ router.get('/:userId', async (req: Request, res: Response) => {
  *             properties:
  *               role:
  *                 type: string
- *                 enum: [super_admin, admin_dirjen, admin_sesditjen, user]
+ *                 enum: [super_admin, admin_unit]
  *               unitKerjaId:
  *                 type: string
  *                 nullable: true
@@ -300,7 +285,7 @@ router.get('/:userId', async (req: Request, res: Response) => {
  *       200:
  *         description: User updated successfully
  */
-router.put('/:userId', async (req: Request, res: Response) => {
+router.put('/:userId', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const paramResult = userIdParamSchema.safeParse(req.params);
         if (!paramResult.success) {
@@ -345,15 +330,8 @@ router.put('/:userId', async (req: Request, res: Response) => {
         }
 
         res.json({ success: true, data: updatedUser });
-    } catch (error: any) {
-        if (error instanceof AppError) {
-            return res.status(error.statusCode).json({ error: error.message });
-        }
-        if (error.message?.includes('Invalid')) {
-            return res.status(400).json({ error: error.message });
-        }
-        log.error({ err: error }, 'Update user error:');
-        res.status(500).json({ error: 'Internal server error' });
+    } catch (error) {
+        next(error);
     }
 });
 
@@ -376,7 +354,7 @@ router.put('/:userId', async (req: Request, res: Response) => {
  *       200:
  *         description: User deactivated successfully
  */
-router.delete('/:userId', async (req: Request, res: Response) => {
+router.delete('/:userId', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);
         if (!parseResult.success) {
@@ -404,11 +382,7 @@ router.delete('/:userId', async (req: Request, res: Response) => {
 
         res.json({ success: true, data: deactivatedUser, message: 'User deactivated' });
     } catch (error) {
-        if (error instanceof AppError) {
-            return res.status(error.statusCode).json({ error: error.message });
-        }
-        log.error({ err: error }, 'Deactivate user error:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 

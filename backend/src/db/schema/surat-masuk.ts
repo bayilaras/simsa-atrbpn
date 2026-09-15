@@ -1,7 +1,8 @@
-import { pgTable, uuid, varchar, text, date, boolean, integer, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, date, boolean, integer, timestamp, uniqueIndex, index, check } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { unitKerja } from './unit-kerja';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
+import { klasifikasiArsip, jadwalRetensiArsip } from './master-data';
 
 export const suratMasuk = pgTable('surat_masuk', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -23,6 +24,8 @@ export const suratMasuk = pgTable('surat_masuk', {
     filePath: text('file_path'),
     fileOriginalName: varchar('file_original_name', { length: 255 }),
     // Klasifikasi fields
+    klasifikasiItemId: integer('klasifikasi_item_id').references(() => klasifikasiArsip.id, { onDelete: 'restrict' }),
+    jraItemId: integer('jra_item_id').references(() => jadwalRetensiArsip.id, { onDelete: 'restrict' }),
     klasifikasiKode: varchar('klasifikasi_kode', { length: 50 }),
     klasifikasiUraian: text('klasifikasi_uraian'),
     isArchived: boolean('is_archived').default(false),
@@ -33,6 +36,9 @@ export const suratMasuk = pgTable('surat_masuk', {
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
+    klasifikasiItemIndex: index('surat_masuk_klasifikasi_item_idx').on(table.klasifikasiItemId),
+    jraItemIndex: index('surat_masuk_jra_item_idx').on(table.jraItemId),
+    jraRequiresClassification: check('surat_masuk_jra_requires_classification', sql`${table.jraItemId} IS NULL OR ${table.klasifikasiItemId} IS NOT NULL`),
     unitYearSequenceUnique: uniqueIndex('surat_masuk_unit_year_sequence_uidx')
         .on(table.unitKerjaId, table.tahun, table.noUrut),
 }));

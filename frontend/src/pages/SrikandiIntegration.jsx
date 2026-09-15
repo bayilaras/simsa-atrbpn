@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { usePaginatedResource } from '@/hooks/use-paginated-resource';
+import { ResourcePagination } from '@/components/ResourcePagination';
 import { CloudCog, RefreshCw, RotateCcw, Send } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -43,37 +45,25 @@ export default function SrikandiIntegration() {
     const { user } = useAuth();
     const { toast } = useToast();
     const isSuperAdmin = user?.role === 'super_admin';
-    const [configuration, setConfiguration] = useState(null);
-    const [rows, setRows] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [workingId, setWorkingId] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all');
     const [unitKerjaId, setUnitKerjaId] = useState(resolveEffectiveUnitKerjaId(user));
     const [retryItem, setRetryItem] = useState(null);
     const [retryReason, setRetryReason] = useState('');
 
-    const load = useCallback(async () => {
-        try {
-            setLoading(true);
-            const params = { limit: 100 };
-            if (statusFilter !== 'all') params.status = statusFilter;
-            if (unitKerjaId) params.unitKerjaId = unitKerjaId;
-            const [statusResponse, outboxResponse] = await Promise.all([
-                srikandiService.status(),
-                srikandiService.list(params),
-            ]);
-            setConfiguration(statusResponse.data);
-            setRows(outboxResponse.data || []);
-        } catch (error) {
-            toast({ title: 'Gagal memuat integrasi SRIKANDI', description: error.message, variant: 'destructive' });
-        } finally {
-            setLoading(false);
-        }
-    }, [statusFilter, unitKerjaId, toast]);
-
-    useEffect(() => {
-        load();
-    }, [load]);
+    const fetchPage = useCallback(async ({ page, limit }) => {
+        const params = { page, limit };
+        if (statusFilter !== 'all') params.status = statusFilter;
+        if (unitKerjaId) params.unitKerjaId = unitKerjaId;
+        const [statusResponse, outboxResponse] = await Promise.all([
+            srikandiService.status(),
+            srikandiService.list(params),
+        ]);
+        return { ...outboxResponse, configuration: statusResponse.data };
+    }, [statusFilter, unitKerjaId]);
+    const outbox = usePaginatedResource(fetchPage, { queryKey: JSON.stringify([user?.id, statusFilter, unitKerjaId]) });
+    const { rows, loading, reload: load } = outbox;
+    const configuration = outbox.response?.configuration;
 
     const dispatch = async (item) => {
         try {
@@ -173,9 +163,9 @@ export default function SrikandiIntegration() {
                     <CardTitle>Outbox sinkronisasi</CardTitle>
                     <CardDescription>HTTP 2xx tidak ditampilkan sebagai sukses tanpa ACK dan ID resmi sesuai kontrak.</CardDescription>
                     <div className="flex flex-col gap-3 pt-3 sm:flex-row">
-                        {isSuperAdmin && <Input value={unitKerjaId} onChange={(event) => setUnitKerjaId(event.target.value.trim())} placeholder="Filter/unit kerja untuk bulk dispatch" className="sm:max-w-xs" />}
+                        {isSuperAdmin && <Input aria-label="Unit kerja outbox" value={unitKerjaId} onChange={(event) => setUnitKerjaId(event.target.value.trim())} placeholder="Filter/unit kerja untuk bulk dispatch" className="sm:max-w-xs" />}
                         <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger className="sm:w-56"><SelectValue /></SelectTrigger>
+                            <SelectTrigger aria-label="Status outbox" className="sm:w-56"><SelectValue /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Semua status</SelectItem>
                                 {Object.entries(STATUS).map(([value, config]) => <SelectItem key={value} value={value}>{config[0]}</SelectItem>)}
@@ -185,7 +175,7 @@ export default function SrikandiIntegration() {
                 </CardHeader>
                 <CardContent>
                     {!rows.length ? (
-                        <div className="py-10 text-center text-sm text-muted-foreground">{loading ? 'Memuat outbox…' : 'Belum ada pesan pada cakupan ini.'}</div>
+                        <div className="py-10 text-center text-sm text-muted-foreground">{loading ? 'Memuat outbox…' : outbox.error ? '' : 'Belum ada pesan pada cakupan ini.'}</div>
                     ) : (
                         <div className="overflow-x-auto">
                             <Table>
@@ -213,6 +203,7 @@ export default function SrikandiIntegration() {
                             </Table>
                         </div>
                     )}
+                    <ResourcePagination resource={outbox} label="outbox SRIKANDI" />
                 </CardContent>
             </Card>
 

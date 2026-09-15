@@ -13,6 +13,7 @@ import {
     ScanCategory,
 } from './electronic-archive-policy.js';
 import { recordPreservationActivity } from './preservation-activity.service.js';
+import { ValidationError, ConflictError } from '../utils/errors.js';
 
 interface ArsipElektronikFilters {
     arsipId?: string;
@@ -153,10 +154,10 @@ class ArsipElektronikService {
             source.attachmentEntityType !== 'arsip' ||
             source.attachmentEntityId !== data.arsipId
         ) {
-            throw new Error('Lampiran tidak terdaftar pada arsip yang dipilih');
+            throw new ValidationError('Lampiran tidak terdaftar pada arsip yang dipilih');
         }
         if (!source.sha256) {
-            throw new Error('Lampiran belum memiliki baseline hash SHA-256; unggah ulang melalui ingest terkendali');
+            throw new ValidationError('Lampiran belum memiliki baseline hash SHA-256; unggah ulang melalui ingest terkendali');
         }
 
         const quality = evaluateScanQuality({
@@ -235,7 +236,7 @@ class ArsipElektronikService {
             .for('update');
         if (!record) return null;
         if (record.immutable || record.statusVerifikasi === 'verified') {
-            throw new Error('Metadata versi terverifikasi bersifat immutable; buat versi baru untuk perubahan');
+            throw new ConflictError('Metadata versi terverifikasi bersifat immutable; buat versi baru untuk perubahan');
         }
 
         const sourceType = data.sourceType || record.sourceType as ElectronicSourceType;
@@ -271,7 +272,7 @@ class ArsipElektronikService {
             ))
             .returning();
         if (!updated) {
-            throw new Error('Status rekod berubah; metadata terverifikasi tidak dapat ditimpa');
+            throw new ConflictError('Status rekod berubah; metadata terverifikasi tidak dapat ditimpa');
         }
         if (auditContext) {
             await auditLogService.logActionOrThrow({
@@ -301,12 +302,12 @@ class ArsipElektronikService {
             .for('update');
         if (!record) return null;
         if (!canDecideVerification(record.statusVerifikasi)) {
-            throw new Error('Keputusan verifikasi versi ini sudah final; koreksi harus dibuat sebagai versi/pending baru');
+            throw new ConflictError('Keputusan verifikasi versi ini sudah final; koreksi harus dibuat sebagai versi/pending baru');
         }
 
         if (status === 'verified') {
             if (!record.fileAttachmentId) {
-                throw new Error('Rekod legacy tanpa bitstream terkendali tidak dapat diverifikasi');
+                throw new ConflictError('Rekod legacy tanpa bitstream terkendali tidak dapat diverifikasi');
             }
             const [attachment] = await tx.select()
                 .from(fileAttachments)
@@ -318,13 +319,13 @@ class ArsipElektronikService {
                 .limit(1)
                 .for('update');
             if (!attachment) {
-                throw new Error('Lampiran terkendali tidak terhubung ke arsip induk');
+                throw new ConflictError('Lampiran terkendali tidak terhubung ke arsip induk');
             }
             if (attachment.storageAccess !== 'private') {
-                throw new Error('Lampiran harus tersimpan secara private sebelum diverifikasi');
+                throw new ConflictError('Lampiran harus tersimpan secara private sebelum diverifikasi');
             }
             if (attachment.malwareScanStatus !== 'clean') {
-                throw new Error('Lampiran belum dinyatakan bersih dari malware');
+                throw new ConflictError('Lampiran belum dinyatakan bersih dari malware');
             }
             const quality = evaluateScanQuality({
                 sourceType: record.sourceType as ElectronicSourceType,
@@ -333,17 +334,17 @@ class ArsipElektronikService {
                 colorDepth: record.colorDepth,
             });
             if (!quality.passed) {
-                throw new Error(`Kendali mutu belum terpenuhi: ${quality.errors.join(' ')}`);
+                throw new ConflictError(`Kendali mutu belum terpenuhi: ${quality.errors.join(' ')}`);
             }
             if (record.qcStatus !== 'passed') {
-                throw new Error('Status kendali mutu belum lulus');
+                throw new ConflictError('Status kendali mutu belum lulus');
             }
             const fixity = await fileAttachmentService.verifyIntegrity(record.fileAttachmentId, tx);
             if (!fixity?.matches) {
-                throw new Error('Verifikasi gagal: hash bitstream tidak cocok dengan baseline ingest');
+                throw new ConflictError('Verifikasi gagal: hash bitstream tidak cocok dengan baseline ingest');
             }
             if (fixity.attachment.integrityStatus !== 'verified') {
-                throw new Error('Status integritas lampiran belum terverifikasi');
+                throw new ConflictError('Status integritas lampiran belum terverifikasi');
             }
         }
 
@@ -364,7 +365,7 @@ class ArsipElektronikService {
             ))
             .returning();
         if (!result[0]) {
-            throw new Error('Status verifikasi berubah; muat ulang rekod sebelum melanjutkan');
+            throw new ConflictError('Status verifikasi berubah; muat ulang rekod sebelum melanjutkan');
         }
         if (auditContext) {
             await auditLogService.logActionOrThrow({
@@ -392,7 +393,7 @@ class ArsipElektronikService {
             .for('update');
         if (!record) return false;
         if (record.immutable || record.statusVerifikasi === 'verified') {
-            throw new Error('Versi terverifikasi tidak dapat dihapus; gunakan workflow penyusutan resmi');
+            throw new ConflictError('Versi terverifikasi tidak dapat dihapus; gunakan workflow penyusutan resmi');
         }
         const [deleted] = await tx
             .delete(arsipElektronik)
@@ -403,7 +404,7 @@ class ArsipElektronikService {
             ))
             .returning({ id: arsipElektronik.id });
         if (!deleted) {
-            throw new Error('Status rekod berubah; versi tidak dapat dihapus');
+            throw new ConflictError('Status rekod berubah; versi tidak dapat dihapus');
         }
         if (auditContext) {
             await auditLogService.logActionOrThrow({

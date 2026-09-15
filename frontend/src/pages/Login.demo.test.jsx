@@ -3,11 +3,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Login from './Login'
 
-const profile = vi.hoisted(() => ({ mode: 'full', provider: 'better-auth', configured: false }))
+const profile = vi.hoisted(() => ({ mode: 'full', provider: 'better-auth', configured: false, pendingGoogleSignup: false }))
 const logout = vi.hoisted(() => ({ signingOut: false, error: null, retry: vi.fn() }))
 const emailSignIn = vi.hoisted(() => vi.fn())
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ loading: false,
-    authentication: { provider: profile.provider, googleSignIn: profile.configured },
+    authentication: { provider: profile.provider, googleSignIn: profile.configured, pendingGoogleSignup: profile.pendingGoogleSignup },
 }) }))
 vi.mock('@/lib/app-config', () => ({ default: {
     get mode() { return profile.mode },
@@ -24,7 +24,16 @@ describe('demo login provider controls', () => {
     beforeEach(() => {
         logout.signingOut = false; logout.error = null; logout.retry.mockClear()
         emailSignIn.mockReset().mockResolvedValue(undefined)
-        Object.assign(profile, { mode: 'full', provider: 'better-auth', configured: false })
+        Object.assign(profile, { mode: 'full', provider: 'better-auth', configured: false, pendingGoogleSignup: false })
+    })
+    it('explains pending first Google access only when enabled by the server', () => {
+        profile.configured = true
+        profile.pendingGoogleSignup = true
+        const view = render(<MemoryRouter><Login /></MemoryRouter>)
+        expect(screen.getByText(/Akun Google baru/)).toHaveTextContent(/persetujuan administrator/i)
+        profile.pendingGoogleSignup = false
+        view.rerender(<MemoryRouter><Login /></MemoryRouter>)
+        expect(screen.queryByText(/Akun Google baru/)).not.toBeInTheDocument()
     })
     it('keeps credential login usable when the server intentionally disables Google', async () => {
         render(<MemoryRouter><Login /></MemoryRouter>)

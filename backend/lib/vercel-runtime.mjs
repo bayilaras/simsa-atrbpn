@@ -46,6 +46,12 @@ export function configureVercelMetadata(source) {
     }
     const selected = { ...source };
     if (source.VERCEL_ENV === 'preview') {
+        delete selected.RATE_LIMIT_KEY_SECRET;
+        const previewRateKey = source.PREVIEW_RATE_LIMIT_KEY_SECRET;
+        if (previewRateKey) {
+            if (previewRateKey === source.RATE_LIMIT_KEY_SECRET) throw new Error('Preview rate limit key must be isolated');
+            selected.RATE_LIMIT_KEY_SECRET = previewRateKey;
+        }
         for (const key of resources) {
             const value = source[`PREVIEW_${key}`];
             if (!value || value !== value.trim()) throw new Error('Isolated Preview resources required');
@@ -64,6 +70,8 @@ export function configureVercelMetadata(source) {
         }
     }
     validateNeonTarget(selected.DATABASE_URL, { role: 'simsa_api' });
+    const rateKey = selected.RATE_LIMIT_KEY_SECRET;
+    if (rateKey && (rateKey.length < 32 || rateKey !== rateKey.trim() || /[\r\n]/.test(rateKey))) throw new Error('Invalid rate limit key');
     if (origin(selected.FRONTEND_URL) !== origin(selected.BETTER_AUTH_URL)
         || typeof selected.BETTER_AUTH_SECRET !== 'string' || selected.BETTER_AUTH_SECRET.length < 32
         || /[\r\n]/.test(selected.BETTER_AUTH_SECRET)) throw new Error('Invalid authentication configuration');
@@ -93,6 +101,8 @@ export async function initializeSimsaVercelHandler({ environment = process.env, 
         // initialize auth, database pools, and storage clients.
         if (environment.VERCEL_ENV === 'preview') {
             for (const key of resources) environment[key] = configured[key];
+            if (configured.RATE_LIMIT_KEY_SECRET) environment.RATE_LIMIT_KEY_SECRET = configured.RATE_LIMIT_KEY_SECRET;
+            else delete environment.RATE_LIMIT_KEY_SECRET;
             // A Preview action must never send mail through inherited Production
             // credentials. This restricted profile does not provision email.
             for (const key of previewDisabledMail) environment[key] = '';

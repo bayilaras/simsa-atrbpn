@@ -64,6 +64,6 @@ describe('explicit internal password-only Google OAuth configuration', () => {
     it('keeps Firebase Google capability controlled by Firebase rather than Better Auth credentials', () => {
         const source = { AUTH_PROVIDER: 'firebase', FIREBASE_PROJECT_ID: 'synthetic-project', NODE_ENV: 'test' };
         expect(buildGoogleOAuthConfig(source).validationErrors).toEqual([]);
-        expect(getPublicCapabilities(source).authentication).toEqual({ provider: 'firebase', googleSignIn: true });
+        expect(getPublicCapabilities(source).authentication).toEqual({ provider: 'firebase', googleSignIn: true, pendingGoogleSignup: false });
     });
 });

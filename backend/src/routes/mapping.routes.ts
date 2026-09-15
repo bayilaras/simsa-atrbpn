@@ -24,13 +24,13 @@ router.use(authMiddleware);
  *       200:
  *         description: List of all thematic mappings
  */
-router.get('/klasifikasi-jra', async (req: AuthRequest, res: Response) => {
+router.get('/klasifikasi-jra', async (req: AuthRequest, res: Response, next) => {
     try {
         const data = await mappingService.getAllMappings();
         res.json({ success: true, data, total: data.length });
     } catch (error) {
         log.error({ err: error }, 'Error fetching mappings:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
@@ -71,7 +71,7 @@ router.get('/klasifikasi-jra', async (req: AuthRequest, res: Response) => {
  *       400:
  *         description: klasifikasiKode is required
  */
-router.get('/suggest-jra/:klasifikasiKode', async (req: AuthRequest, res: Response) => {
+router.get('/suggest-jra/:klasifikasiKode', async (req: AuthRequest, res: Response, next) => {
     try {
         const klasifikasiKode = req.params.klasifikasiKode as string;
 
@@ -88,7 +88,7 @@ router.get('/suggest-jra/:klasifikasiKode', async (req: AuthRequest, res: Respon
         });
     } catch (error) {
         log.error({ err: error }, 'Error fetching JRA suggestions:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 

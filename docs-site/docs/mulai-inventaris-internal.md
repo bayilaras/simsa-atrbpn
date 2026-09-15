@@ -5,7 +5,7 @@ description: Langkah pertama mencatat dan menemukan arsip fisik pada SIMSA
 
 # Mulai inventaris internal
 
-Mulai dari daftar surat dan arsip fisik yang memang menjadi tanggung jawab unit Anda. SIMSA dapat menyimpan metadata tanpa lampiran hasil pindai; konektor API SRIKANDI tidak menjadi prasyarat teknis untuk alur inventaris ini.
+Mulai dari daftar surat dan arsip fisik yang memang menjadi tanggung jawab unit Anda. SIMSA mengelola surat dan arsip secara mandiri, tanpa memerlukan koneksi atau akun SRIKANDI. Metadata dapat disimpan tanpa lampiran hasil pindai; fitur digital digunakan setelah penyimpanan privat dan pemeriksaan berkas siap.
 
 ## 1. Buka aplikasi dan masuk
 

@@ -321,6 +321,7 @@ def main() -> int:
             and "database_principal = google_sql_user.worker.name" in terraform_outputs,
             "maintenance has no canonical Terraform output for runtime database identities")
 
+    subprocess.run([sys.executable, str(ROOT / ".github/scripts/build-migration-manifest.py"), "--check-bindings"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, str(GATE), "--self-test"], cwd=ROOT, check=True)
     print("GCP database maintenance workflow validation: ok")
     return 0

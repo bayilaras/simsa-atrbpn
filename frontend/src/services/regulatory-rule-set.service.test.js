@@ -76,6 +76,35 @@ describe('regulatoryRuleSetService', () => {
         );
     });
 
+    it('allows the bounded server PDF verification runtime while preserving the exact private locator and filename', async () => {
+        const locator = 'https://store.private.blob.vercel-storage.com/regulatory-sources/draft-id/peraturan-random.pdf';
+        const response = { success: true, data: { sourceDocumentVerifiedAt: '2026-09-13T10:00:00Z' } };
+        apiMock.post.mockResolvedValueOnce(response);
+        await expect(regulatoryRuleSetService.verifySourceDocumentFromBlob('draft-id', locator, 'Peraturan (2020).pdf'))
+            .resolves.toBe(response);
+        expect(apiMock.post).toHaveBeenCalledOnce();
+        expect(apiMock.post).toHaveBeenCalledWith('/api/regulatory-rule-sets/draft-id/source-document/verify-blob', {
+            blobUrl: locator, originalFileName: 'Peraturan (2020).pdf',
+        }, { timeoutMs: 300_000 });
+    });
+
+    it('preserves an uncertain verification timeout without retrying the mutation', async () => {
+        const failure = Object.assign(new Error('Periksa catatan sebelum menyimpan kembali.'), { code: 'REQUEST_TIMEOUT', mutationOutcomeUnknown: true });
+        apiMock.post.mockRejectedValueOnce(failure);
+        await expect(regulatoryRuleSetService.verifySourceDocumentFromBlob('draft-id', 'private-locator', 'Peraturan.pdf'))
+            .rejects.toBe(failure);
+        expect(apiMock.post).toHaveBeenCalledOnce();
+    });
+
+    it('keeps multipart source upload on the shared file-request default', () => {
+        const file = new File(['%PDF-1.7'], 'source.pdf', { type: 'application/pdf' });
+        regulatoryRuleSetService.verifySourceDocument('draft-id', file);
+        const body = apiMock.post.mock.calls[0][1];
+        expect(body).toBeInstanceOf(FormData);
+        expect(body.get('file')).toEqual(file);
+        expect(apiMock.post).toHaveBeenCalledWith('/api/regulatory-rule-sets/draft-id/source-document/verify', body);
+    });
+
     it('fetches an authenticated private PDF stream and reads its safe filename', async () => {
         const pdf = new Blob(['%PDF-1.7\nsource'], { type: 'application/pdf' });
         apiMock.get.mockResolvedValue({

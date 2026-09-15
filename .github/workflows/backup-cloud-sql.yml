@@ -13,6 +13,7 @@ on:
         default: post_migration
         options:
           - pre_migration
+          - pre_upgrade_0038
           - post_migration
 
 # Backup access is federated for this run only. There is no service-account key
@@ -162,7 +163,7 @@ jobs:
           umask 077
 
           case "$BACKUP_SCHEMA_PROFILE" in
-            auto|pre_migration|post_migration) ;;
+            auto|pre_migration|pre_upgrade_0038|post_migration) ;;
             *) echo '::error::Unsupported backup schema profile.'; exit 1 ;;
           esac
 
@@ -389,7 +390,7 @@ jobs:
           RESOLVED_SCHEMA_PROFILE=$(awk -F '\t' '$1 == "schema_profile" { print $2 }' \
             "$EVIDENCE_DIR/source.evidence")
           case "$RESOLVED_SCHEMA_PROFILE" in
-            pre_migration|post_migration) ;;
+            pre_migration|pre_upgrade_0038|post_migration) ;;
             *) echo '::error::Source evidence did not resolve a supported schema profile.'; exit 1 ;;
           esac
           if [ "$BACKUP_SCHEMA_PROFILE" != auto ] && \
@@ -621,7 +622,7 @@ jobs:
 
           EXPECTED_MIGRATIONS_JSON=$(python3 "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py")
           case "$SCHEMA_PROFILE" in
-            pre_migration|post_migration) ;;
+            pre_migration|pre_upgrade_0038|post_migration) ;;
             *) echo '::error::Invalid source schema profile.'; exit 1 ;;
           esac
           if [[ ! "$RESTORED_DATABASE" =~ ^[a-z][a-z0-9_]{2,62}$ ]]; then
@@ -746,7 +747,8 @@ jobs:
               --set backup_principal=simsa_restore_backup \
               --file /grants/0001_bootstrap_cloud_sql_roles.sql
 
-          if [ "$SCHEMA_PROFILE" = post_migration ]; then
+          if [ "$SCHEMA_PROFILE" = post_migration ] || [ "$SCHEMA_PROFILE" = pre_upgrade_0038 ]; then
+            RESTORE_MIGRATIONS_JSON=$(python3 "$GITHUB_WORKSPACE/.github/scripts/build-migration-manifest.py" --emit-profile-manifest "$SCHEMA_PROFILE")
             docker run --rm --interactive --network host \
               --env PGHOST=127.0.0.1 --env PGPORT=5432 \
               --env PGUSER=simsa_restore_migrator --env PGPASSWORD=restore-only-ephemeral \
@@ -765,7 +767,7 @@ jobs:
                 --set maintenance_principal=simsa_restore_maintenance \
                 --set migrator_principal=simsa_restore_migrator \
                 --set backup_principal=simsa_restore_backup \
-                --set expected_migrations_json="$EXPECTED_MIGRATIONS_JSON" \
+                --set expected_migrations_json="$RESTORE_MIGRATIONS_JSON" \
                 --file /grants/0002_converge_application_grants.sql
           fi
 

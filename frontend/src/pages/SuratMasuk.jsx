@@ -130,6 +130,7 @@ export default function SuratMasuk() {
     // Fetch data from API
     const fetchData = useCallback(async () => {
         const seq = ++fetchSeqRef.current;
+        let changingPage = false;
         setLoading(true);
         setLoadError(false);
         try {
@@ -151,11 +152,17 @@ export default function SuratMasuk() {
             if (seq !== fetchSeqRef.current) return;
             if (!response.success) throw new Error('Daftar surat masuk tidak dapat dimuat.');
             if (response.success) {
+                const totalPages = Math.max(1, response.pagination?.totalPages || 1);
+                if (pagination.page > totalPages) {
+                    changingPage = true;
+                    setPagination(prev => ({ ...prev, page: totalPages }));
+                    return; // The page effect fetches the last remaining page.
+                }
                 setData(response.data || []);
                 setPagination(prev => ({
                     ...prev,
                     total: response.pagination?.total || 0,
-                    totalPages: response.pagination?.totalPages || 1,
+                    totalPages,
                 }));
             }
         } catch (error) {
@@ -168,7 +175,7 @@ export default function SuratMasuk() {
                 variant: 'destructive',
             });
         } finally {
-            if (seq === fetchSeqRef.current) setLoading(false);
+            if (seq === fetchSeqRef.current && !changingPage) setLoading(false);
         }
     }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, toast]);
 
@@ -192,6 +199,7 @@ export default function SuratMasuk() {
 
     useEffect(() => {
         fetchData();
+        return () => { fetchSeqRef.current += 1; };
     }, [fetchData]);
 
     useEffect(() => {
@@ -236,12 +244,7 @@ export default function SuratMasuk() {
     const handleEdit = (surat) => navigate(`/surat/masuk/edit/${surat.id}`);
 
     const handleOpenArchiveDialog = (surat) => {
-        setSelectedSurat({
-            id: surat.id,
-            nomorSurat: surat.nomorSurat,
-            perihal: surat.perihal,
-            tanggalSurat: surat.tanggalSurat,
-        });
+        setSelectedSurat(surat);
         setArchiveDialogOpen(true);
     };
 

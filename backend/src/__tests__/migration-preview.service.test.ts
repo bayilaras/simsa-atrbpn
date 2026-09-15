@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => {
     return { chain, queue, masuk: vi.fn(), keluar: vi.fn(), arsip: vi.fn() };
 });
 vi.mock('../config/database', () => ({ db: mocks.chain }));
-vi.mock('../services/surat-masuk.service.js', () => ({ suratMasukService: { create: mocks.masuk } }));
-vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: { create: mocks.keluar } }));
+vi.mock('../services/surat-masuk.service.js', () => ({ suratMasukService: { createImported: mocks.masuk } }));
+vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: { createImported: mocks.keluar } }));
 vi.mock('../services/arsip.service.js', () => ({ arsipService: { create: mocks.arsip } }));
 const { migrationService } = await import('../services/migration.service');
 const actor = { userId: 'operator-a', userEmail: 'operator@example.test', ipAddress: '127.0.0.1' };
@@ -85,7 +85,8 @@ describe('CSV date fidelity and mutation-free preview', () => {
         ].join('\n'), 'unit-a', actor);
         expect(result).toMatchObject({ success: false, imported: 1, skipped: 1 });
         expect(result.rows.map(row => row.status)).toEqual(['invalid', 'imported']);
-        expect(result.errors[0]).toContain('audit unavailable');
+        expect(result.errors[0]).toContain('Terjadi kesalahan pada server');
+        expect(JSON.stringify(result)).not.toContain('audit unavailable');
     });
 
     it.each(['__proto__', 'constructor', 'Perihal,Perihal'])('rejects unsafe or ambiguous CSV headers: %s', async header => {

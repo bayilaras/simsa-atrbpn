@@ -6,6 +6,7 @@ import {
     type RecordUnitScope,
 } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
+import { ValidationError } from '../utils/errors';
 
 interface CreateDosirInput {
     unitKerjaId: string;
@@ -22,8 +23,8 @@ interface UpdateDosirInput {
     deskripsi?: string;
     status?: string;
     kategori?: string;
-    tanggalMulai?: string;
-    tanggalSelesai?: string;
+    tanggalMulai?: string | null;
+    tanggalSelesai?: string | null;
 }
 
 interface DosirFilters {
@@ -56,8 +57,9 @@ async function findAccessibleDosir(
     id: string,
     unitScope: RecordUnitScope,
     executor: Pick<typeof db, 'select'> = db,
+    lockForUpdate = false,
 ) {
-    const [result] = await executor
+    const query = executor
         .select()
         .from(dosir)
         .where(scopedRecordByIdWhere(
@@ -67,6 +69,8 @@ async function findAccessibleDosir(
             unitScope,
         ))
         .limit(1);
+
+    const [result] = await (lockForUpdate ? query.for('update') : query);
 
     return result || null;
 }
@@ -109,8 +113,14 @@ export const dosirService = {
         auditContext?: CriticalAuditContext,
     ) {
         return db.transaction(async (tx) => {
-        const before = await findAccessibleDosir(id, unitScope, tx);
+        // Serialize partial edits so validation uses the latest committed pair.
+        const before = await findAccessibleDosir(id, unitScope, tx, true);
         if (!before) return undefined;
+        const start = data.tanggalMulai === undefined ? before.tanggalMulai : data.tanggalMulai;
+        const end = data.tanggalSelesai === undefined ? before.tanggalSelesai : data.tanggalSelesai;
+        if (start && end && end < start) {
+            throw new ValidationError('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+        }
         const [updated] = await tx.update(dosir)
             .set({
                 ...data,

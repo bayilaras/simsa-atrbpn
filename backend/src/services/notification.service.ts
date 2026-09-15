@@ -23,7 +23,7 @@ import {
 } from '../utils/notification-id.js';
 
 type SecurityClassScope = string[] | null | undefined;
-const ADMIN_NOTIFICATION_ROLES = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
+const ADMIN_NOTIFICATION_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
 const RETENTION_NOTIFICATION_ROLES = new Set([...ADMIN_NOTIFICATION_ROLES, 'auditor']);
 
 function incomingSecurityCondition(classes: SecurityClassScope) {
@@ -415,7 +415,7 @@ export class NotificationService {
     ): Promise<Notification[]> {
         if (!RETENTION_NOTIFICATION_ROLES.has(userRole)) return [];
         const readIds = knownReadIds || await this.getReadIds(userId);
-        const reviewer = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor']
+        const reviewer = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'auditor']
             .includes(userRole);
         const actionable = reviewer
             ? or(
@@ -473,7 +473,7 @@ export class NotificationService {
         securityClassifications?: string[] | null,
         knownReadIds?: Set<string>,
     ): Promise<Notification[]> {
-        const reviewer = ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(userRole);
+        const reviewer = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(userRole);
         if (!reviewer) return [];
         const readIds = knownReadIds || await this.getReadIds(userId);
         const statuses = userRole === 'super_admin'
@@ -539,7 +539,7 @@ export class NotificationService {
         securityClassifications?: string[] | null,
         knownReadIds?: Set<string>,
     ): Promise<Notification[]> {
-        if (!['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(userRole)) return [];
+        if (!['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(userRole)) return [];
         const readIds = knownReadIds || await this.getReadIds(userId);
         const rows = await db.select({
             id: permanentTransferManifests.id,

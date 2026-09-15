@@ -5,9 +5,11 @@ import AuthContext from '@/context/AuthContext';
 import { AppConfigContext, DISABLED_FEATURES } from '@/context/app-config-context';
 vi.mock('@/context/AuthContext', async () => ({ default: (await import('react')).createContext(null) }));
 
+const storageState = vi.hoisted(() => ({ provider: 'vercel-blob' }));
 vi.mock('@/lib/cloud-provider-config', async (importOriginal) => ({
     ...await importOriginal(),
     USE_FIREBASE_AUTH: true,
+    get STORAGE_PROVIDER() { return storageState.provider; },
 }));
 vi.mock('@/lib/firebase-client', () => ({
     getFirebaseAppCheckToken: vi.fn().mockResolvedValue('test-app-check'),
@@ -21,6 +23,7 @@ describe('private file preview', () => {
     let revokeObjectURL;
 
     beforeEach(() => {
+        storageState.provider = 'vercel-blob';
         createObjectURL = vi.fn().mockReturnValue('blob:http://localhost:3000/private-preview');
         revokeObjectURL = vi.fn();
         vi.stubGlobal('URL', class extends URL {
@@ -44,6 +47,8 @@ describe('private file preview', () => {
         const { unmount } = render(<FilePreviewSection surat={surat} entityType={entityType} />);
         expect(fetchMock).not.toHaveBeenCalled();
         expect(screen.queryByTitle('PDF Preview')).not.toBeInTheDocument();
+        expect(screen.getByText('Muat pratinjau atau unduh dokumen.')).toBeInTheDocument();
+        expect(screen.queryByText(/pemeriksaan|malware|baseline hash/i)).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Muat dokumen' }));
         expect(await screen.findByTitle('PDF Preview')).toHaveAttribute('src', 'blob:http://localhost:3000/private-preview#toolbar=1&navpanes=0');
@@ -143,12 +148,54 @@ describe('private file preview', () => {
         expect(screen.queryByRole('link', { name: 'Buka di Tab Baru' })).not.toBeInTheDocument();
     });
 
-    it('offers a status check for quarantined files without creating a preview URL', async () => {
+    it.each([
+        ['surat_masuk', 'Muat dokumen'], ['surat_masuk', 'Download'],
+        ['surat_keluar', 'Muat dokumen'], ['surat_keluar', 'Download'],
+    ])('keeps a rejected %s %s private without offering obsolete inspection actions', async (entityType, action) => {
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: false, status: 423, headers: new Headers(),
+            json: async () => ({ error: 'File quarantined', scanState: 'pending',
+                message: 'Bitstream harus diregistrasi, dipindai malware, dan memiliki baseline hash.' }),
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+        render(<AuthContext.Provider value={{ canWrite: () => true }}><FilePreviewSection surat={surat} entityType={entityType} /></AuthContext.Provider>);
+        fireEvent.click(screen.getByRole('button', { name: action }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Dokumen belum dapat diakses. Coba muat ulang dokumen.');
+        expect(screen.queryByText(/malware|baseline hash|pemeriksaan/i)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Periksa status' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Lanjutkan pemeriksaan' })).not.toBeInTheDocument();
+        expect(screen.queryByTitle('PDF Preview')).not.toBeInTheDocument();
+        expect(screen.queryByRole('link')).not.toBeInTheDocument();
+        expect(createObjectURL).not.toHaveBeenCalled();
+        expect(click).not.toHaveBeenCalled();
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(screen.getByRole('button', { name: action })).toBeEnabled();
+    });
+
+    it.each(['surat_masuk', 'surat_keluar'])('preserves GCS %s quarantine recovery until its private object is released', async (entityType) => {
+        storageState.provider = 'gcs';
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: false, status: 423, headers: new Headers(),
+            json: async () => ({ error: 'File quarantined', message: 'Dokumen menunggu pemeriksaan.', scanState: 'pending' }),
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        render(<AuthContext.Provider value={{ canWrite: () => true }}><FilePreviewSection surat={surat} entityType={entityType} /></AuthContext.Provider>);
+        fireEvent.click(screen.getByRole('button', { name: 'Muat dokumen' }));
+        expect(await screen.findByRole('button', { name: 'Periksa status' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Lanjutkan pemeriksaan' })).toBeEnabled();
+        expect(screen.getByText(/tersimpan dan menunggu pemeriksaan/)).toBeInTheDocument();
+        expect(screen.queryByTitle('PDF Preview')).not.toBeInTheDocument();
+        expect(createObjectURL).not.toHaveBeenCalled();
+        expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it('offers a status check for inspected archive files without creating a preview URL', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: false, status: 423, headers: new Headers(),
             json: async () => ({ error: 'File quarantined', message: 'Dokumen menunggu pemeriksaan.' }),
         }));
-        render(<FilePreviewSection surat={surat} />);
+        render(<FilePreviewSection surat={surat} entityType="arsip" />);
         fireEvent.click(screen.getByRole('button', { name: 'Muat dokumen' }));
         expect(await screen.findByRole('button', { name: 'Periksa status' })).toBeEnabled();
         expect(screen.queryByTitle('PDF Preview')).not.toBeInTheDocument();
@@ -160,12 +207,12 @@ describe('private file preview', () => {
         ['blocked', /Hubungi pengelola/, false],
         ['unavailable', /Status pemeriksaan dokumen belum dapat dipastikan/, false],
         [undefined, /Status pemeriksaan dokumen belum dapat dipastikan/, false],
-    ])('uses the server quarantine classification %s without guessing a clean result', async (scanState, text, retry) => {
+    ])('uses the archive quarantine classification %s without guessing a clean result', async (scanState, text, retry) => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: false, status: 423, headers: new Headers(),
             json: async () => ({ error: 'File quarantined', message: 'Dokumen belum dapat dibuka.', scanState }),
         }));
-        render(<AuthContext.Provider value={{ canWrite: () => true }}><FilePreviewSection surat={surat} /></AuthContext.Provider>);
+        render(<AuthContext.Provider value={{ canWrite: () => true }}><FilePreviewSection surat={surat} entityType="arsip" /></AuthContext.Provider>);
         fireEvent.click(screen.getByRole('button', { name: 'Muat dokumen' }));
         expect(await screen.findByText(text)).toBeInTheDocument();
         expect(Boolean(screen.queryByRole('button', { name: 'Lanjutkan pemeriksaan' }))).toBe(retry);

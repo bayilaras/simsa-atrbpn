@@ -1,6 +1,9 @@
 import { PayloadTooLargeError, ValidationError } from '../utils/errors.js';
 
 export const ARCHIVE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+// Official regulation PDFs may include hundreds of scanned annex pages.
+// Business correspondence retains the separate 10 MiB limit above.
+export const REGULATORY_SOURCE_MAX_BYTES = 50 * 1024 * 1024;
 export const ARCHIVE_UPLOAD_MIME = 'application/pdf';
 
 export function isPdfUploadMetadata(fileName: string, mimeType: string): boolean {

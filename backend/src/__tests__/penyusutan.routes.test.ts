@@ -249,8 +249,8 @@ describe('penyusutan batch unit scoping', () => {
 
     it('fails closed for a non-super user without an assigned unit', async () => {
         Object.assign(mocks.user, { role: 'auditor', unitKerjaId: null });
-        await request(app).get('/penyusutan/batch-1?unitKerjaId=unit-b').expect(400);
-        await request(app).get('/penyusutan/batch-1/print/usul-musnah?unitKerjaId=unit-b').expect(400);
+        await request(app).get('/penyusutan/batch-1?unitKerjaId=unit-b').expect(403);
+        await request(app).get('/penyusutan/batch-1/print/usul-musnah?unitKerjaId=unit-b').expect(403);
 
         expect(mocks.service.findById).not.toHaveBeenCalled();
         expect(mocks.print.generateDaftarUsulMusnah).not.toHaveBeenCalled();

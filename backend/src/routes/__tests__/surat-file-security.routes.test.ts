@@ -70,6 +70,7 @@ vi.mock('../../middlewares/role.middleware', () => ({
 
 vi.mock('../../middlewares/rate-limiter.middleware', () => ({
     uploadLimiter: (_req: any, _res: any, next: any) => next(),
+    sensitiveLimiter: (_req: any, _res: any, next: any) => next(),
 }));
 
 vi.mock('../../middlewares/validate.middleware', () => ({

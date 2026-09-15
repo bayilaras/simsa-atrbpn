@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import runpy
 import sys
 import tempfile
 import urllib.error
@@ -44,8 +45,10 @@ SERVICE_ACCOUNT_RE = re.compile(
 BACKUP_WORKFLOW = ".github/workflows/backup-cloud-sql.yml"
 MAINTENANCE_WORKFLOW = ".github/workflows/database-maintenance-gcp.yml"
 PREVIEW_BOOTSTRAP_WORKFLOW = ".github/workflows/database-bootstrap-gcp-preview.yml"
-LATEST_MIGRATION = 1788063600000
-EXPECTED_MIGRATION_COUNT = 39
+_migration_code = runpy.run_path(str(Path(__file__).with_name("build-migration-manifest.py")))
+LATEST_MIGRATION = _migration_code["manifest"][-1]["created_at"]
+EXPECTED_MIGRATION_COUNT = len(_migration_code["manifest"])
+EXPECTED_MANIFEST_SHA256 = _migration_code["manifest_sha256"]()
 EXPECTED_OPERATIONS = [
     "db:roles:bootstrap-initial",
     "db:migrate",
@@ -517,10 +520,9 @@ def validate_maintenance_evidence(
             raise GateFailure(f"reviewed source hash is invalid: {key}")
     journal = summary.get("database_journal") or {}
     if journal.get("count") != EXPECTED_MIGRATION_COUNT or journal.get("latest_created_at") != LATEST_MIGRATION:
-        raise GateFailure("maintenance journal is not complete through migration 0038")
-    if summary.get("migration_manifest_verified") is not True or re.fullmatch(
-        r"[0-9a-f]{64}", str(summary.get("migration_manifest_sha256") or "")
-    ) is None:
+        raise GateFailure("maintenance journal differs from the reviewed migration manifest")
+    if (summary.get("migration_manifest_verified") is not True
+            or summary.get("migration_manifest_sha256") != EXPECTED_MANIFEST_SHA256):
         raise GateFailure("reviewed migration manifest is not proven against the database journal")
     if summary.get("grant_convergence") != "passed":
         raise GateFailure("versioned grant convergence is not proven")
@@ -672,10 +674,9 @@ def validate_preview_bootstrap_evidence(
         raise GateFailure("Preview isolation evidence does not match the sealed database target")
     journal = summary.get("database_journal") or {}
     if journal.get("count") != EXPECTED_MIGRATION_COUNT or journal.get("latest_created_at") != LATEST_MIGRATION:
-        raise GateFailure("Preview journal is not complete through migration 0038")
-    if summary.get("migration_manifest_verified") is not True or SHA256_RE.fullmatch(
-        str(summary.get("migration_manifest_sha256") or "")
-    ) is None:
+        raise GateFailure("Preview journal differs from the reviewed migration manifest")
+    if (summary.get("migration_manifest_verified") is not True
+            or summary.get("migration_manifest_sha256") != EXPECTED_MANIFEST_SHA256):
         raise GateFailure("Preview migration manifest is not proven")
     if summary.get("grant_convergence") != "passed" or summary.get("ownership_violations") != 0:
         raise GateFailure("Preview ownership/grant convergence is not proven")
@@ -744,8 +745,8 @@ def validate_backup_evidence(
         raise GateFailure("backup manifest format is unsupported")
     if values["backup_role_membership_closure"] != "exact":
         raise GateFailure("backup role membership closure is not exact")
-    if values["schema_profile"] != "pre_migration":
-        raise GateFailure("maintenance requires a verified pre_migration backup")
+    if values["schema_profile"] not in {"pre_migration", "pre_upgrade_0038"}:
+        raise GateFailure("maintenance requires a verified reviewed pre-upgrade backup")
     if values["repository_commit"].lower() != metadata["commit_sha"]:
         raise GateFailure("backup manifest commit is not the maintenance commit")
     expected_workflow = f"{metadata['workflow_run_id']}/{metadata['workflow_run_attempt']}"
@@ -940,6 +941,9 @@ def run_self_test() -> None:
         )
         backup_manifest = validate_backup_evidence(backup_root, evidence)
         assert backup_manifest["schema_profile"] == "pre_migration"
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace(
+            "schema_profile=pre_migration", "schema_profile=pre_upgrade_0038"), encoding="utf-8")
+        assert validate_backup_evidence(backup_root, evidence)["schema_profile"] == "pre_upgrade_0038"
         wrong_target_evidence = dict(evidence)
         wrong_target_evidence["expected_source_identity_sha256"] = "d" * 64
         try:
@@ -950,7 +954,7 @@ def run_self_test() -> None:
             raise AssertionError("a backup from another Production database target was accepted")
         manifest.write_text(
             manifest.read_text(encoding="utf-8").replace(
-                "schema_profile=pre_migration", "schema_profile=post_migration"
+                "schema_profile=pre_upgrade_0038", "schema_profile=post_migration"
             ),
             encoding="utf-8",
         )
@@ -1001,9 +1005,9 @@ def run_self_test() -> None:
                 "package_lock_sha256": "2" * 64,
                 "production_merge_review_and_checks": "passed",
             },
-            "database_journal": {"count": 39, "latest_created_at": LATEST_MIGRATION},
+            "database_journal": {"count": EXPECTED_MIGRATION_COUNT, "latest_created_at": LATEST_MIGRATION},
             "migration_manifest_verified": True,
-            "migration_manifest_sha256": "3" * 64,
+            "migration_manifest_sha256": EXPECTED_MANIFEST_SHA256,
             "grant_convergence": "passed",
             "ownership_violations": 0,
             "migrator_database_create": False,

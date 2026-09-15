@@ -182,9 +182,7 @@ router.post('/', permissionMiddleware('arsip', 'create'), async (req: AuthReques
             ipAddress: req.ip,
         });
         res.status(201).json(result);
-    } catch (error: any) {
-        res.status(400).json({ error: error.message || 'Failed to ingest electronic archive' });
-    }
+    } catch (error) { next(error); }
 });
 
 // PUT /api/arsip-elektronik/:id — Update metadata
@@ -201,9 +199,7 @@ router.put('/:id', permissionMiddleware('arsip', 'update'), async (req: AuthRequ
             userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
         });
         res.json(result);
-    } catch (error: any) {
-        res.status(409).json({ error: error.message || 'Update failed' });
-    }
+    } catch (error) { next(error); }
 });
 
 // POST /api/arsip-elektronik/:id/verify — Verify/reject document
@@ -225,9 +221,7 @@ router.post('/:id/verify', permissionMiddleware('arsip', 'update'), async (req: 
             return res.status(404).json({ error: 'Record not found' });
         }
         res.json(result);
-    } catch (error: any) {
-        res.status(409).json({ error: error.message || 'Verification failed' });
-    }
+    } catch (error) { next(error); }
 });
 
 // POST /api/arsip-elektronik/:id/preservasi — Add preservation action tracking
@@ -258,9 +252,7 @@ router.post('/:id/preservasi', permissionMiddleware('arsip', 'update'), async (r
         });
 
         res.status(201).json(result);
-    } catch (error: any) {
-        res.status(400).json({ error: error.message || 'Preservation action failed' });
-    }
+    } catch (error) { next(error); }
 });
 
 // GET /api/arsip-elektronik/:id/preservasi — Get preservation history
@@ -292,9 +284,7 @@ router.delete('/:id', permissionMiddleware('arsip', 'delete'), async (req: AuthR
         });
         if (!deleted) return res.status(404).json({ error: 'Record not found' });
         res.json({ success: true });
-    } catch (error: any) {
-        res.status(409).json({ error: error.message || 'Delete failed' });
-    }
+    } catch (error) { next(error); }
 });
 
 export default router;

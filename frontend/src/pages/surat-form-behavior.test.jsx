@@ -68,6 +68,17 @@ afterEach(async () => {
 });
 
 describe.each(pages)('form surat $kind', page => {
+    it('keeps unsaved edits and stored document metadata when file capabilities recover', async () => {
+        await renderForm(page);
+        fixtures.capabilities.fileUploads = true;
+        fireEvent.change(screen.getByLabelText(/^Perihal/), { target: { value: 'Perubahan saat layanan pulih' } });
+        await screen.findByLabelText(/^Link Dokumen/);
+        await act(async () => {});
+        expect(screen.getByLabelText(/^Perihal/)).toHaveValue('Perubahan saat layanan pulih');
+        expect(screen.getByLabelText(/^Link Dokumen/)).toHaveValue(record.linkDokumen);
+        expect(fixtures[page.kind].getById).toHaveBeenCalledTimes(1);
+    });
+
     it('sends only one save while a request is pending, even for consecutive submit events', async () => {
         fixtures[page.kind].update.mockReturnValue(new Promise(() => {}));
         const { form } = await renderForm(page);

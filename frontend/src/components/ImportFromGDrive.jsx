@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/services/api';
 import { buildGoogleSheetsImportPayload } from '@/lib/google-sheets-import';
@@ -20,7 +20,7 @@ import { useAppConfig } from '@/context/app-config-context';
  * - unitKerjaId: concrete destination unit (required)
  * - onImportComplete: () => void (callback to refresh data)
  */
-const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
+const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const { capabilities } = useAppConfig();
     const [isOpen, setIsOpen] = useState(false);
     const [step, setStep] = useState('input'); // input, sheets, preview, importing, result
@@ -31,10 +31,52 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
     const [importResult, setImportResult] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
+    const requestRef = useRef(0);
+    const busyRef = useRef(false);
+    const [retryUntil, setRetryUntil] = useState({ sheets: 0, preview: 0, import: 0 });
+    const [now, setNow] = useState(() => Date.now());
+    const action = step === 'input' ? 'sheets' : step === 'sheets' ? 'preview' : 'import';
+    const retrySeconds = Math.max(0, Math.ceil((retryUntil[action] - now) / 1000));
+
+    useEffect(() => () => { requestRef.current += 1; }, []);
+    useEffect(() => {
+        const until = Math.max(...Object.values(retryUntil));
+        if (!isOpen || until <= Date.now()) return;
+        const timer = window.setInterval(() => {
+            const time = Date.now();
+            setNow(time);
+            if (time >= until) window.clearInterval(timer);
+        }, 1000);
+        return () => window.clearInterval(timer);
+    }, [isOpen, retryUntil]);
 
     const typeLabel = type === 'surat-masuk' ? 'Surat Masuk' : 'Surat Keluar';
+    const duplicateOnly = importResult?.success === true && importResult.importedRows === 0
+        && importResult.duplicateRows > 0 && !importResult.skippedRows && !importResult.errors?.length;
+    const resultCompleted = importResult?.importedRows > 0 || duplicateOnly;
+
+    const invalidatePreview = () => {
+        requestRef.current += 1;
+        busyRef.current = false;
+        setIsLoading(false);
+        setPreviewData(null);
+        setError('');
+    };
+
+    const handleRequestError = (err, operation) => {
+        setError(err.message || 'Permintaan gagal. Silakan coba lagi.');
+        if ((err.status || err.response?.status) === 429) {
+            const reported = Number(err.data?.retryAfterSeconds ?? err.response?.data?.retryAfterSeconds
+                ?? err.response?.headers?.get?.('Retry-After'));
+            const seconds = Number.isFinite(reported) && reported > 0 ? Math.ceil(reported) : 60;
+            const time = Date.now();
+            setNow(time);
+            setRetryUntil(previous => ({ ...previous, [operation]: time + seconds * 1000 }));
+        }
+    };
 
     const reset = () => {
+        invalidatePreview();
         setStep('input');
         setSpreadsheetUrl('');
         setSheets([]);
@@ -43,6 +85,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
         setImportResult(null);
         setIsLoading(false);
         setError('');
+        setNow(Date.now());
     };
 
     const handleOpen = () => {
@@ -59,19 +102,24 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
 
     // Step 1: Fetch available sheets (GET request — no CSRF needed, but api client handles it)
     const fetchSheets = async () => {
+        if (busyRef.current || retryUntil.sheets > Date.now()) return;
         if (!spreadsheetUrl) {
             setError('Masukkan URL Google Spreadsheet');
             return;
         }
 
+        const request = ++requestRef.current;
+        busyRef.current = true;
         setIsLoading(true);
         setError('');
+        setPreviewData(null);
 
         try {
             const data = await api.get('/api/import/google-drive/sheets', {
                 url: spreadsheetUrl,
             });
 
+            if (request !== requestRef.current) return;
             setSheets(data.sheets || []);
 
             if (data.sheets && data.sheets.length > 0) {
@@ -82,41 +130,60 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                 setStep('sheets');
             }
         } catch (err) {
-            setError(err.message);
+            if (request === requestRef.current) handleRequestError(err, 'sheets');
         } finally {
-            setIsLoading(false);
+            if (request === requestRef.current) {
+                busyRef.current = false;
+                setIsLoading(false);
+            }
         }
     };
 
     // Step 2: Preview data from selected sheet (POST — api client sends CSRF token automatically)
     const handlePreview = async () => {
+        if (busyRef.current || retryUntil.preview > Date.now()) return;
         if (!selectedSheet) {
             setError('Pilih sheet yang akan diimpor');
             return;
         }
 
+        const request = ++requestRef.current;
+        busyRef.current = true;
         setIsLoading(true);
         setError('');
+        setPreviewData(null);
 
         try {
             const data = await api.post('/api/import/google-drive/preview', {
                 spreadsheetUrl,
                 sheetName: selectedSheet,
                 maxRows: 10,
+                type,
             });
 
+            if (request !== requestRef.current) return;
+            if (data.importType !== type || !Array.isArray(data.mapping) || !data.mapping.length
+                || !Number.isInteger(data.headerRow) || data.headerRow < 1) {
+                throw new Error('Pemetaan kolom belum dapat diverifikasi. Periksa pratinjau kembali.');
+            }
             setPreviewData(data);
             setStep('preview');
         } catch (err) {
-            setError(err.message);
+            if (request === requestRef.current) handleRequestError(err, 'preview');
         } finally {
-            setIsLoading(false);
+            if (request === requestRef.current) {
+                busyRef.current = false;
+                setIsLoading(false);
+            }
         }
     };
 
     // Step 3: Execute import (POST — api client sends CSRF token automatically)
-    // unitKerjaId is resolved from the authenticated user's session on the backend
+    // The backend verifies the selected destination against the authenticated user's scope.
     const handleImport = async () => {
+        if (busyRef.current || retryUntil.import > Date.now() || previewData?.importType !== type) return;
+        const request = ++requestRef.current;
+        busyRef.current = true;
         setStep('importing');
         setError('');
 
@@ -126,6 +193,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                 buildGoogleSheetsImportPayload(spreadsheetUrl, selectedSheet, unitKerjaId),
             );
 
+            if (request !== requestRef.current) return;
             setImportResult(result);
             setStep('result');
 
@@ -133,8 +201,12 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                 onImportComplete();
             }
         } catch (err) {
-            setError(err.message);
-            setStep('preview');
+            if (request === requestRef.current) {
+                handleRequestError(err, 'import');
+                setStep('preview');
+            }
+        } finally {
+            if (request === requestRef.current) busyRef.current = false;
         }
     };
 
@@ -180,6 +252,9 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                 <p>{error}</p>
                             </div>
                         )}
+                        {retrySeconds > 0 && <p role="status" className="mb-4 text-sm text-muted-foreground">
+                            Permintaan ini dapat dicoba lagi dalam {retrySeconds} detik.
+                        </p>}
 
                         {/* Step: Input URL */}
                         {step === 'input' && (
@@ -192,7 +267,12 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                         id="google-spreadsheet-url"
                                         type="url"
                                         value={spreadsheetUrl}
-                                        onChange={(e) => setSpreadsheetUrl(e.target.value)}
+                                        onChange={(e) => {
+                                            invalidatePreview();
+                                            setSpreadsheetUrl(e.target.value);
+                                            setSheets([]);
+                                            setSelectedSheet('');
+                                        }}
                                         placeholder="https://docs.google.com/spreadsheets/d/..."
                                         autoComplete="url"
                                         required
@@ -207,7 +287,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                 <button
                                     type="button"
                                     onClick={fetchSheets}
-                                    disabled={isLoading || !spreadsheetUrl}
+                                    disabled={isLoading || retrySeconds > 0 || !spreadsheetUrl}
                                     className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                                 >
                                     {isLoading ? (
@@ -242,7 +322,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                                         name="sheet"
                                                         value={sheet.name}
                                                         checked={selectedSheet === sheet.name}
-                                                        onChange={() => setSelectedSheet(sheet.name)}
+                                                        onChange={() => { invalidatePreview(); setSelectedSheet(sheet.name); }}
                                                         className="text-blue-600"
                                                     />
                                                     <span className="text-sm text-foreground">{sheet.name}</span>
@@ -256,7 +336,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                                 id="manual-sheet-name"
                                                 type="text"
                                                 value={selectedSheet}
-                                                onChange={(e) => setSelectedSheet(e.target.value)}
+                                                onChange={(e) => { invalidatePreview(); setSelectedSheet(e.target.value); }}
                                                 placeholder="Nama lembar (mis. Surat Masuk 2024)"
                                                 className="min-h-11 w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-ring"
                                             />
@@ -270,7 +350,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                 <div className="flex flex-col-reverse gap-3 sm:flex-row">
                                     <button
                                         type="button"
-                                        onClick={() => setStep('input')}
+                                        onClick={() => { invalidatePreview(); setStep('input'); }}
                                         className="min-h-11 flex-1 rounded-lg border border-border py-2.5 text-sm text-foreground transition-colors hover:bg-muted/50"
                                     >
                                         Kembali
@@ -278,7 +358,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                     <button
                                         type="button"
                                         onClick={handlePreview}
-                                        disabled={isLoading || !selectedSheet}
+                                        disabled={isLoading || retrySeconds > 0 || !selectedSheet}
                                         className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                                     >
                                         {isLoading ? (
@@ -295,6 +375,24 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                         {/* Step: Preview */}
                         {step === 'preview' && previewData && (
                             <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <p className="text-sm font-medium">Tujuan: {typeLabel}</p>
+                                    <p className="text-xs text-muted-foreground">Judul ditemukan pada baris data ke-{previewData.headerRow} (baris kosong tidak dihitung).</p>
+                                    <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan agar data dapat dikenali saat impor ulang.</p>
+                                    <div className="overflow-x-auto rounded-lg border">
+                                        <table className="w-full text-sm">
+                                            <caption className="p-2 text-left font-medium">Pemetaan kolom ke data SIMSA</caption>
+                                            <thead><tr className="border-b bg-muted/50">
+                                                <th className="px-3 py-2 text-left">Kolom lembar kerja</th>
+                                                <th className="px-3 py-2 text-left">Data SIMSA</th>
+                                            </tr></thead>
+                                            <tbody>{previewData.mapping.map(item => <tr key={item.field} className="border-b last:border-0">
+                                                <td className="px-3 py-2">Kolom {item.columnIndex + 1}: {item.header}</td>
+                                                <td className="px-3 py-2">{item.label}</td>
+                                            </tr>)}</tbody>
+                                        </table>
+                                    </div>
+                                </div>
                                 <div className="flex items-center justify-between">
                                     <p className="text-sm text-muted-foreground">
                                         Menampilkan <strong>{previewData.rows.length}</strong> dari <strong>{previewData.totalRows}</strong> baris
@@ -333,7 +431,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                 <div className="flex flex-col-reverse gap-3 sm:flex-row">
                                     <button
                                         type="button"
-                                        onClick={() => setStep('sheets')}
+                                        onClick={() => { invalidatePreview(); setStep('sheets'); }}
                                         className="min-h-11 flex-1 rounded-lg border border-border py-2.5 text-sm text-foreground transition-colors hover:bg-muted/50"
                                     >
                                         Kembali
@@ -341,7 +439,8 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                     <button
                                         type="button"
                                         onClick={handleImport}
-                                        className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+                                        disabled={retrySeconds > 0 || previewData.totalRows < 1}
+                                        className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
                                     >
                                         <Upload aria-hidden="true" className="w-4 h-4" />
                                         Impor {previewData.totalRows} baris
@@ -362,21 +461,22 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                         {/* Step: Result */}
                         {step === 'result' && importResult && (
                             <div role="status" aria-live="polite" className="space-y-4">
-                                <div className={`flex items-start gap-3 p-4 rounded-lg ${importResult.importedRows > 0
+                                <div className={`flex items-start gap-3 p-4 rounded-lg ${resultCompleted
                                     ? 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200'
                                     : 'bg-red-50 dark:bg-red-500/15 border border-red-200'
                                     }`}>
-                                    {importResult.importedRows > 0 ? (
+                                    {resultCompleted ? (
                                         <CheckCircle2 aria-hidden="true" className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                                     ) : (
                                         <AlertCircle aria-hidden="true" className="w-5 h-5 text-red-600 mt-0.5" />
                                     )}
                                     <div>
                                         <p className="font-medium text-foreground">
-                                            {importResult.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}
+                                            {duplicateOnly ? 'Semua data sudah ada' : importResult.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}
                                         </p>
                                         <p className="text-sm text-muted-foreground mt-1">
-                                            {importResult.importedRows} dari {importResult.totalRows} baris berhasil diimpor
+                                            {duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
+                                                : `${importResult.importedRows} dari ${importResult.totalRows} baris berhasil diimpor`}
                                         </p>
                                         {importResult.skippedRows > 0 && (
                                             <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
@@ -428,5 +528,9 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
         </>
     );
 };
+
+// A verified preview belongs to one record type and destination unit.
+const ImportFromGDrive = props => <ImportFromGDriveFlow
+    key={JSON.stringify([props.type, props.unitKerjaId])} {...props} />;
 
 export default ImportFromGDrive;

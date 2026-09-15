@@ -13,7 +13,7 @@ import regulatoryRuleSetService from '../services/regulatory-rule-set.service.js
 import { GcsStorageAdapter } from '../storage/gcs.adapter.js';
 import { toGcsLocator } from '../storage/locator.js';
 import { createLogger } from '../utils/logger.js';
-import { ARCHIVE_UPLOAD_MAX_BYTES, isPdfUploadMetadata } from '../config/archive-upload.js';
+import { ARCHIVE_UPLOAD_MAX_BYTES, REGULATORY_SOURCE_MAX_BYTES, isPdfUploadMetadata } from '../config/archive-upload.js';
 
 const router = Router();
 const log = createLogger('GcsUploadRoutes');
@@ -72,8 +72,10 @@ router.post(
             res.status(415).json({ error: 'Content-Type is not allowed' });
             return;
         }
-        if (input.sizeBytes > ARCHIVE_UPLOAD_MAX_BYTES) {
-            res.status(413).json({ error: 'PDF exceeds 10 MiB' });
+        const maximumBytes = input.purpose === 'regulatory_source'
+            ? REGULATORY_SOURCE_MAX_BYTES : ARCHIVE_UPLOAD_MAX_BYTES;
+        if (input.sizeBytes > maximumBytes) {
+            res.status(413).json({ error: `PDF exceeds ${maximumBytes / (1024 * 1024)} MiB` });
             return;
         }
         if (input.purpose === 'regulatory_source') {

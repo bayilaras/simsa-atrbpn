@@ -16,6 +16,7 @@ import { frontendSecurityDirectives } from './config/frontend-security.js';
 import { srikandiConfig } from './config/srikandi.js';
 import { isTrustedOrigin } from './config/trusted-origins';
 import { generalLimiter, authLimiter } from './middlewares/rate-limiter.middleware';
+import { prepareBetterAuthClientIp } from './middlewares/better-auth-ip.middleware.js';
 import { authMiddleware } from './middlewares/auth.middleware';
 import { roleMiddleware } from './middlewares/role.middleware';
 import { csrfCookieSetter, csrfProtection } from './middlewares/csrf.middleware';
@@ -23,6 +24,7 @@ import { firebaseAppCheckMiddleware } from './middlewares/firebase-app-check.mid
 import { sanitizeInput } from './middlewares/sanitize.middleware';
 import { setupSwagger } from './config/swagger';
 import { AppError, ForbiddenError } from './utils/errors';
+import { publicErrorResponse, publicErrorStatus } from './utils/public-error.js';
 import { logger } from './utils/logger';
 
 // Import routes
@@ -253,6 +255,7 @@ const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunctio
         res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
     try {
+        prepareBetterAuthClientIp(req);
         const authHandler = await getBetterAuthHandler();
         await authHandler(req, res);
     } catch (error: any) {
@@ -410,18 +413,14 @@ export function globalErrorHandler(err: Error, req: Request, res: Response, next
             success: false,
             error: parserError.status === 413 ? 'Payload Too Large' : 'Bad Request',
             message: parserError.status === 413 ? 'Ukuran data melebihi batas yang diizinkan.' : 'Format JSON tidak valid.',
+            code: parserError.status === 413 ? 'PAYLOAD_TOO_LARGE' : 'VALIDATION_ERROR',
             requestId,
         });
         return;
     }
     // Custom application errors carry their own status code
-    if (err instanceof AppError) {
-        res.status(err.statusCode).json({
-            success: false,
-            error: err.name,
-            message: err.message,
-            requestId,
-        });
+    if (err instanceof AppError && publicErrorStatus(err) < 500) {
+        res.status(publicErrorStatus(err)).json(publicErrorResponse(err, requestId));
         return;
     }
 
@@ -431,12 +430,7 @@ export function globalErrorHandler(err: Error, req: Request, res: Response, next
     const errorType = err instanceof Error && ['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'AggregateError', 'AbortError'].includes(err.name)
         ? err.name : 'Error';
     logger.error({ event: 'http_unhandled_error', requestId, errorType }, 'Unhandled error');
-    res.status(500).json({
-        success: false,
-        error: 'Internal Server Error',
-        message: 'Terjadi kesalahan pada server.',
-        requestId,
-    });
+    res.status(publicErrorStatus(err)).json(publicErrorResponse(err, requestId));
 }
 
 app.use(globalErrorHandler);

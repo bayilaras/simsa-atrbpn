@@ -88,7 +88,7 @@ describe.each(instruments)('$type baseline bootstrap', (instrument) => {
         environment(deployed);
         const { candidate, item } = fixture(instrument);
         enqueueActivation(candidate, item);
-        await expect(new RegulatoryRuleSetService().activate(candidate.id)).rejects.toThrow(/aktor|pengesahan/i);
+        await expect(new RegulatoryRuleSetService().activate(candidate.id)).rejects.toThrow(/mencatat superadmin.*mengesahkan/i);
         expect(state.writes).toEqual([]);
     });
 
@@ -103,13 +103,21 @@ describe.each(instruments)('$type baseline bootstrap', (instrument) => {
         ]));
     });
 
-    it('rejects draft activation even with an actor in production', async () => {
+    it('rejects an unverified production draft despite having a publisher', async () => {
         environment(deployedEnvironments[0]);
         const { candidate, item } = fixture(instrument);
         enqueueActivation(candidate, item);
         await expect(new RegulatoryRuleSetService().activate(candidate.id, 'publisher'))
-            .rejects.toThrow(/submitted, reviewed, dan approved/);
+            .rejects.toMatchObject({ report: expect.objectContaining({
+                valid: false,
+                errors: expect.arrayContaining([
+                    expect.objectContaining({ code: 'missing_source_verifier' }),
+                    expect.objectContaining({ code: 'missing_source_bitstream' }),
+                    expect.objectContaining({ code: 'missing_source_size' }),
+                ]),
+            }) });
         expect(state.writes).toEqual([]);
+        expect(storage.getFile).not.toHaveBeenCalled();
     });
 
     it('checks stored source availability before activating an approved production baseline', async () => {
@@ -122,14 +130,38 @@ describe.each(instruments)('$type baseline bootstrap', (instrument) => {
         expect(state.writes).toEqual([]);
     });
 
-    it('permits normal approved production activation with private evidence and an audit actor', async () => {
+    it.each(['draft', 'approved'])('permits verified production %s activation with a genuine publisher', async (status) => {
         environment(deployedEnvironments[0]);
         const { candidate, item } = fixture(instrument, true);
+        candidate.status = status;
+        if (status === 'draft') {
+            candidate.submittedBy = null;
+            candidate.reviewedBy = null;
+            candidate.approvedBy = null;
+        }
         enqueueActivation(candidate, item);
         const result = await new RegulatoryRuleSetService().activate(candidate.id, 'publisher');
         expect(result.ruleSet.status).toBe('active');
         expect(storage.getFile).toHaveBeenCalledTimes(1);
-        expect(state.writes.at(-1)).toEqual([expect.objectContaining({ action: 'activate', actorId: 'publisher' })]);
+        const publication = state.writes.find(write => write.status === 'active');
+        expect(publication).toMatchObject({ publishedBy: 'publisher' });
+        for (const key of ['submittedBy', 'submittedAt', 'reviewedBy', 'reviewedAt', 'approvedBy', 'approvedAt']) {
+            expect(publication).not.toHaveProperty(key);
+        }
+        expect(state.writes.at(-1)).toEqual([expect.objectContaining({
+            action: 'activate', actorId: 'publisher', before: { status },
+            after: expect.objectContaining({ publishedBy: 'publisher', authorizationPolicy: 'super_admin' }),
+        })]);
+    });
+
+    it('rejects actor-less activation of any nonbaseline edition even in local development', async () => {
+        const { candidate, item } = fixture(instrument, true);
+        candidate.id = '22222222-2222-4222-8222-222222222222';
+        enqueueActivation(candidate, item);
+        await expect(new RegulatoryRuleSetService().activate(candidate.id))
+            .rejects.toThrow(/mencatat superadmin.*mengesahkan/i);
+        expect(state.writes).toEqual([]);
+        expect(storage.getFile).not.toHaveBeenCalled();
     });
 
     it.each(['development', 'test', undefined])('preserves local %s bootstrap behavior', async (NODE_ENV) => {

@@ -50,7 +50,9 @@ const dosirService = {
         const unitQuery = unitKerjaId
             ? `?unitKerjaId=${encodeURIComponent(unitKerjaId)}`
             : '';
-        const response = await api.post(`${BASE_URL}${unitQuery}`, data);
+        const payload = { ...data };
+        if (payload.tanggalMulai === '') delete payload.tanggalMulai;
+        const response = await api.post(`${BASE_URL}${unitQuery}`, payload);
         return response.data;
     },
 
@@ -58,7 +60,11 @@ const dosirService = {
      * Update dosir
      */
     async update(id, data) {
-        const response = await api.put(`${BASE_URL}/${id}`, data);
+        const payload = { ...data };
+        for (const field of ['tanggalMulai', 'tanggalSelesai']) {
+            if (payload[field] === '') payload[field] = null;
+        }
+        const response = await api.put(`${BASE_URL}/${id}`, payload);
         return response.data;
     },
 
