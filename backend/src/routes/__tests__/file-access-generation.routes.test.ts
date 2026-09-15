@@ -56,6 +56,7 @@ app.use('/api/files', fileAccessRouter);
 
 const locator = 'gs://simsa-final/surat-masuk/final.pdf';
 const generation = '1735689600999999';
+const privateBlobLocator = 'https://store.private.blob.vercel-storage.com/surat/record.pdf';
 const attachment = {
     id: '20000000-0000-4000-8000-000000000001',
     entityType: 'surat_masuk',
@@ -150,30 +151,62 @@ describe('authorized GCS file access', () => {
         expect(mocks.downloadFile).toHaveBeenCalledWith(locator, { generation, abortSignal: expect.any(AbortSignal) });
     });
 
-    it.each([['not_scanned', 'pending'], ['infected', 'blocked'], ['scan_error', 'blocked']])('returns safe %s quarantine guidance without reading bytes', async (malwareScanStatus, expected) => {
-        mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, malwareScanStatus }]));
+    it.each([['not_scanned', 'pending'], ['infected', 'blocked'], ['scan_error', 'blocked']])('retains archive %s quarantine guidance without reading bytes', async (malwareScanStatus, expected) => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType: 'arsip', malwareScanStatus }]));
         const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(423);
         expect(response.body.scanState).toBe(expected);
         expect(JSON.stringify(response.body)).not.toContain(locator);
         expect(mocks.downloadFile).not.toHaveBeenCalled();
     });
 
-    it('does not leak scan state when the record ACL denies access', async () => {
-        mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, malwareScanStatus: 'infected' }]));
+    it.each(['surat_masuk', 'surat_keluar'])('previews and downloads private %s attachments with no hash or completed scan', async entityType => {
+        for (const download of ['', '?download=1']) {
+            mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType, fileUrl: privateBlobLocator, objectGeneration: null, malwareScanStatus: 'not_scanned', integrityStatus: 'unverified', sha256: null }]));
+            mocks.downloadFile.mockResolvedValueOnce({ stream: Readable.from([Buffer.from('%PDF-direct')]), mimeType: 'application/pdf', fileName: 'final.pdf' });
+            const response = await request(app).get(`/api/files/attachment/${attachment.id}${download}`).expect(200);
+            expect(response.headers['content-disposition']).toMatch(download ? /^attachment;/ : /^inline;/);
+            expect(response.headers['cache-control']).toContain('private');
+        }
+        expect(mocks.downloadFile).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps a pending letter attachment private when the record ACL denies access', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, fileUrl: privateBlobLocator, objectGeneration: null, malwareScanStatus: 'not_scanned', sha256: null }]));
         mocks.accessCheck.mockResolvedValue({ exists: true, allowed: false });
         const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(404);
         expect(response.body).not.toHaveProperty('scanState');
         expect(mocks.downloadFile).not.toHaveBeenCalled();
     });
 
-    it('uses the matching surat registration instead of another attachment status', async () => {
-        mocks.select.mockReturnValueOnce(limitedRows([{ filePath: `blob:${locator}`, fileName: 'final.pdf' }]))
+    it('keeps the private registration guard for the matching surat locator', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ filePath: `blob:${privateBlobLocator}`, fileName: 'final.pdf' }]))
             .mockReturnValueOnce(unrestrictedRows([
                 { ...attachment, fileUrl: 'gs://simsa-final/another.pdf', malwareScanStatus: 'not_scanned' },
-                { ...attachment, malwareScanStatus: 'infected' },
+                { ...attachment, fileUrl: privateBlobLocator, objectGeneration: null, storageAccess: 'public' },
             ]));
         const response = await request(app).get(`/api/files/surat_masuk/${attachment.entityId}`).expect(423);
-        expect(response.body.scanState).toBe('blocked');
+        expect(response.body).not.toHaveProperty('scanState');
+        expect(mocks.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it.each(['surat_masuk', 'surat_keluar'])('opens the matching old %s registration regardless of missing inspection evidence', async entityType => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ filePath: `blob:${privateBlobLocator}`, fileName: 'final.pdf' }]))
+            .mockReturnValueOnce(unrestrictedRows([{ ...attachment, entityType, fileUrl: privateBlobLocator, objectGeneration: null, sha256: null, malwareScanStatus: 'not_scanned', integrityStatus: 'unverified' }]));
+        await request(app).get(`/api/files/${entityType}/${attachment.entityId}`).expect(200);
+        expect(mocks.downloadFile).toHaveBeenCalledWith(privateBlobLocator, { generation: undefined, abortSignal: expect.any(AbortSignal) });
+    });
+
+    it('does not release an unregistered locator merely because it is in a surat record', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ filePath: `blob:${privateBlobLocator}`, fileName: 'final.pdf' }]))
+            .mockReturnValueOnce(unrestrictedRows([]));
+        await request(app).get(`/api/files/surat_masuk/${attachment.entityId}`).expect(423);
+        expect(mocks.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it.each(['surat_masuk', 'surat_keluar'])('preserves GCS %s inspection before quarantined bytes can be opened', async entityType => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType, malwareScanStatus: 'not_scanned' }]));
+        const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(423);
+        expect(response.body.scanState).toBe('pending');
         expect(mocks.downloadFile).not.toHaveBeenCalled();
     });
 

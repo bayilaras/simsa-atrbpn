@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isFileReleased, quarantinedFileScanState } from '../services/file-release-policy.js';
+import { isAttachmentAvailable, isFileReleased, quarantinedFileScanState } from '../services/file-release-policy.js';
 
 const clean = {
     storageAccess: 'private',
@@ -9,6 +9,25 @@ const clean = {
 };
 
 describe('file release policy', () => {
+    it.each(['surat_masuk', 'surat_keluar'])('opens registered private %s attachments without inspection evidence', entityType => {
+        for (const malwareScanStatus of ['not_required', 'not_scanned', 'scanning:1:1800000000', 'retry:1:1800000030', 'scan_error', 'infected']) {
+            const metadata = { entityType, fileUrl: 'https://store.private.blob.vercel-storage.com/surat/document.pdf', storageAccess: 'private', sha256: null, integrityStatus: 'unverified', malwareScanStatus };
+            expect(isAttachmentAvailable(metadata)).toBe(true);
+            expect(isFileReleased(metadata)).toBe(false);
+            expect(isAttachmentAvailable({ ...metadata, storageAccess: 'public' })).toBe(false);
+        }
+    });
+
+    it.each(['gs://private/record.pdf', 'https://store.public.blob.vercel-storage.com/record.pdf',
+        'https://store.private.blob.vercel-storage.com.attacker.test/record.pdf', 'https://store.private.blob.vercel-storage.com/record.pdf?token=x', null])('does not exempt an unconfirmed or GCS locator: %s', fileUrl => {
+        expect(isAttachmentAvailable({ ...clean, entityType: 'surat_masuk', fileUrl, sha256: null, malwareScanStatus: 'not_scanned' })).toBe(false);
+    });
+
+    it.each(['arsip', 'regulatory_rule_set', undefined])('retains inspection requirements for %s evidence', entityType => {
+        expect(isAttachmentAvailable({ ...clean, entityType })).toBe(true);
+        expect(isAttachmentAvailable({ ...clean, entityType, sha256: null, malwareScanStatus: 'not_scanned' })).toBe(false);
+    });
+
     it('releases only private, hashed bitstreams positively marked clean', () => {
         expect(isFileReleased(clean)).toBe(true);
     });

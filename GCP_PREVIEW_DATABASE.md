@@ -106,7 +106,7 @@ Urutan fail-closed yang dijalankan adalah:
 6. evidence read-only sebagai migrator.
 
 Bootstrap final wajib mencabut database `CREATE` migrator. Evidence harus
-membuktikan tepat 34 migration, manifest/hash sesuai source, tidak ada
+membuktikan seluruh migrasi pada journal checkout, manifest/hash sesuai source, tidak ada
 ownership violation, membership principal benar, ACL fingerprint tersedia,
 dan unit serta instrumen aktif yang disahkan terverifikasi. Preview baru atau clone dari bootstrap lokal berhenti dengan `GOVERNANCE_REQUIRED` sampai alur administratif selesai. Ikuti bagian **Gate instrumen dan setup pertama** dalam [runbook maintenance](GCP_DATABASE_MAINTENANCE.md), memakai identitas, database, dan private storage Preview; jangan memakai sumber atau akun Production. Instance administrasi setup harus diprovision terpisah dan belum disediakan otomatis oleh workflow ini.
 

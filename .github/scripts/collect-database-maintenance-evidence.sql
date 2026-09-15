@@ -95,13 +95,30 @@ BEGIN
     SELECT count(*), max(created_at)
       INTO journal_count, latest_migration
       FROM drizzle.__drizzle_migrations;
-    IF journal_count <> 39 OR latest_migration <> 1788063600000 THEN
-        RAISE EXCEPTION 'journal is not complete through 0038: count %, latest %',
+    IF pg_catalog.jsonb_typeof(expected_migrations) IS DISTINCT FROM 'array'
+       OR pg_catalog.jsonb_array_length(expected_migrations) = 0 THEN
+        RAISE EXCEPTION 'reviewed migration manifest must be a non-empty array';
+    END IF;
+    IF journal_count <> pg_catalog.jsonb_array_length(expected_migrations)
+       OR latest_migration IS DISTINCT FROM (expected_migrations->-1->>'created_at')::bigint THEN
+        RAISE EXCEPTION 'journal differs from the reviewed migration manifest: count %, latest %',
             journal_count, latest_migration;
     END IF;
-    IF pg_catalog.jsonb_typeof(expected_migrations) <> 'array'
-       OR pg_catalog.jsonb_array_length(expected_migrations) <> 39
-       OR EXISTS (
+    IF EXISTS (
+           SELECT 1
+             FROM pg_catalog.jsonb_array_elements(expected_migrations) WITH ORDINALITY AS entry(value, position)
+            WHERE (value->>'idx')::integer IS DISTINCT FROM position - 1
+               OR value->>'tag' IS NULL OR value->>'sha256' IS NULL OR value->>'created_at' IS NULL
+               OR (value->>'tag') !~ ('^' || pg_catalog.lpad((position - 1)::text, 4, '0') || '_[a-z0-9_]+$')
+               OR (value->>'sha256') !~ '^[0-9a-f]{64}$'
+               OR pg_catalog.jsonb_typeof(value->'accepted_sha256') IS DISTINCT FROM 'array'
+               OR NOT (value->'accepted_sha256' ? (value->>'sha256'))
+               OR pg_catalog.jsonb_array_length(value->'accepted_sha256') <> CASE WHEN position <= 10 THEN 2 ELSE 1 END
+               OR EXISTS (SELECT 1 FROM pg_catalog.jsonb_array_elements_text(value->'accepted_sha256') AS accepted(hash)
+                          WHERE accepted.hash !~ '^[0-9a-f]{64}$')
+               OR (position > 1 AND (value->>'created_at')::bigint <=
+                   (expected_migrations->(position::integer - 2)->>'created_at')::bigint)
+       ) OR EXISTS (
            SELECT 1
              FROM pg_catalog.jsonb_array_elements(expected_migrations) expected
             WHERE NOT EXISTS (

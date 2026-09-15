@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { resolve, relative, isAbsolute, dirname, sep } from 'node:path';
 import { readFile, unlink, lstat } from 'node:fs/promises';
 import { requireCondition, strictPath, assertClusterIdentity, sha256, decryptBuffer, normalizeEvidence } from './local-backup-drill-core.mjs';
+import { assertReviewedMigrationManifest } from './migration-manifest.mjs';
 
 export const CURRENT_FORMAT = 'simsa-current-local-v1';
 export const SOURCE = Object.freeze({ host: '127.0.0.1', port: 55432, database: 'simsa_local',
@@ -80,10 +81,11 @@ export function authenticateManifest(sealed, key) {
     && body.source.database === SOURCE.database && body.source.systemIdentifier === SOURCE.systemIdentifier
     && body.source.backupUser === SOURCE.backupUser && body.source.major === SOURCE.major
     && body.scope === 'database-only' && body.backup_role_membership_closure === 'exact'
-    && Number.isFinite(Date.parse(body.snapshot_at)) && Array.isArray(body.migrations) && body.migrations.length === 39
+    && Number.isFinite(Date.parse(body.snapshot_at)) && Array.isArray(body.migrations)
     && ['archive_sha256', 'evidence_sha256'].every(field => /^[a-f0-9]{64}$/.test(body[field]))
     && body.helpers && Object.values(body.helpers).every(hash => /^[a-f0-9]{64}$/.test(hash)),
   'Manifest does not describe the pinned current local database');
+  assertReviewedMigrationManifest(body.migrations);
   return body;
 }
 export function verifyArtifactHashes(body, archive, evidence) {

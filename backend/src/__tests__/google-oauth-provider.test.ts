@@ -1,6 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { parseUserInput, parseUserOutput } from 'better-auth/db';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import * as schema from '../db/schema';
 
 vi.mock('../config/database', () => ({ db: {} }));
+// Provider registration tests do not run a PostgreSQL store; separate suites
+// exercise shared admission, outages and concurrency against the real schema.
+vi.mock('../config/rate-limits.js', async importOriginal => ({
+    ...await importOriginal<typeof import('../config/rate-limits.js')>(),
+    createRateLimiterStore: () => undefined,
+}));
 
 async function configuredAuth(flag: string) {
     vi.stubEnv('NODE_ENV', 'production');
@@ -51,6 +60,40 @@ describe('Better Auth password-only provider registration', () => {
             clientId: 'synthetic-client', disableImplicitSignUp: true, disableSignUp: true,
         });
         expect(auth.options.emailAndPassword?.disableSignUp).toBe(true);
+    });
+
+    it('returns the current deactivation state through the real database adapter and session serializer', async () => {
+        const databaseUser = {
+            id: 'synthetic-disabled-user', email: 'disabled@example.test', name: 'Disabled user',
+            emailVerified: true, createdAt: new Date('2026-09-14'), updatedAt: new Date('2026-09-14'),
+            role: 'admin_unit', unitKerjaId: 'unit-a', isActive: false,
+        };
+        for (const auth of [passwordOnly, withGoogle]) {
+            const fakeDb = {
+                _: { fullSchema: schema },
+                select: () => ({ from: () => ({ where: async () => [databaseUser] }) }),
+            };
+            const adapter = drizzleAdapter(fakeDb, { provider: 'pg', usePlural: true, schema })(auth.options);
+            const adaptedUser = await adapter.findOne({
+                model: 'user', where: [{ field: 'id', value: databaseUser.id }],
+            });
+            expect(parseUserOutput(auth.options, adaptedUser as typeof databaseUser)).toMatchObject({
+                id: databaseUser.id, role: 'admin_unit', unitKerjaId: 'unit-a', isActive: false,
+            });
+        }
+    });
+
+    it('never accepts role, unit, or reactivation from session user input', () => {
+        for (const auth of [passwordOnly, withGoogle]) {
+            for (const input of [{ role: 'super_admin' }, { unitKerjaId: 'other-unit' }, { isActive: true }]) {
+                try {
+                    const parsed = parseUserInput(auth.options, input, 'update');
+                    expect(parsed).not.toHaveProperty(Object.keys(input)[0]);
+                } catch (error) {
+                    expect(error).toMatchObject({ body: { code: 'FIELD_NOT_ALLOWED' } });
+                }
+            }
+        }
     });
 
     it('rejects public account creation in password-only production before any database call', async () => {

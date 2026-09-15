@@ -1,4 +1,5 @@
 import { buildSuratFormPayload } from '@/lib/surat-form-payload'
+import { buildSuratArchiveSelection, readSuratArchiveSelection, selectedSuratArchiveRules, validateSuratArchiveSelection } from '@/lib/surat-archive-selection'
 import { archiveUploadError } from '@/lib/archive-upload';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -8,6 +9,8 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { suratKeluarService } from '@/services/surat-keluar.service';
 import { suratMasukService } from '@/services/surat-masuk.service';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
+import { usePaginatedResource } from '@/hooks/use-paginated-resource';
+import { ResourcePagination } from '@/components/ResourcePagination';
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
@@ -121,7 +124,7 @@ export default function TambahSuratKeluar() {
     const { user } = useAuth();
     const { capabilities } = useAppConfig();
     const reducedMotion = useReducedMotion();
-    const filesEnabled = capabilities.fileUploads;
+    const filesEnabled = capabilities.letterFileUploads ?? capabilities.fileUploads;
     const navigate = useNavigate();
     const location = useLocation();
     const fileInputRef = useRef(null);
@@ -163,11 +166,10 @@ export default function TambahSuratKeluar() {
     }, [error, fieldErrors, isLoading, reducedMotion]);
 
     // State for surat masuk search
-    const [suratMasukOptions, setSuratMasukOptions] = useState([]);
     const [selectedSuratMasuk, setSelectedSuratMasuk] = useState(null);
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [loadingSuratMasuk, setLoadingSuratMasuk] = useState(false);
+    const [debouncedReplySearch, setDebouncedReplySearch] = useState('');
 
     // Form state
     const [formData, setFormData] = useState({
@@ -180,10 +182,12 @@ export default function TambahSuratKeluar() {
         klasifikasiFasilitatifKode: '',
         klasifikasiSubstantif: '',
         klasifikasiSubstantifKode: '',
+        ...readSuratArchiveSelection(),
         klasifikasiKeamanan: 'biasa',
         linkDokumen: '',
         balasanUntuk: null,
     });
+    const archiveRules = selectedSuratArchiveRules(formData);
 
     // Auto-fill from reply state (when clicking "Balas Surat" from detail surat masuk)
     useEffect(() => {
@@ -224,13 +228,14 @@ export default function TambahSuratKeluar() {
                 klasifikasiFasilitatifKode: data.klasifikasiFasilitatifKode || '',
                 klasifikasiSubstantif: data.klasifikasiSubstantif || '',
                 klasifikasiSubstantifKode: data.klasifikasiSubstantifKode || '',
+                ...readSuratArchiveSelection(data),
                 // Historical rows without explicit metadata remain fail-closed.
                 klasifikasiKeamanan: data.klasifikasiKeamanan || 'terbatas',
-                linkDokumen: filesEnabled ? (data.linkDokumen || '') : '',
+                linkDokumen: data.linkDokumen || '',
                 balasanUntuk: data.balasanUntuk || null,
             });
             // Track existing file info
-            if (filesEnabled && data.filePath) {
+            if (data.filePath) {
                 setExistingFile({
                     path: data.filePath,
                     name: data.fileOriginalName || (data.filePath.startsWith('blob:') || data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
@@ -251,7 +256,7 @@ export default function TambahSuratKeluar() {
         } finally {
             setIsLoading(false);
         }
-    }, [filesEnabled, id]);
+    }, [id]);
 
     // Fetch existing data for edit mode.
     useEffect(() => {
@@ -260,28 +265,20 @@ export default function TambahSuratKeluar() {
         }
     }, [fetchSuratData, id, isEditMode]);
 
-    const loadSuratMasukOptions = useCallback(async () => {
-        if (!resolvedUnitKerjaId) {
-            setSuratMasukOptions([]);
-            return;
-        }
-        try {
-            setLoadingSuratMasuk(true);
-            const response = await suratMasukService.getBelumDibalas({
-                unitKerjaId: resolvedUnitKerjaId,
-            });
-            setSuratMasukOptions(response.data || []);
-        } catch (err) {
-            console.error('Failed to load surat masuk:', err);
-        } finally {
-            setLoadingSuratMasuk(false);
-        }
-    }, [resolvedUnitKerjaId]);
-
-    // Load surat masuk yang belum dibalas only inside the concrete unit scope.
     useEffect(() => {
-        void loadSuratMasukOptions();
-    }, [loadSuratMasukOptions]);
+        const timer = setTimeout(() => setDebouncedReplySearch(searchTerm.trim()), 250);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+    const loadReplyPage = useCallback(params => suratMasukService.getBelumDibalas({
+        ...params, unitKerjaId: resolvedUnitKerjaId, search: debouncedReplySearch || undefined,
+    }), [resolvedUnitKerjaId, debouncedReplySearch]);
+    const replySearchPending = searchTerm.trim() !== debouncedReplySearch;
+    const replyOptions = usePaginatedResource(loadReplyPage, {
+        queryKey: `${resolvedUnitKerjaId}:${debouncedReplySearch}`,
+        enabled: Boolean(resolvedUnitKerjaId) && searchOpen && !selectedSuratMasuk && !replySearchPending,
+        pageSize: 10,
+    });
+    const loadingSuratMasuk = replySearchPending || replyOptions.loading;
 
     useEffect(() => {
         if (
@@ -372,6 +369,8 @@ export default function TambahSuratKeluar() {
     // Validate form
     const validateForm = () => {
         if (!resolvedUnitKerjaId) return { message: 'Pilih unit kerja terlebih dahulu' };
+        const archiveSelectionError = validateSuratArchiveSelection(formData);
+        if (archiveSelectionError) return { message: archiveSelectionError };
         if (!formData.naskahDinas) return { field: 'naskahDinas', message: 'Naskah Dinas wajib diisi' };
         if (!formData.tanggalSurat) return { message: 'Tanggal Surat wajib diisi' };
         if (!formData.perihal) return { message: 'Perihal wajib diisi' };
@@ -437,16 +436,6 @@ export default function TambahSuratKeluar() {
         if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
         return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     };
-
-    // Filter surat masuk based on search
-    const filteredSuratMasuk = suratMasukOptions.filter(surat => {
-        if (!searchTerm) return true;
-        const term = searchTerm.toLowerCase();
-        return (
-            surat.nomorSurat?.toLowerCase().includes(term) ||
-            surat.perihal?.toLowerCase().includes(term)
-        );
-    });
 
     // Section Header Component
     const SectionHeader = ({ icon, title, description, step }) => (
@@ -618,7 +607,7 @@ export default function TambahSuratKeluar() {
                                         role="combobox"
                                         aria-label="Surat masuk yang dibalas"
                                         aria-expanded={searchOpen}
-                                        disabled={saveLocked}
+                                        disabled={saveLocked || !resolvedUnitKerjaId}
                                         className="w-full h-12 justify-start text-muted-foreground border-dashed hover:border-solid hover:border-blue-300 hover:bg-blue-50/50"
                                     >
                                         <Search className="h-4 w-4 mr-2 text-muted-foreground/70" />
@@ -626,7 +615,7 @@ export default function TambahSuratKeluar() {
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-2rem)] p-0 sm:w-[500px]" align="start">
-                                    <Command>
+                                    <Command shouldFilter={false}>
                                         <CommandInput
                                             placeholder="Ketik nomor surat atau perihal..."
                                             value={searchTerm}
@@ -639,17 +628,18 @@ export default function TambahSuratKeluar() {
                                                         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                                                         <span className="ml-2 text-sm text-muted-foreground">Memuat...</span>
                                                     </div>
-                                                ) : (
+                                                ) : !replyOptions.error && (
                                                     <div className="py-6 text-center">
                                                         <Mail className="h-8 w-8 text-muted-foreground/50 mx-auto mb-2" />
-                                                        <p className="text-sm text-muted-foreground">Tidak ada surat masuk yang belum dibalas</p>
+                                                        <p className="text-sm text-muted-foreground">{debouncedReplySearch ? 'Tidak ada surat masuk yang cocok dengan pencarian' : 'Tidak ada surat masuk yang belum dibalas'}</p>
                                                     </div>
                                                 )}
                                             </CommandEmpty>
                                             <CommandGroup heading="Surat Masuk Belum Dibalas">
-                                                {filteredSuratMasuk.slice(0, 10).map((surat) => (
+                                                {replyOptions.rows.map((surat) => (
                                                     <CommandItem
                                                         key={surat.id}
+                                                        value={surat.id}
                                                         onSelect={() => handleSelectSuratMasuk(surat)}
                                                         className="cursor-pointer py-3"
                                                     >
@@ -667,6 +657,7 @@ export default function TambahSuratKeluar() {
                                             </CommandGroup>
                                         </CommandList>
                                     </Command>
+                                    <div className="p-3"><ResourcePagination resource={{ ...replyOptions, loading: loadingSuratMasuk }} label="surat masuk yang dibalas" /></div>
                                 </PopoverContent>
                             </Popover>
                         )}
@@ -824,13 +815,15 @@ export default function TambahSuratKeluar() {
                                 </Label>
                                 <KlasifikasiPicker
                                     id="klasifikasi-surat-keluar"
-                                    value={formData.klasifikasiFasilitatifKode}
-                                    onChange={(kode, klasifikasi) => {
+                                    value={formData.klasifikasiFasilitatifKode || formData.klasifikasiSubstantifKode}
+                                    selectedClassification={archiveRules.classification}
+                                    selectedRetention={archiveRules.retention}
+                                    disabled={saveLocked}
+                                    onChange={(kode, klasifikasi, jra) => {
                                         if (saveLockedRef.current) return;
                                         setFormData(prev => ({
                                             ...prev,
-                                            klasifikasiFasilitatifKode: kode,
-                                            klasifikasiFasilitatif: klasifikasi?.jenis || '',
+                                            ...buildSuratArchiveSelection(kode, klasifikasi, jra, 'keluar'),
                                         }));
                                         setError(null);
                                         setDirty();
@@ -838,7 +831,7 @@ export default function TambahSuratKeluar() {
                                     label="Klik untuk memilih klasifikasi arsip..."
                                 />
                                 <p className="text-xs text-muted-foreground">
-                                    Pilih klasifikasi arsip Fasilitatif atau Substantif sesuai peraturan kearsipan
+                                    Pilih pasangan klasifikasi dan JRA. Pilihan ini diteruskan saat surat diberkaskan menjadi arsip; perhitungan retensi mengikuti pemicu yang dicatat pada siklus hidup arsip.
                                 </p>
                             </div>
 

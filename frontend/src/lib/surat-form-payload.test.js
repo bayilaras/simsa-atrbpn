@@ -14,4 +14,9 @@ describe('surat metadata updates without document services', () => {
             .toBe('https://example.test/existing')
         expect(buildSuratFormPayload({ linkDokumen: '' }, 'unit-a', true).linkDokumen).toBe('')
     })
+
+    it('submits selected rule IDs without trusting editable retention preview text', () => {
+        const payload = JSON.parse(JSON.stringify(buildSuratFormPayload({ klasifikasiItemId: 82, jraItemId: 97, klasifikasiKode: 'BP.02.02', klasifikasiUraian: 'Bimbingan Teknis dan Supervisi', jraKode: 'S.III.01', jraRetensiAktif: 'Edited preview', jraKeterangan: 'Edited outcome' }, 'unit-a', false)))
+        expect(payload).toEqual({ klasifikasiItemId: 82, jraItemId: 97, klasifikasiKode: 'BP.02.02', klasifikasiUraian: 'Bimbingan Teknis dan Supervisi', unitKerjaId: 'unit-a' })
+    })
 })

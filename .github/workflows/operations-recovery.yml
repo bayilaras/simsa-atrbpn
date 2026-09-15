@@ -1,0 +1,64 @@
+name: Verified database and private document recovery
+
+on:
+  schedule:
+    - cron: '15 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simsa-production-recovery
+  cancel-in-progress: false
+
+jobs:
+  recovery:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.OPERATIONS_RECOVERY_ENABLED == 'true'
+    environment: production-recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Install backend dependencies before loading production secrets
+        run: npm ci --prefix backend --ignore-scripts
+      - name: Install compatible PostgreSQL 18 client and isolated restore runtime
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg /etc/postgresql-common
+          echo 'create_main_cluster = false' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-18 postgresql-client-18
+      - name: Check recovery boundaries and encryption contracts
+        run: node --test scripts/operations-recovery-documents.test.mjs scripts/operations-recovery.test.mjs
+      - name: Capture, encrypt, restore and publish sanitized latest result
+        env:
+          NEON_BACKUP_DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
+          NEON_EXPECTED_HOST: ${{ vars.NEON_BACKUP_EXPECTED_HOST }}
+          NEON_EXPECTED_DATABASE: ${{ vars.NEON_BACKUP_EXPECTED_DATABASE }}
+          SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN: ${{ secrets.SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN }}
+          OPERATIONS_RECOVERY_EXPECTED_BLOB_HOSTNAME: ${{ vars.OPERATIONS_RECOVERY_EXPECTED_BLOB_HOSTNAME }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          OPERATIONS_RECOVERY_PG_BIN: /usr/lib/postgresql/18/bin
+          OPERATIONS_RECOVERY_PRIVATE_ROOT: ${{ runner.temp }}/simsa-recovery-private
+          OPERATIONS_RECOVERY_DELIVERY: ${{ runner.temp }}/simsa-recovery-delivery
+          OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES: ${{ vars.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES }}
+          OPERATIONS_RECOVERY_PUBLISH_STATUS: 'true'
+        run: node scripts/operations-recovery.mjs run
+      - name: Preserve encrypted archives and sanitized attempt evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: simsa-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/simsa-recovery-delivery
+          if-no-files-found: warn
+          retention-days: 90
+          include-hidden-files: false

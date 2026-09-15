@@ -7,6 +7,10 @@ export function buildGoogleOAuthConfig(source: NodeJS.ProcessEnv = process.env) 
     const raw = source.GOOGLE_OAUTH_ENABLED?.trim().toLowerCase();
     const enabled = raw !== 'false';
     const validationErrors: string[] = [];
+    const pendingRaw = source.GOOGLE_PENDING_SIGNUP_ENABLED?.trim().toLowerCase();
+    if (pendingRaw && pendingRaw !== 'true' && pendingRaw !== 'false') {
+        validationErrors.push('GOOGLE_PENDING_SIGNUP_ENABLED must be true or false');
+    }
     if (raw && raw !== 'true' && raw !== 'false') {
         validationErrors.push('GOOGLE_OAUTH_ENABLED must be true or false');
     }
@@ -28,6 +32,7 @@ export function buildGoogleOAuthConfig(source: NodeJS.ProcessEnv = process.env) 
     return {
         enabled,
         configured: enabled && hasClientId && hasClientSecret && validationErrors.length === 0,
+        pendingSignupEnabled: pendingRaw === 'true' && enabled && validationErrors.length === 0,
         validationErrors,
     };
 }

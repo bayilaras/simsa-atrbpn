@@ -1,4 +1,5 @@
 import { buildSuratFormPayload } from '@/lib/surat-form-payload'
+import { buildSuratArchiveSelection, readSuratArchiveSelection, selectedSuratArchiveRules, validateSuratArchiveSelection } from '@/lib/surat-archive-selection'
 import { archiveUploadError } from '@/lib/archive-upload';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -139,7 +140,7 @@ export default function TambahSuratMasuk() {
     const { user } = useAuth();
     const { capabilities } = useAppConfig();
     const reducedMotion = useReducedMotion();
-    const filesEnabled = capabilities.fileUploads;
+    const filesEnabled = capabilities.letterFileUploads ?? capabilities.fileUploads;
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
     const errorRef = useRef(null);
@@ -194,15 +195,12 @@ export default function TambahSuratMasuk() {
         kepada: '',
         klasifikasiKode: '',
         klasifikasiUraian: '',
-        jraKode: '',
-        jraUraian: '',
-        jraRetensiAktif: '',
-        jraRetensiInaktif: '',
-        jraKeterangan: '',
+        ...readSuratArchiveSelection(),
         keterangan: '',
         disposisi: [],
         linkDokumen: '',
     });
+    const archiveRules = selectedSuratArchiveRules(formData);
 
     // Restore draft on mount (only for new entries, not edit mode)
     useEffect(() => {
@@ -236,17 +234,13 @@ export default function TambahSuratMasuk() {
                 kepada: data.kepada || '',
                 klasifikasiKode: data.klasifikasiKode || '',
                 klasifikasiUraian: data.klasifikasiUraian || '',
-                jraKode: data.jraKode || '',
-                jraUraian: data.jraUraian || '',
-                jraRetensiAktif: data.jraRetensiAktif || '',
-                jraRetensiInaktif: data.jraRetensiInaktif || '',
-                jraKeterangan: data.jraKeterangan || '',
+                ...readSuratArchiveSelection(data),
                 keterangan: data.keterangan || '',
                 disposisi: Array.isArray(data.disposisi) ? data.disposisi : (data.disposisi ? [data.disposisi] : []),
-                linkDokumen: filesEnabled ? (data.linkDokumen || '') : '',
+                linkDokumen: data.linkDokumen || '',
             });
             // Track existing file info
-            if (filesEnabled && data.filePath) {
+            if (data.filePath) {
                 setExistingFile({
                     path: data.filePath,
                     name: data.fileOriginalName || (data.filePath.startsWith('blob:') || data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
@@ -258,7 +252,7 @@ export default function TambahSuratMasuk() {
         } finally {
             setIsLoading(false);
         }
-    }, [filesEnabled, id]);
+    }, [id]);
 
     // Fetch existing data for edit mode.
     useEffect(() => {
@@ -329,6 +323,8 @@ export default function TambahSuratMasuk() {
     // Validate form
     const validateForm = () => {
         if (!resolvedUnitKerjaId) return { message: 'Pilih unit kerja terlebih dahulu' };
+        const archiveSelectionError = validateSuratArchiveSelection(formData);
+        if (archiveSelectionError) return { message: archiveSelectionError };
         if (!formData.jenisSurat) return { field: 'jenisSurat', message: 'Jenis Surat wajib diisi' };
         if (!formData.tanggalSurat) return { message: 'Tanggal Surat wajib diisi' };
         if (!formData.perihal) return { message: 'Perihal wajib diisi' };
@@ -738,18 +734,15 @@ export default function TambahSuratMasuk() {
                             <KlasifikasiPicker
                                 id="klasifikasi-arsip"
                                 value={formData.klasifikasiKode}
+                                selectedClassification={archiveRules.classification}
+                                selectedRetention={archiveRules.retention}
+                                disabled={saveLocked}
                                 onChange={(kode, klasifikasi, jra) => {
                                     if (saveLockedRef.current) return;
                                     setFormData(prev => {
                                         const updated = {
                                             ...prev,
-                                            klasifikasiKode: kode,
-                                            klasifikasiUraian: klasifikasi?.jenis || '',
-                                            jraKode: jra?.kode || '',
-                                            jraUraian: jra?.uraian || '',
-                                            jraRetensiAktif: jra?.retensiAktif || '',
-                                            jraRetensiInaktif: jra?.retensiInaktif || '',
-                                            jraKeterangan: jra?.keterangan || '',
+                                            ...buildSuratArchiveSelection(kode, klasifikasi, jra),
                                         };
                                         saveDraft(updated);
                                         return updated;
@@ -760,7 +753,7 @@ export default function TambahSuratMasuk() {
                                 label="Klik untuk memilih klasifikasi arsip..."
                             />
                             <p className="text-xs text-muted-foreground">
-                                Pilih klasifikasi arsip Fasilitatif atau Substantif sesuai peraturan kearsipan
+                                Pilih pasangan klasifikasi dan JRA. Pilihan ini diteruskan saat surat diberkaskan menjadi arsip; perhitungan retensi mengikuti pemicu yang dicatat pada siklus hidup arsip.
                             </p>
                         </div>
                     </CardContent>

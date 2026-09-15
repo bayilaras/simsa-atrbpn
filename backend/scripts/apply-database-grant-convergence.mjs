@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { loadMigrations } from './migrate-database.mjs';
 
 for (const name of [
   'PGHOST',
@@ -68,8 +69,15 @@ try {
 } catch {
   throw new Error('EXPECTED_MIGRATIONS_JSON must be valid JSON');
 }
-if (!Array.isArray(expectedManifest) || expectedManifest.length !== 39) {
-  throw new Error('EXPECTED_MIGRATIONS_JSON must contain the exact 39-entry chain');
+const reviewedMigrations = loadMigrations();
+if (!Array.isArray(expectedManifest) || expectedManifest.length !== reviewedMigrations.length
+    || expectedManifest.some((entry, idx) => {
+      const migration = reviewedMigrations[idx];
+      return !entry || entry.idx !== idx || entry.created_at !== migration.timestamp
+        || entry.tag !== migration.tag || entry.sha256 !== migration.hash
+        || JSON.stringify(entry.accepted_sha256) !== JSON.stringify(migration.acceptedHashes);
+    })) {
+  throw new Error('EXPECTED_MIGRATIONS_JSON must match every ordered migration and hash in this checkout');
 }
 
 const here = dirname(fileURLToPath(import.meta.url));

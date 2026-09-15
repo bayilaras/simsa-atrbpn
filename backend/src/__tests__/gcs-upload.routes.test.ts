@@ -97,6 +97,17 @@ describe('GCS direct upload route', () => {
             .send({ purpose: 'surat_masuk', fileName: 'archive.PDF', contentType: 'application/pdf', sizeBytes: 10 * 1024 * 1024 });
         expect(response.status).toBe(201);
     });
+    it('allows exactly 50 MiB only for an authorized regulatory source and rejects one byte more', async () => {
+        mocks.role = 'super_admin';
+        mocks.assertRegulatory.mockResolvedValue(undefined);
+        const intent = { purpose: 'regulatory_source', ruleSetId: '33333333-3333-4333-8333-333333333333',
+            fileName: 'aturan.pdf', contentType: 'application/pdf', sizeBytes: 50 * 1024 * 1024 };
+        await request(app()).post('/api/object-uploads').send(intent).expect(201);
+        expect(mocks.assertRegulatory).toHaveBeenCalledWith(intent.ruleSetId);
+        mocks.authorize.mockClear(); mocks.createSession.mockClear();
+        await request(app()).post('/api/object-uploads').send({ ...intent, sizeBytes: intent.sizeBytes + 1 }).expect(413);
+        expect(mocks.authorize).not.toHaveBeenCalled(); expect(mocks.createSession).not.toHaveBeenCalled();
+    });
 
     it('authorizes an exact lease before returning a browser resumable session', async () => {
         const response = await request(app())

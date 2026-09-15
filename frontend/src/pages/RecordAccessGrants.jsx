@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { usePaginatedResource } from '@/hooks/use-paginated-resource';
+import { ResourcePagination } from '@/components/ResourcePagination';
 import { Clock3, Eye, FileKey2, LockKeyhole, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -124,13 +126,18 @@ function AccessTable({ rows, reviewer, onDecision }) {
     );
 }
 
+const loadMine = params => recordAccessGrantService.listMine(params);
+const loadPending = params => recordAccessGrantService.listForReview({ ...params, status: 'pending' });
+const loadApproved = params => recordAccessGrantService.listForReview({ ...params, status: 'approved' });
+
 export default function RecordAccessGrants() {
     const { user } = useAuth();
     const { toast } = useToast();
     const canReview = user?.role === 'super_admin';
-    const [mine, setMine] = useState([]);
-    const [review, setReview] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const mine = usePaginatedResource(loadMine, { queryKey: user?.id });
+    const pending = usePaginatedResource(loadPending, { queryKey: user?.id, enabled: canReview });
+    const approved = usePaginatedResource(loadApproved, { queryKey: user?.id, enabled: canReview });
+    const loading = mine.loading || pending.loading || approved.loading;
     const [requestOpen, setRequestOpen] = useState(false);
     const [decision, setDecision] = useState(null);
     const [submitting, setSubmitting] = useState(false);
@@ -149,30 +156,7 @@ export default function RecordAccessGrants() {
         return local.toISOString().slice(0, 16);
     }, []);
 
-    const load = useCallback(async () => {
-        try {
-            setLoading(true);
-            const [mineResponse, pendingResponse, approvedResponse] = await Promise.all([
-                recordAccessGrantService.listMine({ limit: 100 }),
-                canReview
-                    ? recordAccessGrantService.listForReview({ limit: 100, status: 'pending' })
-                    : Promise.resolve({ data: [] }),
-                canReview
-                    ? recordAccessGrantService.listForReview({ limit: 100, status: 'approved' })
-                    : Promise.resolve({ data: [] }),
-            ]);
-            setMine(mineResponse.data || []);
-            setReview([...(pendingResponse.data || []), ...(approvedResponse.data || [])]);
-        } catch (error) {
-            toast({ title: 'Gagal memuat persetujuan akses', description: error.message, variant: 'destructive' });
-        } finally {
-            setLoading(false);
-        }
-    }, [canReview, toast]);
-
-    useEffect(() => {
-        load();
-    }, [load]);
+    const load = () => { mine.reload(); pending.reload(); approved.reload(); };
 
     const submitRequest = async () => {
         try {
@@ -238,17 +222,26 @@ export default function RecordAccessGrants() {
                 </CardHeader>
                 <CardContent>
                     <Tabs defaultValue="mine">
-                        <TabsList>
+                        <TabsList className="h-auto flex-wrap">
                             <TabsTrigger value="mine"><Eye className="mr-2 h-4 w-4" /> Permohonan Saya</TabsTrigger>
-                            {canReview && <TabsTrigger value="review"><Clock3 className="mr-2 h-4 w-4" /> Perlu Keputusan ({review.length})</TabsTrigger>}
+                            {canReview && <TabsTrigger value="pending"><Clock3 className="mr-2 h-4 w-4" /> Perlu Keputusan ({pending.total})</TabsTrigger>}
+                            {canReview && <TabsTrigger value="approved">Disetujui ({approved.total})</TabsTrigger>}
                         </TabsList>
                         <TabsContent value="mine" className="mt-4">
-                            <AccessTable rows={mine} reviewer={false} onDecision={openDecision} />
+                            {!mine.loading && !mine.error && <AccessTable rows={mine.rows} reviewer={false} onDecision={openDecision} />}
+                            <ResourcePagination resource={mine} label="permohonan saya" />
                         </TabsContent>
                         {canReview && (
-                            <TabsContent value="review" className="mt-4">
-                                <AccessTable rows={review} reviewer onDecision={openDecision} />
-                            </TabsContent>
+                            <>
+                                <TabsContent value="pending" className="mt-4">
+                                    {!pending.loading && !pending.error && <AccessTable rows={pending.rows} reviewer onDecision={openDecision} />}
+                                    <ResourcePagination resource={pending} label="perlu keputusan" />
+                                </TabsContent>
+                                <TabsContent value="approved" className="mt-4">
+                                    {!approved.loading && !approved.error && <AccessTable rows={approved.rows} reviewer onDecision={openDecision} />}
+                                    <ResourcePagination resource={approved} label="disetujui" />
+                                </TabsContent>
+                            </>
                         )}
                     </Tabs>
                 </CardContent>

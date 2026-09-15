@@ -10,6 +10,7 @@ vi.mock('../middlewares/auth.middleware', () => ({ authMiddleware: (req: any, _r
     req.user = { id: 'staff-a', email: 'staff@example.test', role: 'staff', unitKerjaId: 'unit-a' }; next();
 } }));
 vi.mock('../middlewares/role.middleware', () => ({ canWriteMiddleware: () => (_req: any, _res: any, next: any) => next() }));
+vi.mock('../middlewares/rate-limiter.middleware', () => ({ importLimiter: (_req: any, _res: any, next: any) => next() }));
 const { default: routes } = await import('../routes/migration.routes');
 const app = express().use('/api/migration', routes).use((error: any, _req: any, res: any, _next: any) => res.status(error.statusCode || 500).json({ message: error.message }));
 

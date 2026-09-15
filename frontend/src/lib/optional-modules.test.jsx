@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Outlet } from 'react-router-dom'
 import { createAppConfig, resolveRuntimeCapabilities } from './app-config'
 import App from '@/App'
 import Dashboard from '@/pages/Dashboard'
@@ -21,6 +21,8 @@ vi.mock('react-router-dom', async importOriginal => {
         RouterProvider: ({ router }) => <actual.MemoryRouter initialEntries={[state.path]}><TestRoutes routes={router} /></actual.MemoryRouter> }
 })
 vi.mock('@/components/ProvisionedAccessGate', () => ({ ProvisionedAccessGate: ({ children }) => children }))
+// Route capability tests retain App's guards; the sidebar is exercised separately below.
+vi.mock('@/layouts/AppLayout', () => ({ default: () => <main><Outlet /></main> }))
 vi.mock('@/components/app-header', () => ({ AppHeader: () => null }))
 vi.mock('@/components/IdleWarningBanner', () => ({ IdleWarningBanner: () => null }))
 vi.mock('@/components/OfflineIndicator', () => ({ OfflineIndicator: () => null }))
@@ -91,6 +93,9 @@ describe('optional module capability contract', () => {
 
     it('removes advanced sidebar links while retaining manual archives and governance', () => {
         const page = render(<MemoryRouter><SidebarProvider><AppSidebar /></SidebarProvider></MemoryRouter>)
+        for (const label of ['Siklus Hidup Arsip', 'Layanan & Fisik', 'Media & Autentikasi']) {
+            fireEvent.click(screen.getByRole('button', { name: label, exact: true }))
+        }
         expect(screen.queryByRole('link', { name: 'Penyusutan' })).not.toBeInTheDocument()
         expect(screen.queryByRole('link', { name: 'Arsip Terjaga' })).not.toBeInTheDocument()
         expect(screen.getByRole('link', { name: 'Arsip Elektronik' })).toBeInTheDocument()

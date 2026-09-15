@@ -227,6 +227,8 @@ describe('approval and signature service security', () => {
             [
                 { id: unitAdmin.id, name: 'Maker', role: 'super_admin', isActive: true },
                 { id: 'super-2', name: 'Reviewer', role: 'super_admin', isActive: true },
+                { id: 'unit-approver', name: 'Unit reviewer', role: 'admin_unit', unitKerjaId: 'unit-a', isActive: true },
+                { id: 'other-unit-approver', name: 'Other unit', role: 'admin_unit', unitKerjaId: 'unit-b', isActive: true },
             ],
         );
 
@@ -234,6 +236,7 @@ describe('approval and signature service security', () => {
             'surat-1', unitAdmin, 'unit-a',
         )).resolves.toEqual([
             expect.objectContaining({ id: 'super-2', name: 'Reviewer' }),
+            expect.objectContaining({ id: 'unit-approver', name: 'Unit reviewer' }),
         ]);
     });
 

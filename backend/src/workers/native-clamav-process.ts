@@ -20,6 +20,16 @@ let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
 let watchdog: Worker | undefined;
 let finished = false;
 let nativePids: number[] = [];
+type RssCategory = 'process_tree_invalid' | 'self_status_unreadable' | 'self_rss_missing' | 'self_children_unreadable'
+    | 'descendant_status_unreadable' | 'descendant_rss_missing' | 'descendant_children_unreadable'
+    | 'parent_status_unreadable' | 'parent_rss_missing' | 'sample_unknown';
+let rssDiagnostic: { rssFailure: RssCategory; rssErrorCode?: string } | undefined;
+const rssOsCodes = new Set(['ENOENT', 'ESRCH', 'EACCES', 'EPERM', 'EIO', 'EMFILE', 'ENFILE']);
+function memoryError(category: RssCategory, cause?: unknown): Error {
+    const code = cause && typeof cause === 'object' ? Object.getOwnPropertyDescriptor(cause, 'code')?.value : undefined;
+    return Object.assign(new Error('Antivirus RSS unavailable'), { rssFailure: category,
+        ...(typeof code === 'string' && rssOsCodes.has(code) ? { rssErrorCode: code } : {}) });
+}
 
 function stop(reason: FailureReason): void {
     failureReason ??= reason;
@@ -38,31 +48,48 @@ async function finish(result: NativeCommandResult | null): Promise<void> {
     if (process.connected && !failure && result) {
         process.send?.({ ok: true, result }, () => { process.disconnect(); });
     } else if (process.connected) {
-        process.send?.({ ok: false, reason: failureReason ?? 'child_exit' }, () => { process.disconnect(); });
+        process.send?.({ ok: false, reason: failureReason ?? 'child_exit',
+            ...(failureReason === 'rss_unavailable' ? rssDiagnostic : {}) }, () => { process.disconnect(); });
     }
     process.exitCode = failure || !result ? 1 : 0;
 }
 process.once('disconnect', () => { if (!finished) stop('cancelled'); });
 
-async function rssTree(pid: number, visited = new Set<number>()): Promise<{ bytes: number; pids: number[] }> {
-    if (visited.has(pid) || visited.size > 32) throw new Error('Unexpected antivirus process tree');
+async function rssTree(pid: number, visited = new Set<number>(), descendant = false): Promise<{ bytes: number; pids: number[] }> {
+    if (!Number.isSafeInteger(pid) || pid < 1 || visited.has(pid) || visited.size > 32) throw memoryError('process_tree_invalid');
     visited.add(pid);
     let status: string;
     try { status = await readFile(`/proc/${pid}/status`, 'utf8'); } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { bytes: 0, pids: [] };
-        throw error;
+        // Linux /proc can report ENOENT or ESRCH when a sampled descendant
+        // exits between enumeration and read. The supervisor must remain readable.
+        const code = (error as NodeJS.ErrnoException).code;
+        if (descendant && (code === 'ENOENT' || code === 'ESRCH')) return { bytes: 0, pids: [] };
+        throw memoryError(descendant ? 'descendant_status_unreadable' : 'self_status_unreadable', error);
     }
-    const rss = status.match(/^VmRSS:\s+(\d+)/m);
+    let rss = status.match(/^VmRSS:\s+(\d+)/m);
+    if (!rss && descendant && !/^State:\s+Z/m.test(status)) {
+        // A process can release its mm while /proc/status is being read and
+        // vanish before it is observed as a zombie. Confirm that transition
+        // once; an empty/incomplete read alone never proves zero memory.
+        try { status = await readFile(`/proc/${pid}/status`, 'utf8'); }
+        catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT' || code === 'ESRCH') return { bytes: 0, pids: [] };
+            throw memoryError('descendant_status_unreadable', error);
+        }
+        rss = status.match(/^VmRSS:\s+(\d+)/m);
+    }
     // A zombie has already released memory; an unreadable live process fails.
-    if (!rss && !/^State:\s+Z/m.test(status)) throw new Error('Antivirus RSS unavailable');
+    if (!rss && (!descendant || !/^State:\s+Z/m.test(status))) throw memoryError(descendant ? 'descendant_rss_missing' : 'self_rss_missing');
     let bytes = Number(rss?.[1] ?? 0) * 1024;
     const pids = [pid];
     const children = await readFile(`/proc/${pid}/task/${pid}/children`, 'utf8').catch((error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT') return '';
-        throw error;
+        // Keep the RSS already measured before an exited descendant vanished.
+        if (descendant && (error.code === 'ENOENT' || error.code === 'ESRCH')) return '';
+        throw memoryError(descendant ? 'descendant_children_unreadable' : 'self_children_unreadable', error);
     });
     for (const value of children.trim().split(/\s+/).filter(Boolean)) {
-        const descendant = await rssTree(Number(value), visited); bytes += descendant.bytes; pids.push(...descendant.pids);
+        const childTree = await rssTree(Number(value), visited, true); bytes += childTree.bytes; pids.push(...childTree.pids);
     }
     return { bytes, pids };
 }
@@ -122,12 +149,20 @@ process.once('message', async (message: unknown) => {
             pendingSample = (async () => { try {
                 const tree = await rssTree(process.pid);
                 nativePids = tree.pids.filter(pid => pid !== process.pid);
-                const parent = await readFile(`/proc/${parentPid}/status`, 'utf8');
+                const parent = await readFile(`/proc/${parentPid}/status`, 'utf8')
+                    .catch(error => { throw memoryError('parent_status_unreadable', error); });
                 const parentRss = parent.match(/^VmRSS:\s+(\d+)/m);
-                if (!parentRss) throw new Error('Parent memory unavailable');
+                if (!parentRss) throw memoryError('parent_rss_missing');
                 peakCombinedRssBytes = Math.max(peakCombinedRssBytes, tree.bytes + Number(parentRss[1]) * 1024);
                 if (peakCombinedRssBytes > request.maxCombinedRssBytes) stop('rss_limit');
-            } catch { if (!finished) stop('rss_unavailable'); } })().finally(() => { pendingSample = null; });
+            } catch (error) {
+                if (!finished) {
+                    const details = error as { rssFailure?: RssCategory; rssErrorCode?: string };
+                    rssDiagnostic = { rssFailure: details.rssFailure ?? 'sample_unknown',
+                        ...(details.rssErrorCode ? { rssErrorCode: details.rssErrorCode } : {}) };
+                    stop('rss_unavailable');
+                }
+            } })().finally(() => { pendingSample = null; });
             return pendingSample;
         };
         const poll = setInterval(() => { void sample(); }, 25);

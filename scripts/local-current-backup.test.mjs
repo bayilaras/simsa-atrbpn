@@ -10,6 +10,7 @@ import * as currentCore from './local-current-backup-core.mjs';
 import { SOURCE, CURRENT_FORMAT, assertSourceIdentity, assertTargetIdentity, assertTargetLocation,
   parseCurrentArguments, sealManifest, authenticateManifest, verifyArtifactHashes, assertSeparateKey } from './local-current-backup-core.mjs';
 import { encryptBuffer, decryptBuffer, sha256 } from './local-backup-drill-core.mjs';
+import { reviewedMigrationManifest } from './migration-manifest.mjs';
 
 const repository = resolve(import.meta.dirname, '..');
 const dataDir = resolve(repository, 'output/backup-verification/run/private/restore-data');
@@ -52,7 +53,7 @@ const plain = Buffer.from('PGDMP test-only');
 const archive = encryptBuffer(plain, key, runId, 'archive');
 const evidence = encryptBuffer(Buffer.from('evidence'), key, runId, 'evidence');
 const body = { format: CURRENT_FORMAT, run_id: runId, source: SOURCE, scope: 'database-only',
-  backup_role_membership_closure: 'exact', snapshot_at: new Date().toISOString(), migrations: Array.from({ length: 39 }, () => ({})),
+  backup_role_membership_closure: 'exact', snapshot_at: new Date().toISOString(), migrations: reviewedMigrationManifest(),
   helpers: { collector: '1'.repeat(64) }, archive_sha256: sha256(archive), evidence_sha256: sha256(evidence) };
 test('manifest and both encrypted artifacts must authenticate before restore', () => {
   const sealed = sealManifest(body, key);

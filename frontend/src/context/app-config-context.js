@@ -6,6 +6,7 @@ export const FULL_CAPABILITIES = Object.freeze({
     metadata: true,
     files: true,
     fileUploads: true,
+    letterFileUploads: true,
     externalIntegrations: true,
 })
 
@@ -18,6 +19,7 @@ export const AppConfigContext = createContext({
     compatible: true,
     configurationError: null,
     loading: false,
+    checking: false,
 })
 
 export const FAILED_DEMO_CONFIGURATION = Object.freeze({

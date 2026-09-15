@@ -9,6 +9,7 @@ import {
 } from '../db/schema/index.js';
 import { eq, or, and, desc, count, isNull } from 'drizzle-orm';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 
 const VALID_ENTITY_TYPES = ['arsip', 'surat_masuk', 'surat_keluar', 'dosir'] as const;
@@ -179,7 +180,7 @@ class TunjukSilangService {
                 return created;
             });
         } catch (error) {
-            if ((error as { code?: string })?.code === '23505') {
+            if (hasPostgresErrorCode(error, '23505')) {
                 throw new ConflictError('Tunjuk silang aktif tersebut sudah tercatat.');
             }
             throw error;

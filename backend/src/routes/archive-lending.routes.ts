@@ -3,11 +3,12 @@ import { archiveLendingService } from '../services/archive-lending.service';
 import { storageLocationService } from '../services/storage-location.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
-import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
-import { borrowArchiveSchema, extendLendingSchema } from '../validators/schemas';
+import { validateBody, validateQuery, uuidParamValidator } from '../middlewares/validate.middleware';
+import { borrowArchiveSchema, extendLendingSchema, queryArchiveLendingSchema } from '../validators/schemas';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
-import { isAllowedForClassification } from '../services/record-access.service.js';
+import { allowedSecurityClassifications, isAllowedForClassification } from '../services/record-access.service.js';
+import { getFrontendOrigin } from '../utils/frontend-origin.js';
 
 const router = Router();
 
@@ -45,9 +46,9 @@ router.param('locationId', uuidParamValidator);
  *     summary: List lending records with filters
  *     tags: [Archive Lending]
  */
-router.get('/', async (req: AuthRequest, res, next) => {
+router.get('/', validateQuery(queryArchiveLendingSchema), async (req: AuthRequest, res, next) => {
     try {
-        const { status, lendingType, borrowerId, arsipId, storageLocationId, page, limit } = req.query as any;
+        const { status, lendingType, borrowerId, arsipId, storageLocationId, search, page, limit } = res.locals.validatedQuery;
         const unitKerjaId = readUnitScope(req);
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat peminjaman.' });
@@ -55,13 +56,15 @@ router.get('/', async (req: AuthRequest, res, next) => {
 
         const result = await archiveLendingService.findAll({
             unitKerjaId,
+            securityClassifications: allowedSecurityClassifications(req.user),
             status,
             lendingType,
             borrowerId,
             arsipId,
             storageLocationId,
-            page: page ? parseInt(page) : 1,
-            limit: limit ? parseInt(limit) : 20,
+            search,
+            page,
+            limit,
         });
 
         res.json({ success: true, ...result });
@@ -83,7 +86,7 @@ router.get('/overdue', async (req: AuthRequest, res, next) => {
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat peminjaman.' });
         }
-        const data = await archiveLendingService.getOverdue(unitKerjaId);
+        const data = await archiveLendingService.getOverdue(unitKerjaId, allowedSecurityClassifications(req.user));
         res.json({ success: true, data });
     } catch (error) {
         next(error);
@@ -103,7 +106,7 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat statistik peminjaman.' });
         }
-        const stats = await archiveLendingService.getStats(unitKerjaId);
+        const stats = await archiveLendingService.getStats(unitKerjaId, allowedSecurityClassifications(req.user));
         res.json({ success: true, data: stats });
     } catch (error) {
         next(error);
@@ -127,6 +130,7 @@ router.get('/arsip/:arsipId', async (req: AuthRequest, res, next) => {
         const data = await archiveLendingService.getHistoryByArsipId(
             arsipId as string,
             unitKerjaId,
+            allowedSecurityClassifications(req.user),
         );
         res.json({ success: true, data });
     } catch (error) {
@@ -151,6 +155,7 @@ router.get('/location/:locationId', async (req: AuthRequest, res, next) => {
         const data = await archiveLendingService.getHistoryByLocationId(
             locationId as string,
             unitKerjaId,
+            allowedSecurityClassifications(req.user),
         );
         res.json({ success: true, data });
     } catch (error) {
@@ -172,7 +177,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat peminjaman.' });
         }
-        const result = await archiveLendingService.findById(id as string, unitKerjaId);
+        const result = await archiveLendingService.findById(id as string, unitKerjaId, allowedSecurityClassifications(req.user));
 
         if (!result) {
             return res.status(404).json({ error: 'Lending record not found' });
@@ -225,16 +230,7 @@ router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borr
         });
 
         res.status(201).json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message.includes('not found')) {
-            return res.status(404).json({ error: error.message });
-        }
-        if (error.message.includes('required')) {
-            return res.status(400).json({ error: error.message });
-        }
-        if (error.message.includes('already borrowed')) {
-            return res.status(409).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -263,13 +259,7 @@ router.put('/:id/return', canWriteMiddleware(), async (req: AuthRequest, res, ne
         });
 
         res.json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message.includes('not found')) {
-            return res.status(404).json({ error: error.message });
-        }
-        if (error.message.includes('Already returned') || error.message.includes('changed')) {
-            return res.status(409).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -302,13 +292,7 @@ router.put('/:id/extend', canWriteMiddleware(), validateBody(extendLendingSchema
         });
 
         res.json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message.includes('not found')) {
-            return res.status(404).json({ error: error.message });
-        }
-        if (error.message.includes('Cannot extend') || error.message.includes('changed')) {
-            return res.status(409).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -323,8 +307,6 @@ router.put('/:id/extend', canWriteMiddleware(), validateBody(extendLendingSchema
 router.get('/qr/arsip/:arsipId', async (req: AuthRequest, res, next) => {
     try {
         const { arsipId } = req.params;
-        const host = req.get('host') || 'localhost';
-        const baseUrl = `${req.protocol}://${host}`;
         const unitKerjaId = readUnitScope(req);
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk membuat QR arsip.' });
@@ -332,17 +314,14 @@ router.get('/qr/arsip/:arsipId', async (req: AuthRequest, res, next) => {
 
         const result = await storageLocationService.generateArsipQRCode(
             arsipId as string,
-            baseUrl,
+            getFrontendOrigin(),
             unitKerjaId,
         );
         if (!result.arsip || !isAllowedForClassification(req.user, result.arsip.klasifikasiKeamanan)) {
             return res.status(404).json({ error: 'Arsip not found' });
         }
         res.json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message.includes('not found')) {
-            return res.status(404).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });

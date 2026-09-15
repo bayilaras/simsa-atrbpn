@@ -53,12 +53,16 @@ import userManagementRouter from '../user-management.routes';
 import auditLogRouter from '../audit-log.routes';
 import userManagementService from '../../services/user-management.service';
 import auditLogService from '../../services/audit-log.service';
-import { ConflictError, ForbiddenError, ServiceUnavailableError } from '../../utils/errors.js';
+import { ConflictError, ForbiddenError, ServiceUnavailableError, ValidationError } from '../../utils/errors.js';
+import { publicErrorResponse, publicErrorStatus } from '../../utils/public-error.js';
 
 const app = express();
 app.use(express.json());
 app.use('/api/users', userManagementRouter);
 app.use('/api/audit-log', auditLogRouter);
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(publicErrorStatus(error)).json(publicErrorResponse(error, 'admin-fault-test'));
+});
 
 describe('centralized authentication on privileged routes', () => {
     beforeEach(() => {
@@ -113,7 +117,7 @@ describe('centralized authentication on privileged routes', () => {
     it('rejects self-demotion but permits an unchanged self role', async () => {
         const demotion = await request(app)
             .put(`/api/users/${securityState.user.id}`)
-            .send({ role: 'staff' });
+            .send({ role: 'admin_unit', unitKerjaId: 'ditjen' });
 
         expect(demotion.status).toBe(400);
         expect(userManagementService.updateUser).not.toHaveBeenCalled();
@@ -133,10 +137,10 @@ describe('centralized authentication on privileged routes', () => {
 
         const response = await request(app)
             .put('/api/users/22222222-2222-4222-8222-222222222222')
-            .send({ role: 'staff' });
+            .send({ role: 'admin_unit', unitKerjaId: 'ditjen' });
 
         expect(response.status).toBe(409);
-        expect(response.body.error).toMatch(/masih menjadi penyetuju aktif/);
+        expect(response.body.message).toMatch(/masih menjadi penyetuju aktif/);
     });
 
     it('maps a transaction-time stale administrator rejection on create', async () => {
@@ -154,7 +158,7 @@ describe('centralized authentication on privileged routes', () => {
             });
 
         expect(response.status).toBe(403);
-        expect(response.body.error).toMatch(/bukan super admin aktif/);
+        expect(response.body.message).toMatch(/bukan super admin aktif/);
     });
 
     it('does not expose whether a create conflict came from Firebase or the database', async () => {
@@ -167,12 +171,13 @@ describe('centralized authentication on privileged routes', () => {
             .send({
                 email: 'existing@example.go.id',
                 name: 'Existing User',
-                role: 'staff',
+                role: 'admin_unit',
+                unitKerjaId: 'ditjen',
                 password: 'Transient-Only-2026!',
             });
 
         expect(response.status).toBe(409);
-        expect(response.body).toEqual({ error: 'Identitas pengguna tersebut sudah digunakan.' });
+        expect(response.body).toMatchObject({ code: 'CONFLICT', message: 'Identitas pengguna tersebut sudah digunakan.' });
     });
 
     it('returns a retryable generic response for post-commit Firebase reconciliation failure', async () => {
@@ -187,7 +192,8 @@ describe('centralized authentication on privileged routes', () => {
             .send({ isActive: false });
 
         expect(response.status).toBe(503);
-        expect(response.body.error).toMatch(/sinkronisasi sesi belum selesai/);
+        expect(response.body).toMatchObject({ code: 'SERVICE_UNAVAILABLE', message: 'Layanan sementara tidak tersedia. Silakan coba lagi.' });
+        expect(response.text).not.toContain('sinkronisasi sesi');
     });
 
     it('rejects self-deactivation through the dedicated delete endpoint', async () => {
@@ -207,7 +213,36 @@ describe('centralized authentication on privileged routes', () => {
             .delete('/api/users/22222222-2222-4222-8222-222222222222');
 
         expect(response.status).toBe(409);
-        expect(response.body.error).toMatch(/Minimal satu super admin aktif/);
+        expect(response.body.message).toMatch(/Minimal satu super admin aktif/);
+    });
+
+    it.each(['Invalid', 'Email sudah terdaftar', 'not found'])('does not disclose unknown create failures containing %s', async keyword => {
+        const marker = `${keyword}: SYNTHETIC_ADMIN_DATABASE_SECRET`;
+        vi.mocked(userManagementService.createUser).mockRejectedValueOnce(new Error(marker));
+        const response = await request(app).post('/api/users').send({ email: 'test@example.test', name: 'Test User', role: 'admin_unit', unitKerjaId: 'ditjen' });
+        expect(response.status).toBe(500);
+        expect(response.body).toMatchObject({ code: 'INTERNAL_ERROR', requestId: 'admin-fault-test' });
+        expect(response.text).not.toContain(marker);
+    });
+
+    it.each(['update', 'deactivate', 'list'])('forwards unknown %s errors to the public boundary', async operation => {
+        const marker = 'Invalid sudah not found SYNTHETIC_ADMIN_DATABASE_SECRET';
+        const target = '/api/users/22222222-2222-4222-8222-222222222222';
+        if (operation === 'update') vi.mocked(userManagementService.updateUser).mockRejectedValueOnce(new Error(marker));
+        if (operation === 'deactivate') vi.mocked(userManagementService.deactivateUser).mockRejectedValueOnce(new Error(marker));
+        if (operation === 'list') vi.mocked(userManagementService.listUsers).mockRejectedValueOnce(new Error(marker));
+        const response = operation === 'update' ? await request(app).put(target).send({ role: 'admin_unit', unitKerjaId: 'ditjen' })
+            : operation === 'deactivate' ? await request(app).delete(target) : await request(app).get('/api/users');
+        expect(response.status).toBe(500);
+        expect(response.body).toMatchObject({ code: 'INTERNAL_ERROR', requestId: 'admin-fault-test' });
+        expect(response.text).not.toContain(marker);
+    });
+
+    it('keeps explicit user validation failures informative', async () => {
+        vi.mocked(userManagementService.createUser).mockRejectedValueOnce(new ValidationError('Email sudah terdaftar'));
+        const response = await request(app).post('/api/users').send({ email: 'test@example.test', name: 'Test User', role: 'admin_unit', unitKerjaId: 'ditjen' });
+        expect(response.status).toBe(400);
+        expect(response.body).toMatchObject({ code: 'VALIDATION_ERROR', message: 'Email sudah terdaftar' });
     });
 
     it('does not let audit-log routes bypass a central account-state rejection', async () => {

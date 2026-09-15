@@ -1,5 +1,6 @@
+import { ACTIVATABLE_RULE_SET_STATUSES, regulatoryActivationBlocker } from '@/lib/regulatory-activation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { archiveUploadError } from '@/lib/archive-upload';
+import { regulatorySourceUploadError } from '@/lib/archive-upload';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
     AlertTriangle,
@@ -16,7 +17,6 @@ import {
     LockKeyhole,
     RotateCcw,
     RefreshCw,
-    Send,
     ShieldCheck,
     Upload,
     XCircle,
@@ -103,21 +103,6 @@ const EMPTY_AUDIT_PAGINATION = { page: 1, limit: AUDIT_PAGE_SIZE, total: 0, tota
 const MULTIPART_FALLBACK_MAX_BYTES = 4 * 1024 * 1024;
 
 const WORKFLOW_ACTION = {
-    submit: {
-        title: 'Ajukan versi untuk ditelaah',
-        description: 'Setelah diajukan, isi dan bukti draft dikunci. Penelaahan harus dilakukan akun lain.',
-        button: 'Ajukan versi',
-    },
-    review: {
-        title: 'Nyatakan hasil telaah',
-        description: 'Pastikan dokumen sumber, manifest kelengkapan, diff, dan dampak terhadap arsip telah diperiksa.',
-        button: 'Selesaikan telaah',
-    },
-    approve: {
-        title: 'Setujui versi aturan',
-        description: 'Penyetuju harus berbeda dari penyusun, pengaju, dan penelaah. Aktivasi dilakukan setelah persetujuan.',
-        button: 'Setujui versi',
-    },
     returnToDraft: {
         title: 'Kembalikan ke draft',
         description: 'Catat temuan yang harus diperbaiki. Bukti pengajuan dan telaah sebelumnya tetap tersimpan pada jejak audit.',
@@ -393,8 +378,8 @@ export default function RegulatoryRuleSets() {
     const { toast } = useToast();
     const [searchParams, setSearchParams] = useSearchParams();
     const canPublish = user?.role === 'super_admin';
-    const canGovern = ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
-    const canAudit = canGovern || user?.role === 'auditor';
+    const canGovern = canPublish;
+    const canAudit = canPublish;
     const requestedInstrument = searchParams.get('instrument');
     const [instrumentType, setInstrumentType] = useState(
         requestedInstrument === 'jra' ? 'jra' : 'klasifikasi',
@@ -494,7 +479,7 @@ export default function RegulatoryRuleSets() {
             setCloneOpen(false);
             toast({
                 title: 'Draft versi baru dibuat',
-                description: `${response.data?.itemCount ?? 0} item disalin. Lengkapi bukti sumber dan tahapan pemeriksaan sebelum aktivasi.`,
+                description: `${response.data?.itemCount ?? 0} item disalin. Lengkapi PDF sumber, manifest, dan analisis dampak sebelum aktivasi.`,
             });
             await loadRuleSets();
         } catch (error) {
@@ -520,7 +505,7 @@ export default function RegulatoryRuleSets() {
     };
 
     const activateDraft = async () => {
-        if (!activation) return;
+        if (!activation || !canPublish || regulatoryActivationBlocker(activation.ruleSet)) return;
         try {
             setActionLoading(true);
             await regulatoryRuleSetService.activate(activation.ruleSet.id);
@@ -541,7 +526,7 @@ export default function RegulatoryRuleSets() {
         if (!capabilities.fileUploads) return;
         if (!sourceRuleSet || !sourceFile) return;
         try {
-            const validationError = archiveUploadError(sourceFile);
+            const validationError = regulatorySourceUploadError(sourceFile);
             if (validationError) throw new Error(validationError);
             setActionLoading(true);
             setSourceUploadProgress(0);
@@ -804,7 +789,7 @@ export default function RegulatoryRuleSets() {
             <PageHeader
                 icon={GitBranch}
                 title="Versi Aturan Kearsipan"
-                description="Kelola edisi Klasifikasi Arsip dan JRA dengan bukti sumber, pemeriksaan kelengkapan, analisis dampak, dan persetujuan berjenjang."
+                description="Super Admin menyiapkan dan mengaktifkan edisi Klasifikasi Arsip dan JRA dengan sumber, manifest, dan analisis dampak yang lengkap."
                 actions={(
                     <Button variant="outline" onClick={loadRuleSets} disabled={loading}>
                         <RefreshCw className={loading ? 'animate-spin' : ''} /> Muat ulang
@@ -814,9 +799,9 @@ export default function RegulatoryRuleSets() {
 
             <Alert>
                 <LockKeyhole className="h-4 w-4" />
-                <AlertTitle>Maker–checker dan bukti regulasi</AlertTitle>
+                <AlertTitle>Kesiapan dan aktivasi katalog</AlertTitle>
                 <AlertDescription>
-                    Registrasi arsip selalu memakai versi aktif. Draft wajib dilengkapi PDF resmi, manifest cakupan, diff dampak, lalu melewati pengajuan, telaah, dan persetujuan oleh akun yang berbeda sebelum aktivasi.
+                    Registrasi arsip selalu memakai versi aktif. Lengkapi PDF resmi, manifest cakupan, dan analisis dampak, lalu validasi dan aktifkan katalog. Pemeriksaan sumber, integritas, dan tanggal berlaku tetap dijalankan saat aktivasi.
                     {!canPublish && ' Akun Anda memiliki akses baca; publikasi versi hanya dapat dilakukan super administrator.'}
                 </AlertDescription>
             </Alert>
@@ -931,40 +916,17 @@ export default function RegulatoryRuleSets() {
                                                                     {capabilities.fileUploads && <Button variant="outline" size="sm" onClick={() => { setSourceRuleSet(ruleSet); setSourceFile(null); setSourceUploadProgress(null); }}><Upload /> PDF sumber</Button>}
                                                                     <Button variant="outline" size="sm" onClick={() => openManifest(ruleSet)}><ClipboardCheck /> Manifest</Button>
                                                                     <Button variant="outline" size="sm" onClick={() => generateImpact(ruleSet)} disabled={actionLoading}><GitBranch /> Diff & dampak</Button>
-                                                                    <Button size="sm" onClick={() => openWorkflow(ruleSet, 'submit')}><Send /> Ajukan</Button>
                                                                 </>
                                                             )}
-                                                            {ruleSet.status === 'submitted' && (
+                                                            {canPublish && ACTIVATABLE_RULE_SET_STATUSES.includes(ruleSet.status) && (
                                                                 <>
                                                                     <Button
                                                                         size="sm"
-                                                                        disabled={user?.id === ruleSet.createdBy || user?.id === ruleSet.submittedBy}
-                                                                        title={user?.id === ruleSet.createdBy || user?.id === ruleSet.submittedBy ? 'Penelaah harus akun lain' : 'Telaah versi'}
-                                                                        onClick={() => openWorkflow(ruleSet, 'review')}
-                                                                    ><ClipboardCheck /> Telaah</Button>
-                                                                    <Button variant="outline" size="sm" onClick={() => openWorkflow(ruleSet, 'returnToDraft')}><RotateCcw /> Kembalikan</Button>
-                                                                </>
-                                                            )}
-                                                            {ruleSet.status === 'reviewed' && (
-                                                                <>
-                                                                    <Button
-                                                                        size="sm"
-                                                                        disabled={[ruleSet.createdBy, ruleSet.submittedBy, ruleSet.reviewedBy].includes(user?.id)}
-                                                                        title={[ruleSet.createdBy, ruleSet.submittedBy, ruleSet.reviewedBy].includes(user?.id) ? 'Penyetuju harus akun lain' : 'Setujui versi'}
-                                                                        onClick={() => openWorkflow(ruleSet, 'approve')}
-                                                                    ><ShieldCheck /> Setujui</Button>
-                                                                    <Button variant="outline" size="sm" onClick={() => openWorkflow(ruleSet, 'returnToDraft')}><RotateCcw /> Kembalikan</Button>
-                                                                </>
-                                                            )}
-                                                            {ruleSet.status === 'approved' && (
-                                                                <>
-                                                                    {canPublish && <Button
-                                                                            size="sm"
-                                                                            disabled={actionLoading || effectiveInFuture(ruleSet)}
-                                                                            title={effectiveInFuture(ruleSet) ? `Belum berlaku sampai ${formatDate(ruleSet.effectiveFrom)}` : 'Aktifkan versi yang telah disetujui'}
-                                                                            onClick={() => setActivation({ ruleSet })}
-                                                                        ><ShieldCheck /> Aktifkan</Button>}
-                                                                    <Button variant="outline" size="sm" onClick={() => openWorkflow(ruleSet, 'returnToDraft')}><RotateCcw /> Kembalikan</Button>
+                                                                        disabled={actionLoading || Boolean(regulatoryActivationBlocker(ruleSet))}
+                                                                        title={regulatoryActivationBlocker(ruleSet) || 'Validasi dan aktifkan katalog'}
+                                                                        onClick={() => setActivation({ ruleSet })}
+                                                                    ><ShieldCheck /> Aktifkan</Button>
+                                                                    {ruleSet.status !== 'draft' && <Button variant="outline" size="sm" onClick={() => openWorkflow(ruleSet, 'returnToDraft')}><RotateCcw /> Kembalikan ke draft</Button>}
                                                                 </>
                                                             )}
                                                             <Button variant="ghost" size="sm" onClick={() => openEvents(ruleSet)}><History /> Audit</Button>
@@ -1148,7 +1110,7 @@ export default function RegulatoryRuleSets() {
                     <DialogHeader>
                         <DialogTitle>Verifikasi PDF sumber {sourceRuleSet?.version}</DialogTitle>
                         <DialogDescription>
-                            Unggah salinan PDF resmi (maks. 10 MiB) langsung ke penyimpanan privat. Nama, ukuran, jumlah halaman, dan SHA-256 diverifikasi server; hash tidak dapat diisi manual.
+                            Unggah salinan PDF resmi (maks. 50 MiB) langsung ke penyimpanan privat. Nama, ukuran, jumlah halaman, dan SHA-256 diverifikasi server; hash tidak dapat diisi manual.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-3 py-3">
@@ -1160,7 +1122,7 @@ export default function RegulatoryRuleSets() {
                             disabled={actionLoading}
                             onChange={(event) => { setSourceFile(event.target.files?.[0] || null); setSourceUploadProgress(null); }}
                         />
-                        {sourceFile && <p className="text-sm text-muted-foreground">{sourceFile.name} · {(sourceFile.size / 1024 / 1024).toFixed(2)} MB</p>}
+                        {sourceFile && <p className="text-sm text-muted-foreground">{sourceFile.name} · {(sourceFile.size / 1024 / 1024).toFixed(2)} MiB</p>}
                         {sourceUploadProgress !== null && <p className="text-sm text-muted-foreground">Mengunggah ke penyimpanan privat: {sourceUploadProgress}%</p>}
                     </div>
                     <DialogFooter>
@@ -1283,14 +1245,14 @@ export default function RegulatoryRuleSets() {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Aktifkan versi {activation?.ruleSet.version}?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Versi ini akan menjadi sumber aturan untuk registrasi arsip baru. Versi aktif saat ini dipindahkan ke riwayat dan tidak dapat diedit lagi. Snapshot pada arsip lama tidak berubah.
+                            Sistem akan memvalidasi sumber, manifest, isi, analisis dampak, dan tanggal berlaku. Jika semua pemeriksaan lulus, versi ini langsung aktif untuk registrasi arsip baru. Versi sebelumnya dan snapshot arsip lama tetap tersimpan.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     {activation?.report?.warnings?.length > 0 && (
                         <Alert>
                             <AlertTriangle className="h-4 w-4 text-warning" />
                             <AlertTitle>{activation.report.warnings.length} peringatan perlu dicatat</AlertTitle>
-                            <AlertDescription>Validasi tetap lulus, tetapi hasil manual harus ditelaah oleh petugas berwenang.</AlertDescription>
+                            <AlertDescription>Periksa dan catat peringatan ini sebelum mengaktifkan versi.</AlertDescription>
                         </Alert>
                     )}
                     <AlertDialogFooter>

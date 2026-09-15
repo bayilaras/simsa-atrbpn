@@ -21,6 +21,7 @@ const FULL_CAPABILITIES = Object.freeze({
     metadata: true,
     files: true,
     fileUploads: true,
+    letterFileUploads: true,
     externalIntegrations: true,
     bulkOcr: true,
     advancedArchiveWorkflows: true,
@@ -30,6 +31,7 @@ export const RESTRICTED_CAPABILITIES = Object.freeze({
     metadata: false,
     files: false,
     fileUploads: false,
+    letterFileUploads: false,
     externalIntegrations: false,
     bulkOcr: false,
     advancedArchiveWorkflows: false,
@@ -67,7 +69,7 @@ export function createAppConfig(env = {}) {
     const capabilities = mode === 'metadata-demo'
         ? Object.freeze({ ...RESTRICTED_CAPABILITIES })
         : providers.storageProvider === 'disabled'
-            ? Object.freeze({ ...FULL_CAPABILITIES, files: false, fileUploads: false })
+            ? Object.freeze({ ...FULL_CAPABILITIES, files: false, fileUploads: false, letterFileUploads: false })
             : FULL_CAPABILITIES
 
     return Object.freeze({
@@ -99,12 +101,17 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
             && backendCapabilities?.metadata === true
             && typeof backendCapabilities?.files === 'boolean'
             && typeof backendCapabilities?.fileUploads === 'boolean'
+            && (backendCapabilities?.letterFileUploads === undefined || typeof backendCapabilities.letterFileUploads === 'boolean')
             && typeof backendCapabilities?.externalIntegrations === 'boolean'
             && !(backendCapabilities.fileUploads && !backendCapabilities.files)
+            && !(backendCapabilities.letterFileUploads && !backendCapabilities.files)
             && !(buildConfig.storageProvider === 'disabled' && backendCapabilities.files)
         return Object.freeze({
             compatible: Boolean(compatible), mode: 'full', syntheticDataOnly: false,
             capabilities: Object.freeze(compatible ? { ...backendCapabilities,
+                // Letter attachments can be available while inspection services
+                // required by archival preservation are unavailable.
+                letterFileUploads: backendCapabilities.letterFileUploads ?? backendCapabilities.fileUploads,
                 // Older full backends predate these switches. Explicit values
                 // are authoritative; malformed values never enable a module.
                 bulkOcr: backendCapabilities.bulkOcr === undefined || backendCapabilities.bulkOcr === true,
@@ -114,6 +121,7 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
             authentication: Object.freeze(compatible ? {
                 provider: payload?.authentication?.provider,
                 googleSignIn: payload?.authentication?.googleSignIn === true,
+                pendingGoogleSignup: payload?.authentication?.googleSignIn === true && payload?.authentication?.pendingGoogleSignup === true,
             } : { googleSignIn: false }),
         })
     }
@@ -125,6 +133,7 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
         && backendCapabilities?.metadata === true
         && backendCapabilities?.files === false
         && backendCapabilities?.fileUploads !== true
+        && (backendCapabilities?.letterFileUploads === undefined || backendCapabilities.letterFileUploads === false)
         && backendCapabilities?.externalIntegrations === false
     )
 
@@ -152,6 +161,7 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
         authentication: Object.freeze({
             provider: payload?.authentication?.provider,
             googleSignIn: payload?.authentication?.provider === 'firebase' && payload?.authentication?.googleSignIn === true,
+            pendingGoogleSignup: payload?.authentication?.provider === 'firebase' && payload?.authentication?.googleSignIn === true && payload?.authentication?.pendingGoogleSignup === true,
         }),
     })
 }

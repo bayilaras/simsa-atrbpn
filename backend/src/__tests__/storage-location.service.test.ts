@@ -6,6 +6,7 @@ let transactionCommits = 0;
 let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
 const auditMocks = vi.hoisted(() => ({ logActionOrThrow: vi.fn() }));
+const qrMocks = vi.hoisted(() => ({ toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,mockQR') }));
 
 const mockChain: any = new Proxy({}, {
     get(_target, prop) {
@@ -18,6 +19,7 @@ const mockChain: any = new Proxy({}, {
 });
 
 const mockDb = {
+    execute: vi.fn().mockResolvedValue([]),
     select: (..._a: any[]) => mockChain,
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
@@ -38,7 +40,7 @@ vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
 
 vi.mock('qrcode', () => ({
-    default: { toDataURL: async () => 'data:image/png;base64,mockQR' },
+    default: qrMocks,
 }));
 
 const { StorageLocationService } = await import('../services/storage-location.service');
@@ -53,6 +55,7 @@ describe('StorageLocationService', () => {
         transactionRollbacks = 0;
         auditMocks.logActionOrThrow.mockReset();
         auditMocks.logActionOrThrow.mockResolvedValue(undefined);
+        qrMocks.toDataURL.mockClear();
     });
 
     // ==================== getTree ====================
@@ -143,8 +146,8 @@ describe('StorageLocationService', () => {
         });
 
         it('should auto-generate code when not provided', async () => {
-            // For generateCode: count query
-            enqueue([{ count: 3 }]);
+            // For generateCode: existing unit codes, including a deleted suffix gap.
+            enqueue([{ code: 'G1' }, { code: 'G3' }]);
             // For create: returning
             enqueue([{ id: 'new-2', code: 'G4', level: 'gedung' }]);
 
@@ -218,6 +221,23 @@ describe('StorageLocationService', () => {
     });
 
     // ==================== getArsipCount ====================
+
+    describe('QR destinations', () => {
+        it('targets the existing archive detail route', async () => {
+            enqueue([{ id: 'archive-id', unitKerjaId: 'u1' }]);
+            const result = await service.generateArsipQRCode('archive-id', 'https://frontend.example.test', 'u1');
+            expect(result.qrUrl).toBe('https://frontend.example.test/arsip/detail/archive-id');
+            expect(result.qrDataUrl).toMatch(/^data:image\/png;base64,/);
+            expect(qrMocks.toDataURL).toHaveBeenCalledWith(result.qrUrl, expect.objectContaining({ width: 300 }));
+        });
+
+        it('targets the existing storage location detail route', async () => {
+            enqueue([{ id: 'location-id', unitKerjaId: 'u1' }]);
+            const result = await service.generateQRCode('location-id', 'https://frontend.example.test', 'u1');
+            expect(result.qrUrl).toBe('https://frontend.example.test/storage-locations/location-id');
+            expect(qrMocks.toDataURL).toHaveBeenCalledWith(result.qrUrl, expect.objectContaining({ width: 300 }));
+        });
+    });
 
     describe('getArsipCount', () => {
         it('should return count of arsip in location', async () => {

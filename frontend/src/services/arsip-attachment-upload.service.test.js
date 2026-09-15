@@ -17,7 +17,7 @@ describe('archive attachment upload transport', () => {
         const pdf = new File([new Uint8Array(10 * 1024 * 1024)], 'arsip.pdf', { type: 'application/pdf' })
         const result = await uploadArsipAttachment(id, pdf)
         expect(state.upload).toHaveBeenCalledWith(pdf, { folder: `arsip-attachments/${id}` })
-        expect(state.post).toHaveBeenCalledWith(`/api/upload/arsip/${id}`, { blobUrl: expect.stringContaining('/arsip-attachments/'), fileName: 'arsip.pdf' })
+        expect(state.post).toHaveBeenCalledWith(`/api/upload/arsip/${id}`, { blobUrl: expect.stringContaining('/arsip-attachments/'), fileName: 'arsip.pdf' }, { timeoutMs: 60_000 })
         expect(result.data.malwareScanStatus).toBe('not_scanned')
     })
     it('retries only pending callback finalization with the same object and no duplicate upload', async () => {
@@ -43,6 +43,19 @@ describe('archive attachment upload transport', () => {
         state.provider = 'gcs'; const pdf = file(); await uploadArsipAttachment(id, pdf)
         expect(state.upload).not.toHaveBeenCalled()
         const body = state.post.mock.calls[0][1]; expect(body).toBeInstanceOf(FormData); expect(body.get('file')).toEqual(pdf)
+        expect(state.post).toHaveBeenCalledWith(`/api/upload/arsip/${id}`, body)
+    })
+    it('does not repeat registration when a timeout leaves the mutation outcome unknown', async () => {
+        const failure = Object.assign(new Error('Periksa catatan sebelum menyimpan kembali.'), { code: 'REQUEST_TIMEOUT', mutationOutcomeUnknown: true })
+        state.post.mockRejectedValueOnce(failure)
+        const sleep = vi.fn()
+        await expect(uploadArsipAttachment(id, file(), { sleep })).rejects.toBe(failure)
+        expect(state.post).toHaveBeenCalledOnce()
+        expect(state.post).toHaveBeenCalledWith(`/api/upload/arsip/${id}`, {
+            blobUrl: `https://store.private.blob.vercel-storage.com/arsip-attachments/${id}/arsip-random.pdf`, fileName: 'arsip.pdf',
+        }, { timeoutMs: 60_000 })
+        expect(state.upload).toHaveBeenCalledOnce()
+        expect(sleep).not.toHaveBeenCalled()
     })
     it.each(['disabled', 'unknown'])('fails closed for %s storage', async provider => {
         state.provider = provider

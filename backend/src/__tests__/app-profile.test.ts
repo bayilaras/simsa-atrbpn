@@ -212,10 +212,10 @@ describe('backend application profile', () => {
     });
 
     it.each([
-        [new GoneError('gone'), 410],
-        [new PayloadTooLargeError('large'), 413],
-        [new ServiceUnavailableError('transient'), 503],
-    ])('preserves attachment preflight status %s in the global error handler', (error, statusCode) => {
+        [new GoneError('gone'), 410, 'gone'],
+        [new PayloadTooLargeError('large'), 413, 'large'],
+        [new ServiceUnavailableError('SYNTHETIC_PROVIDER_SECRET'), 503, 'Layanan sementara tidak tersedia. Silakan coba lagi.'],
+    ])('preserves attachment preflight status %s without exposing provider failures', (error, statusCode, publicMessage) => {
         const response = {
             status: vi.fn().mockReturnThis(),
             json: vi.fn(),
@@ -231,7 +231,8 @@ describe('backend application profile', () => {
         expect(response.status).toHaveBeenCalledWith(statusCode);
         expect(response.json).toHaveBeenCalledWith(expect.objectContaining({
             success: false,
-            message: error.message,
+            message: publicMessage,
         }));
+        expect(JSON.stringify(response.json.mock.calls)).not.toContain('SYNTHETIC_PROVIDER_SECRET');
     });
 });

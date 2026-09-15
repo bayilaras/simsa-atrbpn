@@ -126,6 +126,8 @@ export const createSuratMasukSchema = z.object({
     fileOriginalName: z.string().max(255).optional(),
     klasifikasiKode: z.string().max(50).optional(),
     klasifikasiUraian: z.string().max(1000).optional(),
+    klasifikasiItemId: z.coerce.number().int().positive().nullable().optional(),
+    jraItemId: z.coerce.number().int().positive().nullable().optional(),
 });
 
 // Zod 4 applies inner defaults even through partial(). Creation defaults must
@@ -167,6 +169,8 @@ const suratKeluarBaseSchema = z.object({
     klasifikasiFasilitatif: z.string().max(2000).optional(),
     klasifikasiSubstantifKode: z.string().max(50).optional(),
     klasifikasiSubstantif: z.string().max(2000).optional(),
+    klasifikasiItemId: z.coerce.number().int().positive().nullable().optional(),
+    jraItemId: z.coerce.number().int().positive().nullable().optional(),
     klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional(),
     filePath: privateObjectLocatorSchema('surat-keluar').optional(),
     fileOriginalName: z.string().max(255).optional(),
@@ -513,12 +517,24 @@ export const updateDosirSchema = z.object({
     kategori: z.string().max(100).optional().nullable(),
     tanggalMulai: dateSchema.optional().nullable(),
     tanggalSelesai: dateSchema.optional().nullable(),
+}).refine(data => !data.tanggalMulai || !data.tanggalSelesai || data.tanggalSelesai >= data.tanggalMulai, {
+    path: ['tanggalSelesai'],
+    message: 'Tanggal selesai tidak boleh sebelum tanggal mulai.',
 });
 
 export const queryDosirSchema = paginationSchema.extend({
     status: z.enum(['open', 'closed', 'archived']).optional(),
     kategori: z.string().max(100).optional(),
     search: z.string().max(255).optional(),
+});
+
+export const queryArchiveLendingSchema = paginationSchema.extend({
+    status: z.enum(['borrowed', 'returned', 'overdue']).optional(),
+    lendingType: z.enum(['arsip', 'box']).optional(),
+    borrowerId: uuidSchema.optional(),
+    arsipId: uuidSchema.optional(),
+    storageLocationId: uuidSchema.optional(),
+    search: z.string().trim().max(255).optional(),
 });
 
 export const linkSuratToDosirSchema = z.object({
@@ -604,7 +620,7 @@ export type CalculateRetentionDates = z.infer<typeof calculateRetentionDatesSche
 
 export const createStorageLocationSchema = z.object({
     unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
-    code: z.string().min(1, 'Kode lokasi is required').max(50),
+    code: z.string().trim().min(1, 'Kode lokasi is required').max(50),
     name: z.string().min(1, 'Nama lokasi is required').max(255),
     level: z.enum(['gedung', 'ruang', 'rak', 'box']),
     parentId: uuidSchema.optional().nullable(),

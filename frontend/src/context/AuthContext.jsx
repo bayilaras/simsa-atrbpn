@@ -1,3 +1,4 @@
+import { canManageUnit } from '@/lib/role-access';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { authService } from '../services/auth.service';
 import { clearOfflineStorage } from '../lib/offline-storage';
@@ -199,9 +200,8 @@ export function AuthProvider({ children }) {
     }
 
     // Check if user can write (create/update/delete)
-    function canWrite() {
-        if (!user) return false;
-        return ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(user.role);
+    function canWrite(unitKerjaId = '') {
+        return canManageUnit(user, unitKerjaId);
     }
 
     const value = {

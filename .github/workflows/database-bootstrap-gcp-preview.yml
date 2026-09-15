@@ -670,6 +670,7 @@ jobs:
                 "db:roles:bootstrap-final", "db:grants:converge", "seed:deployment"
               ]
             }' >preview-database-evidence/preview-database-summary.json
+          python3 .github/scripts/build-migration-manifest.py --verify-journal-summary preview-database-evidence/preview-database-summary.json
           jq -e '
             .environment == "preview" and
             .reviewed_source.merge_review_and_required_checks == "passed" and
@@ -685,8 +686,6 @@ jobs:
               .database_target.event_principal, .database_target.worker_principal,
               .database_target.final_cleanup_principal, .database_target.migrator_principal,
               .database_target.maintenance_principal, .database_target.backup_principal] | unique | length) == 8 and
-            .database_journal.count == 34 and
-            .database_journal.latest_created_at == 1788060600000 and
             .migration_manifest_verified == true and
             .ownership_violations == 0 and
             .migrator_database_create == false and

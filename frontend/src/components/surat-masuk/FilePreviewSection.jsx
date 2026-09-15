@@ -5,11 +5,14 @@ import { Button } from '@/components/ui/button';
 import { fetchPrivateFile } from '@/services/private-file.service';
 import { useAppConfig } from '@/context/app-config-context';
 import { FileScanStatus } from '@/components/FileScanStatus';
+import { STORAGE_PROVIDER } from '@/lib/cloud-provider-config';
 
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 const SCAN_STATES = { pending: 'not_scanned', blocked: 'scan_error' };
 
 function PrivateFilePreview({ surat, entityType }) {
+    const inspectionRequired = STORAGE_PROVIDER !== 'vercel-blob'
+        || (entityType !== 'surat_masuk' && entityType !== 'surat_keluar');
     const [file, setFile] = useState(null);
     const [loading, setLoading] = useState(null);
     const [error, setError] = useState('');
@@ -49,9 +52,11 @@ function PrivateFilePreview({ surat, entityType }) {
             setFile({ url, type: blob.type.split(';', 1)[0].toLowerCase() });
         } catch (failure) {
             if (!controller.signal.aborted) {
-                setQuarantined(failure.status === 423 && failure.data?.error === 'File quarantined');
+                setQuarantined(inspectionRequired && failure.status === 423 && failure.data?.error === 'File quarantined');
                 setScanStatus(SCAN_STATES[failure.data?.scanState] || null);
-                setError(failure.message || 'Dokumen belum dapat dimuat.');
+                setError(!inspectionRequired && failure.status === 423
+                    ? 'Dokumen belum dapat diakses. Coba muat ulang dokumen.'
+                    : failure.message || 'Dokumen belum dapat dimuat.');
             }
         } finally {
             if (!controller.signal.aborted) {
@@ -93,9 +98,11 @@ function PrivateFilePreview({ surat, entityType }) {
             }
         } catch (failure) {
             if (!controller.signal.aborted) {
-                setQuarantined(failure.status === 423 && failure.data?.error === 'File quarantined');
+                setQuarantined(inspectionRequired && failure.status === 423 && failure.data?.error === 'File quarantined');
                 setScanStatus(SCAN_STATES[failure.data?.scanState] || null);
-                setError(failure.message || 'Dokumen belum dapat diunduh.');
+                setError(!inspectionRequired && failure.status === 423
+                    ? 'Dokumen belum dapat diakses. Coba muat ulang dokumen.'
+                    : failure.message || 'Dokumen belum dapat diunduh.');
             }
         } finally {
             if (!controller.signal.aborted) {
@@ -124,7 +131,9 @@ function PrivateFilePreview({ surat, entityType }) {
                 <div className="border-t bg-muted/20">
                     {!file ? (
                         <div className="flex flex-col items-center gap-3 p-8">
-                            <p className="text-sm text-muted-foreground">Muat pratinjau atau unduh dokumen yang telah lolos pemeriksaan.</p>
+                            <p className="text-sm text-muted-foreground">{inspectionRequired
+                                ? 'Muat pratinjau atau unduh dokumen yang telah lolos pemeriksaan.'
+                                : 'Muat pratinjau atau unduh dokumen.'}</p>
                             <Button type="button" variant="outline" onClick={loadFile} disabled={Boolean(loading)}>
                                 {loading === 'preview' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                 {loading === 'preview' ? 'Memuat dokumen...' : 'Muat dokumen'}

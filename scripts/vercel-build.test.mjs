@@ -41,6 +41,10 @@ const fixtureScript = `const fs=require('node:fs'); const path=require('node:pat
 const phase=process.argv[2]; assert.equal(process.versions.node.split('.')[0],'24');
 fs.appendFileSync('lifecycle.log',phase+'\\n');
 if(phase==='prebuild'&&process.env.FAIL_PREBUILD==='true') process.exit(19);
+if(phase==='prebuild'&&process.env.EXPECT_CANDIDATE_CHECKS==='true') {
+  assert.equal(fs.readFileSync('candidate-checks.log','utf8'),'typecheck\\ntests\\n');
+  assert.equal(process.env.SYNTHETIC_BUILD_SECRET,'build-environment-preserved');
+}
 if(phase==='build') {
   assert.equal(fs.readFileSync('lifecycle.log','utf8'),'prebuild\\nbuild\\n');
   for(const [key,value] of Object.entries({VITE_APP_MODE:'full',VITE_APP_PROFILE:'internal',VITE_AUTH_PROVIDER:'better-auth',VITE_API_URL:'',VITE_FEATURE_SRIKANDI:'false'})) assert.equal(process.env[key],value);
@@ -54,7 +58,8 @@ function withFixture(action) {
     const directory = mkdtempSync(path.join(tmpdir(), 'simsa-vercel-build-'));
     try {
         for (const file of ['backend/scripts/build-vercel.mjs', 'frontend/scripts/build-vercel-metadata.mjs',
-            'frontend/scripts/resolve-npm-cli.mjs', 'scripts/build-cloud-metadata.mjs', 'scripts/build-internal.mjs']) {
+            'frontend/scripts/resolve-npm-cli.mjs', 'scripts/build-cloud-metadata.mjs', 'scripts/build-internal.mjs',
+            'scripts/verify-candidate-source.mjs']) {
             const target = path.join(directory, file); mkdirSync(path.dirname(target), { recursive: true });
             copyFileSync(new URL(file, repository), target);
         }
@@ -71,6 +76,21 @@ function withFixture(action) {
         const bundler = path.join(directory, 'backend/node_modules/esbuild'); mkdirSync(bundler, { recursive: true });
         writeFileSync(path.join(bundler, 'package.json'), '{"type":"module","exports":"./index.js"}');
         writeFileSync(path.join(bundler, 'index.js'), `import{writeFileSync,readFileSync,mkdirSync}from'node:fs';import{dirname,join,basename}from'node:path';import assert from'node:assert/strict';export async function build(options){const root=options.outdir?join(options.outdir,'../..'):join(dirname(options.outfile),'..');assert.equal(readFileSync(join(root,'lifecycle.log'),'utf8'),'prebuild\\nbuild\\npostbuild\\n');const outputs=options.outfile?[options.outfile]:options.entryPoints.map(entry=>join(options.outdir,basename(entry).replace(/\\.ts$/,'.js')));for(const file of outputs){mkdirSync(dirname(file),{recursive:true});writeFileSync(file,'// fixture bundled after npm lifecycle');}}`);
+        for (const [phase, file] of [['typecheck', 'typescript/bin/tsc'], ['tests', 'vitest/vitest.mjs']]) {
+            const target = path.join(directory, 'backend/node_modules', file);
+            mkdirSync(path.dirname(target), { recursive: true });
+            const imports = file.endsWith('.mjs')
+                ? "import fs from 'node:fs'; import assert from 'node:assert/strict';"
+                : "const fs=require('node:fs'); const assert=require('node:assert/strict');";
+            writeFileSync(target, imports + `
+                assert.equal(process.env.NODE_ENV,'test');
+                assert.equal(process.env.SYNTHETIC_BUILD_SECRET,undefined);
+                assert.equal(process.env.SIMSA_VERIFY_CANDIDATE_SOURCE,undefined);
+                assert.equal(fs.existsSync('lifecycle.log'),false);
+                fs.appendFileSync('candidate-checks.log',${JSON.stringify(phase + '\n')});
+                if(fs.existsSync('candidate-${phase}.fail'))process.exit(17);
+            `);
+        }
         const environment = { PATH: [path.dirname(process.execPath), process.env.PATH ?? process.env.Path ?? ''].join(path.delimiter),
             HOME: directory, USERPROFILE: directory, APPDATA: directory, LOCALAPPDATA: directory,
             TEMP: directory, TMP: directory, NPM_CONFIG_USERCONFIG: path.join(directory, 'empty.npmrc'),
@@ -123,4 +143,31 @@ test('the metadata wrapper still requires opt-in before invoking npm', () => wit
     delete environment.SIMSA_VERCEL_METADATA_ENABLED;
     assert.throws(() => run('frontend/scripts/build-vercel-metadata.mjs'));
     assert.equal(existsSync(path.join(directory, 'frontend/lifecycle.log')), false);
+}));
+
+test('the canonical backend builder runs isolated candidate checks before the real npm lifecycle', () => withFixture(({ directory, environment, run }) => {
+    environment.SIMSA_VERIFY_CANDIDATE_SOURCE = '1';
+    environment.EXPECT_CANDIDATE_CHECKS = 'true';
+    environment.SYNTHETIC_BUILD_SECRET = 'build-environment-preserved';
+    const log = run('backend/scripts/build-vercel.mjs');
+    assert.match(log, /SIMSA candidate backend: source checks passed/);
+    assert.equal(readFileSync(path.join(directory, 'backend/candidate-checks.log'), 'utf8'), 'typecheck\ntests\n');
+    assert.equal(readFileSync(path.join(directory, 'backend/lifecycle.log'), 'utf8'), 'prebuild\nbuild\npostbuild\n');
+    assert.equal(existsSync(path.join(directory, 'backend/dist-vercel/app.js')), true);
+}));
+
+for (const phase of ['typecheck', 'tests']) test(`a candidate ${phase} failure stops the canonical backend before npm or bundling`, () => withFixture(({ directory, environment, run }) => {
+    environment.SIMSA_VERIFY_CANDIDATE_SOURCE = '1';
+    writeFileSync(path.join(directory, `backend/candidate-${phase}.fail`), 'synthetic fixture failure');
+    assert.throws(() => run('backend/scripts/build-vercel.mjs'));
+    assert.equal(readFileSync(path.join(directory, 'backend/candidate-checks.log'), 'utf8'), phase === 'typecheck' ? 'typecheck\n' : 'typecheck\ntests\n');
+    assert.equal(existsSync(path.join(directory, 'backend/lifecycle.log')), false);
+    assert.equal(existsSync(path.join(directory, 'backend/dist-vercel')), false);
+}));
+
+test('candidate verification requires the exact deployment opt-in value', () => withFixture(({ directory, environment, run }) => {
+    environment.SIMSA_VERIFY_CANDIDATE_SOURCE = 'true';
+    run('backend/scripts/build-vercel.mjs');
+    assert.equal(existsSync(path.join(directory, 'backend/candidate-checks.log')), false);
+    assert.equal(readFileSync(path.join(directory, 'backend/lifecycle.log'), 'utf8'), 'prebuild\nbuild\npostbuild\n');
 }));

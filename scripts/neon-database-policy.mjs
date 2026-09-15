@@ -121,7 +121,7 @@ export async function assertNeonRoleBoundaries(client, { database, role }) {
 
 export async function loadNeonGrantPolicy() {
   const source = (await readFile(resolve(import.meta.dirname, '../backend/src/db/grants/0002_converge_application_grants.sql'), 'utf8')).replaceAll('\r\n', '\n');
-  requireCondition(createHash('sha256').update(source).digest('hex') === '1d659d27f78cf83c7bc157b5e226973a3be3dc5bb7e0379e6608c15afe50c1ce',
+  requireCondition(createHash('sha256').update(source).digest('hex') === 'b31cc300339509f5b1228d97bb23ea7151045d351484abf8f91c7abb741c73ad',
     'Versioned grant policy changed; review and update the Neon adapter before deployment');
   const marker = '\nALTER SCHEMA public OWNER TO simsa_migrator;\n';
   requireCondition(source.split(marker).length === 2 && source.endsWith('COMMIT;\n'), 'Reviewed grant policy shape changed; review the Neon adapter');
@@ -171,11 +171,10 @@ export async function loadNeonGrantPolicy() {
 export async function migrateNeonDatabase(client, { database }) {
   const grantPolicy = await loadNeonGrantPolicy();
   const migrations = loadMigrations();
-  requireCondition(migrations.length === 39, 'Migration release changed; review the Neon adapter before deployment');
   await assertNeonRoleBoundaries(client, { database, role: 'simsa_migration' });
   const result = await migrateDatabase(client, migrations);
   const rows = (await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id')).rows;
-  requireCondition(validateAppliedMigrations(migrations, rows).length === 0 && rows.length === 39, 'Migration chain is incomplete');
+  requireCondition(validateAppliedMigrations(migrations, rows).length === 0, 'Migration chain is incomplete');
   try { await client.query(grantPolicy); }
   catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
   await assertNeonRoleBoundaries(client, { database, role: 'simsa_migration' });
@@ -187,18 +186,18 @@ export async function migrateNeonDatabase(client, { database }) {
 export async function verifyNeonRuntime(client, { database }) {
   await assertNeonRoleBoundaries(client, { database, role: 'simsa_api' });
   const migrations = loadMigrations();
-  requireCondition(migrations.length === 39, 'Migration release changed; review the Neon adapter before deployment');
   // Runtime intentionally cannot read the private migration journal. Verify
   // required application tables and protected action privileges without DDL.
   const permissions = (await client.query(`SELECT
     (SELECT bool_and(has_table_privilege(current_user,'public.users',p)) FROM unnest(ARRAY['SELECT','INSERT','UPDATE']) p) AS users,
     (SELECT bool_and(has_table_privilege(current_user,'public.surat_masuk',p)) FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) p) AS surat,
     (SELECT bool_and(has_table_privilege(current_user,'public.arsip',p)) FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) p) AS arsip,
+    (SELECT bool_and(has_table_privilege(current_user,'public.shared_rate_limits',p)) FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) p) AS shared_rate_limits,
     has_table_privilege(current_user,'public.audit_log','INSERT') AS audit_insert,
     has_table_privilege(current_user,'public.audit_log','UPDATE,DELETE') AS audit_mutation,
     has_table_privilege(current_user,'public.file_fixity_jobs','INSERT,UPDATE,DELETE') AS worker_mutation,
     (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='public') AS owner`)).rows[0];
-  requireCondition(permissions.users && permissions.surat && permissions.arsip && permissions.audit_insert
+  requireCondition(permissions.users && permissions.surat && permissions.arsip && permissions.shared_rate_limits && permissions.audit_insert
     && !permissions.audit_mutation && !permissions.worker_mutation && permissions.owner === 'simsa_migrator',
   'Runtime data permissions do not match the reviewed application policy');
   return { runtime_role: 'simsa_api', schema_owner: 'simsa_migrator', reviewed_migrations: migrations.length, read_only_probe: true };

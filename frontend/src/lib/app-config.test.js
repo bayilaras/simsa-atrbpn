@@ -7,9 +7,16 @@ import {
 } from './app-config'
 
 describe('app config', () => {
+    it.each([true, false, undefined, 'true'])('trusts pending Google signup only for an explicit backend boolean (%s)', pendingGoogleSignup => {
+        const payload = { mode: 'full', syntheticDataOnly: false,
+            capabilities: { metadata: true, files: true, fileUploads: false, externalIntegrations: false },
+            authentication: { provider: 'better-auth', googleSignIn: true, pendingGoogleSignup } }
+        expect(resolveRuntimeCapabilities(createAppConfig({}), payload).authentication.pendingGoogleSignup).toBe(pendingGoogleSignup === true)
+        expect(resolveRuntimeCapabilities(createAppConfig({}), { ...payload, authentication: { ...payload.authentication, googleSignIn: false } }).authentication.pendingGoogleSignup).toBe(false)
+    })
     it('keeps an explicitly storage-disabled build restricted even if the API advertises files', () => {
         const build = createAppConfig({ VITE_APP_PROFILE: 'internal', VITE_STORAGE_PROVIDER: 'disabled' })
-        expect(build.capabilities).toMatchObject({ metadata: true, files: false, fileUploads: false })
+        expect(build.capabilities).toMatchObject({ metadata: true, files: false, fileUploads: false, letterFileUploads: false })
         const payload = { mode: 'full', syntheticDataOnly: false,
             capabilities: { metadata: true, files: false, fileUploads: false, externalIntegrations: true },
             authentication: { provider: 'better-auth', googleSignIn: false } }
@@ -36,6 +43,32 @@ describe('app config', () => {
         }
         expect(resolveRuntimeCapabilities(build, { ...full, mode: 'metadata-demo' }).capabilities.metadata).toBe(false)
         expect(resolveRuntimeCapabilities(build, null).capabilities.metadata).toBe(true)
+    })
+    it('keeps letter uploads available independently from inspected archival uploads', () => {
+        const build = createAppConfig({})
+        const payload = { mode: 'full', syntheticDataOnly: false,
+            capabilities: { metadata: true, files: true, fileUploads: false, letterFileUploads: true, externalIntegrations: false } }
+        expect(resolveRuntimeCapabilities(build, payload)).toMatchObject({ compatible: true,
+            capabilities: { files: true, fileUploads: false, letterFileUploads: true } })
+        expect(resolveRuntimeCapabilities(build, { ...payload,
+            capabilities: { ...payload.capabilities, fileUploads: true, letterFileUploads: false } })).toMatchObject({ compatible: true,
+                capabilities: { fileUploads: true, letterFileUploads: false } })
+    })
+    it.each([true, false])('uses legacy upload availability %s when the backend has no letter policy', (fileUploads) => {
+        const payload = { mode: 'full', syntheticDataOnly: false,
+            capabilities: { metadata: true, files: true, fileUploads, externalIntegrations: false } }
+        expect(resolveRuntimeCapabilities(createAppConfig({}), payload)).toMatchObject({ compatible: true,
+            capabilities: { fileUploads, letterFileUploads: fileUploads } })
+    })
+    it.each([
+        { files: false, letterFileUploads: true },
+        { files: true, letterFileUploads: 'true' },
+        { files: true, letterFileUploads: null },
+    ])('rejects an inconsistent or malformed letter upload policy %j', (overrides) => {
+        const payload = { mode: 'full', syntheticDataOnly: false,
+            capabilities: { metadata: true, files: true, fileUploads: false, externalIntegrations: false, ...overrides } }
+        expect(resolveRuntimeCapabilities(createAppConfig({}), payload)).toMatchObject({ compatible: false,
+            capabilities: { files: false, fileUploads: false, letterFileUploads: false } })
     })
     it.each([
         ['true', true],
@@ -112,6 +145,7 @@ describe('app config', () => {
             { ...exact, mode: 'full' },
             { ...exact, syntheticDataOnly: false },
             { ...exact, capabilities: { ...exact.capabilities, files: true } },
+            { ...exact, capabilities: { ...exact.capabilities, letterFileUploads: true } },
             { ...exact, capabilities: { ...exact.capabilities, metadata: false } },
             { ...exact, capabilities: { ...exact.capabilities, externalIntegrations: true } },
         ]) {

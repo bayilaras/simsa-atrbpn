@@ -6,6 +6,7 @@ import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { canAccessUnit, Role } from '../config/permissions';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja';
 import { ValidationError } from '../utils/errors.js';
+import { importLimiter } from '../middlewares/rate-limiter.middleware.js';
 
 const router = Router();
 
@@ -47,6 +48,7 @@ function resolveMigrationUnit(req: AuthRequest): string | null {
 
 // All routes require authentication and write permission
 router.use(authMiddleware);
+router.use(importLimiter);
 
 /**
  * POST /api/migration/surat-masuk

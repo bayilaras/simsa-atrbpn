@@ -43,16 +43,18 @@ export function useRequiredUnitKerjaScope(user, { fixedUnitKerjaId = '' } = {}) 
     }, [isSuperAdmin]);
 
     const mandatedUnitKerjaId = getRoleMandatedUnitKerjaId(user?.role);
-    const effectiveSelectedUnitKerjaId = mandatedUnitKerjaId || fixedUnitKerjaId || selectedUnitKerjaId;
+    const effectiveSelectedUnitKerjaId = isSuperAdmin
+        ? fixedUnitKerjaId || selectedUnitKerjaId
+        : resolveEffectiveUnitKerjaId(user);
 
     return {
         isSuperAdmin,
         unitKerjaId: resolveRequiredUnitKerjaId(user, selectedUnitKerjaId, fixedUnitKerjaId),
         selectedUnitKerjaId: effectiveSelectedUnitKerjaId,
-        setSelectedUnitKerjaId: (fixedUnitKerjaId || mandatedUnitKerjaId) ? () => {} : setSelectedUnitKerjaId,
-        unitKerjaList,
+        setSelectedUnitKerjaId: (!isSuperAdmin || fixedUnitKerjaId || mandatedUnitKerjaId) ? () => {} : setSelectedUnitKerjaId,
+        unitKerjaList: isSuperAdmin ? unitKerjaList : [],
         loading: isSuperAdmin && !loaded,
         error,
-        locked: Boolean(fixedUnitKerjaId || mandatedUnitKerjaId),
+        locked: !isSuperAdmin || Boolean(fixedUnitKerjaId || mandatedUnitKerjaId),
     };
 }

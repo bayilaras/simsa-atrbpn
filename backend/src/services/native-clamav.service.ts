@@ -8,26 +8,40 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MalwareScannerError, isCurrentMalwareEngineEvidence, type MalwareScanner, type MalwareScanVerdict, type MalwareEngineEvidence } from './malware-scanner.service.js';
 import { NativeClamAvDefinitions, NATIVE_CLAMAV_VERSION, nativeWorkspace, removeNativeWorkspace, type NativeCommandResult, type NativeCommandRunner, type NativeCommandOptions, type NativeDefinitionStore, type NativeDefinitionSnapshot } from './native-clamav-definitions.js';
 
-export const NATIVE_CLAMAV_LIMITS = Object.freeze({ maxBytes: 10 * 1024 * 1024, maxLifetimeMs: 200_000, maxCombinedRssBytes: 1800 * 1024 * 1024 });
+export const NATIVE_CLAMAV_LIMITS = Object.freeze({ maxBytes: 50 * 1024 * 1024, maxLifetimeMs: 200_000, maxCombinedRssBytes: 1800 * 1024 * 1024 });
 const nativeFailureReasons = ['deadline', 'cancelled', 'rss_limit', 'rss_unavailable', 'missing_measurement', 'spawn_failure',
     'invalid_control', 'invalid_executable', 'watchdog_failure', 'output_limit', 'child_exit', 'invalid_result', 'missing_result'] as const;
 type NativeFailureReason = typeof nativeFailureReasons[number];
+const rssCategories = ['process_tree_invalid', 'self_status_unreadable', 'self_rss_missing', 'self_children_unreadable',
+    'descendant_status_unreadable', 'descendant_rss_missing', 'descendant_children_unreadable',
+    'parent_status_unreadable', 'parent_rss_missing', 'sample_unknown'];
+const rssOsCodes = ['ENOENT', 'ESRCH', 'EACCES', 'EPERM', 'EIO', 'EMFILE', 'ENFILE'];
+function safeRssField(value: unknown, property: string, allowed: string[]): string | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const field = Object.getOwnPropertyDescriptor(value, property)?.value;
+    return typeof field === 'string' && allowed.includes(field) ? field : undefined;
+}
 function nativeFailureReason(value: unknown, property: string): NativeFailureReason | undefined {
     if (!value || typeof value !== 'object') return undefined;
     const reason = Object.getOwnPropertyDescriptor(value, property)?.value;
     return typeof reason === 'string' && (nativeFailureReasons as readonly string[]).includes(reason) ? reason as NativeFailureReason : undefined;
 }
-const failure = (reason?: NativeFailureReason) => Object.assign(
+const failure = (reason?: NativeFailureReason, rssFailure?: string, rssErrorCode?: string) => Object.assign(
     new MalwareScannerError('scanner_error', 'Native antivirus did not complete a verified scan', true),
     reason ? { nativeReason: reason } : {},
+    rssFailure ? { nativeRssFailure: rssFailure } : {},
+    rssErrorCode ? { nativeRssErrorCode: rssErrorCode } : {},
 );
 const diagnosticCodes = new Set(['ENOENT', 'EACCES', 'EPERM', 'scanner_error', 'timeout', 'size_limit', 'stream_error']);
 type NativeExecutionStage = 'workspace' | 'input' | 'definitions' | 'scan_command' | 'scan_verdict' | 'evidence';
 function reportNativeFailure(stage: NativeExecutionStage, error: unknown): void {
     const code = error instanceof Error ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
     const reason = nativeFailureReason(error, 'nativeReason');
+    const rssFailure = reason === 'rss_unavailable' ? safeRssField(error, 'nativeRssFailure', rssCategories) : undefined;
+    const rssErrorCode = reason === 'rss_unavailable' ? safeRssField(error, 'nativeRssErrorCode', rssOsCodes) : undefined;
     console.error('Native antivirus execution failed', { stage,
-        ...(typeof code === 'string' && diagnosticCodes.has(code) ? { errorCode: code } : {}), ...(reason ? { reason } : {}) });
+        ...(typeof code === 'string' && diagnosticCodes.has(code) ? { errorCode: code } : {}), ...(reason ? { reason } : {}),
+        ...(rssFailure ? { rssFailure } : {}), ...(rssErrorCode ? { rssErrorCode } : {}) });
 }
 
 /** Source and isolated worker bundles both sit two levels below backend. */
@@ -48,15 +62,45 @@ function healthPdf(): Buffer {
 
 export function assessNativeScan(result: NativeCommandResult): MalwareScanVerdict {
     const text = `${result.stdout}\n${result.stderr}`;
+    const reject = (reason: 'memory_evidence' | 'unsafe_output' | 'scanned_summary' | 'verdict_summary'): never => {
+        // Native output may contain document names, paths or matched content.
+        // Emit fixed categories and bounded counters only, never output text.
+        const summaries = (label: string) => {
+            const values = [...result.stdout.matchAll(new RegExp(`^${label}:\\s+(\\d+)\\s*$`, 'gm'))];
+            return { occurrences: Math.min(values.length, 100),
+                count: values.length === 1 ? Math.min(Number(values[0][1]), 1_000_000) : null };
+        };
+        const exceeded = (limit: 'MaxFiles' | 'MaxScanSize' | 'MaxFileSize' | 'MaxRecursion' | 'MaxScanTime') => (
+            new RegExp(`^[^\\r\\n]*: Heuristics\\.Limits\\.Exceeded\\.${limit} FOUND[ \\t]*$`, 'm').test(text)
+        );
+        console.error('Native antivirus verdict rejected', {
+            reason,
+            exitCode: Number.isInteger(result.code) && result.code! >= 0 && result.code! <= 255 ? result.code : null,
+            memoryEvidenceValid: Number.isFinite(result.peakCombinedRssBytes) && result.peakCombinedRssBytes > 0,
+            stdoutBytes: Math.min(Buffer.byteLength(result.stdout), 65_536),
+            stderrBytes: Math.min(Buffer.byteLength(result.stderr), 65_536),
+            scannedFiles: summaries('Scanned files'), infectedFiles: summaries('Infected files'),
+            okLines: Math.min((result.stdout.match(/: OK\s*$/gm) ?? []).length, 100),
+            foundLines: Math.min((result.stdout.match(/ FOUND\s*$/gm) ?? []).length, 100),
+            outputError: /ERROR/i.test(text), outputWarning: /WARNING/i.test(text),
+            skipped: /skipp/i.test(text), limitExceeded: /limit.*exceed/i.test(text),
+            encrypted: /Heuristics\.Encrypted/i.test(text),
+            maxFilesExceeded: exceeded('MaxFiles'), maxScanSizeExceeded: exceeded('MaxScanSize'),
+            maxFileSizeExceeded: exceeded('MaxFileSize'), maxRecursionExceeded: exceeded('MaxRecursion'),
+            maxScanTimeExceeded: exceeded('MaxScanTime'),
+        });
+        throw failure();
+    };
     if (!Number.isFinite(result.peakCombinedRssBytes) || result.peakCombinedRssBytes <= 0
-        || /ERROR|WARNING|skipp|limit.*exceed|Heuristics\.Encrypted/i.test(text)
-        || (result.stdout.match(/^Scanned files:\s+1\s*$/gm) ?? []).length !== 1) throw failure();
+    ) return reject('memory_evidence');
+    if (/ERROR|WARNING|skipp|limit.*exceed|Heuristics\.Encrypted/i.test(text)) return reject('unsafe_output');
+    if ((result.stdout.match(/^Scanned files:\s+1\s*$/gm) ?? []).length !== 1) return reject('scanned_summary');
     if (result.code === 0 && /^Infected files:\s+0\s*$/m.test(result.stdout) && /: OK\s*$/m.test(result.stdout)) return { verdict: 'clean' };
     if (result.code === 1 && /^Infected files:\s+1\s*$/m.test(result.stdout)) {
         const signature = result.stdout.match(/: ([A-Za-z0-9_.+()/-]{1,200}) FOUND\s*$/m)?.[1];
         if (signature) return { verdict: 'infected', signature };
     }
-    throw failure();
+    return reject('verdict_summary');
 }
 
 /** Dedicated, credential-free supervisor; it owns the native process group. */
@@ -85,6 +129,8 @@ export function createNativeCommandRunner(launch: typeof fork = fork): NativeCom
             let result: NativeCommandResult | null = null;
             let stopped = false;
             let reason: NativeFailureReason | undefined;
+            let rssFailure: string | undefined;
+            let rssErrorCode: string | undefined;
             let fallback: ReturnType<typeof setTimeout> | undefined;
             const killGroup = () => {
                 if (child.pid && process.platform !== 'win32') { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* Already gone. */ } }
@@ -105,7 +151,14 @@ export function createNativeCommandRunner(launch: typeof fork = fork): NativeCom
             child.on('message', (value: unknown) => {
                 if (stopped) return;
                 const message = value as { ok?: unknown; result?: NativeCommandResult } | null;
-                if (message?.ok === false) { stop(nativeFailureReason(message, 'reason') ?? 'invalid_result'); return; }
+                if (message?.ok === false) {
+                    const reportedReason = nativeFailureReason(message, 'reason');
+                    if (reportedReason === 'rss_unavailable') {
+                        rssFailure = safeRssField(message, 'rssFailure', rssCategories);
+                        rssErrorCode = safeRssField(message, 'rssErrorCode', rssOsCodes);
+                    }
+                    stop(reportedReason ?? 'invalid_result'); return;
+                }
                 const candidate = message?.result;
                 if (message?.ok !== true || result || !candidate || !Number.isInteger(candidate.code)
                     || typeof candidate.stdout !== 'string' || typeof candidate.stderr !== 'string'
@@ -120,7 +173,7 @@ export function createNativeCommandRunner(launch: typeof fork = fork): NativeCom
                 // a residual helper cannot outlive the completed supervisor.
                 killGroup();
                 if (!stopped && code === 0 && result) accept(result);
-                else reject(failure(reason ?? (code === 0 && !result ? 'missing_result' : 'child_exit')));
+                else reject(failure(reason ?? (code === 0 && !result ? 'missing_result' : 'child_exit'), rssFailure, rssErrorCode));
             });
             options.signal?.addEventListener('abort', onAbort, { once: true });
             if (options.signal?.aborted) stop('cancelled');
@@ -147,7 +200,7 @@ export class NativeClamAvScanner implements MalwareScanner {
     constructor(options: NativeClamAvScannerOptions = {}, dependencies: { run?: NativeCommandRunner; definitions?: NativeDefinitionStore } = {}) {
         this.assetsDirectory = resolve(options.assetsDirectory ?? 'native-clamav-assets');
         this.timeoutMs = options.timeoutMs ?? 180_000;
-        this.maxBytes = options.maxBytes ?? NATIVE_CLAMAV_LIMITS.maxBytes;
+        this.maxBytes = options.maxBytes ?? 10 * 1024 * 1024;
         this.maxCombinedRssBytes = options.maxCombinedRssBytes ?? NATIVE_CLAMAV_LIMITS.maxCombinedRssBytes;
         for (const [value, maximum] of [[this.timeoutMs, NATIVE_CLAMAV_LIMITS.maxLifetimeMs], [this.maxBytes, NATIVE_CLAMAV_LIMITS.maxBytes], [this.maxCombinedRssBytes, NATIVE_CLAMAV_LIMITS.maxCombinedRssBytes]]) {
             if (!Number.isInteger(value) || value < 1 || value > maximum) throw new Error('Invalid native antivirus resource limit');
@@ -190,7 +243,7 @@ export class NativeClamAvScanner implements MalwareScanner {
                     for await (const value of stream) {
                         signal.throwIfAborted(); const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
                         bytes += chunk.length;
-                        if (bytes > this.maxBytes) throw new MalwareScannerError('size_limit', 'Antivirus input exceeds 10 MiB', false);
+                        if (bytes > this.maxBytes) throw new MalwareScannerError('size_limit', 'Antivirus input exceeds the configured byte limit', false);
                         let offset = 0;
                         while (offset < chunk.length) { const written = await handle.write(chunk, offset, chunk.length - offset); if (!written.bytesWritten) throw failure(); offset += written.bytesWritten; }
                     }
@@ -207,7 +260,11 @@ export class NativeClamAvScanner implements MalwareScanner {
             stage = 'scan_command';
             const result = await this.run(join(this.assetsDirectory, 'bin/clamscan'), [
                 `--database=${snapshot.directory}`, `--cvdcertsdir=${join(this.assetsDirectory, 'etc/certs')}`, '--fips-limits',
-                '--max-filesize=11M', '--max-scansize=30M', '--max-recursion=10', '--max-files=100', '--max-scantime=60000',
+                `--max-filesize=${Math.ceil(this.maxBytes / (1024 * 1024)) + 1}M`,
+                `--max-scansize=${Math.max(30, Math.ceil(this.maxBytes / (1024 * 1024)) * 3)}M`,
+                // PDF objects and normalized text count separately. Keep this
+                // finite while admitting the official multi-page regulations.
+                '--max-recursion=10', '--max-files=1000', '--max-scantime=60000',
                 '--alert-exceeds-max=yes', '--alert-encrypted=yes', `--tempdir=${work}`, file,
             ], this.commandOptions(work, deadlineAtMs, signal));
             signal.throwIfAborted();

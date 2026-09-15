@@ -34,11 +34,91 @@ describe('native ClamAV fail-closed stream boundary', () => {
         expect(run).not.toHaveBeenCalled();
         expect(definitions.acquire).not.toHaveBeenCalled();
     });
+    it('scans exactly 50 MiB only when explicitly configured and rejects larger streams before native execution', async () => {
+        const maxBytes = 50 * 1024 * 1024;
+        const run = vi.fn(async (_command: string, args: string[], options: { maxCombinedRssBytes: number; deadlineAtMs: number }) => {
+            expect((await stat(args.at(-1)!)).size).toBe(maxBytes);
+            expect(args).toContain('--max-filesize=51M');
+            expect(args).toContain('--max-scansize=150M');
+            expect(args.filter(argument => argument.startsWith('--max-files='))).toEqual(['--max-files=1000']);
+            expect(args).toContain('--max-recursion=10');
+            expect(args).toContain('--max-scantime=60000');
+            expect(options.maxCombinedRssBytes).toBe(1800 * 1024 * 1024);
+            expect(options.deadlineAtMs).toBeLessThanOrEqual(Date.now() + 180_000);
+            expect(args).toContain('--alert-exceeds-max=yes');
+            expect(args).toContain('--alert-encrypted=yes');
+            return clean;
+        });
+        const definitions = { acquire: vi.fn(async () => ({ directory: '/definitions', evidence })), getEvidence: () => evidence };
+        const instance = new NativeClamAvScanner({ assetsDirectory: '/assets', maxBytes }, { run, definitions });
+        await expect(instance.scanStream(Readable.from([Buffer.alloc(maxBytes)]), maxBytes)).resolves.toMatchObject({ verdict: 'clean' });
+        run.mockClear(); definitions.acquire.mockClear();
+        await expect(instance.scanStream(Readable.from(['unused']), maxBytes + 1)).rejects.toMatchObject({ code: 'size_limit' });
+        await expect(instance.scanStream(Readable.from([Buffer.alloc(maxBytes), Buffer.from([1])]))).rejects.toMatchObject({ code: 'size_limit' });
+        expect(run).not.toHaveBeenCalled(); expect(definitions.acquire).not.toHaveBeenCalled();
+        expect(() => new NativeClamAvScanner({ maxBytes: maxBytes + 1 })).toThrow(/resource limit/);
+    });
     it('does not accept incomplete scan, warnings, limits, encrypted or missing summary as clean', () => {
         for (const change of [{ stdout: 'payload: OK' }, { stdout: clean.stdout.replace('files: 1', 'files: 0') }, { stderr: 'WARNING: skipped file' }, { code: 2 }, { code: 1, stdout: 'payload: Heuristics.Limits.Exceeded FOUND\nScanned files: 1\nInfected files: 1\n' }]) {
             expect(() => assessNativeScan({ ...clean, ...change })).toThrow();
         }
         expect(assessNativeScan({ ...clean, code: 1, stdout: 'payload: Win.Test.EICAR_HDB-1 FOUND\nScanned files: 1\nInfected files: 1\n' })).toEqual({ verdict: 'infected', signature: 'Win.Test.EICAR_HDB-1' });
+    });
+    it('reports bounded verdict diagnostics without native output, paths or matched document content', () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const stdout = '/private/SOURCE-CANARY.pdf: Heuristics.Limits.Exceeded FOUND\nScanned files: 1\nInfected files: 1\n';
+        const stderr = 'WARNING: skipped SOURCE-CONTENT-CANARY';
+        expect(() => assessNativeScan({ ...clean, code: 1, stdout, stderr })).toThrow();
+        expect(log).toHaveBeenCalledExactlyOnceWith('Native antivirus verdict rejected', {
+            reason: 'unsafe_output', exitCode: 1, memoryEvidenceValid: true,
+            stdoutBytes: Buffer.byteLength(stdout), stderrBytes: Buffer.byteLength(stderr),
+            scannedFiles: { occurrences: 1, count: 1 }, infectedFiles: { occurrences: 1, count: 1 },
+            okLines: 0, foundLines: 1, outputError: false, outputWarning: true,
+            skipped: true, limitExceeded: true, encrypted: false,
+            maxFilesExceeded: false, maxScanSizeExceeded: false, maxFileSizeExceeded: false,
+            maxRecursionExceeded: false, maxScanTimeExceeded: false,
+        });
+        expect(JSON.stringify(log.mock.calls)).not.toContain('CANARY');
+        expect(JSON.stringify(log.mock.calls)).not.toContain('/private/');
+    });
+    it.each([
+        ['MaxFiles', 'maxFilesExceeded'], ['MaxScanSize', 'maxScanSizeExceeded'],
+        ['MaxFileSize', 'maxFileSizeExceeded'], ['MaxRecursion', 'maxRecursionExceeded'],
+        ['MaxScanTime', 'maxScanTimeExceeded'],
+    ])('keeps %s failures quarantined and identifies only its fixed diagnostic flag', (limit, field) => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const flags = { maxFilesExceeded: false, maxScanSizeExceeded: false, maxFileSizeExceeded: false,
+            maxRecursionExceeded: false, maxScanTimeExceeded: false, [field]: true };
+        // Even apparently clean exit/summary values cannot override a limit.
+        for (const code of [0, 1]) {
+            const stdout = `/private/SOURCE-CANARY.pdf: Heuristics.Limits.Exceeded.${limit} FOUND\nScanned files: 1\nInfected files: ${code}\n`;
+            expect(() => assessNativeScan({ ...clean, code, stdout })).toThrow();
+            expect(log).toHaveBeenLastCalledWith('Native antivirus verdict rejected', expect.objectContaining({
+                reason: 'unsafe_output', limitExceeded: true, ...flags,
+            }));
+        }
+        expect(JSON.stringify(log.mock.calls)).not.toMatch(/CANARY|\/private\/|Heuristics\./);
+    });
+    it('does not expose unknown limit signatures or classify lookalike names as known limits', () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        for (const suffix of ['Private-CONTENT-CANARY', 'MaxFilesPrivate-CANARY']) {
+            const stdout = `payload: Heuristics.Limits.Exceeded.${suffix} FOUND\nScanned files: 1\nInfected files: 1\n`;
+            expect(() => assessNativeScan({ ...clean, code: 1, stdout })).toThrow();
+            expect(log).toHaveBeenLastCalledWith('Native antivirus verdict rejected', expect.objectContaining({
+                reason: 'unsafe_output', limitExceeded: true, maxFilesExceeded: false, maxScanSizeExceeded: false,
+                maxFileSizeExceeded: false, maxRecursionExceeded: false, maxScanTimeExceeded: false,
+            }));
+        }
+        expect(JSON.stringify(log.mock.calls)).not.toContain('CANARY');
+    });
+    it.each([
+        [{ peakCombinedRssBytes: 0 }, 'memory_evidence'],
+        [{ stdout: 'Scanned files: 0\nInfected files: 0\n' }, 'scanned_summary'],
+        [{ code: 2 }, 'verdict_summary'],
+    ])('retains rejection and categorizes %s without changing the verdict boundary', (change, reason) => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        expect(() => assessNativeScan({ ...clean, ...change })).toThrow();
+        expect(log).toHaveBeenCalledWith('Native antivirus verdict rejected', expect.objectContaining({ reason }));
     });
     it('cancels a stalled input without entering the engine', async () => {
         const { instance, run } = scanner();
@@ -122,6 +202,36 @@ describe('native ClamAV fail-closed stream boundary', () => {
         await expect(instance.healthCheck()).rejects.toMatchObject({ code: 'scanner_error' });
         expect(log).toHaveBeenCalledExactlyOnceWith('Native antivirus execution failed', { stage: 'definitions', errorCode: 'scanner_error', reason: 'missing_measurement' });
         expect(JSON.stringify(log.mock.calls)).not.toContain('secret-token'); expect(JSON.stringify(log.mock.calls)).not.toContain('/private/');
+    });
+    it('preserves static RSS location and errno from supervisor IPC through the safe native log', async () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const child = Object.assign(new EventEmitter(), { connected: true, send: vi.fn((_message, callback) => callback?.(null)), kill: vi.fn() });
+        const run = createNativeCommandRunner(vi.fn(() => child) as unknown as typeof fork);
+        const observed = run('/assets/bin/clamscan', [], { assetsDirectory: '/assets', workDirectory: '/tmp', deadlineAtMs: Date.now() + 10000, maxCombinedRssBytes: 500 }).catch(error => error);
+        child.emit('message', { ok: false, reason: 'rss_unavailable', rssFailure: 'parent_status_unreadable', rssErrorCode: 'EACCES', message: '/private/SECRET-CANARY' });
+        child.emit('close', 1);
+        const failure = await observed;
+        expect(failure).toMatchObject({ nativeReason: 'rss_unavailable', nativeRssFailure: 'parent_status_unreadable', nativeRssErrorCode: 'EACCES' });
+        const instance = new NativeClamAvScanner({ assetsDirectory: '/assets' }, { run: vi.fn(async () => { throw failure; }),
+            definitions: { acquire: async () => ({ directory: '/defs', evidence }), getEvidence: () => evidence } });
+        await expect(instance.healthCheck()).rejects.toThrow();
+        expect(log).toHaveBeenCalledWith('Native antivirus execution failed', { stage: 'scan_command', errorCode: 'scanner_error', reason: 'rss_unavailable', rssFailure: 'parent_status_unreadable', rssErrorCode: 'EACCES' });
+        expect(JSON.stringify(log.mock.calls)).not.toMatch(/private|SECRET-CANARY/);
+    });
+    it('does not copy unknown or accessor-backed RSS diagnostics from IPC', async () => {
+        const getter = vi.fn(() => { throw new Error('SECRET-CANARY'); });
+        for (const details of [{ rssFailure: '/private/SECRET-CANARY', rssErrorCode: 'SECRET-CANARY' }, Object.defineProperty({}, 'rssFailure', { get: getter })]) {
+            const child = Object.assign(new EventEmitter(), { connected: true, send: vi.fn((_message, callback) => callback?.(null)), kill: vi.fn() });
+            const run = createNativeCommandRunner(vi.fn(() => child) as unknown as typeof fork);
+            const observed = run('/assets/bin/clamscan', [], { assetsDirectory: '/assets', workDirectory: '/tmp', deadlineAtMs: Date.now() + 10000, maxCombinedRssBytes: 500 }).catch(error => error);
+            Object.defineProperties(details, { ok: { value: false }, reason: { value: 'rss_unavailable' } });
+            child.emit('message', details); child.emit('close', 1);
+            const failure = await observed;
+            expect(failure).not.toHaveProperty('nativeRssFailure');
+            expect(failure).not.toHaveProperty('nativeRssErrorCode');
+            expect(JSON.stringify(failure)).not.toMatch(/private|SECRET-CANARY/);
+        }
+        expect(getter).not.toHaveBeenCalled();
     });
     it.each([0, 1])('classifies supervisor exit %i without a result and never accepts it', async code => {
         const child = Object.assign(new EventEmitter(), { connected: true, send: vi.fn((_message, callback) => callback?.(null)), kill: vi.fn() });

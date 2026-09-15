@@ -41,7 +41,9 @@ async function probe(nodeOptions) {
     if (process.env[key]) environment[key] = process.env[key];
   }
   const { stdout, stderr } = await execute(process.execPath, ['--input-type=commonjs', '-e', fixture], {
-    cwd: backend, env: environment, timeout: 20_000, maxBuffer: 4096,
+    // Cold SDK imports on a busy Windows workstation can exceed 20 seconds.
+    // Keep the probe bounded; its network guard and assertions remain intact.
+    cwd: backend, env: environment, timeout: 60_000, maxBuffer: 4096,
     windowsHide: true, shell: false,
   });
   assert.equal(stderr, '');

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -107,7 +107,7 @@ function TreeNode({ node, level = 0, onEdit, onDelete, onGenerateQR, onAddChild 
 }
 
 // QR Code Dialog
-function QRCodeDialog({ open, onOpenChange, location, qrData }) {
+function QRCodeDialog({ open, onOpenChange, location, qrData, loading, error, onRetry }) {
     if (!location) return null
 
     return (
@@ -121,19 +121,19 @@ function QRCodeDialog({ open, onOpenChange, location, qrData }) {
                     <DialogDescription>{location.name}</DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-col items-center gap-4 py-6 bg-muted/20 rounded-lg mt-2">
-                    {qrData?.qrCodeDataUrl ? (
+                    {qrData?.qrDataUrl ? (
                         <>
                             <div className="bg-card p-4 rounded-xl shadow-sm border">
-                                <img src={qrData.qrCodeDataUrl} alt="QR Code" className="w-48 h-48 mix-blend-multiply" />
+                                <img src={qrData.qrDataUrl} alt="QR Code" className="w-48 h-48 mix-blend-multiply" />
                             </div>
                             <p className="text-sm text-muted-foreground text-center px-4">
-                                Scan QR Code ini untuk melihat detail lokasi dan arsip di dalamnya.
+                                Scan QR Code ini untuk melihat detail lokasi penyimpanan.
                             </p>
                             <Button
                                 className="w-full max-w-xs gap-2"
                                 onClick={() => {
                                     const link = document.createElement('a')
-                                    link.href = qrData.qrCodeDataUrl
+                                    link.href = qrData.qrDataUrl
                                     link.download = `qr-${location.code}.png`
                                     link.click()
                                 }}
@@ -142,12 +142,17 @@ function QRCodeDialog({ open, onOpenChange, location, qrData }) {
                                 Download QR Code
                             </Button>
                         </>
-                    ) : (
+                    ) : loading ? (
                         <div className="py-12 flex flex-col items-center gap-2">
                             <Loader2 className="h-8 w-8 animate-spin text-primary" />
                             <p className="text-sm text-muted-foreground">Membuat QR Code...</p>
                         </div>
-                    )}
+                    ) : error ? (
+                        <div className="flex flex-col items-center gap-3 px-4">
+                            <p role="alert" className="text-sm text-destructive text-center">{error}</p>
+                            <Button variant="outline" onClick={onRetry}>Coba lagi</Button>
+                        </div>
+                    ) : null}
                 </div>
             </DialogContent>
         </Dialog>
@@ -171,6 +176,9 @@ export default function StorageLocations() {
     const [qrDialogOpen, setQrDialogOpen] = useState(false)
     const [qrLocation, setQrLocation] = useState(null)
     const [qrData, setQrData] = useState(null)
+    const [qrLoading, setQrLoading] = useState(false)
+    const [qrError, setQrError] = useState('')
+    const qrRequest = useRef(0)
 
     const [formData, setFormData] = useState({
         code: '',
@@ -312,17 +320,34 @@ export default function StorageLocations() {
 
     const handleGenerateQR = async (node) => {
         if (!unitKerjaId) return
+        const request = ++qrRequest.current
         setQrLocation(node)
         setQrData(null)
+        setQrError('')
+        setQrLoading(true)
         setQrDialogOpen(true)
 
         try {
             const response = await storageLocationService.generateQR(node.id, unitKerjaId)
-            if (response.success) {
-                setQrData(response.data)
+            if (request !== qrRequest.current) return
+            if (!response.success || !response.data?.qrDataUrl) {
+                throw new Error('QR Code tidak tersedia. Coba lagi.')
             }
+            setQrData(response.data)
         } catch (error) {
-            console.error('Gagal generate QR:', error)
+            if (request === qrRequest.current) {
+                setQrError(error.message || 'QR Code gagal dibuat. Coba lagi.')
+            }
+        } finally {
+            if (request === qrRequest.current) setQrLoading(false)
+        }
+    }
+
+    const handleQRDialogChange = (open) => {
+        setQrDialogOpen(open)
+        if (!open) {
+            qrRequest.current += 1
+            setQrLoading(false)
         }
     }
 
@@ -553,9 +578,12 @@ export default function StorageLocations() {
             {/* QR Code Dialog */}
             <QRCodeDialog
                 open={qrDialogOpen}
-                onOpenChange={setQrDialogOpen}
+                onOpenChange={handleQRDialogChange}
                 location={qrLocation}
                 qrData={qrData}
+                loading={qrLoading}
+                error={qrError}
+                onRetry={() => handleGenerateQR(qrLocation)}
             />
         </div>
     )

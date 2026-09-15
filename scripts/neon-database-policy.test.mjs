@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { loadMigrations } from '../backend/scripts/migrate-database.mjs';
 import { assertEmptyNeonDatabase, bootstrapNeonDatabase, migrateNeonDatabase, verifyNeonRuntime, assertNeonRoleBoundaries } from './neon-database-policy.mjs';
 
 const requireBackend = createRequire(resolve(import.meta.dirname, '../backend/package.json'));
@@ -43,7 +44,7 @@ test('non-superuser Neon-style bootstrap runs all migrations, preserves runtime 
     await assert.rejects(bootstrapNeonDatabase(client, { ...target, passwords }), /not a new empty/);
     await db.exec('RESET ROLE; RESET SESSION AUTHORIZATION; SET SESSION AUTHORIZATION simsa_migration; SET ROLE simsa_migrator');
     const first = await migrateNeonDatabase(client, target);
-    assert.equal(first.applied, 39); assert.equal(first.total, 39);
+    assert.equal(first.applied, loadMigrations().length); assert.equal(first.total, loadMigrations().length);
     assert.equal((await migrateNeonDatabase(client, target)).applied, 0);
     await db.exec('RESET ROLE; RESET SESSION AUTHORIZATION; SET SESSION AUTHORIZATION simsa_api');
     assert.equal((await verifyNeonRuntime(client, target)).runtime_role, 'simsa_api');
@@ -54,6 +55,9 @@ test('non-superuser Neon-style bootstrap runs all migrations, preserves runtime 
     await assert.rejects(db.exec('SET ROLE simsa_migrator'), /permission denied/);
     await assert.rejects(db.exec('DELETE FROM public.audit_log'), /permission denied/);
     await assert.rejects(db.exec('DELETE FROM public.file_fixity_jobs'), /permission denied/);
+    await db.exec('RESET ROLE; SET SESSION AUTHORIZATION postgres; REVOKE UPDATE ON public.shared_rate_limits FROM simsa_api_runtime; SET SESSION AUTHORIZATION simsa_api');
+    await assert.rejects(verifyNeonRuntime(client, target), /Runtime data permissions/);
+    await db.exec('RESET ROLE; SET SESSION AUTHORIZATION postgres; GRANT UPDATE ON public.shared_rate_limits TO simsa_api_runtime; SET SESSION AUTHORIZATION simsa_api');
     await db.exec('RESET ROLE; SET SESSION AUTHORIZATION postgres; REVOKE UPDATE ON public.users FROM simsa_api_runtime; SET SESSION AUTHORIZATION simsa_api');
     await assert.rejects(verifyNeonRuntime(client, target), /Runtime data permissions/);
     await db.exec('RESET ROLE; SET SESSION AUTHORIZATION postgres; GRANT UPDATE ON public.users TO simsa_api_runtime; ALTER TABLE public.users OWNER TO neon_test_admin; SET SESSION AUTHORIZATION simsa_api');
@@ -77,7 +81,7 @@ test('Neon provider defaults are accepted only for the exact platform owner, gra
       SET SESSION AUTHORIZATION neon_test_admin`);
     await bootstrapNeonDatabase(client, { ...target, passwords });
     await configure('SELECT 1');
-    assert.equal((await migrateNeonDatabase(client, target)).applied, 39);
+    assert.equal((await migrateNeonDatabase(client, target)).applied, loadMigrations().length);
     assert.equal((await migrateNeonDatabase(client, target)).applied, 0);
     await db.exec('RESET ROLE; SET SESSION AUTHORIZATION simsa_api');
     assert.equal((await verifyNeonRuntime(client, target)).runtime_role, 'simsa_api');

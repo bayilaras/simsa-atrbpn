@@ -6,6 +6,13 @@ import { cloudMetadataEnvironment } from './cloud-metadata-config.mjs';
 
 const database = 'postgresql://simsa_api:synthetic-password@ep-test.region.aws.neon.tech/neondb?sslmode=verify-full';
 const handler = () => {};
+for (const relativePath of ['vercel.json', 'backend/vercel.json', 'docs-site/vercel.json']) {
+    test(`requires explicit Production promotion for the ${relativePath} project root`, () => {
+        const configuration = JSON.parse(readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8'));
+        assert.equal(configuration.git?.deploymentEnabled?.main, false);
+    });
+}
+
 test('Vercel routes explicitly use the gated Node function and Fluid Compute', () => {
     const config = JSON.parse(readFileSync(new URL('../backend/vercel.json', import.meta.url), 'utf8'));
     assert.equal(config.framework, null);

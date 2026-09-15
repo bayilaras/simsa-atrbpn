@@ -27,6 +27,12 @@ const routeNameMap = {
     'settings': 'Pengaturan',
 };
 
+// These prefixes organize routes; they do not have a page of their own.
+const groupingPaths = new Set([
+    '/surat', '/master', '/integrations', '/arsip/detail',
+    '/surat/masuk/edit', '/surat/keluar/edit', '/formulir/cetak',
+]);
+
 export function Breadcrumbs() {
     const location = useLocation();
     const pathnames = location.pathname.split('/').filter((x) => x);
@@ -70,8 +76,8 @@ export function Breadcrumbs() {
                 return (
                     <div key={to} className="flex items-center space-x-2">
                         <ChevronRight className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
-                        {isLast ? (
-                            <span className="font-medium text-foreground">{name}</span>
+                        {isLast || groupingPaths.has(to) ? (
+                            <span className={isLast ? 'font-medium text-foreground' : undefined} aria-current={isLast ? 'page' : undefined}>{name}</span>
                         ) : (
                             <Link to={to} className="hover:text-foreground transition-colors">
                                 {name}

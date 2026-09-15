@@ -9,6 +9,36 @@ import { ProvisionedAccessGate } from './ProvisionedAccessGate'
 
 describe('ProvisionedAccessGate', () => {
     it.each([
+        { role: 'super_admin', unitKerjaId: null },
+        { role: 'admin_unit', unitKerjaId: 'unit-a' },
+        { role: 'staff', unitKerjaId: 'unit-a' },
+    ])('does not mount data-bearing children for a deactivated $role session', (assignment) => {
+        const childMounted = vi.fn()
+        const onRefresh = vi.fn()
+        const onSignOut = vi.fn()
+        const user = { ...assignment, isActive: false, email: 'disabled@example.test' }
+        function DataPage() {
+            childMounted()
+            return <div>Data arsip</div>
+        }
+        render(
+            <ProvisionedAccessGate user={user} onRefresh={onRefresh} onSignOut={onSignOut}>
+                <DataPage />
+            </ProvisionedAccessGate>,
+        )
+
+        expect(hasProvisionedAccess(user)).toBe(false)
+        expect(childMounted).not.toHaveBeenCalled()
+        expect(screen.queryByText('Data arsip')).not.toBeInTheDocument()
+        expect(screen.getByRole('status')).toHaveTextContent('Akun dinonaktifkan')
+        expect(screen.queryByText('Akun belum diprovisikan')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Periksa ulang akses' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Keluar' }))
+        expect(onRefresh).toHaveBeenCalledOnce()
+        expect(onSignOut).toHaveBeenCalledOnce()
+    })
+
+    it.each([
         { role: 'user' },
         { role: 'unknown_role' },
         { role: undefined },
@@ -29,7 +59,7 @@ describe('ProvisionedAccessGate', () => {
                 </ProvisionedAccessGate>,
             )
 
-            expect(screen.getByRole('status')).toHaveTextContent('Akun belum diprovisikan')
+            expect(screen.getByRole('status')).toHaveTextContent(user.role === 'user' ? 'Menunggu persetujuan administrator' : 'Akun belum diprovisikan')
             expect(screen.getByText(/Dashboard, menu data, dan proses arsip tidak dimuat/i)).toBeInTheDocument()
             expect(screen.queryByText('Dashboard rahasia')).not.toBeInTheDocument()
             expect(childMounted).not.toHaveBeenCalled()

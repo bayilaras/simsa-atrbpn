@@ -17,6 +17,8 @@ import fileAttachmentService, {
     type RegisterSuratAttachmentData,
 } from './file-attachment.service.js';
 import { settingsService } from './settings.service.js';
+import { hasSuratRuleSelection, hydrateSuratRuleSelections, prepareSuratRuleSelection } from './surat-rule-selection.service';
+import { assertImportConnected, DuplicateSuratImportError, suratImportIdentity, type SuratImportOptions } from './surat-import-identity.js';
 import {
     resolveSuratCalendar,
     type SuratNumberContext,
@@ -111,7 +113,7 @@ export class SuratKeluarService {
             .offset(offset);
 
         return {
-            data: data || [],
+            data: await hydrateSuratRuleSelections(db, data || [], 'keluar'),
             pagination: {
                 page,
                 limit,
@@ -136,7 +138,11 @@ export class SuratKeluarService {
             ))
             .limit(1);
 
-        return result || null;
+        return result ? (await hydrateSuratRuleSelections(db, [result], 'keluar'))[0] : null;
+    }
+
+    async createImported(data: CreateSuratKeluarInput, auditContext: CriticalAuditContext, options: SuratImportOptions = {}) {
+        return this.create(data, auditContext, undefined, undefined, options);
     }
 
     async create(
@@ -144,6 +150,7 @@ export class SuratKeluarService {
         auditContext?: CriticalAuditContext,
         clientBlobClaim?: ClaimClientBlobUpload,
         attachment?: RegisterSuratAttachmentData,
+        importOptions?: SuratImportOptions,
     ) {
         const { numberingMode: requestedNumberingMode, ...recordData } = data;
         const requestedNomorSurat = recordData.nomorSurat?.trim() || '';
@@ -166,6 +173,7 @@ export class SuratKeluarService {
             naskahDinas: recordData.naskahDinas,
         });
         const tahun = calendar.tahun;
+        const importIdentity = importOptions ? suratImportIdentity('keluar', { ...recordData, tahun }) : undefined;
         if (
             attachment
             && (
@@ -190,6 +198,12 @@ export class SuratKeluarService {
                 // The unit template row is the numbering mutex. Unlike locking
                 // the last surat row, this also serializes an empty sequence.
                 const templates = await settingsService.lockSuratTemplates(tx, recordData.unitKerjaId);
+                if (importIdentity) {
+                    assertImportConnected(importOptions);
+                    const [existing] = await tx.select({ id: suratKeluar.id }).from(suratKeluar).where(importIdentity).limit(1);
+                    assertImportConnected(importOptions);
+                    if (existing) throw new DuplicateSuratImportError();
+                }
                 const [lastSurat] = await tx
                     .select({ noUrut: suratKeluar.noUrut })
                     .from(suratKeluar)
@@ -233,10 +247,13 @@ export class SuratKeluarService {
                     }
                 }
 
+                assertImportConnected(importOptions);
+                const ruleSelection = await prepareSuratRuleSelection(tx, 'keluar', recordData);
                 const [inserted] = await tx
                     .insert(suratKeluar)
                     .values({
                         ...recordData,
+                        ...ruleSelection,
                         // Direct service callers and older API clients receive
                         // the same safe, explicit default as the current form.
                         klasifikasiKeamanan: recordData.klasifikasiKeamanan || 'biasa',
@@ -286,6 +303,8 @@ export class SuratKeluarService {
                                 nomorSurat: inserted.nomorSurat,
                                 perihal: inserted.perihal,
                                 unitKerjaId: inserted.unitKerjaId,
+                                klasifikasiItemId: inserted.klasifikasiItemId,
+                                jraItemId: inserted.jraItemId,
                                 balasanUntuk: inserted.balasanUntuk,
                             },
                         },
@@ -302,7 +321,7 @@ export class SuratKeluarService {
                     createdAt: inserted.createdAt,
                 }, auditContext?.userId || recordData.createdBy || undefined);
 
-                return inserted;
+                return (await hydrateSuratRuleSelections(tx, [inserted], 'keluar'))[0];
             });
 
             return result;
@@ -366,9 +385,14 @@ export class SuratKeluarService {
             })
             : undefined;
         return db.transaction(async (tx) => {
+            const current = hasSuratRuleSelection(data)
+                ? (await tx.select().from(suratKeluar).where(and(...conditions)).limit(1).for('update'))[0]
+                : undefined;
+            if (hasSuratRuleSelection(data) && !current) return undefined;
+            const ruleSelection = await prepareSuratRuleSelection(tx, 'keluar', data, current);
             const [result] = await tx
                 .update(suratKeluar)
-                .set({ ...data, updatedAt: new Date() })
+                .set({ ...data, ...ruleSelection, updatedAt: new Date() })
                 .where(and(...conditions))
                 .returning();
 
@@ -405,10 +429,11 @@ export class SuratKeluarService {
                             hasFile: Boolean(result.filePath),
                         },
                         fields: Object.keys(data),
+                        ruleSelection,
                     },
                 }, tx);
             }
-            return result;
+            return result ? (await hydrateSuratRuleSelections(tx, [result], 'keluar'))[0] : result;
         });
     }
 

@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/hooks/use-toast'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
+import { SuratRetentionSummary } from '@/components/SuratRetentionSummary'
 import suratKeluarService from '@/services/surat-keluar.service'
 import approvalService from '@/services/approval.service'
 import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
@@ -42,9 +43,9 @@ export default function SuratKeluarDetail() {
     const { toast } = useToast()
     const { canWrite, user } = useAuth()
     const { capabilities } = useAppConfig()
-    const isAdmin = canWrite()
 
     const [surat, setSurat] = useState(null)
+    const isAdmin = Boolean(surat && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [approvalHistory, setApprovalHistory] = useState([])
@@ -429,12 +430,14 @@ export default function SuratKeluarDetail() {
                                     <p className="text-sm font-medium">
                                         {surat.klasifikasiFasilitatifKode || surat.klasifikasiFasilitatif || '-'}
                                     </p>
+                                    {surat.klasifikasiFasilitatifKode && surat.klasifikasiFasilitatif && <p className="text-sm text-muted-foreground">{surat.klasifikasiFasilitatif}</p>}
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Substantif</label>
                                     <p className="text-sm font-medium">
                                         {surat.klasifikasiSubstantifKode || surat.klasifikasiSubstantif || '-'}
                                     </p>
+                                    {surat.klasifikasiSubstantifKode && surat.klasifikasiSubstantif && <p className="text-sm text-muted-foreground">{surat.klasifikasiSubstantif}</p>}
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Keamanan</label>
@@ -443,6 +446,8 @@ export default function SuratKeluarDetail() {
                                     </Badge>
                                 </div>
                             </div>
+
+                            <SuratRetentionSummary surat={surat} />
 
                             {/* Balasan dari Surat Masuk */}
                             {surat.balasanUntuk && (
@@ -697,12 +702,7 @@ export default function SuratKeluarDetail() {
                 open={archiveDialogOpen}
                 onOpenChange={setArchiveDialogOpen}
                 suratType="keluar"
-                suratData={{
-                    id: surat.id,
-                    nomorSurat: surat.nomorSurat,
-                    perihal: surat.perihal,
-                    tanggalSurat: surat.tanggalSurat,
-                }}
+                suratData={surat}
                 onArchive={handleArchive}
             />
 

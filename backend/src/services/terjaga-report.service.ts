@@ -13,7 +13,7 @@ import { scopedRecordByIdWhere, type RecordUnitScope } from '../utils/record-uni
 export interface TerjagaReportingActor extends RecordUser { email?: string; ipAddress?: string; }
 type Executor = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const canManage = (role: string) => hasPermission(role as Role, 'arsip_terjaga', 'update');
-const VERIFIERS = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
+const VERIFIERS = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
 const jakartaCalendar = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
 });

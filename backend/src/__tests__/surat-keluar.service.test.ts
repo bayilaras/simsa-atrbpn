@@ -246,7 +246,7 @@ describe('SuratKeluarService', () => {
                     entityType: 'surat_keluar',
                     mimeType: 'application/pdf',
                     sizeBytes: 8,
-                    sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+                    sha256: null,
                 }),
                 expect.objectContaining({ insert: expect.any(Function) }),
             );
@@ -254,7 +254,7 @@ describe('SuratKeluarService', () => {
             registration.mockRestore();
         });
 
-        it('downloads and hashes a direct Blob before opening the numbering transaction', async () => {
+        it('validates direct Blob PDF bytes before opening the numbering transaction', async () => {
             const events: string[] = [];
             const locator = 'blob:https://store.private.blob.vercel-storage.com/surat-keluar/direct.pdf';
             const claim = {

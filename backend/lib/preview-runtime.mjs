@@ -14,6 +14,7 @@ const REQUIRED_PREVIEW_ENVIRONMENT = Object.freeze({
 });
 
 const OPTIONAL_PREVIEW_ENVIRONMENT = Object.freeze({
+    RATE_LIMIT_KEY_SECRET: 'PREVIEW_RATE_LIMIT_KEY_SECRET',
     ADDITIONAL_TRUSTED_ORIGINS: 'PREVIEW_ADDITIONAL_TRUSTED_ORIGINS',
     COOKIE_DOMAIN: 'PREVIEW_COOKIE_DOMAIN',
     OCR_TESSDATA_PATH: 'PREVIEW_OCR_TESSDATA_PATH',
@@ -136,6 +137,10 @@ function validateInteger(environment, name, minimum, maximum, errors) {
 }
 
 function validateOptionalPreviewEnvironment(environment, errors) {
+    const rateLimitSecret = environment.PREVIEW_RATE_LIMIT_KEY_SECRET;
+    if (rateLimitSecret && (rateLimitSecret.length < 32 || rateLimitSecret !== rateLimitSecret.trim() || /[\r\n]/.test(rateLimitSecret))) {
+        errors.push('PREVIEW_RATE_LIMIT_KEY_SECRET must be at least 32 characters without surrounding whitespace or line breaks');
+    }
     validateInteger(environment, 'PREVIEW_SMTP_PORT', 1, 65_535, errors);
     validateInteger(environment, 'PREVIEW_SMTP_TIMEOUT_MS', 1_000, 30_000, errors);
     validateInteger(environment, 'PREVIEW_CLIENT_BLOB_RECONCILE_BATCH_SIZE', 1, 200, errors);
@@ -258,6 +263,7 @@ function validatePreviewEnvironment(environment, missing, compareInheritedProduc
             ['DATABASE_URL', 'PREVIEW_DATABASE_URL', canonicalPostgresTarget],
             ['BLOB_READ_WRITE_TOKEN', 'PREVIEW_BLOB_READ_WRITE_TOKEN', String],
             ['BETTER_AUTH_SECRET', 'PREVIEW_BETTER_AUTH_SECRET', String],
+            ['RATE_LIMIT_KEY_SECRET', 'PREVIEW_RATE_LIMIT_KEY_SECRET', String],
             ['BETTER_AUTH_URL', 'PREVIEW_BETTER_AUTH_URL', canonicalHttpsOrigin],
             ['FRONTEND_URL', 'PREVIEW_FRONTEND_URL', canonicalHttpsOrigin],
             ['GOOGLE_CLIENT_ID', 'PREVIEW_GOOGLE_CLIENT_ID', String],

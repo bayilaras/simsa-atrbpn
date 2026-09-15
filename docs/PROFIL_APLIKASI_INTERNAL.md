@@ -4,6 +4,8 @@
 
 SIMSA adalah aplikasi internal Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan (Ditjen PTPP) untuk membantu pengelolaan surat, arsip, dosir, pencarian, layanan, retensi, dan penyusutan secara lebih mudah, tertib, serta dapat ditelusuri.
 
+SIMSA dikembangkan dan digunakan sebagai aplikasi mandiri. Integrasi SRIKANDI tidak termasuk ruang lingkup penerapan saat ini dan tidak menjadi prasyarat fitur inti. SRIKANDI dapat menjadi referensi pengalaman pengguna; peningkatan SIMSA dinilai dari keberhasilan tugas, kemudahan pencarian, kejelasan status, dan hasil UAT, tanpa klaim kesetaraan fitur yang belum diuji.
+
 Permen ATR/BPN Nomor 2 Tahun 2026 dan ketentuan ANRI digunakan sebagai **rujukan desain dan tata kelola**. Dokumen tersebut bukan instruksi eksekusi bagi pengembang dan pencantumannya tidak berarti SIMSA telah disertifikasi atau dinyatakan sepenuhnya patuh oleh ATR/BPN, ANRI, BSSN, BSrE, atau lembaga lain.
 
 Profil ini bukan opini hukum, sertifikasi keamanan, akreditasi, pengganti SOP, atau pengganti keputusan pejabat yang berwenang. Gunakan instrumen ATR/BPN yang sudah berlaku untuk tata naskah dinas, klasifikasi, JRA, serta keamanan dan akses; pemasangan SIMSA tidak dengan sendirinya memerlukan penerbitan ulang instrumen tersebut. Pengaturan dan pemetaan aplikasi mengikuti instrumen serta penugasan instansi.
@@ -17,7 +19,7 @@ Urutan prioritas SIMSA adalah:
 1. mempermudah pekerjaan harian pengguna Ditjen PTPP;
 2. menjaga metadata, klasifikasi, dosir, pencarian, retensi, legal hold, dan alur penyusutan tetap tertib;
 3. melindungi kerahasiaan, integritas, ketersediaan, dan akuntabilitas data secara proporsional terhadap risiko; dan
-4. menambahkan interoperabilitas eksternal hanya setelah mandat, kontrak, pemilik proses, dan lingkungan uji resminya tersedia.
+4. menyempurnakan navigasi, formulir, pencarian, dan kejelasan status berdasarkan pengujian serta masukan pengguna.
 
 Kemudahan operasional tidak boleh dicapai dengan menghapus pemeriksaan hak akses, isolasi unit, karantina file, audit, validasi retensi, legal hold, atau kontrol keamanan dasar lainnya.
 
@@ -52,7 +54,7 @@ Jika suatu dependensi keamanan belum tersedia, fitur yang bergantung padanya har
 
 | Kapabilitas | Status pada profil internal | Kapan menjadi wajib | Aturan aman |
 |---|---|---|---|
-| Konektor API SRIKANDI di SIMSA | Outbound nonaktif secara default; bukan prasyarat teknis inventaris internal | Jika mekanisme resmi instansi menetapkan pertukaran data SIMSA melalui konektor tersebut | Gunakan kontrak API, sandbox, kredensial, pemetaan data, worker, rekonsiliasi, dan persetujuan resmi; jangan mengklaim sinkronisasi hanya dari HTTP 2xx |
+| Konektor API SRIKANDI di SIMSA | Di luar ruang lingkup penerapan saat ini; producer dan outbound nonaktif; bukan prasyarat fitur inti | Hanya jika ruang lingkup integrasi kemudian ditetapkan secara terpisah | Pertahankan modul dan riwayat yang ada; aktivasi baru memerlukan kontrak API, sandbox, kredensial, pemetaan data, worker, rekonsiliasi, dan persetujuan resmi |
 | Tanda tangan elektronik BSrE/PSrE | Di luar ruang lingkup produk berdasarkan keputusan pemilik aplikasi | Tidak diaktifkan pada SIMSA | Pertahankan endpoint legacy dalam keadaan nonaktif; artefak simulasi tidak sah dan tidak boleh dipakai sebagai bukti |
 | Object lock/WORM | Deferred atau kondisional sesuai kelas data, retensi, arsitektur storage, dan keputusan risiko | Jika kebijakan internal atau klasifikasi data mensyaratkan immutability infrastruktur | Baseline tetap memakai objek privat, backup, fixity, pembatasan admin, dan audit; gunakan versioning bila tersedia dan jangan mengklaim WORM tanpa bukti konfigurasi |
 | SIEM/SOC eksternal | Deferred atau kondisional sesuai skala, risiko, dan kebijakan operasi | Jika diwajibkan kebijakan keamanan atau hasil asesmen risiko | Audit/log lokal, kontrol akses log, alert dasar, retensi, sinkronisasi waktu, dan respons insiden tetap harus berjalan |
@@ -63,21 +65,26 @@ KMS/HSM, DLP, content disarm, watermark dinamis, dan akreditasi juga diterapkan 
 
 ### Profil inti internal
 
-Gunakan fungsi operasional inti dengan baseline keamanan di atas. Penandatanganan BSrE/PSrE bukan bagian dari produk. Biarkan konektor API SRIKANDI di SIMSA dan konektor eksternal lain nonaktif bila belum ditetapkan untuk digunakan atau belum siap; hal ini tidak mengubah kewajiban penerapan SRIKANDI di tingkat instansi.
+Gunakan fungsi operasional inti dengan baseline keamanan di atas. Penandatanganan BSrE/PSrE bukan bagian dari produk. Untuk penerapan mandiri ini, konektor API dan producer SRIKANDI tetap nonaktif. Prasyarat penyimpanan privat, antivirus, dan bukti pada fitur arsip digital tetap mengikuti fungsi yang digunakan.
 
 Konfigurasi bawaan yang disarankan:
 
 ```dotenv
 # Backend
+SIMSA_APP_MODE=full
 APP_PROFILE=internal
 SRIKANDI_ENABLED=false
+SRIKANDI_PRODUCER_ENABLED=false
 
 # Frontend (ditetapkan saat build)
+VITE_APP_MODE=full
 VITE_APP_PROFILE=internal
 VITE_FEATURE_SRIKANDI=false
 ```
 
-Dengan konfigurasi ini, menu dan rute SRIKANDI tidak tampil pada frontend, lalu lintas keluar tetap nonaktif, dan konektor eksternal tidak menjadi syarat startup aplikasi. Nilai profil frontend dan backend harus diselaraskan pada setiap deployment.
+Dengan konfigurasi ini, menu dan rute SRIKANDI tidak tampil pada frontend, pembuatan antrean integrasi baru dan lalu lintas keluar tetap nonaktif, dan konektor eksternal tidak menjadi syarat startup aplikasi. Worker SRIKANDI tidak perlu dijalankan. Nilai profil frontend dan backend harus diselaraskan pada setiap deployment.
+
+Migrasi database tetap mengikuti seluruh riwayat skema yang berlaku, termasuk tabel integrasi historis. Menonaktifkan konektor tidak berarti menghapus modul, melewati migrasi, atau menghapus data lama.
 
 ### Profil integrasi kondisional
 

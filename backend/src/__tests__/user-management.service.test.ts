@@ -8,6 +8,7 @@ let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
 function enqueueError(error: unknown) { resultQueue.push({ queuedError: error }); }
 const auditMocks = vi.hoisted(() => ({ logActionOrThrow: vi.fn() }));
+const logMocks = vi.hoisted(() => ({ error: vi.fn() }));
 const passwordMocks = vi.hoisted(() => ({ hashPassword: vi.fn() }));
 const firebaseAuthMocks = vi.hoisted(() => ({
     createUser: vi.fn(),
@@ -53,6 +54,7 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
+vi.mock('../utils/logger.js', () => ({ createLogger: () => logMocks }));
 vi.mock('better-auth/crypto', () => ({
     hashPassword: passwordMocks.hashPassword,
 }));
@@ -102,10 +104,62 @@ describe('userManagementService', () => {
     });
 
     // ── Pure functions (no DB) ──
+    describe('canonical unit administrator provisioning', () => {
+        it('validates and persists an existing assigned unit', async () => {
+            const created = { id: 'new-admin', role: 'admin_unit', unitKerjaId: 'unit-a', isActive: true };
+            enqueue([activeSuperAdmin], [], [{ id: 'unit-a' }], [created], [created]);
+            const result = await userManagementService.createUser({ email: 'unit@example.test', name: 'Admin Unit', role: 'admin_unit', unitKerjaId: ' unit-a ' }, actorContext);
+            expect(result).toMatchObject({ role: 'admin_unit', unitKerjaId: 'unit-a' });
+            expect(chainCalls.some(call => call.method === 'values' && call.args[0]?.role === 'admin_unit' && call.args[0]?.unitKerjaId === 'unit-a')).toBe(true);
+        });
+        it('rejects a nonexistent unit before inserting an account', async () => {
+            enqueue([activeSuperAdmin], [], []);
+            await expect(userManagementService.createUser({ email: 'unit@example.test', name: 'Admin Unit', role: 'admin_unit', unitKerjaId: 'missing' }, actorContext)).rejects.toThrow(/Invalid unitKerjaId/);
+            expect(mockDb.insert).not.toHaveBeenCalled();
+        });
+        it('does not allow removing an existing admin_unit mandate', async () => {
+            enqueue([activeSuperAdmin], [{ id: 'unit-admin', role: 'admin_unit', unitKerjaId: 'unit-a', isActive: true }]);
+            await expect(userManagementService.updateUser('unit-admin', { unitKerjaId: null }, actorContext)).rejects.toThrow(/Unit kerja wajib/);
+            expect(mockDb.update).not.toHaveBeenCalled();
+        });
+        it('rejects an admin_unit trying to provision another account or promote itself', async () => {
+            enqueue([{ id: 'unit-admin', role: 'admin_unit', unitKerjaId: 'unit-a', isActive: true }]);
+            await expect(userManagementService.updateUser('unit-admin', { role: 'super_admin' }, { userId: 'unit-admin', userEmail: 'unit@example.test' })).rejects.toThrow(/bukan super admin aktif/);
+            expect(mockDb.update).not.toHaveBeenCalled();
+        });
+    });
+    describe('pending identity approval', () => {
+        const pending = { id: 'pending-google', role: 'user', unitKerjaId: null, isActive: true };
+        it('requires a role before assigning a pending identity to a unit', async () => {
+            const incomplete = { ...pending, unitKerjaId: 'unit-a' };
+            enqueue([activeSuperAdmin], [pending], [], [{ id: 'unit-a' }], [incomplete], [], [incomplete]);
+            await expect(userManagementService.updateUser(pending.id, { unitKerjaId: 'unit-a' }, actorContext)).rejects.toThrow(/Pilih peran/);
+            expect(mockDb.update).not.toHaveBeenCalled();
+        });
+        it('does not reuse a legacy pending unit for implicit admin_unit approval', async () => {
+            const approved = { ...pending, role: 'admin_unit', unitKerjaId: 'legacy-unit' };
+            enqueue([activeSuperAdmin], [{ ...pending, unitKerjaId: 'legacy-unit' }], [], [approved], [], [approved]);
+            await expect(userManagementService.updateUser(pending.id, { role: 'admin_unit' }, actorContext)).rejects.toThrow(/Unit kerja wajib/);
+            expect(mockDb.update).not.toHaveBeenCalled();
+        });
+        it('requires a unit when explicitly approving an admin_unit identity', async () => {
+            enqueue([activeSuperAdmin], [pending]);
+            await expect(userManagementService.updateUser(pending.id, { role: 'admin_unit' }, actorContext)).rejects.toThrow(/Unit kerja wajib/);
+            expect(mockDb.update).not.toHaveBeenCalled();
+        });
+        it('approves explicit role and valid unit atomically with audit and session revocation', async () => {
+            const approved = { ...pending, role: 'admin_unit', unitKerjaId: 'unit-a' };
+            enqueue([activeSuperAdmin], [pending], [], [{ id: 'unit-a' }], [approved], [], [approved]);
+            await expect(userManagementService.updateUser(pending.id, { role: 'admin_unit', unitKerjaId: 'unit-a' }, actorContext)).resolves.toMatchObject(approved);
+            expect(transactionCommits).toBe(1);
+            expect(mockDb.delete).toHaveBeenCalledOnce();
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({ entityId: pending.id, changes: expect.objectContaining({ after: expect.objectContaining({ role: 'admin_unit', unitKerjaId: 'unit-a' }) }) }), mockDb);
+        });
+    });
     describe('getRoles', () => {
         it('should return all valid roles with labels', () => {
             const roles = userManagementService.getRoles();
-            expect(roles).toHaveLength(VALID_ROLES.length);
+            expect(roles).toHaveLength(2);
             expect(roles[0]).toHaveProperty('value');
             expect(roles[0]).toHaveProperty('label');
         });
@@ -117,15 +171,8 @@ describe('userManagementService', () => {
             expect(superAdmin!.label).toBe('Super Admin');
         });
 
-        it('should include all 6 roles', () => {
-            const roles = userManagementService.getRoles();
-            const values = roles.map((r: any) => r.value);
-            expect(values).toContain('super_admin');
-            expect(values).toContain('admin_dirjen');
-            expect(values).toContain('admin_sesditjen');
-            expect(values).toContain('staff');
-            expect(values).toContain('auditor');
-            expect(values).toContain('user');
+        it('offers only the two assignable roles while retaining legacy labels', () => {
+            expect(userManagementService.getRoles().map(role => role.value)).toEqual(['super_admin', 'admin_unit']);
         });
     });
 
@@ -145,8 +192,8 @@ describe('userManagementService', () => {
 
     // ── Constants ──
     describe('VALID_ROLES', () => {
-        it('should contain exactly 6 roles', () => {
-            expect(VALID_ROLES).toHaveLength(6);
+        it('retains six legacy roles plus admin_unit', () => {
+            expect(VALID_ROLES).toHaveLength(7);
         });
 
         it('should be an array of strings', () => {
@@ -190,9 +237,9 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'admin-dirjen@example.go.id',
                 name: 'Admin Dirjen',
-                role: 'admin_dirjen',
+                role: 'admin_unit',
                 unitKerjaId: null,
-            }, actorContext)).rejects.toThrow(/Invalid unitKerjaId/);
+            }, actorContext)).rejects.toThrow(/Unit kerja wajib/);
 
             expect(mockDb.transaction).not.toHaveBeenCalled();
         });
@@ -203,18 +250,18 @@ describe('userManagementService', () => {
                 [],
                 [{ id: 'u-new' }],
                 [],
-                [{ id: 'u-new', email: 'new@example.go.id', role: 'staff' }],
+                [{ id: 'u-new', email: 'new@example.go.id', role: 'super_admin' }],
             );
 
             const result = await userManagementService.createUser({
                 email: ' New@Example.go.id ',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
                 unitKerjaId: null,
                 password: 'Strong-Password-2026!',
             }, actorContext);
 
-            expect(result).toEqual({ id: 'u-new', email: 'new@example.go.id', role: 'staff' });
+            expect(result).toEqual({ id: 'u-new', email: 'new@example.go.id', role: 'super_admin' });
             expect(mockDb.transaction).toHaveBeenCalledOnce();
             expect(mockDb.insert).toHaveBeenCalledTimes(2);
         });
@@ -225,9 +272,9 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'existing@example.go.id',
                 name: 'Existing User',
-                role: 'staff',
+                role: 'super_admin',
                 password: 'Strong-Password-2026!',
-            }, actorContext)).rejects.toThrow('Email sudah terdaftar');
+            }, actorContext)).rejects.toMatchObject({ statusCode: 400, message: 'Email sudah terdaftar' });
 
             expect(firebaseAuthMocks.createUser).not.toHaveBeenCalled();
             expect(firebaseAuthMocks.deleteUser).not.toHaveBeenCalled();
@@ -236,7 +283,7 @@ describe('userManagementService', () => {
 
         it('rolls back user provisioning when critical audit storage fails', async () => {
             enqueue([activeSuperAdmin], [], [{
-                id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'staff',
+                id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'super_admin',
                 unitKerjaId: null, isActive: true,
             }]);
             auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
@@ -244,7 +291,7 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'new@example.go.id',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
                 unitKerjaId: null,
             }, actorContext)).rejects.toThrow('audit unavailable');
 
@@ -267,21 +314,21 @@ describe('userManagementService', () => {
                 [activeSuperAdmin], [],
                 [activeSuperAdmin], [],
                 [{
-                    id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'staff',
+                    id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'super_admin',
                     unitKerjaId: null, isActive: true, firebaseUid: 'firebase-uid-1',
                 }],
-                [{ id: 'u-new', email: 'new@example.go.id', role: 'staff' }],
+                [{ id: 'u-new', email: 'new@example.go.id', role: 'super_admin' }],
             );
 
             const result = await userManagementService.createUser({
                 email: ' New@Example.go.id ',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
                 unitKerjaId: null,
                 password: 'Transient-Only-2026!',
             }, actorContext);
 
-            expect(result).toEqual({ id: 'u-new', email: 'new@example.go.id', role: 'staff' });
+            expect(result).toEqual({ id: 'u-new', email: 'new@example.go.id', role: 'super_admin' });
             expect(firebaseAuthMocks.createUser).toHaveBeenCalledWith({
                 email: 'new@example.go.id',
                 password: 'Transient-Only-2026!',
@@ -312,7 +359,7 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'new@example.go.id',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
             }, actorContext)).rejects.toThrow(/Password wajib/);
 
             expect(mockDb.transaction).not.toHaveBeenCalled();
@@ -325,7 +372,7 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'new@example.go.id',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
                 password: 'Transient-Only-2026!',
             }, actorContext)).rejects.toThrow(/AUTH_PROVIDER must be one of/);
 
@@ -345,7 +392,7 @@ describe('userManagementService', () => {
                 [activeSuperAdmin], [],
                 [activeSuperAdmin], [],
                 [{
-                    id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'staff',
+                    id: 'u-new', email: 'new@example.go.id', name: 'New User', role: 'super_admin',
                     unitKerjaId: null, isActive: true, firebaseUid: 'firebase-uid-compensate',
                 }],
             );
@@ -354,7 +401,7 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'new@example.go.id',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
                 password: 'Transient-Only-2026!',
             }, actorContext)).rejects.toThrow('audit unavailable');
 
@@ -371,7 +418,7 @@ describe('userManagementService', () => {
                 uid: 'firebase-uid-orphan',
                 email: 'new@example.go.id',
             });
-            firebaseAuthMocks.deleteUser.mockRejectedValueOnce(new Error('firebase unavailable'));
+            firebaseAuthMocks.deleteUser.mockRejectedValueOnce(Object.assign(new Error('SYNTHETIC_FIREBASE_SECRET'), { providerResponse: 'SYNTHETIC_FIREBASE_SECRET' }));
             enqueue(
                 [activeSuperAdmin], [],
                 [activeSuperAdmin], [{ id: 'racing-db-user' }],
@@ -380,12 +427,16 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'new@example.go.id',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
                 password: 'Transient-Only-2026!',
             }, actorContext)).rejects.toMatchObject({ statusCode: 503 });
 
             expect(firebaseAuthMocks.deleteUser).toHaveBeenCalledWith('firebase-uid-orphan');
             expect(mockDb.insert).not.toHaveBeenCalled();
+            expect(logMocks.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'firebase_provisioning_compensation_failed', status: 500 }), expect.any(String));
+            expect(JSON.stringify(logMocks.error.mock.calls)).not.toContain('SYNTHETIC_FIREBASE_SECRET');
+            expect(logMocks.error.mock.calls[0][0]).not.toHaveProperty('err');
+            expect(logMocks.error.mock.calls[0][0]).not.toHaveProperty('originalError');
         });
 
         it('treats an already-deleted Firebase identity as successful idempotent compensation', async () => {
@@ -406,7 +457,7 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'new@example.go.id',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
                 password: 'Transient-Only-2026!',
             }, actorContext)).rejects.toMatchObject({ statusCode: 409 });
 
@@ -424,7 +475,7 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'new@example.go.id',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
                 password: 'Transient-Only-2026!',
             }, actorContext)).rejects.toMatchObject({
                 statusCode: 409,
@@ -448,7 +499,7 @@ describe('userManagementService', () => {
             await expect(userManagementService.createUser({
                 email: 'new@example.go.id',
                 name: 'New User',
-                role: 'staff',
+                role: 'super_admin',
                 password: 'Transient-Only-2026!',
             }, actorContext)).rejects.toMatchObject({ statusCode: 409 });
 
@@ -509,7 +560,7 @@ describe('userManagementService', () => {
         it('should reject invalid role', async () => {
             await expect(
                 userManagementService.updateUser('u1', { role: 'invalid' as any }, actorContext)
-            ).rejects.toThrow('Invalid role: invalid');
+            ).rejects.toMatchObject({ statusCode: 400, message: 'Invalid role: invalid' });
         });
 
         it('rejects an in-flight mutation when the actor is no longer an active super admin', async () => {
@@ -520,7 +571,7 @@ describe('userManagementService', () => {
 
             await expect(userManagementService.updateUser(
                 'u1',
-                { role: 'admin_dirjen' },
+                { role: 'admin_unit' },
                 actorContext,
             )).rejects.toThrow(/bukan super admin aktif/);
 
@@ -545,14 +596,14 @@ describe('userManagementService', () => {
                 [activeSuperAdmin],
                 [{ id: 'u1', role: 'user', unitKerjaId: 'u1', isActive: true }],
                 [],
-                [{ id: 'u1', role: 'staff', unitKerjaId: 'u1', isActive: true }],
+                [{ id: 'u1', role: 'admin_unit', unitKerjaId: 'u1', isActive: true }],
                 [],
-                [{ id: 'u1', role: 'staff' }],
+                [{ id: 'u1', role: 'admin_unit' }],
             );
 
-            const result = await userManagementService.updateUser('u1', { role: 'staff' }, actorContext);
+            const result = await userManagementService.updateUser('u1', { role: 'admin_unit', unitKerjaId: 'u1' }, actorContext);
 
-            expect(result).toEqual({ id: 'u1', role: 'staff' });
+            expect(result).toEqual({ id: 'u1', role: 'admin_unit' });
             expect(mockDb.delete).toHaveBeenCalledTimes(1);
             expect(mockDb.execute).toHaveBeenCalledOnce();
         });
@@ -568,7 +619,7 @@ describe('userManagementService', () => {
 
             await expect(userManagementService.updateUser(
                 'approver-1',
-                { role: 'staff' },
+                { role: 'admin_unit' },
                 actorContext,
             )).rejects.toThrow(/masih menjadi penyetuju aktif.*SK\/17\/2026/);
 
@@ -604,7 +655,7 @@ describe('userManagementService', () => {
 
             await expect(userManagementService.updateUser(
                 'super-admin-1',
-                { role: 'staff' },
+                { role: 'admin_unit' },
                 actorContext,
             )).rejects.toThrow(/Minimal satu super admin aktif/);
 
@@ -619,7 +670,7 @@ describe('userManagementService', () => {
             enqueue(
                 [activeSuperAdmin],
                 [{
-                    id: 'u1', role: 'staff', unitKerjaId: 'ditjen', isActive: true,
+                    id: 'u1', role: 'admin_unit', unitKerjaId: 'ditjen', isActive: true,
                     firebaseUid: 'firebase-uid-u1',
                 }],
                 [],
@@ -739,10 +790,10 @@ describe('userManagementService', () => {
                     firebaseUid: 'legacy-unexpected-uid',
                 }],
                 [],
-                [{ id: 'u1', role: 'staff' }],
+                [{ id: 'u1', role: 'admin_unit' }],
             );
 
-            await userManagementService.updateUser('u1', { role: 'staff' }, actorContext);
+            await userManagementService.updateUser('u1', { role: 'admin_unit', unitKerjaId: 'ditjen' }, actorContext);
 
             expect(firebaseAuthMocks.updateUser).not.toHaveBeenCalled();
             expect(firebaseAuthMocks.revokeRefreshTokens).not.toHaveBeenCalled();

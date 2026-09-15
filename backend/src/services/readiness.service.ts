@@ -18,6 +18,10 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
     WITH RECURSIVE required_columns(table_name, column_name) AS (
         VALUES
             ('users', 'role'),
+            ('shared_rate_limits', 'bucket'),
+            ('shared_rate_limits', 'key_hash'),
+            ('shared_rate_limits', 'hits'),
+            ('shared_rate_limits', 'reset_at'),
             ('users', 'unit_kerja_id'),
             ('users', 'is_active'),
             ('users', 'jabatan'),
@@ -132,6 +136,9 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
     required_constraints(table_name, constraint_name) AS (
         VALUES
             ('users', 'users_role_unit_mandate_check'),
+            ('shared_rate_limits', 'shared_rate_limits_bucket_check'),
+            ('shared_rate_limits', 'shared_rate_limits_key_check'),
+            ('shared_rate_limits', 'shared_rate_limits_hits_check'),
             ('file_fixity_jobs', 'file_fixity_jobs_claim_check'),
             ('file_fixity_jobs', 'file_fixity_jobs_result_check'),
             ('preservasi_track', 'preservation_activity_evidence_check'),

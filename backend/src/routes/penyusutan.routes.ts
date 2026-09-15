@@ -24,10 +24,6 @@ router.use(authMiddleware);
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);
 
-function isBatchNotFound(error: unknown): boolean {
-    return error instanceof Error && /batch not found/i.test(error.message);
-}
-
 function requireConcreteUnitScope(req: AuthRequest, res: Response): string | null {
     const unitKerjaId = resolveUnitKerjaId(req);
     if (!unitKerjaId) {
@@ -203,19 +199,7 @@ router.put('/:id/status', canWriteMiddleware(), sensitiveLimiter, validateBody(a
             } : undefined,
         }, unitKerjaId, allowedSecurityClassifications(req.user));
         res.json({ success: true, data: result });
-    } catch (error: any) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
-        if (error.message?.includes('changed concurrently')) {
-            return res.status(409).json({ error: error.message });
-        }
-        if (error.message?.includes('Unauthorized')) {
-            return res.status(403).json({ error: error.message });
-        }
-        if (error.message?.includes('Cannot advance')) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -229,7 +213,6 @@ router.get('/:id/execution-options', canWriteMiddleware(), async (req: AuthReque
         }, unitKerjaId, allowedSecurityClassifications(req.user));
         res.json({ success: true, data });
     } catch (error) {
-        if (isBatchNotFound(error)) return res.status(404).json({ error: 'Batch not found' });
         next(error);
     }
 });
@@ -256,7 +239,6 @@ router.post('/:id/evidence', canWriteMiddleware(), uploadLimiter, (req: AuthRequ
             malwareScanStatus: attachment.malwareScanStatus, integrityStatus: attachment.integrityStatus },
             message: 'Bukti masuk karantina dan dapat dipilih setelah pemeriksaan malware serta integritas selesai.' });
     } catch (error) {
-        if (isBatchNotFound(error)) return res.status(404).json({ error: 'Batch not found' });
         next(error);
     }
 });
@@ -271,9 +253,8 @@ router.post('/:id/recover-transfer', canWriteMiddleware(), sensitiveLimiter, val
             }, unitKerjaId, allowedSecurityClassifications(req.user));
             res.json({ success: true, data });
         } catch (error) {
-            if (isBatchNotFound(error)) return res.status(404).json({ error: 'Batch not found' });
-            next(error);
-        }
+        next(error);
+    }
     });
 
 // POST /api/penyusutan/:id/items - Add items to batch
@@ -293,16 +274,7 @@ router.post('/:id/items', canWriteMiddleware(), async (req: AuthRequest, res, ne
             { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
         );
         res.json({ success: true, ...result });
-    } catch (error: any) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
-        if (error.message?.includes('changed concurrently')) {
-            return res.status(409).json({ error: error.message });
-        }
-        if (error.message?.includes('draft')) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -324,16 +296,7 @@ router.delete('/:id/items', canWriteMiddleware(), sensitiveLimiter, validateBody
             { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
         );
         res.json({ success: true, ...result });
-    } catch (error: any) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
-        if (error.message?.includes('changed concurrently')) {
-            return res.status(409).json({ error: error.message });
-        }
-        if (error.message?.includes('draft')) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -350,16 +313,7 @@ router.delete('/:id', canWriteMiddleware(), sensitiveLimiter, async (req: AuthRe
             { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
         );
         res.json({ success: true, ...result });
-    } catch (error: any) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
-        if (error.message?.includes('changed concurrently')) {
-            return res.status(409).json({ error: error.message });
-        }
-        if (error.message?.includes('draft')) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -386,9 +340,6 @@ router.get('/:id/print/usul-musnah', async (req: AuthRequest, res, next) => {
         res.setHeader('Content-Disposition', `inline; filename=usul-musnah-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
         next(error);
     }
 });
@@ -406,9 +357,6 @@ router.get('/:id/print/usul-pindah', async (req: AuthRequest, res, next) => {
         res.setHeader('Content-Disposition', `inline; filename=usul-pindah-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
         next(error);
     }
 });
@@ -426,9 +374,6 @@ router.get('/:id/print/usul-serah', async (req: AuthRequest, res, next) => {
         res.setHeader('Content-Disposition', `inline; filename=usul-serah-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
         next(error);
     }
 });
@@ -446,9 +391,6 @@ router.get('/:id/print/berita-acara', async (req: AuthRequest, res, next) => {
         res.setHeader('Content-Disposition', `inline; filename=berita-acara-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
         next(error);
     }
 });
@@ -466,9 +408,6 @@ router.get('/:id/print/berita-acara-pemindahan', async (req: AuthRequest, res, n
         res.setHeader('Content-Disposition', `inline; filename=ba-pemindahan-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
         next(error);
     }
 });
@@ -486,9 +425,6 @@ router.get('/:id/print/berita-acara-pemusnahan', async (req: AuthRequest, res, n
         res.setHeader('Content-Disposition', `inline; filename=ba-pemusnahan-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
         next(error);
     }
 });
@@ -506,9 +442,6 @@ router.get('/:id/print/berita-acara-alih-media', async (req: AuthRequest, res, n
         res.setHeader('Content-Disposition', `inline; filename=ba-alih-media-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
         next(error);
     }
 });
@@ -526,9 +459,6 @@ router.get('/:id/print/berita-acara-penyerahan', async (req: AuthRequest, res, n
         res.setHeader('Content-Disposition', `inline; filename=ba-penyerahan-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
         next(error);
     }
 });
@@ -546,9 +476,6 @@ router.get('/:id/print/surat-permohonan-penyerahan', async (req: AuthRequest, re
         res.setHeader('Content-Disposition', `inline; filename=surat-permohonan-${id}.pdf`);
         res.send(pdf);
     } catch (error) {
-        if (isBatchNotFound(error)) {
-            return res.status(404).json({ error: 'Batch not found' });
-        }
         next(error);
     }
 });

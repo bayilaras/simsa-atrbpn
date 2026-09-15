@@ -25,6 +25,13 @@ describe('attachment integrity state updates', () => {
         mocks.download.mockImplementation(async () => ({ stream: Readable.from([content]) }));
     });
 
+    it.each(['surat_masuk', 'surat_keluar'])('does not run hash verification for old %s attachments', async entityType => {
+        mocks.select.mockReturnValue({ from: () => ({ where: () => ({ limit: async () => [{ ...record, entityType, fileUrl: 'https://store.private.blob.vercel-storage.com/record.pdf', objectGeneration: null }] }) }) });
+        expect(await fileAttachmentService.verifyIntegrity(record.id)).toBeNull();
+        expect(mocks.download).not.toHaveBeenCalled();
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+
     it('rejects a result whose baseline changed before it could be committed', async () => {
         mocks.returned.mockResolvedValue([]);
         await expect(fileAttachmentService.verifyIntegrity(record.id)).rejects.toThrow(/berubah/i);

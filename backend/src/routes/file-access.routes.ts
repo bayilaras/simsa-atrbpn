@@ -8,7 +8,7 @@ import { validateIdParam } from '../middlewares/validate.middleware';
 import { auditLogService } from '../services/audit-log.service';
 import { blobStorageService } from '../services/blob-storage.service';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
-import { isFileReleased, quarantinedFileScanState } from '../services/file-release-policy.js';
+import { isAttachmentAvailable, requiresAttachmentInspection, quarantinedFileScanState } from '../services/file-release-policy.js';
 import { createLogger } from '../utils/logger';
 import {
     normalizeStoredObjectLocator,
@@ -181,7 +181,10 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 return res.status(404).json({ error: 'File not found' });
             }
 
-            if (!isFileReleased(attachment)) {
+            if (!isAttachmentAvailable(attachment)) {
+                if (!requiresAttachmentInspection(attachment.entityType, attachment.fileUrl || attachment.driveFileId)) {
+                    return res.status(423).json({ error: 'File unavailable', message: 'Dokumen belum tersedia. Periksa kembali lampiran surat.' });
+                }
                 return res.status(423).json({
                     error: 'File quarantined',
                     scanState: quarantinedFileScanState(attachment),
@@ -226,9 +229,8 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
         const locator = normalizeBlobLocator(record?.filePath);
         if (!locator) return res.status(404).json({ error: 'File not found' });
 
-        // Legacy surat locators did not carry malware/fixity state. They are
-        // therefore not released merely because a URL exists: an ingest worker
-        // must register the same bitstream and mark it clean first.
+        // Keep the registered private object tied to this exact parent and
+        // locator. Private Blob letter access does not depend on inspection.
         const registrations = await db
             .select()
             .from(fileAttachments)
@@ -242,12 +244,16 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             );
             return registeredLocator === locator;
         });
-        const releasedRegistration = matchingRegistrations.find(isFileReleased);
+        const releasedRegistration = matchingRegistrations.find(isAttachmentAvailable);
         if (!releasedRegistration) {
+            if (requiresAttachmentInspection(entityType, locator)) {
+                return res.status(423).json({ error: 'File quarantined',
+                    scanState: matchingRegistrations.length === 1 ? quarantinedFileScanState(matchingRegistrations[0]) : 'unavailable',
+                    message: 'Dokumen belum tersedia untuk dibuka.' });
+            }
             return res.status(423).json({
-                error: 'File quarantined',
-                scanState: matchingRegistrations.length === 1 ? quarantinedFileScanState(matchingRegistrations[0]) : 'unavailable',
-                message: 'Bitstream harus diregistrasi, dipindai malware, dan memiliki baseline hash.',
+                error: 'File unavailable',
+                message: 'Dokumen belum terdaftar sebagai lampiran privat surat ini. Periksa kembali lampiran surat.',
             });
         }
 

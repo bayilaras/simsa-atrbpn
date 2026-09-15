@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Readable } from 'node:stream';
+import crypto from 'node:crypto';
 
 const mocks = vi.hoisted(() => ({
     uploadUntrustedFile: vi.fn(),
@@ -66,6 +67,39 @@ describe('FileAttachmentService Blob compensation', () => {
         mocks.deleteFile.mockResolvedValue(true);
         mocks.deleteFileGeneration.mockResolvedValue(true);
         mocks.audit.mockResolvedValue(undefined);
+    });
+
+    it.each(['masuk', 'keluar'] as const)('stores %s attachments without computing or inventing inspection evidence', async suratType => {
+        mocks.insert.mockReturnValue({ values: (data: any) => ({ returning: async () => [{ id: 'attachment-1', ...data }] }) });
+        const digest = vi.spyOn(crypto, 'createHash');
+        try {
+            const result = await new FileAttachmentService().create({
+                suratId: '11111111-1111-4111-8111-111111111111', suratType,
+                fileName: 'request.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7'),
+            }, { userId: directClaim.uploadedBy });
+            expect(result).toMatchObject({ hash: null, sha256: null, integrityStatus: 'not_required', malwareScanStatus: 'not_required', storageAccess: 'private' });
+            expect(digest).not.toHaveBeenCalled();
+        } finally { digest.mockRestore(); }
+    });
+
+    it('continues hashing and quarantining archive evidence uploads', async () => {
+        mocks.insert.mockReturnValue({ values: (data: any) => ({ returning: async () => [{ id: 'attachment-1', ...data }] }) });
+        const content = Buffer.from('%PDF-1.7');
+        const result = await new FileAttachmentService().create({
+            suratId: '11111111-1111-4111-8111-111111111111', suratType: 'arsip',
+            fileName: 'request.pdf', mimeType: 'application/pdf', buffer: content,
+        }, { userId: directClaim.uploadedBy });
+        expect(result).toMatchObject({ sha256: crypto.createHash('sha256').update(content).digest('hex'), integrityStatus: 'baseline_recorded', malwareScanStatus: 'not_scanned' });
+    });
+
+    it.each(['masuk', 'keluar'] as const)('retains GCS %s hashing and quarantine needed for retained storage promotion', async suratType => {
+        mocks.uploadUntrustedFile.mockResolvedValueOnce({ url: 'gs://private/record.pdf', generation: '123' });
+        mocks.insert.mockReturnValue({ values: (data: any) => ({ returning: async () => [{ id: 'attachment-1', ...data }] }) });
+        const buffer = Buffer.from('%PDF-1.7');
+        const result = await new FileAttachmentService().create({ suratId: '11111111-1111-4111-8111-111111111111', suratType,
+            fileName: 'record.pdf', mimeType: 'application/pdf', buffer }, { userId: directClaim.uploadedBy });
+        expect(result).toMatchObject({ objectGeneration: '123', sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+            integrityStatus: 'baseline_recorded', malwareScanStatus: 'not_scanned' });
     });
 
     it('deletes the exact request-created object when attachment persistence fails', async () => {
@@ -173,6 +207,28 @@ describe('FileAttachmentService direct Blob preflight', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         vi.clearAllMocks();
+    });
+
+    it.each(['surat_masuk', 'surat_keluar'] as const)('validates and registers direct %s PDF bytes without hashing them', async purpose => {
+        vi.spyOn(clientBlobUploadService, 'preAuthorizeClaim').mockResolvedValueOnce({} as any);
+        mocks.downloadFile.mockResolvedValueOnce({ stream: Readable.from([Buffer.from('%P'), Buffer.from('DF-1.7')]), mimeType: 'application/pdf' });
+        mocks.insert.mockReturnValue({ values: (data: any) => ({ returning: async () => [{ id: 'attachment-1', ...data }] }) });
+        const digest = vi.spyOn(crypto, 'createHash');
+        try {
+            const service = new FileAttachmentService();
+            const prepared = await service.prepareExisting(directAttachment, { clientBlobClaim: { ...directClaim, purpose }, expectedPurpose: purpose });
+            expect(prepared).toMatchObject({ mimeType: 'application/pdf', sizeBytes: 8, sha256: null });
+            const attachment = await service.insertPrepared({ ...prepared, entityId: '11111111-1111-4111-8111-111111111111', entityType: purpose });
+            expect(attachment).toMatchObject({ sha256: null, integrityStatus: 'not_required', malwareScanStatus: 'not_required', storageAccess: 'private' });
+            expect(digest).not.toHaveBeenCalled();
+        } finally { digest.mockRestore(); }
+    });
+
+    it('rejects invalid PDF bytes even when letter inspections are disabled', async () => {
+        vi.spyOn(clientBlobUploadService, 'preAuthorizeClaim').mockResolvedValueOnce({} as any);
+        mocks.downloadFile.mockResolvedValueOnce({ stream: Readable.from([Buffer.from('not a PDF')]), mimeType: 'application/pdf' });
+        await expect(new FileAttachmentService().prepareExisting(directAttachment, { clientBlobClaim: directClaim, expectedPurpose: 'surat_masuk' }))
+            .rejects.toMatchObject({ statusCode: 400 });
     });
 
     it('rejects a wrong-owner lease before any object-storage download', async () => {
@@ -289,7 +345,7 @@ describe('FileAttachmentService direct Blob preflight', () => {
         }, {
             clientBlobClaim: { ...directClaim, blobUrl: locator },
             expectedPurpose: 'surat_masuk',
-        })).resolves.toMatchObject({ objectGeneration: '1735689600123456' });
+        })).resolves.toMatchObject({ objectGeneration: '1735689600123456', sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
 
         expect(mocks.downloadFile).toHaveBeenCalledWith(locator, expect.objectContaining({
             generation: '1735689600123456',

@@ -35,6 +35,116 @@ afterEach(async () => {
     await Promise.all(databases.splice(0).map((database) => database.close()));
 });
 
+describe('superadmin catalog activation migration', () => {
+    const publisher = '550e8400-e29b-41d4-a716-446655440901';
+    const ruleSet = '550e8400-e29b-41d4-a716-446655440902';
+    const hash = 'a'.repeat(64);
+
+    async function preparedDraft(database: PGlite) {
+        await database.exec(`
+            INSERT INTO users (id, email, role) VALUES
+              ('${publisher}', 'catalog-publisher@example.test', 'super_admin');
+            INSERT INTO regulatory_rule_sets (
+              id, instrument_type, version, name, legal_basis, regulation_number,
+              status, effective_from, created_by, source_document_sha256,
+              source_document_blob_url, source_document_mime_type,
+              source_document_size_bytes, source_document_page_count,
+              source_document_verified_at, source_document_verified_by,
+              completeness_manifest_sha256, completeness_verified_at,
+              impact_report_sha256, impact_report_generated_at, metadata
+            ) VALUES (
+              '${ruleSet}', 'klasifikasi', 'direct-superadmin-test', 'Prepared edition',
+              'Test regulation', 'TEST/2026', 'draft', '2026-01-01', '${publisher}', '${hash}',
+              'https://store.private.blob.vercel-storage.com/regulatory-sources/${ruleSet}/source.pdf',
+              'application/pdf', 1000, 1, now(), '${publisher}', '${hash}', now(),
+              '${hash}', now(), '{"contentHash":"${hash}","contentItemCount":1}'::jsonb
+            );
+            INSERT INTO klasifikasi_arsip (
+              rule_set_id, kode, source_record_key, jenis, tipe, content_hash
+            ) VALUES ('${ruleSet}', 'KU.01', 'test:kementerian:0001', 'Keuangan', 'fasilitatif', '${hash}');
+        `);
+    }
+
+    const activate = () => `UPDATE regulatory_rule_sets SET status = 'active',
+      published_by = '${publisher}', published_at = now() WHERE id = '${ruleSet}'`;
+
+    it.each(['draft', 'submitted', 'reviewed', 'approved'])(
+        'allows the active superadmin creator to publish %s while preserving genuine historical evidence', async (status) => {
+        const database = await migratedDatabase();
+        await preparedDraft(database);
+        if (status !== 'draft') {
+            await database.exec(`UPDATE regulatory_rule_sets SET status='submitted',
+              submitted_by='${publisher}', submitted_at=now(), submission_note='Historical submission recorded.'
+              WHERE id='${ruleSet}'`);
+        }
+        if (['reviewed', 'approved'].includes(status)) {
+            await database.exec(`
+              INSERT INTO users (id,email,role) VALUES
+                ('550e8400-e29b-41d4-a716-446655440903','historic-review@example.test','super_admin'),
+                ('550e8400-e29b-41d4-a716-446655440904','historic-approval@example.test','super_admin');
+              UPDATE regulatory_rule_sets SET status='reviewed', reviewed_at=now(),
+                reviewed_by='550e8400-e29b-41d4-a716-446655440903', review_note='Historical independent review.'
+                WHERE id='${ruleSet}';
+            `);
+        }
+        if (status === 'approved') {
+            await database.exec(`UPDATE regulatory_rule_sets SET status='approved', approved_at=now(),
+              approved_by='550e8400-e29b-41d4-a716-446655440904', approval_note='Historical independent approval.'
+              WHERE id='${ruleSet}'`);
+        }
+        const evidenceQuery = `SELECT submitted_by, submitted_at, submission_note,
+          reviewed_by, reviewed_at, review_note, approved_by, approved_at, approval_note
+          FROM regulatory_rule_sets WHERE id='${ruleSet}'`;
+        const before = await database.query(evidenceQuery);
+        await database.exec(activate());
+        expect((await database.query(evidenceQuery)).rows).toEqual(before.rows);
+        expect((await database.query(`SELECT status,published_by FROM regulatory_rule_sets
+          WHERE id='${ruleSet}'`)).rows).toEqual([{status:'active',published_by:publisher}]);
+        await expect(database.exec(`UPDATE klasifikasi_arsip SET jenis='Changed'
+          WHERE rule_set_id='${ruleSet}'`)).rejects.toThrow(/immutable/i);
+        await expect(database.exec(`UPDATE regulatory_rule_sets SET reviewed_by='${publisher}',
+          reviewed_at=now() WHERE id='${ruleSet}'`)).rejects.toThrow(/Review evidence is immutable/i);
+    }, 30_000);
+
+    it('rechecks current active superadmin authority and retains source, impact, count and evidence guards', async () => {
+        const database = await migratedDatabase();
+        await preparedDraft(database);
+        for (const authority of ["role='staff'", "role='super_admin', is_active=false"]) {
+            await database.exec(`UPDATE users SET ${authority} WHERE id='${publisher}'`);
+            await expect(database.exec(activate())).rejects.toThrow(/transition|superadmin|Publication evidence/i);
+        }
+        await database.exec(`UPDATE users SET role='super_admin',is_active=true WHERE id='${publisher}'`);
+        await expect(database.exec(activate().replace(`'${publisher}'`, 'NULL')))
+          .rejects.toThrow(/transition|superadmin/i);
+        for (const missing of [
+            'source_document_verified_at=NULL',
+            'impact_report_generated_at=NULL',
+            `metadata='{"contentHash":"${hash}","contentItemCount":2}'::jsonb`,
+        ]) {
+            await database.exec('BEGIN');
+            await database.exec(`UPDATE regulatory_rule_sets SET ${missing} WHERE id='${ruleSet}'`);
+            await expect(database.exec(activate())).rejects.toThrow(/evidence|count mismatch/i);
+            await database.exec('ROLLBACK');
+        }
+        await expect(database.exec(`UPDATE regulatory_rule_sets SET status='active',
+          published_by='${publisher}',published_at=now(),reviewed_by='${publisher}',reviewed_at=now()
+          WHERE id='${ruleSet}'`)).rejects.toThrow(/Review evidence is immutable/i);
+        expect((await database.query(`SELECT status FROM regulatory_rule_sets WHERE id='${ruleSet}'`)).rows)
+          .toEqual([{status:'draft'}]);
+        await database.exec(activate());
+    }, 30_000);
+
+    it('requires a nonempty assigned unit for admin_unit without changing existing users', async () => {
+        const database = await migratedDatabase();
+        for (const unit of ['NULL', "''", "'   '"]) {
+            await expect(database.exec(`INSERT INTO users (email,role,unit_kerja_id)
+              VALUES ('missing-unit@example.test','admin_unit',${unit})`))
+              .rejects.toThrow(/users_admin_unit_assignment_check/i);
+        }
+        await database.exec(`INSERT INTO users (email,role) VALUES ('superadmin-no-unit@example.test','super_admin')`);
+    }, 30_000);
+});
+
 describe('regulatory maker-checker database invariants', () => {
     it('rejects a GCS regulatory source without an exact object generation', async () => {
         const database = await migratedDatabase();

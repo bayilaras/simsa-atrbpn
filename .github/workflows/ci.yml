@@ -91,6 +91,7 @@ jobs:
               src/db/migrations/0036_terjaga_reporting_evidence.sql \
               src/db/migrations/0037_preservation_activity_evidence.sql \
               src/db/migrations/0038_arsip_direct_upload.sql \
+              src/db/migrations/0039_shared_rate_limits.sql \
               src/db/grants/0001_bootstrap_cloud_sql_roles.sql \
               src/db/grants/0002_converge_application_grants.sql \
               scripts/apply-database-grant-convergence.mjs
@@ -638,7 +639,7 @@ jobs:
           SQL
 
           # Scheduled mode may resolve only one of the exact histories. On the
-          # current 34-migration DB it must resolve to post_migration.
+          # current reviewed DB it must resolve to post_migration.
           docker run --rm --interactive --network host \
             --env PGPASSWORD \
             --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
@@ -661,7 +662,7 @@ jobs:
           SQL
           grep -Fq $'schema_profile\tpost_migration\t1\t' "$POST_AUTO_EVIDENCE"
 
-          # A 34-migration database must fail closed when the operator chooses
+          # A database at the reviewed head must fail closed when the operator chooses
           # the pre-migration (0000-0020) profile.
           if docker run --rm --interactive --network host \
             --env PGPASSWORD \
@@ -771,6 +772,12 @@ jobs:
           ROLLBACK;
           SQL
           grep -Fq $'schema_profile\tpre_migration\t1\t' "$PRE_AUTO_EVIDENCE"
+
+      - name: Verify the exact 0038 backup baseline and upgrade to the current journal
+        run: node .github/scripts/test-backup-upgrade-profile.mjs
+        env:
+          TEST_POSTGRES_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
+          TEST_POSTGRES_IMAGE: ${{ env.POSTGRES_IMAGE }}
 
       - name: Run PostgreSQL concurrency tests
         run: npm run test:postgres-locks

@@ -37,11 +37,16 @@ export function getPublicCapabilities(source: NodeJS.ProcessEnv = process.env) {
         syntheticDataOnly: demo,
         capabilities: {
             metadata: true, files, fileUploads,
+            letterFileUploads: cloud.storageProvider === 'vercel-blob' ? files : fileUploads,
             ...getOptionalModuleCapabilities(source),
             // Public Sheets metadata imports and source links do not require
             // the separate SRIKANDI connector or its credentials.
             externalIntegrations: !demo,
         },
-        authentication: { provider: cloud.authProvider, googleSignIn },
+        authentication: {
+            provider: cloud.authProvider,
+            googleSignIn,
+            pendingGoogleSignup: !demo && googleSignIn && buildGoogleOAuthConfig(source).pendingSignupEnabled,
+        },
     } as const;
 }

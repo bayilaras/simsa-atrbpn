@@ -67,7 +67,7 @@ describe('updateUserSchema', () => {
     });
 
     it('accepts role update', () => {
-        const result = updateUserSchema.safeParse({ role: 'admin_dirjen' });
+        const result = updateUserSchema.safeParse({ role: 'admin_unit' });
         expect(result.success).toBe(true);
     });
 
@@ -157,7 +157,7 @@ describe('createUserSchema', () => {
     const validUser = {
         email: 'test@example.com',
         name: 'Test User',
-        role: 'user' as const,
+        role: 'super_admin' as const,
     };
 
     it('accepts valid user data without password', () => {
@@ -181,7 +181,7 @@ describe('createUserSchema', () => {
     });
 
     it('rejects missing email', () => {
-        const result = createUserSchema.safeParse({ name: 'Test', role: 'user' });
+        const result = createUserSchema.safeParse({ name: 'Test', role: 'super_admin' });
         expect(result.success).toBe(false);
     });
 
@@ -191,7 +191,7 @@ describe('createUserSchema', () => {
     });
 
     it('rejects missing name', () => {
-        const result = createUserSchema.safeParse({ email: 'test@x.com', role: 'user' });
+        const result = createUserSchema.safeParse({ email: 'test@x.com', role: 'super_admin' });
         expect(result.success).toBe(false);
     });
 
@@ -200,9 +200,9 @@ describe('createUserSchema', () => {
         expect(result.success).toBe(false);
     });
 
-    it('accepts all valid roles including unit-scoped auditor', () => {
-        for (const role of ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user']) {
-            const result = createUserSchema.safeParse({ ...validUser, role });
+    it('accepts only the canonical assignments with a unit for admin_unit', () => {
+        for (const role of ['super_admin', 'admin_unit']) {
+            const result = createUserSchema.safeParse({ ...validUser, role, unitKerjaId: 'ditjen' });
             expect(result.success).toBe(true);
         }
     });

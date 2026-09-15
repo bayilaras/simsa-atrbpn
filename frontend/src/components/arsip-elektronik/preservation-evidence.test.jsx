@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PreservationHistory from './PreservationHistory'
 import ExternalPreservationFields from './ExternalPreservationFields'
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), upload: vi.fn() }))
 vi.mock('@/services/api', () => ({ api: mocks }))
+vi.mock('@/services/arsip-attachment-upload.service', () => ({ uploadArsipAttachment: mocks.upload }))
 const event = { id: 'event-1', action: 'conversion', performedAt: '2020-01-01T00:00:00Z', performedBy: { name: 'Petugas uji' } }
 beforeEach(() => vi.resetAllMocks())
 afterEach(cleanup)
@@ -25,8 +26,9 @@ describe('preservation evidence presentation', () => {
         expect(mocks.get).toHaveBeenCalledTimes(2)
     })
     it('shows options by filename and uploads new results through the existing private attachment API', async () => {
-        mocks.get.mockResolvedValue({ arsipId: 'archive-1', attachments: [{ id: 'output', fileName: 'Hasil.pdf' }, { id: 'proof', fileName: 'Kendali mutu.pdf' }] })
-        mocks.post.mockResolvedValue({ success: true })
+        const archiveId = '550e8400-e29b-41d4-a716-446655440001'
+        mocks.get.mockResolvedValue({ arsipId: archiveId, attachments: [{ id: 'output', fileName: 'Hasil.pdf' }, { id: 'proof', fileName: 'Kendali mutu.pdf' }] })
+        mocks.upload.mockResolvedValue({ success: true })
         const change = vi.fn()
         render(<ExternalPreservationFields electronicId="e1" data={{}} onChange={change} />)
         expect(await screen.findAllByRole('option', { name: 'Hasil.pdf' })).toHaveLength(2)
@@ -35,7 +37,7 @@ describe('preservation evidence presentation', () => {
         const file = new File(['%PDF-1.7'], 'Hasil.pdf', { type: 'application/pdf' })
         fireEvent.change(screen.getByLabelText(/Unggah hasil atau bukti baru/), { target: { files: [file] } })
         fireEvent.click(screen.getByRole('button', { name: 'Unggah lampiran' }))
-        await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/upload/arsip/archive-1', expect.any(FormData)))
+        await waitFor(() => expect(mocks.upload).toHaveBeenCalledWith(archiveId, file))
         expect(await screen.findByText(/Lampiran masuk karantina/)).toBeInTheDocument()
     })
     it('shows a history error and can retry instead of presenting an empty register', async () => {

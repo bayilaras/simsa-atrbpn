@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard,
@@ -55,8 +55,8 @@ import { PROVISIONED_ROLES } from '@/lib/provisioning-access'
 import { useAppConfig } from '@/context/app-config-context'
 
 // Role constants for menu access
-const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen']
-const ADMIN_AND_AUDITOR = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor']
+const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']
+const ADMIN_AND_AUDITOR = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'auditor']
 const ALL_PROVISIONED_ROLES = PROVISIONED_ROLES
 
 // Menu items grouped by section
@@ -116,7 +116,7 @@ const menuGroups = [
                 title: 'Jadwal Retensi',
                 url: '/master/jra',
                 icon: Clock,
-                allowedRoles: ADMIN_ROLES,
+                allowedRoles: ['super_admin'],
             },
             {
                 title: 'Manajemen Retensi',
@@ -220,10 +220,16 @@ const menuGroups = [
                 allowedRoles: ['super_admin'],
             },
             {
-                title: 'Persetujuan Akses',
+                title: 'Persetujuan Akses Arsip',
                 url: '/record-access-grants',
                 icon: FileKey2,
                 allowedRoles: ALL_PROVISIONED_ROLES,
+            },
+            {
+                title: 'Monitoring Operasional',
+                url: '/monitoring-operasional',
+                icon: ClipboardList,
+                allowedRoles: ['super_admin'],
             },
             {
                 title: 'Pengaturan',
@@ -247,10 +253,10 @@ const menuGroups = [
             {
                 title: 'Master Data',
                 icon: FolderTree,
-                allowedRoles: ADMIN_AND_AUDITOR,
+                allowedRoles: ['super_admin'],
                 subItems: [
-                    { title: 'Versi Aturan', url: '/master/regulatory-rules', icon: GitBranch, allowedRoles: ADMIN_AND_AUDITOR },
-                    { title: 'Klasifikasi Arsip', url: '/master/klasifikasi', allowedRoles: ADMIN_ROLES },
+                    { title: 'Versi Aturan', url: '/master/regulatory-rules', icon: GitBranch, allowedRoles: ['super_admin'] },
+                    { title: 'Klasifikasi Arsip', url: '/master/klasifikasi', allowedRoles: ['super_admin'] },
                 ],
             },
         ]
@@ -259,10 +265,29 @@ const menuGroups = [
 
 import { useAuth } from '@/context/AuthContext'
 
+function SidebarSection({ label, primary, active, compact, children }) {
+    const [open, setOpen] = useState(active)
+    if (primary) return <SidebarGroup>
+        <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</SidebarGroupLabel>
+        {children}
+    </SidebarGroup>
+    return <Collapsible asChild open={compact || open} onOpenChange={setOpen}>
+        <SidebarGroup className="mt-2">
+            {!compact && <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+                    {label}
+                    <ChevronDown aria-hidden="true" className={`ml-auto transition-transform ${open ? 'rotate-180' : ''}`} />
+                </CollapsibleTrigger>
+            </SidebarGroupLabel>}
+            <CollapsibleContent>{children}</CollapsibleContent>
+        </SidebarGroup>
+    </Collapsible>
+}
+
 export function AppSidebar() {
     const { features, capabilities } = useAppConfig()
     const location = useLocation()
-    const { setOpenMobile } = useSidebar()
+    const { setOpenMobile, state, isMobile } = useSidebar()
     const { user } = useAuth()
     const userRole = user?.role || 'user'
 
@@ -286,7 +311,7 @@ export function AppSidebar() {
 
     const isParentActive = (item) => {
         if (item.subItems) {
-            return item.subItems.some(sub => isActive(sub.url))
+            return (item.url && isActive(item.url)) || item.subItems.some(sub => isActive(sub.url))
         }
         return isActive(item.url)
     }
@@ -320,8 +345,7 @@ export function AppSidebar() {
                             .filter((item) => !item.subItems || item.subItems.length > 0)
                         if (visibleItems.length === 0) return null
                         return (
-                            <SidebarGroup key={group.label} className={groupIndex === 0 ? '' : 'mt-2'}>
-                                <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</SidebarGroupLabel>
+                            <SidebarSection key={`${group.label}:${location.pathname}`} label={group.label} primary={groupIndex < 2} active={visibleItems.some(isParentActive)} compact={state === 'collapsed' && !isMobile}>
                                 <SidebarGroupContent>
                                     <SidebarMenu>
                                         {visibleItems.map((item) => (
@@ -361,7 +385,7 @@ export function AppSidebar() {
                                         ))}
                                     </SidebarMenu>
                                 </SidebarGroupContent>
-                            </SidebarGroup>
+                            </SidebarSection>
                         )
                     })}
 

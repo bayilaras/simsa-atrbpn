@@ -34,6 +34,7 @@ import { DemoModeBadge } from '@/components/DemoModeBadge'
 // Role label mapping for display in Indonesian
 const ROLE_LABELS = {
     super_admin: 'Super Admin',
+    admin_unit: 'Admin Unit Kerja',
     admin_dirjen: 'Admin Dirjen',
     admin_sesditjen: 'Admin Sesditjen',
     staff: 'Staf',

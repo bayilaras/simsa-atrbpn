@@ -5,6 +5,7 @@ import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createStorageLocationSchema, updateStorageLocationSchema } from '../validators/schemas';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
+import { getFrontendOrigin } from '../utils/frontend-origin.js';
 
 const router = Router();
 
@@ -120,8 +121,6 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
 router.get('/:id/qr', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
-        const host = req.get('host') || 'localhost';
-        const baseUrl = `${req.protocol}://${host}`;
         const unitKerjaId = readUnitScope(req);
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk membuat QR lokasi.' });
@@ -129,7 +128,7 @@ router.get('/:id/qr', async (req: AuthRequest, res, next) => {
 
         const result = await storageLocationService.generateQRCode(
             id as string,
-            baseUrl,
+            getFrontendOrigin(),
             unitKerjaId,
         );
         res.json({ success: true, data: result });
@@ -162,13 +161,7 @@ router.post('/', canWriteMiddleware(), validateBody(createStorageLocationSchema)
         });
 
         res.status(201).json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message?.includes('not found')) {
-            return res.status(404).json({ error: error.message });
-        }
-        if (error.message?.includes('must') || error.message?.includes('Only')) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -197,17 +190,7 @@ router.put('/:id', canWriteMiddleware(), validateBody(updateStorageLocationSchem
         }
 
         res.json({ success: true, data: result });
-    } catch (error: any) {
-        if (error.message?.includes('not found')) {
-            return res.status(404).json({ error: error.message });
-        }
-        if (
-            error.message?.includes('cannot') ||
-            error.message?.includes('must') ||
-            error.message?.includes('Only')
-        ) {
-            return res.status(400).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });
@@ -236,10 +219,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
         }
 
         res.json({ success: true, message: 'Storage location deleted successfully' });
-    } catch (error: any) {
-        if (error.message.includes('Cannot delete')) {
-            return res.status(409).json({ error: error.message });
-        }
+    } catch (error) {
         next(error);
     }
 });

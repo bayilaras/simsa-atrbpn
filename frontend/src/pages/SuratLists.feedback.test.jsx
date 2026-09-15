@@ -61,7 +61,7 @@ describe.each([...letters, { kind: 'arsip', Component: Arsip }])('$kind statisti
         mocks[kind].getStats.mockImplementationOnce(() => new Promise((_, reject) => { rejectStats = reject; }));
         renderList(Component, kind);
         expect(totalValue()).toHaveTextContent('—');
-        expect(screen.getByRole('status')).toHaveTextContent('Memuat statistik');
+        expect(screen.getByText('Memuat statistik…')).toHaveAttribute('role', 'status');
         await act(async () => rejectStats(new Error('Statistics offline')));
         expect(await screen.findByRole('alert')).toHaveTextContent('Statistik belum tersedia');
         expect(totalValue()).toHaveTextContent('—');
@@ -161,7 +161,7 @@ describe('visible search and associated filter labels', () => {
         { kind: 'arsip', Component: Arsip, search: 'Cari arsip', filters: ['Tahun Arsip'] },
     ])('labels the real $kind controls', async ({ kind, Component, search, filters }) => {
         renderList(Component, kind);
-        const searchInput = screen.getByRole('textbox', { name: search });
+        const searchInput = screen.getByRole(kind === 'arsip' ? 'searchbox' : 'textbox', { name: search });
         const searchLabel = screen.getByText(search, { selector: 'label' });
         expect(searchLabel).toBeVisible();
         expect(searchLabel.htmlFor).toBe(searchInput.id);

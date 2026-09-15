@@ -23,7 +23,8 @@ export async function uploadArsipAttachment(arsipId, file, { sleep = delay } = {
     // Completion callbacks may arrive just after upload() returns. Retry only
     // this known state, always against the same object; no second upload/delete.
     for (let attempt = 0; ; attempt += 1) {
-        try { return await api.post(endpoint, metadata) }
+        // Allow the server's 30s file inspection plus its database transaction.
+        try { return await api.post(endpoint, metadata, { timeoutMs: 60_000 }) }
         catch (failure) {
             if (failure?.status !== 409 || failure?.data?.code !== 'UPLOAD_COMPLETION_PENDING' || attempt >= 4) throw failure
             await sleep(250 * 2 ** attempt)

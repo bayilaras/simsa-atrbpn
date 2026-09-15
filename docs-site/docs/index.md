@@ -14,7 +14,7 @@ title: 👋 Selamat Datang
 Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar tanpa hambatan.
 
 :::important Profil aplikasi internal
-SIMSA membantu pekerjaan internal; pencantuman pedoman ATR/BPN dan ANRI bukan sertifikasi kepatuhan. Inventaris metadata tidak menunggu konektor API SRIKANDI atau unggahan digital. Kewajiban instansi menerapkan SRIKANDI tetap terpisah dari konektor SIMSA. Gunakan instrumen instansi yang sudah berlaku. [Baca profil aplikasi internal](/profil-aplikasi-internal).
+SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi prasyarat fitur inti dan tetap nonaktif pada penerapan saat ini. Mulai dengan metadata dan arsip fisik; fitur digital digunakan setelah penyimpanan serta pemeriksaan berkas siap. Gunakan instrumen instansi yang berlaku. [Baca profil aplikasi internal](/profil-aplikasi-internal) untuk konfigurasi, kontrol, dan batas klaim produk.
 :::
 
 ---

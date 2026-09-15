@@ -11,7 +11,22 @@ const output = join(project, 'dist-vercel');
 if (existsSync(output) && realpathSync(output) !== join(realpathSync(project), 'dist-vercel')) {
     throw new Error('Vercel build output must remain inside backend');
 }
+// The cloud builder can reload backend/vercel.json and discard CLI command
+// overrides. Keep candidate verification in the canonical build entry point.
+if (process.env.SIMSA_VERIFY_CANDIDATE_SOURCE === '1') {
+    const verification = spawnSync(process.execPath, [join(project, '../scripts/verify-candidate-source.mjs'), 'backend'], {
+        cwd: project, stdio: 'inherit', windowsHide: true, shell: false,
+    });
+    if (verification.error || verification.status !== 0) throw new Error('Backend candidate source verification failed');
+}
 const npm = resolveNpmCli();
+// PDF.js loads its worker and native canvas through dynamic runtime paths that
+// the serverless dependency tracer cannot reliably infer. Verify the explicit
+// function assets and parse a real PDF before producing a deployable build.
+const pdfRuntime = spawnSync(process.execPath, [join(project, 'scripts/verify-pdf-runtime.mjs')], {
+    cwd: project, stdio: 'inherit', windowsHide: true, shell: false,
+});
+if (pdfRuntime.error || pdfRuntime.status !== 0) throw new Error('PDF runtime packaging verification failed');
 const result = spawnSync(process.execPath, [npm, 'run', 'build', '--', '--out-dir', 'dist-vercel'], {
     cwd: project, stdio: 'inherit', windowsHide: true, shell: false,
 });
