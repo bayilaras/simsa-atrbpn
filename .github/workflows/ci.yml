@@ -373,6 +373,17 @@ jobs:
         run: npx vitest run --reporter=verbose
         working-directory: backend
 
+      # PostgreSQL role memberships are cluster-wide. Run the alternate
+      # upgrade fixture before the canonical bootstrap restores CI principals.
+      - name: Verify the exact 0038 backup baseline and upgrade to the current journal
+        run: |
+          node --test .github/scripts/backup-upgrade-target.test.mjs
+          node .github/scripts/test-backup-upgrade-profile.mjs
+        env:
+          TEST_POSTGRES_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
+          TEST_POSTGRES_IMAGE: ${{ env.POSTGRES_IMAGE }}
+          TEST_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+
       - name: Bootstrap least-privilege roles, migrate, and prove seed idempotency
         run: |
           set -euo pipefail
@@ -780,15 +791,6 @@ jobs:
           ROLLBACK;
           SQL
           grep -Fq $'schema_profile\tpre_migration\t1\t' "$PRE_AUTO_EVIDENCE"
-
-      - name: Verify the exact 0038 backup baseline and upgrade to the current journal
-        run: |
-          node --test .github/scripts/backup-upgrade-target.test.mjs
-          node .github/scripts/test-backup-upgrade-profile.mjs
-        env:
-          TEST_POSTGRES_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
-          TEST_POSTGRES_IMAGE: ${{ env.POSTGRES_IMAGE }}
-          TEST_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
 
       - name: Run PostgreSQL concurrency tests
         run: npm run test:postgres-locks
