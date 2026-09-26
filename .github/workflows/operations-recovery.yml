@@ -38,7 +38,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-18 postgresql-client-18
       - name: Check recovery boundaries and encryption contracts
-        run: node --test scripts/operations-recovery-documents.test.mjs scripts/operations-recovery.test.mjs
+        env:
+          OPERATIONS_RECOVERY_TEST_PG_BIN: /usr/lib/postgresql/18/bin
+        run: node --test scripts/operations-recovery-documents.test.mjs scripts/operations-recovery.test.mjs scripts/operations-recovery-target.test.mjs
       - name: Capture, encrypt, restore and publish sanitized latest result
         env:
           NEON_BACKUP_DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}

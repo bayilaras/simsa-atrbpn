@@ -17,7 +17,7 @@ concurrency:
 jobs:
   lint-and-typecheck:
     name: Lint & Type Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -37,12 +37,25 @@ jobs:
         run: npm ci
         working-directory: backend
 
+      - name: Install PostgreSQL 18 for the isolated recovery target regression
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg /etc/postgresql-common
+          echo 'create_main_cluster = false' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-18 postgresql-client-18
+
       - name: Test operations monitoring, recovery, and integrity contracts
+        env:
+          OPERATIONS_RECOVERY_TEST_PG_BIN: /usr/lib/postgresql/18/bin
         run: >-
           node --test
           scripts/check-operations.test.mjs
           scripts/operations-recovery.test.mjs
           scripts/operations-recovery-documents.test.mjs
+          scripts/operations-recovery-target.test.mjs
           scripts/check-file-integrity.test.mjs
 
       - name: Install frontend dependencies
