@@ -21,6 +21,12 @@ const SIFAT_VALUES: Array<string | null> = [
     'Sangat Segera', 'biasa', 'Rahasia', 'Terbatas', '', null, ' Biasa ', 'sangat-segera', 'Biasa/Terbuka',
     ...JS_WHITESPACE.map(cp => {
         const ch = String.fromCharCode(cp);
+        // PGlite (diverifikasi pada 0.5.7 dan 0.5.8) memotong satu karakter U+FEFF (BOM)
+        // bila karakter itu menjadi karakter PERTAMA nilai text yang dikembalikan SELECT
+        // (kuirk decoding pada sisi PGlite, bukan pada Postgres/pg.Client produksi).
+        // Untuk 0xfeff, jangan taruh ch di posisi pertama; kode titik itu tetap tercakup
+        // lewat kemunculan di tengah dan di akhir string.
+        if (cp === 0xfeff) return `Sangat${ch}Segera${ch}`;
         return `${ch}Sangat${ch}Segera${ch}`;
     }),
 ];
