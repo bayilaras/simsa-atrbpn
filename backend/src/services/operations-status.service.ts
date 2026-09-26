@@ -2,7 +2,6 @@ import { get } from '@vercel/blob';
 import type { QueryConfig } from 'pg';
 import { pool } from '../config/database.js';
 import { getReadiness } from './readiness.service.js';
-import { PRIVATE_LETTER_BLOB_SQL_PATTERN } from './file-release-policy.js';
 
 export const RECOVERY_STATUS_PATH = 'operations/recovery-status-v1.json';
 type Status = 'healthy' | 'attention' | 'failed' | 'unknown' | 'disabled';
@@ -86,18 +85,19 @@ async function readRecoveryEvidence() {
 
 export async function collectOperationsStatus() {
     // Keep queue membership aligned with the actual scan/fixity workers.
-    const eligible = `NOT (entity_type IN ('surat_masuk', 'surat_keluar') AND coalesce(nullif(file_url, ''), drive_file_id, '') ~* '${PRIVATE_LETTER_BLOB_SQL_PATTERN}')`;
-    const pendingScan = `(${eligible}) AND (malware_scan_status='not_scanned'
+    // Legacy not_required letter attachments stay counted until the baseline
+    // backfill queues them, so operators can see they are not yet released.
+    const pendingScan = `(malware_scan_status IN ('not_scanned', 'not_required')
         OR (malware_scan_status='clean' AND (integrity_status <> 'verified' OR sha256 IS NULL OR sha256 !~* '^[a-f0-9]{64}$'))
         OR malware_scan_status ~ '^(scanning|retry):[1-9][0-9]?:[0-9]{1,12}$')`;
-    const fixityEligible = `(${eligible}) AND f.storage_access='private' AND f.malware_scan_status='clean'
+    const fixityEligible = `f.storage_access='private' AND f.malware_scan_status='clean'
         AND f.sha256 IS NOT NULL AND f.integrity_status <> 'mismatch'`;
     const [ready, queue, recovery] = await Promise.allSettled([
         getReadiness(),
         pool.query({ text: `SELECT
             (SELECT count(*) FROM file_attachments WHERE ${pendingScan}) AS "scanWaiting",
             (SELECT count(*) FROM file_attachments WHERE ${pendingScan} AND created_at < now() - interval '30 minutes') AS "scanOverdue",
-            (SELECT count(*) FROM file_attachments WHERE ${eligible} AND malware_scan_status IN ('scan_error', 'infected')) AS "scanErrors",
+            (SELECT count(*) FROM file_attachments WHERE malware_scan_status IN ('scan_error', 'infected')) AS "scanErrors",
             (SELECT count(*) FROM file_fixity_jobs j JOIN file_attachments f ON f.id=j.attachment_id
                 WHERE ${fixityEligible} AND j.next_check_at < now() - interval '1 hour') AS "fixityOverdue",
             (SELECT count(*) FROM file_fixity_jobs j JOIN file_attachments f ON f.id=j.attachment_id

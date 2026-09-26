@@ -25,11 +25,17 @@ describe('attachment integrity state updates', () => {
         mocks.download.mockImplementation(async () => ({ stream: Readable.from([content]) }));
     });
 
-    it.each(['surat_masuk', 'surat_keluar'])('does not run hash verification for old %s attachments', async entityType => {
+    it.each(['surat_masuk', 'surat_keluar'])('runs hash verification for private Blob %s attachments', async entityType => {
         mocks.select.mockReturnValue({ from: () => ({ where: () => ({ limit: async () => [{ ...record, entityType, fileUrl: 'https://store.private.blob.vercel-storage.com/record.pdf', objectGeneration: null }] }) }) });
+        expect(await fileAttachmentService.verifyIntegrity(record.id)).not.toBeNull();
+        expect(mocks.download).toHaveBeenCalledTimes(1);
+        expect(mocks.update).toHaveBeenCalled();
+    });
+
+    it('does not run hash verification for legacy attachments without a baseline', async () => {
+        mocks.select.mockReturnValue({ from: () => ({ where: () => ({ limit: async () => [{ ...record, entityType: 'surat_masuk', sha256: null }] }) }) });
         expect(await fileAttachmentService.verifyIntegrity(record.id)).toBeNull();
         expect(mocks.download).not.toHaveBeenCalled();
-        expect(mocks.update).not.toHaveBeenCalled();
     });
 
     it('rejects a result whose baseline changed before it could be committed', async () => {

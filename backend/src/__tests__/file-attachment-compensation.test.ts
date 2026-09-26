@@ -69,17 +69,15 @@ describe('FileAttachmentService Blob compensation', () => {
         mocks.audit.mockResolvedValue(undefined);
     });
 
-    it.each(['masuk', 'keluar'] as const)('stores %s attachments without computing or inventing inspection evidence', async suratType => {
+    it.each(['masuk', 'keluar'] as const)('hashes and quarantines %s letter attachments like any other bitstream', async suratType => {
         mocks.insert.mockReturnValue({ values: (data: any) => ({ returning: async () => [{ id: 'attachment-1', ...data }] }) });
-        const digest = vi.spyOn(crypto, 'createHash');
-        try {
-            const result = await new FileAttachmentService().create({
-                suratId: '11111111-1111-4111-8111-111111111111', suratType,
-                fileName: 'request.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7'),
-            }, { userId: directClaim.uploadedBy });
-            expect(result).toMatchObject({ hash: null, sha256: null, integrityStatus: 'not_required', malwareScanStatus: 'not_required', storageAccess: 'private' });
-            expect(digest).not.toHaveBeenCalled();
-        } finally { digest.mockRestore(); }
+        const content = Buffer.from('%PDF-1.7');
+        const expected = crypto.createHash('sha256').update(content).digest('hex');
+        const result = await new FileAttachmentService().create({
+            suratId: '11111111-1111-4111-8111-111111111111', suratType,
+            fileName: 'request.pdf', mimeType: 'application/pdf', buffer: content,
+        }, { userId: directClaim.uploadedBy });
+        expect(result).toMatchObject({ hash: expected, sha256: expected, integrityStatus: 'baseline_recorded', malwareScanStatus: 'not_scanned', storageAccess: 'private' });
     });
 
     it('continues hashing and quarantining archive evidence uploads', async () => {
@@ -209,19 +207,16 @@ describe('FileAttachmentService direct Blob preflight', () => {
         vi.clearAllMocks();
     });
 
-    it.each(['surat_masuk', 'surat_keluar'] as const)('validates and registers direct %s PDF bytes without hashing them', async purpose => {
+    it.each(['surat_masuk', 'surat_keluar'] as const)('hashes direct %s PDF bytes and queues them for inspection', async purpose => {
         vi.spyOn(clientBlobUploadService, 'preAuthorizeClaim').mockResolvedValueOnce({} as any);
         mocks.downloadFile.mockResolvedValueOnce({ stream: Readable.from([Buffer.from('%P'), Buffer.from('DF-1.7')]), mimeType: 'application/pdf' });
         mocks.insert.mockReturnValue({ values: (data: any) => ({ returning: async () => [{ id: 'attachment-1', ...data }] }) });
-        const digest = vi.spyOn(crypto, 'createHash');
-        try {
-            const service = new FileAttachmentService();
-            const prepared = await service.prepareExisting(directAttachment, { clientBlobClaim: { ...directClaim, purpose }, expectedPurpose: purpose });
-            expect(prepared).toMatchObject({ mimeType: 'application/pdf', sizeBytes: 8, sha256: null });
-            const attachment = await service.insertPrepared({ ...prepared, entityId: '11111111-1111-4111-8111-111111111111', entityType: purpose });
-            expect(attachment).toMatchObject({ sha256: null, integrityStatus: 'not_required', malwareScanStatus: 'not_required', storageAccess: 'private' });
-            expect(digest).not.toHaveBeenCalled();
-        } finally { digest.mockRestore(); }
+        const expected = crypto.createHash('sha256').update('%PDF-1.7').digest('hex');
+        const service = new FileAttachmentService();
+        const prepared = await service.prepareExisting(directAttachment, { clientBlobClaim: { ...directClaim, purpose }, expectedPurpose: purpose });
+        expect(prepared).toMatchObject({ mimeType: 'application/pdf', sizeBytes: 8, sha256: expected });
+        const attachment = await service.insertPrepared({ ...prepared, entityId: '11111111-1111-4111-8111-111111111111', entityType: purpose });
+        expect(attachment).toMatchObject({ sha256: expected, integrityStatus: 'baseline_recorded', malwareScanStatus: 'not_scanned', storageAccess: 'private' });
     });
 
     it('rejects invalid PDF bytes even when letter inspections are disabled', async () => {

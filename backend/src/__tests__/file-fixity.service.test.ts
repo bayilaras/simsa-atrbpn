@@ -128,15 +128,16 @@ describe('scheduled file integrity checks', () => {
         expect((await database.query('SELECT last_fixity_check_at FROM file_attachments')).rows).toEqual([{ last_fixity_check_at: null }]);
     });
 
-    it.each(['surat_masuk', 'surat_keluar'])('excludes old %s attachments from new and already queued fixity work', async entityType => {
+    it.each(['surat_masuk', 'surat_keluar'])('schedules fixity work for scanned private Blob %s attachments', async entityType => {
         await database.query("UPDATE file_attachments SET entity_type=$1, file_url='https://store.private.blob.vercel-storage.com/record.pdf', object_generation=null", [entityType]);
-        const service = new FileFixityService(pool, download);
-        expect(await service.run(config)).toMatchObject({ checked: 0 });
-        expect((await database.query('SELECT * FROM file_fixity_jobs')).rows).toHaveLength(0);
-        await database.query('INSERT INTO file_fixity_jobs (attachment_id) VALUES ($1)', [id]);
-        expect(await service.run(config)).toMatchObject({ checked: 0 });
+        expect(await new FileFixityService(pool, download).run(config)).toMatchObject({ checked: 1, matched: 1 });
+        expect(download).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves legacy not_required letter attachments out of fixity until they are scanned', async () => {
+        await database.query("UPDATE file_attachments SET entity_type='surat_masuk', file_url='https://store.private.blob.vercel-storage.com/record.pdf', object_generation=null, sha256=null, integrity_status='not_required', malware_scan_status='not_required'");
+        expect(await new FileFixityService(pool, download).run(config)).toMatchObject({ checked: 0 });
         expect(download).not.toHaveBeenCalled();
-        expect((await database.query('SELECT last_fixity_check_at FROM file_attachments')).rows).toEqual([{ last_fixity_check_at: null }]);
     });
 
     it('does not let the HTTP API write or delete operational check results', async () => {

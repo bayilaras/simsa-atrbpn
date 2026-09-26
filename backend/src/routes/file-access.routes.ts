@@ -8,7 +8,7 @@ import { validateIdParam } from '../middlewares/validate.middleware';
 import { auditLogService } from '../services/audit-log.service';
 import { blobStorageService } from '../services/blob-storage.service';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
-import { isAttachmentAvailable, requiresAttachmentInspection, quarantinedFileScanState } from '../services/file-release-policy.js';
+import { isFileReleased, quarantinedFileScanState } from '../services/file-release-policy.js';
 import { createLogger } from '../utils/logger';
 import {
     normalizeStoredObjectLocator,
@@ -181,10 +181,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 return res.status(404).json({ error: 'File not found' });
             }
 
-            if (!isAttachmentAvailable(attachment)) {
-                if (!requiresAttachmentInspection(attachment.entityType, attachment.fileUrl || attachment.driveFileId)) {
-                    return res.status(423).json({ error: 'File unavailable', message: 'Dokumen belum tersedia. Periksa kembali lampiran surat.' });
-                }
+            if (!isFileReleased(attachment)) {
                 return res.status(423).json({
                     error: 'File quarantined',
                     scanState: quarantinedFileScanState(attachment),
@@ -230,7 +227,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
         if (!locator) return res.status(404).json({ error: 'File not found' });
 
         // Keep the registered private object tied to this exact parent and
-        // locator. Private Blob letter access does not depend on inspection.
+        // locator, and serve it only after the scan released that registration.
         const registrations = await db
             .select()
             .from(fileAttachments)
@@ -244,17 +241,11 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             );
             return registeredLocator === locator;
         });
-        const releasedRegistration = matchingRegistrations.find(isAttachmentAvailable);
+        const releasedRegistration = matchingRegistrations.find(isFileReleased);
         if (!releasedRegistration) {
-            if (requiresAttachmentInspection(entityType, locator)) {
-                return res.status(423).json({ error: 'File quarantined',
-                    scanState: matchingRegistrations.length === 1 ? quarantinedFileScanState(matchingRegistrations[0]) : 'unavailable',
-                    message: 'Dokumen belum tersedia untuk dibuka.' });
-            }
-            return res.status(423).json({
-                error: 'File unavailable',
-                message: 'Dokumen belum terdaftar sebagai lampiran privat surat ini. Periksa kembali lampiran surat.',
-            });
+            return res.status(423).json({ error: 'File quarantined',
+                scanState: matchingRegistrations.length === 1 ? quarantinedFileScanState(matchingRegistrations[0]) : 'unavailable',
+                message: 'Dokumen belum tersedia untuk dibuka.' });
         }
 
         return await streamAuthorizedFile(req, res, {

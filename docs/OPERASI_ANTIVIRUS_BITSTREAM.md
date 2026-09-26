@@ -162,3 +162,26 @@ rilis, tetap uji setidaknya: `PING` ke scanner, sampel bersih, sampel uji EICAR
 yang disediakan resmi oleh organisasi antivirus, scanner mati/timeout, objek
 lebih besar dari batas, serta perubahan byte setelah baseline. Jangan menandai
 status database secara manual sebagai `clean`.
+
+## Lampiran surat lama tanpa pemindaian
+
+Semua lampiran, termasuk PDF surat masuk/keluar di Vercel Blob privat, hanya
+dapat dibuka setelah pemindai menyatakan `clean` dan hash cocok. Lampiran surat
+yang tersimpan sebelum aturan ini berstatus `not_required` tanpa hash; lampiran
+tersebut ditahan (423, status `pending`) dan dihitung pada antrean pemindaian
+di Monitoring Operasional sampai diproses.
+
+Setelah backend baru aktif, jalankan dari direktori `backend` dengan
+`DATABASE_URL` dan `BLOB_READ_WRITE_TOKEN` produksi:
+
+1. `npm run files:letter-scan-backfill:plan` — hanya membaca, menghitung hash
+   setiap berkas lama, dan melaporkan jumlahnya tanpa mengubah data.
+2. `npm run files:letter-scan-backfill:apply` — mencatat hash dan ukuran dari
+   objek tersimpan, mengubah status menjadi `not_scanned`, dan menulis audit
+   `system:letter-attachment-scan-backfill`. Worker antivirus kemudian memindai
+   seperti unggahan baru.
+
+Berkas yang tidak dapat dibaca, melebihi 64 MiB, atau ukurannya berbeda dari
+catatan tetap `not_required` dan tertahan; skrip keluar dengan kode 2 dan
+mencatat ID lampiran untuk ditinjau. Skrip aman diulang karena hanya memproses
+baris yang masih `not_required`.
