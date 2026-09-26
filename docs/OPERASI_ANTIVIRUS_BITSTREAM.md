@@ -180,6 +180,11 @@ Setelah backend baru aktif, jalankan dari direktori `backend` dengan
    objek tersimpan, mengubah status menjadi `not_scanned`, dan menulis audit
    `system:letter-attachment-scan-backfill`. Worker antivirus kemudian memindai
    seperti unggahan baru.
+3. Skrip tidak membangunkan pemindai. Klik **Lanjutkan pemeriksaan** pada salah
+   satu lampiran yang menunggu. Setiap pemanggilan worker memindai satu berkas,
+   tetapi satu pemicu terus membangunkannya sampai antrean kosong, maksimal 25
+   berkas dan selama sisa batas waktu permintaan. Ulangi klik bila Monitoring
+   Operasional masih menunjukkan antrean.
 
 Berkas yang tidak dapat dibaca, melebihi 64 MiB, atau ukurannya berbeda dari
 catatan tetap `not_required` dan tertahan; skrip keluar dengan kode 2 dan
