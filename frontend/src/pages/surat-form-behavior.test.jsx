@@ -168,9 +168,9 @@ it('associates the incoming disposition error with the real multiselect trigger'
     expect(screen.getByRole('alert')).toHaveFocus();
 });
 
-it('names the outgoing reply selector for keyboard and screen reader users', async () => {
+it('names the outgoing reference display for keyboard and screen reader users', async () => {
     await renderForm(pages[1]);
-    expect(screen.getByRole('combobox', { name: 'Surat masuk yang dibalas' })).toBeEnabled();
+    expect(screen.getByText('Nomor Referensi')).toBeInTheDocument();
 });
 
 it.each(pages)('associates the $kind document requirement with both available document controls', async page => {

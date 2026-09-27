@@ -246,6 +246,7 @@ const router = createBrowserRouter([
       { path: "/surat/masuk/edit/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratMasuk /></RoleGuard> },
       { path: "/surat/keluar", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><SuratKeluar /></RoleGuard> },
       { path: "/surat/keluar/tambah", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar /></RoleGuard> },
+      { path: "/surat/keluar/inisiatif", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar mode="inisiatif" /></RoleGuard> },
       { path: "/surat/keluar/:id", element: <SuratKeluarDetail /> },
       { path: "/surat/keluar/edit/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar /></RoleGuard> },
       { path: "/distribusi", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><DistributionInbox /></RoleGuard> },
