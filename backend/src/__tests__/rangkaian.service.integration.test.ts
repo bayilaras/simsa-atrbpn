@@ -196,20 +196,25 @@ function simulateGabungMidFindMembership(
 
 /**
  * Simulasi deterministik race Task 12 review: anggota lain masuk ke rangkaian
- * sumber (induk 1-anggota) TEPAT di antara pembacaan keanggotaan (`member`,
- * panggilan select ke-4 = `findMembership`) dan keputusan gabung/tolak
- * berikutnya. Trik sama seperti `simulateGabungMidFindMembership` Task 9/11:
- * bungkus `tx.select` supaya panggilan select KE-5 milik `attach` — yaitu
- * SELECT `lockRangkaian` (sumber+tujuan) di dalam blok keputusan gabung —
- * hanya mengembalikan hasilnya ke pemanggil SETELAH `onIntercepted` (mutasi
- * "bersamaan": anggota baru masuk ke sumber, dalam transaksi yang sama)
- * benar-benar berjalan. Indeksnya ke-5, bukan ke-3, karena perbaikan Minor 1
- * (review final) menambah dua SELECT (lockRangkaian rangkaian tujuan + query
- * keAnggotaId) tepat setelah `lockSurat` tapi SEBELUM `findMembership`, supaya
- * validasi keAnggotaId berjalan sebelum gabung implisit bisa memutasi data.
+ * sumber (induk 1-anggota) TEPAT di antara pembacaan kunci sumber+tujuan dan
+ * keputusan gabung/tolak berikutnya. Trik sama seperti
+ * `simulateGabungMidFindMembership` Task 9/11: bungkus `tx.select` supaya
+ * panggilan select KE-3 milik `attach` — yaitu SELECT `lockRangkaian`
+ * (sumber+tujuan, satu pernyataan gabungan) — hanya mengembalikan hasilnya ke
+ * pemanggil SETELAH `onIntercepted` (mutasi "bersamaan": anggota baru masuk ke
+ * sumber, dalam transaksi yang sama) benar-benar berjalan.
+ *
+ * Indeksnya ke-3 (bukan ke-5 seperti sebelum perbaikan urutan kunci): fix
+ * defect commit 1718e51 memindahkan `findMembership` (select ke-2) SEBELUM
+ * kunci rangkaian pertama, dan menggabungkan kunci target-saja +
+ * kunci-sumber-tujuan lama menjadi SATU pernyataan `lockRangkaian` (select
+ * ke-3) yang selalu mencakup sumber+tujuan sekaligus bila keduanya relevan —
+ * bukan lagi kunci target-saja diikuti kunci gabungan terpisah belakangan.
  * Query manapun yang diintersepsi diekspos lewat `interceptedRows` supaya
  * test bisa menyatakan query mana yang sebenarnya tertangkap (lihat catatan
- * "target the count query" pada review).
+ * "target the count query" pada review, dan assert `toHaveLength(2)` di bawah
+ * yang memastikan panggilan ini benar-benar kunci gabungan, bukan kunci
+ * target sendirian).
  */
 function simulateAnggotaBaruSebelumKeputusanGabung(
     tx: any,
@@ -244,9 +249,97 @@ function simulateAnggotaBaruSebelumKeputusanGabung(
     vi.spyOn(tx, 'select').mockImplementation((columns: any) => {
         const builder = originalSelect(columns);
         outerSelectCount += 1;
-        return outerSelectCount === 5 ? wrapThenable(builder) : builder;
+        return outerSelectCount === 3 ? wrapThenable(builder) : builder;
     });
     return capture;
+}
+
+/**
+ * Fix defect lock-order (commit 1718e51, ~rangkaian.service.ts:640-700):
+ * `attach()` mengunci rangkaian TARGET sendirian (`lockRangkaian(tx,
+ * [input.rangkaianId])`) sebelum tahu apakah surat itu sudah menjadi anggota
+ * rangkaian SUMBER lain; ketika jalur gabung implisit berjalan, sumber+target
+ * dikunci lagi belakangan dalam pernyataan terpisah. Saat sumberId < targetId,
+ * urutan efektif penguncian menjadi target→sumber, melanggar kontrak "ORDER BY
+ * id" dan berisiko deadlock 40P01 terhadap transaksi lain (gabung/
+ * recomputeStatus/attach) yang mengunci sumber lalu menunggu target.
+ *
+ * Trik pembuktian deterministik (satu koneksi PGlite, tanpa transaksi kedua
+ * yang benar-benar konkuren — lihat catatan di
+ * `simulateGabungMidFindMembership` di atas): bungkus `tx.select` supaya
+ * SETIAP panggilan select direkam, dan catat baris SELECT PERTAMA yang
+ * berbentuk baris `rangkaian_surat` terkunci milik `lockRangkaian` (dikenali
+ * lewat kolom `asal` + `selesaiManual`, yang HANYA ada pada hasil
+ * `lockRangkaian` — `findMembership` juga memuat kolom `kode` sehingga tidak
+ * bisa dipakai sebagai pembeda). Pada kode SEBELUM fix, SELECT `rangkaian_surat`
+ * PERTAMA yang tertangkap adalah kunci target-saja (1 baris) — baris ini
+ * GAGAL memuat sumber sama sekali, membuktikan kunci sumber+target tidak
+ * pernah diambil bersamaan dalam satu pernyataan terurut. Pada kode SETELAH
+ * fix, SELECT pertama itu adalah kunci gabungan (2 baris, mencakup sumber DAN
+ * target) — ORDER BY id di dalam `lockRangkaian` menjamin urutan menaik di
+ * dalam pernyataan tunggal itu.
+ */
+function tangkapKunciRangkaianPertama(tx: any): { first: Array<Record<string, unknown>> | undefined } {
+    const originalSelect = tx.select.bind(tx);
+    const state: { first: Array<Record<string, unknown>> | undefined } = { first: undefined };
+
+    function wrapThenable(target: any): any {
+        return new Proxy(target, {
+            get(obj, prop, receiver) {
+                const value = Reflect.get(obj, prop, receiver);
+                if (prop === 'then') {
+                    return (onFulfilled?: any, onRejected?: any) => value.call(obj, (rows: unknown) => {
+                        if (
+                            state.first === undefined
+                            && Array.isArray(rows) && rows.length > 0
+                            && typeof rows[0] === 'object' && rows[0] !== null
+                            && 'asal' in (rows[0] as object) && 'selesaiManual' in (rows[0] as object)
+                        ) {
+                            state.first = rows as Array<Record<string, unknown>>;
+                        }
+                        return onFulfilled ? onFulfilled(rows) : rows;
+                    }, onRejected);
+                }
+                if (typeof value === 'function') {
+                    return (...args: any[]) => {
+                        const result = value.apply(obj, args);
+                        return result && typeof result === 'object' ? wrapThenable(result) : result;
+                    };
+                }
+                return value;
+            },
+        });
+    }
+
+    vi.spyOn(tx, 'select').mockImplementation((columns: any) => wrapThenable(originalSelect(columns)));
+    return state;
+}
+
+async function rangkaianRaw(id: string, kode: string, unitPencatatId = 'sesditjen') {
+    await database.query(
+        `INSERT INTO rangkaian_surat (id, kode, asal, unit_pencatat_id, judul, tahun)
+         VALUES ($1, $2, 'surat_masuk', $3, $4, 2026)`,
+        [id, kode, unitPencatatId, kode],
+    );
+    return id;
+}
+
+async function indukKeluarRaw(rangkaianId: string, suratKeluarId: string) {
+    const { rows } = await database.query<{ id: string }>(
+        `INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id, peran)
+         SELECT $1, id, unit_kerja_id, 'induk' FROM surat_keluar WHERE id = $2 RETURNING id`,
+        [rangkaianId, suratKeluarId],
+    );
+    return rows[0].id;
+}
+
+async function indukMasukRaw(rangkaianId: string, suratMasukId: string) {
+    const { rows } = await database.query<{ id: string }>(
+        `INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran)
+         SELECT $1, id, unit_kerja_id, 'induk' FROM surat_masuk WHERE id = $2 RETURNING id`,
+        [rangkaianId, suratMasukId],
+    );
+    return rows[0].id;
 }
 
 beforeAll(async () => {
@@ -784,14 +877,88 @@ describe('rangkaianService.attach — race Task 12 review (interleaved dalam sat
             }, actor);
         })).rejects.toMatchObject({ statusCode: 409 });
 
-        // Dokumentasi: dengan perbaikan review, query yang diintersepsi adalah
-        // SELECT lockRangkaian (baris sumber+tujuan, masing-masing berkolom
-        // "kode") — bukan lagi SELECT hitung jumlah anggota, karena perbaikan
-        // memindahkan penguncian sebelum penghitungan.
+        // Dokumentasi: dengan perbaikan urutan kunci, query yang diintersepsi
+        // (select ke-3) adalah SATU-SATUNYA SELECT lockRangkaian milik jalur
+        // ini — kunci gabungan sumber+tujuan, masing-masing berkolom "kode" —
+        // bukan lagi SELECT hitung jumlah anggota (perbaikan Task 12
+        // memindahkan penguncian sebelum penghitungan), dan bukan pula kunci
+        // TARGET SENDIRIAN (defect lock-order commit 1718e51: sebelumnya
+        // target dikunci lebih dulu dalam pernyataan terpisah). toHaveLength(2)
+        // + assert id memastikan baris yang tertangkap benar-benar kunci
+        // gabungan atas KEDUA rangkaian, bukan hanya salah satunya.
         expect(Array.isArray(capture?.interceptedRows)).toBe(true);
-        expect((capture!.interceptedRows as Array<Record<string, unknown>>)[0]).toHaveProperty('kode');
+        const interceptedRows = capture!.interceptedRows as Array<Record<string, unknown>>;
+        expect(interceptedRows[0]).toHaveProperty('kode');
+        expect(interceptedRows).toHaveLength(2);
+        expect(interceptedRows.map((row) => row.id).sort()).toEqual(
+            [tunggal.rangkaianId, tujuan.rangkaianId].sort(),
+        );
 
         expect(await rangkaianRow(tunggal.rangkaianId)).toMatchObject({ status: 'aktif', digabung_ke_id: null });
+    });
+});
+
+describe('rangkaianService.attach — urutan kunci menaik pada jalur gabung implisit (fix defect lock-order commit 1718e51)', () => {
+    async function siapkanPasanganGabung(sumberId: string, targetId: string, label: string) {
+        const skSumber = await suratKeluar('dir_bppt', 'approved');
+        await rangkaianRaw(sumberId, `RS-LOCKORDER-SUMBER-${label}`);
+        await indukKeluarRaw(sumberId, skSumber);
+
+        const smTarget = await suratMasuk('sesditjen');
+        await rangkaianRaw(targetId, `RS-LOCKORDER-TARGET-${label}`);
+        const targetAnggotaId = await indukMasukRaw(targetId, smTarget);
+
+        return { skSumber, targetAnggotaId };
+    }
+
+    // Sebelum fix, SELECT rangkaian_surat PERTAMA yang tertangkap adalah kunci
+    // TARGET SENDIRIAN (`lockRangkaian(tx, [input.rangkaianId])`, 1 baris) —
+    // baris sumber tidak ikut terkunci dalam pernyataan itu sama sekali,
+    // regardless urutan id. Test ini genuinely RED pada kode sebelum fix
+    // (`interceptedRows` panjang 1, bukan 2) pada KEDUA arah perbandingan id;
+    // risiko 40P01 sesungguhnya hanya muncul pada arah sumberId < targetId
+    // (lihat catatan di `tangkapKunciRangkaianPertama`), tapi cacat struktural
+    // "dua pernyataan kunci terpisah" itu sendiri ada pada kedua arah.
+    it('mengunci sumber+tujuan dalam SATU pernyataan terurut id saat sumberId < targetId', async () => {
+        const sumberId = uuidOf('91', 1);
+        const targetId = uuidOf('91', 2);
+        expect(sumberId < targetId).toBe(true);
+        const { skSumber, targetAnggotaId } = await siapkanPasanganGabung(sumberId, targetId, '1');
+
+        let capture: { first: Array<Record<string, unknown>> | undefined } | undefined;
+        await inTx(async (tx) => {
+            capture = tangkapKunciRangkaianPertama(tx);
+            return rangkaianService.attach(tx, {
+                rangkaianId: targetId, surat: { jenis: 'surat_keluar', id: skSumber },
+                keAnggotaId: targetAnggotaId, jenisRelasi: 'merujuk',
+            }, actor);
+        });
+
+        expect(capture?.first).toBeDefined();
+        expect(capture!.first).toHaveLength(2);
+        expect((capture!.first as Array<{ id: string }>).map((row) => row.id).sort())
+            .toEqual([sumberId, targetId].sort());
+    });
+
+    it('mengunci sumber+tujuan dalam SATU pernyataan terurut id saat sumberId > targetId', async () => {
+        const sumberId = uuidOf('91', 4);
+        const targetId = uuidOf('91', 3);
+        expect(sumberId > targetId).toBe(true);
+        const { skSumber, targetAnggotaId } = await siapkanPasanganGabung(sumberId, targetId, '2');
+
+        let capture: { first: Array<Record<string, unknown>> | undefined } | undefined;
+        await inTx(async (tx) => {
+            capture = tangkapKunciRangkaianPertama(tx);
+            return rangkaianService.attach(tx, {
+                rangkaianId: targetId, surat: { jenis: 'surat_keluar', id: skSumber },
+                keAnggotaId: targetAnggotaId, jenisRelasi: 'merujuk',
+            }, actor);
+        });
+
+        expect(capture?.first).toBeDefined();
+        expect(capture!.first).toHaveLength(2);
+        expect((capture!.first as Array<{ id: string }>).map((row) => row.id).sort())
+            .toEqual([sumberId, targetId].sort());
     });
 });
 

@@ -642,44 +642,65 @@ export const rangkaianService = {
     /**
      * Primitif keanggotaan + relasi TANPA pemeriksaan wewenang (P3 membungkusnya
      * dengan pemeriksaan akses/pemilik/pengawas). Kontrak urutan kunci (global
-     * constraints): mengunci baris surat (`lockSurat`) lebih dulu, baru
-     * `rangkaian_surat` (ORDER BY id, via `lockRangkaian`); tidak menyentuh
-     * distribusi. Tidak pernah meng-UPDATE baris surat (aman untuk surat
-     * terarsip/guard 0021).
+     * constraints): mengunci baris surat (`lockSurat`) lebih dulu; baru
+     * kemudian SELURUH baris `rangkaian_surat` yang relevan — target saja,
+     * atau sumber+target sekaligus bila surat ini sudah menjadi anggota
+     * rangkaian lain — dikunci dalam SATU pernyataan `lockRangkaian` (ORDER BY
+     * id). `findMembership` (untuk menentukan id mana saja yang perlu dikunci)
+     * dipanggil SEBELUM kunci rangkaian mana pun diambil, dan TIDAK dikunci
+     * sendiri, supaya tidak ada kunci rangkaian_surat lain yang diambil lebih
+     * dulu secara terpisah (fix defect commit 1718e51: sebelumnya rangkaian
+     * target dikunci sendirian lebih dulu, lalu sumber+target dikunci lagi
+     * belakangan; saat sumberId < targetId urutan efektifnya menjadi
+     * target→sumber, melanggar ORDER BY id dan berisiko 40P01 terhadap
+     * gabung/recomputeStatus/attach lain yang bersamaan yang mengunci sumber
+     * lalu menunggu target). Fungsi ini tidak menyentuh distribusi dan tidak
+     * pernah meng-UPDATE baris surat (aman untuk surat terarsip/guard 0021).
      */
     async attach(tx: DbTransaction, input: AttachInput, actor: RangkaianActor): Promise<AttachResult> {
         const surat = await lockSurat(tx, input.surat);
 
-        // Task review Minor 1: validasi rangkaian tujuan + keAnggotaId SEBELUM
-        // gabung implisit di bawah bisa memutasi data. Untuk jalur gabung,
-        // keAnggotaId wajib menjadi anggota rangkaian TARGET (input.rangkaianId)
-        // — ini bisa dipastikan lebih dulu tanpa bergantung pada hasil gabung,
-        // karena gabung() tidak pernah menyentuh baris rangkaian_anggota milik
-        // TARGET yang sudah ada. Memvalidasi lebih dulu mencegah pemanggil yang
+        // Keanggotaan dicari LEBIH DULU (belum mengunci apa pun) supaya seluruh
+        // id rangkaian yang relevan sudah diketahui sebelum kunci rangkaian
+        // pertama diambil.
+        let member = await findMembership(tx, input.surat);
+        const idsRangkaian = member && member.rangkaianId !== input.rangkaianId
+            ? [member.rangkaianId, input.rangkaianId]
+            : [input.rangkaianId];
+        const lockedAwal = await lockRangkaian(tx, idsRangkaian);
+        const rangkaianTujuanAwal = lockedAwal.find((row) => row.id === input.rangkaianId);
+        if (!rangkaianTujuanAwal) throw new NotFoundError('Rangkaian surat');
+        if (!isRangkaianTerbuka(rangkaianTujuanAwal.status)) {
+            throw new ConflictError(
+                `Rangkaian ${rangkaianTujuanAwal.kode} berstatus ${rangkaianTujuanAwal.status}; anggota baru tidak dapat ditambahkan`,
+            );
+        }
+
+        // Task review Minor 1: validasi keAnggotaId SEBELUM gabung implisit di
+        // bawah bisa memutasi data. Untuk jalur gabung, keAnggotaId wajib
+        // menjadi anggota rangkaian TARGET (input.rangkaianId) — ini bisa
+        // dipastikan lebih dulu tanpa bergantung pada hasil gabung, karena
+        // gabung() tidak pernah menyentuh baris rangkaian_anggota milik TARGET
+        // yang sudah ada. Memvalidasi lebih dulu mencegah pemanggil yang
         // menangkap ValidationError di bawah lalu tetap commit meninggalkan
         // penggabungan yang tidak diinginkan.
-        const [rangkaianTujuanAwal] = await lockRangkaian(tx, [input.rangkaianId]);
-        if (!rangkaianTujuanAwal) throw new NotFoundError('Rangkaian surat');
         const [ke] = await tx.select({ id: rangkaianAnggota.id })
             .from(rangkaianAnggota)
             .where(and(eq(rangkaianAnggota.id, input.keAnggotaId), eq(rangkaianAnggota.rangkaianId, rangkaianTujuanAwal.id)))
             .limit(1);
         if (!ke) throw new ValidationError('Surat rujukan bukan anggota rangkaian ini');
 
-        let member = await findMembership(tx, input.surat);
         let digabungDari: string | null = null;
 
         if (member && member.rangkaianId !== input.rangkaianId) {
-            // Review Task 12: kunci sumber + tujuan (ORDER BY id) SEBELUM menghitung
-            // jumlah anggota/status sumber, agar count/status tidak dibaca dari
-            // snapshot basi yang bisa dilewati anggota baru yang masuk bersamaan
-            // (gabung() sendiri mengunci ulang baris yang sama; tidak berefek ganda
-            // dalam transaksi yang sama).
+            // Task 12: jumlah anggota/status sumber dihitung dari baris yang
+            // SUDAH terkunci bersama target di atas (satu pernyataan, ORDER BY
+            // id) — bukan snapshot basi yang bisa dilewati anggota baru yang
+            // masuk bersamaan (gabung() sendiri mengunci ulang baris yang sama;
+            // tidak berefek ganda dalam transaksi yang sama).
             const sumberId = member.rangkaianId;
-            const locked = await lockRangkaian(tx, [sumberId, input.rangkaianId]);
-            const sumberTerkunci = locked.find((row) => row.id === sumberId);
-            const tujuanTerkunci = locked.find((row) => row.id === input.rangkaianId);
-            if (!sumberTerkunci || !tujuanTerkunci) throw new NotFoundError('Rangkaian surat');
+            const sumberTerkunci = lockedAwal.find((row) => row.id === sumberId);
+            if (!sumberTerkunci) throw new NotFoundError('Rangkaian surat');
             const [{ jumlah }] = await tx.select({ jumlah: sql<number>`count(*)::int` })
                 .from(rangkaianAnggota)
                 .where(eq(rangkaianAnggota.rangkaianId, member.rangkaianId));
@@ -690,7 +711,7 @@ export const rangkaianService = {
             await rangkaianService.gabung(tx, {
                 targetId: input.rangkaianId,
                 sumberId: member.rangkaianId,
-                alasan: `Tautan surat tunggal ${member.kode} ke rangkaian ${tujuanTerkunci.kode}`,
+                alasan: `Tautan surat tunggal ${member.kode} ke rangkaian ${rangkaianTujuanAwal.kode}`,
             }, actor);
             digabungDari = member.rangkaianId;
             member = await findMembership(tx, input.surat);
@@ -699,7 +720,11 @@ export const rangkaianService = {
         // ke sudah divalidasi terhadap rangkaian tujuan di atas, sebelum gabung
         // implisit (bila ada) berjalan. Rangkaian tujuan itu sendiri (bukan
         // keanggotaan ke) perlu dikunci ulang di sini karena gabung() bisa saja
-        // mengubah statusnya sendiri lewat recomputeStatus.
+        // mengubah statusnya sendiri lewat recomputeStatus — recomputeStatus
+        // hanya berpindah antar status "terbuka" (aktif<->selesai, lihat
+        // deriveRangkaianStatus/isRangkaianTerbuka), sehingga validasi 409 di
+        // atas tetap berlaku; baris ini hanya menyegarkan status untuk logika
+        // reopened di bawah.
         const [rangkaian] = await lockRangkaian(tx, [input.rangkaianId]);
         if (!rangkaian) throw new NotFoundError('Rangkaian surat');
         if (!isRangkaianTerbuka(rangkaian.status)) {
