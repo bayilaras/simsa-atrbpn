@@ -146,12 +146,12 @@ describe('rangkaianReadService.getDetail', () => {
                 VALUES ('${RANGKAIAN.rsBesar}','RS-2026-000005','inisiatif','aktif','sesditjen','Rangkaian besar',2026);
             INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, perihal)
                 SELECT 'dir_plp', g, 2026, 'biasa', 'Massal ' || g FROM generate_series(1, 301) g;
-            INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id, peran, sumber)
-                SELECT '${RANGKAIAN.rsBesar}', id, 'dir_plp', 'anggota', 'aplikasi' FROM surat_keluar WHERE unit_kerja_id = 'dir_plp';
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id, peran, sumber, ditambahkan_at)
+                SELECT '${RANGKAIAN.rsBesar}', id, 'dir_plp', 'anggota', 'aplikasi', '2000-01-01T00:00:00Z' FROM surat_keluar WHERE unit_kerja_id = 'dir_plp';
             INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, perihal)
                 VALUES ('${suratIndukRsBesar}', 'dir_plp', 999, 2026, 'biasa', 'Induk rangkaian besar');
             INSERT INTO rangkaian_anggota (id, rangkaian_id, surat_keluar_id, unit_kerja_id, peran, sumber, ditambahkan_at)
-                VALUES ('${anggotaIndukRsBesar}', '${RANGKAIAN.rsBesar}', '${suratIndukRsBesar}', 'dir_plp', 'induk', 'aplikasi', '2027-01-01T00:00:00Z');`);
+                VALUES ('${anggotaIndukRsBesar}', '${RANGKAIAN.rsBesar}', '${suratIndukRsBesar}', 'dir_plp', 'induk', 'aplikasi', '2001-01-01T00:00:00Z');`);
         const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rsBesar))!;
         expect(detail.anggota).toHaveLength(300);
         expect(detail.truncated).toBe(true);

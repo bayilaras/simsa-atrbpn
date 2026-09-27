@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SuratKeluarDetail from './SuratKeluarDetail'
@@ -54,6 +54,10 @@ it('hides dead-end links (Lihat di Arsip and the legacy balasan fallback) for cr
     })
     render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
     expect(await screen.findByText('ND Lintas Unit')).toBeInTheDocument()
+    // Tunggu panel Alur Surat selesai memuat (getBySurat -> null) supaya
+    // fallback balasan lama sudah sempat dirender bila gerbangnya hilang.
+    await waitFor(() => expect(screen.queryByText('Memuat alur surat…')).toBeNull())
+    expect(mocks.getBySurat).toHaveBeenCalledWith('surat_keluar', 'surat-id')
     expect(screen.queryByRole('link', { name: /lihat di arsip/i })).toBeNull()
     expect(screen.queryByRole('link', { name: /lihat surat masuk/i })).toBeNull()
 })
