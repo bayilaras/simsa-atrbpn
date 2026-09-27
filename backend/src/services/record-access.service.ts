@@ -1,7 +1,13 @@
 import { db } from '../config/database';
 import { arsip, recordAccessGrants, suratKeluar, suratMasuk } from '../db/schema';
 import { and, desc, eq, gt, type SQL } from 'drizzle-orm';
-import { normalizeSecurityClassification, SECURITY_CLASSES } from './access/visibility-spec';
+import {
+    cocokUnitRekaman,
+    kecocokanUnitRekaman,
+    kelasUntukRole,
+    normalizeSecurityClassification,
+    SECURITY_CLASSES,
+} from './access/visibility-spec';
 
 // Impor lama `normalizeSecurityClassification` dari modul ini tetap berlaku.
 export { normalizeSecurityClassification };
@@ -34,27 +40,11 @@ const CONTROLLED_CLASSIFICATIONS = new Set(['terbatas', 'rahasia', 'sangat_rahas
 export function allowedSecurityClassifications(
     user: RecordUser | undefined,
 ): string[] {
-    // Even a super administrator is limited to classifications recognized by
-    // the records policy. Returning null here used to disable downstream SQL
-    // filters and accidentally expose records containing malformed/unknown
-    // classifications.
-    if (user?.role === 'super_admin') return [...RECOGNIZED_CLASSIFICATIONS];
-    if (['admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role || '')) {
-        return ['biasa', 'terbatas'];
-    }
-    if (['staff', 'auditor'].includes(user?.role || '')) return ['biasa'];
-    return [];
+    return kelasUntukRole(user?.role);
 }
 
 export function isAllowedForRecordUnit(user: RecordUser | undefined, unitKerjaId: string): boolean {
-    if (!user?.role) return false;
-    if (user.role === 'super_admin') return true;
-    if (user.role === 'admin_unit') return Boolean(user.unitKerjaId?.trim()) && user.unitKerjaId === unitKerjaId;
-    if (user.role === 'admin_dirjen') return unitKerjaId === 'ditjen';
-    if (user.role === 'admin_sesditjen') return unitKerjaId === 'sesditjen';
-    if (user.role === 'staff') return Boolean(user.unitKerjaId) && user.unitKerjaId === unitKerjaId;
-    if (user.role === 'auditor') return Boolean(user.unitKerjaId) && user.unitKerjaId === unitKerjaId;
-    return false;
+    return cocokUnitRekaman(kecocokanUnitRekaman(user), unitKerjaId);
 }
 
 export function isAllowedForClassification(
