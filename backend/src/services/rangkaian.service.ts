@@ -1,10 +1,12 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
     rangkaianAnggota,
+    rangkaianRelasi,
     rangkaianSurat,
     suratDistributions,
     suratKeluar,
     suratMasuk,
+    type JenisRelasi,
     type RangkaianAsal,
     type RangkaianStatus,
     type SumberAnggota,
@@ -19,6 +21,7 @@ import {
 } from './rangkaian-status.js';
 import { jangkauanUnitsSql, type JangkauanOptions } from './access/visibility-spec.js';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
 
 export type { JenisRelasi, RangkaianStatus } from '../db/schema';
 export type JenisSurat = 'surat_masuk' | 'surat_keluar';
@@ -178,6 +181,43 @@ export interface GabungResult {
     distribusiDipindah: number;
     unitAksesBaru: string[];
     targetStatus: RangkaianStatus;
+}
+
+export interface AttachInput {
+    rangkaianId: string;
+    surat: SuratRef;
+    keAnggotaId: string;
+    jenisRelasi: JenisRelasi;
+    keterangan?: string | null;
+    sumber?: 'aplikasi' | 'tautan';
+}
+export interface AttachResult {
+    rangkaianId: string;
+    anggotaId: string;
+    relasiId: string;
+    anggotaBaru: boolean;
+    digabungDari: string | null;
+    reopened: boolean;
+}
+
+async function bukaKembaliOtomatis(
+    tx: DbTransaction,
+    rangkaian: RangkaianTerkunci,
+    actor: RangkaianActor,
+    alasan: string,
+): Promise<void> {
+    await tx.update(rangkaianSurat)
+        .set({
+            status: 'aktif', selesaiAt: null, selesaiBy: null,
+            catatanSelesai: null, selesaiManual: false, updatedAt: new Date(),
+        })
+        .where(eq(rangkaianSurat.id, rangkaian.id));
+    await catatAudit(tx, actor, {
+        action: 'status_change',
+        entityType: 'rangkaian_surat',
+        entityId: rangkaian.id,
+        changes: { before: { status: rangkaian.status }, after: { status: 'aktif' }, otomatis: true, alasan },
+    });
 }
 
 export const rangkaianService = {
@@ -545,6 +585,102 @@ export const rangkaianService = {
             unitAksesBaru,
             targetStatus: statusTarget?.after ?? target.status,
         };
+    },
+
+    /**
+     * Primitif keanggotaan + relasi TANPA pemeriksaan wewenang (P3 membungkusnya
+     * dengan pemeriksaan akses/pemilik/pengawas). Kontrak urutan kunci (global
+     * constraints): mengunci baris surat (`lockSurat`) lebih dulu, baru
+     * `rangkaian_surat` (ORDER BY id, via `lockRangkaian`); tidak menyentuh
+     * distribusi. Tidak pernah meng-UPDATE baris surat (aman untuk surat
+     * terarsip/guard 0021).
+     */
+    async attach(tx: DbTransaction, input: AttachInput, actor: RangkaianActor): Promise<AttachResult> {
+        const surat = await lockSurat(tx, input.surat);
+        let member = await findMembership(tx, input.surat);
+        let digabungDari: string | null = null;
+
+        if (member && member.rangkaianId !== input.rangkaianId) {
+            const [{ jumlah }] = await tx.select({ jumlah: sql<number>`count(*)::int` })
+                .from(rangkaianAnggota)
+                .where(eq(rangkaianAnggota.rangkaianId, member.rangkaianId));
+            if (member.peran !== 'induk' || jumlah !== 1 || !isRangkaianTerbuka(member.status)) {
+                throw new ConflictError('Surat sudah menjadi anggota rangkaian lain; gunakan Gabungkan Rangkaian');
+            }
+            const [tujuan] = await tx.select({ kode: rangkaianSurat.kode })
+                .from(rangkaianSurat).where(eq(rangkaianSurat.id, input.rangkaianId)).limit(1);
+            if (!tujuan) throw new NotFoundError('Rangkaian surat');
+            // Tautan induk rangkaian 1-anggota = gabung (tidak menyisakan rangkaian kosong aktif).
+            await rangkaianService.gabung(tx, {
+                targetId: input.rangkaianId,
+                sumberId: member.rangkaianId,
+                alasan: `Tautan surat tunggal ${member.kode} ke rangkaian ${tujuan.kode}`,
+            }, actor);
+            digabungDari = member.rangkaianId;
+            member = await findMembership(tx, input.surat);
+        }
+
+        const [rangkaian] = await lockRangkaian(tx, [input.rangkaianId]);
+        if (!rangkaian) throw new NotFoundError('Rangkaian surat');
+        if (!isRangkaianTerbuka(rangkaian.status)) {
+            throw new ConflictError(`Rangkaian ${rangkaian.kode} berstatus ${rangkaian.status}; anggota baru tidak dapat ditambahkan`);
+        }
+        const [ke] = await tx.select({ id: rangkaianAnggota.id })
+            .from(rangkaianAnggota)
+            .where(and(eq(rangkaianAnggota.id, input.keAnggotaId), eq(rangkaianAnggota.rangkaianId, rangkaian.id)))
+            .limit(1);
+        if (!ke) throw new ValidationError('Surat rujukan bukan anggota rangkaian ini');
+
+        let anggotaId = member?.anggotaId;
+        let anggotaBaru = false;
+        if (!anggotaId) {
+            const [inserted] = await tx.insert(rangkaianAnggota).values({
+                rangkaianId: rangkaian.id,
+                suratMasukId: input.surat.jenis === 'surat_masuk' ? input.surat.id : null,
+                suratKeluarId: input.surat.jenis === 'surat_keluar' ? input.surat.id : null,
+                unitKerjaId: surat.unitKerjaId,
+                peran: 'anggota',
+                sumber: input.sumber ?? 'aplikasi',
+                ditambahkanBy: actor.userId,
+            }).returning({ id: rangkaianAnggota.id });
+            anggotaId = inserted.id;
+            anggotaBaru = true;
+        }
+        if (anggotaId === ke.id) throw new ValidationError('Surat tidak dapat merujuk dirinya sendiri');
+
+        let relasiId: string;
+        try {
+            const [created] = await tx.insert(rangkaianRelasi).values({
+                rangkaianId: rangkaian.id,
+                dariAnggotaId: anggotaId,
+                keAnggotaId: ke.id,
+                jenisRelasi: input.jenisRelasi,
+                keterangan: input.keterangan?.trim() || null,
+                createdBy: actor.userId,
+            }).returning({ id: rangkaianRelasi.id });
+            relasiId = created.id;
+        } catch (error) {
+            if (hasPostgresErrorCode(error, '23505', 'rangkaian_relasi_active_uidx')) {
+                throw new ConflictError('Relasi yang sama sudah tercatat di rangkaian ini');
+            }
+            throw error;
+        }
+
+        const reopened = anggotaBaru && rangkaian.status === 'selesai';
+        if (reopened) await bukaKembaliOtomatis(tx, rangkaian, actor, 'Anggota baru ditambahkan ke rangkaian');
+
+        await catatAudit(tx, actor, {
+            action: 'link',
+            entityType: 'rangkaian_relasi',
+            entityId: relasiId,
+            changes: {
+                after: {
+                    rangkaianId: rangkaian.id, dariAnggotaId: anggotaId, keAnggotaId: ke.id,
+                    jenisRelasi: input.jenisRelasi, surat: input.surat, anggotaBaru, digabungDari,
+                },
+            },
+        });
+        return { rangkaianId: rangkaian.id, anggotaId, relasiId, anggotaBaru, digabungDari, reopened };
     },
 };
 

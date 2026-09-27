@@ -531,3 +531,76 @@ describe('lockSuratMasukRows', () => {
         expect(await inTx((tx) => lockSuratMasukRows(tx, []))).toEqual([]);
     });
 });
+
+describe('rangkaianService.attach', () => {
+    it('menautkan tindak lanjut, membuka kembali rangkaian selesai, dan menolak relasi ganda', async () => {
+        const sm = await suratMasuk('sesditjen');
+        const r = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor, { unitPengolahId: 'dir_bppt' }));
+        await disposisi(sm, 'dir_bppt', 'processed', r.rangkaianId);
+        await inTx((tx) => rangkaianService.recomputeStatus(tx, [r.rangkaianId], actor));
+        const nd = await suratKeluar('dir_bppt', 'draft');
+
+        const result = await inTx((tx) => rangkaianService.attach(tx, {
+            rangkaianId: r.rangkaianId, surat: { jenis: 'surat_keluar', id: nd },
+            keAnggotaId: r.anggotaId, jenisRelasi: 'tindak_lanjut', keterangan: '  ND tindak lanjut  ',
+        }, actor));
+        expect(result).toMatchObject({ rangkaianId: r.rangkaianId, anggotaBaru: true, digabungDari: null, reopened: true });
+        expect((await rangkaianRow(r.rangkaianId)).status).toBe('aktif');
+        const rel = await database.query(`SELECT jenis_relasi, keterangan, created_by FROM rangkaian_relasi WHERE id = $1`, [result.relasiId]);
+        expect(rel.rows).toEqual([{ jenis_relasi: 'tindak_lanjut', keterangan: 'ND tindak lanjut', created_by: actorId }]);
+        expect(await auditRows(result.relasiId)).toEqual([{ action: 'link', entity_type: 'rangkaian_relasi' }]);
+
+        await expect(inTx((tx) => rangkaianService.attach(tx, {
+            rangkaianId: r.rangkaianId, surat: { jenis: 'surat_keluar', id: nd },
+            keAnggotaId: r.anggotaId, jenisRelasi: 'tindak_lanjut',
+        }, actor))).rejects.toMatchObject({ statusCode: 409 });
+
+        const smLain = await suratMasuk('sesditjen');
+        const lain = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smLain, actor));
+        const skLain = await suratKeluar('dir_bppt');
+        await expect(inTx((tx) => rangkaianService.attach(tx, {
+            rangkaianId: r.rangkaianId, surat: { jenis: 'surat_keluar', id: skLain },
+            keAnggotaId: lain.anggotaId, jenisRelasi: 'merujuk',
+        }, actor))).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    it('memproses induk rangkaian 1-anggota sebagai gabung dan menolak anggota rangkaian besar', async () => {
+        const sk = await suratKeluar('dir_bppt', 'approved');
+        const tunggal = await inTx((tx) => rangkaianService.ensureForSurat(tx, { jenis: 'surat_keluar', id: sk }, actor));
+        const sm = await suratMasuk('sesditjen');
+        const tujuan = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor));
+
+        const result = await inTx((tx) => rangkaianService.attach(tx, {
+            rangkaianId: tujuan.rangkaianId, surat: { jenis: 'surat_keluar', id: sk },
+            keAnggotaId: tujuan.anggotaId, jenisRelasi: 'merujuk', sumber: 'tautan',
+        }, actor));
+        expect(result).toMatchObject({ digabungDari: tunggal.rangkaianId, anggotaBaru: false, anggotaId: tunggal.anggotaId });
+        expect(await rangkaianRow(tunggal.rangkaianId)).toMatchObject({ status: 'digabung', digabung_ke_id: tujuan.rangkaianId });
+
+        const smBesar = await suratMasuk('sesditjen');
+        const besar = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smBesar, actor));
+        await expect(inTx((tx) => rangkaianService.attach(tx, {
+            rangkaianId: besar.rangkaianId, surat: { jenis: 'surat_keluar', id: sk },
+            keAnggotaId: besar.anggotaId, jenisRelasi: 'merujuk',
+        }, actor))).rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it('menautkan surat keluar terarsip tanpa memicu guard 0021 dan menolak rangkaian diberkaskan', async () => {
+        const sm = await suratMasuk('sesditjen');
+        const r = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor));
+        const nd = await suratKeluar('dir_bppt', 'approved');
+        await arsipkan('keluar', nd);
+        await inTx((tx) => rangkaianService.attach(tx, {
+            rangkaianId: r.rangkaianId, surat: { jenis: 'surat_keluar', id: nd },
+            keAnggotaId: r.anggotaId, jenisRelasi: 'balasan',
+        }, actor));
+        expect((await inTx((tx) => rangkaianService.recomputeSuratMasukStatus(tx, [sm], actor)))[0].after).toBe('sudah_dibalas');
+
+        await berkaskan(r.rangkaianId);
+        const ndTolak = await suratKeluar('dir_bppt');
+        await expect(inTx((tx) => rangkaianService.attach(tx, {
+            rangkaianId: r.rangkaianId, surat: { jenis: 'surat_keluar', id: ndTolak },
+            keAnggotaId: r.anggotaId, jenisRelasi: 'merujuk',
+        }, actor))).rejects.toMatchObject({ statusCode: 409 });
+    });
+});
