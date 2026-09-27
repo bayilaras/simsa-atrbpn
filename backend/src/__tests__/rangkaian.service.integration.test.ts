@@ -223,3 +223,112 @@ describe('rangkaianService.ensureForSurat / ensureForSuratMasuk', () => {
         expect(leftovers.rows).toEqual([]);
     });
 });
+
+describe('rangkaianService jangkauan & recompute', () => {
+    it('menurunkan jangkauan secara langsung; disposisi ditolak dan peserta lama (tanpa flag) tidak memberi akses', async () => {
+        const sm = await suratMasuk('sesditjen');
+        const { rangkaianId } = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor, { unitPengolahId: 'dir_bppt' }));
+        await disposisi(sm, 'dir_ptep', 'sent', rangkaianId);
+        await disposisi(sm, 'dir_ktpp', 'rejected', rangkaianId);
+        await anggotaKeluar(rangkaianId, await suratKeluar('dir_plp'));
+        await database.query(
+            `INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal) VALUES ($1, 'ditjen', 'disposisi_lama', 'Dirjen')`,
+            [rangkaianId],
+        );
+        await expect(rangkaianService.jangkauanUnitIds(holder.db, rangkaianId))
+            .resolves.toEqual(['dir_bppt', 'dir_plp', 'dir_ptep', 'sesditjen']);
+        await expect(rangkaianService.jangkauanUnitIds(holder.db, rangkaianId, { disposisiLama: true }))
+            .resolves.toEqual(['dir_bppt', 'dir_plp', 'dir_ptep', 'ditjen', 'sesditjen']);
+    });
+
+    it('surat masuk tetap aktif selama disposisi terbuka lalu selesai otomatis setelah diproses', async () => {
+        const sm = await suratMasuk('sesditjen');
+        const { rangkaianId } = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor));
+        const dist = await disposisi(sm, 'dir_bppt', 'sent', rangkaianId);
+        const first = await inTx((tx) => rangkaianService.recomputeStatus(tx, [rangkaianId], actor));
+        expect(first).toEqual([{ id: rangkaianId, before: 'aktif', after: 'aktif', changed: false }]);
+
+        await database.query(`UPDATE surat_distributions SET status = 'processed' WHERE id = $1`, [dist]);
+        const second = await inTx((tx) => rangkaianService.recomputeStatus(tx, [rangkaianId], actor));
+        expect(second).toEqual([{ id: rangkaianId, before: 'aktif', after: 'selesai', changed: true }]);
+        expect(await rangkaianRow(rangkaianId)).toMatchObject({ status: 'selesai', selesai_manual: false, ada_selesai_at: true });
+        expect(await auditRows(rangkaianId)).toContainEqual({ action: 'status_change', entity_type: 'rangkaian_surat' });
+    });
+
+    it('inisiatif selesai saat induk disetujui; draft yang dihapus tidak memblokir', async () => {
+        const induk = await suratKeluar('dir_bppt', 'draft');
+        const { rangkaianId, anggotaId } = await inTx((tx) => rangkaianService.ensureForSurat(tx, { jenis: 'surat_keluar', id: induk }, actor));
+        expect((await inTx((tx) => rangkaianService.recomputeStatus(tx, [rangkaianId], actor)))[0].after).toBe('aktif');
+
+        const penjelas = await suratKeluar('dir_bppt', 'draft');
+        await relasi(rangkaianId, await anggotaKeluar(rangkaianId, penjelas), anggotaId, 'menjelaskan');
+        await database.query(`UPDATE surat_keluar SET approval_status = 'approved' WHERE id = $1`, [induk]);
+        expect((await inTx((tx) => rangkaianService.recomputeStatus(tx, [rangkaianId], actor)))[0].after).toBe('aktif');
+
+        await database.query(`UPDATE surat_keluar SET is_deleted = true, deleted_at = now() WHERE id = $1`, [penjelas]);
+        expect((await inTx((tx) => rangkaianService.recomputeStatus(tx, [rangkaianId], actor)))[0].after).toBe('selesai');
+    });
+
+    it('Tandai Selesai manual dibuka kembali oleh disposisi baru', async () => {
+        const sm = await suratMasuk('sesditjen');
+        const { rangkaianId } = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor));
+        await database.query(
+            `UPDATE rangkaian_surat SET status = 'selesai', selesai_manual = true, selesai_by = $2,
+                    selesai_at = now(), catatan_selesai = 'Selesai lewat rapat koordinasi' WHERE id = $1`,
+            [rangkaianId, actorId],
+        );
+        await disposisi(sm, 'dir_bppt', 'sent', rangkaianId);
+        await inTx((tx) => rangkaianService.recomputeStatus(tx, [rangkaianId], actor));
+        const row = await database.query(
+            `SELECT status, selesai_manual, catatan_selesai, selesai_by FROM rangkaian_surat WHERE id = $1`, [rangkaianId]);
+        expect(row.rows).toEqual([{ status: 'aktif', selesai_manual: false, catatan_selesai: null, selesai_by: null }]);
+    });
+
+    it('status surat masuk diturunkan dari balasan disetujui, turun bila relasi dibatalkan, dan monoton untuk impor', async () => {
+        const sm = await suratMasuk('sesditjen');
+        await arsipkan('masuk', sm); // guard 0021 tidak boleh terpicu oleh UPDATE status
+        const { rangkaianId, anggotaId } = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor));
+        const nd = await suratKeluar('dir_bppt', 'draft');
+        const relasiId = await relasi(rangkaianId, await anggotaKeluar(rangkaianId, nd), anggotaId, 'tindak_lanjut');
+
+        expect(await inTx((tx) => rangkaianService.recomputeSuratMasukStatus(tx, [sm], actor)))
+            .toEqual([{ id: sm, before: 'belum_dibalas', after: 'belum_dibalas', changed: false }]);
+        await database.query(`UPDATE surat_keluar SET approval_status = 'approved' WHERE id = $1`, [nd]);
+        expect(await inTx((tx) => rangkaianService.recomputeSuratMasukStatus(tx, [sm], actor)))
+            .toEqual([{ id: sm, before: 'belum_dibalas', after: 'sudah_dibalas', changed: true }]);
+        expect(await auditRows(sm)).toContainEqual({ action: 'status_change', entity_type: 'surat_masuk' });
+
+        await database.query(
+            `UPDATE rangkaian_relasi SET cancelled_at = now(), cancelled_by = $2,
+                    cancellation_reason = 'Relasi salah pilih surat induk' WHERE id = $1`,
+            [relasiId, actorId],
+        );
+        expect((await inTx((tx) => rangkaianService.recomputeSuratMasukStatus(tx, [sm], actor)))[0])
+            .toMatchObject({ after: 'belum_dibalas', changed: true });
+
+        const impor = await suratMasuk('sesditjen', { status: 'sudah_dibalas' });
+        expect(await inTx((tx) => rangkaianService.recomputeSuratMasukStatus(tx, [impor], actor)))
+            .toEqual([{ id: impor, before: 'sudah_dibalas', after: 'sudah_dibalas', changed: false }]);
+    });
+
+    it('rangkaian data_lama dengan selesai_manual tidak memicu sudah_dibalas (pengecualian ada di caller, bukan fungsi murni)', async () => {
+        const sm = await suratMasuk('sesditjen');
+        const { rows: [{ id: rangkaianId }] } = await database.query<{ id: string }>(
+            `INSERT INTO rangkaian_surat (kode, asal, status, unit_pencatat_id, judul, tahun,
+                    selesai_manual, selesai_at, selesai_by, catatan_selesai)
+             VALUES ($1, 'data_lama', 'selesai', 'sesditjen', 'Berkas lama tanpa bukti rangkaian', 2020,
+                    true, now(), $2, 'Ditutup saat migrasi data lama')
+             RETURNING id`,
+            [`RS-LEGACY-${sm.slice(-6)}`, actorId],
+        );
+        await database.query(
+            `INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber)
+             VALUES ($1, $2, 'sesditjen', 'induk', 'data_lama')`,
+            [rangkaianId, sm],
+        );
+        // Bila SQL fakta ikut menghitung selesai_manual milik rangkaian asal='data_lama',
+        // hasil akan salah menjadi 'sudah_dibalas' meski tidak ada bukti tautan apa pun.
+        expect(await inTx((tx) => rangkaianService.recomputeSuratMasukStatus(tx, [sm], actor)))
+            .toEqual([{ id: sm, before: 'belum_dibalas', after: 'belum_dibalas', changed: false }]);
+    });
+});

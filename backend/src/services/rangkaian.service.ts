@@ -9,7 +9,13 @@ import {
 } from '../db/schema';
 import type { DbTransaction } from '../db/transaction';
 import auditLogService, { type CriticalAuditContext, type LogActionData } from './audit-log.service.js';
-import { isRangkaianTerbuka, judulRangkaian } from './rangkaian-status.js';
+import {
+    deriveRangkaianStatus,
+    deriveSuratMasukStatus,
+    isRangkaianTerbuka,
+    judulRangkaian,
+} from './rangkaian-status.js';
+import { jangkauanUnitsSql, type JangkauanOptions } from './access/visibility-spec.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
 
 export type { JenisRelasi, RangkaianStatus } from '../db/schema';
@@ -126,6 +132,22 @@ async function nextKode(tx: DbTransaction, tahun: number): Promise<string> {
     return `RS-${tahun}-${rows[0].n.padStart(6, '0')}`;
 }
 
+export interface StatusChange<T extends string> { id: string; before: T; after: T; changed: boolean }
+
+type RangkaianFacts = {
+    open_disposisi: number;
+    processed_disposisi: number;
+    blocking_anggota: number;
+    approved_tindak_lanjut: number;
+};
+
+type SuratMasukFacts = {
+    approved_reply: boolean;
+    penyelesaian: boolean;
+    selesai_manual: boolean;
+    evidence: boolean;
+};
+
 export const rangkaianService = {
     async ensureForSurat(
         tx: DbTransaction,
@@ -217,6 +239,162 @@ export const rangkaianService = {
             }
         }
         return result;
+    },
+
+    async jangkauanUnitIds(
+        executor: Pick<DbTransaction, 'execute'>,
+        rangkaianId: string,
+        options: JangkauanOptions = {},
+    ): Promise<string[]> {
+        const { rows } = await executor.execute<{ unit_kerja_id: string }>(
+            sql`SELECT j.unit_kerja_id FROM ${jangkauanUnitsSql(rangkaianId, options)} AS j`,
+        );
+        return rows.map((row) => row.unit_kerja_id).sort();
+    },
+
+    async recomputeStatus(
+        tx: DbTransaction,
+        rangkaianIds: string[],
+        actor: RangkaianActor,
+    ): Promise<StatusChange<RangkaianStatus>[]> {
+        const changes: StatusChange<RangkaianStatus>[] = [];
+        for (const rangkaian of await lockRangkaian(tx, rangkaianIds)) {
+            if (!isRangkaianTerbuka(rangkaian.status)) {
+                changes.push({ id: rangkaian.id, before: rangkaian.status, after: rangkaian.status, changed: false });
+                continue;
+            }
+            const { rows: [facts] } = await tx.execute<RangkaianFacts>(sql`
+                SELECT
+                    (SELECT count(*)::int FROM surat_distributions d
+                      WHERE d.rangkaian_id = ${rangkaian.id} AND d.status IN ('sent', 'received')) AS open_disposisi,
+                    (SELECT count(*)::int FROM surat_distributions d
+                      WHERE d.rangkaian_id = ${rangkaian.id} AND d.status = 'processed') AS processed_disposisi,
+                    (SELECT count(*)::int FROM rangkaian_anggota a
+                      JOIN surat_keluar k ON k.id = a.surat_keluar_id
+                      WHERE a.rangkaian_id = ${rangkaian.id}
+                        AND k.is_deleted IS NOT TRUE
+                        AND k.approval_status IN ('draft', 'pending', 'rejected')
+                        AND (a.peran = 'induk' OR EXISTS (
+                            SELECT 1 FROM rangkaian_relasi r
+                            WHERE r.dari_anggota_id = a.id AND r.cancelled_at IS NULL
+                        ))) AS blocking_anggota,
+                    (SELECT count(*)::int FROM rangkaian_relasi r
+                      JOIN rangkaian_anggota a ON a.id = r.dari_anggota_id
+                      JOIN surat_keluar k ON k.id = a.surat_keluar_id
+                      WHERE r.rangkaian_id = ${rangkaian.id}
+                        AND r.cancelled_at IS NULL
+                        AND r.jenis_relasi IN ('balasan', 'tindak_lanjut')
+                        AND k.is_deleted IS NOT TRUE
+                        AND k.approval_status = 'approved') AS approved_tindak_lanjut
+            `);
+            const after = deriveRangkaianStatus({
+                current: rangkaian.status,
+                asal: rangkaian.asal,
+                selesaiManual: rangkaian.selesaiManual,
+                openDisposisi: facts.open_disposisi,
+                processedDisposisi: facts.processed_disposisi,
+                blockingAnggota: facts.blocking_anggota,
+                approvedTindakLanjut: facts.approved_tindak_lanjut,
+            });
+            const changed = after !== rangkaian.status;
+            if (changed) {
+                await tx.update(rangkaianSurat)
+                    .set(after === 'selesai'
+                        ? { status: 'selesai', selesaiAt: new Date(), updatedAt: new Date() }
+                        : {
+                            status: 'aktif', selesaiAt: null, selesaiBy: null,
+                            catatanSelesai: null, selesaiManual: false, updatedAt: new Date(),
+                        })
+                    .where(eq(rangkaianSurat.id, rangkaian.id));
+                await catatAudit(tx, actor, {
+                    action: 'status_change',
+                    entityType: 'rangkaian_surat',
+                    entityId: rangkaian.id,
+                    changes: { before: { status: rangkaian.status }, after: { status: after }, otomatis: true, fakta: facts },
+                });
+            }
+            changes.push({ id: rangkaian.id, before: rangkaian.status, after, changed });
+        }
+        return changes;
+    },
+
+    async recomputeSuratMasukStatus(
+        tx: DbTransaction,
+        suratMasukIds: string[],
+        actor: RangkaianActor,
+    ): Promise<StatusChange<string>[]> {
+        const ids = [...new Set(suratMasukIds)];
+        if (ids.length === 0) return [];
+        const rows = await tx.select({ id: suratMasuk.id, status: suratMasuk.status, isDeleted: suratMasuk.isDeleted })
+            .from(suratMasuk)
+            .where(inArray(suratMasuk.id, ids))
+            .orderBy(asc(suratMasuk.id))
+            .for('update');
+        const changes: StatusChange<string>[] = [];
+        for (const row of rows) {
+            if (row.isDeleted === true) continue;
+            const { rows: [facts] } = await tx.execute<SuratMasukFacts>(sql`
+                WITH m AS (
+                    SELECT a.id AS anggota_id, a.rangkaian_id
+                    FROM rangkaian_anggota a WHERE a.surat_masuk_id = ${row.id}
+                )
+                SELECT
+                    EXISTS (
+                        SELECT 1 FROM rangkaian_relasi r
+                        JOIN m ON r.ke_anggota_id = m.anggota_id
+                        JOIN rangkaian_anggota d ON d.id = r.dari_anggota_id
+                        JOIN surat_keluar k ON k.id = d.surat_keluar_id
+                        WHERE r.cancelled_at IS NULL
+                          AND r.jenis_relasi IN ('balasan', 'tindak_lanjut')
+                          AND k.is_deleted IS NOT TRUE
+                          AND k.approval_status = 'approved'
+                    ) AS approved_reply,
+                    EXISTS (
+                        SELECT 1 FROM surat_distributions sd
+                        WHERE sd.surat_masuk_id = ${row.id}
+                          AND sd.status = 'processed'
+                          AND NOT sd.ditutup_pengawas
+                          AND (sd.penyelesaian_surat_keluar_id IS NOT NULL
+                               OR coalesce(length(trim(sd.catatan_penyelesaian)), 0) >= 10)
+                    ) AS penyelesaian,
+                    EXISTS (
+                        SELECT 1 FROM m JOIN rangkaian_surat rs ON rs.id = m.rangkaian_id
+                        WHERE rs.selesai_manual AND rs.asal <> 'data_lama'
+                    ) AS selesai_manual,
+                    (
+                        EXISTS (
+                            SELECT 1 FROM rangkaian_relasi r
+                            JOIN m ON m.anggota_id IN (r.ke_anggota_id, r.dari_anggota_id)
+                        )
+                        OR EXISTS (
+                            SELECT 1 FROM surat_distributions sd
+                            JOIN m ON sd.rangkaian_id = m.rangkaian_id
+                            WHERE sd.status = 'processed'
+                        )
+                    ) AS evidence
+            `);
+            const before = row.status ?? 'belum_dibalas';
+            const after = deriveSuratMasukStatus({
+                current: row.status,
+                approvedReply: facts.approved_reply,
+                penyelesaian: facts.penyelesaian,
+                selesaiManualNonLegacy: facts.selesai_manual,
+                hasRangkaianEvidence: facts.evidence,
+            });
+            const changed = after !== before;
+            if (changed) {
+                // Hanya status + updated_at: guard 0021 tetap lolos untuk surat terarsip.
+                await tx.update(suratMasuk).set({ status: after, updatedAt: new Date() }).where(eq(suratMasuk.id, row.id));
+                await catatAudit(tx, actor, {
+                    action: 'status_change',
+                    entityType: 'surat_masuk',
+                    entityId: row.id,
+                    changes: { before: { status: before }, after: { status: after }, sumber: 'rangkaian', fakta: facts },
+                });
+            }
+            changes.push({ id: row.id, before, after, changed });
+        }
+        return changes;
     },
 };
 
