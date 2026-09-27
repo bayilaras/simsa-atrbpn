@@ -1,12 +1,19 @@
 import { db } from '../config/database';
 import { arsip, recordAccessGrants, suratKeluar, suratMasuk } from '../db/schema';
-import { and, desc, eq, gt, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gt, or, sql, type SQL } from 'drizzle-orm';
 import {
+    barisDari,
     cocokUnitRekaman,
+    jalurJangkauan,
+    jangkauanSql,
     kecocokanUnitRekaman,
+    kelasBolehDibacaLintasUnit,
     kelasUntukRole,
+    klasifikasiRekamanSql,
     normalizeSecurityClassification,
+    resolveKonteksBaca,
     SECURITY_CLASSES,
+    type JenisRekamanRangkaian,
 } from './access/visibility-spec';
 
 // Impor lama `normalizeSecurityClassification` dari modul ini tetap berlaku.
@@ -229,6 +236,92 @@ export function evaluateOwnerAccess(
     };
 }
 
+export type ReadVia = 'owner' | 'pengawas' | 'peserta';
+export interface ReadRef { type: JenisRekamanRangkaian; id: string }
+export interface ReadAccessResult extends RecordAccessResult {
+    via: ReadVia | null;
+    rangkaianId: string | null;
+    masked: boolean;
+}
+export type ReadExecutor = Pick<typeof db, 'select' | 'execute'>;
+
+export function readRefKey(ref: ReadRef): string {
+    return `${ref.type}:${ref.id}`;
+}
+
+function inaccessibleReadResult(): ReadAccessResult {
+    return {
+        exists: false, allowed: false, mutable: false, unitKerjaId: null, classification: null,
+        grantId: null, accessPurpose: null, grantAccessMode: null, grantExpiresAt: null,
+        via: null, rangkaianId: null, masked: false,
+    };
+}
+
+interface ReadMetadataRow extends AccessMetadata {
+    id: string;
+    rangkaianId: string | null;
+    peserta: boolean;
+}
+
+async function findReadMetadata(
+    executor: ReadExecutor,
+    ctx: Awaited<ReturnType<typeof resolveKonteksBaca>>,
+    type: JenisRekamanRangkaian,
+    ids: string[],
+): Promise<ReadMetadataRow[]> {
+    if (ids.length === 0) return [];
+    const table = type === 'surat_masuk' ? 'surat_masuk' : 'surat_keluar';
+    const fk = type === 'surat_masuk' ? 'surat_masuk_id' : 'surat_keluar_id';
+    const peserta = ctx.unitJangkauan
+        ? jangkauanSql(sql.raw('ra.rangkaian_id'), ctx.unitJangkauan, ctx.disposisiLamaRead)
+        : sql`false`;
+    return barisDari<ReadMetadataRow>(await executor.execute(sql`
+        SELECT r.id::text AS "id",
+               r.unit_kerja_id AS "unitKerjaId",
+               ${klasifikasiRekamanSql(type, 'r')} AS "classification",
+               (r.is_deleted IS NOT TRUE) AS "readable",
+               (r.is_deleted IS NOT TRUE AND r.is_archived IS NOT TRUE) AS "mutable",
+               ra.rangkaian_id::text AS "rangkaianId",
+               coalesce(${peserta}, false) AS "peserta"
+        FROM ${sql.raw(table)} r
+        LEFT JOIN rangkaian_anggota ra ON ra.${sql.raw(fk)} = r.id
+        WHERE r.id IN (${sql.join(ids.map(id => sql`${id}::uuid`), sql`, `)})
+    `));
+}
+
+async function findActiveGrantsMany(
+    executor: ReadExecutor,
+    user: RecordUser | undefined,
+    items: Array<{ type: JenisRekamanRangkaian; id: string; unitKerjaId: string; classification: string | null }>,
+): Promise<Map<string, ActiveGrant>> {
+    const grants = new Map<string, ActiveGrant>();
+    if (!user?.id) return grants;
+    const controlled = items
+        .map(item => ({ ...item, normalized: normalizeSecurityClassification(item.classification) }))
+        .filter(item => requiresExplicitAccessGrant(item.normalized));
+    if (controlled.length === 0) return grants;
+    const rows = await executor
+        .select({
+            id: recordAccessGrants.id,
+            purpose: recordAccessGrants.purpose,
+            accessMode: recordAccessGrants.accessMode,
+            expiresAt: recordAccessGrants.expiresAt,
+            entityType: recordAccessGrants.entityType,
+            entityId: recordAccessGrants.entityId,
+        })
+        .from(recordAccessGrants)
+        .where(or(...controlled.map(item =>
+            activeGrantConditions(user.id!, item.type, item.id, item.unitKerjaId, item.normalized))))
+        .orderBy(desc(recordAccessGrants.decidedAt));
+    for (const row of rows) {
+        const key = `${row.entityType}:${row.entityId}`;
+        if (!grants.has(key)) {
+            grants.set(key, { id: row.id, purpose: row.purpose, accessMode: row.accessMode, expiresAt: row.expiresAt });
+        }
+    }
+    return grants;
+}
+
 export const recordAccessService = {
     async inspect(
         user: RecordUser | undefined,
@@ -264,6 +357,83 @@ export const recordAccessService = {
             ? await findActiveGrant(executor, user, entityType, entityId, metadata!.unitKerjaId, metadata!.classification)
             : null;
         return evaluateOwnerAccess(user, metadata, grant);
+    },
+
+    /**
+     * Keputusan baca batch (read-only). Pemilik dinilai persis seperti check();
+     * bila gagal, jangkauan pengawas/peserta dihitung ulang setiap panggilan.
+     * Kueri: konteks (≤1) + metadata per tipe (≤2) + grant (≤1).
+     */
+    async checkMany(
+        user: RecordUser | undefined,
+        refs: ReadRef[],
+        executor: ReadExecutor = db,
+    ): Promise<Map<string, ReadAccessResult>> {
+        const unique = [...new Map(refs.map(ref => [readRefKey(ref), ref])).values()];
+        const results = new Map<string, ReadAccessResult>();
+        if (unique.length === 0) return results;
+
+        const ctx = await resolveKonteksBaca(user, executor);
+        const metadata = new Map<string, ReadMetadataRow>();
+        for (const type of ['surat_masuk', 'surat_keluar'] as const) {
+            const ids = unique.filter(ref => ref.type === type).map(ref => ref.id);
+            for (const row of await findReadMetadata(executor, ctx, type, ids)) {
+                metadata.set(readRefKey({ type, id: row.id }), row);
+            }
+        }
+        const grants = await findActiveGrantsMany(executor, user, unique.flatMap(ref => {
+            const row = metadata.get(readRefKey(ref));
+            return row ? [{ type: ref.type, id: ref.id, unitKerjaId: row.unitKerjaId, classification: row.classification }] : [];
+        }));
+
+        for (const ref of unique) {
+            const key = readRefKey(ref);
+            const row = metadata.get(key);
+            if (!row) {
+                results.set(key, inaccessibleReadResult());
+                continue;
+            }
+            const grant = grants.get(key) ?? null;
+            const owner = evaluateOwnerAccess(user, row, grant);
+            if (owner.allowed) {
+                results.set(key, { ...owner, via: 'owner', rangkaianId: row.rangkaianId, masked: false });
+                continue;
+            }
+            const jalur = row.readable ? jalurJangkauan(ctx, row.unitKerjaId, row.peserta === true) : null;
+            if (!jalur) {
+                results.set(key, { ...owner, via: null, rangkaianId: null, masked: false });
+                continue;
+            }
+            const kelas = normalizeSecurityClassification(row.classification);
+            const allowed = kelasBolehDibacaLintasUnit(user, kelas, Boolean(grant));
+            const crossGrant = allowed && requiresExplicitAccessGrant(kelas) ? grant : null;
+            results.set(key, {
+                exists: true,
+                allowed,
+                mutable: false,
+                unitKerjaId: row.unitKerjaId,
+                classification: row.classification || null,
+                grantId: crossGrant?.id || null,
+                accessPurpose: crossGrant?.purpose || null,
+                grantAccessMode: grantAccessModeOf(crossGrant),
+                grantExpiresAt: crossGrant?.expiresAt || null,
+                via: jalur,
+                rangkaianId: row.rangkaianId,
+                masked: !allowed,
+            });
+        }
+        return results;
+    },
+
+    async checkRead(
+        user: RecordUser | undefined,
+        entityType: JenisRekamanRangkaian,
+        entityId: string,
+        executor: ReadExecutor = db,
+    ): Promise<ReadAccessResult> {
+        const ref = { type: entityType, id: entityId };
+        const results = await recordAccessService.checkMany(user, [ref], executor);
+        return results.get(readRefKey(ref)) ?? inaccessibleReadResult();
     },
 
     async markGrantUsed(grantId: string): Promise<boolean> {
