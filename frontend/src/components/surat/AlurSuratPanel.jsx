@@ -30,17 +30,20 @@ function keItemLinimasa(node, relasiDari) {
 }
 
 export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null }) {
-    const [state, setState] = useState({ loading: true, data: null, error: false })
+    const [state, setState] = useState({ loading: true, data: null, error: false, notFound: false })
 
     useEffect(() => {
         let aktif = true
         async function muat() {
-            setState({ loading: true, data: null, error: false })
+            setState({ loading: true, data: null, error: false, notFound: false })
             try {
                 const data = await rangkaianService.getBySurat(jenis, suratId)
-                if (aktif) setState({ loading: false, data, error: false })
-            } catch {
-                if (aktif) setState({ loading: false, data: null, error: true })
+                if (aktif) setState({ loading: false, data, error: false, notFound: false })
+            } catch (err) {
+                if (!aktif) return
+                const status = err?.status ?? err?.response?.status
+                if (status === 404) setState({ loading: false, data: null, error: false, notFound: true })
+                else setState({ loading: false, data: null, error: true, notFound: false })
             }
         }
         muat()
@@ -49,7 +52,7 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
 
     if (state.loading) {
         return (
-            <Card aria-busy="true">
+            <Card role="status" aria-busy="true">
                 <CardContent className="p-4 flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                     Memuat alur surat…
@@ -57,9 +60,16 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
             </Card>
         )
     }
+    if (state.notFound) {
+        return (
+            <Card role="status">
+                <CardContent className="p-4 text-sm text-muted-foreground">Alur surat tidak tersedia untuk Anda.</CardContent>
+            </Card>
+        )
+    }
     if (state.error) {
         return (
-            <Card>
+            <Card role="alert">
                 <CardContent className="p-4 text-sm text-destructive">Alur surat tidak dapat dimuat.</CardContent>
             </Card>
         )

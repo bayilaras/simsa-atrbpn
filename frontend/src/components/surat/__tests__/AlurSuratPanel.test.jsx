@@ -108,5 +108,25 @@ it('merender fallback untuk surat tunggal', async () => {
 it('menampilkan pesan bila gagal dimuat', async () => {
     mocks.getBySurat.mockRejectedValue(new Error('boom'))
     renderPanel({})
-    expect(await screen.findByText('Alur surat tidak dapat dimuat.')).toBeInTheDocument()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Alur surat tidak dapat dimuat.')
+})
+
+it('menampilkan pesan netral (bukan error) bila surat tidak tersedia (404)', async () => {
+    const notFoundError = new Error('Not Found')
+    notFoundError.status = 404
+    mocks.getBySurat.mockRejectedValue(notFoundError)
+    renderPanel({})
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent('Alur surat tidak tersedia untuk Anda.')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText('Alur surat tidak dapat dimuat.')).toBeNull()
+})
+
+it('menampilkan status memuat dengan role status dan aria-busy', () => {
+    mocks.getBySurat.mockResolvedValue(detail)
+    renderPanel({ aksesMelalui: 'pengawas' })
+    const status = screen.getByRole('status')
+    expect(status).toHaveAttribute('aria-busy', 'true')
+    expect(status).toHaveTextContent('Memuat alur surat')
 })
