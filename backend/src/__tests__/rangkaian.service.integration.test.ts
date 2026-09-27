@@ -332,3 +332,62 @@ describe('rangkaianService jangkauan & recompute', () => {
             .toEqual([{ id: sm, before: 'belum_dibalas', after: 'belum_dibalas', changed: false }]);
     });
 });
+
+describe('rangkaianService.gabung', () => {
+    it('memindahkan anggota, relasi, dan disposisi; target tidak selesai selama sumber punya disposisi terbuka', async () => {
+        const smA = await suratMasuk('sesditjen');
+        const a = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smA, actor, { unitPengolahId: 'dir_bppt' }));
+        await disposisi(smA, 'dir_bppt', 'processed', a.rangkaianId);
+        await inTx((tx) => rangkaianService.recomputeStatus(tx, [a.rangkaianId], actor));
+        expect((await rangkaianRow(a.rangkaianId)).status).toBe('selesai');
+
+        const smB = await suratMasuk('sesditjen');
+        const b = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smB, actor));
+        const nd = await suratKeluar('dir_plp', 'approved');
+        const relasiB = await relasi(b.rangkaianId, await anggotaKeluar(b.rangkaianId, nd), b.anggotaId, 'balasan');
+        const distB = await disposisi(smB, 'dir_ptep', 'sent', b.rangkaianId);
+
+        const result = await inTx((tx) => rangkaianService.gabung(tx, {
+            targetId: a.rangkaianId, sumberId: b.rangkaianId, alasan: 'TU lupa mengisi Nomor Referensi',
+        }, actor));
+
+        expect(result).toEqual({
+            targetId: a.rangkaianId,
+            sumberId: b.rangkaianId,
+            anggotaDipindah: 2,
+            distribusiDipindah: 1,
+            unitAksesBaru: ['dir_plp', 'dir_ptep'],
+            targetStatus: 'aktif',
+        });
+        const anggota = await database.query<{ peran: string; sumber: string }>(
+            `SELECT peran, sumber FROM rangkaian_anggota WHERE rangkaian_id = $1 ORDER BY peran, sumber`, [a.rangkaianId]);
+        expect(anggota.rows).toEqual([
+            { peran: 'anggota', sumber: 'gabung' },
+            { peran: 'anggota', sumber: 'gabung' },
+            { peran: 'induk', sumber: 'aplikasi' },
+        ]);
+        const pindah = await database.query(
+            `SELECT (SELECT rangkaian_id FROM rangkaian_relasi WHERE id = $1) AS relasi,
+                    (SELECT rangkaian_id FROM surat_distributions WHERE id = $2) AS distribusi`,
+            [relasiB, distB]);
+        expect(pindah.rows).toEqual([{ relasi: a.rangkaianId, distribusi: a.rangkaianId }]);
+        expect(await rangkaianRow(b.rangkaianId)).toMatchObject({ status: 'digabung', digabung_ke_id: a.rangkaianId });
+        expect(await auditRows(b.rangkaianId)).toContainEqual({ action: 'merge', entity_type: 'rangkaian_surat' });
+    });
+
+    it('menolak alasan pendek, sumber = target, dan rangkaian tertutup', async () => {
+        const smT = await suratMasuk('sesditjen');
+        const smS = await suratMasuk('sesditjen');
+        const t = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smT, actor));
+        const s = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smS, actor));
+        await expect(inTx((tx) => rangkaianService.gabung(tx, { targetId: t.rangkaianId, sumberId: s.rangkaianId, alasan: ' pendek ' }, actor)))
+            .rejects.toMatchObject({ statusCode: 400 });
+        await expect(inTx((tx) => rangkaianService.gabung(tx, { targetId: t.rangkaianId, sumberId: t.rangkaianId, alasan: 'Alasan cukup panjang' }, actor)))
+            .rejects.toMatchObject({ statusCode: 400 });
+        await berkaskan(s.rangkaianId);
+        await expect(inTx((tx) => rangkaianService.gabung(tx, { targetId: t.rangkaianId, sumberId: s.rangkaianId, alasan: 'Alasan cukup panjang' }, actor)))
+            .rejects.toMatchObject({ statusCode: 409 });
+        await expect(inTx((tx) => rangkaianService.gabung(tx, { targetId: s.rangkaianId, sumberId: t.rangkaianId, alasan: 'Alasan cukup panjang' }, actor)))
+            .rejects.toMatchObject({ statusCode: 409 });
+    });
+});

@@ -2,10 +2,12 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
     rangkaianAnggota,
     rangkaianSurat,
+    suratDistributions,
     suratKeluar,
     suratMasuk,
     type RangkaianAsal,
     type RangkaianStatus,
+    type SumberAnggota,
 } from '../db/schema';
 import type { DbTransaction } from '../db/transaction';
 import auditLogService, { type CriticalAuditContext, type LogActionData } from './audit-log.service.js';
@@ -16,7 +18,7 @@ import {
     judulRangkaian,
 } from './rangkaian-status.js';
 import { jangkauanUnitsSql, type JangkauanOptions } from './access/visibility-spec.js';
-import { ConflictError, NotFoundError } from '../utils/errors.js';
+import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
 
 export type { JenisRelasi, RangkaianStatus } from '../db/schema';
 export type JenisSurat = 'surat_masuk' | 'surat_keluar';
@@ -147,6 +149,16 @@ type SuratMasukFacts = {
     selesai_manual: boolean;
     evidence: boolean;
 };
+
+export interface GabungInput { targetId: string; sumberId: string; alasan: string }
+export interface GabungResult {
+    targetId: string;
+    sumberId: string;
+    anggotaDipindah: number;
+    distribusiDipindah: number;
+    unitAksesBaru: string[];
+    targetStatus: RangkaianStatus;
+}
 
 export const rangkaianService = {
     async ensureForSurat(
@@ -395,6 +407,78 @@ export const rangkaianService = {
             changes.push({ id: row.id, before, after, changed });
         }
         return changes;
+    },
+
+    async gabung(tx: DbTransaction, input: GabungInput, actor: RangkaianActor): Promise<GabungResult> {
+        const alasan = input.alasan?.trim() ?? '';
+        if (alasan.length < 10) throw new ValidationError('Alasan penggabungan minimal 10 karakter');
+        if (input.targetId === input.sumberId) {
+            throw new ValidationError('Rangkaian sumber dan tujuan harus berbeda');
+        }
+        const locked = await lockRangkaian(tx, [input.targetId, input.sumberId]);
+        const target = locked.find((row) => row.id === input.targetId);
+        const sumber = locked.find((row) => row.id === input.sumberId);
+        if (!target || !sumber) throw new NotFoundError('Rangkaian surat');
+        for (const row of [target, sumber]) {
+            if (!isRangkaianTerbuka(row.status)) {
+                throw new ConflictError(`Rangkaian ${row.kode} berstatus ${row.status} dan tidak dapat digabung`);
+            }
+        }
+
+        const aksesSebelum = new Set(await rangkaianService.jangkauanUnitIds(tx, target.id));
+        const anggota = await tx.update(rangkaianAnggota)
+            .set({
+                rangkaianId: target.id,
+                peran: 'anggota',
+                sumber: sql<SumberAnggota>`CASE WHEN ${rangkaianAnggota.sumber} = 'data_lama' THEN 'data_lama' ELSE 'gabung' END`,
+            })
+            .where(eq(rangkaianAnggota.rangkaianId, sumber.id))
+            .returning({ id: rangkaianAnggota.id });
+        const distribusi = await tx.update(suratDistributions)
+            .set({ rangkaianId: target.id, updatedAt: new Date() })
+            .where(eq(suratDistributions.rangkaianId, sumber.id))
+            .returning({ id: suratDistributions.id });
+        await tx.execute(sql`
+            UPDATE rangkaian_peserta p SET rangkaian_id = ${target.id}
+            WHERE p.rangkaian_id = ${sumber.id}
+              AND p.berakhir_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM rangkaian_peserta t
+                  WHERE t.rangkaian_id = ${target.id}
+                    AND t.unit_kerja_id = p.unit_kerja_id
+                    AND t.peran = p.peran
+                    AND t.berakhir_at IS NULL
+              )
+        `);
+        await tx.update(rangkaianSurat)
+            .set({ status: 'digabung', digabungKeId: target.id, updatedAt: new Date() })
+            .where(eq(rangkaianSurat.id, sumber.id));
+
+        const unitAksesBaru = (await rangkaianService.jangkauanUnitIds(tx, target.id))
+            .filter((unit) => !aksesSebelum.has(unit));
+        await catatAudit(tx, actor, {
+            action: 'merge',
+            entityType: 'rangkaian_surat',
+            entityId: sumber.id,
+            changes: {
+                before: { status: sumber.status },
+                after: { status: 'digabung', digabungKeId: target.id },
+                alasan,
+                targetKode: target.kode,
+                anggotaDipindah: anggota.length,
+                distribusiDipindah: distribusi.length,
+                unitAksesBaru,
+            },
+        });
+        const [statusTarget] = await rangkaianService.recomputeStatus(tx, [target.id], actor);
+        return {
+            targetId: target.id,
+            sumberId: sumber.id,
+            anggotaDipindah: anggota.length,
+            distribusiDipindah: distribusi.length,
+            unitAksesBaru,
+            targetStatus: statusTarget?.after ?? target.status,
+        };
     },
 };
 
