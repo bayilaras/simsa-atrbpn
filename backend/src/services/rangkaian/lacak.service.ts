@@ -2,7 +2,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../config/database.js';
 import { classifyLacakQuery, escapeLike, LIKE_ESCAPE, nomorNormSql, type LacakQueryPlan } from '../../utils/nomor-surat.js';
 import {
-    isAjukanAksesEnabled, judulTersamar, LABEL_DIKECUALIKAN, readRefKey, recordAccessService,
+    denganRetryDeadlock, isAjukanAksesEnabled, judulTersamar, LABEL_DIKECUALIKAN, readRefKey, recordAccessService,
     requiresExplicitAccessGrant, resolveKonteksBaca, visibleSql,
     type KonteksBaca, type RecordUser, type SuratJenis, type Tx,
 } from './deps.js';
@@ -205,7 +205,7 @@ export const lacakService = {
         const plan = classifyLacakQuery(params.q);
         const limit = Math.min(params.limit ?? KELOMPOK_MAKS, KELOMPOK_MAKS);
         const kosong: LacakResult = { q: plan.q, mode: params.mode, jenisKueri: plan.jenis, kelompok: [] };
-        return db.transaction(async (tx) => {
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
             await tx.execute(sql`SET LOCAL statement_timeout = '2s'`);
             const ctx = await resolveKonteksBaca(user, tx as never);
             const jenisList: SuratJenis[] = params.jenis ? [params.jenis] : ['surat_masuk', 'surat_keluar'];
@@ -237,6 +237,6 @@ export const lacakService = {
                  LIMIT ${limit}`));
             if (grup.length === 0) return kosong;
             return { ...kosong, kelompok: await ekspansi(tx, user, grup) };
-        });
+        }));
     },
 };
