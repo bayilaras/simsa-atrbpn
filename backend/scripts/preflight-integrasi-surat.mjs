@@ -27,8 +27,12 @@ function kelasLamaSql(column) {
 }
 
 function kelasBaruSql(column) {
-  const base = `regexp_replace(lower(regexp_replace(coalesce(nullif(${column}, ''), 'biasa'), `
-    + `'^[${WS}]+|[${WS}]+$', '', 'g')), '[${WS}-]+', '_', 'g')`;
+  // Trim DULU, baru anggap hasil kosong sebagai 'biasa' -- sama seperti
+  // klasifikasiNormSql di src/services/access/visibility-spec.ts, agar
+  // idempoten (nilai murni whitespace, mis. ' ', tidak lolos sebagai ''
+  // yang berbeda dari normalizeSecurityClassification('')==='biasa').
+  const trimmed = `regexp_replace(${column}, '^[${WS}]+|[${WS}]+$', '', 'g')`;
+  const base = `regexp_replace(lower(coalesce(nullif(${trimmed}, ''), 'biasa')), '[${WS}-]+', '_', 'g')`;
   return `CASE WHEN ${base} IN (${BIASA_LIST}) THEN 'biasa' ELSE ${base} END`;
 }
 

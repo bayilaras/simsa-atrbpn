@@ -151,3 +151,45 @@ describe('paritas TS ↔ SQL', () => {
         }
     }, 120_000);
 });
+
+// Ruling controller pada counterexample 1: root cause adalah
+// normalizeSecurityClassification/klasifikasiNormSql yang tidak idempoten
+// untuk nilai murni whitespace (' ' -> '' pada satu kali, tapi '' dianggap
+// falsy dan menjadi 'biasa' pada satu kali lagi). Diperbaiki di sumber (P0)
+// alih-alih di titik panggil evaluateOwnerAccess, agar check() tidak
+// berubah perilaku (snapshot Task 1 tetap hijau tanpa -u). Blok ini
+// mengunci perbaikan itu secara eksplisit.
+describe('regresi: normalisasi klasifikasi idempoten (ruling controller)', () => {
+    it("normalizeSecurityClassification(' ') === 'biasa', bukan ''", () => {
+        expect(spec.normalizeSecurityClassification(' ')).toBe('biasa');
+    });
+
+    it('normalizeSecurityClassification idempoten untuk seluruh nilai generator dan alias', () => {
+        const nilai: Array<string | null> = [
+            ...SIFAT, ...KELAS_SK, ...spec.BIASA_SIFAT_ALIASES, ...spec.SECURITY_CLASSES,
+            '\t', ' ', '   ', '',
+        ];
+        for (const value of nilai) {
+            const sekali = spec.normalizeSecurityClassification(value);
+            const duaKali = spec.normalizeSecurityClassification(sekali);
+            expect(duaKali, JSON.stringify({ value, sekali })).toBe(sekali);
+        }
+    });
+
+    it("klasifikasiNormSql(' ') === 'biasa' di SQL, setara dengan TS", async () => {
+        const [row] = spec.barisDari<{ kelas: string }>(await holder.db.execute(
+            sql`SELECT ${spec.klasifikasiNormSql(sql`${' '}::text`)} AS "kelas"`,
+        ));
+        expect(row.kelas).toBe('biasa');
+        expect(row.kelas).toBe(spec.normalizeSecurityClassification(' '));
+    });
+
+    it('check() pada surat_masuk bersifat murni whitespace tetap mengizinkan staff (biasa) seperti sebelumnya', async () => {
+        // g=1 dari seed di atas: unit_kerja_id='sesditjen', sifat_surat=' '.
+        const staff = { id: USER_ID.staffSes, role: 'staff', unitKerjaId: 'sesditjen' };
+        const hasil = await access.recordAccessService.check(
+            staff as any, 'surat_masuk', '31000000-0000-4000-8000-000000000001',
+        );
+        expect(hasil).toMatchObject({ exists: true, allowed: true, mutable: true, classification: ' ' });
+    });
+});

@@ -40,10 +40,18 @@ const BIASA_ALIAS_SET: ReadonlySet<string> = new Set(BIASA_SIFAT_ALIASES);
 export function normalizeSecurityClassification(
     classification?: string | null,
 ): string {
-    const normalized = (classification || 'biasa')
-        .trim()
-        .toLowerCase()
-        .replace(/[\s-]+/g, '_');
+    // Trim DULU, baru perlakukan hasil yang kosong sebagai 'biasa'. Bila
+    // default 'biasa' diterapkan pada NILAI MENTAH (mis. `classification ||
+    // 'biasa'`) sebelum trim, nilai yang seluruhnya whitespace (mis. ' ')
+    // lolos sebagai truthy dan trim ke '' TANPA default -- fungsi ini jadi
+    // tidak idempoten (normalize(' ')==='' tetapi normalize('')==='biasa').
+    // Urutan di bawah membuat normalize(normalize(x)) === normalize(x) untuk
+    // semua x, sehingga aman dikomposisikan (mis. requiresExplicitAccessGrant
+    // atau isAllowedForClassification yang menormalisasi ulang input yang
+    // sudah ternormalisasi).
+    const trimmed = (classification ?? '').trim();
+    const base = trimmed === '' ? 'biasa' : trimmed;
+    const normalized = base.toLowerCase().replace(/[\s-]+/g, '_');
 
     // Kolom lama `sifatSurat` mencampur urgensi/jenis dengan keamanan. Nilai
     // non-rahasia yang dikenali adalah rekaman kelas biasa.
@@ -51,11 +59,13 @@ export function normalizeSecurityClassification(
 }
 
 /**
- * Padanan SQL `normalizeSecurityClassification`: '' dan NULL → 'biasa',
- * trim whitespace JS, lower, `[\s-]+` → '_', lalu pemetaan alias → 'biasa'.
+ * Padanan SQL `normalizeSecurityClassification`: trim whitespace JS DULU
+ * (idempoten, lihat komentar TS), lalu '' dan NULL → 'biasa', lower,
+ * `[\s-]+` → '_', lalu pemetaan alias → 'biasa'.
  */
 export function klasifikasiNormSql(column: AnyColumn | SQL): SQL<string> {
-    const base = sql`regexp_replace(lower(regexp_replace(coalesce(nullif(${column}, ''), 'biasa'), ${PG_TRIM_PATTERN}::text, '', 'g')), ${PG_SEPARATOR_PATTERN}::text, '_', 'g')`;
+    const trimmed = sql`regexp_replace(${column}, ${PG_TRIM_PATTERN}::text, '', 'g')`;
+    const base = sql`regexp_replace(lower(coalesce(nullif(${trimmed}, ''), 'biasa')), ${PG_SEPARATOR_PATTERN}::text, '_', 'g')`;
     const aliases = sql.join(BIASA_SIFAT_ALIASES.map(alias => sql`${alias}`), sql`, `);
     return sql<string>`(CASE WHEN ${base} IN (${aliases}) THEN 'biasa' ELSE ${base} END)`;
 }

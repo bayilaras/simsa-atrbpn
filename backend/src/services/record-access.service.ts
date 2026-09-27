@@ -215,16 +215,9 @@ export function evaluateOwnerAccess(
         isAllowedForRecordUnit(user, unitKerjaId!);
     const controlled = requiresExplicitAccessGrant(normalizedClassification);
     const ownerGrant = unitAllowed && user?.id && controlled ? grant : null;
-    // isAllowedForClassification menormalisasi sendiri; memberinya
-    // normalizedClassification yang SUDAH ternormalisasi menerapkan
-    // normalizeSecurityClassification dua kali. Fungsi itu tidak idempoten
-    // untuk nilai murni whitespace (mis. sifat_surat=' '): lolos satu kali
-    // ('' -> tidak dikenal, ditolak) tetapi '' dianggap falsy pada lolos
-    // kedua ('' -> 'biasa', diterima) -- fail-open yang tidak dimiliki SQL
-    // (klasifikasiNormSql hanya menjalankan satu kali). Kirim nilai mentah.
     const classificationAllowed = controlled
         ? Boolean(ownerGrant)
-        : isAllowedForClassification(user, metadata?.classification);
+        : isAllowedForClassification(user, normalizedClassification);
     const grantAccessMode = grantAccessModeOf(ownerGrant);
 
     return {
