@@ -253,6 +253,7 @@ export default function SuratMasuk() {
             id: surat.id,
             nomorSurat: surat.nomorSurat,
             perihal: surat.perihal,
+            sifatSurat: surat.sifatSurat,
             unitKerjaId: surat.unitKerjaId || resolvedUnitKerjaId,
         });
         setDistributeDialogOpen(true);

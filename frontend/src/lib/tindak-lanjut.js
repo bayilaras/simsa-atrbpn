@@ -21,6 +21,15 @@ export function isSifatTerkendali(v) {
     return TERKENDALI.has(normalisasiSifat(v))
 }
 
+/** Pesan 409 persis dari server selama RANGKAIAN_AJUKAN_AKSES mati (Global Constraints). */
+export const PESAN_TERKENDALI = 'Surat terkendali belum dapat didisposisikan; tangani di unit pencatat atau aktifkan jalur akses disposisi'
+
+/** Gabungkan chip instruksi ke catatan yang sudah diketik, satu per baris. */
+export function appendInstruksi(prev, teks) {
+    const p = (prev ?? '').trimEnd()
+    return p ? `${p}\n${teks}` : teks
+}
+
 export function isKeputusan(naskahDinas) {
     return /keputusan/i.test(naskahDinas || '')
 }
