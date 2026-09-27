@@ -18,6 +18,7 @@ export * from './storage-locations.js';
 export * from './archive-lending.js';
 export * from './dosir.js';
 export * from './surat-distribution.js';
+export * from './rangkaian-surat.js';
 export * from './penyusutan.js';
 export * from './arsip-vital.js';
 export * from './arsip-terjaga.js';

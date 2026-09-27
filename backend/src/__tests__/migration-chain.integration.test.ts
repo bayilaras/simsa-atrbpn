@@ -1433,4 +1433,42 @@ describe('PostgreSQL migration chain', () => {
             { id: 'sesditjen', name: 'Sekretariat Ditjen', parent_id: 'ditjen', unit_type: 'sesditjen', can_receive_distribution: true, is_unit_pengawas: true },
         ]);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('memodelkan setiap kolom integrasi rangkaian di skema Drizzle', async () => {
+        const database = await createDatabase();
+        for (const entry of journal.entries) {
+            await applyMigration(database, entry);
+        }
+        const actual = await database.query<{ table_name: string; column_name: string }>(`
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND (
+                  table_name IN (
+                      'rangkaian_surat', 'rangkaian_anggota', 'rangkaian_relasi',
+                      'rangkaian_peserta', 'rangkaian_koreksi_berkas', 'disposisi_label_unit'
+                  )
+                  OR (table_name, column_name) IN (
+                      ('unit_kerja', 'is_unit_pengawas'),
+                      ('surat_keluar', 'asal_naskah'),
+                      ('surat_distributions', 'rangkaian_id'),
+                      ('surat_distributions', 'batas_waktu'),
+                      ('surat_distributions', 'penanggung_jawab'),
+                      ('surat_distributions', 'processed_by'),
+                      ('surat_distributions', 'penyelesaian_surat_keluar_id'),
+                      ('surat_distributions', 'catatan_penyelesaian'),
+                      ('surat_distributions', 'ditutup_pengawas')
+                  )
+              )
+        `);
+        expect(actual.rows).toHaveLength(75);
+        const modeled = new Set(
+            expectedSchemaColumns().map(({ tableName, columnName }) => `${tableName}.${columnName}`),
+        );
+        const unmodeled = actual.rows
+            .map(({ table_name, column_name }) => `${table_name}.${column_name}`)
+            .filter((name) => !modeled.has(name))
+            .sort();
+        expect(unmodeled).toEqual([]);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 });
