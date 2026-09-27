@@ -36,6 +36,7 @@ import { format, formatDistanceToNow } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import { useAuth } from '@/context/AuthContext'
 import { useAppConfig } from '@/context/app-config-context'
+import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
 
 export default function SuratKeluarDetail() {
     const { id } = useParams()
@@ -45,7 +46,8 @@ export default function SuratKeluarDetail() {
     const { capabilities } = useAppConfig()
 
     const [surat, setSurat] = useState(null)
-    const isAdmin = Boolean(surat && canWrite(surat.unitKerjaId))
+    const aksesMelalui = surat?.aksesMelalui ?? 'owner'
+    const isAdmin = Boolean(surat && aksesMelalui === 'owner' && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [approvalHistory, setApprovalHistory] = useState([])
@@ -449,21 +451,26 @@ export default function SuratKeluarDetail() {
 
                             <SuratRetentionSummary surat={surat} />
 
-                            {/* Balasan dari Surat Masuk */}
-                            {surat.balasanUntuk && (
-                                <>
-                                    <Separator />
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Balasan dari Surat Masuk</label>
-                                        <Button variant="outline" size="sm" asChild className="group">
-                                            <Link to={`/surat/masuk/${surat.balasanUntuk}`}>
-                                                <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
-                                                Lihat Surat Masuk
-                                            </Link>
-                                        </Button>
-                                    </div>
-                                </>
-                            )}
+                            {/* Alur Surat (fallback: tautan balasan lama untuk surat tunggal) */}
+                            <AlurSuratPanel
+                                jenis="surat_keluar"
+                                suratId={surat.id}
+                                aksesMelalui={aksesMelalui}
+                                fallback={surat.balasanUntuk ? (
+                                    <>
+                                        <Separator />
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Balasan dari Surat Masuk</label>
+                                            <Button variant="outline" size="sm" asChild className="group">
+                                                <Link to={`/surat/masuk/${surat.balasanUntuk}`}>
+                                                    <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
+                                                    Lihat Surat Masuk
+                                                </Link>
+                                            </Button>
+                                        </div>
+                                    </>
+                                ) : null}
+                            />
 
                             {/* Link Dokumen */}
                             {capabilities.files && surat.linkDokumen && (

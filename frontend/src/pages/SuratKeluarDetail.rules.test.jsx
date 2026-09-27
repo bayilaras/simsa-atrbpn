@@ -1,15 +1,18 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SuratKeluarDetail from './SuratKeluarDetail'
 
-const mocks = vi.hoisted(() => ({ getById: vi.fn(), toast: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getById: vi.fn(), toast: vi.fn(), canWrite: false, getBySurat: vi.fn(), getHistory: vi.fn(), getEligibleApprovers: vi.fn() }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: { getById: mocks.getById } }))
-vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ canWrite: () => false, user: { id: 'user-a' } }) }))
+vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ canWrite: () => mocks.canWrite, user: { id: 'user-a' } }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false } }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
 vi.mock('@/components/ArchiveDialog', () => ({ ArchiveDialog: ({ suratData }) => <output aria-label="Surat sumber arsip">{JSON.stringify(suratData)}</output> }))
-afterEach(cleanup)
+vi.mock('@/services/rangkaian.service', () => ({ default: { getBySurat: mocks.getBySurat } }))
+vi.mock('@/services/approval.service', () => ({ default: { getHistory: mocks.getHistory, getEligibleApprovers: mocks.getEligibleApprovers } }))
+beforeEach(() => { mocks.getBySurat.mockResolvedValue(null); mocks.getHistory.mockResolvedValue([]); mocks.getEligibleApprovers.mockResolvedValue([]) })
+afterEach(() => { cleanup(); mocks.canWrite = false; vi.clearAllMocks() })
 
 it('shows saved outgoing labels and retention and passes the complete pair to registration', async () => {
     mocks.getById.mockResolvedValue({
@@ -26,4 +29,20 @@ it('shows saved outgoing labels and retention and passes the complete pair to re
     expect(retention.getByText('3 tahun')).toBeInTheDocument()
     expect(screen.getByLabelText('Surat sumber arsip')).toHaveTextContent('"klasifikasiItemId":82')
     expect(screen.getByLabelText('Surat sumber arsip')).toHaveTextContent('"jraItemId":97')
+})
+
+it('hides owner mutations and approval loading when read through a rangkaian', async () => {
+    mocks.canWrite = true
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '002/2026', perihal: 'ND BPPT', unitKerjaId: 'dir_bppt', approvalStatus: 'draft', aksesMelalui: 'pengawas' })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect((await screen.findAllByText('ND BPPT')).length).toBeGreaterThan(0)
+    expect(screen.queryAllByRole('button', { name: /^edit$/i })).toHaveLength(0)
+    expect(mocks.getHistory).not.toHaveBeenCalled()
+    expect(mocks.getBySurat).toHaveBeenCalledWith('surat_keluar', 'surat-id')
+})
+
+it('keeps the legacy reply link when the letter is not in a rangkaian', async () => {
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '003/2026', perihal: 'Balasan lama', unitKerjaId: 'unit-a', balasanUntuk: 'sm-9', aksesMelalui: 'owner' })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByRole('link', { name: /lihat surat masuk/i })).toHaveAttribute('href', '/surat/masuk/sm-9')
 })

@@ -15,6 +15,7 @@ import { DetailHeader } from '@/components/surat-masuk/DetailHeader'
 import { InfoSection } from '@/components/surat-masuk/InfoSection'
 import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
 import { StatusSidebar } from '@/components/surat-masuk/StatusSidebar'
+import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
 
 export default function SuratMasukDetail() {
     const { id } = useParams()
@@ -23,7 +24,8 @@ export default function SuratMasukDetail() {
     const { canWrite, user } = useAuth()
 
     const [surat, setSurat] = useState(null)
-    const isAdmin = Boolean(surat && canWrite(surat.unitKerjaId))
+    const aksesMelalui = surat?.aksesMelalui ?? 'owner'
+    const isAdmin = Boolean(surat && aksesMelalui === 'owner' && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
@@ -137,6 +139,7 @@ export default function SuratMasukDetail() {
                 {/* Main Content */}
                 <div className="lg:col-span-2 space-y-6">
                     <InfoSection surat={surat} />
+                    <AlurSuratPanel jenis="surat_masuk" suratId={surat.id} aksesMelalui={aksesMelalui} />
                     <FilePreviewSection surat={surat} />
                 </div>
 
