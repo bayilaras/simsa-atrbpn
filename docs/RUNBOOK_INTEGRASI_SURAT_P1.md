@@ -2,10 +2,34 @@
 
 Berlaku untuk rilis yang memuat migrasi `0046_rangkaian_surat` dan `0047_unit_kerja_direktorat`. Produksi memakai Vercel + Neon; jalur Cloud SQL/psql dicantumkan untuk lingkungan lain.
 
+**Prasyarat:** Pre-flight P0 (`docs/PREFLIGHT_INTEGRASI_SURAT_P0.md`) harus sudah **selesai dan disahkan** (blok Pengesahan terisi, laporan `docs/HASIL_PREFLIGHT_INTEGRASI_SURAT_P0_<tanggal>.md` sudah ter-commit) sebelum langkah apa pun di runbook ini dijalankan. Jangan mulai P1 di atas pre-flight yang belum ditinjau.
+
+**Keamanan koneksi (berlaku untuk semua kueri manual di runbook ini):** jangan pernah menaruh connection string di argumen baris perintah atau berkas yang tersimpan di riwayat shell — connection string yang lolos ke argv juga umumnya terlihat oleh proses lain di mesin yang sama (`ps`/Task Manager). Masukkan lewat prompt tersembunyi ke variabel lingkungan sesi, gunakan, lalu hapus variabelnya, mengikuti pola yang sama dengan `docs/PREFLIGHT_INTEGRASI_SURAT_P0.md`:
+
+```bash
+read -rs NEON_QUERY_DATABASE_URL && export NEON_QUERY_DATABASE_URL
+psql "$NEON_QUERY_DATABASE_URL" -f query.sql
+unset NEON_QUERY_DATABASE_URL
+```
+
+```powershell
+$secure = Read-Host -AsSecureString 'NEON_QUERY_DATABASE_URL'
+$ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($secure)
+try {
+    $env:NEON_QUERY_DATABASE_URL = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
+} finally {
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeGlobalAllocUnicode($ptr)
+}
+psql $env:NEON_QUERY_DATABASE_URL -f query.sql
+Remove-Item Env:\NEON_QUERY_DATABASE_URL
+```
+
+Alternatif yang sama-sama aman: tempelkan kueri langsung ke konsol SQL Neon (Neon Console → SQL Editor) memakai role yang disebutkan di setiap langkah — konsol tidak pernah menaruh credential di argv/riwayat shell mesin operator.
+
 ## Urutan wajib
 
 1. **Backup** Neon dengan helper versi yang sedang berjalan di produksi (sebelum checkout rilis ini), sesuai `docs/BACKUP_NEON.md`. Gunakan helper sumber yang cocok dengan manifest migrasi checkout tersebut; jangan memakai helper versi lama untuk database yang sudah lebih baru (lihat status backup terakhir di `docs/BACKUP_NEON.md`).
-2. **Preflight read-only** (akun runtime/operator, tanpa menulis):
+2. **Preflight read-only.** Gunakan role Neon **read-only** yang terpisah dari role runtime/migrator (role yang sama dengan yang disiapkan untuk P0 — lihat `docs/PREFLIGHT_INTEGRASI_SURAT_P0.md` langkah 1), dikoneksikan lewat pola aman di atas (`NEON_QUERY_DATABASE_URL` diisi dengan connection string role read-only ini):
 
    ```sql
    SELECT status, count(*) FROM surat_distributions
@@ -25,7 +49,7 @@ Berlaku untuk rilis yang memuat migrasi `0046_rangkaian_surat` dan `0047_unit_ke
    ```
 
    Adapter Neon menjalankan migrasi dalam satu transaksi lalu langsung menerapkan `grants/0002` (hash tersemat di `scripts/neon-database-policy.mjs`). Jalur Cloud SQL/psql: `npm --prefix backend run db:migrate`, lalu **segera** `EXPECTED_MIGRATIONS_JSON="$(python3 .github/scripts/build-migration-manifest.py)" npm --prefix backend run db:grants:converge`.
-4. **Verifikasi hak dan skema** (akun runtime):
+4. **Verifikasi hak dan skema.** `scripts/neon-database.mjs verify-runtime` (dijalankan sebagai bagian langkah 3 di atas) sudah menyambungkan sebagai role runtime `simsa_api` dan memverifikasi batas role serta privilege pada tabel inti (`users`, `surat_masuk`, `arsip`, `shared_rate_limits`, `audit_log`, `file_fixity_jobs`) lewat `verifyNeonRuntime()` di `scripts/neon-database-policy.mjs`; **`verify-runtime` tidak memeriksa privilege `rangkaian_surat` maupun isi `unit_kerja`**, jadi kueri di bawah tetap wajib dijalankan terpisah, dengan koneksi sebagai role runtime yang sama (`simsa_api`/`NEON_RUNTIME_DATABASE_URL`, mengikuti pola aman di atas — bukan role admin/migrator):
 
    ```sql
    SELECT has_table_privilege(current_user, 'public.rangkaian_surat', 'DELETE') AS boleh_hapus,      -- false
@@ -33,6 +57,8 @@ Berlaku untuk rilis yang memuat migrasi `0046_rangkaian_surat` dan `0047_unit_ke
    SELECT id, is_unit_pengawas FROM unit_kerja WHERE id IN ('ditjen','sesditjen');                 -- keduanya true
    SELECT count(*) FROM unit_kerja WHERE id IN ('dir_bppt','dir_ptep','dir_ktpp','dir_plp');       -- 4
    ```
+
+   Bila operator tidak punya akses langsung ke `NEON_RUNTIME_DATABASE_URL`, jalankan ketiga kueri ini lewat konsol SQL Neon dengan role `simsa_api` dipilih secara eksplisit di sesi tersebut.
 
 5. **Backfill langkah 1** (`backend/scripts/backfill-rangkaian-disposisi.mjs`): **belum ada di P1**. Kode P1 tidak mewajibkan `rangkaian_id`, sehingga langkah ini dilewati pada rilis P1 dan wajib dijalankan pada rilis P3 **sebelum** kode P3 aktif, dengan kriteria keluar `SELECT count(*) FROM surat_distributions WHERE rangkaian_id IS NULL` = 0.
 6. **Deploy kode** backend. `/ready` menolak (503) bila skema belum lengkap: `DATABASE_SCHEMA_READINESS_SQL` (`backend/src/services/readiness.service.ts`) memeriksa, di antara syarat lain yang sudah ada sejak migrasi sebelumnya, seluruh berikut yang ditambahkan 0046/0047:
