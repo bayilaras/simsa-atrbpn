@@ -180,4 +180,25 @@ describe('versioned PostgreSQL role policy', () => {
             expect(source).toContain('[.]gserviceaccount[.]com$');
         }
     });
+
+    it('keeps rangkaian berkas tables append-only for the API across convergence', () => {
+        for (const table of [
+            'rangkaian_surat',
+            'rangkaian_anggota',
+            'rangkaian_relasi',
+            'rangkaian_peserta',
+            'rangkaian_koreksi_berkas',
+        ]) {
+            expect(convergenceSql).toContain(`'${table}'`);
+        }
+        expect(convergenceSql).toContain(
+            "EXECUTE pg_catalog.format('REVOKE DELETE ON TABLE public.%I FROM simsa_api_runtime', relation_name)",
+        );
+        // Restore/upgrade drill memakai skema lama (0038): tabel yang belum ada dilewati.
+        expect(convergenceSql).toContain("pg_catalog.to_regclass(pg_catalog.format('public.%I', relation_name))");
+        const grantIndex = convergenceSql.indexOf('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public');
+        const revokeIndex = convergenceSql.indexOf('$rangkaian_append_only$');
+        expect(grantIndex).toBeGreaterThan(0);
+        expect(revokeIndex).toBeGreaterThan(grantIndex);
+    });
 });

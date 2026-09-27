@@ -267,6 +267,17 @@ describe('least-privilege PostgreSQL runtime grants', () => {
             SELECT pg_catalog.has_schema_privilege(${principals.api}, 'public', 'CREATE') AS can_create
         `;
         expect(schema.can_create).toBe(false);
+        for (const table of [
+            'rangkaian_surat',
+            'rangkaian_anggota',
+            'rangkaian_relasi',
+            'rangkaian_peserta',
+            'rangkaian_koreksi_berkas',
+        ]) {
+            await expect(tablePrivilege(principals.api, table, 'INSERT')).resolves.toBe(true);
+            await expect(tablePrivilege(principals.api, table, 'UPDATE')).resolves.toBe(true);
+            await expect(tablePrivilege(principals.api, table, 'DELETE')).resolves.toBe(false);
+        }
     });
 
     it('limits event and malware workers to their operational queues', async () => {
