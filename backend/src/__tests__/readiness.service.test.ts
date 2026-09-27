@@ -437,3 +437,25 @@ describe('collectReadiness', () => {
         });
     });
 });
+
+describe('schema readiness for rangkaian surat (0046)', () => {
+    it('requires the rangkaian columns, constraints, and closure triggers', async () => {
+        const { DATABASE_SCHEMA_READINESS_SQL } = await import('../services/readiness.service.js');
+        for (const fragment of [
+            "('unit_kerja', 'is_unit_pengawas')",
+            "('surat_keluar', 'asal_naskah')",
+            "('surat_distributions', 'rangkaian_id')",
+            "('surat_distributions', 'ditutup_pengawas')",
+            "('rangkaian_surat', 'kode')",
+            "('rangkaian_relasi', 'cancelled_at')",
+            "('surat_distributions', 'surat_distributions_status_check')",
+            "('rangkaian_surat', 'rangkaian_berkas_check')",
+            "('rangkaian_relasi', 'rangkaian_relasi_pembatalan_check')",
+            "('surat_distributions', 'surat_distributions_closed_guard')",
+            "('rangkaian_surat', 'rangkaian_surat_status_guard')",
+            "('rangkaian_koreksi_berkas', 'rangkaian_koreksi_lifecycle_guard')",
+        ]) {
+            expect(DATABASE_SCHEMA_READINESS_SQL).toContain(fragment);
+        }
+    });
+});

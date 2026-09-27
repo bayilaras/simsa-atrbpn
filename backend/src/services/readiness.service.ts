@@ -112,7 +112,22 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
             ('final_object_orphans', 'source_object_generation'),
             ('final_object_orphans', 'status'),
             ('final_object_orphans', 'not_before'),
-            ('final_object_orphans', 'attempts')
+            ('final_object_orphans', 'attempts'),
+            ('unit_kerja', 'is_unit_pengawas'),
+            ('surat_keluar', 'asal_naskah'),
+            ('surat_distributions', 'rangkaian_id'),
+            ('surat_distributions', 'batas_waktu'),
+            ('surat_distributions', 'penanggung_jawab'),
+            ('surat_distributions', 'processed_by'),
+            ('surat_distributions', 'penyelesaian_surat_keluar_id'),
+            ('surat_distributions', 'catatan_penyelesaian'),
+            ('surat_distributions', 'ditutup_pengawas'),
+            ('rangkaian_surat', 'kode'),
+            ('rangkaian_surat', 'status'),
+            ('rangkaian_anggota', 'rangkaian_id'),
+            ('rangkaian_relasi', 'cancelled_at'),
+            ('rangkaian_peserta', 'berakhir_at'),
+            ('rangkaian_koreksi_berkas', 'status')
     ),
     column_state AS (
         SELECT NOT EXISTS (
@@ -166,7 +181,13 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
             ('final_object_orphans', 'final_object_orphans_candidate_kind_check'),
             ('final_object_orphans', 'final_object_orphans_identity_check'),
             ('final_object_orphans', 'final_object_orphans_status_check'),
-            ('final_object_orphans', 'final_object_orphans_attempts_check')
+            ('final_object_orphans', 'final_object_orphans_attempts_check'),
+            ('surat_distributions', 'surat_distributions_status_check'),
+            ('rangkaian_surat', 'rangkaian_berkas_check'),
+            ('rangkaian_surat', 'rangkaian_gabung_check'),
+            ('rangkaian_surat', 'rangkaian_selesai_manual_check'),
+            ('rangkaian_relasi', 'rangkaian_relasi_pembatalan_check'),
+            ('rangkaian_peserta', 'rangkaian_peserta_berakhir_check')
     ),
     constraint_state AS (
         SELECT NOT EXISTS (
@@ -194,7 +215,12 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
                 ('preservasi_track', 'preservation_activity_immutable_guard'),
                 ('file_attachments', 'preservation_attachment_guard'),
                 ('file_attachments', 'terjaga_reporting_attachment_guard'),
-                ('arsip_terjaga_reports', 'arsip_terjaga_reports_immutable')
+                ('arsip_terjaga_reports', 'arsip_terjaga_reports_immutable'),
+                ('rangkaian_anggota', 'rangkaian_anggota_closed_guard'),
+                ('rangkaian_relasi', 'rangkaian_relasi_closed_guard'),
+                ('surat_distributions', 'surat_distributions_closed_guard'),
+                ('rangkaian_surat', 'rangkaian_surat_status_guard'),
+                ('rangkaian_koreksi_berkas', 'rangkaian_koreksi_lifecycle_guard')
             ) AS required(table_name, trigger_name)
             WHERE NOT EXISTS (
                 SELECT 1 FROM pg_catalog.pg_trigger AS trigger_record
