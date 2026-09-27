@@ -69,6 +69,7 @@ import { id as localeId } from 'date-fns/locale';
 // Generate year options
 const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
+const NASKAH_INISIATIF = ['Nota Dinas', 'Surat Edaran', 'Surat Undangan', 'Keputusan', 'Surat Tugas'];
 const approvalStatusDisplay = {
     draft: { label: 'Draft', className: 'text-muted-foreground' },
     pending: { label: 'Menunggu Persetujuan', className: 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
@@ -377,12 +378,31 @@ export default function SuratKeluar() {
                     />
 
                     {isAdmin && (
-                        <Button asChild size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">
-                            <Link to="/surat/keluar/tambah">
-                                <Plus className="mr-2 h-3.5 w-3.5" />
-                                Surat Baru
-                            </Link>
-                        </Button>
+                        <div className="flex" role="group" aria-label="Buat surat keluar">
+                            <Button asChild size="sm" className="h-9 rounded-r-none shadow-sm">
+                                <Link to="/surat/keluar/inisiatif">
+                                    <Plus className="mr-2 h-3.5 w-3.5" />
+                                    Buat Surat Inisiatif
+                                </Link>
+                            </Button>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button size="sm" className="h-9 rounded-l-none border-l border-primary-foreground/20 px-2" aria-label="Pilihan surat keluar lainnya">
+                                        <ChevronDown className="h-3.5 w-3.5" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-60">
+                                    {NASKAH_INISIATIF.map((naskah) => (
+                                        <DropdownMenuItem key={naskah} onSelect={() => navigate(`/surat/keluar/inisiatif?naskah=${encodeURIComponent(naskah)}`)}>
+                                            {naskah}
+                                        </DropdownMenuItem>
+                                    ))}
+                                    <DropdownMenuItem onSelect={() => navigate('/surat/keluar/inisiatif')}>Lainnya…</DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onSelect={() => navigate('/surat/keluar/tambah?pilih=referensi')}>Tindak Lanjut Surat Masuk…</DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
                     )}
                 </div>
             </div>
@@ -645,6 +665,12 @@ export default function SuratKeluar() {
                                                                 <MailOpen className="h-3 w-3" />
                                                                 Balasan
                                                             </Badge>
+                                                        )}
+                                                        {row.asalNaskah === 'inisiatif' && (
+                                                            <Badge data-badge="asal-naskah" variant="outline" className="border-emerald-200 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15">Inisiatif</Badge>
+                                                        )}
+                                                        {row.asalNaskah === 'tindak_lanjut' && (
+                                                            <Badge data-badge="asal-naskah" variant="outline" className="border-sky-200 text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-500/15">Tindak Lanjut</Badge>
                                                         )}
                                                         <Badge variant="outline" className="capitalize">
                                                             {(row.klasifikasiKeamanan || 'terbatas').replaceAll('_', ' ')}

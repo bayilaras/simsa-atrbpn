@@ -82,6 +82,8 @@ describe('dashboard daily workflow', () => {
         fireEvent.click(within(actions).getByRole('button', { name: 'Catat Surat Masuk' }))
         expect(mocks.navigate).toHaveBeenCalledWith('/surat/masuk/tambah')
         expect(within(actions).getByRole('button', { name: 'Catat Surat Keluar' })).toBeInTheDocument()
+        fireEvent.click(within(actions).getByRole('button', { name: 'Buat Surat Inisiatif' }))
+        expect(mocks.navigate).toHaveBeenCalledWith('/surat/keluar/inisiatif')
         expect(screen.getByRole('button', { name: 'Kelola Penyimpanan' })).toBeInTheDocument()
     })
     it('does not infer a draft or completed reporting from the recorded status', async () => {
