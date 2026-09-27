@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -140,6 +140,21 @@ it('menampilkan pesan netral (bukan error) bila surat tidak tersedia (404)', asy
     expect(status).toHaveTextContent('Alur surat tidak tersedia untuk Anda.')
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByText('Alur surat tidak dapat dimuat.')).toBeNull()
+})
+
+// F1: onChanged HANYA boleh terpanggil lewat muatUlang (tombol "Coba lagi"),
+// TIDAK pada muat awal -- itulah pola yang dulu membentuk loop tak berujung
+// saat parent membongkar panel ini lewat gerbang `if (loading)`.
+it('tidak memanggil onChanged pada muat awal, hanya lewat tombol Coba Lagi setelah gagal', async () => {
+    const onChanged = vi.fn()
+    mocks.getBySurat.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(detail)
+    renderPanel({ aksesMelalui: 'pengawas', onChanged })
+    const alert = await screen.findByRole('alert')
+    expect(onChanged).not.toHaveBeenCalled()
+    fireEvent.click(within(alert).getByRole('button', { name: 'Coba lagi' }))
+    await screen.findByText('Alur Surat')
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(mocks.getBySurat).toHaveBeenCalledTimes(2)
 })
 
 it('menampilkan status memuat dengan role status dan aria-busy', () => {

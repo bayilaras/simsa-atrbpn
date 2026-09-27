@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
     ArrowLeft, Send, Calendar, Building, FileText,
@@ -57,12 +57,21 @@ export default function SuratKeluarDetail() {
     const [approvalNotes, setApprovalNotes] = useState('')
     const [selectedApproverId, setSelectedApproverId] = useState('')
     const [approvalBusy, setApprovalBusy] = useState(false)
+    // Sekali surat termuat untuk id ini, refresh berikutnya (mis. dari
+    // onChanged AlurSuratPanel, atau setelah Arsip/persetujuan) bersifat diam:
+    // tidak menyalakan `loading`, sehingga gerbang `if (loading) return
+    // <spinner>` di bawah tidak membongkar seluruh halaman (dan AlurSuratPanel
+    // di dalamnya) pada setiap refresh (F1).
+    const termuatRef = useRef(false)
+    useEffect(() => { termuatRef.current = false }, [id])
 
     const fetchSurat = useCallback(async () => {
-        setLoading(true)
+        const diam = termuatRef.current
+        if (!diam) setLoading(true)
         try {
             const data = await suratKeluarService.getById(id)
             setSurat(data)
+            termuatRef.current = true
         } catch (error) {
             console.error('Error fetching surat:', error)
             toast({
@@ -71,7 +80,7 @@ export default function SuratKeluarDetail() {
                 variant: 'destructive',
             })
         } finally {
-            setLoading(false)
+            if (!diam) setLoading(false)
         }
     }, [id, toast])
 

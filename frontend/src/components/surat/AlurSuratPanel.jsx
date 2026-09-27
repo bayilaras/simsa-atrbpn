@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { GitBranch, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import rangkaianService from '@/services/rangkaian.service'
 import { TimelineItem } from '@/components/surat/TimelineItem'
 import { JENIS_RELASI_LABEL } from '@/lib/tindak-lanjut'
@@ -50,6 +51,17 @@ function keItemLinimasa(node, relasiDari) {
 
 export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null, onChanged }) {
     const [state, setState] = useState({ loading: true, data: null, error: false, notFound: false })
+    // Kunci reload internal panel: dinaikkan hanya oleh muatUlang (mis. tombol
+    // "Coba lagi", atau aksi panel di Task 25), TIDAK oleh render ulang biasa.
+    // onChanged HANYA dipanggil dari muatUlang -- bukan dari jalur muat awal --
+    // supaya me-refresh parent (yang membongkar panel ini lewat gerbang
+    // `if (loading) return <spinner>`) tidak memicu panel memuat ulang lalu
+    // memanggil onChanged lagi tanpa henti (F1).
+    const [muatKe, setMuatKe] = useState(0)
+    const muatUlang = () => {
+        setMuatKe((n) => n + 1)
+        onChanged?.()
+    }
 
     useEffect(() => {
         let aktif = true
@@ -59,7 +71,6 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                 const data = await rangkaianService.getBySurat(jenis, suratId)
                 if (aktif) {
                     setState({ loading: false, data, error: false, notFound: false })
-                    onChanged?.()
                 }
             } catch (err) {
                 if (!aktif) return
@@ -70,7 +81,7 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
         }
         muat()
         return () => { aktif = false }
-    }, [jenis, suratId, onChanged])
+    }, [jenis, suratId, muatKe])
 
     if (state.loading) {
         return (
@@ -92,7 +103,10 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
     if (state.error) {
         return (
             <Card role="alert">
-                <CardContent className="p-4 text-sm text-destructive">Alur surat tidak dapat dimuat.</CardContent>
+                <CardContent className="p-4 flex items-center justify-between gap-3 text-sm text-destructive">
+                    <span>Alur surat tidak dapat dimuat.</span>
+                    <Button type="button" variant="outline" size="sm" onClick={muatUlang}>Coba lagi</Button>
+                </CardContent>
             </Card>
         )
     }

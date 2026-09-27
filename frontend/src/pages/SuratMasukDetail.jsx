@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -30,12 +30,21 @@ export default function SuratMasukDetail() {
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
+    // Sekali surat termuat untuk id ini, refresh berikutnya (mis. dari
+    // onChanged AlurSuratPanel, atau setelah Terima/Arsip/Distribusi) bersifat
+    // diam: tidak menyalakan `loading`, sehingga gerbang `if (loading) return
+    // <spinner>` di bawah tidak membongkar seluruh halaman (dan AlurSuratPanel
+    // di dalamnya) pada setiap refresh (F1).
+    const termuatRef = useRef(false)
+    useEffect(() => { termuatRef.current = false }, [id])
 
     const fetchSurat = useCallback(async () => {
-        setLoading(true)
+        const diam = termuatRef.current
+        if (!diam) setLoading(true)
         try {
             const data = await suratMasukService.getById(id)
             setSurat(data)
+            termuatRef.current = true
         } catch (error) {
             console.error('Error fetching surat:', error)
             toast({
@@ -44,7 +53,7 @@ export default function SuratMasukDetail() {
                 variant: 'destructive',
             })
         } finally {
-            setLoading(false)
+            if (!diam) setLoading(false)
         }
     }, [id, toast])
 
