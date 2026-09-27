@@ -142,9 +142,22 @@ export type PelaksanaSql = { execute: (query: SQL) => PromiseLike<unknown> };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALIAS_RE = /^[a-z_][a-z0-9_]*$/;
+/**
+ * Alias yang dipakai builder internal untuk subkueri jangkauan/grant pada
+ * statement SQL yang sama (`ra` = rangkaian_anggota di jangkauanRekamanSql,
+ * `g` = record_access_grants di grantAktifSql, `j` = subkueri jangkauanUnitsSql
+ * di jangkauanSql). Alias pemanggil tidak boleh memakainya: sebelum penjagaan
+ * ini, alias 'ra' membuat `${a}.id` diam-diam menunjuk ke rangkaian_anggota
+ * sendiri (menolak peserta tanpa error) dan alias 'g' membuat `${a}.id`
+ * menunjuk ke record_access_grants (kolom tidak ada → error SQL).
+ */
+const ALIAS_INTERNAL_TERPAKAI: ReadonlySet<string> = new Set(['ra', 'g', 'j']);
 
 function aliasAman(alias: string): string {
     if (!ALIAS_RE.test(alias)) throw new Error(`Alias SQL tidak valid: ${alias}`);
+    if (ALIAS_INTERNAL_TERPAKAI.has(alias)) {
+        throw new Error(`Alias SQL '${alias}' dicadangkan untuk subkueri internal dan tidak boleh dipakai pemanggil`);
+    }
     return alias;
 }
 

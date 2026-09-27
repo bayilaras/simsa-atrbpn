@@ -2,8 +2,9 @@ import type { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
+import { resolveKonteksBaca } from '../services/access/visibility-spec';
 import {
-    PENGGUNA, RANGKAIAN, SURAT, GRANT,
+    PENGGUNA, RANGKAIAN, SURAT, GRANT, USER_ID,
     bootRangkaianDatabase, seedRangkaianFixture,
 } from './helpers/rangkaian-pglite';
 
@@ -121,5 +122,66 @@ describe('checkRead: matriks unit × role × kelas × grant × jangkauan', () =>
         for (const ref of refs) {
             expect(batch.get(mod.readRefKey(ref))).toEqual(await mod.recordAccessService.checkRead(PENGGUNA.tu, ref.type, ref.id));
         }
+    });
+});
+
+describe('findActiveGrant: pengikatan SQL eksplisit (bukan snapshot)', () => {
+    it('kelas yang diminta berbeda dari kelas ternormalisasi rekaman → null', async () => {
+        // GRANT.ptepSmTerbatas terikat required_classification='terbatas'; meminta
+        // 'rahasia' untuk rekaman yang sama tidak boleh cocok.
+        expect(await mod.findActiveGrant(holder.db, PENGGUNA.ptep, 'surat_masuk', SURAT.smTerbatas, 'sesditjen', 'rahasia')).toBeNull();
+        // Kontrol: kelas yang cocok tetap mengembalikan grant yang sama.
+        expect((await mod.findActiveGrant(holder.db, PENGGUNA.ptep, 'surat_masuk', SURAT.smTerbatas, 'sesditjen', 'terbatas'))?.id)
+            .toBe(GRANT.ptepSmTerbatas);
+    });
+
+    it('grant berstatus pending tidak pernah aktif', async () => {
+        await database.exec(`INSERT INTO record_access_grants
+            (requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status)
+            VALUES ('${USER_ID.tu}','${USER_ID.tu}','surat_masuk','${SURAT.smTerbatas}','sesditjen','terbatas','Permintaan baca menunggu keputusan atasan','view','pending')`);
+        expect(await mod.findActiveGrant(holder.db, PENGGUNA.tu, 'surat_masuk', SURAT.smTerbatas, 'sesditjen', 'terbatas')).toBeNull();
+    });
+
+    it('grant berstatus revoked tidak pernah aktif', async () => {
+        await database.exec(`INSERT INTO record_access_grants
+            (requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode,
+             status, decided_by, decided_at, decision_reason, expires_at, revoked_by, revoked_at, revocation_reason)
+            VALUES ('${USER_ID.tu}','${USER_ID.tu}','surat_masuk','${SURAT.smTerbatas}','sesditjen','terbatas','Grant yang kemudian dicabut kembali','view',
+             'revoked','${USER_ID.approver}','2026-09-01T00:00:00Z','Kebutuhan kerja terverifikasi','2099-01-01T00:00:00Z','${USER_ID.approver}','2026-09-10T00:00:00Z','Kebutuhan sudah selesai')`);
+        expect(await mod.findActiveGrant(holder.db, PENGGUNA.tu, 'surat_masuk', SURAT.smTerbatas, 'sesditjen', 'terbatas')).toBeNull();
+    });
+
+    it('grant terikat unit lain tidak berlaku untuk unit rekaman saat ini', async () => {
+        // GRANT.adminSesSalahUnit terikat unit_kerja_id='dir_ptep'; unit rekaman
+        // skBpptNull saat ini adalah 'dir_bppt'.
+        expect(await mod.findActiveGrant(holder.db, PENGGUNA.adminSesNull, 'surat_keluar', SURAT.skBpptNull, 'dir_bppt', 'terbatas')).toBeNull();
+        expect((await mod.findActiveGrant(holder.db, PENGGUNA.adminSesNull, 'surat_keluar', SURAT.skBpptNull, 'dir_ptep', 'terbatas'))?.id)
+            .toBe(GRANT.adminSesSalahUnit);
+    });
+});
+
+describe('metadata baca: klasifikasi surat keluar NULL', () => {
+    it('surat keluar dengan klasifikasi_keamanan NULL disajikan sebagai "terbatas" (fail-closed) dan tetap terkendali', async () => {
+        expect(mod.requiresExplicitAccessGrant('terbatas')).toBe(true);
+        // Jalur pengawas + grant: SQL (klasifikasiRekamanSql) memetakan NULL →
+        // 'terbatas', bukan 'biasa'.
+        const denganGrant = await mod.recordAccessService.checkRead(PENGGUNA.tu, 'surat_keluar', SURAT.skBpptNull);
+        expect(denganGrant).toMatchObject({ allowed: true, via: 'pengawas', classification: 'terbatas' });
+        // Jalur peserta tanpa grant: kelas terkendali menolak (masked), bukan
+        // meloloskannya seolah 'biasa'.
+        const tanpaGrant = await mod.recordAccessService.checkRead(PENGGUNA.bppt, 'surat_keluar', SURAT.skBpptNull);
+        expect(tanpaGrant).toMatchObject({ allowed: false, via: 'peserta', masked: true, classification: 'terbatas' });
+    });
+});
+
+describe('resolveKonteksBaca: konteks tambahan', () => {
+    it('unit efektif pengguna tidak ada di unit_kerja → pengawas false, unitJangkauan tetap terisi', async () => {
+        const ctx = await resolveKonteksBaca({ id: USER_ID.tu, role: 'admin_unit', unitKerjaId: 'unit_tak_ada' }, holder.db);
+        expect(ctx).toMatchObject({ unitJangkauan: 'unit_tak_ada', pengawas: false });
+    });
+
+    it('unit bagian_* tidak pernah memberi jangkauan pengawas', async () => {
+        const ctx = await resolveKonteksBaca({ id: USER_ID.tu, role: 'admin_unit', unitKerjaId: 'bagian_umum' }, holder.db);
+        expect(ctx).toMatchObject({ unitJangkauan: 'bagian_umum', pengawas: false });
     });
 });
