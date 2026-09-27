@@ -1,8 +1,9 @@
 import type { PGlite } from '@electric-sql/pglite';
+import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
-import { resolveKonteksBaca } from '../services/access/visibility-spec';
+import { barisDari, jangkauanSql, resolveKonteksBaca } from '../services/access/visibility-spec';
 import {
     PENGGUNA, RANGKAIAN, SURAT, GRANT, USER_ID,
     bootRangkaianDatabase, seedRangkaianFixture,
@@ -136,9 +137,14 @@ describe('findActiveGrant: pengikatan SQL eksplisit (bukan snapshot)', () => {
     });
 
     it('grant berstatus pending tidak pernah aktif', async () => {
+        // expires_at diisi jauh di masa depan secara sengaja: baris ini harus
+        // ditolak KARENA status='pending' (activeGrantConditions mensyaratkan
+        // status='approved'), bukan karena kedaluwarsa. Tanpa expires_at,
+        // predikat `expires_at > now()` sendiri sudah menolaknya walau status
+        // tidak pernah diperiksa — tes jadi tidak membuktikan apa pun.
         await database.exec(`INSERT INTO record_access_grants
-            (requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status)
-            VALUES ('${USER_ID.tu}','${USER_ID.tu}','surat_masuk','${SURAT.smTerbatas}','sesditjen','terbatas','Permintaan baca menunggu keputusan atasan','view','pending')`);
+            (requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status, expires_at)
+            VALUES ('${USER_ID.tu}','${USER_ID.tu}','surat_masuk','${SURAT.smTerbatas}','sesditjen','terbatas','Permintaan baca menunggu keputusan atasan','view','pending','2099-01-01T00:00:00Z')`);
         expect(await mod.findActiveGrant(holder.db, PENGGUNA.tu, 'surat_masuk', SURAT.smTerbatas, 'sesditjen', 'terbatas')).toBeNull();
     });
 
@@ -184,4 +190,23 @@ describe('resolveKonteksBaca: konteks tambahan', () => {
         const ctx = await resolveKonteksBaca({ id: USER_ID.tu, role: 'admin_unit', unitKerjaId: 'bagian_umum' }, holder.db);
         expect(ctx).toMatchObject({ unitJangkauan: 'bagian_umum', pengawas: false });
     });
+});
+
+describe('jangkauanSql: alias pemanggil tidak boleh bertabrakan dengan alias internal jangkauanUnitsSql', () => {
+    // RANGKAIAN.rs1: unit_pengolah_id='dir_bppt' (dir_bppt benar-benar terkait).
+    // RANGKAIAN.rs2: unit_pengolah_id=NULL, tidak ada anggota/distribusi
+    // dir_bppt sama sekali — dir_bppt harus TIDAK muncul untuk rs2.
+    it.each(['r', 'a', 'd', 'p'])(
+        'alias pemanggil "%s" untuk rangkaian_surat tidak membocorkan rangkaian lain yang tidak terkait dengan dir_bppt',
+        async (alias) => {
+            const query = sql`
+                SELECT ${sql.raw(alias)}.id::text AS id
+                FROM rangkaian_surat ${sql.raw(alias)}
+                WHERE ${jangkauanSql(sql.raw(`${alias}.id`), 'dir_bppt', false)}
+                ORDER BY ${sql.raw(alias)}.id
+            `;
+            const rows = barisDari<{ id: string }>(await holder.db.execute(query));
+            expect(rows.map(row => row.id)).toEqual([RANGKAIAN.rs1]);
+        },
+    );
 });

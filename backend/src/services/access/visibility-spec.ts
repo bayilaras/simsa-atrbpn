@@ -87,17 +87,25 @@ export interface JangkauanOptions {
  */
 export function jangkauanUnitsSql(rangkaianId: SQLWrapper | string, options: JangkauanOptions = {}): SQL {
     const id = typeof rangkaianId === 'string' ? sql`${rangkaianId}::uuid` : rangkaianId;
+    // Alias internal berprefiks `jk_` (lihat ALIAS_PREFIX_INTERNAL): rangkaianId
+    // boleh berupa SQL mentah yang mereferensikan alias tabel pemanggil (mis.
+    // `sql.raw('r.id')` saat pemanggil menulis `FROM rangkaian_surat r`). Bila
+    // subkueri ini memakai alias polos `r`/`a`/`d`/`p` yang sama, `r.id = ${id}`
+    // diam-diam berubah jadi tautologi `r.id = r.id` yang terikat ke alias lokal
+    // ini sendiri, bukan ke baris pemanggil — meloloskan SETIAP rangkaian lain
+    // yang unit pencatat/pengolahnya sama. Prefiks ini menjaga agar identifier
+    // pemanggil (divalidasi aliasAman) tidak pernah bisa sama dengan alias di sini.
     const peserta = options.disposisiLama
-        ? sql`UNION SELECT p.unit_kerja_id FROM rangkaian_peserta p
-              WHERE p.rangkaian_id = ${id} AND p.berakhir_at IS NULL`
+        ? sql`UNION SELECT jk_p.unit_kerja_id FROM rangkaian_peserta jk_p
+              WHERE jk_p.rangkaian_id = ${id} AND jk_p.berakhir_at IS NULL`
         : sql``;
     return sql`(
-        SELECT r.unit_pencatat_id AS unit_kerja_id FROM rangkaian_surat r WHERE r.id = ${id}
-        UNION SELECT r.unit_pengolah_id FROM rangkaian_surat r
-              WHERE r.id = ${id} AND r.unit_pengolah_id IS NOT NULL
-        UNION SELECT a.unit_kerja_id FROM rangkaian_anggota a WHERE a.rangkaian_id = ${id}
-        UNION SELECT d.target_unit_id FROM surat_distributions d
-              WHERE d.rangkaian_id = ${id} AND d.status <> 'rejected'
+        SELECT jk_r.unit_pencatat_id AS unit_kerja_id FROM rangkaian_surat jk_r WHERE jk_r.id = ${id}
+        UNION SELECT jk_r.unit_pengolah_id FROM rangkaian_surat jk_r
+              WHERE jk_r.id = ${id} AND jk_r.unit_pengolah_id IS NOT NULL
+        UNION SELECT jk_a.unit_kerja_id FROM rangkaian_anggota jk_a WHERE jk_a.rangkaian_id = ${id}
+        UNION SELECT jk_d.target_unit_id FROM surat_distributions jk_d
+              WHERE jk_d.rangkaian_id = ${id} AND jk_d.status <> 'rejected'
         ${peserta}
     )`;
 }
@@ -143,19 +151,27 @@ export type PelaksanaSql = { execute: (query: SQL) => PromiseLike<unknown> };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALIAS_RE = /^[a-z_][a-z0-9_]*$/;
 /**
- * Alias yang dipakai builder internal untuk subkueri jangkauan/grant pada
- * statement SQL yang sama (`ra` = rangkaian_anggota di jangkauanRekamanSql,
- * `g` = record_access_grants di grantAktifSql, `j` = subkueri jangkauanUnitsSql
- * di jangkauanSql). Alias pemanggil tidak boleh memakainya: sebelum penjagaan
- * ini, alias 'ra' membuat `${a}.id` diam-diam menunjuk ke rangkaian_anggota
- * sendiri (menolak peserta tanpa error) dan alias 'g' membuat `${a}.id`
- * menunjuk ke record_access_grants (kolom tidak ada → error SQL).
+ * Semua alias tabel yang dipakai builder internal untuk subkueri
+ * jangkauan/grant pakai prefiks `jk_` (jangkauanUnitsSql: `jk_r`, `jk_a`,
+ * `jk_d`, `jk_p`; jangkauanSql: `jk_j`; grantAktifSql: `jk_g`;
+ * jangkauanRekamanSql: `jk_ra`). Prefiks ini DICADANGKAN — alias pemanggil
+ * (target.alias di visibleSql, atau alias tabel apa pun yang disisipkan
+ * lewat SQLWrapper mentah seperti argumen rangkaianId di jangkauanSql) tidak
+ * boleh memakainya, karena beberapa builder menyisipkan alias pemanggil itu
+ * sebagai teks SQL mentah ke dalam statement yang sama tempat alias
+ * internal ini dideklarasikan. Sebelum prefiks ini ada, alias pemanggil
+ * polos 'r'/'a'/'d'/'p' (persis nama alias internal lama) membuat kondisi
+ * `r.id = ${id}` di jangkauanUnitsSql diam-diam menjadi tautologi yang
+ * terikat ke alias LOKAL, bukan ke baris pemanggil, sehingga jangkauan satu
+ * rangkaian bisa membocorkan rangkaian lain yang tidak berkaitan. Alias
+ * bekas 'ra'/'g'/'j' tetap ditolak eksplisit sebagai jaga-jaga tambahan.
  */
+const ALIAS_PREFIX_INTERNAL = 'jk_';
 const ALIAS_INTERNAL_TERPAKAI: ReadonlySet<string> = new Set(['ra', 'g', 'j']);
 
 function aliasAman(alias: string): string {
     if (!ALIAS_RE.test(alias)) throw new Error(`Alias SQL tidak valid: ${alias}`);
-    if (ALIAS_INTERNAL_TERPAKAI.has(alias)) {
+    if (ALIAS_INTERNAL_TERPAKAI.has(alias) || alias.startsWith(ALIAS_PREFIX_INTERNAL)) {
         throw new Error(`Alias SQL '${alias}' dicadangkan untuk subkueri internal dan tidak boleh dipakai pemanggil`);
     }
     return alias;
@@ -267,7 +283,7 @@ export function klasifikasiRekamanSql(type: JenisRekamanRangkaian, alias: string
  * cabang rangkaian_peserta hanya ikut bila disposisiLamaRead (flag P5) true.
  */
 export function jangkauanSql(rangkaianId: SQLWrapper, unitKerjaId: string, disposisiLamaRead: boolean): SQL {
-    return sql`(${unitKerjaId} IN (SELECT j.unit_kerja_id FROM ${jangkauanUnitsSql(rangkaianId, { disposisiLama: disposisiLamaRead })} AS j))`;
+    return sql`(${unitKerjaId} IN (SELECT jk_j.unit_kerja_id FROM ${jangkauanUnitsSql(rangkaianId, { disposisiLama: disposisiLamaRead })} AS jk_j))`;
 }
 
 export function jangkauanRekamanSql(ctx: KonteksBaca, type: JenisRekamanRangkaian, alias: string): SQL {
@@ -276,7 +292,7 @@ export function jangkauanRekamanSql(ctx: KonteksBaca, type: JenisRekamanRangkaia
     if (ctx.pengawas) parts.push(dalamCakupanPengawasSql(sql.raw(`${a}.unit_kerja_id`)));
     if (ctx.unitJangkauan) {
         const fk = type === 'surat_masuk' ? 'surat_masuk_id' : 'surat_keluar_id';
-        parts.push(sql`EXISTS (SELECT 1 FROM rangkaian_anggota ra WHERE ra.${sql.raw(fk)} = ${sql.raw(`${a}.id`)} AND ${jangkauanSql(sql.raw('ra.rangkaian_id'), ctx.unitJangkauan, ctx.disposisiLamaRead)})`);
+        parts.push(sql`EXISTS (SELECT 1 FROM rangkaian_anggota jk_ra WHERE jk_ra.${sql.raw(fk)} = ${sql.raw(`${a}.id`)} AND ${jangkauanSql(sql.raw('jk_ra.rangkaian_id'), ctx.unitJangkauan, ctx.disposisiLamaRead)})`);
     }
     return parts.length ? sql`(${sql.join(parts, sql` OR `)})` : sql`false`;
 }
@@ -291,14 +307,14 @@ export function grantAktifSql(
     const userId = ctx.user?.id;
     if (!userId || !UUID_RE.test(userId)) return sql`false`;
     return sql`EXISTS (
-        SELECT 1 FROM record_access_grants g
-        WHERE g.target_user_id = ${userId}::uuid
-          AND g.entity_type = ${type}
-          AND g.entity_id = ${idCol}
-          AND g.unit_kerja_id = ${unitCol}
-          AND g.required_classification = ${kelasNorm}
-          AND g.status = 'approved'
-          AND g.expires_at > now()
+        SELECT 1 FROM record_access_grants jk_g
+        WHERE jk_g.target_user_id = ${userId}::uuid
+          AND jk_g.entity_type = ${type}
+          AND jk_g.entity_id = ${idCol}
+          AND jk_g.unit_kerja_id = ${unitCol}
+          AND jk_g.required_classification = ${kelasNorm}
+          AND jk_g.status = 'approved'
+          AND jk_g.expires_at > now()
     )`;
 }
 
