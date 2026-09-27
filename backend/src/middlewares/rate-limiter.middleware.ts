@@ -110,6 +110,25 @@ export const ocrLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+export const LACAK_RATE_LIMIT_MAX = 90;
+
+// Lacak Surat dipanggil saat mengetik (debounce 300 ms di klien). Kuota per
+// pengguna terautentikasi, tidak per IP, agar satu kantor di balik NAT tidak
+// saling menghabiskan. generalLimiter tetap berlaku (tidak di-skip).
+export const lacakLimiter = rateLimit({
+    store: createRateLimiterStore('lacak'),
+    passOnStoreError: false,
+    windowMs: 60 * 1000,
+    max: LACAK_RATE_LIMIT_MAX,
+    keyGenerator: (req: AuthRequest) => req.user?.id || 'unauthenticated',
+    message: {
+        error: 'Too Many Requests',
+        message: 'Terlalu banyak pencarian. Coba lagi setelah 1 menit.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 // Keep each bounded Sheets phase at three requests/minute, with independent
 // counters so discovery and preview cannot consume the write quota.
 function createImportPhaseLimiter(bucket: string, phase: string) { return rateLimit({

@@ -59,6 +59,7 @@ describe('metadata-only demo API access', () => {
         ['PUT', `/api/surat-keluar/${id}`],
         ['POST', `/api/surat-keluar/${id}/archive-full`],
         ['GET', `/api/rangkaian/${id}`],
+        ['GET', '/api/rangkaian/lacak'],
         ['GET', `/api/rangkaian/by-surat/surat_masuk/${id}`],
         ['GET', '/api/arsip/search/fulltext'],
         ['POST', `/api/arsip/${id}/reconcile-rules`],

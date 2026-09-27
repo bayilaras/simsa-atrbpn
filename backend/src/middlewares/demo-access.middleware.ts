@@ -52,7 +52,7 @@ const ALLOWED_METADATA_ROUTES: readonly AllowedRoute[] = [
     { methods: PUT, path: exact(`/surat-keluar/${UUID}`) },
     { methods: DELETE, path: exact(`/surat-keluar/${UUID}`) },
 
-    { methods: GET, path: exact(`/rangkaian/(?:${UUID}|by-surat/(?:surat_masuk|surat_keluar)/${UUID})`) },
+    { methods: GET, path: exact(`/rangkaian/(?:lacak|${UUID}|by-surat/(?:surat_masuk|surat_keluar)/${UUID})`) },
 
     { methods: GET, path: exact(`/arsip(?:/(?:expiring|stats|search/(?:fulltext|suggestions|keywords)|${UUID}(?:/(?:related|rule-history))?))?`) },
     { methods: POST, path: exact(`/arsip(?:/${UUID}/reconcile-rules)?`) },

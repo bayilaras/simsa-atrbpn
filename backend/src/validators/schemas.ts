@@ -572,6 +572,16 @@ export type CreateDistribution = z.infer<typeof createDistributionSchema>;
 export type RejectDistribution = z.infer<typeof rejectDistributionSchema>;
 export type QueryDistribution = z.infer<typeof queryDistributionSchema>;
 
+// ==================== Rangkaian: Lacak ====================
+export const lacakQuerySchema = z.object({
+    q: z.string().trim().min(3, 'Kata kunci minimal 3 karakter').max(100, 'Kata kunci maksimal 100 karakter'),
+    tahun: z.coerce.number().int().min(2000).max(2100).optional(),
+    mode: z.enum(['lacak', 'referensi', 'cek']).default('lacak'),
+    limit: z.coerce.number().int().min(1).max(8).default(8),
+    jenis: z.enum(['surat_masuk', 'surat_keluar']).optional(),
+});
+export type LacakQuery = z.infer<typeof lacakQuerySchema>;
+
 // ==================== Penyusutan schemas ====================
 
 export const createPenyusutanSchema = z.object({

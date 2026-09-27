@@ -1,9 +1,14 @@
 import { Router, type Response } from 'express';
 import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware';
-import { validateIdParam } from '../middlewares/validate.middleware';
+import { validateIdParam, validateQuery } from '../middlewares/validate.middleware';
+import { canReadMiddleware } from '../middlewares/role.middleware';
+import { lacakLimiter } from '../middlewares/rate-limiter.middleware';
+import { lacakQuerySchema } from '../validators/schemas';
 import auditLogService from '../services/audit-log.service.js';
 import { recordAccessService } from '../services/record-access.service.js';
 import { rangkaianReadService, type RangkaianDetail } from '../services/rangkaian-read.service.js';
+import { lacakService } from '../services/rangkaian/lacak.service.js';
+import type { LacakParams } from '../services/rangkaian/lacak.types.js';
 import type { JenisRekamanRangkaian } from '../services/access/visibility-spec.js';
 
 const router = Router();
@@ -30,6 +35,19 @@ async function auditLintasUnit(req: AuthRequest, detail: RangkaianDetail, extraC
         ipAddress: req.ip,
     });
 }
+
+// GET /api/rangkaian/lacak — pencarian surat/rangkaian (§6). Harus terdaftar
+// sebelum '/:id' dan '/by-surat/...': validateIdParam akan menolak 'lacak'
+// dan 'by-surat' sebagai segmen path lain, tapi Express mencocokkan urutan
+// pendaftaran, jadi ini tetap wajib berada lebih dulu (Review Focus #1).
+router.get('/lacak', canReadMiddleware(), lacakLimiter, validateQuery(lacakQuerySchema), async (req: AuthRequest, res, next) => {
+    try {
+        const params = res.locals.validatedQuery as LacakParams;
+        res.json({ success: true, data: await lacakService.search(req.user!, params) });
+    } catch (error) {
+        next(error);
+    }
+});
 
 // GET /api/rangkaian/by-surat/:jenis/:suratId — rangkaian dari surat yang dapat dibaca (null = surat tunggal)
 router.get('/by-surat/:jenis/:suratId', validateIdParam('suratId'), async (req: AuthRequest, res, next) => {

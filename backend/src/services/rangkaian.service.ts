@@ -23,6 +23,7 @@ import {
 import { jangkauanUnitsSql, type JangkauanOptions } from './access/visibility-spec.js';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
+import type { RecordUser } from './record-access.service.js';
 
 export type { JenisRelasi, RangkaianStatus } from '../db/schema';
 export type JenisSurat = 'surat_masuk' | 'surat_keluar';
@@ -781,6 +782,12 @@ export const rangkaianService = {
             },
         });
         return { rangkaianId: rangkaian.id, anggotaId, relasiId, anggotaBaru, digabungDari, reopened };
+    },
+
+    /** GET /api/rangkaian/lacak (§6). Implementasi di services/rangkaian/lacak.service.ts. */
+    async lacak(user: RecordUser, params: import('./rangkaian/lacak.types.js').LacakParams) {
+        const { lacakService } = await import('./rangkaian/lacak.service.js');
+        return lacakService.search(user, params);
     },
 };
 
