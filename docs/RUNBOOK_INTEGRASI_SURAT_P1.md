@@ -91,6 +91,25 @@ Kontrak layanan berikut dari P1 wajib dipatuhi P3 saat menyambungkan rute/servis
 - **Setiap jalur distribusi harus lewat `ensureForSuratMasuk` atau pre-check layanan setingkat**, supaya trigger penutupan berkas 0046 (`surat_distributions_closed_guard`, dkk.) tidak pernah tampil ke pemanggil sebagai 500 mentah. `rangkaianService.ensureForSuratMasuk` (`backend/src/services/rangkaian.service.ts`) dan pemeriksaan status rangkaian di `distributionService.distribute` (`backend/src/services/distribution.service.ts`, memeriksa `rangkaian.status IN ('diberkaskan','digabung')` sebelum INSERT) adalah dua contoh pola ini; P3 mengulang pola yang sama untuk rute baru.
 - **Backfill langkah 1 wajib mengisi `rangkaian_id` pada seluruh baris `surat_distributions` yang ada** sebelum kode P3 (yang mewajibkan kolom ini pada jalur baru) diaktifkan — lihat kriteria keluar pada langkah 5 di atas.
 
+Catatan tambahan dari review final P1 (belum ada kode P1 yang menanganinya; wajib jadi keputusan/pekerjaan P3 kecuali disebutkan lain):
+
+1. Setiap penulisan distribusi (insert, receive, process, reject, tutup, penyelesaian, gabung) mengunci baris surat lalu `rangkaian_surat` `FOR UPDATE` lebih dulu — lihat bullet "Urutan kunci" (Important 2) di atas.
+2. Setelah distribute ke rangkaian berstatus `selesai`, panggil `recomputeStatus` supaya rangkaian itu terbuka lagi bila perlu; panggil juga `recomputeSuratMasukStatus` setelah distribute/process supaya status kompatibilitas `surat_masuk` ikut diturunkan.
+3. Tegakkan spesifikasi §9 untuk `unitPengolahId`: harus berada dalam jangkauan (target disposisi, penulis anggota, atau pemilik induk) — `ensureForSurat`/`ensureForSuratMasuk` P1 belum memeriksa ini sama sekali.
+4. Migrasi berikutnya yang menambah kolom ke `rangkaian_surat` wajib `CREATE OR REPLACE FUNCTION rangkaian_guard_status()` untuk memperluas daftar pengecualian imutabilitas `diberkaskan` (baris `(to_jsonb(NEW) - ... )` di trigger 0046) — kolom baru yang tidak dikecualikan akan otomatis ikut dibekukan begitu rangkaian `diberkaskan`.
+5. Trigger penutupan berkas berjalan sebagai *invoker* (bukan *definer*) — peran mana pun yang menulis `surat_distributions`/`rangkaian_anggota`/`rangkaian_relasi` butuh `UPDATE` pada `rangkaian_surat` dan `SELECT` pada `rangkaian_anggota` (bila backfill/P5 dijalankan sebagai peran maintenance terpisah, peran itu perlu grant serupa → ini mengubah hash `grants/0002` dan pin Neon-nya).
+6. Backfill/P5 yang meng-INSERT `rangkaian_surat` wajib memakai `nextval('rangkaian_surat_kode_seq')` untuk `kode`, dan mengunci baris surat lebih dulu (atau baris rangkaian untuk kasus peserta) sebelum menulis.
+7. `hardDelete` (`surat-masuk.service.ts`/`surat-keluar.service.ts`) tetap tidak disambungkan ke rute mana pun untuk surat yang sudah jadi anggota rangkaian; bila P3 menyambungkannya, petakan FK violation (`23503`) dari `rangkaian_anggota` menjadi error yang bermakna bagi pemanggil.
+8. P5 (Koreksi Berkas): `set_config('simsa.berkas_koreksi', id, true)` bersifat transaction-local (parameter ketiga `true`) — set dan gunakan dalam transaksi yang sama; transisi `approved` → `applied` harus terjadi di transaksi yang sama dengan UPDATE `rangkaian_surat` yang diizinkannya.
+9. `rangkaian_peserta` tidak punya trigger penutupan berkas (`rangkaian_guard_closed`) — P5 yang memutuskan apakah baris peserta boleh berubah pada rangkaian yang sudah `diberkaskan`.
+10. P2 yang memutuskan apakah anggota dari surat keluar yang di-soft-delete tetap memberi jangkauan akses (`jangkauanUnitIds` saat ini tidak memfilter `is_deleted` pada anggota), dan P2 juga menambahkan label audit frontend untuk aksi `merge`/`link`, entitas `rangkaian_surat`, dan `rangkaian_relasi` (P1 hanya mencatatnya di `audit_log`, belum ada label UI).
+11. Pemeriksaan pemberkasan P4 memakai predikat blocking yang sama dengan `recomputeStatus` (lihat Important 1 di atas — NOT(punya relasi keluar AND semua dibatalkan), bukan berbasis peran), dan menyelesaikan (resolve) rantai `digabung` secara rekursif sampai menemukan rangkaian tujuan akhir yang bukan `digabung`.
+
+Catatan tambahan lain:
+- Audit `gabung`/`attach` P1 hanya mencatat **jumlah** anggota/distribusi yang dipindah (`anggotaDipindah`/`distribusiDipindah`), bukan id-nya — P3 wajib merekam id baris anggota/distribusi yang dipindah sebelum fitur gabung ini diekspos ke pengguna, supaya jejak audit bisa ditelusuri per-baris.
+- `batasWaktu` pada distribusi (P1 hanya membawanya lewat) butuh validasi format `YYYY-MM-DD` dengan zod di P3.
+- Kotak masuk yang dimasker (masked inbox) harus mencakup `catatan_penyelesaian`, bukan hanya kolom lain yang sudah dimasker.
+
 ## Rollback
 
 Pemulihan yang disarankan adalah **deploy ulang versi aplikasi sebelumnya dengan skema 47 tetap terpasang**. Aplikasi lama kompatibel: kolom baru nullable/berdefault, index parsial lebih longgar daripada cek duplikat lama, dan tabel `rangkaian_*` tidak dipakai. Jangan menghapus tabel atau membalik migrasi secara manual; bila skema harus dibatalkan, pulihkan dari backup langkah 1.
