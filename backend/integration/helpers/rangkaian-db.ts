@@ -90,8 +90,12 @@ export async function createRangkaianTestDatabase(label: string) {
 
     async function insertSuratMasuk(input: { unitKerjaId: string; nomorSurat: string; perihal?: string | null; sifatSurat?: string; tahun?: number; dari?: string; createdBy?: string | null }) {
         const tahun = input.tahun ?? 2026;
+        // $1::varchar di kedua pemakaian: VALUES menyimpulkan varchar(50)
+        // (unit_kerja_id), sedangkan `unit_kerja_id = $1` tanpa cast
+        // menyimpulkan text lewat operator text=text — Postgres menolak
+        // parameter yang sama dengan dua tipe berbeda (42P08). [F2]
         const [row] = await query<{ id: string }>(`INSERT INTO surat_masuk (unit_kerja_id, no_urut, tahun, nomor_surat, perihal, dari, sifat_surat, tanggal_surat, created_by)
-            VALUES ($1, (SELECT coalesce(max(no_urut), 0) + 1 FROM surat_masuk WHERE unit_kerja_id = $1 AND tahun = $2), $2, $3, $4, $5, $6, make_date($2, 9, 12), $7)
+            VALUES ($1::varchar, (SELECT coalesce(max(no_urut), 0) + 1 FROM surat_masuk WHERE unit_kerja_id = $1::varchar AND tahun = $2), $2, $3, $4, $5, $6, make_date($2, 9, 12), $7)
             RETURNING id`, [input.unitKerjaId, tahun, input.nomorSurat, input.perihal === undefined ? 'Perihal uji' : input.perihal,
             input.dari ?? 'Kantah Sintetis', input.sifatSurat ?? 'biasa', input.createdBy ?? null]);
         return row.id;
@@ -99,8 +103,11 @@ export async function createRangkaianTestDatabase(label: string) {
 
     async function insertSuratKeluar(input: { unitKerjaId: string; nomorSurat: string; perihal?: string; naskahDinas?: string; approvalStatus?: string; klasifikasiKeamanan?: string; tahun?: number; asalNaskah?: string | null; kepada?: string }) {
         const tahun = input.tahun ?? 2026;
+        // $1::varchar di kedua pemakaian: lihat catatan pada insertSuratMasuk
+        // di atas — 42P08 yang sama terjadi di surat_keluar.unit_kerja_id
+        // (juga varchar(50)). [F2]
         const [row] = await query<{ id: string }>(`INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun, nomor_surat, perihal, kepada, naskah_dinas, approval_status, klasifikasi_keamanan, tanggal_surat, asal_naskah)
-            VALUES ($1, (SELECT coalesce(max(no_urut), 0) + 1 FROM surat_keluar WHERE unit_kerja_id = $1 AND tahun = $2), $2, $3, $4, $5, $6, $7, $8, make_date($2, 9, 12), $9)
+            VALUES ($1::varchar, (SELECT coalesce(max(no_urut), 0) + 1 FROM surat_keluar WHERE unit_kerja_id = $1::varchar AND tahun = $2), $2, $3, $4, $5, $6, $7, $8, make_date($2, 9, 12), $9)
             RETURNING id`, [input.unitKerjaId, tahun, input.nomorSurat, input.perihal ?? 'Perihal keluar uji', input.kepada ?? 'Pihak Sintetis',
             input.naskahDinas ?? 'Nota Dinas', input.approvalStatus ?? 'draft', input.klasifikasiKeamanan ?? 'biasa', input.asalNaskah ?? null]);
         return row.id;

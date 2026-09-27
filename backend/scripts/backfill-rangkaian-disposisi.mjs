@@ -26,6 +26,14 @@ function judulDari(surat) {
 }
 
 export async function backfillRangkaianDisposisi(client, { batchSize = 500, log = () => {} } = {}) {
+  // Log identitas koneksi SEBELUM batch pertama: operator produksi harus
+  // bisa melihat langsung role dan database yang sedang ditulis skrip ini,
+  // supaya salah role/DB (mis. lupa set DATABASE_URL ke NEON_RUNTIME_DATABASE_URL
+  // dan jatuh ke backend/.env) langsung terlihat sebelum menyimpulkan
+  // `sisaTanpaRangkaian: 0` dari database yang salah. [F3]
+  const { rows: [identitas] } = await client.query(
+    'SELECT current_user AS db_user, current_database() AS db_name');
+  log({ dbUser: identitas.db_user, dbName: identitas.db_name });
   let rangkaianDibuat = 0;
   let distribusiDiisi = 0;
   const dilewati = [];
@@ -79,8 +87,13 @@ export async function backfillRangkaianDisposisi(client, { batchSize = 500, log 
           const status = agg.terbuka ? 'aktif' : 'selesai';
           const pengolah = Number(agg.jumlah_target) === 1 ? agg.target_tunggal : null;
           const { rows: [created] } = await client.query(
+            // $2::varchar di kedua pemakaian: VALUES menyimpulkan varchar(20)
+            // (kolom rangkaian_surat.status), sedangkan `$2 = 'selesai'` tanpa
+            // cast menyimpulkan text lewat operator text=text — Postgres
+            // menolak parameter yang sama dengan dua tipe berbeda (42P08
+            // "inconsistent types deduced for parameter $2"). [F1]
             `INSERT INTO rangkaian_surat (kode, asal, status, unit_pencatat_id, unit_pengolah_id, judul, tahun, selesai_at)
-             VALUES ($1, 'surat_masuk', $2, $3, $4, $5, $6, CASE WHEN $2 = 'selesai' THEN now() END)
+             VALUES ($1, 'surat_masuk', $2::varchar, $3, $4, $5, $6, CASE WHEN $2::varchar = 'selesai' THEN now() END)
              RETURNING id`,
             [kode, status, surat.unit_kerja_id, pengolah, judulDari(surat), surat.tahun]);
           rangkaianId = created.id;
@@ -112,8 +125,24 @@ export async function backfillRangkaianDisposisi(client, { batchSize = 500, log 
 }
 
 async function main() {
+  // Sengaja diperiksa SEBELUM dotenv.config(): skrip ini menyentuh produksi
+  // lewat runbook (docs/RUNBOOK_INTEGRASI_SURAT_P3.md §4), jadi DATABASE_URL
+  // harus sudah diset eksplisit di shell (dari NEON_RUNTIME_DATABASE_URL,
+  // pola prompt tersembunyi) sebelum npm dipanggil. Berbeda dari db:migrate,
+  // skrip ini TIDAK jatuh ke fallback backend/.env — kalau lupa set, jatuh
+  // ke .env bisa diam-diam membackfill database dev, atau produksi lewat
+  // role bukan-runtime (melanggar T2-3), dan operator akan salah membaca
+  // `sisaTanpaRangkaian: 0` dari database yang salah. [F3]
+  const sudahEksplisit = Boolean(process.env.DATABASE_URL?.trim());
   dotenv.config({ quiet: true });
-  if (!process.env.DATABASE_URL?.trim()) throw new Error('DATABASE_URL is required for db:backfill:rangkaian-disposisi');
+  if (!sudahEksplisit) {
+    throw new Error(
+      'DATABASE_URL harus diset eksplisit di shell sebelum menjalankan db:backfill:rangkaian-disposisi ' +
+      '(skrip ini TIDAK memakai fallback backend/.env). Ikuti pola prompt tersembunyi di ' +
+      'docs/RUNBOOK_INTEGRASI_SURAT_P3.md §4 untuk mengisi DATABASE_URL dari NEON_RUNTIME_DATABASE_URL ' +
+      '(role runtime simsa_api).',
+    );
+  }
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10_000 });
   await client.connect();
   try {

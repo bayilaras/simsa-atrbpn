@@ -44,10 +44,14 @@ melompati langkah verifikasi.
 ```
 npm run db:migrate
 npm run db:grants:converge      # tidak ada migrasi baru di P3
-npm run db:backfill:rangkaian-disposisi
+<jalankan backfill — lihat §4 untuk perintah lengkap>
 # --- deploy kode P3 ---
-npm run db:backfill:rangkaian-disposisi   # dijalankan LAGI, segera setelah deploy
+<jalankan backfill LAGI — lihat §4 — segera setelah deploy>
 ```
+
+`npm run db:backfill:rangkaian-disposisi` bare (tanpa `DATABASE_URL` diset
+eksplisit) BUKAN cara yang benar untuk menjalankan langkah ini — lihat §4
+untuk alasan dan perintah yang benar.
 
 Penulis P2 (`POST /api/distributions`, lihat `distribution.routes.ts:206-213`)
 masih aktif sampai kode P3 benar-benar live, sehingga baris
@@ -73,11 +77,49 @@ SELECT count(*) FROM surat_distributions WHERE rangkaian_id IS NULL;
 ## 4. Peran
 
 Jalankan skrip backfill sebagai role runtime `simsa_api` lewat
-`NEON_RUNTIME_DATABASE_URL`, memakai pola prompt tersembunyi
-`docs/RUNBOOK_INTEGRASI_SURAT_P1.md:7-27`. Role itu sudah memegang grant
-yang diperlukan (`backend/src/db/grants/0002_converge_application_grants.sql`).
-**Jangan** memakai role maintenance terpisah — itu mengubah hash
-grants/0002 dan pin Neon. [T2-3]
+`NEON_RUNTIME_DATABASE_URL`. Role itu sudah memegang grant yang diperlukan
+(`backend/src/db/grants/0002_converge_application_grants.sql`). **Jangan**
+memakai role maintenance terpisah — itu mengubah hash grants/0002 dan pin
+Neon. [T2-3]
+
+**Penting — beda dari pola P1.** Pola prompt tersembunyi di
+`docs/RUNBOOK_INTEGRASI_SURAT_P1.md:7-27` mengisi variabel
+`NEON_QUERY_DATABASE_URL` untuk `psql`. Skrip backfill ini (Node, bukan
+`psql`) hanya membaca `DATABASE_URL`, dan **tidak** memakai fallback
+`backend/.env` untuk variabel ini — kalau `DATABASE_URL` tidak diset
+eksplisit di shell, skrip berhenti dengan error, TIDAK diam-diam
+membackfill database lain. Isi `DATABASE_URL` dengan connection string
+`simsa_api` (`NEON_RUNTIME_DATABASE_URL`) lewat pola aman di bawah, jalankan
+lewat `npm --prefix backend run ...` dari root repo, lalu hapus variabelnya
+segera setelah selesai — jangan pernah menaruh connection string di
+argumen baris perintah atau berkas riwayat shell.
+
+```bash
+read -rs NEON_RUNTIME_DATABASE_URL && export NEON_RUNTIME_DATABASE_URL
+export DATABASE_URL="$NEON_RUNTIME_DATABASE_URL"
+npm --prefix backend run db:backfill:rangkaian-disposisi
+unset DATABASE_URL NEON_RUNTIME_DATABASE_URL
+```
+
+```powershell
+$secure = Read-Host -AsSecureString 'NEON_RUNTIME_DATABASE_URL'
+$ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($secure)
+try {
+    $env:DATABASE_URL = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
+} finally {
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeGlobalAllocUnicode($ptr)
+}
+npm --prefix backend run db:backfill:rangkaian-disposisi
+Remove-Item Env:\DATABASE_URL
+```
+
+Jalankan blok ini dua kali sesuai §2 (sebelum dan segera setelah deploy
+kode P3). Baris pertama yang dicetak skrip adalah
+`{"dbUser":"...","dbName":"..."}` — **periksa baris ini sebelum membaca
+`sisaTanpaRangkaian`**: `dbUser` harus `simsa_api` dan `dbName` harus nama
+database produksi yang dimaksud. Bila baris ini menunjukkan role atau
+database yang salah, hentikan (Ctrl+C) sebelum skrip menulis apa pun lagi
+dan periksa `DATABASE_URL` yang diisi. [F3]
 
 ## 5. Flag
 
