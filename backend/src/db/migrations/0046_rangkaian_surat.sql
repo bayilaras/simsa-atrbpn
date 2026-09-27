@@ -250,3 +250,153 @@ REVOKE DELETE ON TABLE
     rangkaian_peserta,
     rangkaian_koreksi_berkas
     FROM simsa_api_runtime;
+--> statement-breakpoint
+-- Penutupan berkas (pola 0021): anggota, relasi, dan disposisi rangkaian
+-- yang diberkaskan tidak dapat berubah. Disposisi tanpa rangkaian_id (jalur
+-- lama) ditahan lewat keanggotaan surat masuknya.
+CREATE OR REPLACE FUNCTION rangkaian_guard_closed()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    candidate_ids uuid[] := ARRAY[]::uuid[];
+    closed_id uuid;
+BEGIN
+    IF TG_TABLE_NAME = 'rangkaian_anggota' AND TG_OP = 'UPDATE' THEN
+        IF NEW.surat_masuk_id IS DISTINCT FROM OLD.surat_masuk_id
+           OR NEW.surat_keluar_id IS DISTINCT FROM OLD.surat_keluar_id
+           OR NEW.unit_kerja_id IS DISTINCT FROM OLD.unit_kerja_id THEN
+            RAISE EXCEPTION 'Identitas anggota rangkaian % tidak dapat diubah', OLD.id
+                USING ERRCODE = '23514';
+        END IF;
+    END IF;
+
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        candidate_ids := candidate_ids || NEW.rangkaian_id;
+        IF TG_TABLE_NAME = 'surat_distributions' THEN
+            candidate_ids := candidate_ids || ARRAY(
+                SELECT a.rangkaian_id FROM rangkaian_anggota a
+                WHERE a.surat_masuk_id = NEW.surat_masuk_id
+            );
+        END IF;
+    END IF;
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        candidate_ids := candidate_ids || OLD.rangkaian_id;
+        IF TG_TABLE_NAME = 'surat_distributions' THEN
+            candidate_ids := candidate_ids || ARRAY(
+                SELECT a.rangkaian_id FROM rangkaian_anggota a
+                WHERE a.surat_masuk_id = OLD.surat_masuk_id
+            );
+        END IF;
+    END IF;
+
+    -- Kunci dulu: pemberkasan yang sedang berjalan harus selesai sebelum
+    -- status dibaca (READ COMMITTED mengambil snapshot baru per statement).
+    PERFORM 1 FROM rangkaian_surat r
+    WHERE r.id = ANY (candidate_ids)
+    ORDER BY r.id
+    FOR SHARE;
+
+    SELECT r.id INTO closed_id
+    FROM rangkaian_surat r
+    WHERE r.id = ANY (candidate_ids)
+      AND r.status = 'diberkaskan'
+    LIMIT 1;
+
+    IF closed_id IS NOT NULL THEN
+        RAISE EXCEPTION 'Rangkaian % sudah diberkaskan; anggota, relasi, dan disposisinya terkunci', closed_id
+            USING ERRCODE = '23514';
+    END IF;
+
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END $$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION rangkaian_guard_status()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    koreksi_setting text;
+    koreksi rangkaian_koreksi_berkas%ROWTYPE;
+    tujuan_status text;
+BEGIN
+    IF TG_OP = 'UPDATE' AND OLD.status = 'digabung' AND (
+        NEW.status IS DISTINCT FROM OLD.status
+        OR NEW.digabung_ke_id IS DISTINCT FROM OLD.digabung_ke_id
+    ) THEN
+        RAISE EXCEPTION 'Rangkaian % sudah digabung; status dan tujuannya tidak dapat diubah', OLD.id
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF TG_OP = 'UPDATE' AND OLD.status = 'diberkaskan' THEN
+        IF NEW.status IS DISTINCT FROM 'diberkaskan' THEN
+            RAISE EXCEPTION 'Rangkaian % sudah diberkaskan; status tidak dapat dibuka kembali', OLD.id
+                USING ERRCODE = '23514';
+        END IF;
+        IF NEW.diberkaskan_at IS DISTINCT FROM OLD.diberkaskan_at
+           OR NEW.diberkaskan_by IS DISTINCT FROM OLD.diberkaskan_by THEN
+            RAISE EXCEPTION 'Bukti pemberkasan rangkaian % tidak dapat diubah', OLD.id
+                USING ERRCODE = '23514';
+        END IF;
+        IF NEW.unit_pengolah_id IS DISTINCT FROM OLD.unit_pengolah_id
+           OR NEW.klasifikasi_item_id IS DISTINCT FROM OLD.klasifikasi_item_id THEN
+            koreksi_setting := nullif(current_setting('simsa.berkas_koreksi', true), '');
+            IF koreksi_setting IS NULL
+               OR koreksi_setting !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+                RAISE EXCEPTION 'Unit pengolah/klasifikasi rangkaian % yang diberkaskan hanya dapat diubah lewat Koreksi Berkas yang disetujui', OLD.id
+                    USING ERRCODE = '23514';
+            END IF;
+            SELECT * INTO koreksi
+            FROM rangkaian_koreksi_berkas k
+            WHERE k.id = koreksi_setting::uuid
+              AND k.rangkaian_id = OLD.id
+              AND k.status = 'approved'
+              AND k.diputuskan_by IS NOT NULL
+              AND k.diputuskan_at IS NOT NULL
+            FOR UPDATE;
+            IF NOT FOUND
+               OR OLD.unit_pengolah_id IS DISTINCT FROM koreksi.unit_pengolah_lama
+               OR OLD.klasifikasi_item_id IS DISTINCT FROM koreksi.klasifikasi_lama
+               OR NEW.unit_pengolah_id IS DISTINCT FROM koreksi.unit_pengolah_baru
+               OR NEW.klasifikasi_item_id IS DISTINCT FROM koreksi.klasifikasi_baru THEN
+                RAISE EXCEPTION 'Perubahan rangkaian % tidak sesuai Koreksi Berkas yang disetujui', OLD.id
+                    USING ERRCODE = '23514';
+            END IF;
+        END IF;
+    END IF;
+
+    IF NEW.digabung_ke_id IS NOT NULL
+       AND (TG_OP = 'INSERT' OR NEW.digabung_ke_id IS DISTINCT FROM OLD.digabung_ke_id) THEN
+        SELECT r.status INTO tujuan_status
+        FROM rangkaian_surat r
+        WHERE r.id = NEW.digabung_ke_id
+        FOR SHARE;
+        IF tujuan_status IS NULL OR tujuan_status IN ('digabung', 'diberkaskan') THEN
+            RAISE EXCEPTION 'Rangkaian % berstatus % dan tidak dapat menjadi tujuan penggabungan',
+                NEW.digabung_ke_id, coalesce(tujuan_status, 'tidak ada')
+                USING ERRCODE = '23514';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END $$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION rangkaian_guard_closed() FROM PUBLIC;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION rangkaian_guard_status() FROM PUBLIC;
+--> statement-breakpoint
+CREATE TRIGGER rangkaian_anggota_closed_guard
+BEFORE INSERT OR UPDATE OR DELETE ON rangkaian_anggota
+FOR EACH ROW EXECUTE FUNCTION rangkaian_guard_closed();
+--> statement-breakpoint
+CREATE TRIGGER rangkaian_relasi_closed_guard
+BEFORE INSERT OR UPDATE OR DELETE ON rangkaian_relasi
+FOR EACH ROW EXECUTE FUNCTION rangkaian_guard_closed();
+--> statement-breakpoint
+CREATE TRIGGER surat_distributions_closed_guard
+BEFORE INSERT OR UPDATE OR DELETE ON surat_distributions
+FOR EACH ROW EXECUTE FUNCTION rangkaian_guard_closed();
+--> statement-breakpoint
+CREATE TRIGGER rangkaian_surat_status_guard
+BEFORE INSERT OR UPDATE ON rangkaian_surat
+FOR EACH ROW EXECUTE FUNCTION rangkaian_guard_status();

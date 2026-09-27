@@ -1015,4 +1015,156 @@ describe('PostgreSQL migration chain', () => {
             kode_seq: true,
         }]);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0046 mengunci rangkaian yang diberkaskan, mencegah siklus gabung, dan hanya menerima koreksi berkas yang disetujui', async () => {
+        const database = await createDatabase();
+        for (const entry of journal.entries) {
+            await applyMigration(database, entry);
+        }
+
+        const maker = '46000000-0000-4000-8000-0000000000b1';
+        const checker = '46000000-0000-4000-8000-0000000000b2';
+        const sm = '46000000-0000-4000-8000-0000000000b3';
+        const smLain = '46000000-0000-4000-8000-0000000000b4';
+        const sk = '46000000-0000-4000-8000-0000000000b5';
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES
+                ('unit-46-tu', 'TU'), ('unit-46-dir', 'Direktorat'), ('unit-46-dir2', 'Direktorat 2');
+            INSERT INTO users (id, email, role) VALUES
+                ('${maker}', 'maker-0046@example.test', 'super_admin'),
+                ('${checker}', 'checker-0046@example.test', 'super_admin');
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal) VALUES
+                ('${sm}', 'unit-46-tu', 1, 2026, 'SM-46/2026', 'Surat induk'),
+                ('${smLain}', 'unit-46-tu', 2, 2026, 'SM-47/2026', 'Surat lain');
+            INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal, approval_status)
+            VALUES ('${sk}', 'unit-46-dir', 1, 2026, 'ND-46/2026', 'Tindak lanjut terarsip', 'approved');
+            INSERT INTO arsip (
+                unit_kerja_id, jenis_arsip, source_surat_id, tahun,
+                nomor_surat_original, perihal_original
+            ) VALUES ('unit-46-dir', 'keluar', '${sk}', 2026, 'ND-46/2026', 'Tindak lanjut terarsip');
+        `);
+        const klasifikasi = async (kode: string, key: string) => (await database.query<{ id: number }>(`
+            INSERT INTO klasifikasi_arsip (kode, source_record_key, jenis, tipe)
+            VALUES ('${kode}', '${key}', 'Uji rangkaian', 'substantif') RETURNING id
+        `)).rows[0].id;
+        const klasLama = await klasifikasi('PT.01.01', 'test:0046:0001');
+        const klasBaru = await klasifikasi('PT.01.02', 'test:0046:0002');
+        const rangkaian = async (kode: string) => (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_surat (kode, asal, unit_pencatat_id, judul, tahun)
+            VALUES ('${kode}', 'surat_masuk', 'unit-46-tu', 'Uji ${kode}', 2026) RETURNING id
+        `)).rows[0].id;
+        const berkasA = await rangkaian('RS-2026-900001');
+        const b = await rangkaian('RS-2026-900002');
+        const c = await rangkaian('RS-2026-900003');
+
+        const induk = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran)
+            VALUES ('${berkasA}', '${sm}', 'unit-46-tu', 'induk') RETURNING id
+        `)).rows[0].id;
+        // Surat keluar terarsip dapat menjadi anggota: tidak ada UPDATE atas
+        // baris surat_keluar sehingga guard 0021 tidak terpicu.
+        const tindakLanjut = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id)
+            VALUES ('${berkasA}', '${sk}', 'unit-46-dir') RETURNING id
+        `)).rows[0].id;
+        await database.exec(`
+            INSERT INTO rangkaian_relasi (rangkaian_id, dari_anggota_id, ke_anggota_id, jenis_relasi)
+            VALUES ('${berkasA}', '${tindakLanjut}', '${induk}', 'tindak_lanjut');
+            INSERT INTO surat_distributions (
+                surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id
+            ) VALUES ('${sm}', 'unit-46-tu', 'unit-46-dir', 'processed', '${berkasA}');
+            UPDATE rangkaian_surat
+            SET status = 'diberkaskan', unit_pengolah_id = 'unit-46-dir',
+                klasifikasi_item_id = ${klasLama}, diberkaskan_at = now(), diberkaskan_by = '${maker}'
+            WHERE id = '${berkasA}';
+        `);
+
+        await expect(database.exec(`
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id)
+            VALUES ('${berkasA}', '${smLain}', 'unit-46-tu')
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        await expect(database.exec(`
+            UPDATE rangkaian_relasi SET keterangan = 'ubah setelah ditutup' WHERE rangkaian_id = '${berkasA}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        // Jalur distribusi lama tanpa rangkaian_id tetap tertahan lewat keanggotaan surat.
+        await expect(database.exec(`
+            INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status)
+            VALUES ('${sm}', 'unit-46-tu', 'unit-46-dir2', 'sent')
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        await expect(database.exec(`
+            UPDATE surat_distributions SET status = 'received' WHERE rangkaian_id = '${berkasA}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        await expect(database.exec(`
+            DELETE FROM surat_distributions WHERE rangkaian_id = '${berkasA}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        await expect(database.exec(`
+            UPDATE rangkaian_surat SET status = 'selesai' WHERE id = '${berkasA}'
+        `)).rejects.toThrow(/tidak dapat dibuka kembali/);
+        await expect(database.exec(`
+            UPDATE rangkaian_surat SET unit_pengolah_id = 'unit-46-tu' WHERE id = '${berkasA}'
+        `)).rejects.toThrow(/Koreksi Berkas/);
+        await expect(database.exec(`
+            UPDATE rangkaian_anggota SET unit_kerja_id = 'unit-46-dir2' WHERE id = '${induk}'
+        `)).rejects.toThrow(/Identitas anggota rangkaian/);
+
+        const koreksi = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_koreksi_berkas (
+                rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+                klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by
+            ) VALUES (
+                '${berkasA}', 'unit-46-dir', 'unit-46-tu', ${klasLama}, ${klasBaru},
+                'Salah memilih unit pengolah saat pemberkasan', '${maker}'
+            ) RETURNING id
+        `)).rows[0].id;
+        const denganKoreksi = async (setClause: string) => {
+            try {
+                await database.exec(`
+                    BEGIN;
+                    SELECT set_config('simsa.berkas_koreksi', '${koreksi}', true);
+                    UPDATE rangkaian_surat SET ${setClause} WHERE id = '${berkasA}';
+                    COMMIT;
+                `);
+            } catch (error) {
+                await database.exec('ROLLBACK');
+                throw error;
+            }
+        };
+        // Masih pending: GUC saja tidak cukup.
+        await expect(denganKoreksi(`unit_pengolah_id = 'unit-46-tu', klasifikasi_item_id = ${klasBaru}`))
+            .rejects.toThrow(/tidak sesuai Koreksi Berkas/);
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas
+            SET status = 'approved', diputuskan_by = '${maker}', diputuskan_at = now()
+            WHERE id = '${koreksi}'
+        `)).rejects.toThrow(/rangkaian_koreksi_maker_checker_check/);
+        await database.exec(`
+            UPDATE rangkaian_koreksi_berkas
+            SET status = 'approved', diputuskan_by = '${checker}', diputuskan_at = now()
+            WHERE id = '${koreksi}'
+        `);
+        // Nilai harus sama persis dengan baris koreksi.
+        await expect(denganKoreksi(`unit_pengolah_id = 'unit-46-tu'`))
+            .rejects.toThrow(/tidak sesuai Koreksi Berkas/);
+        await denganKoreksi(`unit_pengolah_id = 'unit-46-tu', klasifikasi_item_id = ${klasBaru}`);
+        const dikoreksi = await database.query(`
+            SELECT status, unit_pengolah_id, klasifikasi_item_id FROM rangkaian_surat WHERE id = '${berkasA}'
+        `);
+        expect(dikoreksi.rows).toEqual([{
+            status: 'diberkaskan', unit_pengolah_id: 'unit-46-tu', klasifikasi_item_id: klasBaru,
+        }]);
+
+        await expect(database.exec(`
+            UPDATE rangkaian_surat SET status = 'digabung', digabung_ke_id = '${berkasA}' WHERE id = '${b}'
+        `)).rejects.toThrow(/tidak dapat menjadi tujuan/);
+        await database.exec(`
+            UPDATE rangkaian_surat SET status = 'digabung', digabung_ke_id = '${c}' WHERE id = '${b}'
+        `);
+        // Siklus B→C→B mustahil: B sudah digabung.
+        await expect(database.exec(`
+            UPDATE rangkaian_surat SET status = 'digabung', digabung_ke_id = '${b}' WHERE id = '${c}'
+        `)).rejects.toThrow(/tidak dapat menjadi tujuan/);
+        await expect(database.exec(`
+            UPDATE rangkaian_surat SET status = 'aktif', digabung_ke_id = NULL WHERE id = '${b}'
+        `)).rejects.toThrow(/sudah digabung/);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 });
