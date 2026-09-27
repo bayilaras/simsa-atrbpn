@@ -1396,4 +1396,41 @@ describe('PostgreSQL migration chain', () => {
         `);
         expect(hasil.rows).toEqual([{ status: 'applied' }, { status: 'denied' }]);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0047 fail-closed pada id direktorat-* lalu melengkapi unit direktorat tanpa menimpa pengaturan admin', async () => {
+        const database = await createDatabase();
+        const index0047 = journal.entries.findIndex(({ tag }) => tag === '0047_unit_kerja_direktorat');
+        expect(index0047).toBeGreaterThan(0);
+        for (const entry of journal.entries.slice(0, index0047)) {
+            await applyMigration(database, entry);
+        }
+
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name, parent_id, unit_type, can_receive_distribution) VALUES
+                ('ditjen', 'Ditjen', NULL, NULL, true),
+                ('sesditjen', 'Sekretariat Ditjen', NULL, NULL, true),
+                ('dir_bppt', 'Nama BPPT dari admin', NULL, NULL, false),
+                ('direktorat-bppt', 'Duplikat lama', NULL, NULL, true);
+        `);
+        await expect(applyMigration(database, journal.entries[index0047]))
+            .rejects.toThrow(/0047: unit_kerja berpola direktorat-\*/);
+
+        await database.exec(`DELETE FROM unit_kerja WHERE id = 'direktorat-bppt'`);
+        await applyMigration(database, journal.entries[index0047]);
+        // Idempoten untuk latihan pemulihan.
+        await applyMigration(database, journal.entries[index0047]);
+
+        const units = await database.query(`
+            SELECT id, name, parent_id, unit_type, can_receive_distribution, is_unit_pengawas
+            FROM unit_kerja ORDER BY id COLLATE "C"
+        `);
+        expect(units.rows).toEqual([
+            { id: 'dir_bppt', name: 'Nama BPPT dari admin', parent_id: 'ditjen', unit_type: 'direktorat', can_receive_distribution: false, is_unit_pengawas: false },
+            { id: 'dir_ktpp', name: 'Direktorat KTPP', parent_id: 'ditjen', unit_type: 'direktorat', can_receive_distribution: true, is_unit_pengawas: false },
+            { id: 'dir_plp', name: 'Direktorat PLP', parent_id: 'ditjen', unit_type: 'direktorat', can_receive_distribution: true, is_unit_pengawas: false },
+            { id: 'dir_ptep', name: 'Direktorat PTEP', parent_id: 'ditjen', unit_type: 'direktorat', can_receive_distribution: true, is_unit_pengawas: false },
+            { id: 'ditjen', name: 'Ditjen', parent_id: null, unit_type: null, can_receive_distribution: true, is_unit_pengawas: true },
+            { id: 'sesditjen', name: 'Sekretariat Ditjen', parent_id: 'ditjen', unit_type: 'sesditjen', can_receive_distribution: true, is_unit_pengawas: true },
+        ]);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 });

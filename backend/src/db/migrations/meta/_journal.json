@@ -330,6 +330,13 @@
       "when": 1789397417667,
       "tag": "0046_rangkaian_surat",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789397418667,
+      "tag": "0047_unit_kerja_direktorat",
+      "breakpoints": true
     }
   ]
 }
