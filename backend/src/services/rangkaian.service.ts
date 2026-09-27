@@ -77,6 +77,26 @@ async function lockSurat(tx: DbTransaction, ref: SuratRef): Promise<SuratTerkunc
     return row;
 }
 
+/**
+ * Mengunci baris `surat_masuk` (FOR UPDATE, ORDER BY id, tanpa memfilter
+ * baris terhapus) sebelum mengunci `rangkaian_surat`. Diekspor untuk P3:
+ * urutan kunci global adalah baris surat (helper ini) → baris `rangkaian_surat`
+ * (ORDER BY id, lihat `lockRangkaian`) → distribusi. Pemanggil bertanggung
+ * jawab memvalidasi `isDeleted` bila relevan; helper ini tidak menyaringnya.
+ */
+export async function lockSuratMasukRows(
+    tx: DbTransaction,
+    ids: string[],
+): Promise<Array<{ id: string; isDeleted: boolean | null }>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return [];
+    return tx.select({ id: suratMasuk.id, isDeleted: suratMasuk.isDeleted })
+        .from(suratMasuk)
+        .where(inArray(suratMasuk.id, unique))
+        .orderBy(asc(suratMasuk.id))
+        .for('update');
+}
+
 interface Keanggotaan {
     anggotaId: string;
     peran: string;
@@ -168,9 +188,23 @@ export const rangkaianService = {
         options: EnsureOptions = {},
     ): Promise<EnsureRangkaianResult> {
         const surat = await lockSurat(tx, ref);
-        const existing = await findMembership(tx, ref);
+        let existing = await findMembership(tx, ref);
         if (existing) {
-            const [locked] = await lockRangkaian(tx, [existing.rangkaianId]);
+            let [locked] = await lockRangkaian(tx, [existing.rangkaianId]);
+            if (locked.status === 'digabung') {
+                // Task 9/11 review: findMembership di atas tidak mengunci apa pun,
+                // jadi sebuah gabung() bisa commit tepat di antara pembacaan itu dan
+                // lockRangkaian ini. lockRangkaian baru saja menunggu kunci baris
+                // rangkaian sumber, sehingga commit gabung yang bersamaan (bila ada)
+                // sudah pasti terlihat sekarang; baca ulang keanggotaan sekali dan
+                // kunci rangkaian tujuannya yang sebenarnya, bukan sumber yang sudah
+                // digabung.
+                const fresh = await findMembership(tx, ref);
+                if (fresh && fresh.rangkaianId !== locked.id) {
+                    existing = fresh;
+                    [locked] = await lockRangkaian(tx, [fresh.rangkaianId]);
+                }
+            }
             return {
                 rangkaianId: locked.id,
                 kode: locked.kode,
@@ -231,9 +265,15 @@ export const rangkaianService = {
             tx, { jenis: 'surat_masuk', id: suratMasukId }, actor, options,
         );
         if (!isRangkaianTerbuka(result.status)) {
+            // 'digabung' seharusnya sudah diselesaikan ke rangkaian tujuan oleh
+            // ensureForSurat (lihat catatan race di sana); pesan berikut hanya
+            // pengaman bila status itu tetap terlihat oleh pemanggil ini.
             throw new ConflictError(
-                `Rangkaian ${result.kode} sudah ${result.status}; disposisi baru tidak dapat ditambahkan. `
-                + 'Gunakan Koreksi Berkas atau surat lanjutan.',
+                result.status === 'digabung'
+                    ? `Rangkaian ${result.kode} sudah digabung ke rangkaian lain; disposisi baru tidak dapat ditambahkan. `
+                        + 'Tambahkan disposisi pada rangkaian tujuan penggabungan.'
+                    : `Rangkaian ${result.kode} sudah ${result.status}; disposisi baru tidak dapat ditambahkan. `
+                        + 'Gunakan Koreksi Berkas atau surat lanjutan.',
             );
         }
         if (!result.created && options.unitPengolahId) {
@@ -264,6 +304,14 @@ export const rangkaianService = {
         return rows.map((row) => row.unit_kerja_id).sort();
     },
 
+    /**
+     * Kontrak urutan kunci (global constraints): pemanggil WAJIB sudah
+     * mengunci baris surat yang terpengaruh (`surat_masuk`/`surat_keluar`
+     * FOR UPDATE, ORDER BY id — lihat `lockSuratMasukRows` untuk surat masuk)
+     * SEBELUM memanggil fungsi ini, karena fungsi ini mengunci baris
+     * `rangkaian_surat` (ORDER BY id). Urutan globalnya: surat → rangkaian
+     * (ORDER BY id) → distribusi.
+     */
     async recomputeStatus(
         tx: DbTransaction,
         rangkaianIds: string[],
@@ -330,6 +378,14 @@ export const rangkaianService = {
         return changes;
     },
 
+    /**
+     * Kontrak urutan kunci (global constraints): pemanggil WAJIB sudah
+     * mengunci baris `surat_masuk` yang terpengaruh FOR UPDATE ORDER BY id
+     * (lihat `lockSuratMasukRows`) sebelum memanggil fungsi ini — fungsi ini
+     * SENDIRI mengunci ulang baris `surat_masuk` di bawah, tetapi urutan
+     * globalnya (surat → rangkaian ORDER BY id → distribusi) tetap berlaku
+     * bila pemanggil juga menyentuh baris rangkaian pada transaksi yang sama.
+     */
     async recomputeSuratMasukStatus(
         tx: DbTransaction,
         suratMasukIds: string[],
@@ -409,6 +465,16 @@ export const rangkaianService = {
         return changes;
     },
 
+    /**
+     * Menggabungkan `sumber` ke `target` (spesifikasi §3 Catatan gabung).
+     * Kontrak urutan kunci (global constraints): fungsi ini sendiri tidak
+     * menyentuh baris surat, jadi ia langsung mengunci `rangkaian_surat`
+     * (ORDER BY id) lalu distribusi. Bila pemanggil P3 kelak juga perlu
+     * mengubah baris surat dalam transaksi yang sama, baris itu WAJIB
+     * dikunci (`lockSuratMasukRows`/setara surat keluar, FOR UPDATE ORDER BY
+     * id) SEBELUM memanggil `gabung`, sesuai urutan global surat → rangkaian
+     * (ORDER BY id) → distribusi.
+     */
     async gabung(tx: DbTransaction, input: GabungInput, actor: RangkaianActor): Promise<GabungResult> {
         const alasan = input.alasan?.trim() ?? '';
         if (alasan.length < 10) throw new ValidationError('Alasan penggabungan minimal 10 karakter');

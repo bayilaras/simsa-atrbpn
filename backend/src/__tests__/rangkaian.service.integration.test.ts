@@ -18,6 +18,7 @@ const journal = JSON.parse(
 
 let database: PGlite;
 let rangkaianService: typeof import('../services/rangkaian.service').rangkaianService;
+let lockSuratMasukRows: typeof import('../services/rangkaian.service').lockSuratMasukRows;
 let auditLogService: typeof import('../services/audit-log.service').default;
 let klasifikasiId: number;
 
@@ -147,7 +148,7 @@ beforeAll(async () => {
         VALUES ('PT.01.01', 'test:rangkaian:0001', 'Uji rangkaian', 'substantif') RETURNING id
     `)).rows[0].id;
     holder.db = drizzle(database, { schema });
-    ({ rangkaianService } = await import('../services/rangkaian.service'));
+    ({ rangkaianService, lockSuratMasukRows } = await import('../services/rangkaian.service'));
     ({ default: auditLogService } = await import('../services/audit-log.service'));
 }, 180_000);
 
@@ -389,5 +390,46 @@ describe('rangkaianService.gabung', () => {
             .rejects.toMatchObject({ statusCode: 409 });
         await expect(inTx((tx) => rangkaianService.gabung(tx, { targetId: s.rangkaianId, sumberId: t.rangkaianId, alasan: 'Alasan cukup panjang' }, actor)))
             .rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it('ensureForSurat mengikuti rangkaian tujuan (bukan status digabung sumber) untuk anggota yang sudah dipindah oleh gabung', async () => {
+        // Ruling Task 9/11: findMembership tidak mengunci apa pun sebelum
+        // lockRangkaian, jadi gabung() yang commit di antaranya bisa membuat
+        // ensureForSurat mengembalikan rangkaian sumber (status 'digabung').
+        // Simulasi sekuensial ini mengunci kontrak akhir: sesudah gabung
+        // benar-benar selesai, memanggil ensureForSurat untuk anggota yang
+        // tadinya milik sumber HARUS mengikuti ke rangkaian tujuan yang aktif,
+        // bukan berhenti di baris sumber yang sudah berstatus 'digabung'.
+        const smTarget = await suratMasuk('sesditjen');
+        const target = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smTarget, actor));
+        const smSumber = await suratMasuk('sesditjen');
+        const sumber = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smSumber, actor));
+
+        await inTx((tx) => rangkaianService.gabung(tx, {
+            targetId: target.rangkaianId, sumberId: sumber.rangkaianId, alasan: 'Simulasi race: gabung lalu ensureForSurat',
+        }, actor));
+
+        const result = await inTx((tx) => rangkaianService.ensureForSurat(tx, { jenis: 'surat_masuk', id: smSumber }, actor));
+        expect(result).toMatchObject({ rangkaianId: target.rangkaianId, status: 'aktif', created: false });
+        expect(result.rangkaianId).not.toBe(sumber.rangkaianId);
+
+        await expect(inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smSumber, actor)))
+            .resolves.toMatchObject({ rangkaianId: target.rangkaianId, created: false });
+    });
+});
+
+describe('lockSuratMasukRows', () => {
+    it('mengunci baris FOR UPDATE, mengembalikan urutan menaik, dedupe id, dan tidak menyaring baris terhapus', async () => {
+        const a = await suratMasuk('sesditjen');
+        const b = await suratMasuk('sesditjen');
+        await database.query(`UPDATE surat_masuk SET is_deleted = true WHERE id = $1`, [b]);
+        const ordered = [a, b].sort();
+
+        const rows = await inTx((tx) => lockSuratMasukRows(tx, [b, a, a]));
+        expect(rows).toEqual(ordered.map((id) => ({ id, isDeleted: id === b })));
+    });
+
+    it('mengembalikan larik kosong untuk masukan kosong', async () => {
+        expect(await inTx((tx) => lockSuratMasukRows(tx, []))).toEqual([]);
     });
 });
