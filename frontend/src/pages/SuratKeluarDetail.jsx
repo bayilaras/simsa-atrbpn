@@ -57,6 +57,11 @@ export default function SuratKeluarDetail() {
     const [approvalNotes, setApprovalNotes] = useState('')
     const [selectedApproverId, setSelectedApproverId] = useState('')
     const [approvalBusy, setApprovalBusy] = useState(false)
+    // Sinyal reload AlurSuratPanel yang dikendalikan halaman ini (N1): dinaikkan
+    // hanya setelah Arsip/persetujuan SUKSES, tidak pernah dari refresh yang
+    // dipicu onChanged panel sendiri -- lihat komentar muatUlangKe di
+    // AlurSuratPanel.jsx.
+    const [alurVersi, setAlurVersi] = useState(0)
     // Sekali surat termuat untuk id ini, refresh berikutnya (mis. dari
     // onChanged AlurSuratPanel, atau setelah Arsip/persetujuan) bersifat diam:
     // tidak menyalakan `loading`, sehingga gerbang `if (loading) return
@@ -143,6 +148,7 @@ export default function SuratKeluarDetail() {
                 description: `Surat ${surat.nomorSurat} telah diarsipkan`,
             })
             fetchSurat()
+            setAlurVersi((v) => v + 1)
         } catch (error) {
             toast({
                 title: 'Error',
@@ -197,6 +203,7 @@ export default function SuratKeluarDetail() {
             })
             setApprovalAction(null)
             await fetchSurat()
+            setAlurVersi((v) => v + 1)
         } catch (error) {
             toast({
                 title: 'Gagal memperbarui persetujuan',
@@ -487,6 +494,7 @@ export default function SuratKeluarDetail() {
                                 suratId={surat.id}
                                 aksesMelalui={aksesMelalui}
                                 onChanged={fetchSurat}
+                                muatUlangKe={alurVersi}
                                 fallback={aksesMelalui === 'owner' && surat.balasanUntuk ? (
                                     <>
                                         <Separator />

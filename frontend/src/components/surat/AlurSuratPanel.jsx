@@ -49,7 +49,7 @@ function keItemLinimasa(node, relasiDari) {
     }
 }
 
-export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null, onChanged }) {
+export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null, onChanged, muatUlangKe = 0 }) {
     const [state, setState] = useState({ loading: true, data: null, error: false, notFound: false })
     // Kunci reload internal panel: dinaikkan hanya oleh muatUlang (mis. tombol
     // "Coba lagi", atau aksi panel di Task 25), TIDAK oleh render ulang biasa.
@@ -63,6 +63,14 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
         onChanged?.()
     }
 
+    // muatUlangKe: sinyal reload yang dikendalikan PARENT (bukan panel), untuk
+    // aksi di level halaman yang mengubah data rangkaian/disposisi tapi tidak
+    // lewat muatUlang panel sendiri -- Terima Disposisi, Arsipkan, Distribusi,
+    // persetujuan (N1). Parent menaikkannya hanya setelah aksi tersebut
+    // sukses, TIDAK di jalur onChanged/fetchSurat biasa, supaya tidak
+    // membentuk loop dengan mekanisme F1 di atas: fetchSurat yang dipanggil
+    // dari sini tidak menaikkan muatUlangKe, hanya effect memuat data (yang
+    // memang harus jalan lagi) yang bergantung padanya.
     useEffect(() => {
         let aktif = true
         async function muat() {
@@ -81,7 +89,7 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
         }
         muat()
         return () => { aktif = false }
-    }, [jenis, suratId, muatKe])
+    }, [jenis, suratId, muatKe, muatUlangKe])
 
     if (state.loading) {
         return (

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -155,6 +155,26 @@ it('tidak memanggil onChanged pada muat awal, hanya lewat tombol Coba Lagi setel
     await screen.findByText('Alur Surat')
     expect(onChanged).toHaveBeenCalledTimes(1)
     expect(mocks.getBySurat).toHaveBeenCalledTimes(2)
+})
+
+// N1: parent (halaman detail) menaikkan muatUlangKe setelah aksi seperti
+// Terima/Arsip/Distribusi sukses -- ini HARUS memicu pemuatan ulang panel
+// (effect deps [jenis, suratId, muatKe, muatUlangKe]), tapi TIDAK boleh lewat
+// onChanged (yang hanya untuk jalur muatUlang/"Coba lagi" milik panel sendiri,
+// lihat F1), supaya tidak membentuk loop dengan fetchSurat parent.
+it('muatUlangKe yang dinaikkan parent memuat ulang panel tanpa memanggil onChanged', async () => {
+    const onChanged = vi.fn()
+    mocks.getBySurat.mockResolvedValue(detail)
+    const { rerender } = renderPanel({ aksesMelalui: 'pengawas', onChanged, muatUlangKe: 0 })
+    await screen.findByText('Alur Surat')
+    expect(mocks.getBySurat).toHaveBeenCalledTimes(1)
+    rerender(
+        <MemoryRouter>
+            <AlurSuratPanel jenis="surat_masuk" suratId="s1" aksesMelalui="pengawas" onChanged={onChanged} muatUlangKe={1} />
+        </MemoryRouter>,
+    )
+    await waitFor(() => expect(mocks.getBySurat).toHaveBeenCalledTimes(2))
+    expect(onChanged).not.toHaveBeenCalled()
 })
 
 it('menampilkan status memuat dengan role status dan aria-busy', () => {

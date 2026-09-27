@@ -30,6 +30,11 @@ export default function SuratMasukDetail() {
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
+    // Sinyal reload AlurSuratPanel yang dikendalikan halaman ini (N1): dinaikkan
+    // hanya setelah Terima/Arsip/Distribusi SUKSES, tidak pernah dari refresh
+    // yang dipicu onChanged panel sendiri -- lihat komentar muatUlangKe di
+    // AlurSuratPanel.jsx.
+    const [alurVersi, setAlurVersi] = useState(0)
     // Sekali surat termuat untuk id ini, refresh berikutnya (mis. dari
     // onChanged AlurSuratPanel, atau setelah Terima/Arsip/Distribusi) bersifat
     // diam: tidak menyalakan `loading`, sehingga gerbang `if (loading) return
@@ -69,6 +74,7 @@ export default function SuratMasukDetail() {
                 description: `Surat ${surat.nomorSurat} telah diarsipkan`,
             })
             fetchSurat()
+            setAlurVersi((v) => v + 1)
         } catch (error) {
             toast({
                 title: 'Error',
@@ -84,6 +90,7 @@ export default function SuratMasukDetail() {
             await distributionService.receive(surat.distribusiUnitSaya.id, resolveEffectiveUnitKerjaId(user))
             toast({ title: 'Berhasil', description: 'Disposisi diterima' })
             fetchSurat()
+            setAlurVersi((v) => v + 1)
         } catch (error) {
             toast({ title: 'Error', description: error.message || 'Gagal menerima disposisi', variant: 'destructive' })
         }
@@ -148,7 +155,7 @@ export default function SuratMasukDetail() {
                 {/* Main Content */}
                 <div className="lg:col-span-2 space-y-6">
                     <InfoSection surat={surat} />
-                    <AlurSuratPanel jenis="surat_masuk" suratId={surat.id} aksesMelalui={aksesMelalui} onChanged={fetchSurat} />
+                    <AlurSuratPanel jenis="surat_masuk" suratId={surat.id} aksesMelalui={aksesMelalui} onChanged={fetchSurat} muatUlangKe={alurVersi} />
                     <FilePreviewSection surat={surat} />
                 </div>
 
@@ -192,6 +199,7 @@ export default function SuratMasukDetail() {
                         description: 'Surat berhasil didistribusikan',
                     })
                     fetchSurat()
+                    setAlurVersi((v) => v + 1)
                 }}
             />
         </div>
