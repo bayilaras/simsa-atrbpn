@@ -6,6 +6,7 @@ import {
     NOTIFICATION_ID_PATTERN,
 } from '../utils/notification-id.js';
 import { parseGcsLocator } from '../storage/locator.js';
+import { jakartaDate } from '../utils/jakarta-date.js';
 
 // Common schemas
 export const uuidSchema = z.string().uuid('Invalid UUID format');
@@ -98,6 +99,70 @@ export const nextSuratNumberQuerySchema = z.object({
     naskahDinas: z.string().trim().max(100).optional(),
 }).strict();
 
+// ==================== Rangkaian surat (P3) ====================
+
+/** Multipart mengirim objek bersarang sebagai JSON string; bentuk JSON diterima, selain itu apa adanya. */
+function parseJsonObjectString(value: unknown) {
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('{')) return value;
+    try {
+        return JSON.parse(trimmed);
+    } catch {
+        return value;
+    }
+}
+
+const alasanText = z.string().trim().min(10, 'Alasan minimal 10 karakter').max(2000);
+export const alasanSchema = z.object({ alasan: alasanText }).strict();
+
+const batasWaktuSchema = dateSchema.refine((value) => value >= jakartaDate(), 'Batas waktu tidak boleh sebelum hari ini');
+
+export const disposisiTargetSchema = z.object({
+    unitKerjaId: z.string().trim().min(1).max(50),
+    batasWaktu: batasWaktuSchema.nullish(),
+    penanggungJawab: z.boolean().optional().default(false),
+}).strict();
+
+export const disposisiTargetsSchema = z.array(disposisiTargetSchema)
+    .min(1, 'Pilih minimal satu unit tujuan')
+    .max(10)
+    .superRefine((targets, ctx) => {
+        const ids = targets.map((target) => target.unitKerjaId);
+        if (new Set(ids).size !== ids.length) {
+            ctx.addIssue({ code: 'custom', message: 'Unit tujuan disposisi tidak boleh ganda' });
+        }
+        if (targets.filter((target) => target.penanggungJawab).length > 1) {
+            ctx.addIssue({ code: 'custom', message: 'Penanggung jawab (Unit Pengolah) hanya boleh satu' });
+        }
+    });
+
+export const disposisiRoutingSchema = z.object({
+    targets: disposisiTargetsSchema,
+    // Registrasi multipart di-parse multer SETELAH sanitizer global, sehingga
+    // MULTILINE_FIELDS tidak pernah melihatnya; normalisasi baris baru di sini [T5-3].
+    instruksi: z.string().max(2000)
+        .transform((value) => value.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim())
+        .nullish(),
+    labelTambahan: z.array(z.string().trim().min(1).max(100)).max(10).optional(),
+}).strict();
+export type DisposisiRoutingInput = z.infer<typeof disposisiRoutingSchema>;
+
+const legacyDisposisiLabels = z.union([z.string(), z.array(z.string())])
+    .transform((value) => {
+        if (Array.isArray(value)) return value;
+        if (!value) return undefined;
+        return [value];
+    });
+
+export const tindakLanjutInputSchema = z.object({
+    jenis: z.enum(['surat_masuk', 'surat_keluar']),
+    suratId: uuidSchema,
+    jenisRelasi: z.enum(['balasan', 'tindak_lanjut', 'menjelaskan', 'merujuk']),
+    distribusiId: uuidSchema.optional(),
+}).strict();
+export type TindakLanjutInput = z.infer<typeof tindakLanjutInputSchema>;
+
 // Surat Masuk schemas
 // Fields must match database schema in db/schema/surat-masuk.ts
 export const createSuratMasukSchema = z.object({
@@ -112,13 +177,11 @@ export const createSuratMasukSchema = z.object({
     dari: z.string().min(1, 'Pengirim is required').max(255), // Field name is 'dari' in DB
     kepada: z.string().max(255).optional(),
     status: z.enum(['belum_dibalas', 'sudah_dibalas']).optional().default('belum_dibalas'),
-    disposisi: z.union([z.string(), z.array(z.string())])
-        .transform((val) => {
-            if (Array.isArray(val)) return val;
-            if (!val) return undefined;
-            return [val];
-        })
-        .optional(),
+    disposisi: z.preprocess(parseJsonObjectString, z.union([disposisiRoutingSchema, legacyDisposisiLabels])).optional(),
+    referensi: z.preprocess(parseJsonObjectString, z.object({
+        jenis: z.literal('surat_keluar'),
+        id: uuidSchema,
+    }).strict()).optional(),
     keterangan: z.string().max(2000).optional(),
     linkDokumen: z.string().url().optional().or(z.literal('')),
     // File attachment fields (set by a provider-authorized direct upload)
@@ -130,11 +193,14 @@ export const createSuratMasukSchema = z.object({
     jraItemId: z.coerce.number().int().positive().nullable().optional(),
 });
 
-// Zod 4 applies inner defaults even through partial(). Creation defaults must
-// be removed explicitly so a metadata edit cannot reset existing workflow state.
+// Zod 4 applies inner defaults even through partial(). Status surat masuk kini
+// diturunkan server (§8), sehingga tidak lagi dapat diubah lewat PUT.
 export const updateSuratMasukSchema = createSuratMasukSchema.partial()
-    .omit({ unitKerjaId: true })
-    .extend({ status: createSuratMasukSchema.shape.status.removeDefault().optional() });
+    .omit({ unitKerjaId: true, status: true, disposisi: true, referensi: true })
+    .extend({
+        disposisi: legacyDisposisiLabels.optional(),
+        alasan: alasanText.optional(),
+    });
 
 export const querySuratMasukSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -563,6 +629,12 @@ export const rejectDistributionSchema = z.object({
     reason: z.string().min(1, 'Alasan penolakan harus diisi').max(2000),
 });
 
+export const processDistributionSchema = z.union([
+    z.object({ penyelesaianSuratKeluarId: uuidSchema }).strict(),
+    z.object({ catatanPenyelesaian: z.string().trim().min(10, 'Catatan penyelesaian minimal 10 karakter').max(2000) }).strict(),
+]);
+export type ProcessDistributionInput = z.infer<typeof processDistributionSchema>;
+
 export const queryDistributionSchema = paginationSchema.extend({
     unitKerjaId: z.string().max(50).optional(),
     status: z.enum(['sent', 'received', 'processed', 'rejected']).optional(),
@@ -571,6 +643,27 @@ export const queryDistributionSchema = paginationSchema.extend({
 export type CreateDistribution = z.infer<typeof createDistributionSchema>;
 export type RejectDistribution = z.infer<typeof rejectDistributionSchema>;
 export type QueryDistribution = z.infer<typeof queryDistributionSchema>;
+
+export const selesaiRangkaianSchema = z.object({ catatan: alasanText }).strict();
+export const berkaskanSchema = z.object({
+    unitPengolahId: z.string().trim().min(1).max(50),
+    klasifikasiItemId: z.coerce.number().int().positive(),
+    konfirmasi: z.literal(true, { message: 'Konfirmasi dua langkah wajib' }),
+    catatan: z.string().trim().max(2000).optional(),
+}).strict();
+export const unitPengolahSchema = z.object({ unitPengolahId: z.string().trim().min(1).max(50) }).strict();
+export const tautanSchema = z.object({
+    jenis: z.enum(['surat_masuk', 'surat_keluar']),
+    suratId: uuidSchema,
+    keAnggotaId: uuidSchema,
+    jenisRelasi: z.enum(['balasan', 'tindak_lanjut', 'menjelaskan', 'merujuk']),
+    keterangan: z.string().trim().max(2000).nullish(),
+}).strict();
+export const gabungSchema = z.object({ sumberId: uuidSchema, alasan: alasanText }).strict();
+export const ajukanAksesSchema = z.object({
+    purpose: z.string().trim().min(20, 'Tujuan akses minimal 20 karakter').max(2000),
+    accessMode: z.enum(['view', 'download']).default('view'),
+}).strict();
 
 // ==================== Rangkaian: Lacak ====================
 export const lacakQuerySchema = z.object({

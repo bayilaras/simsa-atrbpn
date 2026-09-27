@@ -34,8 +34,8 @@ describe('partial update contracts', () => {
         });
     });
 
-    it('still accepts explicit status changes without inserting unrelated defaults', () => {
-        expect(updateSuratMasukSchema.parse({ status: 'sudah_dibalas' })).toEqual({ status: 'sudah_dibalas' });
+    it('ignores surat masuk status because it is derived server-side (P3)', () => {
+        expect(updateSuratMasukSchema.parse({ status: 'sudah_dibalas' })).toEqual({});
         expect(updateArsipVitalSchema.parse({ statusProteksi: 'terlindungi' })).toEqual({ statusProteksi: 'terlindungi' });
         expect(updateArsipTerjagaSchema.safeParse({ statusPelaporan: 'dilaporkan' }).success).toBe(false);
     });
