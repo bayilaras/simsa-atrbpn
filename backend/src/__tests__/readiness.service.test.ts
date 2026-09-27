@@ -458,4 +458,23 @@ describe('schema readiness for rangkaian surat (0046)', () => {
             expect(DATABASE_SCHEMA_READINESS_SQL).toContain(fragment);
         }
     });
+
+    // Minor 3 (review final): /ready juga wajib memeriksa bahwa role runtime
+    // TIDAK punya DELETE pada seluruh tabel rangkaian_* (0046 REVOKE DELETE,
+    // lihat grants/0002 & runbook langkah 4), dan bahwa index parsial anti-duplikat
+    // surat_distributions_active_target_uidx (0047) tersedia.
+    it('requires the runtime to lack DELETE on every rangkaian_* table and the active-target unique index', async () => {
+        const { DATABASE_SCHEMA_READINESS_SQL } = await import('../services/readiness.service.js');
+        for (const fragment of [
+            "NOT has_table_privilege(current_user, 'public.rangkaian_surat', 'DELETE')",
+            "NOT has_table_privilege(current_user, 'public.rangkaian_anggota', 'DELETE')",
+            "NOT has_table_privilege(current_user, 'public.rangkaian_relasi', 'DELETE')",
+            "NOT has_table_privilege(current_user, 'public.rangkaian_peserta', 'DELETE')",
+            "NOT has_table_privilege(current_user, 'public.rangkaian_koreksi_berkas', 'DELETE')",
+            'surat_distributions_active_target_uidx',
+        ]) {
+            expect(DATABASE_SCHEMA_READINESS_SQL).toContain(fragment);
+        }
+    });
+
 });

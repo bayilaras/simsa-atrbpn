@@ -233,6 +233,22 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
             )
         ) AS ready
     ),
+    -- Minor 3 (review final): index parsial anti-duplikat disposisi aktif (0047)
+    -- adalah bagian dari kontrak skema P1, sama seperti kolom/constraint/trigger
+    -- di atas — bukan hanya diperiksa manual lewat runbook.
+    index_state AS (
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_class AS index_relation
+            JOIN pg_catalog.pg_namespace AS namespace
+                ON namespace.oid = index_relation.relnamespace
+            JOIN pg_catalog.pg_index AS index_record
+                ON index_record.indexrelid = index_relation.oid
+            WHERE namespace.nspname = 'public'
+              AND index_relation.relname = 'surat_distributions_active_target_uidx'
+              AND index_record.indisvalid
+        ) AS ready
+    ),
     runtime_membership_closure(role_name) AS (
         SELECT parent.rolname
         FROM pg_catalog.pg_roles member
@@ -316,14 +332,25 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
                 current_user,
                 to_regprocedure('public.simsa_mark_api_final_object_referenced(uuid,text,text)'),
                 'EXECUTE'
-            ) AS ready
+            )
+            -- Minor 3 (review final): 0046 REVOKE DELETE ON rangkaian_* FROM
+            -- simsa_api_runtime (grants/0002); readiness memverifikasi role
+            -- runtime yang sedang tersambung TIDAK punya DELETE, sama seperti
+            -- diperiksa manual di runbook langkah 4.
+            AND NOT has_table_privilege(current_user, 'public.rangkaian_surat', 'DELETE')
+            AND NOT has_table_privilege(current_user, 'public.rangkaian_anggota', 'DELETE')
+            AND NOT has_table_privilege(current_user, 'public.rangkaian_relasi', 'DELETE')
+            AND NOT has_table_privilege(current_user, 'public.rangkaian_peserta', 'DELETE')
+            AND NOT has_table_privilege(current_user, 'public.rangkaian_koreksi_berkas', 'DELETE')
+            AS ready
     )
     SELECT column_state.ready
         AND constraint_state.ready
         AND trigger_state.ready
+        AND index_state.ready
         AND membership_state.ready
         AND privilege_state.ready AS schema_ready
-    FROM column_state, constraint_state, trigger_state, membership_state, privilege_state
+    FROM column_state, constraint_state, trigger_state, index_state, membership_state, privilege_state
 `;
 
 type RuntimeState = 'ready' | 'not_ready' | 'disabled';
