@@ -128,6 +128,64 @@ async function rejectsWith(promise: Promise<unknown>, pattern: RegExp) {
     expect(messages).toMatch(pattern);
 }
 
+/**
+ * Simulasi deterministik race Task 9/11 tanpa koneksi kedua (PGlite hanya
+ * punya satu koneksi: transaksi kedua yang benar-benar terpisah akan deadlock
+ * — lihat catatan di task-11-report.md). Trik ini tetap memakai SATU
+ * transaksi (`tx`), jadi tidak ada BEGIN bersarang: kita menge-patch
+ * `tx.select` supaya panggilan select KEDUA milik transaksi ini — yaitu
+ * `findMembership` di `ensureForSurat` (panggilan pertama adalah `lockSurat`)
+ * — mengembalikan baris yang sudah dibaca (masih menunjuk ke `sumberId`,
+ * karena gabung belum berjalan saat baris itu dibaca), TAPI baru
+ * mengembalikannya ke pemanggil SETELAH `rangkaianService.gabung` benar-benar
+ * commit (dalam transaksi yang sama) di antara pembacaan itu dan langkah
+ * `lockRangkaian` berikutnya. Ini persis interleaving yang digambarkan pada
+ * review Task 9/11. Flag `insideGabung` membuat semua select milik gabung()
+ * sendiri (dan pemanggilan findMembership KEDUA oleh blok perbaikan) lolos
+ * tanpa disentuh.
+ */
+function simulateGabungMidFindMembership(
+    tx: any,
+    gabungInput: { targetId: string; sumberId: string; alasan: string },
+): void {
+    const originalSelect = tx.select.bind(tx);
+    let outerSelectCount = 0;
+    let insideGabung = false;
+
+    function wrapThenable(target: any): any {
+        return new Proxy(target, {
+            get(obj, prop, receiver) {
+                const value = Reflect.get(obj, prop, receiver);
+                if (prop === 'then') {
+                    return (onFulfilled?: any, onRejected?: any) => value.call(obj, async (rows: unknown) => {
+                        insideGabung = true;
+                        try {
+                            await rangkaianService.gabung(tx, gabungInput, actor);
+                        } finally {
+                            insideGabung = false;
+                        }
+                        return onFulfilled ? onFulfilled(rows) : rows;
+                    }, onRejected);
+                }
+                if (typeof value === 'function') {
+                    return (...args: any[]) => {
+                        const result = value.apply(obj, args);
+                        return result && typeof result === 'object' ? wrapThenable(result) : result;
+                    };
+                }
+                return value;
+            },
+        });
+    }
+
+    vi.spyOn(tx, 'select').mockImplementation((columns: any) => {
+        const builder = originalSelect(columns);
+        if (insideGabung) return builder;
+        outerSelectCount += 1;
+        return outerSelectCount === 2 ? wrapThenable(builder) : builder;
+    });
+}
+
 beforeAll(async () => {
     database = new PGlite({ extensions: { pgcrypto } });
     await database.waitReady;
@@ -392,14 +450,14 @@ describe('rangkaianService.gabung', () => {
             .rejects.toMatchObject({ statusCode: 409 });
     });
 
-    it('ensureForSurat mengikuti rangkaian tujuan (bukan status digabung sumber) untuk anggota yang sudah dipindah oleh gabung', async () => {
-        // Ruling Task 9/11: findMembership tidak mengunci apa pun sebelum
-        // lockRangkaian, jadi gabung() yang commit di antaranya bisa membuat
-        // ensureForSurat mengembalikan rangkaian sumber (status 'digabung').
-        // Simulasi sekuensial ini mengunci kontrak akhir: sesudah gabung
-        // benar-benar selesai, memanggil ensureForSurat untuk anggota yang
-        // tadinya milik sumber HARUS mengikuti ke rangkaian tujuan yang aktif,
-        // bukan berhenti di baris sumber yang sudah berstatus 'digabung'.
+    it('[kontrak] ensureForSurat mengikuti rangkaian tujuan untuk anggota yang sudah dipindah oleh gabung (sekuensial, tanpa race)', async () => {
+        // Ini adalah tes kontrak, BUKAN tes race: sesudah gabung benar-benar
+        // commit secara sekuensial, anggota yang berpindah sudah memiliki
+        // rangkaian_id = target, sehingga findMembership yang fresh langsung
+        // menemukan target tanpa perlu jalur perbaikan 'digabung' di bawah.
+        // Tes race yang sesungguhnya (mem-verifikasi jalur perbaikan itu) ada
+        // pada describe('rangkaianService.gabung — race Task 9/11...') di
+        // bawah, memakai simulateGabungMidFindMembership.
         const smTarget = await suratMasuk('sesditjen');
         const target = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smTarget, actor));
         const smSumber = await suratMasuk('sesditjen');
@@ -415,6 +473,46 @@ describe('rangkaianService.gabung', () => {
 
         await expect(inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smSumber, actor)))
             .resolves.toMatchObject({ rangkaianId: target.rangkaianId, created: false });
+    });
+});
+
+describe('rangkaianService.gabung — race Task 9/11 (interleaved dalam satu koneksi)', () => {
+    it('ensureForSurat menyelesaikan ke rangkaian tujuan walau gabung commit tepat di antara findMembership dan lockRangkaian', async () => {
+        const smTarget = await suratMasuk('sesditjen');
+        const smSumber = await suratMasuk('sesditjen');
+        const target = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smTarget, actor));
+        const sumber = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smSumber, actor));
+
+        const result = await inTx(async (tx) => {
+            simulateGabungMidFindMembership(tx, {
+                targetId: target.rangkaianId,
+                sumberId: sumber.rangkaianId,
+                alasan: 'Simulasi race: gabung commit di tengah findMembership',
+            });
+            return rangkaianService.ensureForSurat(tx, { jenis: 'surat_masuk', id: smSumber }, actor);
+        });
+
+        expect(result).toMatchObject({ rangkaianId: target.rangkaianId, status: 'aktif', created: false });
+        expect(result.rangkaianId).not.toBe(sumber.rangkaianId);
+        expect(await rangkaianRow(sumber.rangkaianId)).toMatchObject({ status: 'digabung', digabung_ke_id: target.rangkaianId });
+    });
+
+    it('ensureForSuratMasuk mengembalikan rangkaian tujuan (bukan 409) pada interleaving yang sama', async () => {
+        const smTarget = await suratMasuk('sesditjen');
+        const smSumber = await suratMasuk('sesditjen');
+        const target = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smTarget, actor));
+        const sumber = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smSumber, actor));
+
+        const result = await inTx(async (tx) => {
+            simulateGabungMidFindMembership(tx, {
+                targetId: target.rangkaianId,
+                sumberId: sumber.rangkaianId,
+                alasan: 'Simulasi race: gabung commit di tengah findMembership',
+            });
+            return rangkaianService.ensureForSuratMasuk(tx, smSumber, actor);
+        });
+
+        expect(result).toMatchObject({ rangkaianId: target.rangkaianId, created: false });
     });
 });
 
