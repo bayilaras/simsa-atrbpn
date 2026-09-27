@@ -20,6 +20,14 @@ import {
 
 export const BATAS_NODE_DETAIL = 300;
 export const BATAS_RANGKAIAN_TERKAIT = 5;
+/**
+ * Batas hop saat mengikuti rantai digabung_ke_id (A→B→C→...). Baris yang
+ * sudah digabung tidak dapat diubah lagi (trigger rangkaian_guard_status di
+ * migrasi 0046), sehingga rantai nyata bersifat asiklik dan pendek; batas
+ * ini murni jaga-jaga defensif terhadap data yang rusak, bukan skenario yang
+ * diharapkan terjadi.
+ */
+export const BATAS_HOP_GABUNG = 16;
 export const LABEL_DIKECUALIKAN = 'Dikecualikan' as const;
 
 export type AksesRangkaian = 'owner' | 'pengawas' | 'peserta';
@@ -319,10 +327,23 @@ export const rangkaianReadService = {
         if (!rs) return null;
         let dialihkanDari: RangkaianDetail['dialihkanDari'] = null;
         if (rs.status === 'digabung' && rs.digabungKeId) {
-            const target = await muatRangkaian(executor, rs.digabungKeId);
-            if (!target) return null;
-            dialihkanDari = { id: rs.id, kode: rs.kode };
-            rs = target;
+            // Rantai gabung (A→B→C) terjadi bila B masih aktif ketika A
+            // digabung ke B, dan B baru digabung ke C setelahnya -- baris
+            // yang sudah digabung tidak pernah diperbarui lagi. dialihkanDari
+            // selalu menunjuk rangkaian yang ASLINYA diminta (A), bukan hop
+            // antara, walau resolusi mengikuti seluruh rantai ke target akhir.
+            const asal: RangkaianDetail['dialihkanDari'] = { id: rs.id, kode: rs.kode };
+            const dikunjungi = new Set<string>([rs.id]);
+            let hop = 0;
+            while (rs.status === 'digabung' && rs.digabungKeId) {
+                if (hop >= BATAS_HOP_GABUNG || dikunjungi.has(rs.digabungKeId)) return null;
+                const target = await muatRangkaian(executor, rs.digabungKeId);
+                if (!target) return null;
+                dikunjungi.add(target.id);
+                rs = target;
+                hop += 1;
+            }
+            dialihkanDari = asal;
         }
 
         const ctx = await resolveKonteksBaca(user, executor);
@@ -344,10 +365,16 @@ export const rangkaianReadService = {
         const terlihat = new Set<string>();
         const tersamar = new Set<string>();
         const anggota: Array<AnggotaTerlihat | AnggotaTersamar> = [];
+        // Jalur lintas unit terbaik di antara anggota yang benar-benar
+        // terlihat (checkMany per surat), dipakai sebagai jatuhan aksesMelalui
+        // saat tier rangkaian (tingkat) null -- lihat komentar di aksesMelalui.
+        let viaLintas: 'pengawas' | 'peserta' | null = null;
         for (const row of dipakai) {
             const a = aksesAnggota(row);
             if (a?.allowed && a.via) {
                 terlihat.add(row.anggotaId);
+                if (a.via === 'pengawas') viaLintas = 'pengawas';
+                else if (a.via === 'peserta' && viaLintas !== 'pengawas') viaLintas = 'peserta';
                 anggota.push({
                     anggotaId: row.anggotaId,
                     jenis: row.jenis,
@@ -431,7 +458,21 @@ export const rangkaianReadService = {
                 createdAt: iso(rs.createdAt)!,
             },
             dialihkanDari,
-            aksesMelalui: tingkat ?? 'owner',
+            // Tier rangkaian (tingkat) menilai jangkauan atas RANGKAIAN itu
+            // sendiri (unit_pencatat_id / jangkauanSql atas rangkaian ini).
+            // Bila null, pembaca tidak "penuh" pada level rangkaian -- tetapi
+            // checkMany menilai jangkauan PER SURAT, dan bisa saja meloloskan
+            // satu atau lebih anggota lewat jalur lintas unit (pengawas atas
+            // unit anggota tertentu, atau peserta atas rangkaian anggota lain
+            // yang kebetulan surat itu juga menjadi anggotanya) walau
+            // rangkaian ini sendiri di luar jangkauan pembaca. Melabeli
+            // pembacaan itu 'owner' menyembunyikan pembacaan lintas unit dari
+            // gerbang audit hilir yang melewatkan via==='owner' (spec §4.10).
+            // Jatuhkan ke jalur lintas unit terbaik di antara anggota yang
+            // terlihat sebelum menjatuhkan ke 'owner' yang sesungguhnya murni
+            // milik sendiri (tidak ada anggota yang terlihat lewat jalur
+            // lintas unit sama sekali).
+            aksesMelalui: tingkat ?? viaLintas ?? 'owner',
             peserta: penuh ? await muatPeserta(executor, rs.id, ctx.disposisiLamaRead) : [],
             anggota,
             relasi,

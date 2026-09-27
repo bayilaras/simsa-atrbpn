@@ -49,6 +49,13 @@ export const SURAT = {
     skBpptNull: '40000000-0000-4000-8000-000000000002',
     skPtepBiasa: '40000000-0000-4000-8000-000000000003',
     skBpptTunggal: '40000000-0000-4000-8000-000000000004',
+    // Catatan: id surat_keluar/surat_masuk khusus satu tes (mis. anggota
+    // tambahan yang disisipkan ad hoc lewat database.exec) SENGAJA TIDAK
+    // ditaruh di sini. record-access-check.snapshot.integration.test.ts
+    // meng-enumerate Object.entries(SURAT) untuk snapshot karakterisasi
+    // check() yang dibekukan (dilarang -u); menambah kunci di sini
+    // menambah baris baru ke snapshot itu dan membuatnya merah. Taruh id
+    // semacam itu sebagai konstanta lokal pada berkas tes yang memakainya.
 } as const;
 
 export const ARSIP_TERBATAS = '60000000-0000-4000-8000-000000000001';
@@ -59,6 +66,10 @@ export const RANGKAIAN = {
     rs3Digabung: '50000000-0000-4000-8000-000000000003',
     rs4Lanjutan: '50000000-0000-4000-8000-000000000004',
     rsBesar: '50000000-0000-4000-8000-000000000005',
+    rsBagianUmum: '50000000-0000-4000-8000-000000000006',
+    rsRantaiA: '50000000-0000-4000-8000-000000000007',
+    rsRantaiB: '50000000-0000-4000-8000-000000000008',
+    rsRantaiC: '50000000-0000-4000-8000-000000000009',
 } as const;
 
 export const ANGGOTA = {
@@ -67,12 +78,17 @@ export const ANGGOTA = {
     rs1SkNull: '51000000-0000-4000-8000-000000000003',
     rs2Sm: '51000000-0000-4000-8000-000000000004',
     rs2SkPtep: '51000000-0000-4000-8000-000000000005',
+    rsBagianUmumInduk: '51000000-0000-4000-8000-000000000006',
+    rsBagianUmumSk: '51000000-0000-4000-8000-000000000007',
+    rs2SkRahasia: '51000000-0000-4000-8000-000000000008',
 } as const;
 
 export const DISPOSISI = {
     rs1Bppt: '52000000-0000-4000-8000-000000000001',
     rs1Ptep: '52000000-0000-4000-8000-000000000002',
     rs2Ptep: '52000000-0000-4000-8000-000000000003',
+    rs2Ditolak: '52000000-0000-4000-8000-000000000004',
+    rs2Selesai: '52000000-0000-4000-8000-000000000005',
 } as const;
 
 export const GRANT = {
@@ -93,6 +109,11 @@ export const RAHASIA = {
     perihalSkNull: 'ND BPPT klasifikasi lama',
     nomorSkNull: 'ND-2/BPPT/2026',
     keteranganSkNull: 'Keterangan relasi rahasia',
+    alasanTolakRs2: 'Alasan penolakan rahasia PTEP 2026',
+    catatanSelesaiRs2: 'Catatan penyelesaian rahasia PTEP 2026',
+    perihalSkRahasiaRs2: 'ND rahasia PTEP tanpa grant',
+    nomorSkRahasiaRs2: 'ND-9/PTEP/2026',
+    tanggalSkRahasiaRs2: '2031-07-19',
 } as const;
 
 function grantRow(id: string, user: string, type: string, entity: string, unit: string, purpose: string, mode: string, decidedAt: string, expiresAt: string): string {
