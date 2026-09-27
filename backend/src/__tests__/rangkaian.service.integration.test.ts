@@ -189,17 +189,19 @@ function simulateGabungMidFindMembership(
 /**
  * Simulasi deterministik race Task 12 review: anggota lain masuk ke rangkaian
  * sumber (induk 1-anggota) TEPAT di antara pembacaan keanggotaan (`member`,
- * panggilan select ke-2 = `findMembership`) dan keputusan gabung/tolak
+ * panggilan select ke-4 = `findMembership`) dan keputusan gabung/tolak
  * berikutnya. Trik sama seperti `simulateGabungMidFindMembership` Task 9/11:
- * bungkus `tx.select` supaya panggilan select KE-3 milik `attach` — sebelum
- * perbaikan review ini, itu adalah SELECT hitung jumlah anggota; SESUDAH
- * perbaikan (yang mengunci sumber+tujuan lebih dulu), itu menjadi SELECT
- * `lockRangkaian`, karena perbaikan menggeser urutannya satu langkah — hanya
- * mengembalikan hasilnya ke pemanggil SETELAH `onIntercepted` (mutasi
+ * bungkus `tx.select` supaya panggilan select KE-5 milik `attach` — yaitu
+ * SELECT `lockRangkaian` (sumber+tujuan) di dalam blok keputusan gabung —
+ * hanya mengembalikan hasilnya ke pemanggil SETELAH `onIntercepted` (mutasi
  * "bersamaan": anggota baru masuk ke sumber, dalam transaksi yang sama)
- * benar-benar berjalan. Query manapun yang diintersepsi diekspos lewat
- * `interceptedRows` supaya test bisa menyatakan query mana yang sebenarnya
- * tertangkap (lihat catatan "target the count query" pada review).
+ * benar-benar berjalan. Indeksnya ke-5, bukan ke-3, karena perbaikan Minor 1
+ * (review final) menambah dua SELECT (lockRangkaian rangkaian tujuan + query
+ * keAnggotaId) tepat setelah `lockSurat` tapi SEBELUM `findMembership`, supaya
+ * validasi keAnggotaId berjalan sebelum gabung implisit bisa memutasi data.
+ * Query manapun yang diintersepsi diekspos lewat `interceptedRows` supaya
+ * test bisa menyatakan query mana yang sebenarnya tertangkap (lihat catatan
+ * "target the count query" pada review).
  */
 function simulateAnggotaBaruSebelumKeputusanGabung(
     tx: any,
@@ -234,7 +236,7 @@ function simulateAnggotaBaruSebelumKeputusanGabung(
     vi.spyOn(tx, 'select').mockImplementation((columns: any) => {
         const builder = originalSelect(columns);
         outerSelectCount += 1;
-        return outerSelectCount === 3 ? wrapThenable(builder) : builder;
+        return outerSelectCount === 5 ? wrapThenable(builder) : builder;
     });
     return capture;
 }
@@ -659,6 +661,31 @@ describe('rangkaianService.attach', () => {
             rangkaianId: besar.rangkaianId, surat: { jenis: 'surat_keluar', id: sk },
             keAnggotaId: besar.anggotaId, jenisRelasi: 'merujuk',
         }, actor))).rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it('menolak keAnggotaId tidak valid SEBELUM gabung implisit memutasi data (Minor 1)', async () => {
+        // sk adalah induk rangkaian 1-anggota; attach() ke rangkaian lain akan
+        // memicu jalur gabung implisit (lihat tes di atas). keAnggotaId yang
+        // tidak valid HARUS ditolak sebelum gabung itu berjalan, supaya
+        // pemanggil yang (secara salah) menangkap ValidationError ini di dalam
+        // transaksi yang sama dan tetap commit tidak meninggalkan penggabungan
+        // yang tidak diinginkan.
+        const sk = await suratKeluar('dir_bppt', 'approved');
+        const tunggal = await inTx((tx) => rangkaianService.ensureForSurat(tx, { jenis: 'surat_keluar', id: sk }, actor));
+        const sm = await suratMasuk('sesditjen');
+        const tujuan = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor));
+        const keAnggotaIdTidakValid = uuidOf('90', 1); // bukan anggota rangkaian tujuan
+
+        await inTx(async (tx) => {
+            // Mensimulasikan pemanggil yang menangkap error di dalam transaksi
+            // yang sama dan tetap melanjutkan (commit) alih-alih melempar ulang.
+            await expect(rangkaianService.attach(tx, {
+                rangkaianId: tujuan.rangkaianId, surat: { jenis: 'surat_keluar', id: sk },
+                keAnggotaId: keAnggotaIdTidakValid, jenisRelasi: 'merujuk', sumber: 'tautan',
+            }, actor)).rejects.toMatchObject({ statusCode: 400 });
+        });
+
+        expect(await rangkaianRow(tunggal.rangkaianId)).toMatchObject({ status: 'aktif', digabung_ke_id: null });
     });
 
     it('menautkan surat keluar terarsip tanpa memicu guard 0021 dan menolak rangkaian diberkaskan', async () => {

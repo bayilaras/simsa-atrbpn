@@ -613,6 +613,23 @@ export const rangkaianService = {
      */
     async attach(tx: DbTransaction, input: AttachInput, actor: RangkaianActor): Promise<AttachResult> {
         const surat = await lockSurat(tx, input.surat);
+
+        // Task review Minor 1: validasi rangkaian tujuan + keAnggotaId SEBELUM
+        // gabung implisit di bawah bisa memutasi data. Untuk jalur gabung,
+        // keAnggotaId wajib menjadi anggota rangkaian TARGET (input.rangkaianId)
+        // — ini bisa dipastikan lebih dulu tanpa bergantung pada hasil gabung,
+        // karena gabung() tidak pernah menyentuh baris rangkaian_anggota milik
+        // TARGET yang sudah ada. Memvalidasi lebih dulu mencegah pemanggil yang
+        // menangkap ValidationError di bawah lalu tetap commit meninggalkan
+        // penggabungan yang tidak diinginkan.
+        const [rangkaianTujuanAwal] = await lockRangkaian(tx, [input.rangkaianId]);
+        if (!rangkaianTujuanAwal) throw new NotFoundError('Rangkaian surat');
+        const [ke] = await tx.select({ id: rangkaianAnggota.id })
+            .from(rangkaianAnggota)
+            .where(and(eq(rangkaianAnggota.id, input.keAnggotaId), eq(rangkaianAnggota.rangkaianId, rangkaianTujuanAwal.id)))
+            .limit(1);
+        if (!ke) throw new ValidationError('Surat rujukan bukan anggota rangkaian ini');
+
         let member = await findMembership(tx, input.surat);
         let digabungDari: string | null = null;
 
@@ -643,16 +660,15 @@ export const rangkaianService = {
             member = await findMembership(tx, input.surat);
         }
 
+        // ke sudah divalidasi terhadap rangkaian tujuan di atas, sebelum gabung
+        // implisit (bila ada) berjalan. Rangkaian tujuan itu sendiri (bukan
+        // keanggotaan ke) perlu dikunci ulang di sini karena gabung() bisa saja
+        // mengubah statusnya sendiri lewat recomputeStatus.
         const [rangkaian] = await lockRangkaian(tx, [input.rangkaianId]);
         if (!rangkaian) throw new NotFoundError('Rangkaian surat');
         if (!isRangkaianTerbuka(rangkaian.status)) {
             throw new ConflictError(`Rangkaian ${rangkaian.kode} berstatus ${rangkaian.status}; anggota baru tidak dapat ditambahkan`);
         }
-        const [ke] = await tx.select({ id: rangkaianAnggota.id })
-            .from(rangkaianAnggota)
-            .where(and(eq(rangkaianAnggota.id, input.keAnggotaId), eq(rangkaianAnggota.rangkaianId, rangkaian.id)))
-            .limit(1);
-        if (!ke) throw new ValidationError('Surat rujukan bukan anggota rangkaian ini');
 
         let anggotaId = member?.anggotaId;
         let anggotaBaru = false;
