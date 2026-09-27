@@ -360,8 +360,15 @@ export function grantAktifSql(
 
 /**
  * Predikat visibilitas SQL. Mode 'read' identik dengan checkRead (property
- * test). Mode 'list' melonggarkan hanya unit sendiri ke kebijakan list lama
- * (kelasUntukRole); bagian lintas unit sama dengan mode 'read'.
+ * test). Mode 'list' melonggarkan unit sendiri DENGAN kebijakan list lama
+ * (kelasUntukRole) SELAIN kriteria 'read' (bukan pengganti): unit sendiri
+ * tetap boleh dibaca lewat grant seperti mode 'read', dan tambahan kelas yang
+ * diizinkan kebijakan list lama pun ikut terlihat. Ini menjaga invarian
+ * visibleSql(list) ⊇ visibleSql(read) (diuji property test) -- bila
+ * kelasList MENGGANTI kelasBaca, pemegang grant kelas terkendali pada
+ * rekaman unit sendiri (mis. staff/auditor) bisa terlihat di mode 'read'
+ * tetapi hilang di mode 'list', memutus invarian tersebut. Bagian lintas
+ * unit sama dengan mode 'read' di kedua mode.
  */
 export function visibleSql(ctx: KonteksBaca, target: TargetVisibilitas, mode: 'read' | 'list' = 'read'): SQL {
     const a = aliasAman(target.alias);
@@ -378,7 +385,7 @@ export function visibleSql(ctx: KonteksBaca, target: TargetVisibilitas, mode: 'r
     const unitSendiri = cocokUnitRekamanSql(kecocokanUnitRekaman(ctx.user), unit);
     const pemilik = mode === 'read'
         ? sql`(${unitSendiri} AND ${kelasBaca})`
-        : sql`(${unitSendiri} AND ${kelasList})`;
+        : sql`(${unitSendiri} AND (${kelasList} OR ${kelasBaca}))`;
     const lintas = sql`(${jangkauanRekamanSql(ctx, target.type, a)} AND ${kelasBaca})`;
     return sql`(${sql.raw(`${a}.is_deleted IS NOT TRUE`)} AND (${pemilik} OR ${lintas}))`;
 }
