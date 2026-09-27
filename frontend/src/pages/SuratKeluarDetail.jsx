@@ -37,6 +37,7 @@ import { id as localeId } from 'date-fns/locale'
 import { useAuth } from '@/context/AuthContext'
 import { useAppConfig } from '@/context/app-config-context'
 import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
+import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu'
 
 export default function SuratKeluarDetail() {
     const { id } = useParams()
@@ -244,8 +245,13 @@ export default function SuratKeluarDetail() {
         approved: 'Disetujui',
         rejected: 'Ditolak / Perlu Perbaikan',
     }[approvalStatus] || approvalStatus
-    const canEdit = isAdmin && !surat.isArchived && ['draft', 'rejected'].includes(approvalStatus)
-    const canArchive = isAdmin && !surat.isArchived && approvalStatus === 'approved'
+    // aksiDiizinkan dari server (Task 16) adalah gerbang otoritatif; bila belum
+    // ada (respons lama), jatuh ke isAdmin lama sebagai fallback.
+    const aksi = surat?.aksiDiizinkan
+    const bolehEdit = Array.isArray(aksi) ? aksi.includes('edit') : isAdmin
+    const bolehArsip = Array.isArray(aksi) ? aksi.includes('arsipkan') : isAdmin
+    const canEdit = bolehEdit && !surat.isArchived && ['draft', 'rejected'].includes(approvalStatus)
+    const canArchive = bolehArsip && !surat.isArchived && approvalStatus === 'approved'
     const canSubmitApproval = canEdit && surat.createdBy === user?.id
     const isCurrentApprover = isAdmin
         && approvalStatus === 'pending'
@@ -297,7 +303,7 @@ export default function SuratKeluarDetail() {
                     </div>
 
                     {/* Desktop Actions */}
-                    {isAdmin && (
+                    {(isAdmin || (surat.aksiDiizinkan || []).length > 0) && (
                         <div className="hidden md:flex gap-2">
                             {canEdit && (
                                 <Button
@@ -309,6 +315,13 @@ export default function SuratKeluarDetail() {
                                     Edit
                                 </Button>
                             )}
+                            <TindakLanjutMenu
+                                jenis="surat_keluar"
+                                surat={surat}
+                                aksiDiizinkan={surat.aksiDiizinkan || []}
+                                variant="secondary"
+                                className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
+                            />
                             {canArchive && (
                                 <Button
                                     className="bg-card text-blue-700 hover:bg-card/90"
@@ -322,7 +335,7 @@ export default function SuratKeluarDetail() {
                     )}
 
                     {/* Mobile Actions */}
-                    {isAdmin && (canEdit || canArchive) && (
+                    {(isAdmin && (canEdit || canArchive) || (surat.aksiDiizinkan || []).length > 0) && (
                         <div className="md:hidden flex gap-2">
                             {canEdit && (
                                 <Button
@@ -335,6 +348,13 @@ export default function SuratKeluarDetail() {
                                     Edit
                                 </Button>
                             )}
+                            <TindakLanjutMenu
+                                jenis="surat_keluar"
+                                surat={surat}
+                                aksiDiizinkan={surat.aksiDiizinkan || []}
+                                variant="secondary"
+                                className="bg-card/20 hover:bg-card/30 text-white border-0"
+                            />
                             {canArchive && (
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
@@ -342,6 +362,7 @@ export default function SuratKeluarDetail() {
                                             variant="secondary"
                                             size="icon"
                                             className="bg-card/20 hover:bg-card/30 text-white border-0"
+                                            aria-label="Aksi lain"
                                         >
                                             <MoreHorizontal className="h-4 w-4" />
                                         </Button>
@@ -456,6 +477,7 @@ export default function SuratKeluarDetail() {
                                 jenis="surat_keluar"
                                 suratId={surat.id}
                                 aksesMelalui={aksesMelalui}
+                                onChanged={fetchSurat}
                                 fallback={aksesMelalui === 'owner' && surat.balasanUntuk ? (
                                     <>
                                         <Separator />

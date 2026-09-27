@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { DistributeDialog } from '@/components/DistributeDialog'
 import suratMasukService from '@/services/surat-masuk.service'
+import distributionService from '@/services/distribution.service'
 import { useAuth } from '@/context/AuthContext'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 
@@ -69,18 +70,16 @@ export default function SuratMasukDetail() {
         }
     }
 
-    const handleReply = () => {
-        navigate('/surat/keluar/tambah', {
-            state: {
-                replyTo: {
-                    id: surat.id,
-                    nomorSurat: surat.nomorSurat,
-                    perihal: surat.perihal,
-                    dari: surat.dari,
-                }
-            }
-        })
+    const handleTerima = async () => {
+        try {
+            await distributionService.receive(surat.distribusiUnitSaya.id, resolveEffectiveUnitKerjaId(user))
+            toast({ title: 'Berhasil', description: 'Disposisi diterima' })
+            fetchSurat()
+        } catch (error) {
+            toast({ title: 'Error', description: error.message || 'Gagal menerima disposisi', variant: 'destructive' })
+        }
     }
+    const handlePenyelesaian = () => navigate(`/distribusi?penyelesaian=${surat.distribusiUnitSaya.id}`)
 
     if (loading) {
         return (
@@ -129,9 +128,10 @@ export default function SuratMasukDetail() {
                 surat={surat}
                 onBack={() => navigate(-1)}
                 onEdit={() => navigate(`/surat/masuk/edit/${surat.id}`)}
-                onReply={handleReply}
                 onDistribute={() => setDistributeDialogOpen(true)}
                 onArchive={() => setArchiveDialogOpen(true)}
+                onTerima={handleTerima}
+                onPenyelesaian={handlePenyelesaian}
                 isAdmin={isAdmin}
             />
 
@@ -139,7 +139,7 @@ export default function SuratMasukDetail() {
                 {/* Main Content */}
                 <div className="lg:col-span-2 space-y-6">
                     <InfoSection surat={surat} />
-                    <AlurSuratPanel jenis="surat_masuk" suratId={surat.id} aksesMelalui={aksesMelalui} />
+                    <AlurSuratPanel jenis="surat_masuk" suratId={surat.id} aksesMelalui={aksesMelalui} onChanged={fetchSurat} />
                     <FilePreviewSection surat={surat} />
                 </div>
 
@@ -148,9 +148,10 @@ export default function SuratMasukDetail() {
                     <StatusSidebar
                         surat={surat}
                         onEdit={() => navigate(`/surat/masuk/edit/${surat.id}`)}
-                        onReply={handleReply}
                         onDistribute={() => setDistributeDialogOpen(true)}
                         onArchive={() => setArchiveDialogOpen(true)}
+                        onTerima={handleTerima}
+                        onPenyelesaian={handlePenyelesaian}
                         isAdmin={isAdmin}
                     />
                 </div>
@@ -172,6 +173,7 @@ export default function SuratMasukDetail() {
                     id: surat.id,
                     nomorSurat: surat.nomorSurat,
                     perihal: surat.perihal,
+                    sifatSurat: surat.sifatSurat,
                 }}
                 sourceUnitId={surat.unitKerjaId || resolveEffectiveUnitKerjaId(user)}
                 onSuccess={() => {
@@ -180,6 +182,7 @@ export default function SuratMasukDetail() {
                         title: 'Berhasil',
                         description: 'Surat berhasil didistribusikan',
                     })
+                    fetchSurat()
                 }}
             />
         </div>

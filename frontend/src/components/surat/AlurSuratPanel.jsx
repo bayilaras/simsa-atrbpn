@@ -5,10 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import rangkaianService from '@/services/rangkaian.service'
 import { TimelineItem } from '@/components/surat/TimelineItem'
+import { JENIS_RELASI_LABEL } from '@/lib/tindak-lanjut'
+
+// Kontrak ekspor P2 dipertahankan; sumber tunggal kini lib/tindak-lanjut.js (Task 19).
+export { JENIS_RELASI_LABEL } from '@/lib/tindak-lanjut'
 
 export const STATUS_RANGKAIAN_LABEL = { aktif: 'Aktif', selesai: 'Selesai', diberkaskan: 'Diberkaskan', digabung: 'Digabung' }
 export const STATUS_DISPOSISI_LABEL = { sent: 'Terkirim', received: 'Diterima', processed: 'Selesai', rejected: 'Ditolak' }
-export const JENIS_RELASI_LABEL = { balasan: 'Balasan', tindak_lanjut: 'Tindak lanjut', menjelaskan: 'Menjelaskan', merujuk: 'Merujuk' }
 // 'pengawas' tidak lagi dipetakan di sini -- lihat teks banner khusus di bawah.
 const AKSES_LABEL = { peserta: 'peserta rangkaian' }
 const DIKECUALIKAN = 'Dikecualikan'
@@ -45,7 +48,7 @@ function keItemLinimasa(node, relasiDari) {
     }
 }
 
-export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null }) {
+export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null, onChanged }) {
     const [state, setState] = useState({ loading: true, data: null, error: false, notFound: false })
 
     useEffect(() => {
@@ -54,7 +57,10 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
             setState({ loading: true, data: null, error: false, notFound: false })
             try {
                 const data = await rangkaianService.getBySurat(jenis, suratId)
-                if (aktif) setState({ loading: false, data, error: false, notFound: false })
+                if (aktif) {
+                    setState({ loading: false, data, error: false, notFound: false })
+                    onChanged?.()
+                }
             } catch (err) {
                 if (!aktif) return
                 const status = err?.status ?? err?.response?.status
@@ -64,7 +70,7 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
         }
         muat()
         return () => { aktif = false }
-    }, [jenis, suratId])
+    }, [jenis, suratId, onChanged])
 
     if (state.loading) {
         return (

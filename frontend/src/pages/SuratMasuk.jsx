@@ -14,6 +14,7 @@ import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
 import { DistributeDialog } from '@/components/DistributeDialog';
+import { buildTindakLanjutState } from '@/lib/tindak-lanjut';
 import {
     Select,
     SelectContent,
@@ -704,6 +705,12 @@ export default function SuratMasuk() {
                                                                 <>
                                                                     <DropdownMenuItem onClick={() => handleEdit(row)}>
                                                                         <Edit className="h-4 w-4 mr-2" /> Edit Surat
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem onClick={() => navigate('/surat/keluar/tambah', { state: buildTindakLanjutState('surat_masuk', row, 'saya_balas') })}>
+                                                                        <Reply className="h-4 w-4 mr-2" /> Saya Balas
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem onClick={() => navigate('/surat/keluar/tambah', { state: buildTindakLanjutState('surat_masuk', row, 'buat_nota_dinas') })}>
+                                                                        <FileText className="h-4 w-4 mr-2" /> Buat Nota Dinas
                                                                     </DropdownMenuItem>
                                                                     <DropdownMenuItem onClick={() => handleOpenDistributeDialog(row)}>
                                                                         <Send className="h-4 w-4 mr-2" /> Distribusi
