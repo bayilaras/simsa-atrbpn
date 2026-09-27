@@ -696,3 +696,52 @@ describe('rangkaianService.attach — race Task 12 review (interleaved dalam sat
         expect(await rangkaianRow(tunggal.rangkaianId)).toMatchObject({ status: 'aktif', digabung_ke_id: null });
     });
 });
+
+describe('distributionService.distribute dalam transaksi rangkaian', () => {
+    it('menulis disposisi berangkaian bersama ensureForSuratMasuk dalam satu transaksi', async () => {
+        const { distributionService } = await import('../services/distribution.service');
+        const sm = await suratMasuk('sesditjen');
+        const { r, d } = await inTx(async (tx) => {
+            const r = await rangkaianService.ensureForSuratMasuk(tx, sm, actor, { unitPengolahId: 'dir_bppt' });
+            const d = await distributionService.distribute({
+                suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt',
+                rangkaianId: r.rangkaianId, batasWaktu: '2026-10-01', penanggungJawab: true, sentBy: actorId,
+            }, actor, tx);
+            return { r, d };
+        });
+        const row = await database.query(
+            `SELECT rangkaian_id, batas_waktu::text AS batas_waktu, penanggung_jawab, status FROM surat_distributions WHERE id = $1`,
+            [d.id]);
+        expect(row.rows).toEqual([{ rangkaian_id: r.rangkaianId, batas_waktu: '2026-10-01', penanggung_jawab: true, status: 'sent' }]);
+        expect(await auditRows(d.id)).toEqual([{ action: 'distribute', entity_type: 'surat_distribution' }]);
+    });
+
+    it('membatalkan ensure + distribusi bersama bila transaksi pemanggil gagal', async () => {
+        const { distributionService } = await import('../services/distribution.service');
+        const sm = await suratMasuk('sesditjen');
+        await expect(inTx(async (tx) => {
+            const r = await rangkaianService.ensureForSuratMasuk(tx, sm, actor);
+            await distributionService.distribute({
+                suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_ptep', rangkaianId: r.rangkaianId,
+            }, actor, tx);
+            throw new Error('langkah berikutnya gagal');
+        })).rejects.toThrow('langkah berikutnya gagal');
+        const left = await database.query(
+            `SELECT (SELECT count(*)::int FROM surat_distributions WHERE surat_masuk_id = $1) AS d,
+                    (SELECT count(*)::int FROM rangkaian_anggota WHERE surat_masuk_id = $1) AS a`, [sm]);
+        expect(left.rows).toEqual([{ d: 0, a: 0 }]);
+    });
+
+    it('menolak disposisi atas berkas tertutup: 409 dari layanan, trigger untuk jalur lama tanpa rangkaian_id', async () => {
+        const { distributionService } = await import('../services/distribution.service');
+        const sm = await suratMasuk('sesditjen');
+        const { rangkaianId } = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor));
+        await berkaskan(rangkaianId);
+        await expect(distributionService.distribute({
+            suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_ptep', rangkaianId,
+        }, actor)).rejects.toMatchObject({ statusCode: 409 });
+        await rejectsWith(distributionService.distribute({
+            suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_ptep',
+        }, actor), /sudah diberkaskan/);
+    });
+});

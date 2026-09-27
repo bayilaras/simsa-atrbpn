@@ -1,10 +1,12 @@
 import { db } from '../config/database';
-import { suratDistributions, NewSuratDistribution, SuratDistribution, suratMasuk, unitKerja, users } from '../db/schema';
+import { suratDistributions, NewSuratDistribution, SuratDistribution, suratMasuk, unitKerja, users, rangkaianSurat } from '../db/schema';
 import { eq, and, desc, sql, or, notInArray } from 'drizzle-orm';
 import { klasifikasiInSql } from './access/visibility-spec';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
-import { AppError, ValidationError } from '../utils/errors.js';
+import { AppError, ConflictError, ValidationError } from '../utils/errors.js';
+import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
+import type { DbTransaction } from '../db/transaction';
 
 export interface DistributionFilters {
     unitKerjaId?: string;
@@ -19,19 +21,40 @@ function incomingSecurityCondition(classes: string[] | null | undefined) {
     return klasifikasiInSql(suratMasuk.sifatSurat, classes);
 }
 
+export interface DistributeInput {
+    suratMasukId: string;
+    sourceUnitId: string;
+    targetUnitId: string;
+    instruction?: string | null;
+    ccUnits?: string[];
+    sentBy?: string;
+    /** Wajib diisi semua jalur mulai P3 (lewat rangkaianService.ensureForSuratMasuk). */
+    rangkaianId?: string | null;
+    /** Tanggal 'YYYY-MM-DD'. */
+    batasWaktu?: string | null;
+    penanggungJawab?: boolean;
+}
+
 export class DistributionService {
     /**
-     * Create a new distribution (send surat from Ditjen to target unit)
+     * Create a new distribution (send surat from Ditjen to target unit).
+     * Tanpa `tx`, membuka transaksi sendiri (perilaku lama). Dengan `tx`,
+     * memakai transaksi pemanggil dan audit ditulis ke transaksi tersebut.
      */
-    async distribute(data: {
-        suratMasukId: string;
-        sourceUnitId: string;
-        targetUnitId: string;
-        instruction?: string | null;
-        ccUnits?: string[];
-        sentBy?: string;
-    }, auditContext?: CriticalAuditContext) {
-        return db.transaction(async (tx) => {
+    async distribute(
+        data: DistributeInput,
+        auditContext?: CriticalAuditContext,
+        tx?: DbTransaction,
+    ): Promise<SuratDistribution> {
+        if (tx) return this.distributeInTransaction(tx, data, auditContext);
+        return db.transaction((ownTx) => this.distributeInTransaction(ownTx, data, auditContext));
+    }
+
+    private async distributeInTransaction(
+        tx: DbTransaction,
+        data: DistributeInput,
+        auditContext?: CriticalAuditContext,
+    ): Promise<SuratDistribution> {
         // The source unit supplied by the client must own the source letter. This
         // prevents an authorised unit from distributing another unit's letter by ID.
         const [sourceSurat] = await tx
@@ -44,6 +67,19 @@ export class DistributionService {
             .limit(1);
         if (!sourceSurat) {
             throw new AppError('Data not found', 404);
+        }
+
+        if (data.rangkaianId) {
+            // Urutan kunci: surat -> rangkaian -> distribusi (trigger 0046 hanya FOR SHARE).
+            const [rangkaian] = await tx
+                .select({ id: rangkaianSurat.id, status: rangkaianSurat.status })
+                .from(rangkaianSurat)
+                .where(eq(rangkaianSurat.id, data.rangkaianId))
+                .for('update');
+            if (!rangkaian) throw new ValidationError('Rangkaian surat tidak ditemukan');
+            if (rangkaian.status === 'diberkaskan' || rangkaian.status === 'digabung') {
+                throw new ConflictError('Rangkaian surat sudah ditutup; disposisi baru tidak dapat ditambahkan');
+            }
         }
 
         // Check if already distributed to this target
@@ -60,19 +96,31 @@ export class DistributionService {
             throw new ValidationError('Surat sudah didistribusikan ke unit ini');
         }
 
-        const [result] = await tx
-            .insert(suratDistributions)
-            .values({
-                suratMasukId: data.suratMasukId,
-                sourceUnitId: data.sourceUnitId,
-                targetUnitId: data.targetUnitId,
-                instruction: data.instruction,
-                ccUnits: data.ccUnits ? JSON.stringify(data.ccUnits) : null,
-                sentBy: data.sentBy,
-                status: 'sent',
-                sentAt: new Date(),
-            })
-            .returning();
+        let result: SuratDistribution;
+        try {
+            [result] = await tx
+                .insert(suratDistributions)
+                .values({
+                    suratMasukId: data.suratMasukId,
+                    sourceUnitId: data.sourceUnitId,
+                    targetUnitId: data.targetUnitId,
+                    instruction: data.instruction ?? null,
+                    ccUnits: data.ccUnits ? JSON.stringify(data.ccUnits) : null,
+                    sentBy: data.sentBy,
+                    status: 'sent',
+                    sentAt: new Date(),
+                    rangkaianId: data.rangkaianId ?? null,
+                    batasWaktu: data.batasWaktu ?? null,
+                    penanggungJawab: data.penanggungJawab ?? false,
+                })
+                .returning();
+        } catch (error) {
+            // Race dengan index parsial 0046; Drizzle membungkus error pg di `.cause`.
+            if (hasPostgresErrorCode(error, '23505', 'surat_distributions_active_target_uidx')) {
+                throw new ValidationError('Surat sudah didistribusikan ke unit ini');
+            }
+            throw error;
+        }
 
         if (auditContext) {
             await auditLogService.logActionOrThrow({
@@ -87,13 +135,15 @@ export class DistributionService {
                         targetUnitId: data.targetUnitId,
                         instruction: data.instruction ?? null,
                         status: 'sent',
+                        rangkaianId: data.rangkaianId ?? null,
+                        batasWaktu: data.batasWaktu ?? null,
+                        penanggungJawab: data.penanggungJawab ?? false,
                     },
                 },
             }, tx);
         }
 
         return result;
-        });
     }
 
     /**
