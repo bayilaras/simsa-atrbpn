@@ -49,6 +49,7 @@ const mocks = vi.hoisted(() => ({
     audit: vi.fn(),
     recordAccess: {
         check: vi.fn(),
+        checkRead: vi.fn(),
     },
 }));
 
@@ -110,7 +111,7 @@ vi.mock('../../services/blob-storage.service', () => ({
 }));
 
 vi.mock('../../services/audit-log.service', () => ({
-    default: { logAction: mocks.audit },
+    default: { logAction: mocks.audit, logActionOrThrow: mocks.audit },
 }));
 
 import suratKeluarRouter from '../surat-keluar.routes';
@@ -185,6 +186,10 @@ describe('surat and attachment route security policy', () => {
             classification: 'terbatas',
             grantId: '550e8400-e29b-41d4-a716-446655440099',
             grantAccessMode: 'manage',
+        });
+        mocks.recordAccess.checkRead.mockResolvedValue({
+            exists: true, allowed: true, mutable: true, unitKerjaId: 'sesditjen',
+            classification: 'biasa', grantId: null, via: 'owner', rangkaianId: null, masked: false,
         });
     });
 
@@ -675,5 +680,30 @@ describe('surat and attachment route security policy', () => {
         expect(response.body.code).toBe('DISPOSITION_REQUIRED');
         expect(mocks.attachment.findById).not.toHaveBeenCalled();
         expect(mocks.attachment.delete).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for a non-participant detail read without loading the record', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: false, via: null, unitKerjaId: 'sesditjen', rangkaianId: null, masked: false });
+        await request(app).get('/api/surat-masuk/550e8400-e29b-41d4-a716-446655440030').expect(404);
+        await request(app).get('/api/surat-keluar/550e8400-e29b-41d4-a716-446655440031').expect(404);
+        expect(mocks.suratMasuk.findById).not.toHaveBeenCalled();
+        expect(mocks.suratKeluar.findById).not.toHaveBeenCalled();
+        expect(mocks.audit).not.toHaveBeenCalled();
+    });
+
+    it('loads a participant detail in the record unit scope and audits the cross-unit view', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({
+            exists: true, allowed: true, mutable: false, unitKerjaId: 'sesditjen', grantId: null,
+            via: 'peserta', rangkaianId: '550e8400-e29b-41d4-a716-446655440077', masked: false,
+        });
+        mocks.suratMasuk.findById.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440030', unitKerjaId: 'sesditjen', perihal: 'Permohonan', filePath: null });
+        const response = await request(app).get('/api/surat-masuk/550e8400-e29b-41d4-a716-446655440030').expect(200);
+        expect(mocks.suratMasuk.findById).toHaveBeenCalledWith('550e8400-e29b-41d4-a716-446655440030', 'sesditjen');
+        expect(response.body.data).toMatchObject({ aksesMelalui: 'peserta', aksiDiizinkan: [] });
+        expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
+            action: 'view_via_rangkaian',
+            entityType: 'surat_masuk',
+            changes: expect.objectContaining({ via: 'peserta', rangkaianId: '550e8400-e29b-41d4-a716-446655440077' }),
+        }));
     });
 });
