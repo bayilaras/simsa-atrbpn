@@ -1106,6 +1106,51 @@ describe('PostgreSQL migration chain', () => {
         await expect(database.exec(`
             UPDATE rangkaian_anggota SET unit_kerja_id = 'unit-46-dir2' WHERE id = '${induk}'
         `)).rejects.toThrow(/Identitas anggota rangkaian/);
+        // Kolom non-identitas anggota tetap terkunci selama berkas tertutup.
+        await expect(database.exec(`
+            UPDATE rangkaian_anggota SET sumber = 'tautan' WHERE id = '${induk}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        await expect(database.exec(`
+            DELETE FROM rangkaian_anggota WHERE id = '${tindakLanjut}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        await expect(database.exec(`
+            INSERT INTO rangkaian_relasi (rangkaian_id, dari_anggota_id, ke_anggota_id, jenis_relasi)
+            VALUES ('${berkasA}', '${induk}', '${tindakLanjut}', 'merujuk')
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        await expect(database.exec(`
+            DELETE FROM rangkaian_relasi WHERE rangkaian_id = '${berkasA}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
+
+        // Memindahkan disposisi keluar dari berkas tertutup tetap ditolak.
+        const distribusiTertutup = (await database.query<{ id: string }>(`
+            SELECT id FROM surat_distributions WHERE rangkaian_id = '${berkasA}'
+        `)).rows[0].id;
+        await expect(database.exec(`
+            UPDATE surat_distributions SET rangkaian_id = '${b}' WHERE id = '${distribusiTertutup}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        // Kontrol positif: disposisi lama (rangkaian_id NULL) untuk surat yang
+        // bukan anggota berkas manapun tetap dapat dibuat.
+        const distribusiLegacy = (await database.query<{ id: string }>(`
+            INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status)
+            VALUES ('${smLain}', 'unit-46-tu', 'unit-46-dir2', 'sent') RETURNING id
+        `)).rows[0].id;
+        // ...tetapi memindahkannya ke surat yang anggota berkas tertutup tetap ditolak.
+        await expect(database.exec(`
+            UPDATE surat_distributions SET surat_masuk_id = '${sm}' WHERE id = '${distribusiLegacy}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
+
+        // Bukti pemberkasan dan kolom header lain tetap terkunci; hanya
+        // unit_pengolah_id/klasifikasi_item_id (lewat Koreksi Berkas) dan
+        // updated_at yang dikecualikan.
+        await expect(database.exec(`
+            UPDATE rangkaian_surat SET diberkaskan_at = now() WHERE id = '${berkasA}'
+        `)).rejects.toThrow(/tidak dapat diubah/);
+        await expect(database.exec(`
+            UPDATE rangkaian_surat SET judul = 'Judul diubah setelah ditutup' WHERE id = '${berkasA}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
+        await expect(database.exec(`
+            UPDATE rangkaian_surat SET selesai_at = now() WHERE id = '${berkasA}'
+        `)).rejects.toThrow(/sudah diberkaskan/);
 
         const koreksi = (await database.query<{ id: string }>(`
             INSERT INTO rangkaian_koreksi_berkas (
@@ -1153,6 +1198,69 @@ describe('PostgreSQL migration chain', () => {
             status: 'diberkaskan', unit_pengolah_id: 'unit-46-tu', klasifikasi_item_id: klasBaru,
         }]);
 
+        // GUC yang menunjuk koreksi rangkaian lain, koreksi yang ditolak, koreksi
+        // yang sudah applied, GUC cacat, dan sisi "lama" yang tidak cocok — semuanya ditolak.
+        const denganKoreksiGuc = async (guc: string, setClause: string) => {
+            try {
+                await database.exec(`
+                    BEGIN;
+                    SELECT set_config('simsa.berkas_koreksi', '${guc}', true);
+                    UPDATE rangkaian_surat SET ${setClause} WHERE id = '${berkasA}';
+                    COMMIT;
+                `);
+            } catch (error) {
+                await database.exec('ROLLBACK');
+                throw error;
+            }
+        };
+        const buatKoreksi = async (
+            rangkaianId: string, lamaUnit: string, baruUnit: string, lamaKlas: number, baruKlas: number,
+        ) => (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_koreksi_berkas (
+                rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+                klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by
+            ) VALUES ('${rangkaianId}', '${lamaUnit}', '${baruUnit}', ${lamaKlas}, ${baruKlas},
+                'Koreksi tambahan untuk skenario penolakan', '${maker}') RETURNING id
+        `)).rows[0].id;
+        const setujuiKoreksi = (id: string) => database.exec(`
+            UPDATE rangkaian_koreksi_berkas
+            SET status = 'approved', diputuskan_by = '${checker}', diputuskan_at = now()
+            WHERE id = '${id}'
+        `);
+
+        // Koreksi rangkaian lain (c), meskipun approved, tidak berlaku untuk berkasA.
+        const koreksiLainRangkaian = await buatKoreksi(c, 'unit-46-tu', 'unit-46-dir', klasBaru, klasLama);
+        await setujuiKoreksi(koreksiLainRangkaian);
+        await expect(denganKoreksiGuc(koreksiLainRangkaian, `unit_pengolah_id = 'unit-46-dir', klasifikasi_item_id = ${klasLama}`))
+            .rejects.toThrow(/tidak sesuai Koreksi Berkas/);
+
+        // Koreksi yang ditolak (denied) tidak pernah berlaku.
+        const koreksiDitolak = await buatKoreksi(berkasA, 'unit-46-tu', 'unit-46-dir', klasBaru, klasLama);
+        await database.exec(`
+            UPDATE rangkaian_koreksi_berkas
+            SET status = 'denied', diputuskan_by = '${checker}', diputuskan_at = now()
+            WHERE id = '${koreksiDitolak}'
+        `);
+        await expect(denganKoreksiGuc(koreksiDitolak, `unit_pengolah_id = 'unit-46-dir', klasifikasi_item_id = ${klasLama}`))
+            .rejects.toThrow(/tidak sesuai Koreksi Berkas/);
+
+        // Koreksi yang sudah diterapkan (applied) tidak dapat dipakai ulang.
+        const koreksiTerapan = await buatKoreksi(berkasA, 'unit-46-tu', 'unit-46-dir', klasBaru, klasLama);
+        await setujuiKoreksi(koreksiTerapan);
+        await database.exec(`UPDATE rangkaian_koreksi_berkas SET status = 'applied' WHERE id = '${koreksiTerapan}'`);
+        await expect(denganKoreksiGuc(koreksiTerapan, `unit_pengolah_id = 'unit-46-dir', klasifikasi_item_id = ${klasLama}`))
+            .rejects.toThrow(/tidak sesuai Koreksi Berkas/);
+
+        // GUC yang bukan UUID valid ditolak sebelum mencari baris koreksi.
+        await expect(denganKoreksiGuc('bukan-uuid', `unit_pengolah_id = 'unit-46-dir', klasifikasi_item_id = ${klasLama}`))
+            .rejects.toThrow(/Koreksi Berkas yang disetujui/);
+
+        // Sisi "lama" yang tidak cocok dengan nilai baris saat ini tetap ditolak.
+        const koreksiLamaSalah = await buatKoreksi(berkasA, 'unit-46-dir', 'unit-46-dir2', klasLama, klasBaru);
+        await setujuiKoreksi(koreksiLamaSalah);
+        await expect(denganKoreksiGuc(koreksiLamaSalah, `unit_pengolah_id = 'unit-46-dir2'`))
+            .rejects.toThrow(/tidak sesuai Koreksi Berkas/);
+
         await expect(database.exec(`
             UPDATE rangkaian_surat SET status = 'digabung', digabung_ke_id = '${berkasA}' WHERE id = '${b}'
         `)).rejects.toThrow(/tidak dapat menjadi tujuan/);
@@ -1166,5 +1274,116 @@ describe('PostgreSQL migration chain', () => {
         await expect(database.exec(`
             UPDATE rangkaian_surat SET status = 'aktif', digabung_ke_id = NULL WHERE id = '${b}'
         `)).rejects.toThrow(/sudah digabung/);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0046 menegakkan siklus hidup rangkaian_koreksi_berkas: pending -> approved/denied -> applied, dan terminal', async () => {
+        const database = await createDatabase();
+        for (const entry of journal.entries) {
+            await applyMigration(database, entry);
+        }
+
+        const pengaju = '46000000-0000-4000-8000-0000000000c1';
+        const checker1 = '46000000-0000-4000-8000-0000000000c2';
+        const checker2 = '46000000-0000-4000-8000-0000000000c3';
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES ('unit-46c-a', 'Unit C A'), ('unit-46c-b', 'Unit C B');
+            INSERT INTO users (id, email, role) VALUES
+                ('${pengaju}', 'pengaju-0046c@example.test', 'super_admin'),
+                ('${checker1}', 'checker1-0046c@example.test', 'super_admin'),
+                ('${checker2}', 'checker2-0046c@example.test', 'super_admin');
+        `);
+        const klasBaru = (await database.query<{ id: number }>(`
+            INSERT INTO klasifikasi_arsip (kode, source_record_key, jenis, tipe)
+            VALUES ('PT.02.01', 'test:0046c:0001', 'Uji siklus koreksi', 'substantif') RETURNING id
+        `)).rows[0].id;
+        const rangkaianId = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_surat (kode, asal, unit_pencatat_id, judul, tahun)
+            VALUES ('RS-2026-900101', 'surat_masuk', 'unit-46c-a', 'Uji siklus koreksi', 2026) RETURNING id
+        `)).rows[0].id;
+
+        // INSERT harus pending tanpa keputusan.
+        await expect(database.exec(`
+            INSERT INTO rangkaian_koreksi_berkas (
+                rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+                klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by, status
+            ) VALUES ('${rangkaianId}', 'unit-46c-a', 'unit-46c-b', 1, ${klasBaru}, 'Alasan uji siklus koreksi', '${pengaju}', 'approved')
+        `)).rejects.toThrow(/Koreksi berkas baru harus berstatus pending/);
+        await expect(database.exec(`
+            INSERT INTO rangkaian_koreksi_berkas (
+                rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+                klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by, diputuskan_by
+            ) VALUES ('${rangkaianId}', 'unit-46c-a', 'unit-46c-b', 1, ${klasBaru}, 'Alasan uji siklus koreksi', '${pengaju}', '${checker1}')
+        `)).rejects.toThrow(/Koreksi berkas baru harus berstatus pending/);
+
+        const koreksiId = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_koreksi_berkas (
+                rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+                klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by
+            ) VALUES ('${rangkaianId}', 'unit-46c-a', 'unit-46c-b', 1, ${klasBaru}, 'Alasan uji siklus koreksi', '${pengaju}')
+            RETURNING id
+        `)).rows[0].id;
+
+        // Pengajuan tidak dapat diubah setelah dibuat.
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET unit_pengolah_baru = 'unit-46c-a' WHERE id = '${koreksiId}'
+        `)).rejects.toThrow(/Pengajuan koreksi berkas .* tidak dapat diubah/);
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET alasan = 'Alasan uji siklus koreksi diubah' WHERE id = '${koreksiId}'
+        `)).rejects.toThrow(/Pengajuan koreksi berkas .* tidak dapat diubah/);
+
+        // pending -> approved membutuhkan diputuskan_by/at terisi.
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET status = 'approved' WHERE id = '${koreksiId}'
+        `)).rejects.toThrow(/harus mengisi diputuskan_by/);
+
+        // Baris terpisah untuk jalur pending -> denied agar tidak mengganggu jalur approved di atas.
+        const koreksiDitolakId = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_koreksi_berkas (
+                rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+                klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by
+            ) VALUES ('${rangkaianId}', 'unit-46c-a', 'unit-46c-b', 1, ${klasBaru}, 'Alasan uji siklus koreksi ditolak', '${pengaju}')
+            RETURNING id
+        `)).rows[0].id;
+        await database.exec(`
+            UPDATE rangkaian_koreksi_berkas
+            SET status = 'denied', diputuskan_by = '${checker1}', diputuskan_at = now()
+            WHERE id = '${koreksiDitolakId}'
+        `);
+        // denied terminal: tidak ada transisi lanjutan sama sekali.
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET status = 'pending' WHERE id = '${koreksiDitolakId}'
+        `)).rejects.toThrow(/berstatus denied tidak dapat berubah/);
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET status = 'approved' WHERE id = '${koreksiDitolakId}'
+        `)).rejects.toThrow(/berstatus denied tidak dapat berubah/);
+        // Keputusan yang sudah terisi tidak dapat diubah.
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET diputuskan_by = '${checker2}' WHERE id = '${koreksiDitolakId}'
+        `)).rejects.toThrow(/Keputusan koreksi berkas .* tidak dapat diubah/);
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET diputuskan_at = now() WHERE id = '${koreksiDitolakId}'
+        `)).rejects.toThrow(/Keputusan koreksi berkas .* tidak dapat diubah/);
+
+        // Jalur approved -> applied yang sah (dipakai P5 setelah menerapkan perubahan).
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET status = 'applied' WHERE id = '${koreksiId}'
+        `)).rejects.toThrow(/berstatus pending tidak dapat berubah/);
+        await database.exec(`
+            UPDATE rangkaian_koreksi_berkas
+            SET status = 'approved', diputuskan_by = '${checker1}', diputuskan_at = now()
+            WHERE id = '${koreksiId}'
+        `);
+        await database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET status = 'applied' WHERE id = '${koreksiId}'
+        `);
+        // applied terminal.
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET status = 'approved' WHERE id = '${koreksiId}'
+        `)).rejects.toThrow(/berstatus applied tidak dapat berubah/);
+
+        const hasil = await database.query<{ status: string }>(`
+            SELECT status FROM rangkaian_koreksi_berkas WHERE id IN ('${koreksiId}', '${koreksiDitolakId}') ORDER BY status
+        `);
+        expect(hasil.rows).toEqual([{ status: 'applied' }, { status: 'denied' }]);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 });

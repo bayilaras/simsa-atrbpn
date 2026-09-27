@@ -363,6 +363,16 @@ BEGIN
                     USING ERRCODE = '23514';
             END IF;
         END IF;
+
+        -- Kolom lain (judul, kode, tahun, selesai_*, created_*, dst.) tidak
+        -- boleh berubah sama sekali; hanya unit_pengolah_id/klasifikasi_item_id
+        -- (lewat Koreksi Berkas di atas) dan updated_at yang dikecualikan.
+        IF (to_jsonb(NEW) - 'unit_pengolah_id' - 'klasifikasi_item_id' - 'updated_at')
+           IS DISTINCT FROM
+           (to_jsonb(OLD) - 'unit_pengolah_id' - 'klasifikasi_item_id' - 'updated_at') THEN
+            RAISE EXCEPTION 'Rangkaian % sudah diberkaskan; kolom lain tidak dapat diubah', OLD.id
+                USING ERRCODE = '23514';
+        END IF;
     END IF;
 
     IF NEW.digabung_ke_id IS NOT NULL
@@ -400,3 +410,66 @@ FOR EACH ROW EXECUTE FUNCTION rangkaian_guard_closed();
 CREATE TRIGGER rangkaian_surat_status_guard
 BEFORE INSERT OR UPDATE ON rangkaian_surat
 FOR EACH ROW EXECUTE FUNCTION rangkaian_guard_status();
+--> statement-breakpoint
+-- Siklus hidup rangkaian_koreksi_berkas (maker-checker, spesifikasi §9):
+-- pending -> approved|denied (dengan keputusan terisi) -> applied (hanya dari
+-- approved). denied dan applied terminal. Pengajuan dan keputusan yang sudah
+-- terisi tidak dapat diubah.
+CREATE OR REPLACE FUNCTION rangkaian_koreksi_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.status IS DISTINCT FROM 'pending'
+           OR NEW.diputuskan_by IS NOT NULL
+           OR NEW.diputuskan_at IS NOT NULL THEN
+            RAISE EXCEPTION 'Koreksi berkas baru harus berstatus pending tanpa keputusan'
+                USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF NEW.rangkaian_id IS DISTINCT FROM OLD.rangkaian_id
+       OR NEW.unit_pengolah_lama IS DISTINCT FROM OLD.unit_pengolah_lama
+       OR NEW.unit_pengolah_baru IS DISTINCT FROM OLD.unit_pengolah_baru
+       OR NEW.klasifikasi_lama IS DISTINCT FROM OLD.klasifikasi_lama
+       OR NEW.klasifikasi_baru IS DISTINCT FROM OLD.klasifikasi_baru
+       OR NEW.alasan IS DISTINCT FROM OLD.alasan
+       OR NEW.diajukan_by IS DISTINCT FROM OLD.diajukan_by
+       OR NEW.diajukan_at IS DISTINCT FROM OLD.diajukan_at THEN
+        RAISE EXCEPTION 'Pengajuan koreksi berkas % tidak dapat diubah', OLD.id
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF OLD.diputuskan_by IS NOT NULL AND NEW.diputuskan_by IS DISTINCT FROM OLD.diputuskan_by THEN
+        RAISE EXCEPTION 'Keputusan koreksi berkas % tidak dapat diubah', OLD.id
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.diputuskan_at IS NOT NULL AND NEW.diputuskan_at IS DISTINCT FROM OLD.diputuskan_at THEN
+        RAISE EXCEPTION 'Keputusan koreksi berkas % tidak dapat diubah', OLD.id
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF NEW.status IS DISTINCT FROM OLD.status THEN
+        IF OLD.status = 'pending' AND NEW.status IN ('approved', 'denied') THEN
+            IF NEW.diputuskan_by IS NULL OR NEW.diputuskan_at IS NULL THEN
+                RAISE EXCEPTION 'Keputusan koreksi berkas % harus mengisi diputuskan_by dan diputuskan_at', OLD.id
+                    USING ERRCODE = '23514';
+            END IF;
+        ELSIF OLD.status = 'approved' AND NEW.status = 'applied' THEN
+            NULL;
+        ELSE
+            RAISE EXCEPTION 'Koreksi berkas % berstatus % tidak dapat berubah ke %', OLD.id, OLD.status, NEW.status
+                USING ERRCODE = '23514';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END $$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION rangkaian_koreksi_guard() FROM PUBLIC;
+--> statement-breakpoint
+CREATE TRIGGER rangkaian_koreksi_lifecycle_guard
+BEFORE INSERT OR UPDATE ON rangkaian_koreksi_berkas
+FOR EACH ROW EXECUTE FUNCTION rangkaian_koreksi_guard();
