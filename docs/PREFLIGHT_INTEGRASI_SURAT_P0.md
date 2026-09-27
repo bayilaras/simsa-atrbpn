@@ -16,15 +16,48 @@ Pre-flight ini **hanya membaca** database produksi dan wajib selesai serta disah
 ## Langkah
 
 1. Siapkan role read-only di konsol Neon (proyek produksi SIMSA), lalu salin connection string-nya.
-2. Jalankan dari mesin operator:
+2. Jalankan dari mesin operator. Jangan menaruh connection string di argumen baris perintah (tersimpan di histori shell) — masukkan lewat prompt tersembunyi, lalu tulis output ke berkas `.tmp` dan pindahkan ke tempat aslinya hanya bila perintah keluar dengan status 0, agar `sifat-surat-produksi.json` (berkas yang di-commit) tidak pernah tertimpa separuh jalan oleh kegagalan koneksi/izin.
+
+   Bash/WSL/Git Bash:
 
    ```bash
    cd backend
-   PREFLIGHT_DATABASE_URL='<connection string read-only>' npm run db:preflight:integrasi-surat > ../preflight-p0.md
-   PREFLIGHT_DATABASE_URL='<connection string read-only>' node scripts/preflight-integrasi-surat.mjs --format=sifat-json > src/__tests__/fixtures/sifat-surat-produksi.json
+   read -rs PREFLIGHT_DATABASE_URL && export PREFLIGHT_DATABASE_URL
+
+   npm run db:preflight:integrasi-surat > ../preflight-p0.md.tmp \
+     && mv ../preflight-p0.md.tmp ../preflight-p0.md
+   node scripts/preflight-integrasi-surat.mjs --format=sifat-json \
+     > src/__tests__/fixtures/sifat-surat-produksi.json.tmp \
+     && mv src/__tests__/fixtures/sifat-surat-produksi.json.tmp src/__tests__/fixtures/sifat-surat-produksi.json
+
+   unset PREFLIGHT_DATABASE_URL
    ```
 
-   Exit code 1 berarti ada pemeriksaan yang gagal (bagian **GAGAL** di laporan). Perbaiki izin atau koneksi lalu ulangi.
+   PowerShell (mesin operator Windows):
+
+   ```powershell
+   cd backend
+   $secure = Read-Host -AsSecureString 'PREFLIGHT_DATABASE_URL'
+   $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($secure)
+   try {
+       $env:PREFLIGHT_DATABASE_URL = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
+   } finally {
+       [System.Runtime.InteropServices.Marshal]::ZeroFreeGlobalAllocUnicode($ptr)
+   }
+
+   npm run db:preflight:integrasi-surat > ..\preflight-p0.md.tmp
+   if ($LASTEXITCODE -eq 0) { Move-Item ..\preflight-p0.md.tmp ..\preflight-p0.md -Force }
+
+   node scripts/preflight-integrasi-surat.mjs --format=sifat-json `
+     > src\__tests__\fixtures\sifat-surat-produksi.json.tmp
+   if ($LASTEXITCODE -eq 0) {
+       Move-Item src\__tests__\fixtures\sifat-surat-produksi.json.tmp src\__tests__\fixtures\sifat-surat-produksi.json -Force
+   }
+
+   Remove-Item Env:\PREFLIGHT_DATABASE_URL
+   ```
+
+   Exit code 1 berarti ada pemeriksaan yang gagal (bagian **GAGAL** di laporan) atau koneksi/izin bermasalah; berkas `.tmp` yang bersangkutan tetap ada untuk diperiksa (laporan markdown tetap memuat bagian **GAGAL** meski exit-nya 1) dan berkas asli (termasuk fixture yang sudah ter-commit) tidak tersentuh. Perbaiki izin atau koneksi, lalu ulangi seluruh blok sampai kedua perintah keluar dengan status 0 sebelum menghapus sisa `.tmp`.
 3. Jalankan test paritas dengan fixture produksi: `cd backend && npx vitest run src/__tests__/visibility-spec.parity.test.ts`. Hasilnya harus PASS. Bila gagal, **jangan** lanjut ke P1; laporkan nilai yang tidak cocok.
 4. Tinjau setiap bagian laporan memakai tabel keputusan di bawah.
 5. Simpan laporan sebagai `docs/HASIL_PREFLIGHT_INTEGRASI_SURAT_P0_<YYYY-MM-DD>.md`, isi blok **Pengesahan**, lalu commit bersama fixture JSON.
