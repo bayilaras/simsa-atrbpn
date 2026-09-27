@@ -23,6 +23,7 @@ import {
     ArrowRight, Plus, Loader2
 } from 'lucide-react'
 import dosirService from '@/services/dosir.service'
+import { TimelineItem } from '@/components/surat/TimelineItem'
 import { format, parseISO, formatDistanceToNow } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 
@@ -47,59 +48,6 @@ function StatCard({ icon: Icon, label, value, color }) {
                 </div>
             </CardContent>
         </Card>
-    )
-}
-
-function TimelineItem({ item, isLast }) {
-    const isMasuk = item.type === 'masuk';
-    const navigate = useNavigate();
-
-    return (
-        <div className="relative pl-8 pb-8 last:pb-0">
-            {/* Connector line */}
-            {!isLast && (
-                <div className="absolute left-[11px] top-8 bottom-0 w-0.5 bg-muted" />
-            )}
-
-            {/* Icon */}
-            <div className={`absolute left-0 top-1 p-1.5 rounded-full ring-4 ring-white ${isMasuk ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600' : 'bg-blue-100 dark:bg-blue-500/15 text-blue-600'
-                }`}>
-                {isMasuk ? <MailPlus className="h-4 w-4" /> : <MailMinus className="h-4 w-4" />}
-            </div>
-
-            <Card className="hover:shadow-md transition-shadow duration-200">
-                <CardContent className="p-4">
-                    <div className="flex flex-col sm:flex-row gap-4 justify-between items-start">
-                        <div className="space-y-1">
-                            <div className="flex items-center gap-2 mb-1">
-                                <Badge variant={isMasuk ? 'default' : 'secondary'} className={isMasuk ? 'bg-emerald-600' : 'bg-primary text-white'}>
-                                    {isMasuk ? 'Surat Masuk' : 'Surat Keluar'}
-                                </Badge>
-                                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                    <Clock className="h-3 w-3" />
-                                    {format(parseISO(item.tanggal), 'dd MMMM yyyy, HH:mm', { locale: idLocale })}
-                                </span>
-                            </div>
-                            <h4 className="font-semibold text-base">{item.perihal || 'Tanpa Perihal'}</h4>
-                            <p className="text-sm text-muted-foreground font-mono bg-muted/50 px-2 py-0.5 rounded inline-block">
-                                {item.nomorSurat || 'Tanpa Nomor'}
-                            </p>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                                <span className={isMasuk ? 'text-emerald-700 dark:text-emerald-300' : 'text-blue-700 dark:text-blue-300'}>
-                                    {isMasuk ? `Dari: ${item.dari}` : `Kepada: ${item.kepada}`}
-                                </span>
-                            </div>
-                        </div>
-                        <div className="flex gap-2 shrink-0">
-                            <Button variant="outline" size="sm" onClick={() => navigate(`/surat/${item.type}/${item.id}`)}>
-                                <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                                Detail
-                            </Button>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
     )
 }
 
