@@ -446,6 +446,29 @@ describe('rangkaianService jangkauan & recompute', () => {
 });
 
 describe('rangkaianService.gabung', () => {
+    it('induk draft inisiatif yang digabung ke target tetap memblokir auto-selesai (Task review Important 1)', async () => {
+        // Target: rangkaian surat masuk yang sudah lengkap (disposisi processed -> selesai).
+        const smA = await suratMasuk('sesditjen');
+        const target = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smA, actor, { unitPengolahId: 'dir_bppt' }));
+        await disposisi(smA, 'dir_bppt', 'processed', target.rangkaianId);
+        await inTx((tx) => rangkaianService.recomputeStatus(tx, [target.rangkaianId], actor));
+        expect((await rangkaianRow(target.rangkaianId)).status).toBe('selesai');
+
+        // Sumber: rangkaian inisiatif ber-induk surat keluar draft, TANPA relasi keluar apa pun
+        // (skenario gabung() yang menurunkan peran induk -> anggota tanpa mengubah relasi).
+        const skDraft = await suratKeluar('dir_bppt', 'draft');
+        const sumber = await inTx((tx) => rangkaianService.ensureForSurat(tx, { jenis: 'surat_keluar', id: skDraft }, actor));
+
+        await inTx((tx) => rangkaianService.gabung(tx, {
+            targetId: target.rangkaianId, sumberId: sumber.rangkaianId,
+            alasan: 'Uji predikat blocking: induk draft digabung tidak boleh lolos auto-selesai',
+        }, actor));
+
+        // Induk draft yang digabung (kini peran='anggota', tanpa relasi keluar) harus tetap
+        // memblokir auto-selesai target sampai draft itu disetujui/ditolak/dibatalkan.
+        expect((await rangkaianRow(target.rangkaianId)).status).toBe('aktif');
+    });
+
     it('memindahkan anggota, relasi, dan disposisi; target tidak selesai selama sumber punya disposisi terbuka', async () => {
         const smA = await suratMasuk('sesditjen');
         const a = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smA, actor, { unitPengolahId: 'dir_bppt' }));

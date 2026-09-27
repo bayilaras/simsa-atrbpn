@@ -14,6 +14,7 @@ import {
 import type { DbTransaction } from '../db/transaction';
 import auditLogService, { type CriticalAuditContext, type LogActionData } from './audit-log.service.js';
 import {
+    BLOCKING_APPROVAL_STATUSES,
     deriveRangkaianStatus,
     deriveSuratMasukStatus,
     isRangkaianTerbuka,
@@ -363,6 +364,10 @@ export const rangkaianService = {
                 changes.push({ id: rangkaian.id, before: rangkaian.status, after: rangkaian.status, changed: false });
                 continue;
             }
+            const blockingStatuses = sql.join(
+                BLOCKING_APPROVAL_STATUSES.map((status) => sql`${status}`),
+                sql`, `,
+            );
             const { rows: [facts] } = await tx.execute<RangkaianFacts>(sql`
                 SELECT
                     (SELECT count(*)::int FROM surat_distributions d
@@ -373,11 +378,22 @@ export const rangkaianService = {
                       JOIN surat_keluar k ON k.id = a.surat_keluar_id
                       WHERE a.rangkaian_id = ${rangkaian.id}
                         AND k.is_deleted IS NOT TRUE
-                        AND k.approval_status IN ('draft', 'pending', 'rejected')
-                        AND (a.peran = 'induk' OR EXISTS (
-                            SELECT 1 FROM rangkaian_relasi r
-                            WHERE r.dari_anggota_id = a.id AND r.cancelled_at IS NULL
-                        ))) AS blocking_anggota,
+                        AND k.approval_status IN (${blockingStatuses})
+                        -- Task review Important 1: sebuah anggota keluar hidup dalam status
+                        -- pending selalu memblokir KECUALI ia punya relasi keluar (dari a.id)
+                        -- DAN seluruh relasi keluar itu sudah dibatalkan. Tidak lagi
+                        -- bergantung pada peran='induk' — gabung() menurunkan induk yang
+                        -- digabung menjadi peran='anggota' tanpa menyentuh relasinya, jadi
+                        -- special-casing peran akan lolos untuk induk draft yang digabung
+                        -- masuk (tanpa relasi keluar apa pun) padahal seharusnya tetap
+                        -- memblokir.
+                        AND NOT (
+                            EXISTS (SELECT 1 FROM rangkaian_relasi r WHERE r.dari_anggota_id = a.id)
+                            AND NOT EXISTS (
+                                SELECT 1 FROM rangkaian_relasi r
+                                WHERE r.dari_anggota_id = a.id AND r.cancelled_at IS NULL
+                            )
+                        )) AS blocking_anggota,
                     (SELECT count(*)::int FROM rangkaian_relasi r
                       JOIN rangkaian_anggota a ON a.id = r.dari_anggota_id
                       JOIN surat_keluar k ON k.id = a.surat_keluar_id
