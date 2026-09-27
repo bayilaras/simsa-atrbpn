@@ -35,9 +35,34 @@ describe('useLacakSearch', () => {
         const sinyalLama = mocks.lacak.mock.calls[0][1].signal
         rerender({ term: 'baru saja' })
         expect(sinyalLama.aborted).toBe(true)
-        await act(async () => { await vi.advanceTimersByTimeAsync(300) })
         await act(async () => { selesaiLama() })
+        expect(result.current.loading).toBe(true)
+        expect(result.current.data).toBeNull()
+        await act(async () => { await vi.advanceTimersByTimeAsync(300) })
         expect(result.current.data.q).toBe('baru saja')
+    })
+
+    it('mengabaikan AbortError dari permintaan basi dan tidak menampilkan gagal untuk kueri yang sama', async () => {
+        mocks.lacak.mockImplementationOnce((_arg, { signal }) => new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+        }))
+        const { result, rerender } = renderHook(({ term }) => useLacakSearch(term), { initialProps: { term: 'lama sekali' } })
+        await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+        rerender({ term: 'baru saja' })
+        await act(async () => {})
+        rerender({ term: 'lama sekali' })
+        expect(result.current.error).toBeNull()
+        expect(result.current.loading).toBe(true)
+    })
+
+    it('tidak menampilkan hasil kueri lama saat kueri baru sedang memuat', async () => {
+        const { result, rerender } = renderHook(({ term }) => useLacakSearch(term), { initialProps: { term: 'Nota dinas' } })
+        await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+        expect(result.current.data).toEqual(hasil('Nota dinas'))
+        rerender({ term: '' })
+        rerender({ term: 'B-12' })
+        expect(result.current.loading).toBe(true)
+        expect(result.current.data).toBeNull()
     })
 
     it('memakai cache untuk kueri yang sama', async () => {

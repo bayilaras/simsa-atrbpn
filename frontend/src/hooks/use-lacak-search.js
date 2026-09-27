@@ -24,7 +24,6 @@ export function useLacakSearch(term, { mode = 'lacak', jenis, tahun, enabled = t
     const kunci = enabled && q.length >= MIN_KARAKTER ? JSON.stringify([q, mode, jenis ?? null, tahun ?? null]) : null
     const [cache, setCache] = useState(() => new Map())
     const [gagal, setGagal] = useState({ kunci: null, error: null })
-    const [terakhir, setTerakhir] = useState(null)
     const [percobaan, setPercobaan] = useState(0)
     const tersimpan = kunci ? cache.get(kunci) : undefined
 
@@ -41,7 +40,6 @@ export function useLacakSearch(term, { mode = 'lacak', jenis, tahun, enabled = t
                 const data = await rangkaianService.lacak({ q, mode, jenis, tahun }, { signal: controller.signal })
                 if (controller.signal.aborted) return
                 setCache((prev) => simpan(prev, kunci, data))
-                setTerakhir(data)
             } catch (error) {
                 if (controller.signal.aborted) return
                 setGagal({ kunci, error })
@@ -62,5 +60,5 @@ export function useLacakSearch(term, { mode = 'lacak', jenis, tahun, enabled = t
     if (!kunci) return { ...KOSONG, retry }
     if (tersimpan !== undefined) return { loading: false, error: null, data: tersimpan, retry }
     if (gagal.kunci === kunci) return { loading: false, error: gagal.error, data: null, retry }
-    return { loading: true, error: null, data: terakhir, retry }
+    return { loading: true, error: null, data: null, retry }
 }
