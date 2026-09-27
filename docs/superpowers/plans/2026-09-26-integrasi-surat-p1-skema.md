@@ -1120,7 +1120,9 @@ EOF
 - Modify: `backend/src/db/schema/surat-keluar.ts:21` (setelah `balasanUntuk`)
 - Modify: `backend/src/db/schema/unit-kerja.ts:11` (setelah `canReceiveDistribution`)
 - Modify: `backend/src/db/schema/index.ts:20` (setelah ekspor `surat-distribution.js`)
+- Modify: `backend/src/__tests__/helpers/surat-inbox-pglite.ts:24-30` (`SCHEMA_SQL`, tabel `surat_distributions`)
 - Test: `backend/src/__tests__/migration-chain.integration.test.ts`
+- Test (regresi P0, harus tetap lulus): `backend/src/__tests__/distribution-inbox-classification.test.ts`, `backend/src/__tests__/notification-deleted-classification.test.ts`
 
 **Interfaces:**
 - Produces (TS, diekspor dari `backend/src/db/schema/index.ts`):
@@ -1358,10 +1360,31 @@ export * from './rangkaian-surat.js';
 Run: `cd backend && npx vitest run src/__tests__/migration-chain.integration.test.ts src/__tests__/distribution.service.test.ts && npx tsc --noEmit`
 Expected: PASS; `tsc` tanpa error.
 
+- [ ] **Step 4b: Samakan helper PGlite P0 dengan kolom baru, pastikan test klasifikasi P0 tetap lulus**
+
+`distributionService.findInbox` men-select seluruh tabel Drizzle `suratDistributions` (`select().from(suratDistributions)`), sedangkan `backend/src/__tests__/helpers/surat-inbox-pglite.ts` (dipakai oleh `distribution-inbox-classification.test.ts` dan `notification-deleted-classification.test.ts`, keduanya P0) membuat `surat_distributions` lewat SQL tangan yang belum punya tujuh kolom di atas. Setelah Task 4 menambah kolom itu ke skema Drizzle, kedua test P0 akan gagal dengan `column "rangkaian_id" does not exist` (atau kolom baru lain) begitu Drizzle mem-generate `SELECT` dengan kolom itu — perbaiki helper-nya, jangan skema Drizzle-nya.
+
+Di `backend/src/__tests__/helpers/surat-inbox-pglite.ts`, pada `CREATE TABLE surat_distributions (...)` (SCHEMA_SQL, sekitar baris 24-30), tambahkan tujuh kolom ini sebelum tanda kurung penutup `)` yang mengakhiri statement (setelah baris `created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());`), persis padanan tipe kolom 0046 di atas (tanpa FK — helper ini tidak membuat tabel `rangkaian_surat`/`surat_keluar`/`users`, dan test P0 tidak butuh integritas referensial):
+
+```sql
+    rangkaian_id uuid,
+    batas_waktu date,
+    penanggung_jawab boolean NOT NULL DEFAULT false,
+    processed_by uuid,
+    penyelesaian_surat_keluar_id uuid,
+    catatan_penyelesaian text,
+    ditutup_pengawas boolean NOT NULL DEFAULT false);
+```
+
+dan hapus `);` yang sebelumnya menutup statement `CREATE TABLE surat_distributions` (ganti `updated_at timestamp NOT NULL DEFAULT now());` menjadi `updated_at timestamp NOT NULL DEFAULT now(),` agar tujuh kolom baru menyambung sebagai kolom tambahan, bukan statement baru).
+
+Run: `cd backend && npx vitest run src/__tests__/distribution-inbox-classification.test.ts src/__tests__/notification-deleted-classification.test.ts`
+Expected: PASS (kedua file, tanpa error "column does not exist").
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/src/db/schema/rangkaian-surat.ts backend/src/db/schema/surat-distribution.ts backend/src/db/schema/surat-keluar.ts backend/src/db/schema/unit-kerja.ts backend/src/db/schema/index.ts backend/src/__tests__/migration-chain.integration.test.ts
+git add backend/src/db/schema/rangkaian-surat.ts backend/src/db/schema/surat-distribution.ts backend/src/db/schema/surat-keluar.ts backend/src/db/schema/unit-kerja.ts backend/src/db/schema/index.ts backend/src/__tests__/migration-chain.integration.test.ts backend/src/__tests__/helpers/surat-inbox-pglite.ts
 git commit -m "$(cat <<'EOF'
 feat(db): modelkan tabel rangkaian surat di skema Drizzle
 
@@ -3782,3 +3805,7 @@ Perubahan dari tinjauan konsistensi P0–P5 terhadap berkas ini:
 - Self-review: toggle `is_unit_pengawas` di `PUT /api/settings/unit-kerja/:id` kini dimiliki P3 Task 26; `visibility-spec.ts` di P1 terbatas pada `jangkauanUnitsSql`.
 - Branch: konvensi `feat/integrasi-surat-pN` dicantumkan di Global Constraints.
 - Dikonfirmasi tanpa perubahan: 0046 `when` 1789397417667, 0047 `when` 1789397418667; audit `merge`/`link` dan entitas `rangkaian_surat`/`rangkaian_relasi` dimiliki P1 Task 9.
+
+### 2026-09-27
+
+- Tinjauan whole-branch P0 (final review) menemukan bahwa Task 4 menambah tujuh kolom ke `suratDistributions` tanpa menyentuh `backend/src/__tests__/helpers/surat-inbox-pglite.ts`, yang men-hardcode `CREATE TABLE surat_distributions` terpisah dari migrasi/skema Drizzle untuk dua test P0 (`distribution-inbox-classification.test.ts`, `notification-deleted-classification.test.ts`). Ditambahkan **Step 4b** ke Task 4 (SQL kolom persis, tanpa FK) dan kedua test itu ke Files list Task 4 sebagai regresi yang wajib tetap lulus setelah Step 4b. Tidak ada perubahan kode di P0; helper hanya diedit saat Task 4 P1 berjalan.
