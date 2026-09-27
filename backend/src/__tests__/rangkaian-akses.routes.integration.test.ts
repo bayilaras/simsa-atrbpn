@@ -4,7 +4,7 @@ import request from 'supertest';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
-import { PENGGUNA, RAHASIA, SURAT, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
+import { ANGGOTA, PENGGUNA, RAHASIA, RANGKAIAN, SURAT, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
 
 const holder = vi.hoisted(() => ({ db: null as any }));
 vi.mock('../config/database', () => ({
@@ -36,10 +36,12 @@ beforeAll(async () => {
     holder.db = drizzle(database, { schema });
     const { default: suratMasukRouter } = await import('../routes/surat-masuk.routes');
     const { default: suratKeluarRouter } = await import('../routes/surat-keluar.routes');
+    const { default: rangkaianRouter } = await import('../routes/rangkaian.routes');
     app = express();
     app.use(express.json());
     app.use('/api/surat-masuk', suratMasukRouter);
     app.use('/api/surat-keluar', suratKeluarRouter);
+    app.use('/api/rangkaian', rangkaianRouter);
     app.use((error: any, _req: any, res: any, _next: any) => res.status(error?.statusCode || 500).json({ error: error?.message }));
 }, 90_000);
 afterAll(async () => { await database?.close(); });
@@ -106,5 +108,41 @@ describe('GET detail surat lintas unit', () => {
         const sk = (await database.query<any>(`SELECT perihal, is_deleted FROM surat_keluar WHERE id = '${SURAT.skBpptNull}'`)).rows[0];
         expect(sk).toEqual({ perihal: RAHASIA.perihalSkNull, is_deleted: false });
         expect(await auditRows()).toHaveLength(0);
+    });
+});
+
+describe('GET /api/rangkaian', () => {
+    it('pengawas mendapat rangkaian tersamar dan tercatat di audit', async () => {
+        const response = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs2}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(response.body.data.aksesMelalui).toBe('pengawas');
+        expect(response.body.data.anggota[0]).toEqual({ anggotaId: ANGGOTA.rs2Sm, jenis: 'surat_masuk', unitNama: 'Sekretariat Ditjen', label: 'Dikecualikan', masked: true, dapatAjukanAkses: false });
+        expect(JSON.stringify(response.body)).not.toContain(RAHASIA.perihalSmTerbatas);
+        const [audit] = await auditRows();
+        expect(audit).toMatchObject({ action: 'view_via_rangkaian', entity_type: 'rangkaian_surat', entity_id: RANGKAIAN.rs2 });
+    });
+
+    it('non-peserta mendapat 404 tanpa audit', async () => {
+        await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(PENGGUNA.plp)).expect(404);
+        expect(await auditRows()).toHaveLength(0);
+    });
+
+    it('pemilik tanpa jangkauan (staff lama) tidak diaudit sebagai lintas unit', async () => {
+        const response = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(PENGGUNA.staffSes)).expect(200);
+        expect(response.body.data.aksesMelalui).toBe('owner');
+        expect(await auditRows()).toHaveLength(0);
+    });
+
+    it('by-surat mengembalikan rangkaian anggota, null untuk surat tunggal, 404 bila surat tak terbaca', async () => {
+        const anggota = await request(app).get(`/api/rangkaian/by-surat/surat_masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect(anggota.body.data.rangkaian.id).toBe(RANGKAIAN.rs1);
+        const tunggal = await request(app).get(`/api/rangkaian/by-surat/surat_keluar/${SURAT.skBpptTunggal}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect(tunggal.body).toEqual({ success: true, data: null });
+        await request(app).get(`/api/rangkaian/by-surat/surat_masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.plp)).expect(404);
+    });
+
+    it('memvalidasi parameter', async () => {
+        await request(app).get('/api/rangkaian/bukan-uuid').set(sebagai(PENGGUNA.tu)).expect(400);
+        await request(app).get(`/api/rangkaian/by-surat/arsip/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.tu)).expect(400);
+        await request(app).get('/api/rangkaian/by-surat/surat_masuk/bukan-uuid').set(sebagai(PENGGUNA.tu)).expect(400);
     });
 });

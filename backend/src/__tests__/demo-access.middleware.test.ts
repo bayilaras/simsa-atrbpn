@@ -58,6 +58,8 @@ describe('metadata-only demo API access', () => {
         ['POST', '/api/surat-masuk'],
         ['PUT', `/api/surat-keluar/${id}`],
         ['POST', `/api/surat-keluar/${id}/archive-full`],
+        ['GET', `/api/rangkaian/${id}`],
+        ['GET', `/api/rangkaian/by-surat/surat_masuk/${id}`],
         ['GET', '/api/arsip/search/fulltext'],
         ['POST', `/api/arsip/${id}/reconcile-rules`],
         ['GET', `/api/approval/history/${id}`],
@@ -105,6 +107,7 @@ describe('metadata-only demo API access', () => {
         ['POST', '/api/retention-governance/retention-events', 'file_storage'],
         ['POST', '/api/retention-governance/permanent-transfers', 'file_storage'],
         ['POST', `/api/retention-governance/permanent-transfers/${id}/handover`, 'file_storage'],
+        ['POST', `/api/rangkaian/${id}/gabung`, 'unsupported_route'],
         ['GET', '/api/docs', 'unsupported_route'],
         ['GET', '/api/not-reviewed-yet', 'unsupported_route'],
     ])('fails closed for %s %s', async (method, path, capability) => {
