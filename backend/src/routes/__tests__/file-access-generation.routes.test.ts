@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     markGrantUsed: vi.fn(),
     downloadFile: vi.fn(),
     audit: vi.fn(),
+    auditLogAction: vi.fn(),
 }));
 
 vi.mock('../../config/database.js', () => ({
@@ -48,7 +49,7 @@ vi.mock('../../services/blob-storage.service.js', () => ({
 }));
 
 vi.mock('../../services/audit-log.service.js', () => ({
-    auditLogService: { logActionOrThrow: mocks.audit },
+    auditLogService: { logActionOrThrow: mocks.audit, logAction: mocks.auditLogAction },
 }));
 
 const { default: fileAccessRouter } = await import('../file-access.routes.js');
@@ -228,6 +229,22 @@ describe('authorized GCS file access', () => {
         mocks.select.mockReturnValueOnce(limitedRows([attachment]));
         await request(app).get(`/api/files/attachment/${attachment.id}`).expect(200);
         expect(mocks.audit.mock.calls[0][0].changes).not.toHaveProperty('via');
+    });
+
+    it('blocks the response with no body or stream when audit fails for a cross-unit read', async () => {
+        const stream = Readable.from([Buffer.from('%PDF-cross-unit-must-not-leak')]);
+        const destroy = vi.spyOn(stream, 'destroy');
+        mocks.select.mockReturnValueOnce(limitedRows([attachment]));
+        mocks.accessCheckRead.mockResolvedValueOnce({ exists: true, allowed: true, grantId: null, via: 'peserta', rangkaianId: '50000000-0000-4000-8000-000000000001' });
+        mocks.downloadFile.mockResolvedValueOnce({ stream, mimeType: 'application/pdf', fileName: 'final.pdf' });
+        mocks.audit.mockRejectedValueOnce(new Error('audit unavailable'));
+
+        const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(500);
+
+        expect(response.body).not.toHaveProperty('data');
+        expect(JSON.stringify(response.body)).not.toContain('%PDF-cross-unit-must-not-leak');
+        expect(destroy).toHaveBeenCalledOnce();
+        expect(mocks.auditLogAction).not.toHaveBeenCalled();
     });
 
     it('keeps the private registration guard for the matching surat locator', async () => {

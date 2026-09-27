@@ -4,7 +4,7 @@ import request from 'supertest';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
-import { PENGGUNA, SURAT, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
+import { PENGGUNA, RAHASIA, SURAT, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
 
 const holder = vi.hoisted(() => ({ db: null as any }));
 vi.mock('../config/database', () => ({
@@ -98,5 +98,13 @@ describe('GET detail surat lintas unit', () => {
         const sm = (await database.query<any>(`SELECT perihal, is_deleted FROM surat_masuk WHERE id = '${SURAT.smBiasa}'`)).rows[0];
         expect(sk).toEqual({ perihal: 'Tindak lanjut permohonan data', is_deleted: false });
         expect(sm).toEqual({ perihal: 'Permohonan data pertanahan', is_deleted: false });
+    });
+
+    it('grant manage + jangkauan pengawas tidak membuka mutasi: tu tetap 404 pada PUT/DELETE skBpptNull', async () => {
+        await request(app).put(`/api/surat-keluar/${SURAT.skBpptNull}`).set(sebagai(PENGGUNA.tu)).send({ perihal: 'Diubah lewat grant manage' }).expect(404);
+        await request(app).delete(`/api/surat-keluar/${SURAT.skBpptNull}`).set(sebagai(PENGGUNA.tu)).expect(404);
+        const sk = (await database.query<any>(`SELECT perihal, is_deleted FROM surat_keluar WHERE id = '${SURAT.skBpptNull}'`)).rows[0];
+        expect(sk).toEqual({ perihal: RAHASIA.perihalSkNull, is_deleted: false });
+        expect(await auditRows()).toHaveLength(0);
     });
 });
