@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -9,6 +10,7 @@ import {
     runPreflight,
 } from '../../scripts/preflight-integrasi-surat.mjs';
 import { normalizeSecurityClassification } from '../services/record-access.service';
+import { BIASA_SIFAT_ALIASES, SECURITY_CLASSES } from '../services/access/visibility-spec';
 
 const uuid = (prefix: number, n: number) =>
     `${String(prefix).padStart(8, '0')}-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -17,8 +19,31 @@ const uuid = (prefix: number, n: number) =>
 const JS_WHITESPACE = Array.from({ length: 0x10000 }, (_, cp) => cp)
     .filter(cp => (cp < 0xd800 || cp > 0xdfff) && /\s/.test(String.fromCharCode(cp)));
 
-const SIFAT_VALUES: Array<string | null> = [
+// L1..L4 di bawah berasumsi indeks 0-3 tetap 4 nilai ini pada urutan ini; nilai
+// tambahan untuk cakupan drift alias masuk SETELAH blok ini, bukan disisipkan.
+const BASE_SIFAT_VALUES: Array<string | null> = [
     'Sangat Segera', 'biasa', 'Rahasia', 'Terbatas', '', null, ' Biasa ', 'sangat-segera', 'Biasa/Terbuka',
+];
+
+const PRODUCTION_SIFAT_VALUES = JSON.parse(
+    readFileSync(new URL('./fixtures/sifat-surat-produksi.json', import.meta.url), 'utf8'),
+) as Array<string | null>;
+
+// Cakupan drift alias: setiap nilai BIASA_SIFAT_ALIASES/SECURITY_CLASSES dan
+// setiap nilai fixture produksi harus diuji langsung terhadap BIASA_LIST di
+// preflight-integrasi-surat.mjs, bukan hanya tiga contoh acak — bila salah
+// satu daftar itu berubah tanpa BIASA_LIST diperbarui, test ini harus gagal.
+const ALIAS_DRIFT_VALUES: Array<string | null> = [
+    ...new Set<string | null>([
+        ...BIASA_SIFAT_ALIASES,
+        ...SECURITY_CLASSES,
+        ...PRODUCTION_SIFAT_VALUES,
+    ]),
+].filter(value => !BASE_SIFAT_VALUES.includes(value));
+
+const SIFAT_VALUES: Array<string | null> = [
+    ...BASE_SIFAT_VALUES,
+    ...ALIAS_DRIFT_VALUES,
     ...JS_WHITESPACE.map(cp => {
         const ch = String.fromCharCode(cp);
         // PGlite (diverifikasi pada 0.5.7 dan 0.5.8) memotong satu karakter U+FEFF (BOM)
