@@ -1,12 +1,14 @@
 import { Router, type Response } from 'express';
 import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware';
-import { validateIdParam, validateQuery } from '../middlewares/validate.middleware';
-import { canReadMiddleware } from '../middlewares/role.middleware';
+import { validateBody, validateIdParam, validateQuery } from '../middlewares/validate.middleware';
+import { canReadMiddleware, canWriteMiddleware } from '../middlewares/role.middleware';
 import { lacakLimiter } from '../middlewares/rate-limiter.middleware';
-import { lacakQuerySchema } from '../validators/schemas';
+import { ajukanAksesSchema, lacakQuerySchema } from '../validators/schemas';
 import auditLogService from '../services/audit-log.service.js';
 import { recordAccessService } from '../services/record-access.service.js';
+import { recordAccessGrantService } from '../services/record-access-grant.service.js';
 import { rangkaianReadService, type RangkaianDetail } from '../services/rangkaian-read.service.js';
+import { isAjukanAksesEnabled } from '../services/rangkaian/deps.js';
 import { lacakService } from '../services/rangkaian/lacak.service.js';
 import type { LacakParams } from '../services/rangkaian/lacak.types.js';
 import type { JenisRekamanRangkaian } from '../services/access/visibility-spec.js';
@@ -15,6 +17,8 @@ const router = Router();
 router.use(authMiddleware);
 
 const JENIS_SURAT = new Set<JenisRekamanRangkaian>(['surat_masuk', 'surat_keluar']);
+
+const auditOf = (req: AuthRequest) => ({ userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip });
 
 function tidakDitemukan(res: Response) {
     return res.status(404).json({ success: false, error: 'Rangkaian tidak ditemukan' });
@@ -48,6 +52,19 @@ router.get('/lacak', canReadMiddleware(), lacakLimiter, validateQuery(lacakQuery
         next(error);
     }
 });
+
+// POST /api/rangkaian/anggota/:anggotaId/ajukan-akses — grant untuk node tersamar (§4.11), di balik flag
+router.post('/anggota/:anggotaId/ajukan-akses', validateIdParam('anggotaId'), canWriteMiddleware(), validateBody(ajukanAksesSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            if (!isAjukanAksesEnabled()) return res.status(404).json({ success: false, error: 'Fitur Ajukan Akses belum diaktifkan' });
+            const grant = await recordAccessGrantService.requestViaRangkaian(
+                req.user!, String(req.params.anggotaId), req.body, auditOf(req));
+            res.status(201).json({ success: true, data: grant });
+        } catch (error) {
+            next(error);
+        }
+    });
 
 // GET /api/rangkaian/by-surat/:jenis/:suratId — rangkaian dari surat yang dapat dibaca (null = surat tunggal)
 router.get('/by-surat/:jenis/:suratId', validateIdParam('suratId'), async (req: AuthRequest, res, next) => {

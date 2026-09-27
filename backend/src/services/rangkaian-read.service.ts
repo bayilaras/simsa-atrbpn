@@ -3,6 +3,7 @@ import { db } from '../config/database';
 import {
     readRefKey,
     recordAccessService,
+    requiresExplicitAccessGrant,
     type ReadAccessResult,
     type ReadExecutor,
     type ReadVia,
@@ -395,7 +396,8 @@ export const rangkaianReadService = {
                 });
             } else if (penuh) {
                 tersamar.add(row.anggotaId);
-                anggota.push(samarkanAnggota(row, dapatAjukan && a?.masked === true));
+                // C-2: kelas tak dikenal juga tersamar, tetapi requestViaRangkaian menolaknya (409).
+                anggota.push(samarkanAnggota(row, dapatAjukan && a?.masked === true && requiresExplicitAccessGrant(a?.classification)));
             }
         }
         const tampil = (id: string) => terlihat.has(id) || tersamar.has(id);

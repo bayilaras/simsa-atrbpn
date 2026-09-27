@@ -61,6 +61,7 @@ describe('metadata-only demo API access', () => {
         ['GET', `/api/rangkaian/${id}`],
         ['GET', '/api/rangkaian/lacak'],
         ['GET', `/api/rangkaian/by-surat/surat_masuk/${id}`],
+        ['POST', `/api/rangkaian/anggota/${id}/ajukan-akses`],
         ['GET', '/api/arsip/search/fulltext'],
         ['POST', `/api/arsip/${id}/reconcile-rules`],
         ['GET', `/api/approval/history/${id}`],

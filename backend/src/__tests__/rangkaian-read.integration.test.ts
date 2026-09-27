@@ -90,6 +90,15 @@ describe('rangkaianReadService.getDetail', () => {
         expect(detail.anggota.find(node => node.anggotaId === ANGGOTA.rs1SkNull)).toMatchObject({ masked: true, dapatAjukanAkses: true });
     });
 
+    it('kelas tak dikenal tetap tersamar tetapi tidak ditawari Ajukan Akses (C-2)', async () => {
+        process.env.RANGKAIAN_AJUKAN_AKSES = 'true';
+        const sebelum = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rs2))!;
+        expect(sebelum.anggota.find(node => node.anggotaId === ANGGOTA.rs2Sm)).toMatchObject({ masked: true, dapatAjukanAkses: true });
+        await database.exec(`UPDATE surat_masuk SET sifat_surat = 'Kelas Asing' WHERE id = '${SURAT.smTerbatas}'`);
+        const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rs2))!;
+        expect(detail.anggota.find(node => node.anggotaId === ANGGOTA.rs2Sm)).toMatchObject({ masked: true, dapatAjukanAkses: false });
+    });
+
     it('non-peserta dan disposisi ditolak tidak mendapat rangkaian', async () => {
         expect(await svc.rangkaianReadService.getDetail(PENGGUNA.plp, RANGKAIAN.rs1)).toBeNull();
         expect(await svc.rangkaianReadService.getDetail(PENGGUNA.ptep, RANGKAIAN.rs1)).toBeNull();
