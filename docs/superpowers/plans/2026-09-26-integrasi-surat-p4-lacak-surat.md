@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Menyediakan halaman **Lacak Surat** (`/surat/lacak`) dengan satu input besar, kartu rangkaian berpratinjau node, ekspansi di tempat, sinkronisasi URL (`?q=`, `?rangkaian=`), tab **Berkas Rangkaian**, aksi "Lihat rangkaian" di GlobalSearch tanpa request tambahan, dan penyempurnaan peringkat `/lacak` beserta bukti kinerja (EXPLAIN 50 ribu baris) serta uji probing penyamaran.
+**Goal:** Menyediakan halaman **Lacak Surat** (`/surat/lacak`) dengan satu input besar, kartu rangkaian berpratinjau node, ekspansi di tempat, sinkronisasi URL (`?q=`, `?rangkaian=`), tab **Berkas Rangkaian**, aksi "Lihat rangkaian" di GlobalSearch tanpa request tambahan, dan penyempurnaan peringkat `/lacak` beserta bukti kinerja (EXPLAIN 50 ribu baris) serta uji probing penyamaran. Tambahan D7 (2026-09-27): tab **Perlu Dilengkapi** (daftar kerja enam kategori rantai belum lengkap dengan aksi langsung per baris), endpoint **Tandai Inisiatif**, dan badge hitungan pada entri sidebar "Lacak Surat".
 
-**Architecture:** Backend `/api/rangkaian/lacak` (3 mode) sudah dibangun P3. P4 hanya (a) mengekstrak skor ke modul murni `lacak-skor.ts` (dipasang di `skorSql` pada `services/rangkaian/lacak.service.ts` P3) lalu menambah tingkat *prefix mentah berbatas*, urutan seed sebelum `LIMIT 200`, dan tie-break deterministik; (b) menambah endpoint daftar `GET /api/rangkaian` untuk tab Berkas Rangkaian, dengan predikat jangkauan §4.5 yang dijaga uji paritas terhadap `checkRead`; (c) membangun UI React: memperluas hook tunggal P3 `useLacakSearch` (debounce 300 ms, minimal 3 karakter, AbortController, penjaga urutan basi, cache LRU 20), halaman `LacakSurat.jsx` yang merender `AlurSuratPanel` (P2) di dalam kartu, tab Berkas Rangkaian, route, sidebar, breadcrumbs, dan hook GlobalSearch. Tidak ada migrasi baru, role baru, atau perubahan pada `check()`/`visibleSql`.
+**Architecture:** Backend `/api/rangkaian/lacak` (3 mode) sudah dibangun P3. P4 hanya (a) mengekstrak skor ke modul murni `lacak-skor.ts` (dipasang di `skorSql` pada `services/rangkaian/lacak.service.ts` P3) lalu menambah tingkat *prefix mentah berbatas*, urutan seed sebelum `LIMIT 200`, dan tie-break deterministik; (b) menambah endpoint daftar `GET /api/rangkaian` untuk tab Berkas Rangkaian, dengan predikat jangkauan §4.5 yang dijaga uji paritas terhadap `checkRead`; (c) membangun UI React: memperluas hook tunggal P3 `useLacakSearch` (debounce 300 ms, minimal 3 karakter, AbortController, penjaga urutan basi, cache LRU 20), halaman `LacakSurat.jsx` yang merender `AlurSuratPanel` (P2) di dalam kartu, tab Berkas Rangkaian, route, sidebar, breadcrumbs, dan hook GlobalSearch; (d) **D7**: layanan `perluDilengkapiService` (satu kueri `UNION ALL` enam cabang kategori untuk daftar maupun ringkasan, dirakit dari fragmen P2 `kecocokanUnitRekaman`/`jangkauanRekamanSql`/`visibleSql` dan lingkup daftar Task 5, dengan aksi baris dari `computeSuratAksi`/`computeRangkaianAksi` P3), `asalNaskahService.tandaiInisiatif`, router `rangkaian-perlu-dilengkapi.routes.ts`, tab `PerluDilengkapiTab`, dan hook badge `usePerluDilengkapiCount` di sidebar. Tidak ada migrasi baru, role baru, atau perubahan pada `check()`/`visibleSql`.
 
 **Tech Stack:** Frontend React 19 (JSX), react-router-dom v7, shadcn/Radix + Tailwind v4, lucide-react, Vitest 4 + Testing Library (jsdom). Backend Express 5 + TypeScript, Drizzle ORM (`sql` template), Zod 4, Vitest 4, PGlite (rantai migrasi penuh), Postgres nyata via `vitest.postgres.config.ts`.
 
@@ -21,6 +21,12 @@
 - Semua perintah dijalankan dari Git Bash di root repo `D:/Projects/New folder/simsa-atrbpn`. Uji frontend: `(cd frontend && npx vitest run <file>)`. Uji backend: `(cd backend && npx vitest run <file>)`. Uji Postgres: `(cd backend && TEST_POSTGRES_URL=... npm run test:postgres-locks -- <file>)`.
 - Branch `feat/integrasi-surat-p4` (Task 1). Satu commit per task, tanpa push. Pesan commit diakhiri baris kosong lalu `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Jangan menjalankan drizzle-kit.
 - Jangan mengubah `SuratMasukService.getStats`, `arsip.service`, `ArchiveDialog`, `KlasifikasiPicker`, `dosir.service`, dan payload producer SRIKANDI.
+- **D7 (2026-09-27).** Kategori Perlu Dilengkapi persis `sm_belum_ditindaklanjuti`, `disposisi_terbuka`, `sk_tanpa_nd_penjelas`, `tindak_lanjut_tertahan`, `siap_diberkaskan`, `sk_tanpa_asal` (konstanta tunggal `backend/src/services/perlu-dilengkapi.constants.ts`, dicerminkan `frontend/src/lib/perlu-dilengkapi.js`). Tidak ada tabel baru.
+  - Isi baris mengikuti `visibleSql(ctx, target, 'list')`. Aksi yang membaca/menindaklanjuti isi hanya bila `visibleSql(…, 'read')` lolos.
+  - Nilai sensitif baris tersamar di-NULL-kan di SQL, bukan hanya di TypeScript.
+  - Batas data lama: env `RANGKAIAN_DATA_LAMA_SEBELUM` (ISO-8601 berzona). Cadangannya `min(created_at)` rangkaian non-`data_lama`, atau "sekarang".
+  - Badge sidebar hanya untuk FULL_ADMIN, paling sering satu request per 60 detik per tab (irama `useNotifications`), dan hanya saat tab terlihat.
+  - Satu-satunya endpoint tulis P4 adalah Tandai Inisiatif. Endpoint ini memakai `canWriteMiddleware()`, `validateIdParam('suratKeluarId')`, dan `logActionOrThrow(..., tx)`, serta mengubah **hanya** `asal_naskah` (+ `updated_at`).
 
 ## Review Focus
 
@@ -29,6 +35,13 @@
 3. **`LIMIT 200` pada seed memotong kecocokan persis, dan seri skor tidak deterministik.** Seed yang dibatasi sebelum diurutkan skor akan membuang nomor persis yang lebih tua, dan urutan kartu bisa berubah antar-permintaan. Diuji di **Task 3** (`LIMIT 200 seed diterapkan setelah urut skor…` dan `seri penuh … diurutkan kunci naik secara deterministik`).
 4. **Loop sinkronisasi URL.** Gejalanya: setiap ketikan membuat entri history baru, Back/tautan GlobalSearch tidak memperbarui input, atau auto-open kartu tunggal menulis `?rangkaian=` sehingga penutupan kartu gagal. Diuji di **Task 13** (`menunda pencarian 300 ms, menyinkronkan ?q= dengan replace…`, `mengikuti navigasi luar…`, `membuka langsung bila hanya satu kelompok…`).
 5. **Daftar Berkas Rangkaian menyimpang dari `checkRead`.** Contohnya: disposisi `rejected` masih memberi jangkauan, `staff` mendapat jangkauan peserta, pengawas tidak melihat `dir_*`, atau rangkaian `digabung`/`data_lama` ikut tampil. Diuji di **Task 5** (uji paritas pengguna × rangkaian terhadap `recordAccessService.checkRead`, ditambah kasus eksplisit).
+6. **Daftar Perlu Dilengkapi (D7) membocorkan isi surat terkendali atau menawarkan aksi yang akan ditolak server.** Gejalanya:
+   - nomor, perihal, id surat, atau kode rangkaian ikut terkirim pada baris tersamar
+   - pengawas tidak melihat direktorat, atau direktorat yang disposisinya ditolak masih melihat surat
+   - "Buka surat"/"Tindak Lanjut" tampil untuk surat yang `checkRead`-nya 404
+   - data lama membanjiri badge
+
+   Diuji di **Task 16**: `perlu-dilengkapi.integration.test.ts` › ringkasan per pengguna, "baris tersamar memakai placeholder standar…", "aksi buka_surat hanya ditawarkan bila checkRead mengizinkan…", dan "data lama tersembunyi secara default…". Dicek juga di **Task 20** (klien hanya merender `aksiDiizinkan`).
 
 ---
 
@@ -42,12 +55,23 @@
 - `backend/src/__tests__/helpers/lacak-pglite.ts` berisi fixture lacak/rangkaian; boot PGlite memakai `bootRangkaianDatabase` dari helper P2 `rangkaian-pglite.ts`.
 - `backend/src/__tests__/lacak-skor.test.ts`, `lacak-ranking.integration.test.ts`, `lacak-probing.integration.test.ts`, `rangkaian-judul.test.ts`, `rangkaian-daftar.integration.test.ts`, `rangkaian-daftar.routes.test.ts`.
 - `backend/integration/lacak-explain.postgres.test.ts`.
+- D7:
+  - `backend/src/services/perlu-dilengkapi.constants.ts` berisi `KATEGORI_PERLU_DILENGKAPI` dan tipe `KategoriPerluDilengkapi`. Tanpa impor, sehingga aman diimpor `validators/schemas.ts`.
+  - `backend/src/services/perlu-dilengkapi.service.ts` berisi `perluDilengkapiService.{ list, ringkasan }`, `resolveBatasDataLama`, dan `ENV_BATAS_DATA_LAMA`.
+  - `backend/src/services/asal-naskah.service.ts` berisi `asalNaskahService.tandaiInisiatif`.
+  - `backend/src/routes/rangkaian-perlu-dilengkapi.routes.ts` berisi `GET /perlu-dilengkapi`, `GET /perlu-dilengkapi/ringkasan`, dan `POST /surat-keluar/:suratKeluarId/tandai-inisiatif`.
+  - Tes: `backend/src/__tests__/perlu-dilengkapi.integration.test.ts`, `asal-naskah.integration.test.ts`, `rangkaian-perlu-dilengkapi.routes.test.ts`.
 
 **Backend (diubah):**
 - `backend/src/services/rangkaian/lacak.service.ts` (P3; `rangkaianService.lacak` di `rangkaian.service.ts` hanya mendelegasikan ke `lacakService.search`) mengubah `skorSql`: skor diganti `skorLacakSql` (predikat `cocok` P3 tetap), urutan seed sebelum `LIMIT 200` dan tie-break kelompok diverifikasi, dan `judul` di `ekspansi` disamarkan lewat `judulRangkaianTampil`.
 - `backend/src/validators/schemas.ts` mendapat `daftarRangkaianQuerySchema`.
 - `backend/src/app.ts` memasang `rangkaianDaftarRoutes` tepat sebelum `app.use('/api/rangkaian', rangkaianRoutes)` milik P2/P3.
 - `backend/src/middlewares/demo-access.middleware.ts` mendapat allowlist `GET /rangkaian`.
+- D7:
+  - `backend/src/services/rangkaian-daftar.service.ts` (Task 5) mengekspor `lingkupRangkaianSql(ctx, alias)` agar lingkup rangkaian tetap dirakit di satu tempat (Task 16).
+  - `backend/src/validators/schemas.ts` mendapat `perluDilengkapiQuerySchema`, `ringkasanPerluDilengkapiQuerySchema`, dan `tandaiInisiatifSchema` (Task 18).
+  - `backend/src/app.ts` memasang `rangkaianPerluDilengkapiRoutes` tepat setelah `rangkaianDaftarRoutes` (Task 18).
+  - `demo-access.middleware.ts` mendapat allowlist `GET /rangkaian/perlu-dilengkapi(/ringkasan)` dan `POST /rangkaian/surat-keluar/:uuid/tandai-inisiatif` (Task 18).
 
 **Frontend (baru):**
 - `frontend/src/lib/lacak-cache.js` berisi `LACAK_MIN_CHARS`, `LACAK_MAX_CHARS`, `LACAK_CACHE_SIZE`, `lacakCacheKey`, dan `createLacakCache`.
@@ -56,6 +80,11 @@
 - `frontend/src/components/lacak/LacakKelompokCard.jsx` dan `frontend/src/components/lacak/BerkasRangkaianTab.jsx`.
 - `frontend/src/pages/LacakSurat.jsx`.
 - Tes: `lib/lacak-cache.test.js`, `lib/lacak-link.test.js`, `services/rangkaian.service.lacak.test.js`, `components/surat/__tests__/AlurSuratPanel.rangkaian-id.test.jsx`, `hooks/use-lacak-search.p4.test.jsx`, `components/lacak/LacakKelompokCard.test.jsx`, `components/lacak/BerkasRangkaianTab.test.jsx`, `pages/LacakSurat.test.jsx`, `App.lacak-route.test.jsx`, `components/GlobalSearch.lacak.test.jsx`.
+- D7:
+  - `frontend/src/lib/perlu-dilengkapi.js` berisi `KATEGORI_PERLU_DILENGKAPI`, `LABEL_KATEGORI_PERLU_DILENGKAPI`, `LABEL_STATUS_DISPOSISI`, `PERLU_DILENGKAPI_EVENT`, `PERLU_DILENGKAPI_REFRESH_MS`, `formatJumlahBadge`, dan `umumkanRingkasanPerluDilengkapi`.
+  - `frontend/src/components/lacak/PerluDilengkapiTab.jsx`.
+  - `frontend/src/hooks/use-perlu-dilengkapi-count.js`.
+  - Tes: `lib/perlu-dilengkapi.test.js`, `services/rangkaian.service.perlu-dilengkapi.test.js`, `components/lacak/PerluDilengkapiTab.test.jsx`, `hooks/use-perlu-dilengkapi-count.test.jsx`.
 
 **Frontend (diubah):**
 - `frontend/src/hooks/use-lacak-search.js` (P3 Task 18) diperluas menjadi satu-satunya hook Lacak: `status`, batas 100, `retry`, `LACAK_DEBOUNCE_MS`, dan cache `lacak-cache.js` (Task 10).
@@ -65,6 +94,10 @@
 - `frontend/src/components/app-sidebar.jsx` mendapat sub-item "Lacak Surat" di grup Surat (`:84-85`).
 - `frontend/src/components/app-sidebar.groups.test.jsx`, `frontend/src/components/breadcrumbs.jsx`, `frontend/src/components/breadcrumbs.test.jsx`.
 - `frontend/src/components/GlobalSearch.jsx` mendapat aksi "Lihat rangkaian", Shift+Enter, dan item "Lacak rangkaian “q”".
+- D7:
+  - `frontend/src/services/rangkaian.service.js` mendapat `perluDilengkapi`, `ringkasanPerluDilengkapi`, dan `tandaiInisiatif` (Task 19).
+  - `frontend/src/pages/LacakSurat.jsx` + `LacakSurat.test.jsx` mendapat tab `?tab=perlu-dilengkapi` (Task 20).
+  - `frontend/src/components/app-sidebar.jsx` + `app-sidebar.groups.test.jsx` mendapat badge pada sub-item "Lacak Surat" (Task 21).
 
 ---
 
@@ -99,6 +132,19 @@ Task ini gerbang, bukan TDD. Tugasnya memastikan nama dan bentuk yang dikonsumsi
   - `frontend/src/components/surat/AlurSuratPanel.jsx`: `AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null })` (named + default), yang memuat lewat `rangkaianService.getBySurat`. P4 menambah prop opsional `rangkaianId` (Task 9).
   - `frontend/src/services/rangkaian.service.js`: `export const rangkaianService = { getById, getBySurat }` + `export default rangkaianService`
 - Consumes (P3, frontend): metode `rangkaianService.lacak` yang ditambahkan P3 ke file yang sama.
+- Consumes untuk D7 (Task 16–21):
+  - P2 `visibility-spec.ts`: `visibleSql(ctx, target, mode?: 'read' | 'list')`, `jangkauanRekamanSql(ctx, type, alias)`, `cocokUnitRekamanSql`, `kecocokanUnitRekaman`, `dalamCakupanPengawas`, `dalamCakupanPengawasSql`, `resolveKonteksBaca`, `barisDari`, tipe `KonteksBaca`, `TargetVisibilitas`, `PelaksanaSql`, `PenggunaVisibilitas`
+  - P2 `record-access.service.ts`: `isAllowedForRecordUnit`
+  - P3 `services/rangkaian/aksi.ts`: `computeSuratAksi(role, ctx: SuratAksiContext): SuratAksi[]` dan `computeRangkaianAksi(ctx: RangkaianAksiContext): RangkaianAksi[]`
+  - P3 `services/rangkaian/roles.ts`: `isFullAdmin(user)`
+  - P1 `services/rangkaian-status.ts`: tipe `RangkaianStatus`
+  - repo: `utils/jakarta-date.ts` `jakartaDate()`, `audit-log.service.ts` `auditLogService.logActionOrThrow(data, executor)` + `CriticalAuditContext`, `utils/errors.ts` `NotFoundError`/`ConflictError`
+  - P3 frontend:
+    - `lib/tindak-lanjut.js` `buildTindakLanjutState(jenis, surat, aksi)`
+    - `components/DistributeDialog.jsx` `DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, onSuccess })`
+    - `components/surat/BerkaskanDialog.jsx` `BerkaskanDialog({ open, onOpenChange, rangkaian, onBerhasil })`
+    - `components/surat/AlurSuratActions.jsx` `TautkanDialog({ open, onOpenChange, jenis, surat, onBerhasil })`
+  - Kolom `surat_keluar.asal_naskah` (0046). `updateSuratKeluarSchema` P3 **tidak** memuat `asalNaskah` (`.omit({ …, asalNaskah: true, … })`), sehingga belum ada jalur untuk menandai surat lama sebagai inisiatif. Karena itu Task 17 menambah endpoint itu.
 - Kontrak respons `/lacak` (`data` di amplop `{ success: true, data }`), yaitu bentuk yang dibekukan untuk P4 dari §4.8, §5, dan §6. Typedef ini **identik** dengan `backend/src/services/rangkaian/lacak.types.ts` P3 Task 4 (sumber kebenaran); bila berbeda, P3 yang menang:
 
 ```js
@@ -124,7 +170,7 @@ Task ini gerbang, bukan TDD. Tugasnya memastikan nama dan bentuk yang dikonsumsi
  */
 ```
 
-- Produces: branch `feat/integrasi-surat-p4` dan catatan baseline (jumlah tes lulus) untuk Task 16.
+- Produces: branch `feat/integrasi-surat-p4` dan catatan baseline (jumlah tes lulus) untuk Task 22.
 
 - [ ] **Step 1: Buat branch dari ujung P3**
 
@@ -152,9 +198,16 @@ grep -n "'/lacak'\|lacakLimiter" backend/src/routes/rangkaian.routes.ts
 grep -n "rangkaian" backend/src/app.ts backend/src/middlewares/demo-access.middleware.ts
 grep -n "is_unit_pengawas" backend/src/db/migrations/0046_rangkaian_surat.sql
 grep -n "0046_rangkaian_surat\|0047_unit_kerja_direktorat" backend/src/db/migrations/meta/_journal.json
+# D7 (Task 16–18)
+grep -n "export function jangkauanRekamanSql\|export function visibleSql\|export type PelaksanaSql\|export interface TargetVisibilitas\|export function dalamCakupanPengawas(" backend/src/services/access/visibility-spec.ts
+grep -n "export function computeSuratAksi\|export function computeRangkaianAksi\|export interface SuratAksiContext" backend/src/services/rangkaian/aksi.ts
+grep -n "export function isFullAdmin" backend/src/services/rangkaian/roles.ts
+grep -n "asal_naskah" backend/src/db/migrations/0046_rangkaian_surat.sql
+grep -n "asalNaskah: true" backend/src/validators/schemas.ts
+grep -n "protect_archived_surat_source\|surat_keluar_archived_source_guard" backend/src/db/migrations/0021_archive_source_domain_integrity.sql
 ```
 
-Expected: setiap perintah mengembalikan minimal satu baris. Dari grep `lacak.service.ts`, catat baris `export function skorSql` (titik ubah Task 3), CTE `teratas` (`ORDER BY skor DESC, tanggal_surat DESC NULLS LAST, surat_id LIMIT ${SEED_LIMIT}`), dan `ORDER BY` kelompok (`skor DESC, tanggal_terbaru DESC NULLS LAST, kunci ASC`).
+Expected: setiap perintah mengembalikan minimal satu baris. Dari grep `lacak.service.ts`, catat baris `export function skorSql` (titik ubah Task 3), CTE `teratas` (`ORDER BY skor DESC, tanggal_surat DESC NULLS LAST, surat_id LIMIT ${SEED_LIMIT}`), dan `ORDER BY` kelompok (`skor DESC, tanggal_terbaru DESC NULLS LAST, kunci ASC`). Untuk D7: grep `asalNaskah: true` menunjukkan skema update P3 mengecualikan `asalNaskah` (dasar Task 17). Grep 0021 menunjukkan trigger `surat_keluar_archived_source_guard` yang perilakunya diuji Task 17 (fungsi itu hanya membandingkan `id`, `is_archived`, `is_deleted`, unit, tahun, nomor, tanggal, perihal, dan kode klasifikasi; `asal_naskah` tidak dijaga).
 
 - [ ] **Step 3: Verifikasi nama frontend P2/P3**
 
@@ -162,6 +215,12 @@ Expected: setiap perintah mengembalikan minimal satu baris. Dari grep `lacak.ser
 cd "D:/Projects/New folder/simsa-atrbpn"
 grep -n "export const rangkaianService\|export default\|lacak\|getById\|getBySurat" frontend/src/services/rangkaian.service.js
 grep -n "export function AlurSuratPanel\|export default AlurSuratPanel\|rangkaianService.getBySurat" frontend/src/components/surat/AlurSuratPanel.jsx
+# D7 (Task 20–21)
+grep -n "export function buildTindakLanjutState" frontend/src/lib/tindak-lanjut.js
+grep -n "export function DistributeDialog" frontend/src/components/DistributeDialog.jsx
+grep -n "export function BerkaskanDialog" frontend/src/components/surat/BerkaskanDialog.jsx
+grep -n "export function TautkanDialog" frontend/src/components/surat/AlurSuratActions.jsx
+grep -n "refreshInterval: 60000" frontend/src/components/app-header.jsx
 ```
 
 Expected:
@@ -185,7 +244,7 @@ cd "D:/Projects/New folder/simsa-atrbpn"
 (cd frontend && npx vitest run) 2>&1 | tail -5
 ```
 
-Expected: kedua suite hijau. Catat jumlah file/tes sebagai baseline Task 16. Tidak ada commit pada task ini.
+Expected: kedua suite hijau. Catat jumlah file/tes sebagai baseline Task 22. Tidak ada commit pada task ini.
 
 ---
 
@@ -1367,10 +1426,11 @@ Lalu sisipkan baris berikut **tepat sebelum** `app.use('/api/rangkaian', rangkai
 app.use('/api/rangkaian', rangkaianDaftarRoutes);
 ```
 
-Urutan final setelah P5 (P5 Task 8 menyisipkan router berkas di antara keduanya):
+Urutan final setelah P5 (P4 Task 18 menyisipkan router D7 tepat setelah router daftar; P5 Task 8 menyisipkan router berkas tepat sebelum router utama):
 
 ```ts
 app.use('/api/rangkaian', rangkaianDaftarRoutes);  // P4 Task 6: hanya GET / (auth per-route)
+app.use('/api/rangkaian', rangkaianPerluDilengkapiRoutes); // P4 Task 18 (D7): /perlu-dilengkapi, /perlu-dilengkapi/ringkasan, /surat-keluar/:suratKeluarId/tandai-inisiatif (auth per-route)
 app.use('/api/rangkaian', rangkaianBerkasRoutes);  // P5 Task 8: /data-lama/*, /:id/koreksi-berkas, /koreksi-berkas/:koreksiId/putuskan (auth per-route)
 app.use('/api/rangkaian', rangkaianRoutes);        // P2 Task 9 (+P3): router.use(authMiddleware); /lacak, /tautan, ... sebelum /:id dan /by-surat
 ```
@@ -3455,18 +3515,2413 @@ EOF
 
 ---
 
-### Task 16: Verifikasi akhir P4
+### Task 16: Layanan Perlu Dilengkapi (`perluDilengkapiService`) — enam kategori, penyamaran, dan data lama (D7)
+
+Task 16–21 menambahkan keputusan **D7** (2026-09-27, spec §7 "Perlu Dilengkapi"). Task ini menyiapkan satu kueri `UNION ALL` dengan enam cabang kategori. Kueri yang sama dipakai untuk daftar maupun ringkasan, sehingga angka badge tidak mungkin menyimpang dari isi tab.
+
+**Files:**
+- Create: `backend/src/services/perlu-dilengkapi.constants.ts`
+- Create: `backend/src/services/perlu-dilengkapi.service.ts`
+- Create: `backend/src/__tests__/perlu-dilengkapi.integration.test.ts`
+- Modify: `backend/src/services/rangkaian-daftar.service.ts` (Task 5: fungsi privat `lingkupSql` dan blok impor `visibility-spec`)
+
+**Interfaces:**
+- Consumes (P2, `visibility-spec.ts`):
+  - `visibleSql(ctx, target, mode: 'read' | 'list')`
+  - `jangkauanRekamanSql(ctx, type, alias)`
+  - `kecocokanUnitRekaman(user)` dan `cocokUnitRekamanSql(match, unitCol)`
+  - `dalamCakupanPengawas(unit)` dan `dalamCakupanPengawasSql(unitCol)`
+  - `resolveKonteksBaca(user, executor)`, `barisDari`
+  - tipe `KonteksBaca`, `TargetVisibilitas`, `PelaksanaSql`
+- Consumes (P2, `record-access.service.ts`): `recordAccessService.checkRead`, khusus uji paritas
+- Consumes (P3): `computeSuratAksi(role, ctx: SuratAksiContext)` dan `computeRangkaianAksi(ctx: RangkaianAksiContext)` dari `services/rangkaian/aksi.ts`; `isFullAdmin(user)` dari `services/rangkaian/roles.ts`
+- Consumes (P1): tipe `RangkaianStatus` dari `services/rangkaian-status.ts`
+- Consumes (repo): `jakartaDate()` (`utils/jakarta-date.ts`)
+- Consumes (Task 3–5): helper `lacak-pglite.ts`, `judulRangkaianTampil`, dan lingkup rangkaian Task 5 (diekspor di task ini)
+- Produces:
+  - `KATEGORI_PERLU_DILENGKAPI = ['sm_belum_ditindaklanjuti', 'disposisi_terbuka', 'sk_tanpa_nd_penjelas', 'tindak_lanjut_tertahan', 'siap_diberkaskan', 'sk_tanpa_asal'] as const` dan `type KategoriPerluDilengkapi` (`perlu-dilengkapi.constants.ts`, tanpa impor; di-re-export oleh layanan)
+  - `type PerluDilengkapiAksi = 'tindak_lanjut' | 'disposisi' | 'buka_kotak_disposisi' | 'buat_nd_penjelas' | 'buka_surat' | 'berkaskan' | 'tandai_inisiatif' | 'tautkan'`
+  - `type PerluDilengkapiFilter = { kategori?: KategoriPerluDilengkapi; tampilkanDataLama: boolean; page: number; limit: number }`
+  - `type PenggunaPerluDilengkapi = { id: string; role: string; unitKerjaId: string | null; email?: string; name?: string | null }`
+  - `interface PerluDilengkapiItem`. Baris tersamar hanya punya kunci `aksiDiizinkan, dataLama, disposisi, jenis, kategori, kunci, label, masked, rangkaian, surat, unitNama`, dengan `surat` dan `rangkaian` bernilai `null`:
+    ```ts
+    {
+      kunci: string;
+      kategori: KategoriPerluDilengkapi;
+      masked: boolean;
+      label?: 'Dikecualikan';
+      jenis: 'surat_masuk' | 'surat_keluar' | 'rangkaian';
+      unitNama: string;
+      surat: { jenis; id; nomorSurat; perihal; tanggalSurat; naskahDinas; dari; kepada; sifatSurat; unitKerjaId; approvalStatus } | null;
+      rangkaian: { id; kode; status; judul; unitPencatatId; unitPengolahId; unitPengolahNama } | null;
+      disposisi: { id; status; targetUnitNama; batasWaktu; lewatBatas } | null;
+      dataLama: boolean;
+      aksiDiizinkan: PerluDilengkapiAksi[];
+    }
+    ```
+  - `perluDilengkapiService.list(user: PenggunaPerluDilengkapi, filter: PerluDilengkapiFilter): Promise<{ data: PerluDilengkapiItem[]; pagination: { page; limit; total; totalPages }; meta: { batasDataLama: string; tampilkanDataLama: boolean } }>`
+  - `perluDilengkapiService.ringkasan(user: PenggunaPerluDilengkapi, filter: { tampilkanDataLama: boolean }): Promise<{ perKategori: Record<KategoriPerluDilengkapi, number>; total: number; lewatBatas: number; batasDataLama: string }>`
+  - `ENV_BATAS_DATA_LAMA = 'RANGKAIAN_DATA_LAMA_SEBELUM'` dan `resolveBatasDataLama(executor?: PelaksanaSql, env?: NodeJS.ProcessEnv): Promise<string>` (ISO UTC)
+  - `lingkupRangkaianSql(ctx: KonteksBaca, alias = 'r'): SQL` diekspor dari `rangkaian-daftar.service.ts`. Perilaku `rangkaianDaftarService.list` tidak berubah.
+
+- [ ] **Step 1: Tulis tes yang gagal**
+
+```ts
+// backend/src/__tests__/perlu-dilengkapi.integration.test.ts
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PGlite } from '@electric-sql/pglite';
+import { drizzle } from 'drizzle-orm/pglite';
+import * as schema from '../db/schema';
+import type { KategoriPerluDilengkapi } from '../services/perlu-dilengkapi.constants';
+import {
+    createMigratedPglite, insertDisposisi, insertRangkaian, insertRelasi, insertSuratKeluar, insertSuratMasuk, insertUser,
+    resetRangkaianFixture, seedUnits, uid, type PenggunaUji,
+} from './helpers/lacak-pglite';
+
+const holder = vi.hoisted(() => ({ db: null as any }));
+vi.mock('../config/database', () => ({ db: holder.db }));
+
+let database: PGlite;
+let svc: typeof import('../services/perlu-dilengkapi.service');
+let access: typeof import('../services/record-access.service').recordAccessService;
+
+const pengguna = {
+    bppt: { id: uid(901), email: 'bppt@example.test', name: 'Admin BPPT', role: 'admin_unit', unitKerjaId: 'dir_bppt' },
+    ptep: { id: uid(902), email: 'ptep@example.test', name: 'Admin PTEP', role: 'admin_unit', unitKerjaId: 'dir_ptep' },
+    tu: { id: uid(903), email: 'tu@example.test', name: 'Admin TU', role: 'admin_unit', unitKerjaId: 'sesditjen' },
+    staffTu: { id: uid(904), email: 'staff@example.test', name: 'Staff TU', role: 'staff', unitKerjaId: 'sesditjen' },
+    superAdmin: { id: uid(906), email: 'super@example.test', name: 'Super Admin', role: 'super_admin', unitKerjaId: null },
+} satisfies Record<string, PenggunaUji>;
+type NamaPengguna = keyof typeof pengguna;
+
+const BATAS = '2026-01-01T00:00:00+07:00';
+const BATAS_UTC = '2025-12-31T17:00:00.000Z';
+const LAMA = '2025-06-01 00:00:00';
+const KOSONG: Record<KategoriPerluDilengkapi, number> = {
+    sm_belum_ditindaklanjuti: 0, disposisi_terbuka: 0, sk_tanpa_nd_penjelas: 0,
+    tindak_lanjut_tertahan: 0, siap_diberkaskan: 0, sk_tanpa_asal: 0,
+};
+const id: Record<string, string> = {};
+
+beforeAll(async () => {
+    database = await createMigratedPglite();
+    holder.db = drizzle(database, { schema });
+    svc = await import('../services/perlu-dilengkapi.service');
+    ({ recordAccessService: access } = await import('../services/record-access.service'));
+}, 180_000);
+afterAll(async () => { await database?.close(); });
+afterEach(() => { vi.unstubAllEnvs(); });
+
+beforeEach(async () => {
+    vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', BATAS);
+    await resetRangkaianFixture(database);
+    await seedUnits(database, [
+        { id: 'ditjen', name: 'Ditjen PTPP', pengawas: true },
+        { id: 'sesditjen', name: 'Sesditjen', pengawas: true },
+        { id: 'dir_bppt', name: 'Dit. BPPT' },
+        { id: 'dir_ptep', name: 'Dit. PTEP' },
+    ]);
+    for (const user of Object.values(pengguna)) await insertUser(database, user);
+
+    // SM1: surat masuk TU tanpa disposisi dan tanpa balasan → sm_belum_ditindaklanjuti.
+    id.SM1 = await insertSuratMasuk(database, { n: 1, unit: 'sesditjen', nomor: 'SM-1/2026', tanggal: '2026-09-01', perihal: 'Undangan rapat satu' });
+
+    // SM2: disposisi `sent` ke BPPT (batas lewat) + ND9 draft BPPT → disposisi_terbuka + tindak_lanjut_tertahan.
+    id.SM2 = await insertSuratMasuk(database, { n: 2, unit: 'sesditjen', nomor: 'SM-2/2026', tanggal: '2026-09-02', perihal: 'Permohonan data dua' });
+    id.ND9 = await insertSuratKeluar(database, { n: 9, unit: 'dir_bppt', nomor: 'ND-9/2026', tanggal: '2026-09-09', perihal: 'Tindak lanjut permohonan data' });
+    const r2 = await insertRangkaian(database, {
+        n: 2, kode: 'RS-2026-000002', tahun: 2026, pencatat: 'sesditjen', pengolah: 'dir_bppt', judul: 'Permohonan data dua',
+        anggota: [{ jenis: 'surat_masuk', id: id.SM2, peran: 'induk', unit: 'sesditjen' }, { jenis: 'surat_keluar', id: id.ND9, unit: 'dir_bppt' }],
+    });
+    id.R2 = r2.id;
+    await insertRelasi(database, { rangkaianId: r2.id, dari: r2.anggota[1], ke: r2.anggota[0], jenis: 'tindak_lanjut' });
+    await insertDisposisi(database, { suratMasukId: id.SM2, sumber: 'sesditjen', target: 'dir_bppt', status: 'sent', rangkaianId: r2.id });
+
+    // SM3: surat Rahasia yang didisposisikan ke BPPT → disposisi_terbuka tersamar.
+    id.SM3 = await insertSuratMasuk(database, { n: 3, unit: 'sesditjen', nomor: 'R-3/2026', tanggal: '2026-09-03', perihal: 'PERIHAL-RAHASIA-SM3', sifat: 'Rahasia' });
+    const r3 = await insertRangkaian(database, {
+        n: 3, kode: 'RS-2026-000003', tahun: 2026, pencatat: 'sesditjen', judul: 'PERIHAL-RAHASIA-SM3',
+        anggota: [{ jenis: 'surat_masuk', id: id.SM3, peran: 'induk', unit: 'sesditjen' }],
+    });
+    id.R3 = r3.id;
+    await insertDisposisi(database, { suratMasukId: id.SM3, sumber: 'sesditjen', target: 'dir_bppt', status: 'received', rangkaianId: r3.id });
+
+    // SM4: surat lama tanpa rangkaian, dibuat sebelum batas → data lama.
+    id.SM4 = await insertSuratMasuk(database, { n: 4, unit: 'sesditjen', nomor: 'SM-4/2025', tanggal: '2025-05-20', perihal: 'Surat lama empat' });
+
+    // SM5: satu-satunya disposisinya ditolak PTEP → belum ditindaklanjuti; PTEP kehilangan jangkauan.
+    id.SM5 = await insertSuratMasuk(database, { n: 5, unit: 'sesditjen', nomor: 'SM-5/2026', tanggal: '2026-09-05', perihal: 'Permohonan lima' });
+    const r5 = await insertRangkaian(database, {
+        n: 5, kode: 'RS-2026-000005', tahun: 2026, pencatat: 'sesditjen', judul: 'Permohonan lima',
+        anggota: [{ jenis: 'surat_masuk', id: id.SM5, peran: 'induk', unit: 'sesditjen' }],
+    });
+    await insertDisposisi(database, { suratMasukId: id.SM5, sumber: 'sesditjen', target: 'dir_ptep', status: 'rejected', rangkaianId: r5.id });
+
+    // SM6 + SK6: dibalas, disposisi processed, rangkaian selesai → siap_diberkaskan saja.
+    id.SM6 = await insertSuratMasuk(database, { n: 6, unit: 'sesditjen', nomor: 'SM-6/2026', tanggal: '2026-09-06', perihal: 'Permohonan data enam' });
+    id.SK6 = await insertSuratKeluar(database, { n: 61, unit: 'dir_bppt', nomor: 'ND-6/2026', tanggal: '2026-09-16', perihal: 'Jawaban permohonan enam' });
+    const r6 = await insertRangkaian(database, {
+        n: 6, kode: 'RS-2026-000006', tahun: 2026, pencatat: 'sesditjen', pengolah: 'dir_bppt', status: 'selesai', judul: 'Permohonan data enam',
+        anggota: [{ jenis: 'surat_masuk', id: id.SM6, peran: 'induk', unit: 'sesditjen' }, { jenis: 'surat_keluar', id: id.SK6, unit: 'dir_bppt' }],
+    });
+    id.R6 = r6.id;
+    await insertRelasi(database, { rangkaianId: r6.id, dari: r6.anggota[1], ke: r6.anggota[0], jenis: 'balasan' });
+    await insertDisposisi(database, { suratMasukId: id.SM6, sumber: 'sesditjen', target: 'dir_bppt', status: 'received', rangkaianId: r6.id });
+
+    // SK7: Keputusan approved tanpa ND penjelas → sk_tanpa_nd_penjelas. SK8 sudah dijelaskan ND8.
+    id.SK7 = await insertSuratKeluar(database, { n: 7, unit: 'dir_bppt', nomor: 'KEP-7/2026', tanggal: '2026-09-07', naskah: 'Keputusan', perihal: 'Penetapan tim tujuh' });
+    id.SK8 = await insertSuratKeluar(database, { n: 8, unit: 'dir_bppt', nomor: 'KEP-8/2026', tanggal: '2026-09-08', naskah: 'Keputusan', perihal: 'Penetapan tim delapan' });
+    id.ND8 = await insertSuratKeluar(database, { n: 81, unit: 'dir_bppt', nomor: 'ND-8/2026', tanggal: '2026-09-18', perihal: 'Penjelasan Keputusan delapan' });
+    const r8 = await insertRangkaian(database, {
+        n: 8, kode: 'RS-2026-000008', tahun: 2026, asal: 'inisiatif', pencatat: 'dir_bppt', judul: 'Penetapan tim delapan',
+        anggota: [{ jenis: 'surat_keluar', id: id.SK8, peran: 'induk', unit: 'dir_bppt' }, { jenis: 'surat_keluar', id: id.ND8, unit: 'dir_bppt' }],
+    });
+    await insertRelasi(database, { rangkaianId: r8.id, dari: r8.anggota[1], ke: r8.anggota[0], jenis: 'menjelaskan' });
+
+    // SK10: surat keluar baru tanpa asal dan tanpa rangkaian → sk_tanpa_asal.
+    id.SK10 = await insertSuratKeluar(database, { n: 10, unit: 'dir_bppt', nomor: 'ND-10/2026', tanggal: '2026-09-10', perihal: 'Undangan koordinasi sepuluh' });
+    // SK11: surat keluar lama (klasifikasi NULL = Terbatas) tanpa asal → data lama.
+    id.SK11 = await insertSuratKeluar(database, { n: 11, unit: 'dir_bppt', nomor: 'ND-11/2025', tanggal: '2025-05-11', perihal: 'Nota lama sebelas' });
+    // SM12/R12: rangkaian data_lama berstatus selesai → siap_diberkaskan, tetapi data lama.
+    id.SM12 = await insertSuratMasuk(database, { n: 12, unit: 'sesditjen', nomor: 'SM-12/2019', tanggal: '2019-03-01', perihal: 'Surat lama dua belas' });
+    const r12 = await insertRangkaian(database, {
+        n: 12, kode: 'RS-2019-000012', tahun: 2019, asal: 'data_lama', status: 'selesai', pencatat: 'sesditjen', judul: 'Surat lama dua belas',
+        anggota: [{ jenis: 'surat_masuk', id: id.SM12, peran: 'induk', unit: 'sesditjen' }],
+    });
+    id.R12 = r12.id;
+    // SK13: draf Keputusan → tidak masuk sk_tanpa_nd_penjelas.
+    id.SK13 = await insertSuratKeluar(database, { n: 13, unit: 'dir_bppt', nomor: 'KEP-13/2026', tanggal: '2026-09-13', naskah: 'Keputusan', perihal: 'Draf penetapan' });
+
+    await database.exec(`
+        UPDATE surat_distributions SET batas_waktu = '2026-01-10' WHERE surat_masuk_id = '${id.SM2}';
+        UPDATE surat_distributions SET status = 'processed', processed_at = now() WHERE surat_masuk_id = '${id.SM6}';
+        UPDATE surat_keluar SET approval_status = 'draft' WHERE id IN ('${id.ND9}', '${id.SK13}');
+        UPDATE surat_keluar SET asal_naskah = 'tindak_lanjut' WHERE id IN ('${id.ND9}', '${id.SK6}', '${id.ND8}');
+        UPDATE surat_keluar SET asal_naskah = 'inisiatif' WHERE id IN ('${id.SK7}', '${id.SK8}', '${id.SK13}');
+        UPDATE surat_keluar SET klasifikasi_keamanan = NULL, created_at = '${LAMA}' WHERE id = '${id.SK11}';
+        UPDATE surat_masuk SET created_at = '${LAMA}' WHERE id IN ('${id.SM4}', '${id.SM12}');
+    `);
+});
+
+const daftar = (nama: NamaPengguna, filter: Partial<{ kategori: KategoriPerluDilengkapi; tampilkanDataLama: boolean; page: number; limit: number }> = {}) =>
+    svc.perluDilengkapiService.list(pengguna[nama], { tampilkanDataLama: false, page: 1, limit: 50, ...filter });
+
+describe('Perlu Dilengkapi (D7) — cakupan §4', () => {
+    it.each([
+        ['bppt', { disposisi_terbuka: 2, sk_tanpa_nd_penjelas: 1, tindak_lanjut_tertahan: 1, siap_diberkaskan: 1, sk_tanpa_asal: 1 }, 6],
+        ['tu', { sm_belum_ditindaklanjuti: 2, disposisi_terbuka: 2, sk_tanpa_nd_penjelas: 1, tindak_lanjut_tertahan: 1, siap_diberkaskan: 1, sk_tanpa_asal: 1 }, 8],
+        ['ptep', {}, 0],
+        ['staffTu', { sm_belum_ditindaklanjuti: 2, disposisi_terbuka: 2, siap_diberkaskan: 1 }, 5],
+        ['superAdmin', { sm_belum_ditindaklanjuti: 2, disposisi_terbuka: 2, sk_tanpa_nd_penjelas: 1, tindak_lanjut_tertahan: 1, siap_diberkaskan: 1, sk_tanpa_asal: 1 }, 8],
+    ] as const)('ringkasan %s: pengawas melihat semua direktorat, direktorat hanya milik/peserta, disposisi ditolak mencabut jangkauan', async (nama, per, total) => {
+        const hasil = await svc.perluDilengkapiService.ringkasan(pengguna[nama], { tampilkanDataLama: false });
+        expect(hasil.perKategori).toEqual({ ...KOSONG, ...per });
+        expect(hasil.total).toBe(total);
+        expect(hasil.lewatBatas).toBe(total === 0 ? 0 : 1);
+        expect(hasil.batasDataLama).toBe(BATAS_UTC);
+    });
+
+    it('baris tersamar memakai placeholder standar: tanpa id, nomor, perihal, maupun rangkaian', async () => {
+        const hasil = await daftar('bppt', { kategori: 'disposisi_terbuka' });
+        const tersamar = hasil.data.filter(item => item.masked);
+        expect(tersamar).toHaveLength(1);
+        expect(Object.keys(tersamar[0]).sort()).toEqual(['aksiDiizinkan', 'dataLama', 'disposisi', 'jenis', 'kategori', 'kunci', 'label', 'masked', 'rangkaian', 'surat', 'unitNama']);
+        expect(tersamar[0]).toMatchObject({
+            kategori: 'disposisi_terbuka', label: 'Dikecualikan', jenis: 'surat_masuk', unitNama: 'Sesditjen', surat: null, rangkaian: null,
+            disposisi: { status: 'received', targetUnitNama: 'Dit. BPPT', batasWaktu: null, lewatBatas: false },
+            dataLama: false, aksiDiizinkan: ['buka_kotak_disposisi'],
+        });
+        const json = JSON.stringify(hasil);
+        for (const bocoran of ['PERIHAL-RAHASIA-SM3', 'R-3/2026', id.SM3, id.R3, 'RS-2026-000003']) expect(json).not.toContain(bocoran);
+    });
+
+    it('data lama tersembunyi secara default, tampil dengan tampilkanDataLama, dan tetap tersamar bila kelas terkendali', async () => {
+        expect((await daftar('tu')).data.some(item => item.dataLama)).toBe(false);
+        const semua = await daftar('tu', { tampilkanDataLama: true });
+        expect(semua.pagination.total).toBe(11);
+        expect(semua.data.filter(item => item.dataLama).map(item => item.kategori).sort()).toEqual(['siap_diberkaskan', 'sk_tanpa_asal', 'sm_belum_ditindaklanjuti']);
+        const skLama = semua.data.find(item => item.kategori === 'sk_tanpa_asal' && item.dataLama)!;
+        expect(skLama).toMatchObject({ masked: true, label: 'Dikecualikan', surat: null, rangkaian: null, aksiDiizinkan: [] });
+        expect(skLama.kunci).toMatch(/^sk_tanpa_asal:tersamar-\d+$/);
+        const json = JSON.stringify(semua);
+        expect(json).not.toContain('ND-11/2025');
+        expect(json).not.toContain(id.SK11);
+        expect(semua.data.find(item => item.kunci === `siap_diberkaskan:${id.R12}`)).toMatchObject({ dataLama: true, rangkaian: { kode: 'RS-2019-000012' } });
+        expect((await svc.perluDilengkapiService.ringkasan(pengguna.tu, { tampilkanDataLama: true })).total).toBe(11);
+    });
+
+    it('aksiDiizinkan dihitung server dengan aturan P3 (computeSuratAksi/computeRangkaianAksi)', async () => {
+        const aksi = async (nama: NamaPengguna, kunci: string, tampilkanDataLama = false) =>
+            (await daftar(nama, { tampilkanDataLama })).data.find(item => item.kunci === kunci)?.aksiDiizinkan;
+        expect(await aksi('tu', `sm_belum_ditindaklanjuti:${id.SM1}`)).toEqual(['buka_surat', 'disposisi', 'tindak_lanjut']);
+        expect(await aksi('staffTu', `sm_belum_ditindaklanjuti:${id.SM1}`)).toEqual(['buka_surat']);
+        expect(await aksi('bppt', `sk_tanpa_nd_penjelas:${id.SK7}`)).toEqual(['buat_nd_penjelas', 'buka_surat']);
+        expect(await aksi('bppt', `sk_tanpa_asal:${id.SK10}`)).toEqual(['buka_surat', 'tandai_inisiatif', 'tautkan']);
+        expect(await aksi('tu', `sk_tanpa_asal:${id.SK10}`)).toEqual(['buka_surat']);
+        expect(await aksi('bppt', `sk_tanpa_asal:${id.SK11}`, true)).toEqual(['tandai_inisiatif']);
+        expect(await aksi('bppt', `siap_diberkaskan:${id.R6}`)).toEqual(['berkaskan']);
+        expect(await aksi('staffTu', `siap_diberkaskan:${id.R6}`)).toEqual([]);
+        expect(await aksi('bppt', `tindak_lanjut_tertahan:${id.ND9}`)).toEqual(['buka_surat']);
+        const disposisiSm2 = (await daftar('bppt', { kategori: 'disposisi_terbuka' })).data.find(item => item.surat?.id === id.SM2)!;
+        expect(disposisiSm2.aksiDiizinkan).toEqual(['buka_kotak_disposisi', 'buka_surat']);
+        expect(disposisiSm2.disposisi).toMatchObject({ lewatBatas: true, batasWaktu: '2026-01-10', targetUnitNama: 'Dit. BPPT' });
+        expect(disposisiSm2.rangkaian).toMatchObject({ id: id.R2, kode: 'RS-2026-000002' });
+    });
+
+    it('aksi buka_surat hanya ditawarkan bila checkRead mengizinkan (paritas visibleSql read ↔ checkRead)', async () => {
+        for (const [nama, user] of Object.entries(pengguna)) {
+            const hasil = await svc.perluDilengkapiService.list(user, { tampilkanDataLama: true, page: 1, limit: 100 });
+            for (const item of hasil.data) {
+                if (!item.surat) continue;
+                const akses = await access.checkRead(user, item.surat.jenis, item.surat.id, holder.db);
+                expect(item.aksiDiizinkan.includes('buka_surat'), `${nama} × ${item.kunci}`).toBe(Boolean(akses.allowed) && !akses.masked);
+            }
+        }
+    });
+
+    it('urutan: lewat batas dahulu dan deterministik; filter kategori dan paginasi', async () => {
+        const pertama = await daftar('bppt');
+        expect(pertama.data[0]).toMatchObject({ kategori: 'disposisi_terbuka', disposisi: { lewatBatas: true } });
+        expect((await daftar('bppt')).data.map(item => item.kunci)).toEqual(pertama.data.map(item => item.kunci));
+        const halaman = await daftar('tu', { kategori: 'sm_belum_ditindaklanjuti', page: 2, limit: 1 });
+        expect(halaman.pagination).toEqual({ page: 2, limit: 1, total: 2, totalPages: 2 });
+        expect(halaman.data).toHaveLength(1);
+        expect(halaman.meta).toEqual({ batasDataLama: BATAS_UTC, tampilkanDataLama: false });
+    });
+
+    it('batas data lama: env diutamakan, tanpa env diturunkan dari rangkaian non-data-lama tertua, konfigurasi rusak ditolak', async () => {
+        await database.exec(`
+            UPDATE rangkaian_surat SET created_at = '2026-03-04T05:06:07Z' WHERE id = '${id.R2}';
+            UPDATE rangkaian_surat SET created_at = '2020-01-01T00:00:00Z' WHERE asal = 'data_lama';
+        `);
+        expect(await svc.resolveBatasDataLama(holder.db)).toBe(BATAS_UTC);
+        vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', '');
+        expect(await svc.resolveBatasDataLama(holder.db)).toBe('2026-03-04T05:06:07.000Z');
+        vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', '2026-01-01');
+        await expect(svc.resolveBatasDataLama(holder.db)).rejects.toThrow(/zona waktu/);
+        vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', '');
+        await resetRangkaianFixture(database);
+        const sebelum = Date.now();
+        expect(Date.parse(await svc.resolveBatasDataLama(holder.db))).toBeGreaterThanOrEqual(sebelum - 1_000);
+    });
+});
+```
+
+- [ ] **Step 2: Jalankan, pastikan gagal**
+
+Run: `(cd backend && npx vitest run src/__tests__/perlu-dilengkapi.integration.test.ts)`
+Expected: FAIL. Impor dinamis `../services/perlu-dilengkapi.service` di `beforeAll` gagal karena modul belum ada, sehingga seluruh tes di berkas ini gagal. Impor tipe `perlu-dilengkapi.constants` dihapus saat transpilasi, jadi tidak menjadi penyebab.
+
+- [ ] **Step 3: Implementasi minimal**
+
+(a) Konstanta tanpa impor:
+
+```ts
+// backend/src/services/perlu-dilengkapi.constants.ts
+/** D7: kode kategori Perlu Dilengkapi. API, validator, dan UI memakai daftar yang sama. Sengaja tanpa impor. */
+export const KATEGORI_PERLU_DILENGKAPI = [
+    'sm_belum_ditindaklanjuti',
+    'disposisi_terbuka',
+    'sk_tanpa_nd_penjelas',
+    'tindak_lanjut_tertahan',
+    'siap_diberkaskan',
+    'sk_tanpa_asal',
+] as const;
+export type KategoriPerluDilengkapi = typeof KATEGORI_PERLU_DILENGKAPI[number];
+```
+
+(b) Di `backend/src/services/rangkaian-daftar.service.ts` (Task 5), ganti blok impor ini (persis):
+
+```ts
+import {
+    barisDari, cocokUnitRekamanSql, dalamCakupanPengawasSql, jangkauanSql, kecocokanUnitRekaman, resolveKonteksBaca,
+} from './access/visibility-spec.js';
+```
+
+menjadi:
+
+```ts
+import {
+    barisDari, cocokUnitRekamanSql, dalamCakupanPengawasSql, jangkauanSql, kecocokanUnitRekaman, resolveKonteksBaca,
+    type KonteksBaca,
+} from './access/visibility-spec.js';
+```
+
+Lalu ganti fungsi ini (persis):
+
+```ts
+async function lingkupSql(user: PenggunaDaftar): Promise<SQL> {
+    const ctx = await resolveKonteksBaca(user, db);
+    const bagian: SQL[] = [cocokUnitRekamanSql(kecocokanUnitRekaman(user), sql.raw('r.unit_pencatat_id'))];
+    if (ctx.pengawas) bagian.push(dalamCakupanPengawasSql(sql.raw('r.unit_pencatat_id')));
+    if (ctx.unitJangkauan) bagian.push(jangkauanSql(sql.raw('r.id'), ctx.unitJangkauan, ctx.disposisiLamaRead));
+    return sql`(${sql.join(bagian, sql` OR `)})`;
+}
+```
+
+menjadi:
+
+```ts
+/** Lingkup rangkaian (pencatat ∨ pengawas ∨ jangkauan §4.5) untuk alias tabel rangkaian_surat; dipakai juga D7 (Task 16). */
+export function lingkupRangkaianSql(ctx: KonteksBaca, alias = 'r'): SQL {
+    if (!/^[a-z_][a-z0-9_]*$/.test(alias)) throw new Error(`Alias SQL tidak valid: ${alias}`);
+    const bagian: SQL[] = [cocokUnitRekamanSql(kecocokanUnitRekaman(ctx.user), sql.raw(`${alias}.unit_pencatat_id`))];
+    if (ctx.pengawas) bagian.push(dalamCakupanPengawasSql(sql.raw(`${alias}.unit_pencatat_id`)));
+    if (ctx.unitJangkauan) bagian.push(jangkauanSql(sql.raw(`${alias}.id`), ctx.unitJangkauan, ctx.disposisiLamaRead));
+    return sql`(${sql.join(bagian, sql` OR `)})`;
+}
+
+async function lingkupSql(user: PenggunaDaftar): Promise<SQL> {
+    return lingkupRangkaianSql(await resolveKonteksBaca(user, db));
+}
+```
+
+(c) Layanan:
+
+```ts
+// backend/src/services/perlu-dilengkapi.service.ts
+import { sql, type SQL } from 'drizzle-orm';
+import { db } from '../config/database.js';
+import {
+    barisDari, cocokUnitRekamanSql, dalamCakupanPengawas, dalamCakupanPengawasSql, jangkauanRekamanSql, kecocokanUnitRekaman,
+    resolveKonteksBaca, visibleSql, type KonteksBaca, type PelaksanaSql, type TargetVisibilitas,
+} from './access/visibility-spec.js';
+import { computeRangkaianAksi, computeSuratAksi } from './rangkaian/aksi.js';
+import { isFullAdmin } from './rangkaian/roles.js';
+import type { RangkaianStatus } from './rangkaian-status.js';
+import { lingkupRangkaianSql } from './rangkaian-daftar.service.js';
+import { judulRangkaianTampil } from './rangkaian-judul.js';
+import { jakartaDate } from '../utils/jakarta-date.js';
+import { KATEGORI_PERLU_DILENGKAPI, type KategoriPerluDilengkapi } from './perlu-dilengkapi.constants.js';
+
+export { KATEGORI_PERLU_DILENGKAPI, type KategoriPerluDilengkapi };
+
+export const ENV_BATAS_DATA_LAMA = 'RANGKAIAN_DATA_LAMA_SEBELUM';
+const ISO_BERZONA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+export type PerluDilengkapiAksi = 'tindak_lanjut' | 'disposisi' | 'buka_kotak_disposisi' | 'buat_nd_penjelas'
+    | 'buka_surat' | 'berkaskan' | 'tandai_inisiatif' | 'tautkan';
+export type PerluDilengkapiFilter = { kategori?: KategoriPerluDilengkapi; tampilkanDataLama: boolean; page: number; limit: number };
+export type PenggunaPerluDilengkapi = { id: string; role: string; unitKerjaId: string | null; email?: string; name?: string | null };
+type JenisSurat = 'surat_masuk' | 'surat_keluar';
+
+export interface PerluDilengkapiItem {
+    kunci: string;
+    kategori: KategoriPerluDilengkapi;
+    masked: boolean;
+    label?: 'Dikecualikan';
+    jenis: JenisSurat | 'rangkaian';
+    unitNama: string;
+    surat: {
+        jenis: JenisSurat; id: string; nomorSurat: string | null; perihal: string | null; tanggalSurat: string | null;
+        naskahDinas: string | null; dari: string | null; kepada: string | null; sifatSurat: string | null;
+        unitKerjaId: string; approvalStatus: string | null;
+    } | null;
+    rangkaian: {
+        id: string; kode: string; status: RangkaianStatus; judul: string | null;
+        unitPencatatId: string | null; unitPengolahId: string | null; unitPengolahNama: string | null;
+    } | null;
+    disposisi: { id: string; status: string; targetUnitNama: string | null; batasWaktu: string | null; lewatBatas: boolean } | null;
+    dataLama: boolean;
+    aksiDiizinkan: PerluDilengkapiAksi[];
+}
+
+/**
+ * Batas data lama (§7 D7): env ISO-8601 berzona (runbook P4: waktu kode P3 aktif di produksi).
+ * Tanpa env: rangkaian non-data-lama tertua (backfill langkah 1 berjalan tepat sebelum kode P3 aktif),
+ * atau "sekarang" bila belum ada rangkaian, sehingga surat lama tersembunyi, bukan membanjiri daftar.
+ */
+export async function resolveBatasDataLama(executor: PelaksanaSql = db, env: NodeJS.ProcessEnv = process.env): Promise<string> {
+    const mentah = env[ENV_BATAS_DATA_LAMA]?.trim();
+    if (mentah) {
+        if (!ISO_BERZONA.test(mentah) || Number.isNaN(Date.parse(mentah))) {
+            throw new Error(`${ENV_BATAS_DATA_LAMA} harus ISO-8601 dengan zona waktu, mis. 2026-10-05T00:00:00+07:00`);
+        }
+        return new Date(mentah).toISOString();
+    }
+    const [row] = barisDari<{ batas: Date | string | null }>(await executor.execute(
+        sql`SELECT min(created_at) AS batas FROM rangkaian_surat WHERE asal <> 'data_lama'`,
+    ));
+    return (row?.batas ? new Date(row.batas) : new Date()).toISOString();
+}
+
+// ─── Satu bentuk baris untuk keenam cabang UNION ALL ────────────────────────
+const KOLOM = [
+    'kategori', 'urut_id', 'kunci_id', 'masked', 'terbaca', 'jenis', 'surat_id', 'nomor_surat', 'perihal', 'tanggal_surat',
+    'naskah', 'pihak', 'sifat', 'status_persetujuan', 'unit_kerja_id', 'unit_nama', 'unit_sendiri', 'is_archived',
+    'rangkaian_id', 'rangkaian_kode', 'rangkaian_status', 'rangkaian_judul', 'rangkaian_pencatat', 'rangkaian_pengolah',
+    'rangkaian_pengolah_nama', 'induk_terbaca', 'distribusi_id', 'distribusi_status', 'target_unit_nama', 'target_saya',
+    'batas_waktu', 'lewat_batas', 'tanggal_urut', 'data_lama',
+] as const;
+type NamaKolom = typeof KOLOM[number];
+const BAWAAN: Record<NamaKolom, SQL> = {
+    kategori: sql`NULL::text`, urut_id: sql`NULL::text`, kunci_id: sql`NULL::text`, masked: sql`false`, terbaca: sql`false`,
+    jenis: sql`NULL::text`, surat_id: sql`NULL::uuid`, nomor_surat: sql`NULL::text`, perihal: sql`NULL::text`,
+    tanggal_surat: sql`NULL::text`, naskah: sql`NULL::text`, pihak: sql`NULL::text`, sifat: sql`NULL::text`,
+    status_persetujuan: sql`NULL::text`, unit_kerja_id: sql`NULL::text`, unit_nama: sql`NULL::text`, unit_sendiri: sql`false`,
+    is_archived: sql`false`, rangkaian_id: sql`NULL::uuid`, rangkaian_kode: sql`NULL::text`, rangkaian_status: sql`NULL::text`,
+    rangkaian_judul: sql`NULL::text`, rangkaian_pencatat: sql`NULL::text`, rangkaian_pengolah: sql`NULL::text`,
+    rangkaian_pengolah_nama: sql`NULL::text`, induk_terbaca: sql`false`, distribusi_id: sql`NULL::uuid`,
+    distribusi_status: sql`NULL::text`, target_unit_nama: sql`NULL::text`, target_saya: sql`false`, batas_waktu: sql`NULL::text`,
+    lewat_batas: sql`false`, tanggal_urut: sql`NULL::timestamptz`, data_lama: sql`false`,
+};
+/** urut_id (id asli) hanya dipakai ORDER BY di dalam kueri; tidak pernah dikirim ke klien. */
+const KOLOM_KELUAR = sql.raw(KOLOM.filter(nama => nama !== 'urut_id').map(nama => `s.${nama}`).join(', '));
+
+type BarisPerluDilengkapi = {
+    kategori: KategoriPerluDilengkapi; kunci_id: string | null; masked: boolean; terbaca: boolean; jenis: JenisSurat | 'rangkaian';
+    surat_id: string | null; nomor_surat: string | null; perihal: string | null; tanggal_surat: string | null; naskah: string | null;
+    pihak: string | null; sifat: string | null; status_persetujuan: string | null; unit_kerja_id: string; unit_nama: string | null;
+    unit_sendiri: boolean; is_archived: boolean; rangkaian_id: string | null; rangkaian_kode: string | null;
+    rangkaian_status: RangkaianStatus | null; rangkaian_judul: string | null; rangkaian_pencatat: string | null;
+    rangkaian_pengolah: string | null; rangkaian_pengolah_nama: string | null; induk_terbaca: boolean;
+    distribusi_id: string | null; distribusi_status: string | null; target_unit_nama: string | null; target_saya: boolean;
+    batas_waktu: string | null; lewat_batas: boolean; tanggal_urut: Date | string | null; data_lama: boolean; total: number;
+};
+
+interface KonteksPd { user: PenggunaPerluDilengkapi; ctx: KonteksBaca; batas: string; tampilkanDataLama: boolean; hariIni: string }
+
+function pilih(nilai: Partial<Record<NamaKolom, SQL>>): SQL {
+    return sql.join(KOLOM.map(nama => sql`${nilai[nama] ?? BAWAAN[nama]} AS ${sql.raw(nama)}`), sql`, `);
+}
+
+/** Nilai isi surat hanya keluar bila baris lolos visibleSql 'list'; selain itu NULL di SQL (§4.8). */
+const tampil = (kolom: SQL) => sql`CASE WHEN v.terlihat THEN ${kolom} END`;
+const milikSendiri = (k: KonteksPd, unitCol: SQL) => cocokUnitRekamanSql(kecocokanUnitRekaman(k.ctx.user), unitCol);
+const saringDataLama = (k: KonteksPd, dataLama: SQL) => (k.tampilkanDataLama ? sql`true` : sql`NOT ${dataLama}`);
+
+function lateralTerlihat(k: KonteksPd, t: TargetVisibilitas): SQL {
+    return sql`CROSS JOIN LATERAL (
+        SELECT coalesce(${visibleSql(k.ctx, t, 'list')}, false) AS terlihat,
+               coalesce(${visibleSql(k.ctx, t, 'read')}, false) AS terbaca) v`;
+}
+
+/** Cakupan surat = unit sendiri ∨ jangkauan lintas unit (pengawas/peserta), dari fragmen P2 yang sama dengan visibleSql. */
+function cakupanSurat(k: KonteksPd, t: TargetVisibilitas): SQL {
+    return sql`(${sql.raw(`${t.alias}.is_deleted IS NOT TRUE`)}
+        AND (${milikSendiri(k, sql.raw(`${t.alias}.unit_kerja_id`))} OR ${jangkauanRekamanSql(k.ctx, t.type, t.alias)}))`;
+}
+
+/** Data lama = anggota rangkaian data_lama, atau bukan anggota rangkaian mana pun dan dibuat sebelum batas. */
+function dataLamaSurat(k: KonteksPd, t: TargetVisibilitas): SQL {
+    const fk = sql.raw(t.type === 'surat_masuk' ? 'surat_masuk_id' : 'surat_keluar_id');
+    const suratId = sql.raw(`${t.alias}.id`);
+    return sql`(EXISTS (SELECT 1 FROM rangkaian_anggota dla JOIN rangkaian_surat dlr ON dlr.id = dla.rangkaian_id
+                         WHERE dla.${fk} = ${suratId} AND dlr.asal = 'data_lama')
+             OR (NOT EXISTS (SELECT 1 FROM rangkaian_anggota dlb WHERE dlb.${fk} = ${suratId})
+                 AND ${sql.raw(`${t.alias}.created_at`)} < ${k.batas}::timestamptz))`;
+}
+
+function kolomSuratMasuk(k: KonteksPd): Partial<Record<NamaKolom, SQL>> {
+    return {
+        jenis: sql`'surat_masuk'::text`, masked: sql`NOT v.terlihat`, terbaca: sql`v.terbaca`,
+        surat_id: tampil(sql`sm.id`), nomor_surat: tampil(sql`sm.nomor_surat`), perihal: tampil(sql`sm.perihal`),
+        tanggal_surat: tampil(sql`sm.tanggal_surat::text`), pihak: tampil(sql`sm.dari`), sifat: tampil(sql`sm.sifat_surat`),
+        unit_kerja_id: sql`sm.unit_kerja_id`, unit_nama: sql`u.name`, unit_sendiri: milikSendiri(k, sql`sm.unit_kerja_id`),
+        is_archived: sql`coalesce(sm.is_archived, false)`,
+    };
+}
+
+function kolomSuratKeluar(k: KonteksPd): Partial<Record<NamaKolom, SQL>> {
+    return {
+        jenis: sql`'surat_keluar'::text`, masked: sql`NOT v.terlihat`, terbaca: sql`v.terbaca`,
+        surat_id: tampil(sql`sk.id`), nomor_surat: tampil(sql`sk.nomor_surat`), perihal: tampil(sql`sk.perihal`),
+        tanggal_surat: tampil(sql`sk.tanggal_surat::text`), naskah: tampil(sql`sk.naskah_dinas`), pihak: tampil(sql`sk.kepada`),
+        sifat: tampil(sql`sk.klasifikasi_keamanan`), status_persetujuan: tampil(sql`sk.approval_status`),
+        unit_kerja_id: sql`sk.unit_kerja_id`, unit_nama: sql`u.name`, unit_sendiri: milikSendiri(k, sql`sk.unit_kerja_id`),
+        is_archived: sql`coalesce(sk.is_archived, false)`,
+    };
+}
+
+/** Rangkaian tempat surat berada (alias rs), disamarkan bersama suratnya. */
+const KOLOM_RANGKAIAN_SURAT: Partial<Record<NamaKolom, SQL>> = {
+    rangkaian_id: tampil(sql`rs.id`), rangkaian_kode: tampil(sql`rs.kode`), rangkaian_status: tampil(sql`rs.status`),
+    rangkaian_pencatat: tampil(sql`rs.unit_pencatat_id`), rangkaian_pengolah: tampil(sql`rs.unit_pengolah_id`),
+};
+
+function cabangSmBelumDitindaklanjuti(k: KonteksPd): SQL {
+    const t: TargetVisibilitas = { type: 'surat_masuk', alias: 'sm' };
+    const dataLama = dataLamaSurat(k, t);
+    return sql`SELECT ${pilih({
+        ...kolomSuratMasuk(k), ...KOLOM_RANGKAIAN_SURAT,
+        kategori: sql`'sm_belum_ditindaklanjuti'::text`, urut_id: sql`sm.id::text`, kunci_id: tampil(sql`sm.id::text`),
+        tanggal_urut: sql`sm.created_at::timestamptz`, data_lama: dataLama,
+    })}
+    FROM surat_masuk sm
+    JOIN unit_kerja u ON u.id = sm.unit_kerja_id
+    LEFT JOIN rangkaian_anggota ag ON ag.surat_masuk_id = sm.id
+    LEFT JOIN rangkaian_surat rs ON rs.id = ag.rangkaian_id
+    ${lateralTerlihat(k, t)}
+    WHERE ${cakupanSurat(k, t)}
+      AND ${saringDataLama(k, dataLama)}
+      AND coalesce(rs.status, 'aktif') NOT IN ('selesai', 'diberkaskan')
+      AND NOT EXISTS (SELECT 1 FROM surat_distributions d WHERE d.surat_masuk_id = sm.id AND d.status <> 'rejected')
+      AND NOT EXISTS (SELECT 1 FROM surat_keluar bk WHERE bk.balasan_untuk = sm.id AND bk.is_deleted IS NOT TRUE)
+      AND NOT EXISTS (
+          SELECT 1 FROM rangkaian_relasi rr
+            JOIN rangkaian_anggota da ON da.id = rr.dari_anggota_id
+            JOIN surat_keluar dk ON dk.id = da.surat_keluar_id
+           WHERE rr.ke_anggota_id = ag.id AND rr.cancelled_at IS NULL
+             AND rr.jenis_relasi IN ('balasan', 'tindak_lanjut') AND dk.is_deleted IS NOT TRUE)`;
+}
+
+function cabangDisposisiTerbuka(k: KonteksPd): SQL {
+    const t: TargetVisibilitas = { type: 'surat_masuk', alias: 'sm' };
+    const dataLama = sql`coalesce(rs.asal = 'data_lama', false)`;
+    const cakupan: SQL[] = [milikSendiri(k, sql`d.target_unit_id`), milikSendiri(k, sql`d.source_unit_id`)];
+    if (k.ctx.pengawas) cakupan.push(dalamCakupanPengawasSql(sql`d.target_unit_id`));
+    return sql`SELECT ${pilih({
+        ...kolomSuratMasuk(k), ...KOLOM_RANGKAIAN_SURAT,
+        kategori: sql`'disposisi_terbuka'::text`, urut_id: sql`d.id::text`, kunci_id: sql`d.id::text`,
+        distribusi_id: sql`d.id`, distribusi_status: sql`d.status`, target_unit_nama: sql`ut.name`,
+        target_saya: milikSendiri(k, sql`d.target_unit_id`), batas_waktu: sql`d.batas_waktu::text`,
+        lewat_batas: sql`coalesce(d.batas_waktu < ${k.hariIni}::date, false)`,
+        tanggal_urut: sql`d.sent_at::timestamptz`, data_lama: dataLama,
+    })}
+    FROM surat_distributions d
+    JOIN surat_masuk sm ON sm.id = d.surat_masuk_id
+    JOIN unit_kerja u ON u.id = sm.unit_kerja_id
+    JOIN unit_kerja ut ON ut.id = d.target_unit_id
+    LEFT JOIN rangkaian_surat rs ON rs.id = d.rangkaian_id
+    ${lateralTerlihat(k, t)}
+    WHERE d.status IN ('sent', 'received')
+      AND sm.is_deleted IS NOT TRUE
+      AND (${sql.join(cakupan, sql` OR `)})
+      AND ${saringDataLama(k, dataLama)}`;
+}
+
+function cabangSkTanpaNdPenjelas(k: KonteksPd): SQL {
+    const t: TargetVisibilitas = { type: 'surat_keluar', alias: 'sk' };
+    const dataLama = dataLamaSurat(k, t);
+    return sql`SELECT ${pilih({
+        ...kolomSuratKeluar(k), ...KOLOM_RANGKAIAN_SURAT,
+        kategori: sql`'sk_tanpa_nd_penjelas'::text`, urut_id: sql`sk.id::text`, kunci_id: tampil(sql`sk.id::text`),
+        tanggal_urut: sql`sk.created_at::timestamptz`, data_lama: dataLama,
+    })}
+    FROM surat_keluar sk
+    JOIN unit_kerja u ON u.id = sk.unit_kerja_id
+    LEFT JOIN rangkaian_anggota ag ON ag.surat_keluar_id = sk.id
+    LEFT JOIN rangkaian_surat rs ON rs.id = ag.rangkaian_id
+    ${lateralTerlihat(k, t)}
+    WHERE ${cakupanSurat(k, t)}
+      AND ${saringDataLama(k, dataLama)}
+      AND sk.naskah_dinas ~* 'keputusan'
+      AND sk.approval_status = 'approved'
+      AND coalesce(rs.status, 'aktif') <> 'diberkaskan'
+      AND NOT EXISTS (
+          SELECT 1 FROM rangkaian_relasi rr
+            JOIN rangkaian_anggota da ON da.id = rr.dari_anggota_id
+            JOIN surat_keluar nd ON nd.id = da.surat_keluar_id
+           WHERE rr.ke_anggota_id = ag.id AND rr.cancelled_at IS NULL
+             AND rr.jenis_relasi = 'menjelaskan' AND nd.is_deleted IS NOT TRUE)`;
+}
+
+function cabangTindakLanjutTertahan(k: KonteksPd): SQL {
+    const t: TargetVisibilitas = { type: 'surat_keluar', alias: 'sk' };
+    const dataLama = sql`(rs.asal = 'data_lama')`;
+    return sql`SELECT ${pilih({
+        ...kolomSuratKeluar(k), ...KOLOM_RANGKAIAN_SURAT,
+        kategori: sql`'tindak_lanjut_tertahan'::text`, urut_id: sql`sk.id::text`, kunci_id: tampil(sql`sk.id::text`),
+        tanggal_urut: sql`sk.updated_at::timestamptz`, data_lama: dataLama,
+    })}
+    FROM rangkaian_anggota ag
+    JOIN surat_keluar sk ON sk.id = ag.surat_keluar_id
+    JOIN rangkaian_surat rs ON rs.id = ag.rangkaian_id
+    JOIN unit_kerja u ON u.id = sk.unit_kerja_id
+    ${lateralTerlihat(k, t)}
+    WHERE ${cakupanSurat(k, t)}
+      AND ${saringDataLama(k, dataLama)}
+      AND sk.approval_status IN ('draft', 'pending', 'rejected')
+      AND rs.status IN ('aktif', 'selesai')`;
+}
+
+function cabangSiapDiberkaskan(k: KonteksPd): SQL {
+    const dataLama = sql`(rs.asal = 'data_lama')`;
+    // Judul mengikuti keterbacaan induk mode 'read' (sama dengan Task 5): judul SELALU disamarkan bila induk terkendali.
+    const indukTerbaca = sql`coalesce(
+        (im.id IS NOT NULL AND ${visibleSql(k.ctx, { type: 'surat_masuk', alias: 'im' }, 'read')})
+        OR (ik.id IS NOT NULL AND ${visibleSql(k.ctx, { type: 'surat_keluar', alias: 'ik' }, 'read')}), false)`;
+    return sql`SELECT ${pilih({
+        kategori: sql`'siap_diberkaskan'::text`, urut_id: sql`rs.id::text`, kunci_id: sql`rs.id::text`,
+        masked: sql`false`, terbaca: sql`vi.induk_terbaca`, jenis: sql`'rangkaian'::text`,
+        unit_kerja_id: sql`rs.unit_pencatat_id`, unit_nama: sql`u.name`, unit_sendiri: milikSendiri(k, sql`rs.unit_pencatat_id`),
+        rangkaian_id: sql`rs.id`, rangkaian_kode: sql`rs.kode`, rangkaian_status: sql`rs.status`,
+        rangkaian_judul: sql`CASE WHEN vi.induk_terbaca THEN rs.judul END`,
+        rangkaian_pencatat: sql`rs.unit_pencatat_id`, rangkaian_pengolah: sql`rs.unit_pengolah_id`,
+        rangkaian_pengolah_nama: sql`uo.name`, induk_terbaca: sql`vi.induk_terbaca`,
+        tanggal_urut: sql`rs.selesai_at`, data_lama: dataLama,
+    })}
+    FROM rangkaian_surat rs
+    JOIN unit_kerja u ON u.id = rs.unit_pencatat_id
+    LEFT JOIN unit_kerja uo ON uo.id = rs.unit_pengolah_id
+    LEFT JOIN rangkaian_anggota ai ON ai.rangkaian_id = rs.id AND ai.peran = 'induk'
+    LEFT JOIN surat_masuk im ON im.id = ai.surat_masuk_id
+    LEFT JOIN surat_keluar ik ON ik.id = ai.surat_keluar_id
+    CROSS JOIN LATERAL (SELECT ${indukTerbaca} AS induk_terbaca) vi
+    WHERE rs.status = 'selesai'
+      AND ${lingkupRangkaianSql(k.ctx, 'rs')}
+      AND ${saringDataLama(k, dataLama)}`;
+}
+
+function cabangSkTanpaAsal(k: KonteksPd): SQL {
+    const t: TargetVisibilitas = { type: 'surat_keluar', alias: 'sk' };
+    const dataLama = dataLamaSurat(k, t);
+    return sql`SELECT ${pilih({
+        ...kolomSuratKeluar(k),
+        kategori: sql`'sk_tanpa_asal'::text`, urut_id: sql`sk.id::text`, kunci_id: tampil(sql`sk.id::text`),
+        tanggal_urut: sql`sk.created_at::timestamptz`, data_lama: dataLama,
+    })}
+    FROM surat_keluar sk
+    JOIN unit_kerja u ON u.id = sk.unit_kerja_id
+    ${lateralTerlihat(k, t)}
+    WHERE ${cakupanSurat(k, t)}
+      AND ${saringDataLama(k, dataLama)}
+      AND sk.asal_naskah IS NULL
+      AND NOT EXISTS (SELECT 1 FROM rangkaian_anggota ax WHERE ax.surat_keluar_id = sk.id)`;
+}
+
+const CABANG: Record<KategoriPerluDilengkapi, (k: KonteksPd) => SQL> = {
+    sm_belum_ditindaklanjuti: cabangSmBelumDitindaklanjuti,
+    disposisi_terbuka: cabangDisposisiTerbuka,
+    sk_tanpa_nd_penjelas: cabangSkTanpaNdPenjelas,
+    tindak_lanjut_tertahan: cabangTindakLanjutTertahan,
+    siap_diberkaskan: cabangSiapDiberkaskan,
+    sk_tanpa_asal: cabangSkTanpaAsal,
+};
+
+function semuaSql(k: KonteksPd, kategori?: KategoriPerluDilengkapi): SQL {
+    const daftar = kategori ? [kategori] : [...KATEGORI_PERLU_DILENGKAPI];
+    return sql.join(daftar.map(nama => CABANG[nama](k)), sql` UNION ALL `);
+}
+
+function viaBaris(row: BarisPerluDilengkapi, k: KonteksPd): 'owner' | 'pengawas' | 'peserta' {
+    if (row.unit_sendiri) return 'owner';
+    return k.ctx.pengawas && dalamCakupanPengawas(row.unit_kerja_id) ? 'pengawas' : 'peserta';
+}
+
+/** Aksi baris memakai aturan P3 (aksi.ts). Aksi yang membaca/menindaklanjuti isi hanya bila visibleSql 'read' lolos. */
+function aksiUntuk(row: BarisPerluDilengkapi, k: KonteksPd): PerluDilengkapiAksi[] {
+    const role = k.user.role ?? '';
+    if (row.kategori === 'siap_diberkaskan') {
+        const bolehBerkaskan = computeRangkaianAksi({
+            role, unitEfektif: k.ctx.unitJangkauan, isPengawas: k.ctx.pengawas,
+            rangkaian: { status: 'selesai', unitPencatatId: row.rangkaian_pencatat ?? '', unitPengolahId: row.rangkaian_pengolah },
+            adaDisposisiTerbuka: false,
+        }).includes('berkaskan');
+        return bolehBerkaskan ? ['berkaskan'] : [];
+    }
+    const aksi = new Set<PerluDilengkapiAksi>();
+    if (row.kategori === 'disposisi_terbuka' && row.target_saya && isFullAdmin(k.user)) aksi.add('buka_kotak_disposisi');
+    if (row.masked) return [...aksi];
+    if (row.kategori === 'sk_tanpa_asal' && row.unit_sendiri && isFullAdmin(k.user)) aksi.add('tandai_inisiatif');
+    if (row.terbaca && row.jenis !== 'rangkaian') {
+        const suratAksi = computeSuratAksi(role, {
+            jenis: row.jenis, via: viaBaris(row, k), isArchived: Boolean(row.is_archived), naskahDinas: row.naskah,
+            rangkaian: row.rangkaian_id && row.rangkaian_kode && row.rangkaian_status
+                ? { id: row.rangkaian_id, kode: row.rangkaian_kode, status: row.rangkaian_status,
+                    unitPencatatId: row.rangkaian_pencatat ?? '', unitPengolahId: row.rangkaian_pengolah }
+                : null,
+            distribusiUnitSaya: null, isPengawas: k.ctx.pengawas,
+        });
+        if (row.kategori === 'sm_belum_ditindaklanjuti') {
+            if (suratAksi.includes('saya_balas') || suratAksi.includes('buat_nota_dinas')) aksi.add('tindak_lanjut');
+            if (suratAksi.includes('disposisi')) aksi.add('disposisi');
+        }
+        if (row.kategori === 'sk_tanpa_nd_penjelas' && suratAksi.includes('buat_nd_penjelas')) aksi.add('buat_nd_penjelas');
+        if (row.kategori === 'sk_tanpa_asal' && suratAksi.includes('tautkan')) aksi.add('tautkan');
+        aksi.add('buka_surat');
+    }
+    return [...aksi].sort();
+}
+
+function keItem(row: BarisPerluDilengkapi, urutan: number, k: KonteksPd): PerluDilengkapiItem {
+    const aksiDiizinkan = aksiUntuk(row, k);
+    const unitNama = row.unit_nama ?? row.unit_kerja_id;
+    const disposisi = row.distribusi_id
+        ? { id: row.distribusi_id, status: row.distribusi_status ?? '', targetUnitNama: row.target_unit_nama,
+            batasWaktu: row.batas_waktu, lewatBatas: Boolean(row.lewat_batas) }
+        : null;
+    if (row.masked) {
+        // Placeholder §4.8: kategori, jenis, unit pemilik, dan metadata routing disposisi saja.
+        return {
+            kunci: `${row.kategori}:${row.kunci_id ?? `tersamar-${urutan + 1}`}`,
+            kategori: row.kategori, masked: true, label: 'Dikecualikan', jenis: row.jenis, unitNama,
+            surat: null, rangkaian: null, disposisi, dataLama: Boolean(row.data_lama), aksiDiizinkan,
+        };
+    }
+    const jenisSurat = row.jenis === 'rangkaian' ? null : row.jenis;
+    return {
+        kunci: `${row.kategori}:${row.kunci_id}`,
+        kategori: row.kategori, masked: false, jenis: row.jenis, unitNama,
+        surat: jenisSurat && row.surat_id ? {
+            jenis: jenisSurat, id: row.surat_id, nomorSurat: row.nomor_surat, perihal: row.perihal, tanggalSurat: row.tanggal_surat,
+            naskahDinas: row.naskah, dari: jenisSurat === 'surat_masuk' ? row.pihak : null,
+            kepada: jenisSurat === 'surat_keluar' ? row.pihak : null, sifatSurat: row.sifat,
+            unitKerjaId: row.unit_kerja_id, approvalStatus: row.status_persetujuan,
+        } : null,
+        rangkaian: row.rangkaian_id && row.rangkaian_kode && row.rangkaian_status ? {
+            id: row.rangkaian_id, kode: row.rangkaian_kode, status: row.rangkaian_status,
+            judul: row.jenis === 'rangkaian' ? judulRangkaianTampil(row.rangkaian_kode, row.rangkaian_judul, !row.induk_terbaca) : null,
+            unitPencatatId: row.rangkaian_pencatat, unitPengolahId: row.rangkaian_pengolah, unitPengolahNama: row.rangkaian_pengolah_nama,
+        } : null,
+        disposisi, dataLama: Boolean(row.data_lama), aksiDiizinkan,
+    };
+}
+
+async function dalamTransaksiBaca<T>(
+    user: PenggunaPerluDilengkapi,
+    tampilkanDataLama: boolean,
+    kerja: (tx: PelaksanaSql, k: KonteksPd) => Promise<T>,
+): Promise<T> {
+    return db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL statement_timeout = '2s'`);
+        const k: KonteksPd = {
+            user, ctx: await resolveKonteksBaca(user, tx), batas: await resolveBatasDataLama(tx),
+            tampilkanDataLama, hariIni: jakartaDate(),
+        };
+        return kerja(tx, k);
+    });
+}
+
+export const perluDilengkapiService = {
+    async list(user: PenggunaPerluDilengkapi, filter: PerluDilengkapiFilter) {
+        return dalamTransaksiBaca(user, filter.tampilkanDataLama, async (tx, k) => {
+            const offset = (filter.page - 1) * filter.limit;
+            const rows = barisDari<BarisPerluDilengkapi>(await tx.execute(sql`
+                WITH semua AS (${semuaSql(k, filter.kategori)})
+                SELECT ${KOLOM_KELUAR}, count(*) OVER ()::int AS total
+                  FROM semua s
+                 ORDER BY s.lewat_batas DESC, s.tanggal_urut DESC NULLS LAST, s.kategori, s.urut_id
+                 LIMIT ${filter.limit} OFFSET ${offset}`));
+            const total = Number(rows[0]?.total ?? 0);
+            return {
+                data: rows.map((row, index) => keItem(row, offset + index, k)),
+                pagination: { page: filter.page, limit: filter.limit, total, totalPages: Math.max(1, Math.ceil(total / filter.limit)) },
+                meta: { batasDataLama: k.batas, tampilkanDataLama: filter.tampilkanDataLama },
+            };
+        });
+    },
+
+    async ringkasan(user: PenggunaPerluDilengkapi, filter: { tampilkanDataLama: boolean }) {
+        return dalamTransaksiBaca(user, filter.tampilkanDataLama, async (tx, k) => {
+            const rows = barisDari<{ kategori: KategoriPerluDilengkapi; jumlah: number; lewat: number }>(await tx.execute(sql`
+                WITH semua AS (${semuaSql(k)})
+                SELECT s.kategori, count(*)::int AS jumlah, (count(*) FILTER (WHERE s.lewat_batas))::int AS lewat
+                  FROM semua s
+                 GROUP BY s.kategori`));
+            const perKategori = Object.fromEntries(KATEGORI_PERLU_DILENGKAPI.map(nama => [nama, 0])) as Record<KategoriPerluDilengkapi, number>;
+            let lewatBatas = 0;
+            for (const row of rows) {
+                perKategori[row.kategori] = Number(row.jumlah);
+                lewatBatas += Number(row.lewat);
+            }
+            const total = Object.values(perKategori).reduce((jumlah, nilai) => jumlah + nilai, 0);
+            return { perKategori, total, lewatBatas, batasDataLama: k.batas };
+        });
+    },
+};
+```
+
+- [ ] **Step 4: Jalankan, pastikan lulus (termasuk tes daftar Task 5 setelah refaktor lingkup)**
+
+Run: `(cd backend && npx vitest run src/__tests__/perlu-dilengkapi.integration.test.ts src/__tests__/rangkaian-daftar.integration.test.ts)`
+Expected: PASS (11 + 5 tes). Bila uji paritas `buka_surat` gagal pada satu pasangan, **jangan** melonggarkan tes. Periksa bahwa aksi baca hanya ditambahkan saat `row.terbaca` (mode `'read'`), bukan `masked`/`'list'`. Bila `visibleSql 'read'` sendiri menyimpang dari `checkRead`, itu temuan P2 (property test P2 seharusnya sudah menangkapnya); laporkan ke pemilik P2.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd "D:/Projects/New folder/simsa-atrbpn"
+git add backend/src/services/perlu-dilengkapi.constants.ts backend/src/services/perlu-dilengkapi.service.ts backend/src/services/rangkaian-daftar.service.ts backend/src/__tests__/perlu-dilengkapi.integration.test.ts
+git commit -m "feat(perlu-dilengkapi): layanan daftar kerja enam kategori dengan penyamaran dan batas data lama" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 17: Tandai Inisiatif (`asalNaskahService.tandaiInisiatif`) — pemilik saja, diaudit, berlaku pada surat terarsip (D7)
+
+Skema update P3 tidak memuat `asalNaskah` (Task 1 Step 2), sehingga belum ada jalur untuk menandai surat keluar lama sebagai inisiatif. Task ini menambah jalur tunggal tersebut. Pemeriksaan pada `0021_archive_source_domain_integrity.sql`: fungsi `protect_archived_surat_source()` (trigger `surat_keluar_archived_source_guard`, `BEFORE UPDATE OR DELETE`) hanya menolak perubahan `id`, `is_archived`, `is_deleted`, serta `unit_kerja_id`/`tahun`/`nomor_surat`/`tanggal_surat`/`perihal`/kode klasifikasi yang menyimpang dari arsip. Karena `asal_naskah` dan `updated_at` tidak dijaga, pembaruan boleh dilakukan pada surat `approved` maupun terarsip. Tidak ada trigger lain pada `surat_keluar`.
+
+**Files:**
+- Create: `backend/src/services/asal-naskah.service.ts`
+- Create: `backend/src/__tests__/asal-naskah.integration.test.ts`
+
+**Interfaces:**
+- Consumes (P2): `resolveKonteksBaca`, `visibleSql(ctx, target, 'list')`, `barisDari` (`visibility-spec.ts`); `isAllowedForRecordUnit` (`record-access.service.ts`)
+- Consumes (P3): `isFullAdmin` (`services/rangkaian/roles.ts`)
+- Consumes (repo): `auditLogService.logActionOrThrow(data, executor)`, `CriticalAuditContext`, `NotFoundError`, `ConflictError`
+- Consumes (Task 3): helper `lacak-pglite.ts`
+- Produces:
+  - `asalNaskahService.tandaiInisiatif(user: { id: string; role: string; unitKerjaId: string | null }, suratKeluarId: string, audit: CriticalAuditContext): Promise<{ id: string; asalNaskah: 'inisiatif' }>`
+  - `PESAN_ASAL_SUDAH_ADA = 'Asal naskah surat ini sudah ditetapkan.'`
+  - `PESAN_BUKAN_INISIATIF = 'Surat ini menindaklanjuti surat lain; tautkan relasinya alih-alih menandai inisiatif.'`
+  - Galat: `NotFoundError('Surat keluar')` (404 seragam, tanpa oracle) untuk surat tidak ada/terhapus, bukan FULL_ADMIN, bukan unit pemilik, atau tidak lolos kebijakan list; `ConflictError` (409) untuk asal terisi atau surat yang menindaklanjuti surat lain
+  - Audit `{ action: 'update', entityType: 'surat_keluar', changes: { before: { asalNaskah: null }, after: { asalNaskah: 'inisiatif' }, fields: ['asalNaskah'], sumber: 'perlu_dilengkapi', approvalStatus, isArchived } }` di transaksi yang sama
+
+- [ ] **Step 1: Tulis tes yang gagal**
+
+```ts
+// backend/src/__tests__/asal-naskah.integration.test.ts
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PGlite } from '@electric-sql/pglite';
+import { drizzle } from 'drizzle-orm/pglite';
+import * as schema from '../db/schema';
+import {
+    createMigratedPglite, insertRangkaian, insertRelasi, insertSuratKeluar, insertSuratMasuk, insertUser,
+    resetRangkaianFixture, seedUnits, uid, type PenggunaUji,
+} from './helpers/lacak-pglite';
+
+const holder = vi.hoisted(() => ({ db: null as any }));
+vi.mock('../config/database', () => ({ db: holder.db }));
+
+let database: PGlite;
+let asalNaskahService: typeof import('../services/asal-naskah.service').asalNaskahService;
+let auditLogService: typeof import('../services/audit-log.service').auditLogService;
+
+const pengguna = {
+    bppt: { id: uid(901), email: 'bppt@example.test', name: 'Admin BPPT', role: 'admin_unit', unitKerjaId: 'dir_bppt' },
+    ptep: { id: uid(902), email: 'ptep@example.test', name: 'Admin PTEP', role: 'admin_unit', unitKerjaId: 'dir_ptep' },
+    tu: { id: uid(903), email: 'tu@example.test', name: 'Admin TU', role: 'admin_unit', unitKerjaId: 'sesditjen' },
+    staffBppt: { id: uid(904), email: 'staff@example.test', name: 'Staff BPPT', role: 'staff', unitKerjaId: 'dir_bppt' },
+    superAdmin: { id: uid(906), email: 'super@example.test', name: 'Super Admin', role: 'super_admin', unitKerjaId: null },
+} satisfies Record<string, PenggunaUji>;
+const audit = (user: PenggunaUji) => ({ userId: user.id, userEmail: user.email });
+const sk: Record<'lama' | 'arsip' | 'rahasia' | 'sudahAsal' | 'balasan' | 'relasi' | 'terhapus', string> = {} as never;
+const asalDari = async (id: string) =>
+    (await database.query<{ asal_naskah: string | null }>('SELECT asal_naskah FROM surat_keluar WHERE id = $1', [id])).rows[0].asal_naskah;
+
+beforeAll(async () => {
+    database = await createMigratedPglite();
+    holder.db = drizzle(database, { schema });
+    ({ asalNaskahService } = await import('../services/asal-naskah.service'));
+    ({ auditLogService } = await import('../services/audit-log.service'));
+}, 180_000);
+afterAll(async () => { await database?.close(); });
+
+beforeEach(async () => {
+    vi.restoreAllMocks();
+    // arsip.source_surat_id polimorfik tanpa FK: kosongkan lebih dulu agar id surat deterministik tidak bertabrakan.
+    await database.exec('TRUNCATE arsip CASCADE');
+    await resetRangkaianFixture(database);
+    await seedUnits(database, [
+        { id: 'sesditjen', name: 'Sesditjen', pengawas: true },
+        { id: 'dir_bppt', name: 'Dit. BPPT' },
+        { id: 'dir_ptep', name: 'Dit. PTEP' },
+    ]);
+    for (const user of Object.values(pengguna)) await insertUser(database, user);
+    sk.lama = await insertSuratKeluar(database, { n: 1, unit: 'dir_bppt', nomor: 'ND-1/2025', tanggal: '2025-03-01' });
+    sk.arsip = await insertSuratKeluar(database, { n: 2, unit: 'dir_bppt', nomor: 'ND-2/2025', tanggal: '2025-03-02' });
+    sk.rahasia = await insertSuratKeluar(database, { n: 3, unit: 'dir_bppt', nomor: 'ND-3/2025', tanggal: '2025-03-03', klasifikasi: 'rahasia' });
+    sk.sudahAsal = await insertSuratKeluar(database, { n: 4, unit: 'dir_bppt', nomor: 'ND-4/2026', tanggal: '2026-03-04' });
+    sk.balasan = await insertSuratKeluar(database, { n: 5, unit: 'dir_bppt', nomor: 'ND-5/2025', tanggal: '2025-03-05' });
+    sk.relasi = await insertSuratKeluar(database, { n: 6, unit: 'dir_bppt', nomor: 'ND-6/2025', tanggal: '2025-03-06' });
+    sk.terhapus = await insertSuratKeluar(database, { n: 7, unit: 'dir_bppt', nomor: 'ND-7/2025', tanggal: '2025-03-07' });
+    const smBppt = await insertSuratMasuk(database, { n: 50, unit: 'dir_bppt', nomor: 'SM-50/2025', tanggal: '2025-02-01' });
+    const smTu = await insertSuratMasuk(database, { n: 51, unit: 'sesditjen', nomor: 'SM-51/2025', tanggal: '2025-02-02' });
+    const r = await insertRangkaian(database, {
+        n: 1, kode: 'RS-2025-000001', tahun: 2025, pencatat: 'sesditjen', judul: 'Permintaan data',
+        anggota: [{ jenis: 'surat_masuk', id: smTu, peran: 'induk', unit: 'sesditjen' }, { jenis: 'surat_keluar', id: sk.relasi, unit: 'dir_bppt' }],
+    });
+    await insertRelasi(database, { rangkaianId: r.id, dari: r.anggota[1], ke: r.anggota[0], jenis: 'tindak_lanjut' });
+    await database.exec(`
+        UPDATE surat_keluar SET klasifikasi_keamanan = NULL WHERE id = '${sk.lama}';
+        UPDATE surat_keluar SET asal_naskah = 'tindak_lanjut' WHERE id = '${sk.sudahAsal}';
+        UPDATE surat_keluar SET balasan_untuk = '${smBppt}' WHERE id = '${sk.balasan}';
+        UPDATE surat_keluar SET is_deleted = true WHERE id = '${sk.terhapus}';
+        INSERT INTO arsip (unit_kerja_id, jenis_arsip, source_surat_id, tahun, nomor_surat_original, tanggal_surat_original, perihal_original)
+        VALUES ('dir_bppt', 'keluar', '${sk.arsip}', 2025, 'ND-2/2025', '2025-03-02', 'Undangan rapat');
+    `);
+});
+
+describe('asalNaskahService.tandaiInisiatif (D7)', () => {
+    it('pemilik menandai surat keluar lama (klasifikasi NULL = Terbatas) dan menulis audit di transaksi yang sama', async () => {
+        await expect(asalNaskahService.tandaiInisiatif(pengguna.bppt, sk.lama, audit(pengguna.bppt)))
+            .resolves.toEqual({ id: sk.lama, asalNaskah: 'inisiatif' });
+        expect(await asalDari(sk.lama)).toBe('inisiatif');
+        const log = await database.query<{ action: string; entity_type: string; user_id: string; changes: any }>(
+            'SELECT action, entity_type, user_id, changes FROM audit_log WHERE entity_id = $1', [sk.lama]);
+        expect(log.rows).toHaveLength(1);
+        expect(log.rows[0]).toMatchObject({
+            action: 'update', entity_type: 'surat_keluar', user_id: pengguna.bppt.id,
+            changes: { before: { asalNaskah: null }, after: { asalNaskah: 'inisiatif' }, fields: ['asalNaskah'], sumber: 'perlu_dilengkapi', approvalStatus: 'approved', isArchived: false },
+        });
+    });
+
+    it('berlaku pada surat terarsip: trigger 0021 tidak menjaga asal_naskah, tetapi tetap menjaga perihal', async () => {
+        const arsip = await database.query<{ is_archived: boolean }>('SELECT is_archived FROM surat_keluar WHERE id = $1', [sk.arsip]);
+        expect(arsip.rows[0].is_archived).toBe(true);
+        await expect(asalNaskahService.tandaiInisiatif(pengguna.bppt, sk.arsip, audit(pengguna.bppt)))
+            .resolves.toEqual({ id: sk.arsip, asalNaskah: 'inisiatif' });
+        expect(await asalDari(sk.arsip)).toBe('inisiatif');
+        await expect(database.query(`UPDATE surat_keluar SET perihal = 'Perihal diubah' WHERE id = $1`, [sk.arsip]))
+            .rejects.toThrow(/cannot diverge/i);
+    });
+
+    it('super_admin boleh menandai surat unit mana pun', async () => {
+        await expect(asalNaskahService.tandaiInisiatif(pengguna.superAdmin, sk.lama, audit(pengguna.superAdmin)))
+            .resolves.toMatchObject({ asalNaskah: 'inisiatif' });
+    });
+
+    it.each([
+        ['unit lain', 'ptep', 'lama'],
+        ['pengawas yang bukan pemilik', 'tu', 'lama'],
+        ['role read-only di unit pemilik', 'staffBppt', 'lama'],
+        ['kelas di luar kebijakan list pemilik', 'bppt', 'rahasia'],
+        ['surat terhapus', 'bppt', 'terhapus'],
+    ] as const)('404 seragam untuk %s, tanpa perubahan', async (_label, nama, surat) => {
+        await expect(asalNaskahService.tandaiInisiatif(pengguna[nama], sk[surat], audit(pengguna[nama])))
+            .rejects.toMatchObject({ statusCode: 404, message: 'Surat keluar tidak ditemukan.' });
+        expect(await asalDari(sk[surat])).toBeNull();
+    });
+
+    it('404 untuk id yang tidak ada', async () => {
+        await expect(asalNaskahService.tandaiInisiatif(pengguna.bppt, uid(999), audit(pengguna.bppt)))
+            .rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it.each([
+        ['asal sudah terisi', 'sudahAsal', 'Asal naskah surat ini sudah ditetapkan.'],
+        ['balasan_untuk terisi', 'balasan', 'Surat ini menindaklanjuti surat lain; tautkan relasinya alih-alih menandai inisiatif.'],
+        ['sisi dari relasi aktif', 'relasi', 'Surat ini menindaklanjuti surat lain; tautkan relasinya alih-alih menandai inisiatif.'],
+    ] as const)('409 bila %s', async (_label, surat, pesan) => {
+        await expect(asalNaskahService.tandaiInisiatif(pengguna.bppt, sk[surat], audit(pengguna.bppt)))
+            .rejects.toMatchObject({ statusCode: 409, message: pesan });
+    });
+
+    it('UPDATE dibatalkan bila audit gagal (transaksi yang sama)', async () => {
+        vi.spyOn(auditLogService, 'logActionOrThrow').mockRejectedValueOnce(new Error('audit mati'));
+        await expect(asalNaskahService.tandaiInisiatif(pengguna.bppt, sk.lama, audit(pengguna.bppt))).rejects.toThrow('audit mati');
+        expect(await asalDari(sk.lama)).toBeNull();
+    });
+});
+```
+
+- [ ] **Step 2: Jalankan, pastikan gagal**
+
+Run: `(cd backend && npx vitest run src/__tests__/asal-naskah.integration.test.ts)`
+Expected: FAIL. Impor dinamis `../services/asal-naskah.service` di `beforeAll` gagal karena modul belum ada, sehingga seluruh tes di berkas ini gagal.
+
+- [ ] **Step 3: Implementasi minimal**
+
+```ts
+// backend/src/services/asal-naskah.service.ts
+import { sql } from 'drizzle-orm';
+import { db } from '../config/database.js';
+import { auditLogService, type CriticalAuditContext } from './audit-log.service.js';
+import { barisDari, resolveKonteksBaca, visibleSql } from './access/visibility-spec.js';
+import { isAllowedForRecordUnit } from './record-access.service.js';
+import { isFullAdmin } from './rangkaian/roles.js';
+import { ConflictError, NotFoundError } from '../utils/errors.js';
+
+export const PESAN_ASAL_SUDAH_ADA = 'Asal naskah surat ini sudah ditetapkan.';
+export const PESAN_BUKAN_INISIATIF = 'Surat ini menindaklanjuti surat lain; tautkan relasinya alih-alih menandai inisiatif.';
+
+type PenggunaAsalNaskah = { id: string; role: string; unitKerjaId: string | null };
+type BarisSuratKeluar = {
+    id: string; unit_kerja_id: string; asal_naskah: string | null; balasan_untuk: string | null;
+    approval_status: string; is_archived: boolean | null; terlihat: boolean; tindak_lanjut: boolean;
+};
+
+export const asalNaskahService = {
+    /**
+     * D7: tetapkan asal_naskah='inisiatif' pada surat keluar yang belum punya asal.
+     * Hanya pemilik (FULL_ADMIN + unit pemilik + lolos kebijakan list). Sengaja tidak memakai check():
+     * check() mensyaratkan grant untuk Terbatas, termasuk surat lama berklasifikasi NULL, padahal yang diubah
+     * hanya metadata alur kerja dan respons tidak memuat isi surat. Berlaku juga untuk surat approved/terarsip:
+     * trigger 0021 tidak menjaga asal_naskah.
+     */
+    async tandaiInisiatif(user: PenggunaAsalNaskah, suratKeluarId: string, audit: CriticalAuditContext) {
+        return db.transaction(async (tx) => {
+            const ctx = await resolveKonteksBaca(user, tx);
+            const [row] = barisDari<BarisSuratKeluar>(await tx.execute(sql`
+                SELECT sk.id, sk.unit_kerja_id, sk.asal_naskah, sk.balasan_untuk, sk.approval_status, sk.is_archived,
+                       coalesce(${visibleSql(ctx, { type: 'surat_keluar', alias: 'sk' }, 'list')}, false) AS terlihat,
+                       EXISTS (SELECT 1 FROM rangkaian_anggota ax
+                                 JOIN rangkaian_relasi rx ON rx.dari_anggota_id = ax.id AND rx.cancelled_at IS NULL
+                                WHERE ax.surat_keluar_id = sk.id) AS tindak_lanjut
+                  FROM surat_keluar sk
+                 WHERE sk.id = ${suratKeluarId} AND sk.is_deleted IS NOT TRUE
+                 FOR UPDATE OF sk`));
+            // 404 seragam: tidak membedakan "tidak ada" dari "bukan milik Anda" (tanpa oracle).
+            if (!row || !isFullAdmin(user) || !isAllowedForRecordUnit(user, row.unit_kerja_id) || !row.terlihat) {
+                throw new NotFoundError('Surat keluar');
+            }
+            if (row.asal_naskah !== null) throw new ConflictError(PESAN_ASAL_SUDAH_ADA);
+            if (row.balasan_untuk !== null || row.tindak_lanjut) throw new ConflictError(PESAN_BUKAN_INISIATIF);
+
+            await tx.execute(sql`
+                UPDATE surat_keluar SET asal_naskah = 'inisiatif', updated_at = now()
+                 WHERE id = ${suratKeluarId} AND asal_naskah IS NULL`);
+            await auditLogService.logActionOrThrow({
+                ...audit,
+                action: 'update',
+                entityType: 'surat_keluar',
+                entityId: suratKeluarId,
+                changes: {
+                    before: { asalNaskah: null }, after: { asalNaskah: 'inisiatif' }, fields: ['asalNaskah'],
+                    sumber: 'perlu_dilengkapi', approvalStatus: row.approval_status, isArchived: Boolean(row.is_archived),
+                },
+            }, tx);
+            return { id: suratKeluarId, asalNaskah: 'inisiatif' as const };
+        });
+    },
+};
+```
+
+- [ ] **Step 4: Jalankan, pastikan lulus**
+
+Run: `(cd backend && npx vitest run src/__tests__/asal-naskah.integration.test.ts)`
+Expected: PASS (13 tes). Bila kasus terarsip gagal dengan `Archived source … cannot be detached`, periksa bahwa UPDATE tidak menyentuh `is_archived`/`is_deleted`. Jangan menambah pengecualian pada trigger 0021.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd "D:/Projects/New folder/simsa-atrbpn"
+git add backend/src/services/asal-naskah.service.ts backend/src/__tests__/asal-naskah.integration.test.ts
+git commit -m "feat(perlu-dilengkapi): tandai surat keluar lama sebagai inisiatif, pemilik saja dan diaudit" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 18: Route Perlu Dilengkapi (`GET /perlu-dilengkapi`, `/ringkasan`, `POST …/tandai-inisiatif`), allowlist demo, dan pemasangan di `app.ts` (D7)
+
+**Files:**
+- Create: `backend/src/routes/rangkaian-perlu-dilengkapi.routes.ts`
+- Create: `backend/src/__tests__/rangkaian-perlu-dilengkapi.routes.test.ts`
+- Modify: `backend/src/validators/schemas.ts` (tambah di akhir file, setelah `daftarRangkaianQuerySchema` Task 6)
+- Modify: `backend/src/app.ts` (impor + satu baris tepat setelah `app.use('/api/rangkaian', rangkaianDaftarRoutes);` Task 6)
+- Modify: `backend/src/middlewares/demo-access.middleware.ts` (`ALLOWED_METADATA_ROUTES`, setelah entri `exact('/rangkaian')` Task 6)
+
+**Interfaces:**
+- Consumes (Task 16): `perluDilengkapiService.list`, `perluDilengkapiService.ringkasan`, `KATEGORI_PERLU_DILENGKAPI` (dari `perlu-dilengkapi.constants.ts`)
+- Consumes (Task 17): `asalNaskahService.tandaiInisiatif`
+- Consumes (repo): `authMiddleware`, `roleMiddleware(allowedRoles)`, `canWriteMiddleware()`, `validateQuery`, `validateBody`, `validateIdParam(paramName)`, `res.locals.validatedQuery`
+- Produces:
+  - `perluDilengkapiQuerySchema` (`.strict()`) → `{ kategori?: KategoriPerluDilengkapi; tampilkanDataLama: boolean; page: number; limit: number }` dengan `tampilkanDataLama` dari string `'true'|'false'` (bawaan `false`), `page` 1–10000 (bawaan 1), `limit` 1–50 (bawaan 20); tipe `PerluDilengkapiQuery`
+  - `ringkasanPerluDilengkapiQuerySchema` (`.strict()`) → `{ tampilkanDataLama: boolean }`; tipe `RingkasanPerluDilengkapiQuery`
+  - `tandaiInisiatifSchema`: body kosong (`undefined` → `{}`), field apa pun → 400
+  - `GET /api/rangkaian/perlu-dilengkapi` → `{ success: true, data, pagination, meta }`
+  - `GET /api/rangkaian/perlu-dilengkapi/ringkasan` → `{ success: true, data: { perKategori, total, lewatBatas, batasDataLama } }`
+  - `POST /api/rangkaian/surat-keluar/:suratKeluarId/tandai-inisiatif` → `{ success: true, data: { id, asalNaskah: 'inisiatif' } }`
+  - Pengguna belum terprovisi (`user`) → 403 pada GET; role read-only → 403 pada POST; id bukan UUID → 400
+  - Urutan mount: `rangkaianDaftarRoutes` → `rangkaianPerluDilengkapiRoutes` → (`rangkaianBerkasRoutes` P5) → `rangkaianRoutes`
+
+- [ ] **Step 1: Tulis tes yang gagal**
+
+```ts
+// backend/src/__tests__/rangkaian-perlu-dilengkapi.routes.test.ts
+import fs from 'node:fs';
+import path from 'node:path';
+import express from 'express';
+import request from 'supertest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createDemoAccessMiddleware } from '../middlewares/demo-access.middleware.js';
+import { validateIdParam } from '../middlewares/validate.middleware.js';
+
+const ID = '550e8400-e29b-41d4-a716-446655440000';
+const BATAS = '2025-12-31T17:00:00.000Z';
+const mocks = vi.hoisted(() => ({
+    user: { id: 'user-1', email: 'user@example.test', name: 'Pengguna', role: 'admin_unit', unitKerjaId: 'dir_bppt' as string | null },
+    list: vi.fn(),
+    ringkasan: vi.fn(),
+    tandaiInisiatif: vi.fn(),
+}));
+vi.mock('../middlewares/auth.middleware.js', () => ({
+    authMiddleware: (req: any, _res: any, next: any) => { req.user = { ...mocks.user }; next(); },
+}));
+vi.mock('../services/perlu-dilengkapi.service.js', () => ({ perluDilengkapiService: { list: mocks.list, ringkasan: mocks.ringkasan } }));
+vi.mock('../services/asal-naskah.service.js', () => ({ asalNaskahService: { tandaiInisiatif: mocks.tandaiInisiatif } }));
+
+const { default: router } = await import('../routes/rangkaian-perlu-dilengkapi.routes.js');
+const app = express();
+app.use(express.json());
+app.use('/api/rangkaian', router);
+// Router P2/P3 dengan GET /:id dipasang SETELAH router D7 (urutan app.ts); permintaan D7 tidak boleh sampai ke sini.
+const routerUtama = express.Router();
+routerUtama.get('/:id', validateIdParam(), (_req, res) => { res.json({ tertangkap: true }); });
+app.use('/api/rangkaian', routerUtama);
+
+beforeEach(() => {
+    vi.clearAllMocks();
+    Object.assign(mocks.user, { role: 'admin_unit', unitKerjaId: 'dir_bppt' });
+    mocks.list.mockResolvedValue({
+        data: [{ kunci: 'sk_tanpa_asal:x' }], pagination: { page: 2, limit: 20, total: 21, totalPages: 2 },
+        meta: { batasDataLama: BATAS, tampilkanDataLama: true },
+    });
+    mocks.ringkasan.mockResolvedValue({ perKategori: { sk_tanpa_asal: 3 }, total: 3, lewatBatas: 1, batasDataLama: BATAS });
+    mocks.tandaiInisiatif.mockResolvedValue({ id: ID, asalNaskah: 'inisiatif' });
+});
+
+describe('GET /api/rangkaian/perlu-dilengkapi', () => {
+    it('meneruskan filter tervalidasi dan tidak tertangkap route /:id', async () => {
+        const response = await request(app).get('/api/rangkaian/perlu-dilengkapi?kategori=sk_tanpa_asal&tampilkanDataLama=true&page=2').expect(200);
+        expect(mocks.list).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }),
+            { kategori: 'sk_tanpa_asal', tampilkanDataLama: true, page: 2, limit: 20 });
+        expect(response.body).toEqual({
+            success: true, data: [{ kunci: 'sk_tanpa_asal:x' }], pagination: { page: 2, limit: 20, total: 21, totalPages: 2 },
+            meta: { batasDataLama: BATAS, tampilkanDataLama: true },
+        });
+    });
+
+    it('bawaan: tanpa kategori dan tanpa data lama', async () => {
+        await request(app).get('/api/rangkaian/perlu-dilengkapi').expect(200);
+        expect(mocks.list).toHaveBeenCalledWith(expect.anything(), { tampilkanDataLama: false, page: 1, limit: 20 });
+    });
+
+    it.each(['kategori=lainnya', 'tampilkanDataLama=ya', 'limit=51', 'page=0', 'unitKerjaId=ditjen'])('menolak kueri %s dengan 400', async (query) => {
+        await request(app).get(`/api/rangkaian/perlu-dilengkapi?${query}`).expect(400);
+        expect(mocks.list).not.toHaveBeenCalled();
+    });
+
+    it('ringkasan hanya menerima tampilkanDataLama', async () => {
+        const response = await request(app).get('/api/rangkaian/perlu-dilengkapi/ringkasan').expect(200);
+        expect(mocks.ringkasan).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), { tampilkanDataLama: false });
+        expect(response.body).toEqual({ success: true, data: { perKategori: { sk_tanpa_asal: 3 }, total: 3, lewatBatas: 1, batasDataLama: BATAS } });
+        await request(app).get('/api/rangkaian/perlu-dilengkapi/ringkasan?kategori=sk_tanpa_asal').expect(400);
+        expect(mocks.ringkasan).toHaveBeenCalledTimes(1);
+    });
+
+    it('menolak pengguna yang belum terprovisi; staff/auditor boleh membaca (cakupan ditentukan layanan)', async () => {
+        Object.assign(mocks.user, { role: 'user', unitKerjaId: null });
+        await request(app).get('/api/rangkaian/perlu-dilengkapi').expect(403);
+        await request(app).get('/api/rangkaian/perlu-dilengkapi/ringkasan').expect(403);
+        Object.assign(mocks.user, { role: 'staff', unitKerjaId: 'sesditjen' });
+        await request(app).get('/api/rangkaian/perlu-dilengkapi/ringkasan').expect(200);
+        expect(mocks.list).not.toHaveBeenCalled();
+    });
+});
+
+describe('POST /api/rangkaian/surat-keluar/:suratKeluarId/tandai-inisiatif', () => {
+    it('memanggil layanan dengan konteks audit', async () => {
+        const response = await request(app).post(`/api/rangkaian/surat-keluar/${ID}/tandai-inisiatif`).send({}).expect(200);
+        expect(response.body).toEqual({ success: true, data: { id: ID, asalNaskah: 'inisiatif' } });
+        expect(mocks.tandaiInisiatif).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), ID,
+            expect.objectContaining({ userId: 'user-1', userEmail: 'user@example.test' }));
+    });
+
+    it('tanpa body diterima; body berisi field apa pun ditolak 400', async () => {
+        await request(app).post(`/api/rangkaian/surat-keluar/${ID}/tandai-inisiatif`).expect(200);
+        await request(app).post(`/api/rangkaian/surat-keluar/${ID}/tandai-inisiatif`).send({ asalNaskah: 'tindak_lanjut' }).expect(400);
+        expect(mocks.tandaiInisiatif).toHaveBeenCalledTimes(1);
+    });
+
+    it('id bukan UUID → 400; role read-only → 403', async () => {
+        await request(app).post('/api/rangkaian/surat-keluar/bukan-uuid/tandai-inisiatif').send({}).expect(400);
+        Object.assign(mocks.user, { role: 'staff', unitKerjaId: 'dir_bppt' });
+        await request(app).post(`/api/rangkaian/surat-keluar/${ID}/tandai-inisiatif`).send({}).expect(403);
+        expect(mocks.tandaiInisiatif).not.toHaveBeenCalled();
+    });
+});
+
+describe('pemasangan dan allowlist demo', () => {
+    it('router D7 dipasang setelah router daftar dan sebelum router rangkaian utama di app.ts', () => {
+        const source = fs.readFileSync(path.resolve(process.cwd(), 'src/app.ts'), 'utf8');
+        const daftar = source.indexOf("app.use('/api/rangkaian', rangkaianDaftarRoutes)");
+        const d7 = source.indexOf("app.use('/api/rangkaian', rangkaianPerluDilengkapiRoutes)");
+        const utama = source.indexOf("app.use('/api/rangkaian', rangkaianRoutes)");
+        expect(daftar).toBeGreaterThan(-1);
+        expect(d7).toBeGreaterThan(daftar);
+        expect(utama).toBeGreaterThan(d7);
+    });
+
+    it('meneruskan GET daftar/ringkasan dan POST tandai-inisiatif, menolak id bukan UUID', async () => {
+        const demo = express();
+        let downstream = 0;
+        demo.use('/api', createDemoAccessMiddleware(true));
+        demo.use('/api', (_req, res) => { downstream += 1; res.json({ success: true }); });
+        await request(demo).get('/api/rangkaian/perlu-dilengkapi?tampilkanDataLama=true').expect(200);
+        await request(demo).get('/api/rangkaian/perlu-dilengkapi/ringkasan').expect(200);
+        await request(demo).post(`/api/rangkaian/surat-keluar/${ID}/tandai-inisiatif`).send({}).expect(200);
+        expect(downstream).toBe(3);
+        await request(demo).post('/api/rangkaian/surat-keluar/bukan-uuid/tandai-inisiatif').send({}).expect(403);
+        expect(downstream).toBe(3);
+    });
+});
+```
+
+- [ ] **Step 2: Jalankan, pastikan gagal**
+
+Run: `(cd backend && npx vitest run src/__tests__/rangkaian-perlu-dilengkapi.routes.test.ts)`
+Expected: FAIL, karena `Failed to resolve import "../routes/rangkaian-perlu-dilengkapi.routes.js"`.
+
+- [ ] **Step 3: Implementasi minimal**
+
+Tambah di akhir `backend/src/validators/schemas.ts`, setelah `daftarRangkaianQuerySchema`, beserta impor konstanta di blok impor atas berkas:
+
+```ts
+import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
+```
+
+```ts
+// Perlu Dilengkapi (P4, D7). Kueri tak dikenal ditolak agar unitKerjaId tidak bisa menyelinap.
+const benderaQuerySchema = z.enum(['true', 'false']).default('false').transform((value) => value === 'true');
+export const perluDilengkapiQuerySchema = z.object({
+    kategori: z.enum(KATEGORI_PERLU_DILENGKAPI).optional(),
+    tampilkanDataLama: benderaQuerySchema,
+    page: z.coerce.number().int().min(1).max(10_000).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+}).strict();
+export type PerluDilengkapiQuery = z.infer<typeof perluDilengkapiQuerySchema>;
+export const ringkasanPerluDilengkapiQuerySchema = z.object({ tampilkanDataLama: benderaQuerySchema }).strict();
+export type RingkasanPerluDilengkapiQuery = z.infer<typeof ringkasanPerluDilengkapiQuerySchema>;
+// Body Tandai Inisiatif selalu kosong; express 5 membiarkan req.body undefined bila tidak ada body.
+export const tandaiInisiatifSchema = z.preprocess((value) => value ?? {}, z.object({}).strict());
+```
+
+```ts
+// backend/src/routes/rangkaian-perlu-dilengkapi.routes.ts
+import { Router, type NextFunction, type Response } from 'express';
+import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware.js';
+import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware.js';
+import { validateBody, validateIdParam, validateQuery } from '../middlewares/validate.middleware.js';
+import {
+    perluDilengkapiQuerySchema, ringkasanPerluDilengkapiQuerySchema, tandaiInisiatifSchema,
+    type PerluDilengkapiQuery, type RingkasanPerluDilengkapiQuery,
+} from '../validators/schemas.js';
+import { perluDilengkapiService } from '../services/perlu-dilengkapi.service.js';
+import { asalNaskahService } from '../services/asal-naskah.service.js';
+
+// Middleware per-route (pola Task 6) agar permintaan /api/rangkaian lain jatuh ke router berikutnya tanpa autentikasi ganda.
+const router = Router();
+
+router.get(
+    '/perlu-dilengkapi/ringkasan',
+    authMiddleware,
+    roleMiddleware(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']),
+    validateQuery(ringkasanPerluDilengkapiQuerySchema),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+        try {
+            const filter = res.locals.validatedQuery as RingkasanPerluDilengkapiQuery;
+            res.json({ success: true, data: await perluDilengkapiService.ringkasan(req.user!, filter) });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
+
+router.get(
+    '/perlu-dilengkapi',
+    authMiddleware,
+    roleMiddleware(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']),
+    validateQuery(perluDilengkapiQuerySchema),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+        try {
+            const filter = res.locals.validatedQuery as PerluDilengkapiQuery;
+            res.json({ success: true, ...(await perluDilengkapiService.list(req.user!, filter)) });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
+
+router.post(
+    '/surat-keluar/:suratKeluarId/tandai-inisiatif',
+    authMiddleware,
+    validateIdParam('suratKeluarId'),
+    canWriteMiddleware(),
+    validateBody(tandaiInisiatifSchema),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+        try {
+            const data = await asalNaskahService.tandaiInisiatif(req.user!, req.params.suratKeluarId as string,
+                { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip });
+            res.json({ success: true, data });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
+
+export default router;
+```
+
+Di `backend/src/app.ts`, tambah impor di blok impor route (di bawah impor `rangkaianDaftarRoutes` Task 6):
+
+```ts
+import rangkaianPerluDilengkapiRoutes from './routes/rangkaian-perlu-dilengkapi.routes.js';
+```
+
+Lalu sisipkan tepat **setelah** baris `app.use('/api/rangkaian', rangkaianDaftarRoutes);`:
+
+```ts
+app.use('/api/rangkaian', rangkaianPerluDilengkapiRoutes); // P4 Task 18 (D7), auth per-route; sebelum router berkas P5 dan router utama
+```
+
+Di `backend/src/middlewares/demo-access.middleware.ts`, dalam `ALLOWED_METADATA_ROUTES`, tambahkan setelah entri `{ methods: GET, path: exact('/rangkaian') }` Task 6:
+
+```ts
+    { methods: GET, path: exact('/rangkaian/perlu-dilengkapi(?:/ringkasan)?') },
+    { methods: POST, path: exact(`/rangkaian/surat-keluar/${UUID}/tandai-inisiatif`) },
+```
+
+- [ ] **Step 4: Jalankan, pastikan lulus**
+
+Run: `(cd backend && npx vitest run src/__tests__/rangkaian-perlu-dilengkapi.routes.test.ts src/__tests__/rangkaian-daftar.routes.test.ts src/__tests__/demo-access.middleware.test.ts)`
+Expected: PASS (14 tes di berkas baru), dan tes Task 6 serta demo lama tetap hijau.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd "D:/Projects/New folder/simsa-atrbpn"
+git add backend/src/routes/rangkaian-perlu-dilengkapi.routes.ts backend/src/__tests__/rangkaian-perlu-dilengkapi.routes.test.ts backend/src/validators/schemas.ts backend/src/app.ts backend/src/middlewares/demo-access.middleware.ts
+git commit -m "feat(perlu-dilengkapi): endpoint daftar, ringkasan, dan tandai inisiatif di /api/rangkaian" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 19: Klien Perlu Dilengkapi — `lib/perlu-dilengkapi.js` dan metode `rangkaianService` (D7)
+
+**Files:**
+- Create: `frontend/src/lib/perlu-dilengkapi.js`
+- Create: `frontend/src/lib/perlu-dilengkapi.test.js`
+- Create: `frontend/src/services/rangkaian.service.perlu-dilengkapi.test.js`
+- Modify: `frontend/src/services/rangkaian.service.js` (objek `rangkaianService`, setelah metode `unitKerjaOpsi` Task 9)
+
+**Interfaces:**
+- Consumes (repo): `api.get(endpoint, params, { signal })` dan `api.post(endpoint, body)` (`services/api.js`, parameter `undefined` disaring)
+- Consumes (Task 18): `GET /api/rangkaian/perlu-dilengkapi`, `GET /api/rangkaian/perlu-dilengkapi/ringkasan`, `POST /api/rangkaian/surat-keluar/:suratKeluarId/tandai-inisiatif`
+- Produces (`lib/perlu-dilengkapi.js`):
+  - `KATEGORI_PERLU_DILENGKAPI` (urutan sama dengan backend)
+  - `LABEL_KATEGORI_PERLU_DILENGKAPI` dan `LABEL_STATUS_DISPOSISI`
+  - `PERLU_DILENGKAPI_REFRESH_MS = 60_000`
+  - `PERLU_DILENGKAPI_EVENT = 'simsa:perlu-dilengkapi-ringkasan'`
+  - `formatJumlahBadge(jumlah): string` (≥100 → `'99+'`)
+  - `umumkanRingkasanPerluDilengkapi(ringkasan)`, yang mengirim `CustomEvent` dengan `detail: { total }`
+- Produces (`rangkaianService`):
+  - `perluDilengkapi({ kategori, tampilkanDataLama = false, page = 1, limit = 20 } = {})` → respons utuh `{ success, data, pagination, meta }` untuk `usePaginatedResource`; `tampilkanDataLama` hanya dikirim sebagai `'true'`
+  - `ringkasanPerluDilengkapi({ tampilkanDataLama = false } = {}, { signal } = {})` → `data` (`{ perKategori, total, lewatBatas, batasDataLama }`)
+  - `tandaiInisiatif(suratKeluarId)` → `data` (`{ id, asalNaskah: 'inisiatif' }`)
+
+- [ ] **Step 1: Tulis tes yang gagal**
+
+```js
+// frontend/src/lib/perlu-dilengkapi.test.js
+import { describe, expect, it, vi } from 'vitest'
+import {
+    formatJumlahBadge, KATEGORI_PERLU_DILENGKAPI, LABEL_KATEGORI_PERLU_DILENGKAPI, LABEL_STATUS_DISPOSISI,
+    PERLU_DILENGKAPI_EVENT, PERLU_DILENGKAPI_REFRESH_MS, umumkanRingkasanPerluDilengkapi,
+} from './perlu-dilengkapi'
+
+describe('lib Perlu Dilengkapi (D7)', () => {
+    it('kategori sama dengan kontrak backend dan setiap kategori berlabel', () => {
+        expect(KATEGORI_PERLU_DILENGKAPI).toEqual([
+            'sm_belum_ditindaklanjuti', 'disposisi_terbuka', 'sk_tanpa_nd_penjelas',
+            'tindak_lanjut_tertahan', 'siap_diberkaskan', 'sk_tanpa_asal',
+        ])
+        for (const kategori of KATEGORI_PERLU_DILENGKAPI) expect(LABEL_KATEGORI_PERLU_DILENGKAPI[kategori]).toMatch(/\S/)
+        expect(LABEL_STATUS_DISPOSISI).toMatchObject({ sent: 'Terkirim', received: 'Diterima' })
+    })
+    it('irama badge sama dengan notifikasi (60 detik)', () => {
+        expect(PERLU_DILENGKAPI_REFRESH_MS).toBe(60_000)
+    })
+    it('format jumlah badge', () => {
+        expect(formatJumlahBadge(7)).toBe('7')
+        expect(formatJumlahBadge(99)).toBe('99')
+        expect(formatJumlahBadge(100)).toBe('99+')
+    })
+    it('mengumumkan total ringkasan lewat event window dan mengabaikan ringkasan rusak', () => {
+        const pendengar = vi.fn()
+        window.addEventListener(PERLU_DILENGKAPI_EVENT, pendengar)
+        umumkanRingkasanPerluDilengkapi({ total: 4, perKategori: {} })
+        umumkanRingkasanPerluDilengkapi(null)
+        window.removeEventListener(PERLU_DILENGKAPI_EVENT, pendengar)
+        expect(pendengar).toHaveBeenCalledTimes(1)
+        expect(pendengar.mock.calls[0][0].detail).toEqual({ total: 4 })
+    })
+})
+```
+
+```js
+// frontend/src/services/rangkaian.service.perlu-dilengkapi.test.js
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
+vi.mock('./api', () => ({ default: { get: mocks.get, post: mocks.post }, api: { get: mocks.get, post: mocks.post } }))
+import rangkaianService from './rangkaian.service'
+
+beforeEach(() => vi.clearAllMocks())
+
+describe('rangkaianService — Perlu Dilengkapi (D7)', () => {
+    it('perluDilengkapi mengembalikan respons utuh; data lama hanya dikirim bila diminta', async () => {
+        const response = { success: true, data: [], pagination: { total: 0 }, meta: {} }
+        mocks.get.mockResolvedValue(response)
+        await expect(rangkaianService.perluDilengkapi({ kategori: 'sk_tanpa_asal', page: 2 })).resolves.toBe(response)
+        expect(mocks.get).toHaveBeenLastCalledWith('/api/rangkaian/perlu-dilengkapi',
+            { kategori: 'sk_tanpa_asal', tampilkanDataLama: undefined, page: 2, limit: 20 })
+        await rangkaianService.perluDilengkapi({ tampilkanDataLama: true })
+        expect(mocks.get).toHaveBeenLastCalledWith('/api/rangkaian/perlu-dilengkapi',
+            { kategori: undefined, tampilkanDataLama: 'true', page: 1, limit: 20 })
+    })
+    it('ringkasanPerluDilengkapi meneruskan AbortSignal dan mengembalikan data', async () => {
+        const controller = new AbortController()
+        mocks.get.mockResolvedValue({ success: true, data: { total: 5 } })
+        await expect(rangkaianService.ringkasanPerluDilengkapi({}, { signal: controller.signal })).resolves.toEqual({ total: 5 })
+        expect(mocks.get).toHaveBeenCalledWith('/api/rangkaian/perlu-dilengkapi/ringkasan', { tampilkanDataLama: undefined }, { signal: controller.signal })
+    })
+    it('tandaiInisiatif mengirim POST dengan body kosong', async () => {
+        mocks.post.mockResolvedValue({ success: true, data: { id: 'sk-1', asalNaskah: 'inisiatif' } })
+        await expect(rangkaianService.tandaiInisiatif('sk-1')).resolves.toEqual({ id: 'sk-1', asalNaskah: 'inisiatif' })
+        expect(mocks.post).toHaveBeenCalledWith('/api/rangkaian/surat-keluar/sk-1/tandai-inisiatif', {})
+    })
+})
+```
+
+- [ ] **Step 2: Jalankan, pastikan gagal**
+
+Run: `(cd frontend && npx vitest run src/lib/perlu-dilengkapi.test.js src/services/rangkaian.service.perlu-dilengkapi.test.js)`
+Expected: FAIL. `Failed to resolve import "./perlu-dilengkapi"`, dan `rangkaianService.perluDilengkapi is not a function`.
+
+- [ ] **Step 3: Implementasi minimal**
+
+```js
+// frontend/src/lib/perlu-dilengkapi.js
+/** Kode kategori D7. Cermin backend/src/services/perlu-dilengkapi.constants.ts dengan urutan sama. */
+export const KATEGORI_PERLU_DILENGKAPI = [
+    'sm_belum_ditindaklanjuti',
+    'disposisi_terbuka',
+    'sk_tanpa_nd_penjelas',
+    'tindak_lanjut_tertahan',
+    'siap_diberkaskan',
+    'sk_tanpa_asal',
+]
+
+export const LABEL_KATEGORI_PERLU_DILENGKAPI = Object.freeze({
+    sm_belum_ditindaklanjuti: 'Surat masuk belum ditindaklanjuti',
+    disposisi_terbuka: 'Disposisi belum selesai',
+    sk_tanpa_nd_penjelas: 'Keputusan tanpa ND penjelas',
+    tindak_lanjut_tertahan: 'Tindak lanjut tertahan',
+    siap_diberkaskan: 'Siap diberkaskan',
+    sk_tanpa_asal: 'Surat keluar tanpa asal',
+})
+
+export const LABEL_STATUS_DISPOSISI = Object.freeze({
+    sent: 'Terkirim',
+    received: 'Diterima',
+    processed: 'Selesai',
+    rejected: 'Ditolak',
+})
+
+/** Irama badge = irama notifikasi (useNotifications / app-header: refreshInterval 60000). */
+export const PERLU_DILENGKAPI_REFRESH_MS = 60_000
+export const PERLU_DILENGKAPI_EVENT = 'simsa:perlu-dilengkapi-ringkasan'
+
+export function formatJumlahBadge(jumlah) {
+    return jumlah > 99 ? '99+' : String(jumlah)
+}
+
+/** Tab Perlu Dilengkapi membagikan ringkasan terbarunya ke badge sidebar tanpa request tambahan. */
+export function umumkanRingkasanPerluDilengkapi(ringkasan) {
+    const total = Number(ringkasan?.total)
+    if (!Number.isFinite(total)) return
+    window.dispatchEvent(new CustomEvent(PERLU_DILENGKAPI_EVENT, { detail: { total } }))
+}
+```
+
+Di dalam objek `rangkaianService` pada `frontend/src/services/rangkaian.service.js`, setelah metode `unitKerjaOpsi` (Task 9), tambahkan:
+
+```js
+    /** GET /api/rangkaian/perlu-dilengkapi (D7). Respons utuh untuk usePaginatedResource. */
+    async perluDilengkapi({ kategori, tampilkanDataLama = false, page = 1, limit = 20 } = {}) {
+        return api.get('/api/rangkaian/perlu-dilengkapi', {
+            kategori, tampilkanDataLama: tampilkanDataLama ? 'true' : undefined, page, limit,
+        })
+    },
+
+    /** GET /api/rangkaian/perlu-dilengkapi/ringkasan (D7) → { perKategori, total, lewatBatas, batasDataLama }. */
+    async ringkasanPerluDilengkapi({ tampilkanDataLama = false } = {}, { signal } = {}) {
+        const response = await api.get('/api/rangkaian/perlu-dilengkapi/ringkasan',
+            { tampilkanDataLama: tampilkanDataLama ? 'true' : undefined }, { signal })
+        return response.data
+    },
+
+    /** POST /api/rangkaian/surat-keluar/:id/tandai-inisiatif (D7). Body selalu kosong. */
+    async tandaiInisiatif(suratKeluarId) {
+        return (await api.post(`/api/rangkaian/surat-keluar/${suratKeluarId}/tandai-inisiatif`, {})).data
+    },
+```
+
+- [ ] **Step 4: Jalankan, pastikan lulus**
+
+Run: `(cd frontend && npx vitest run src/lib/perlu-dilengkapi.test.js src/services/rangkaian.service.perlu-dilengkapi.test.js src/services/rangkaian.service.lacak.test.js)`
+Expected: PASS (4 + 3 tes, dan tes layanan Task 9 tetap hijau).
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd "D:/Projects/New folder/simsa-atrbpn"
+git add frontend/src/lib/perlu-dilengkapi.js frontend/src/lib/perlu-dilengkapi.test.js frontend/src/services/rangkaian.service.js frontend/src/services/rangkaian.service.perlu-dilengkapi.test.js
+git commit -m "feat(perlu-dilengkapi): layanan klien dan konstanta tab Perlu Dilengkapi" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 20: Tab `PerluDilengkapiTab` dengan aksi baris, lalu dipasang di `LacakSurat` (`?tab=perlu-dilengkapi`) (D7)
+
+**Files:**
+- Create: `frontend/src/components/lacak/PerluDilengkapiTab.jsx`
+- Create: `frontend/src/components/lacak/PerluDilengkapiTab.test.jsx`
+- Modify: `frontend/src/pages/LacakSurat.jsx` (Task 13: impor, konstanta tab, `tab`, `ubahTab`, `TabsList`, `TabsContent`)
+- Modify: `frontend/src/pages/LacakSurat.test.jsx` (Task 13: satu `vi.mock` dan dua tes)
+
+**Interfaces:**
+- Consumes (Task 19): `rangkaianService.perluDilengkapi`, `rangkaianService.ringkasanPerluDilengkapi`, `rangkaianService.tandaiInisiatif`, `KATEGORI_PERLU_DILENGKAPI`, `LABEL_KATEGORI_PERLU_DILENGKAPI`, `LABEL_STATUS_DISPOSISI`, `umumkanRingkasanPerluDilengkapi`
+- Consumes (P3):
+  - `buildTindakLanjutState(jenis, surat, aksi)` (`lib/tindak-lanjut.js`)
+  - `DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, onSuccess })`
+  - `BerkaskanDialog({ open, onOpenChange, rangkaian, onBerhasil })`
+  - `TautkanDialog({ open, onOpenChange, jenis, surat, onBerhasil })` (`components/surat/AlurSuratActions.jsx`)
+- Consumes (repo/Task 8): `usePaginatedResource` (termasuk `reload`), `ResourcePagination`, `useToast`, `Dialog*`, `Button` (`asChild`), `Badge`, `lacakHref({ rangkaianId })`
+- Produces:
+  - `PerluDilengkapiTab()` (named export). Tombol baris hanya dirender dari `aksiDiizinkan`:
+    - `tindak_lanjut` → form `/surat/keluar/tambah` dengan state `buildTindakLanjutState('surat_masuk', …, 'saya_balas')`
+    - `buat_nd_penjelas` → `buildTindakLanjutState('surat_keluar', …, 'buat_nd_penjelas')`
+    - `disposisi` → `DistributeDialog`
+    - `berkaskan` → `BerkaskanDialog`
+    - `tautkan` → `TautkanDialog`
+    - `tandai_inisiatif` → dialog konfirmasi
+    - `buka_kotak_disposisi` → tautan `/distribusi`
+    - `buka_surat` → tautan detail
+  - Setelah aksi berhasil, daftar dan ringkasan dimuat ulang. Ringkasan tanpa data lama diumumkan ke badge sidebar.
+  - `LacakSurat` menerima `?tab=perlu-dilengkapi`. Nilai `tab` lain selain `berkas`/`perlu-dilengkapi` jatuh ke tab Lacak.
+
+- [ ] **Step 1: Tulis tes yang gagal**
+
+```jsx
+// frontend/src/components/lacak/PerluDilengkapiTab.test.jsx
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-dom'
+
+const mocks = vi.hoisted(() => ({
+    perluDilengkapi: vi.fn(), ringkasanPerluDilengkapi: vi.fn(), tandaiInisiatif: vi.fn(),
+    toast: vi.fn(), distribute: vi.fn(), berkaskan: vi.fn(), tautkan: vi.fn(),
+}))
+vi.mock('@/services/rangkaian.service', () => {
+    const service = {
+        perluDilengkapi: mocks.perluDilengkapi, ringkasanPerluDilengkapi: mocks.ringkasanPerluDilengkapi, tandaiInisiatif: mocks.tandaiInisiatif,
+    }
+    return { default: service, rangkaianService: service }
+})
+vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
+vi.mock('@/components/DistributeDialog', () => ({
+    DistributeDialog: (props) => { mocks.distribute(props); return <div role="dialog" aria-label="Disposisi">{props.suratData.nomorSurat}</div> },
+}))
+vi.mock('@/components/surat/BerkaskanDialog', () => ({
+    BerkaskanDialog: (props) => { mocks.berkaskan(props); return <div role="dialog" aria-label="Berkaskan">{props.rangkaian.kode}</div> },
+}))
+vi.mock('@/components/surat/AlurSuratActions', () => ({
+    TautkanDialog: (props) => { mocks.tautkan(props); return <div role="dialog" aria-label="Tautkan">{props.surat.nomorSurat}</div> },
+}))
+import { PerluDilengkapiTab } from './PerluDilengkapiTab'
+import { PERLU_DILENGKAPI_EVENT } from '@/lib/perlu-dilengkapi'
+
+const SM1 = '11111111-1111-4111-8111-111111111111'
+const SK10 = '22222222-2222-4222-8222-222222222222'
+const R6 = '33333333-3333-4333-8333-333333333333'
+const D2 = '44444444-4444-4444-8444-444444444444'
+const itemTersamar = {
+    kunci: `disposisi_terbuka:${D2}`, kategori: 'disposisi_terbuka', masked: true, label: 'Dikecualikan', jenis: 'surat_masuk',
+    unitNama: 'Sesditjen', surat: null, rangkaian: null,
+    disposisi: { id: D2, status: 'sent', targetUnitNama: 'Dit. BPPT', batasWaktu: '2026-01-10', lewatBatas: true },
+    dataLama: false, aksiDiizinkan: ['buka_kotak_disposisi'],
+}
+const itemSm = {
+    kunci: `sm_belum_ditindaklanjuti:${SM1}`, kategori: 'sm_belum_ditindaklanjuti', masked: false, jenis: 'surat_masuk', unitNama: 'Sesditjen',
+    surat: {
+        jenis: 'surat_masuk', id: SM1, nomorSurat: 'SM-1/2026', perihal: 'Undangan rapat satu', tanggalSurat: '2026-09-01',
+        naskahDinas: null, dari: 'Kanwil Jawa Barat', kepada: null, sifatSurat: 'Biasa', unitKerjaId: 'sesditjen', approvalStatus: null,
+    },
+    rangkaian: null, disposisi: null, dataLama: false, aksiDiizinkan: ['buka_surat', 'disposisi', 'tindak_lanjut'],
+}
+const itemSkTanpaAsal = {
+    kunci: `sk_tanpa_asal:${SK10}`, kategori: 'sk_tanpa_asal', masked: false, jenis: 'surat_keluar', unitNama: 'Dit. BPPT',
+    surat: {
+        jenis: 'surat_keluar', id: SK10, nomorSurat: 'ND-10/2026', perihal: 'Undangan koordinasi sepuluh', tanggalSurat: '2026-09-10',
+        naskahDinas: 'Nota Dinas', dari: null, kepada: 'Para Direktur', sifatSurat: 'biasa', unitKerjaId: 'dir_bppt', approvalStatus: 'approved',
+    },
+    rangkaian: null, disposisi: null, dataLama: false, aksiDiizinkan: ['buka_surat', 'tandai_inisiatif', 'tautkan'],
+}
+const itemSiap = {
+    kunci: `siap_diberkaskan:${R6}`, kategori: 'siap_diberkaskan', masked: false, jenis: 'rangkaian', unitNama: 'Sesditjen', surat: null,
+    rangkaian: {
+        id: R6, kode: 'RS-2026-000006', status: 'selesai', judul: 'Permohonan data enam',
+        unitPencatatId: 'sesditjen', unitPengolahId: 'dir_bppt', unitPengolahNama: 'Dit. BPPT',
+    },
+    disposisi: null, dataLama: false, aksiDiizinkan: ['berkaskan'],
+}
+const RINGKASAN = {
+    perKategori: { sm_belum_ditindaklanjuti: 1, disposisi_terbuka: 1, sk_tanpa_nd_penjelas: 0, tindak_lanjut_tertahan: 0, siap_diberkaskan: 1, sk_tanpa_asal: 1 },
+    total: 4, lewatBatas: 1, batasDataLama: '2025-12-31T17:00:00.000Z',
+}
+const respons = (rows) => ({
+    success: true, data: rows, pagination: { page: 1, limit: 20, total: rows.length, totalPages: 1 },
+    meta: { batasDataLama: RINGKASAN.batasDataLama, tampilkanDataLama: false },
+})
+
+function Lokasi() {
+    const { state } = useLocation()
+    return <p>{`${state?.tindakLanjut?.suratId}|${state?.tindakLanjut?.jenisRelasi}`}</p>
+}
+let router
+function mount() {
+    router = createMemoryRouter([
+        { path: '/surat/lacak', element: <PerluDilengkapiTab /> },
+        { path: '/surat/keluar/tambah', element: <Lokasi /> },
+    ], { initialEntries: ['/surat/lacak?tab=perlu-dilengkapi'] })
+    render(<RouterProvider router={router} />)
+}
+const baris = async () => within(await screen.findByRole('list', { name: 'Daftar perlu dilengkapi' })).findAllByRole('listitem')
+
+beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.perluDilengkapi.mockResolvedValue(respons([itemTersamar, itemSm, itemSkTanpaAsal, itemSiap]))
+    mocks.ringkasanPerluDilengkapi.mockResolvedValue(RINGKASAN)
+    mocks.tandaiInisiatif.mockResolvedValue({ id: SK10, asalNaskah: 'inisiatif' })
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+})
+afterEach(() => { cleanup(); router?.dispose(); vi.unstubAllGlobals() })
+
+describe('Tab Perlu Dilengkapi (D7)', () => {
+    it('memuat ringkasan dan daftar tanpa data lama, lalu mengumumkan total untuk badge sidebar', async () => {
+        const diumumkan = vi.fn()
+        window.addEventListener(PERLU_DILENGKAPI_EVENT, diumumkan)
+        mount()
+        await baris()
+        expect(mocks.perluDilengkapi).toHaveBeenCalledWith({ kategori: undefined, tampilkanDataLama: false, page: 1, limit: 20 })
+        expect(mocks.ringkasanPerluDilengkapi).toHaveBeenCalledWith({ tampilkanDataLama: false })
+        expect(await screen.findByRole('button', { name: 'Semua (4)' })).toHaveAttribute('aria-pressed', 'true')
+        expect(screen.getByRole('button', { name: 'Surat masuk belum ditindaklanjuti (1)' })).toHaveAttribute('aria-pressed', 'false')
+        await waitFor(() => expect(diumumkan).toHaveBeenCalledTimes(1))
+        expect(diumumkan.mock.calls[0][0].detail).toEqual({ total: 4 })
+        window.removeEventListener(PERLU_DILENGKAPI_EVENT, diumumkan)
+    })
+
+    it('aksi hanya dari aksiDiizinkan; baris tersamar tanpa nomor, perihal, atau tautan surat', async () => {
+        mount()
+        const [tersamar, sm, skTanpaAsal, siap] = await baris()
+        expect(within(tersamar).getByText('Dikecualikan')).toBeVisible()
+        expect(within(tersamar).getByText('Lewat batas waktu')).toBeVisible()
+        expect(within(tersamar).getByRole('link', { name: 'Buka Kotak Disposisi' })).toHaveAttribute('href', '/distribusi')
+        expect(within(tersamar).queryByRole('link', { name: 'Buka surat' })).toBeNull()
+        expect(within(tersamar).queryAllByRole('button')).toHaveLength(0)
+
+        expect(within(sm).getByText('SM-1/2026 — Undangan rapat satu')).toBeVisible()
+        expect(within(sm).getByRole('button', { name: 'Tindak Lanjut' })).toBeVisible()
+        expect(within(sm).getByRole('button', { name: 'Disposisi' })).toBeVisible()
+        expect(within(sm).getByRole('link', { name: 'Buka surat' })).toHaveAttribute('href', `/surat/masuk/${SM1}`)
+        expect(within(sm).queryByRole('button', { name: 'Tandai Inisiatif' })).toBeNull()
+
+        expect(within(skTanpaAsal).getByRole('button', { name: 'Tandai Inisiatif' })).toBeVisible()
+        expect(within(skTanpaAsal).getByRole('button', { name: 'Tautkan' })).toBeVisible()
+        expect(within(skTanpaAsal).getByRole('link', { name: 'Buka surat' })).toHaveAttribute('href', `/surat/keluar/${SK10}`)
+
+        expect(within(siap).getByText('Permohonan data enam')).toBeVisible()
+        expect(within(siap).getByRole('link', { name: 'RS-2026-000006' })).toHaveAttribute('href', `/surat/lacak?rangkaian=${R6}`)
+        expect(within(siap).getByRole('button', { name: 'Berkaskan ke Direktorat' })).toBeVisible()
+        expect(within(siap).queryByRole('link', { name: 'Buka surat' })).toBeNull()
+    })
+
+    it('Tindak Lanjut membuka form surat keluar dengan Nomor Referensi terkunci', async () => {
+        mount()
+        const [, sm] = await baris()
+        fireEvent.click(within(sm).getByRole('button', { name: 'Tindak Lanjut' }))
+        expect(await screen.findByText(`${SM1}|balasan`)).toBeVisible()
+    })
+
+    it('Berkaskan, Tautkan, dan Disposisi membuka dialog P3 dengan data baris, lalu memuat ulang setelah berhasil', async () => {
+        mount()
+        const [, sm, skTanpaAsal, siap] = await baris()
+        await waitFor(() => expect(mocks.ringkasanPerluDilengkapi).toHaveBeenCalledTimes(1))
+
+        fireEvent.click(within(siap).getByRole('button', { name: 'Berkaskan ke Direktorat' }))
+        expect(screen.getByRole('dialog', { name: 'Berkaskan' })).toHaveTextContent('RS-2026-000006')
+        expect(mocks.berkaskan).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, rangkaian: { id: R6, kode: 'RS-2026-000006' } }))
+        act(() => { mocks.berkaskan.mock.lastCall[0].onOpenChange(false) })
+        expect(screen.queryByRole('dialog', { name: 'Berkaskan' })).toBeNull()
+
+        fireEvent.click(within(skTanpaAsal).getByRole('button', { name: 'Tautkan' }))
+        expect(mocks.tautkan).toHaveBeenLastCalledWith(expect.objectContaining({
+            open: true, jenis: 'surat_keluar', surat: { id: SK10, nomorSurat: 'ND-10/2026', perihal: 'Undangan koordinasi sepuluh' },
+        }))
+        act(() => { mocks.tautkan.mock.lastCall[0].onOpenChange(false) })
+        expect(screen.queryByRole('dialog', { name: 'Tautkan' })).toBeNull()
+
+        fireEvent.click(within(sm).getByRole('button', { name: 'Disposisi' }))
+        expect(screen.getByRole('dialog', { name: 'Disposisi' })).toHaveTextContent('SM-1/2026')
+        expect(mocks.distribute).toHaveBeenLastCalledWith(expect.objectContaining({
+            open: true, sourceUnitId: 'sesditjen',
+            suratData: { id: SM1, nomorSurat: 'SM-1/2026', perihal: 'Undangan rapat satu', sifatSurat: 'Biasa' },
+        }))
+        await act(async () => { mocks.distribute.mock.lastCall[0].onSuccess() })
+        expect(screen.queryByRole('dialog', { name: 'Disposisi' })).toBeNull()
+        expect(mocks.toast).toHaveBeenCalledWith({ title: 'Surat didisposisikan' })
+        await waitFor(() => expect(mocks.perluDilengkapi).toHaveBeenCalledTimes(2))
+        await waitFor(() => expect(mocks.ringkasanPerluDilengkapi).toHaveBeenCalledTimes(2))
+    })
+
+    it('Tandai Inisiatif meminta konfirmasi, menampilkan galat server, lalu memuat ulang setelah berhasil', async () => {
+        mocks.tandaiInisiatif.mockRejectedValueOnce(new Error('Asal naskah surat ini sudah ditetapkan.'))
+        mount()
+        const [, , skTanpaAsal] = await baris()
+        fireEvent.click(within(skTanpaAsal).getByRole('button', { name: 'Tandai Inisiatif' }))
+        const dialog = await screen.findByRole('dialog', { name: 'Tandai sebagai Surat Inisiatif?' })
+        expect(dialog).toHaveTextContent('ND-10/2026')
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Ya, tandai inisiatif' }))
+        expect(await within(dialog).findByRole('alert')).toHaveTextContent('Asal naskah surat ini sudah ditetapkan.')
+        expect(mocks.perluDilengkapi).toHaveBeenCalledTimes(1)
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Ya, tandai inisiatif' }))
+        await waitFor(() => expect(mocks.tandaiInisiatif).toHaveBeenCalledTimes(2))
+        expect(mocks.tandaiInisiatif).toHaveBeenLastCalledWith(SK10)
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tandai sebagai Surat Inisiatif?' })).toBeNull())
+        expect(mocks.toast).toHaveBeenCalledWith({ title: 'Surat ditandai sebagai Surat Inisiatif' })
+        await waitFor(() => expect(mocks.perluDilengkapi).toHaveBeenCalledTimes(2))
+    })
+
+    it('Tampilkan data lama meminta server secara eksplisit tanpa mengubah badge sidebar', async () => {
+        const diumumkan = vi.fn()
+        window.addEventListener(PERLU_DILENGKAPI_EVENT, diumumkan)
+        mount()
+        await baris()
+        await waitFor(() => expect(diumumkan).toHaveBeenCalledTimes(1))
+        fireEvent.click(screen.getByLabelText('Tampilkan data lama'))
+        await waitFor(() => expect(mocks.perluDilengkapi).toHaveBeenLastCalledWith({ kategori: undefined, tampilkanDataLama: true, page: 1, limit: 20 }))
+        await waitFor(() => expect(mocks.ringkasanPerluDilengkapi).toHaveBeenLastCalledWith({ tampilkanDataLama: true }))
+        await act(async () => { await Promise.resolve() })
+        expect(diumumkan).toHaveBeenCalledTimes(1)
+        window.removeEventListener(PERLU_DILENGKAPI_EVENT, diumumkan)
+    })
+
+    it('filter kategori dikirim ke server', async () => {
+        mount()
+        await baris()
+        fireEvent.click(await screen.findByRole('button', { name: 'Siap diberkaskan (1)' }))
+        await waitFor(() => expect(mocks.perluDilengkapi).toHaveBeenLastCalledWith({ kategori: 'siap_diberkaskan', tampilkanDataLama: false, page: 1, limit: 20 }))
+        expect(screen.getByRole('button', { name: 'Siap diberkaskan (1)' })).toHaveAttribute('aria-pressed', 'true')
+    })
+})
+```
+
+Di `frontend/src/pages/LacakSurat.test.jsx` (Task 13), tambahkan tepat setelah baris `vi.mock('@/components/lacak/BerkasRangkaianTab', …)`:
+
+```jsx
+vi.mock('@/components/lacak/PerluDilengkapiTab', () => ({ PerluDilengkapiTab: () => <p>Isi tab perlu dilengkapi</p> }))
+```
+
+Lalu tambahkan di akhir `describe('Halaman Lacak Surat', …)`:
+
+```jsx
+    it('tab Perlu Dilengkapi lewat ?tab=perlu-dilengkapi tanpa memicu pencarian', async () => {
+        mount('/surat/lacak?tab=perlu-dilengkapi')
+        expect(screen.getByText('Isi tab perlu dilengkapi')).toBeVisible()
+        expect(screen.getByRole('tab', { name: 'Perlu Dilengkapi' })).toHaveAttribute('aria-selected', 'true')
+        await maju(1000)
+        expect(mocks.lacak).not.toHaveBeenCalled()
+    })
+
+    it('nilai tab yang tidak dikenal jatuh ke tab Lacak', () => {
+        mount('/surat/lacak?tab=lainnya')
+        expect(screen.getByRole('tab', { name: 'Lacak' })).toHaveAttribute('aria-selected', 'true')
+        expect(screen.queryByText('Isi tab perlu dilengkapi')).toBeNull()
+    })
+```
+
+- [ ] **Step 2: Jalankan, pastikan gagal**
+
+Run: `(cd frontend && npx vitest run src/components/lacak/PerluDilengkapiTab.test.jsx src/pages/LacakSurat.test.jsx)`
+Expected: FAIL. `Failed to resolve import "./PerluDilengkapiTab"`, dan di `LacakSurat.test.jsx` tab "Perlu Dilengkapi" tidak ditemukan.
+
+- [ ] **Step 3: Implementasi minimal**
+
+```jsx
+// frontend/src/components/lacak/PerluDilengkapiTab.jsx
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { AlertTriangle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ResourcePagination } from '@/components/ResourcePagination'
+import { DistributeDialog } from '@/components/DistributeDialog'
+import { BerkaskanDialog } from '@/components/surat/BerkaskanDialog'
+import { TautkanDialog } from '@/components/surat/AlurSuratActions'
+import { usePaginatedResource } from '@/hooks/use-paginated-resource'
+import { useToast } from '@/hooks/use-toast'
+import { buildTindakLanjutState } from '@/lib/tindak-lanjut'
+import { lacakHref } from '@/lib/lacak-link'
+import {
+    KATEGORI_PERLU_DILENGKAPI, LABEL_KATEGORI_PERLU_DILENGKAPI, LABEL_STATUS_DISPOSISI, umumkanRingkasanPerluDilengkapi,
+} from '@/lib/perlu-dilengkapi'
+import rangkaianService from '@/services/rangkaian.service'
+
+const hrefSurat = surat => `/surat/${surat.jenis === 'surat_masuk' ? 'masuk' : 'keluar'}/${surat.id}`
+
+function judulBaris(item) {
+    if (item.masked) return item.label || 'Dikecualikan'
+    if (item.jenis === 'rangkaian') return item.rangkaian?.judul || item.rangkaian?.kode || ''
+    return [item.surat?.nomorSurat, item.surat?.perihal].filter(Boolean).join(' — ') || '(tanpa nomor dan perihal)'
+}
+
+function InfoBaris({ item }) {
+    return (
+        <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{LABEL_KATEGORI_PERLU_DILENGKAPI[item.kategori] ?? item.kategori}</Badge>
+                {item.dataLama && <Badge variant="secondary">Data lama</Badge>}
+                {item.disposisi?.lewatBatas && (
+                    <Badge variant="destructive"><AlertTriangle aria-hidden="true" />Lewat batas waktu</Badge>
+                )}
+            </div>
+            <p className={item.masked ? 'text-sm italic text-muted-foreground' : 'truncate text-sm font-medium'}>{judulBaris(item)}</p>
+            <p className="text-xs text-muted-foreground">
+                {item.unitNama}
+                {item.rangkaian?.kode && (
+                    <> · <Link to={lacakHref({ rangkaianId: item.rangkaian.id })} className="underline-offset-2 hover:underline">{item.rangkaian.kode}</Link></>
+                )}
+                {item.disposisi && (
+                    <> · Disposisi ke {item.disposisi.targetUnitNama} · {LABEL_STATUS_DISPOSISI[item.disposisi.status] ?? item.disposisi.status}
+                        {item.disposisi.batasWaktu ? ` · batas ${item.disposisi.batasWaktu}` : ''}</>
+                )}
+                {item.kategori === 'tindak_lanjut_tertahan' && item.surat?.approvalStatus && <> · Status persetujuan: {item.surat.approvalStatus}</>}
+            </p>
+        </div>
+    )
+}
+
+/** Tombol hanya dari aksiDiizinkan server (§7); klien tidak menebak hak dari unit. */
+function AksiBaris({ item, onAksi }) {
+    const aksi = new Set(item.aksiDiizinkan || [])
+    return (
+        <div className="flex shrink-0 flex-wrap gap-2">
+            {aksi.has('tindak_lanjut') && <Button type="button" size="sm" onClick={() => onAksi('tindak_lanjut', item)}>Tindak Lanjut</Button>}
+            {aksi.has('disposisi') && <Button type="button" size="sm" variant="outline" onClick={() => onAksi('disposisi', item)}>Disposisi</Button>}
+            {aksi.has('buka_kotak_disposisi') && <Button size="sm" variant="outline" asChild><Link to="/distribusi">Buka Kotak Disposisi</Link></Button>}
+            {aksi.has('buat_nd_penjelas') && <Button type="button" size="sm" onClick={() => onAksi('buat_nd_penjelas', item)}>Buat ND Penjelas</Button>}
+            {aksi.has('berkaskan') && <Button type="button" size="sm" onClick={() => onAksi('berkaskan', item)}>Berkaskan ke Direktorat</Button>}
+            {aksi.has('tandai_inisiatif') && <Button type="button" size="sm" variant="outline" onClick={() => onAksi('inisiatif', item)}>Tandai Inisiatif</Button>}
+            {aksi.has('tautkan') && <Button type="button" size="sm" variant="outline" onClick={() => onAksi('tautkan', item)}>Tautkan</Button>}
+            {aksi.has('buka_surat') && item.surat && <Button size="sm" variant="ghost" asChild><Link to={hrefSurat(item.surat)}>Buka surat</Link></Button>}
+        </div>
+    )
+}
+
+export function PerluDilengkapiTab() {
+    const navigate = useNavigate()
+    const { toast } = useToast()
+    const [kategori, setKategori] = useState('')
+    const [tampilkanDataLama, setTampilkanDataLama] = useState(false)
+    const [revisiRingkasan, setRevisiRingkasan] = useState(0)
+    const [ringkasan, setRingkasan] = useState(null)
+    const [dialog, setDialog] = useState(null)
+    const [menyimpan, setMenyimpan] = useState(false)
+    const [galat, setGalat] = useState(null)
+
+    useEffect(() => {
+        let aktif = true
+        rangkaianService.ringkasanPerluDilengkapi({ tampilkanDataLama })
+            .then((data) => {
+                if (!aktif) return
+                setRingkasan(data)
+                // Badge sidebar hanya menghitung data tanpa data lama; bagikan tanpa request tambahan.
+                if (!tampilkanDataLama) umumkanRingkasanPerluDilengkapi(data)
+            })
+            .catch(() => { if (aktif) setRingkasan(null) })
+        return () => { aktif = false }
+    }, [tampilkanDataLama, revisiRingkasan])
+
+    const fetchPage = useCallback(({ page, limit }) => rangkaianService.perluDilengkapi({
+        kategori: kategori || undefined, tampilkanDataLama, page, limit,
+    }), [kategori, tampilkanDataLama])
+    const resource = usePaginatedResource(fetchPage, { queryKey: JSON.stringify({ kategori, tampilkanDataLama }), pageSize: 20 })
+    const { reload } = resource
+
+    const tutup = useCallback(() => { setDialog(null); setGalat(null) }, [])
+    const berhasil = useCallback((pesan) => {
+        tutup()
+        toast({ title: pesan })
+        reload()
+        setRevisiRingkasan(nilai => nilai + 1)
+    }, [reload, toast, tutup])
+    const tutupBila = (buka) => { if (!buka && !menyimpan) tutup() }
+
+    const onAksi = (jenis, item) => {
+        const surat = item.surat ? { ...item.surat, rangkaian: item.rangkaian } : null
+        if (jenis === 'tindak_lanjut') {
+            navigate('/surat/keluar/tambah', { state: buildTindakLanjutState('surat_masuk', surat, 'saya_balas') })
+        } else if (jenis === 'buat_nd_penjelas') {
+            navigate('/surat/keluar/tambah', { state: buildTindakLanjutState('surat_keluar', surat, 'buat_nd_penjelas') })
+        } else {
+            setGalat(null)
+            setDialog({ jenis, item })
+        }
+    }
+
+    const tandaiInisiatif = async () => {
+        setMenyimpan(true)
+        setGalat(null)
+        try {
+            await rangkaianService.tandaiInisiatif(dialog.item.surat.id)
+            berhasil('Surat ditandai sebagai Surat Inisiatif')
+        } catch (error) {
+            setGalat(error?.message || 'Gagal menandai surat')
+        } finally {
+            setMenyimpan(false)
+        }
+    }
+
+    const item = dialog?.item
+    return (
+        <section aria-label="Perlu Dilengkapi" className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+                Surat dan rangkaian dalam jangkauan Anda yang rantainya belum lengkap. Surat yang tidak boleh Anda baca tampil sebagai “Dikecualikan”.
+            </p>
+            <div role="group" aria-label="Kategori" className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant={kategori === '' ? 'default' : 'outline'} aria-pressed={kategori === ''} onClick={() => setKategori('')}>
+                    {ringkasan ? `Semua (${ringkasan.total})` : 'Semua'}
+                </Button>
+                {KATEGORI_PERLU_DILENGKAPI.map(kode => (
+                    <Button key={kode} type="button" size="sm" variant={kategori === kode ? 'default' : 'outline'} aria-pressed={kategori === kode} onClick={() => setKategori(kode)}>
+                        {ringkasan ? `${LABEL_KATEGORI_PERLU_DILENGKAPI[kode]} (${ringkasan.perKategori?.[kode] ?? 0})` : LABEL_KATEGORI_PERLU_DILENGKAPI[kode]}
+                    </Button>
+                ))}
+            </div>
+            <label className="flex w-fit items-center gap-2 text-sm">
+                <input type="checkbox" checked={tampilkanDataLama} onChange={event => setTampilkanDataLama(event.target.checked)} />
+                Tampilkan data lama
+            </label>
+
+            {resource.error && <p role="alert" className="text-sm text-destructive">{resource.error.message || 'Gagal memuat daftar.'}</p>}
+            <ul aria-label="Daftar perlu dilengkapi" className="divide-y rounded-md border">
+                {resource.rows.map(baris => (
+                    <li key={baris.kunci} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <InfoBaris item={baris} />
+                        <AksiBaris item={baris} onAksi={onAksi} />
+                    </li>
+                ))}
+            </ul>
+            {!resource.loading && !resource.error && resource.rows.length === 0 && (
+                <p role="status" className="text-sm text-muted-foreground">Tidak ada yang perlu dilengkapi untuk filter ini.</p>
+            )}
+            <ResourcePagination resource={resource} label="perlu dilengkapi" />
+
+            {dialog?.jenis === 'disposisi' && (
+                <DistributeDialog
+                    open
+                    onOpenChange={tutupBila}
+                    suratData={{ id: item.surat.id, nomorSurat: item.surat.nomorSurat, perihal: item.surat.perihal, sifatSurat: item.surat.sifatSurat }}
+                    sourceUnitId={item.surat.unitKerjaId}
+                    onSuccess={() => berhasil('Surat didisposisikan')}
+                />
+            )}
+            {dialog?.jenis === 'berkaskan' && (
+                <BerkaskanDialog
+                    open
+                    onOpenChange={tutupBila}
+                    rangkaian={{ id: item.rangkaian.id, kode: item.rangkaian.kode }}
+                    onBerhasil={() => berhasil(`Rangkaian ${item.rangkaian.kode} diberkaskan`)}
+                />
+            )}
+            {dialog?.jenis === 'tautkan' && (
+                <TautkanDialog
+                    open
+                    onOpenChange={tutupBila}
+                    jenis="surat_keluar"
+                    surat={{ id: item.surat.id, nomorSurat: item.surat.nomorSurat, perihal: item.surat.perihal }}
+                    onBerhasil={() => berhasil('Surat ditautkan ke rangkaian')}
+                />
+            )}
+            <Dialog open={dialog?.jenis === 'inisiatif'} onOpenChange={tutupBila}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Tandai sebagai Surat Inisiatif?</DialogTitle>
+                        <DialogDescription>
+                            Surat {item?.surat?.nomorSurat || 'ini'} dicatat sebagai surat atas prakarsa sendiri (tidak menindaklanjuti surat lain).
+                            Perubahan ini diaudit dan tidak mengubah isi surat.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {galat && <p role="alert" className="text-sm text-destructive">{galat}</p>}
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={tutup} disabled={menyimpan}>Batal</Button>
+                        <Button type="button" onClick={tandaiInisiatif} disabled={menyimpan}>Ya, tandai inisiatif</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </section>
+    )
+}
+```
+
+Di `frontend/src/pages/LacakSurat.jsx` (Task 13):
+
+1. Tambah impor setelah `import { BerkasRangkaianTab } from '@/components/lacak/BerkasRangkaianTab'`:
+
+```jsx
+import { PerluDilengkapiTab } from '@/components/lacak/PerluDilengkapiTab'
+```
+
+2. Tambah konstanta setelah `const PILIHAN_TAHUN = …`:
+
+```jsx
+const TAB_LAIN = ['berkas', 'perlu-dilengkapi']
+```
+
+3. Ganti baris (persis):
+
+```jsx
+    const tab = searchParams.get('tab') === 'berkas' ? 'berkas' : 'lacak'
+```
+
+menjadi:
+
+```jsx
+    const tabParam = searchParams.get('tab')
+    const tab = TAB_LAIN.includes(tabParam) ? tabParam : 'lacak'
+```
+
+4. Ganti fungsi (persis):
+
+```jsx
+    const ubahTab = value => ubahParam(next => {
+        if (value === 'berkas') next.set('tab', 'berkas')
+        else next.delete('tab')
+    })
+```
+
+menjadi:
+
+```jsx
+    const ubahTab = value => ubahParam(next => {
+        if (TAB_LAIN.includes(value)) next.set('tab', value)
+        else next.delete('tab')
+    })
+```
+
+5. Tambah pemicu tab setelah `<TabsTrigger value="berkas">Berkas Rangkaian</TabsTrigger>`:
+
+```jsx
+                    <TabsTrigger value="perlu-dilengkapi">Perlu Dilengkapi</TabsTrigger>
+```
+
+6. Tambah isi tab setelah blok `<TabsContent value="berkas">…</TabsContent>`:
+
+```jsx
+                <TabsContent value="perlu-dilengkapi">
+                    <PerluDilengkapiTab />
+                </TabsContent>
+```
+
+- [ ] **Step 4: Jalankan, pastikan lulus**
+
+Run: `(cd frontend && npx vitest run src/components/lacak/PerluDilengkapiTab.test.jsx src/pages/LacakSurat.test.jsx && npx eslint src/components/lacak/PerluDilengkapiTab.jsx src/pages/LacakSurat.jsx)`
+Expected: PASS (7 tes tab + 10 tes halaman) dan ESLint bersih.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd "D:/Projects/New folder/simsa-atrbpn"
+git add frontend/src/components/lacak/PerluDilengkapiTab.jsx frontend/src/components/lacak/PerluDilengkapiTab.test.jsx frontend/src/pages/LacakSurat.jsx frontend/src/pages/LacakSurat.test.jsx
+git commit -m "feat(perlu-dilengkapi): tab Perlu Dilengkapi di Lacak Surat dengan aksi baris dari aksiDiizinkan" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 21: Badge "Perlu Dilengkapi" pada entri sidebar Lacak Surat (`usePerluDilengkapiCount`) (D7)
+
+Irama badge sama dengan notifikasi yang sudah ada: `useNotifications({ refreshInterval: 60000 })` di `app-header.jsx`, yang memakai `setInterval` 60 detik. Badge dimuat saat aplikasi dibuka, lalu paling sering sekali per 60 detik dan hanya saat tab browser terlihat. Ringkasan yang diumumkan tab Perlu Dilengkapi dipakai langsung. Hanya FULL_ADMIN (`ADMIN_ROLES` sidebar) yang memicu request. Semua request melewati `generalLimiter` (≤15 per 15 menit per tab).
+
+**Files:**
+- Create: `frontend/src/hooks/use-perlu-dilengkapi-count.js`
+- Create: `frontend/src/hooks/use-perlu-dilengkapi-count.test.jsx`
+- Modify: `frontend/src/components/app-sidebar.jsx` (impor, sub-item "Lacak Surat" dari Task 14, `AppSidebar`, render sub-item)
+- Modify: `frontend/src/components/app-sidebar.groups.test.jsx` (impor `within`, mock hook, reset di `beforeEach`, satu tes)
+
+**Interfaces:**
+- Consumes (Task 19): `rangkaianService.ringkasanPerluDilengkapi({}, { signal })`, `PERLU_DILENGKAPI_EVENT`, `PERLU_DILENGKAPI_REFRESH_MS`, `formatJumlahBadge`
+- Consumes (Task 14): sub-item `{ title: 'Lacak Surat', url: '/surat/lacak', icon: Search }` di grup Surat
+- Produces:
+  - `usePerluDilengkapiCount({ enabled = true, refreshMs = PERLU_DILENGKAPI_REFRESH_MS } = {})` → `{ total: number }`. Nilainya 0 dan tanpa request bila `enabled` false; request lama dibatalkan saat unmount; nilai terakhir dipertahankan saat gagal.
+  - Sub-item sidebar dengan `badge: 'perluDilengkapi'`:
+    - saat `total > 0`, `Badge` `aria-hidden` berisi `formatJumlahBadge(total)` dan nama aksesibel tautan `"Lacak Surat (N perlu dilengkapi)"`
+    - saat `total = 0`, nama tetap `"Lacak Surat"` (tes Task 14 tetap berlaku)
+
+- [ ] **Step 1: Tulis tes yang gagal**
+
+```jsx
+// frontend/src/hooks/use-perlu-dilengkapi-count.test.jsx
+import { act, renderHook } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({ ringkasan: vi.fn() }))
+vi.mock('@/services/rangkaian.service', () => {
+    const service = { ringkasanPerluDilengkapi: mocks.ringkasan }
+    return { default: service, rangkaianService: service }
+})
+import { usePerluDilengkapiCount } from './use-perlu-dilengkapi-count'
+import { PERLU_DILENGKAPI_EVENT, PERLU_DILENGKAPI_REFRESH_MS } from '@/lib/perlu-dilengkapi'
+
+let visibilitas = 'visible'
+const tunggu = async (ms) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms) }) }
+
+beforeEach(() => {
+    vi.useFakeTimers()
+    visibilitas = 'visible'
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibilitas })
+    mocks.ringkasan.mockReset()
+    mocks.ringkasan.mockResolvedValue({ total: 12 })
+})
+afterEach(() => {
+    vi.useRealTimers()
+    delete document.visibilityState
+})
+
+describe('usePerluDilengkapiCount', () => {
+    it('tidak meminta apa pun bila dinonaktifkan (role read-only)', async () => {
+        const { result } = renderHook(() => usePerluDilengkapiCount({ enabled: false }))
+        await tunggu(PERLU_DILENGKAPI_REFRESH_MS * 3)
+        expect(mocks.ringkasan).not.toHaveBeenCalled()
+        expect(result.current.total).toBe(0)
+    })
+
+    it('memuat saat mount, lalu paling sering sekali per 60 detik dan hanya saat tab terlihat', async () => {
+        const { result } = renderHook(() => usePerluDilengkapiCount())
+        await tunggu(0)
+        expect(result.current.total).toBe(12)
+        expect(mocks.ringkasan).toHaveBeenCalledTimes(1)
+        expect(mocks.ringkasan).toHaveBeenCalledWith({}, { signal: expect.any(AbortSignal) })
+        await tunggu(PERLU_DILENGKAPI_REFRESH_MS - 1)
+        expect(mocks.ringkasan).toHaveBeenCalledTimes(1)
+        await tunggu(1)
+        expect(mocks.ringkasan).toHaveBeenCalledTimes(2)
+
+        visibilitas = 'hidden'
+        await tunggu(PERLU_DILENGKAPI_REFRESH_MS * 2)
+        expect(mocks.ringkasan).toHaveBeenCalledTimes(2)
+
+        visibilitas = 'visible'
+        act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+        expect(mocks.ringkasan).toHaveBeenCalledTimes(3)
+        act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+        expect(mocks.ringkasan).toHaveBeenCalledTimes(3)
+    })
+
+    it('memakai ringkasan yang diumumkan tab Perlu Dilengkapi tanpa request tambahan', async () => {
+        const { result } = renderHook(() => usePerluDilengkapiCount())
+        await tunggu(0)
+        act(() => { window.dispatchEvent(new CustomEvent(PERLU_DILENGKAPI_EVENT, { detail: { total: 3 } })) })
+        expect(result.current.total).toBe(3)
+        expect(mocks.ringkasan).toHaveBeenCalledTimes(1)
+    })
+
+    it('mempertahankan nilai terakhir saat gagal dan membatalkan permintaan saat unmount', async () => {
+        const { result, unmount } = renderHook(() => usePerluDilengkapiCount())
+        await tunggu(0)
+        mocks.ringkasan.mockRejectedValueOnce(new Error('Terlalu banyak permintaan'))
+        await tunggu(PERLU_DILENGKAPI_REFRESH_MS)
+        expect(result.current.total).toBe(12)
+        mocks.ringkasan.mockReturnValueOnce(new Promise(() => {}))
+        await tunggu(PERLU_DILENGKAPI_REFRESH_MS)
+        const sinyal = mocks.ringkasan.mock.calls.at(-1)[1].signal
+        unmount()
+        expect(sinyal.aborted).toBe(true)
+    })
+})
+```
+
+Di `frontend/src/components/app-sidebar.groups.test.jsx`:
+
+1. Ganti baris impor pertama (persis) `import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'` menjadi:
+
+```jsx
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+```
+
+2. Tambahkan tepat setelah baris `vi.mock('@/context/app-config-context', …)`:
+
+```jsx
+const perlu = vi.hoisted(() => ({ total: 0, opsi: [] }))
+vi.mock('@/hooks/use-perlu-dilengkapi-count', () => ({
+    usePerluDilengkapiCount: (opsi) => { perlu.opsi.push(opsi); return { total: perlu.total } },
+}))
+```
+
+3. Di `beforeEach` yang sudah ada, tambahkan baris berikut tepat setelah `state.role = 'super_admin'`:
+
+```jsx
+    perlu.total = 0
+    perlu.opsi.length = 0
+```
+
+4. Tambahkan di akhir `describe('sidebar task groups', …)`:
+
+```jsx
+    it('menampilkan badge Perlu Dilengkapi pada Lacak Surat hanya untuk admin, tanpa mengubah tujuan tautan', () => {
+        state.role = 'admin_unit'
+        perlu.total = 12
+        const pertama = show({ route: '/surat/lacak' })
+        const link = screen.getByRole('link', { name: 'Lacak Surat (12 perlu dilengkapi)' })
+        expect(link).toHaveAttribute('href', '/surat/lacak')
+        expect(link).toHaveAttribute('aria-current', 'page')
+        expect(within(link).getByText('12')).toHaveAttribute('aria-hidden', 'true')
+        expect(perlu.opsi.at(-1)).toEqual({ enabled: true })
+        pertama.unmount()
+
+        perlu.total = 150
+        const kedua = show({ route: '/surat/lacak' })
+        expect(within(screen.getByRole('link', { name: 'Lacak Surat (150 perlu dilengkapi)' })).getByText('99+')).toBeInTheDocument()
+        kedua.unmount()
+
+        state.role = 'staff'
+        perlu.total = 0
+        show({ route: '/surat/lacak' })
+        expect(perlu.opsi.at(-1)).toEqual({ enabled: false })
+        expect(screen.getByRole('link', { name: 'Lacak Surat' })).toHaveAttribute('href', '/surat/lacak')
+    })
+```
+
+- [ ] **Step 2: Jalankan, pastikan gagal**
+
+Run: `(cd frontend && npx vitest run src/hooks/use-perlu-dilengkapi-count.test.jsx src/components/app-sidebar.groups.test.jsx)`
+Expected: FAIL. `Failed to resolve import "./use-perlu-dilengkapi-count"`, dan di tes sidebar tautan `Lacak Surat (12 perlu dilengkapi)` tidak ditemukan (hook belum dipakai `AppSidebar`).
+
+- [ ] **Step 3: Implementasi minimal**
+
+```js
+// frontend/src/hooks/use-perlu-dilengkapi-count.js
+import { useEffect, useState } from 'react'
+import rangkaianService from '@/services/rangkaian.service'
+import { PERLU_DILENGKAPI_EVENT, PERLU_DILENGKAPI_REFRESH_MS } from '@/lib/perlu-dilengkapi'
+
+/**
+ * Jumlah "Perlu Dilengkapi" untuk badge sidebar (D7). Irama sama dengan notifikasi (60 detik):
+ * paling sering satu permintaan per refreshMs, hanya saat tab terlihat. Ringkasan yang diumumkan
+ * tab Perlu Dilengkapi (PERLU_DILENGKAPI_EVENT) dipakai tanpa request tambahan.
+ */
+export function usePerluDilengkapiCount({ enabled = true, refreshMs = PERLU_DILENGKAPI_REFRESH_MS } = {}) {
+    const [total, setTotal] = useState(0)
+
+    useEffect(() => {
+        if (!enabled) return undefined
+        let aktif = true
+        let controller = null
+        let terakhir = -Infinity
+        const muat = () => {
+            if (document.visibilityState === 'hidden') return
+            if (Date.now() - terakhir < refreshMs) return
+            terakhir = Date.now()
+            controller?.abort()
+            controller = new AbortController()
+            rangkaianService.ringkasanPerluDilengkapi({}, { signal: controller.signal })
+                .then((ringkasan) => { if (aktif) setTotal(Number(ringkasan?.total) || 0) })
+                .catch(() => { /* Badge bukan jalur kritis: nilai terakhir dipertahankan, dicoba lagi pada siklus berikutnya. */ })
+        }
+        const terimaRingkasan = (event) => {
+            const nilai = Number(event.detail?.total)
+            if (!aktif || !Number.isFinite(nilai)) return
+            terakhir = Date.now()
+            setTotal(nilai)
+        }
+        muat()
+        const timer = window.setInterval(muat, refreshMs)
+        document.addEventListener('visibilitychange', muat)
+        window.addEventListener(PERLU_DILENGKAPI_EVENT, terimaRingkasan)
+        return () => {
+            aktif = false
+            controller?.abort()
+            window.clearInterval(timer)
+            document.removeEventListener('visibilitychange', muat)
+            window.removeEventListener(PERLU_DILENGKAPI_EVENT, terimaRingkasan)
+        }
+    }, [enabled, refreshMs])
+
+    return { total: enabled ? total : 0 }
+}
+```
+
+Di `frontend/src/components/app-sidebar.jsx`:
+
+1. Tambah impor setelah `import { useAppConfig } from '@/context/app-config-context'`:
+
+```jsx
+import { usePerluDilengkapiCount } from '@/hooks/use-perlu-dilengkapi-count'
+import { formatJumlahBadge } from '@/lib/perlu-dilengkapi'
+```
+
+2. Ubah sub-item Task 14 `{ title: 'Lacak Surat', url: '/surat/lacak', icon: Search },` menjadi:
+
+```jsx
+                    { title: 'Lacak Surat', url: '/surat/lacak', icon: Search, badge: 'perluDilengkapi' },
+```
+
+3. Di `AppSidebar`, tepat setelah `const userRole = user?.role || 'user'`, tambahkan:
+
+```jsx
+    // D7: hanya FULL_ADMIN yang memicu request ringkasan (role read-only tidak punya aksi di daftar kerja).
+    const perluDilengkapi = usePerluDilengkapiCount({ enabled: ADMIN_ROLES.includes(userRole) })
+```
+
+4. Ganti blok render sub-item (persis):
+
+```jsx
+                                                                {item.subItems.map((subItem) => (
+                                                                    <SidebarMenuSubItem key={subItem.title}>
+                                                                        <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
+                                                                            <Link to={subItem.url} aria-current={isActive(subItem.url) ? 'page' : undefined}>{subItem.title}</Link>
+                                                                        </SidebarMenuSubButton>
+                                                                    </SidebarMenuSubItem>
+                                                                ))}
+```
+
+menjadi:
+
+```jsx
+                                                                {item.subItems.map((subItem) => {
+                                                                    const jumlah = subItem.badge === 'perluDilengkapi' ? perluDilengkapi.total : 0
+                                                                    return (
+                                                                        <SidebarMenuSubItem key={subItem.title}>
+                                                                            <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
+                                                                                <Link
+                                                                                    to={subItem.url}
+                                                                                    aria-current={isActive(subItem.url) ? 'page' : undefined}
+                                                                                    aria-label={jumlah > 0 ? `${subItem.title} (${jumlah} perlu dilengkapi)` : undefined}
+                                                                                >
+                                                                                    {subItem.title}
+                                                                                    {jumlah > 0 && (
+                                                                                        <Badge variant="secondary" aria-hidden="true" className="ml-auto h-5 min-w-5 px-1.5 text-[11px]">
+                                                                                            {formatJumlahBadge(jumlah)}
+                                                                                        </Badge>
+                                                                                    )}
+                                                                                </Link>
+                                                                            </SidebarMenuSubButton>
+                                                                        </SidebarMenuSubItem>
+                                                                    )
+                                                                })}
+```
+
+- [ ] **Step 4: Jalankan, pastikan lulus (termasuk tes sidebar/route Task 14)**
+
+Run: `(cd frontend && npx vitest run src/hooks/use-perlu-dilengkapi-count.test.jsx src/components/app-sidebar.groups.test.jsx src/App.lacak-route.test.jsx && npx eslint src/hooks/use-perlu-dilengkapi-count.js src/components/app-sidebar.jsx)`
+Expected: PASS (4 tes hook; semua tes sidebar, termasuk tes Task 14 "menawarkan Lacak Surat…" dengan badge 0) dan ESLint bersih.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd "D:/Projects/New folder/simsa-atrbpn"
+git add frontend/src/hooks/use-perlu-dilengkapi-count.js frontend/src/hooks/use-perlu-dilengkapi-count.test.jsx frontend/src/components/app-sidebar.jsx frontend/src/components/app-sidebar.groups.test.jsx
+git commit -m "feat(perlu-dilengkapi): badge hitungan pada entri sidebar Lacak Surat dengan irama notifikasi" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 22: Verifikasi akhir P4
 
 **Files:** tidak ada perubahan kode. Commit hanya dibuat bila ada perbaikan dari langkah ini.
 
 **Interfaces:**
-- Consumes: seluruh keluaran Task 2–15 dan baseline Task 1 Step 5
-- Produces: bukti kriteria selesai §10-P4, yaitu fixture ranking, probing, EXPLAIN 50 ribu baris, dan RTL debounce/abort
+- Consumes: seluruh keluaran Task 2–21 dan baseline Task 1 Step 5
+- Produces: bukti kriteria selesai §10-P4, yaitu fixture ranking, probing, EXPLAIN 50 ribu baris, RTL debounce/abort, serta kriteria D7 (matriks cakupan Perlu Dilengkapi, placeholder tanpa bocoran, paritas Buka surat ↔ `checkRead`, Tandai Inisiatif pada surat terarsip, dan irama badge)
 
 - [ ] **Step 1: Suite backend penuh**
 
 Run: `(cd backend && npx vitest run)`
-Expected: PASS. Jumlah file uji = baseline + 6 (`lacak-skor`, `lacak-ranking.integration`, `lacak-probing.integration`, `rangkaian-judul`, `rangkaian-daftar.integration`, `rangkaian-daftar.routes`).
+Expected: PASS. Jumlah file uji = baseline + 9 (`lacak-skor`, `lacak-ranking.integration`, `lacak-probing.integration`, `rangkaian-judul`, `rangkaian-daftar.integration`, `rangkaian-daftar.routes`, ditambah D7: `perlu-dilengkapi.integration`, `asal-naskah.integration`, `rangkaian-perlu-dilengkapi.routes`).
 
 - [ ] **Step 2: Typecheck backend**
 
@@ -3478,11 +5933,11 @@ Expected: tidak ada galat baru di file P4. Bandingkan dengan keluaran pada commi
 ```bash
 cd "D:/Projects/New folder/simsa-atrbpn/frontend"
 npx vitest run
-npx eslint src/pages/LacakSurat.jsx src/components/lacak src/hooks/use-lacak-search.js src/lib/lacak-cache.js src/lib/lacak-link.js src/lib/lacak-labels.js src/components/GlobalSearch.jsx src/components/app-sidebar.jsx src/components/breadcrumbs.jsx src/App.jsx src/services/rangkaian.service.js
+npx eslint src/pages/LacakSurat.jsx src/components/lacak src/hooks/use-lacak-search.js src/hooks/use-perlu-dilengkapi-count.js src/lib/lacak-cache.js src/lib/lacak-link.js src/lib/lacak-labels.js src/lib/perlu-dilengkapi.js src/components/GlobalSearch.jsx src/components/app-sidebar.jsx src/components/breadcrumbs.jsx src/App.jsx src/services/rangkaian.service.js
 npm run build
 ```
 
-Expected: vitest PASS (baseline + 9 file uji baru), ESLint tanpa galat, dan build Vite sukses dengan chunk terpisah untuk `LacakSurat`.
+Expected: vitest PASS (baseline + 9 file uji baru Task 8–15, ditambah 4 file uji D7: `lib/perlu-dilengkapi.test.js`, `services/rangkaian.service.perlu-dilengkapi.test.js`, `components/lacak/PerluDilengkapiTab.test.jsx`, `hooks/use-perlu-dilengkapi-count.test.jsx`), ESLint tanpa galat, dan build Vite sukses dengan chunk terpisah untuk `LacakSurat`.
 
 - [ ] **Step 4: Postgres EXPLAIN (CI/lokal dengan `TEST_POSTGRES_URL`)**
 
@@ -3503,6 +5958,12 @@ Login sebagai `admin_unit` unit uji, lalu periksa:
 3. Buka satu kartu. `?rangkaian=` muncul dan panel Alur Surat tampil di dalam kartu.
 4. Tab **Berkas Rangkaian** memuat daftar tanpa data lama.
 5. Ctrl+K lalu cari nomor. Klik **Lihat rangkaian** (tab Network hanya menampilkan `/api/search`, lalu `/api/rangkaian/lacak` setelah halaman Lacak terbuka).
+6. (D7) Sidebar **Lacak Surat** menampilkan badge jumlah. Di tab Network, `/api/rangkaian/perlu-dilengkapi/ringkasan` muncul saat aplikasi dibuka, lalu paling sering sekali per 60 detik, dan berhenti saat tab browser disembunyikan.
+7. (D7) Buka tab **Perlu Dilengkapi** (`?tab=perlu-dilengkapi`). Hitungan kategori sama dengan badge, dan data lama tersembunyi sampai **Tampilkan data lama** dicentang.
+8. (D7) Pada baris **Surat keluar tanpa asal**, klik **Tandai Inisiatif** lalu konfirmasi. Baris hilang, badge berkurang, dan Audit Log (super_admin) memuat entri `surat_keluar`/`update` dengan `asalNaskah` null → `inisiatif`.
+9. (D7) Login sebagai `staff` unit uji. Badge tidak tampil dan tidak ada request ringkasan dari sidebar.
+
+Catat untuk runbook deploy P4 (deskripsi PR): isi env `RANGKAIAN_DATA_LAMA_SEBELUM` di Vercel dengan waktu kode P3 aktif di produksi (ISO-8601 berzona, mis. `2026-10-05T00:00:00+07:00`) **sebelum** kode P4 aktif. Bila dibiarkan kosong, batas diturunkan dari `min(created_at)` rangkaian non-`data_lama` (§7 D7).
 
 - [ ] **Step 6: Commit perbaikan (bila ada)**
 
@@ -3545,8 +6006,21 @@ Lewati commit bila `git status` bersih.
 - §11 "debounce/abort dan sinkronisasi URL di LacakSurat" → Task 13.
 - §10 "Setiap PR memperbarui `app-sidebar.groups.test.jsx`" → Task 14.
 - D5 → `lingkupSql` (Task 5) memakai FULL_ADMIN dan `is_unit_pengawas` pada unit efektif, dengan kasus `admin_sesditjen` unit NULL dan `staff@sesditjen`.
+- **D7 (2026-09-27), §7 "Perlu Dilengkapi":**
+  - enam kategori beserta kriterianya → Task 16 (satu cabang SQL per kategori, satu kueri untuk daftar dan ringkasan)
+  - visibilitas §4 (cakupan unit sendiri/pengawas/peserta, isi `visibleSql 'list'`, placeholder §4.8, aksi baca bila `visibleSql 'read'`) → Task 16, diuji matriks lima pengguna, pindai JSON, dan paritas `checkRead`
+  - data lama tersembunyi dan filter "Tampilkan data lama" → Task 16 (batas `RANGKAIAN_DATA_LAMA_SEBELUM` beserta cadangannya) dan Task 20 (kotak centang)
+  - `aksiDiizinkan` baris konsisten dengan P3 → Task 16 (`computeSuratAksi`/`computeRangkaianAksi`) dan Task 20 (render hanya dari `aksiDiizinkan`)
+  - endpoint Tandai Inisiatif pemilik-saja, diaudit di transaksi yang sama, berlaku pada surat `approved`/terarsip (trigger 0021 diverifikasi) → Task 17
+  - route, validator `.strict()`, allowlist demo, urutan mount → Task 18
+  - tab `?tab=perlu-dilengkapi` → Task 20
+  - badge sidebar "Lacak Surat (N)", irama notifikasi 60 detik → Task 21
+- §5 baris API D7 → Task 18. §10-P4 kriteria D7 → Task 16–21 dan Task 22 Step 5 butir 6–9. §11 tes D7 → Task 16–21.
 
-**Pemindaian placeholder:** setiap langkah kode memuat kode lengkap. Dua titik ubah bergantung pada kode P3 yang belum tertulis saat rencana ini disusun: ekspresi skor/ORDER BY di Task 3 Step 4 dan pemetaan `judul` di Task 4 Step 4. Keduanya diberi fragmen kode persis beserta perintah `grep` penemu lokasinya (Task 1 Step 2). Task 1 menghentikan eksekusi bila nama P2/P3 berbeda.
+**Pemindaian placeholder:** setiap langkah kode memuat kode lengkap. Dua titik ubah bergantung pada kode P3 yang belum tertulis saat rencana ini disusun: ekspresi skor/ORDER BY di Task 3 Step 4 dan pemetaan `judul` di Task 4 Step 4. Keduanya diberi fragmen kode persis beserta perintah `grep` penemu lokasinya (Task 1 Step 2). Task 1 menghentikan eksekusi bila nama P2/P3 berbeda. Titik ubah D7 memakai teks persis:
+- Task 16 Step 3(b): impor dan `lingkupSql` dari Task 5
+- Task 20 Step 3: baris `tab`/`ubahTab`/`TabsTrigger` dari Task 13
+- Task 21 Step 3: blok render sub-item `app-sidebar.jsx` sesuai kode di `5f57b39`, serta sub-item "Lacak Surat" dari Task 14
 
 **Konsistensi tipe dan nama:**
 - `LacakResult`/`LacakKelompok`/`LacakNode`/`LacakNodeTersamar` (Task 1) dipakai sama di fixture backend (Task 3–4) dan frontend (Task 10–13).
@@ -3556,6 +6030,14 @@ Lewati commit bila `git status` bersih.
 - `meta.aksiDiizinkan` selalu `[]` di Task 5 dan 6; Task 12 tidak membacanya (Tutup massal milik P5 via `GET /api/rangkaian/data-lama/ringkasan`).
 - `judulRangkaianTampil` konsisten di Task 4 dan 5.
 - `LACAK_MIN_CHARS`/`LACAK_MAX_CHARS` konsisten di Task 8, 10, 13, dan 15.
+- D7:
+  - `KATEGORI_PERLU_DILENGKAPI` sama di `perlu-dilengkapi.constants.ts` (Task 16, dipakai validator Task 18) dan `lib/perlu-dilengkapi.js` (Task 19, diuji urutannya).
+  - `PerluDilengkapiAksi` (`tindak_lanjut`, `disposisi`, `buka_kotak_disposisi`, `buat_nd_penjelas`, `buka_surat`, `berkaskan`, `tandai_inisiatif`, `tautkan`) sama di Task 16 dan tombol Task 20.
+  - Bentuk `PerluDilengkapiItem` (Task 16) sama dengan fixture Task 20.
+  - `ringkasan` → `{ perKategori, total, lewatBatas, batasDataLama }` sama di Task 16, 18, 19, 20, dan 21.
+  - `PERLU_DILENGKAPI_EVENT` detail `{ total }` sama di Task 19, 20, dan 21.
+  - `tandaiInisiatif(suratKeluarId)` ↔ `POST /api/rangkaian/surat-keluar/:suratKeluarId/tandai-inisiatif` ↔ `asalNaskahService.tandaiInisiatif(user, id, audit)` konsisten.
+  - `lingkupRangkaianSql(ctx, alias)` dipakai `rangkaianDaftarService.list` (lewat `lingkupSql`) dan cabang `siap_diberkaskan`.
 
 **Ambiguitas spec yang diselesaikan di rencana ini:**
 1. **Bentuk respons `/lacak`** tidak dirinci spec, sehingga dibekukan di Task 1 dari §4.8, §5, dan §6 lalu diverifikasi terhadap kode P3.
@@ -3572,6 +6054,23 @@ Lewati commit bila `git status` bersih.
    Tabel skor §6 lainnya tidak berubah.
 7. **Pengawas di daftar** mengikuti §4.4 (unit rekaman ∈ ditjen/sesditjen/`dir_*`) dan diterapkan pada unit pencatat rangkaian. Role lama hanya melihat rangkaian yang dicatat unitnya sendiri.
 8. **Cache 20 entri** berlaku per instans halaman (bukan global), agar data tidak basi antar-sesi atau antar-pengguna.
+10. **Batas data lama D7.**
+    - Definisi: rangkaian `asal='data_lama'`, **atau** surat tanpa keanggotaan rangkaian dengan `created_at` < batas.
+    - Batas diambil dari env `RANGKAIAN_DATA_LAMA_SEBELUM` (ISO-8601 berzona; runbook: waktu kode P3 aktif). Tanpa env, batas = `min(created_at)` rangkaian non-`data_lama` (backfill langkah 1 berjalan tepat sebelum kode P3). Tanpa rangkaian sama sekali, batas = sekarang (fail-safe: menyembunyikan, bukan membanjiri). Nilai rusak → 500 eksplisit.
+    - Disposisi pra-deploy tetap tampil karena backfill langkah 1 memasukkannya ke rangkaian `asal='surat_masuk'`.
+    - Tidak ada tabel konfigurasi baru.
+11. **Irama badge.** Mengikuti `useNotifications` (`refreshInterval: 60000` di `app-header.jsx`):
+    - satu request saat aplikasi dibuka, lalu paling sering sekali per 60 detik dan hanya saat tab terlihat
+    - ringkasan dari tab dibagikan lewat event tanpa request
+    - hanya FULL_ADMIN
+
+    Pilihan "hanya saat navigasi" ditolak karena setiap perpindahan halaman akan memicu request dan justru melampaui irama notifikasi.
+12. **Otorisasi Tandai Inisiatif.** FULL_ADMIN + unit pemilik + kebijakan list (`visibleSql 'list'`), bukan `check()`. Alasannya, `check()` mensyaratkan grant untuk kelas Terbatas, termasuk surat keluar lama yang klasifikasinya NULL, sehingga kasus utama tidak pernah bisa ditandai. Hanya `asal_naskah` yang diubah dan respons tidak memuat isi surat. Keputusan ini dicatat di spec §13 untuk sign-off keamanan.
+13. **Detail kategori.**
+    - `sk_tanpa_nd_penjelas` hanya untuk Keputusan `approved`; draf masih bisa berubah.
+    - `sm_belum_ditindaklanjuti` mengecualikan rangkaian `selesai`/`diberkaskan`, sehingga Tandai Selesai manual menutupnya, dan juga balasan lama via `balasan_untuk`.
+    - `disposisi_terbuka` juga tampil bagi unit sumber (TU pemilik).
+    - Badge = `total` ringkasan tanpa data lama, termasuk baris tersamar. Baris tersamar tetap pekerjaan yang harus diselesaikan, mis. oleh super_admin atau lewat Ajukan Akses.
 
 ## Catatan Konsistensi Lintas Fase (2026-09-26)
 
@@ -3583,3 +6082,25 @@ Perubahan dari tinjauan konsistensi P0–P5 terhadap berkas ini:
 - Task 8/9/10/13: hook `useLacakSurat`/`use-lacak-surat.js` dihapus; Task 10 kini memperluas hook P3 `useLacakSearch` (`use-lacak-search.js`) dengan test baru `use-lacak-search.p4.test.jsx`; `lacakCacheKey` ikut memuat `jenis`; Task 9 tidak lagi mengganti `rangkaianService.lacak` P3 (mempertahankan `jenis` dan `limit = 8`).
 - Task 9/12 dan Self-Review: "Tutup massal data lama" (service klien, tombol, dialog `{ unitPengolahId, alasan }` → `{ jumlah }`) dihapus dari P4; endpoint **dan** UI dimiliki P5 dengan kontrak tunggal pratinjau + `expectedCount`. `meta.aksiDiizinkan` tetap `[]`.
 - Task 6: urutan mount final `/api/rangkaian` dicantumkan; Branch diganti `feat/integrasi-surat-p4` dari `origin/main` (sebelumnya `feat/integrasi-surat-p4-lacak`).
+
+## Catatan Konsistensi Lintas Fase — tambahan D7 (2026-09-27)
+
+Tambahan keputusan pengguna **D7** (tab Perlu Dilengkapi + badge sidebar) ke rencana ini:
+
+- **Task baru 16–21** disisipkan sebelum verifikasi akhir. Verifikasi akhir kini **Task 22** (sebelumnya Task 16), dan rujukan baseline di Task 1 ikut diperbarui.
+  - Task 16: `perluDilengkapiService` + `resolveBatasDataLama`, ekspor `lingkupRangkaianSql` dari Task 5
+  - Task 17: `asalNaskahService.tandaiInisiatif`
+  - Task 18: router `rangkaian-perlu-dilengkapi.routes.ts`, validator, demo, `app.ts`
+  - Task 19: klien
+  - Task 20: `PerluDilengkapiTab` + `LacakSurat`
+  - Task 21: badge sidebar
+- **Urutan mount final** `/api/rangkaian` (Task 6 diperbarui): `rangkaianDaftarRoutes` (P4 Task 6) → `rangkaianPerluDilengkapiRoutes` (P4 Task 18) → `rangkaianBerkasRoutes` (P5 Task 8, disisipkan tepat sebelum router utama sesuai rencana P5) → `rangkaianRoutes` (P2/P3). Jalur ketiga router tambahan tidak beririsan. Uji sumber `app.ts` di P5 Task 8 (berkas sebelum utama) tetap berlaku, begitu pula uji Task 18 (daftar < D7 < utama).
+- **Nama P2/P3 yang dikonsumsi D7** (diverifikasi grep Task 1 Step 2–3):
+  - `visibleSql`, `jangkauanRekamanSql`, `cocokUnitRekamanSql`, `kecocokanUnitRekaman`, `dalamCakupanPengawas(Sql)`, `resolveKonteksBaca`, `barisDari`, `PelaksanaSql`, `TargetVisibilitas` (P2 Task 2)
+  - `isAllowedForRecordUnit` (P2)
+  - `computeSuratAksi`/`computeRangkaianAksi` (P3 Task 16) dan `isFullAdmin` (P3 Task 1)
+  - `buildTindakLanjutState` (P3 Task 19), `DistributeDialog` (P3 Task 22), `BerkaskanDialog` dan `TautkanDialog` (P3 Task 25)
+  - D7 tidak mengubah satu pun modul P2/P3. Satu-satunya perubahan pada berkas P4 lain adalah ekspor `lingkupRangkaianSql` di `rangkaian-daftar.service.ts` (perilaku Task 5 tetap, dan tes Task 5 dijalankan ulang di Task 16).
+- **P3 tidak punya jalur untuk mengisi `asal_naskah` surat yang sudah ada** (`updateSuratKeluarSchema` meng-`omit` `asalNaskah`). Karena itu D7 menambah endpoint Tandai Inisiatif di P4. Trigger 0021 (`protect_archived_surat_source`) diverifikasi tidak menjaga `asal_naskah`/`updated_at`, sehingga endpoint berlaku pada surat terarsip tanpa mengubah migrasi.
+- **Konfigurasi baru:** env `RANGKAIAN_DATA_LAMA_SEBELUM`, dicatat di runbook deploy P4 (Task 22 Step 5). Tidak ada tabel, migrasi, role, flag, atau limiter baru; badge memakai `generalLimiter` yang ada.
+- **P5:** notifikasi batas waktu (P5) dan daftar kerja D7 memakai tanggal Jakarta yang sama (`jakartaDate()`). Tutup massal data lama (P5) mengurangi baris `siap_diberkaskan` berasal `data_lama` yang hanya tampil saat "Tampilkan data lama" dicentang. Tidak ada kontrak P5 yang berubah.

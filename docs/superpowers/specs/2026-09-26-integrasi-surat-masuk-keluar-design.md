@@ -39,7 +39,7 @@ Keanggotaan rangkaian disimpan di tabel terpisah (`rangkaian_surat`, `rangkaian_
 
 Akses lintas unit memakai `recordAccessService.checkRead/checkMany`, yang selalu read-only. `check()` tidak berubah sedikit pun. Predikat visibilitas punya **satu sumber** (spesifikasi TS yang menghasilkan fragmen SQL), dipakai bersama oleh `checkRead`, kotak disposisi, seed Lacak, dan daftar rangkaian. Klasifikasi Terbatas ke atas tetap disamarkan ("Dikecualikan") kecuali ada grant yang terikat unit pemilik rekaman. Surat terkendali hanya boleh didisposisikan bila jalur grant disposisi aktif (§4.12).
 
-Pencarian "Lacak Surat" menormalkan nomor, mengelompokkan hasil per rangkaian, dan langsung menampilkan pratinjau rantai. Tombol **Buat Surat Inisiatif** memulai surat keluar mandiri. Rangkaian yang selesai **diberkaskan ke Direktorat (Unit Pengolah)**. Status "diberkaskan" dikunci di level DB, dan koreksinya hanya lewat alur **Koreksi Berkas** super_admin yang maker-checker. Total estimasi sekitar 24–29 hari kerja dalam 6 fase (P0–P5).
+Pencarian "Lacak Surat" menormalkan nomor, mengelompokkan hasil per rangkaian, dan langsung menampilkan pratinjau rantai. Halaman yang sama memuat daftar kerja **Perlu Dilengkapi** (D7) untuk surat yang rantainya belum lengkap, dengan badge hitungan di sidebar. Tombol **Buat Surat Inisiatif** memulai surat keluar mandiri. Rangkaian yang selesai **diberkaskan ke Direktorat (Unit Pengolah)**. Status "diberkaskan" dikunci di level DB, dan koreksinya hanya lewat alur **Koreksi Berkas** super_admin yang maker-checker. Total estimasi sekitar 25,5–31 hari kerja dalam 6 fase (P0–P5), termasuk D7 di P4.
 
 **Keputusan yang dipakai:**
 - **D1** Registrasi surat masuk terpusat di TU Ditjen/Sesditjen. TU menjadi *unit pencatat* dan mendisposisikan surat ke direktorat.
@@ -50,6 +50,7 @@ Pencarian "Lacak Surat" menormalkan nomor, mengelompokkan hasil per rangkaian, d
   Kepemilikan rekaman tidak pernah dipindah, sehingga provenance terjaga (Permen 2/2026, Perban ANRI 5/2021 Pasal 137(2)).
 - **D3** Surat Inisiatif adalah surat keluar mandiri bertanda `asal_naskah='inisiatif'`. Surat ini menjadi induk rantai baru yang bisa dikaitkan kemudian, misalnya ND penjelas SK.
 - **D4** Unit peserta rangkaian dan unit pengawas (efektif `ditjen`/`sesditjen`) dapat melihat rangkaian. Node terkendali tetap disamarkan tanpa grant.
+- **D7** (2026-09-27) Halaman Lacak Surat mendapat tab **Perlu Dilengkapi**: daftar kerja surat yang rantainya belum lengkap dalam enam kategori, dengan tombol aksi langsung per baris dan badge hitungan pada entri sidebar "Lacak Surat". Visibilitasnya mengikuti §4 dan data lama disembunyikan secara default (§7).
 
 ---
 
@@ -479,6 +480,11 @@ Endpoint baru ada di `backend/src/routes/rangkaian.routes.ts` (BARU), dipasang `
 | POST | `/api/rangkaian/:id/koreksi-berkas` | Ajukan koreksi unit pengolah/klasifikasi berkas yang sudah diberkaskan `{unitPengolahBaru, klasifikasiBaru, alasan≥10}` | super_admin (pengaju) |
 | POST | `/api/rangkaian/koreksi-berkas/:koreksiId/putuskan` | Setujui/tolak; bila setuju, terapkan dalam tx dengan `set_config('simsa.berkas_koreksi', id, true)` → status `applied` | super_admin lain (maker-checker) |
 | POST | `/api/rangkaian/data-lama/tutup-massal` | Berkaskan/tutup massal rangkaian `data_lama` per filter | super_admin, admin pengawas |
+| GET | `/api/rangkaian/perlu-dilengkapi?kategori&tampilkanDataLama&page&limit≤50` | Daftar kerja **Perlu Dilengkapi** (D7, §7): enam kategori, baris tersamar memakai placeholder §4.8, `aksiDiizinkan[]` per baris, data lama disembunyikan kecuali `tampilkanDataLama=true`. Kueri Zod `.strict()` | semua role terprovisi (aksi tulis hanya FULL_ADMIN) |
+| GET | `/api/rangkaian/perlu-dilengkapi/ringkasan?tampilkanDataLama` | Hitungan per kategori `{perKategori, total, lewatBatas, batasDataLama}` dari kueri yang sama dengan daftar; dipakai tab dan badge sidebar | semua role terprovisi |
+| POST | `/api/rangkaian/surat-keluar/:suratKeluarId/tandai-inisiatif` | Tetapkan `asal_naskah='inisiatif'` pada surat keluar yang `asal_naskah`-nya NULL dan bukan anggota rangkaian (D7). Body kosong; 409 bila asal sudah terisi atau surat menindaklanjuti surat lain. Berlaku juga untuk surat `approved`/terarsip | pemilik surat (FULL_ADMIN unit pemilik) |
+
+Ketiga endpoint D7 berada di router terpisah `backend/src/routes/rangkaian-perlu-dilengkapi.routes.ts` (auth per-route). Router ini dipasang **sebelum** router utama `/api/rangkaian` (urutan: daftar P4 → Perlu Dilengkapi P4 → berkas P5 → utama P2/P3), sehingga `/perlu-dilengkapi` tidak tertangkap `GET /:id`. Endpoint tandai inisiatif adalah satu-satunya jalur yang mengubah `asal_naskah` surat yang sudah ada, karena skema update P3 tidak memuat `asalNaskah`.
 
 **Batas `unitPengolahId`** (PUT unit-pengolah maupun berkaskan). Nilainya harus salah satu dari:
 - target disposisi non-rejected di rangkaian itu
@@ -638,7 +644,47 @@ Kata "Kembalikan" **tidak** dipakai untuk penyerahan berkas karena sudah dipakai
 - `pages/LacakSurat.jsx` (BARU) di `/surat/lacak` (RoleGuard `ALL_PROVISIONED_ROLES`), dengan entri sidebar "Lacak Surat" di grup Surat (`app-sidebar.jsx:84-85`).
 - Halaman berisi satu input besar, kartu rangkaian dengan pratinjau node inline, ekspansi di tempat, dan sinkronisasi URL (`?q=`, `?rangkaian=`).
 - Tab **Berkas Rangkaian** memuat filter unit pengolah dan status. Data lama tersembunyi secara default, dengan aksi "Tutup massal data lama" untuk pengawas.
+- Tab **Perlu Dilengkapi** (D7) berisi daftar kerja rantai yang belum lengkap, dengan badge hitungan pada entri sidebar (lihat subbagian berikut).
 - `GlobalSearch.jsx` mendapat aksi "Lihat rangkaian" per hasil surat tanpa request tambahan.
+
+**Perlu Dilengkapi (P4, D7).**
+- Tab ketiga di `LacakSurat.jsx` (`?tab=perlu-dilengkapi`, komponen `components/lacak/PerluDilengkapiTab.jsx`) berisi daftar kerja surat dan rangkaian yang rantainya belum lengkap. Setiap baris punya tombol aksi langsung. Datanya dari `GET /api/rangkaian/perlu-dilengkapi` dan `/ringkasan` (§5). Tidak ada tabel atau migrasi baru.
+- Enam kategori. Kodenya tetap dan dipakai API maupun UI. Semua kriteria menyaring `is_deleted IS NOT TRUE`.
+
+  | Kategori | Kriteria | Aksi (hanya bila ada di `aksiDiizinkan`) |
+  |---|---|---|
+  | `sm_belum_ditindaklanjuti` | Surat masuk tanpa disposisi non-`rejected`, tanpa relasi aktif `balasan`/`tindak_lanjut` dari surat keluar hidup, tanpa `balasan_untuk` lama dari surat keluar hidup, dan tidak berada di rangkaian `selesai`/`diberkaskan` (Tandai Selesai manual menutupnya) | Tindak Lanjut, Disposisi |
+  | `disposisi_terbuka` | Baris `surat_distributions` berstatus `sent`/`received`. Baris disorot **Lewat batas waktu** bila `batas_waktu` < tanggal hari ini Asia/Jakarta (`jakartaDate()`, sama dengan filter kotak disposisi P3) | Buka Kotak Disposisi (hanya untuk unit target) |
+  | `sk_tanpa_nd_penjelas` | Surat keluar `approved` dengan `naskah_dinas ~* 'keputusan'` (padanan `/keputusan/i`) yang tidak ditunjuk relasi aktif `menjelaskan` dari surat keluar hidup, dan rangkaiannya (bila ada) tidak `diberkaskan`. Draf Keputusan tidak masuk karena isinya masih bisa berubah | Buat ND Penjelas |
+  | `tindak_lanjut_tertahan` | Anggota surat keluar hidup dengan `approval_status IN ('draft','pending','rejected')` (himpunan penghalang §8) di rangkaian `aktif`/`selesai` | Buka surat |
+  | `siap_diberkaskan` | Rangkaian berstatus `selesai` (belum `diberkaskan`) | Berkaskan ke Direktorat (memakai `BerkaskanDialog` P3) |
+  | `sk_tanpa_asal` | Surat keluar dengan `asal_naskah` NULL yang bukan anggota rangkaian mana pun | Tandai Inisiatif, Tautkan |
+
+  Semua baris yang isinya boleh dibaca juga mendapat **Buka surat**. Aksi dihitung server memakai aturan P3 yang sama (`computeSuratAksi`/`computeRangkaianAksi`), sehingga klien tidak pernah menebak hak dari `canWrite(unit)`.
+- **Visibilitas (§4).** Tidak ada predikat kedua. Semuanya dirakit dari fragmen `visibility-spec.ts`:
+  - *Cakupan baris surat* = unit sendiri (`kecocokanUnitRekaman`) atau `jangkauanRekamanSql`. Artinya pengawas (FULL_ADMIN dengan unit efektif `is_unit_pengawas`) melihat rekaman `ditjen`/`sesditjen`/`dir_*`, sedangkan direktorat melihat miliknya sendiri dan rangkaian tempat ia menjadi peserta.
+  - *Cakupan disposisi*: unit target atau unit sumber = unit sendiri, atau pengawas atas target dalam cakupan pengawas.
+  - *Cakupan rangkaian*: lingkup daftar Berkas Rangkaian (pencatat, pengawas, atau jangkauan §4.5).
+  - *Isi baris* mengikuti `visibleSql(ctx, target, 'list')`, kebijakan yang sama dengan daftar surat. Baris dalam cakupan yang tidak lolos tampil sebagai placeholder §4.8 `{kategori, jenis, unitNama, label:'Dikecualikan', masked:true}`. Placeholder tidak memuat id surat, nomor, perihal, tanggal, pihak, maupun rangkaian, dan nilai-nilai itu sudah di-NULL-kan di SQL. Disposisi tersamar tetap membawa metadata routing (id disposisi, unit target, status, batas waktu), sama seperti kotak disposisi bertopeng, agar target bisa membuka kotak disposisi dan menolak.
+  - *Aksi yang membaca atau menindaklanjuti isi* (Buka surat, Tindak Lanjut, Disposisi, Buat ND Penjelas, Tautkan) hanya ditawarkan bila `visibleSql(…, 'read')` lolos. Ini paritas dengan `checkRead`, yang disyaratkan semua jalur tulis P3. Staff/auditor hanya mendapat Buka surat.
+  - Judul rangkaian disamarkan lewat `judulRangkaianTampil` bila induk tidak terbaca.
+- **Data lama disembunyikan secara default**, dengan kotak centang **Tampilkan data lama**.
+  - Sebuah baris dianggap data lama bila rangkaiannya ber-`asal='data_lama'`, **atau** suratnya bukan anggota rangkaian mana pun dan `created_at` < *batas data lama*.
+  - *Batas data lama* diambil dari env `RANGKAIAN_DATA_LAMA_SEBELUM` (ISO-8601 dengan zona, mis. `2026-10-05T00:00:00+07:00`). Runbook P4 mengisinya dengan waktu kode P3 aktif di produksi.
+  - Bila env kosong, batas diturunkan dari data: `min(created_at)` rangkaian non-`data_lama`. Rangkaian pertama dibuat backfill langkah 1, yang dijalankan tepat sebelum kode P3 aktif (§3). Bila belum ada rangkaian sama sekali, batasnya "sekarang", sehingga surat lama tersembunyi dan tidak membanjiri daftar. Nilai env yang tidak valid menghasilkan galat 500 yang eksplisit, bukan diam-diam diabaikan.
+  - Alasan: sebelum P3, surat tidak mungkin punya disposisi terstruktur, relasi, atau `asal_naskah`. Tanpa batas, sekitar 2 ribu surat lama akan tampil "belum lengkap". Syarat "bukan anggota rangkaian" mencegah surat lama yang sudah ditautkan ke rantai baru ikut tersembunyi. Disposisi pra-deploy yang dibackfill ke rangkaian `asal='surat_masuk'` tetap tampil karena memang pekerjaan nyata di kotak disposisi.
+- **Urutan:** baris lewat batas waktu lebih dulu, lalu tanggal terbaru, lalu kategori dan id (deterministik). Seluruh kueri berjalan dalam satu transaksi dengan `SET LOCAL statement_timeout='2s'`.
+- **Badge sidebar.** Sub-item "Lacak Surat" menampilkan jumlah (`total` ringkasan tanpa data lama), mis. "Lacak Surat **12**". Nama aksesibelnya "Lacak Surat (12 perlu dilengkapi)", dan nilai ≥100 tampil sebagai "99+".
+  - Badge hanya untuk FULL_ADMIN (`ADMIN_ROLES` sidebar); role read-only tidak memicu request.
+  - Hitungan dimuat saat aplikasi dibuka, lalu paling sering satu kali per 60 detik dan hanya saat tab terlihat. Iramanya sama dengan notifikasi (`useNotifications`, `refreshInterval: 60000` di `app-header.jsx`).
+  - Tab Perlu Dilengkapi mengumumkan ringkasan terbarunya lewat event `window`, sehingga badge langsung diperbarui tanpa request tambahan.
+  - Semua request melewati `generalLimiter` (≤15 request per 15 menit per tab, jauh di bawah 500).
+- **Tandai Inisiatif** (`POST /api/rangkaian/surat-keluar/:suratKeluarId/tandai-inisiatif`).
+  - Hanya pemilik: role FULL_ADMIN, unit pemilik rekaman (`isAllowedForRecordUnit`), dan baris lolos `visibleSql(…, 'list')`. Selain itu 404 seragam, tanpa oracle.
+  - 409 bila `asal_naskah` sudah terisi, atau surat menindaklanjuti surat lain (`balasan_untuk` terisi atau surat ini sisi `dari` sebuah relasi aktif).
+  - Berlaku juga untuk surat `approved` dan terarsip. Trigger 0021 (`protect_archived_surat_source`) hanya membandingkan `id`, `is_archived`, `is_deleted`, unit, tahun, nomor, tanggal, perihal, dan kode klasifikasi, jadi `asal_naskah` tidak dijaga.
+  - Audit `surat_keluar`/`update` ditulis di transaksi yang sama (`logActionOrThrow`).
+  - Endpoint ini sengaja tidak memakai `check()`. `check()` mensyaratkan grant untuk kelas Terbatas, termasuk surat keluar lama yang klasifikasinya NULL, sehingga kasus utamanya akan selalu terblokir. `asal_naskah` adalah metadata alur kerja, dan respons endpoint tidak memuat isi surat. Keputusan ini masuk paket sign-off keamanan (§13).
 
 **Kotak Disposisi direktorat.** `DistributionInbox.jsx:344-425` tetap menjadi kotak disposisi (tidak diganti). Perubahannya:
 - Baris menjadi tautan ke detail surat.
@@ -730,10 +776,10 @@ Kata "Kembalikan" **tidak** dipakai untuk penyerahan berkas karena sudah dipakai
 | **P1 Skema** | 0046 (termasuk `rangkaian_koreksi_berkas`, `selesai_manual`, `ditutup_pengawas`, trigger penutupan atas `surat_distributions`, trigger anti-siklus gabung), 0047, Drizzle, REVOKE di 0002, runbook deploy (migrate → converge → backfill langkah 1 → kode), `rangkaianService` inti (ensure/attach/recompute/gabung), `distribute(data, auditContext?, tx?)` | P0 | 4,5 | Test migration-chain PGlite 0000–0047 hijau (termasuk fixture perihal NULL); CHECK menolak pembatalan/berakhir/selesai manual dengan alasan NULL; trigger 0021 tidak terpicu saat menautkan surat terarsip; trigger penutupan menolak insert anggota/relasi/disposisi; trigger menolak `digabung_ke_id` ke rangkaian `digabung`; paritas normalisasi TS/SQL; precheck 0046 RAISE pada data ganda; konvergensi grants lulus |
 | **P2 Akses baca lintas unit** | `visibility-spec.ts` lengkap (`visibleSql`), `findActiveGrant`, `checkRead`, `checkMany`, pengawas via unit efektif, `scopeForAuthorizedRead`, detail/berkas (kedua cabang) + audit `via`, `GET /rangkaian/:id` & `/by-surat`, AlurSuratPanel read-only, penyamaran | P1 | 5 | Matriks keamanan unit × role × kelas × grant × jangkauan, termasuk `admin_sesditjen` dengan unit NULL (tetap pengawas) dan `admin_unit@sesditjen` (pengawas via `is_unit_pengawas`), `admin_unit@dir_bppt` (bukan pengawas), dan `staff@sesditjen` (role lama, tanpa jangkauan); property test paritas `checkRead` ↔ SQL; non-peserta tetap 404 (`surat-file-security.routes.test.ts` hijau); PUT/DELETE lintas unit tetap 404; disposisi ditolak mencabut jangkauan; judul/instruksi tersamar; hasil `check()` identik (snapshot test) |
 | **P3 Alur tindak lanjut & inisiatif** | Backfill langkah 1 (disposisi eksplisit, tanpa gerbang); semua jalur `distribute()` lewat `ensureForSuratMasuk` (termasuk `POST /api/distributions`); **backend `/lacak` (3 mode), `lacakLimiter`, `escapeLike`, `normalizeNomor`**; ekstensi create masuk/keluar; disposisi multi-target + batas waktu + penanggung jawab; aturan surat terkendali §4.12; kotak disposisi bertopeng; terima eksplisit; penyelesaian (dengan `checkRead`); tutup disposisi pengawas; status turunan monoton + audit; selesai/berkaskan (dua langkah, unit dalam jangkauan)/tautan/gabung (pemindahan distribusi)/batal; guard update/delete surat masuk anggota; MULTILINE_FIELDS; TindakLanjutMenu; split button & route inisiatif; ND Penjelas; Kotak Disposisi; registrasi (unit, Nomor Referensi, cek duplikat); Ajukan Akses (`requestViaRangkaian`, flag) | P2 | 7,5 | `surat_distributions.rangkaian_id IS NULL` = 0 setelah backfill langkah 1; skenario a–e lulus di Postgres; disposisi lama sebelum deploy dapat dibuka penerimanya; test create berbasis Proxy mock diperbarui (hook di-mock per modul); matriks Ajukan Akses (pengajuan oleh peserta luar unit, persetujuan, baca via grant); gerbang rilis: sign-off keamanan untuk flag Ajukan Akses, kebijakan surat terkendali, dan role (D5 sudah diputuskan) |
-| **P4 Lacak Surat (UI)** | Halaman LacakSurat, tab Berkas Rangkaian, hook GlobalSearch, penyempurnaan ranking | P3 (backend `/lacak`) | 2,5–3 | Fixture ranking (beberapa varian `B-12/PTPP.1/IX/2024`, SK berulang tiap tahun, `1/23` vs `12/3`); test probing bahwa perihal tersamar tidak pernah cocok; EXPLAIN pada 50 ribu baris sintetis; RTL debounce/abort |
+| **P4 Lacak Surat (UI)** | Halaman LacakSurat, tab Berkas Rangkaian, hook GlobalSearch, penyempurnaan ranking; **tab Perlu Dilengkapi (D7)**: layanan daftar kerja enam kategori + ringkasan (`GET /api/rangkaian/perlu-dilengkapi`, `/ringkasan`), endpoint Tandai Inisiatif, aksi baris dari `aksiDiizinkan`, batas data lama, badge sidebar | P3 (backend `/lacak`, `aksi.ts`, dialog P3) | 4–5 (termasuk D7 1,5–2) | Fixture ranking (beberapa varian `B-12/PTPP.1/IX/2024`, SK berulang tiap tahun, `1/23` vs `12/3`); test probing bahwa perihal tersamar tidak pernah cocok; EXPLAIN pada 50 ribu baris sintetis; RTL debounce/abort; **D7:** matriks cakupan pengguna × kategori (bppt, TU pengawas, ptep, staff lama, super_admin), placeholder tanpa bocoran (pindai JSON), paritas aksi Buka surat ↔ `checkRead`, data lama tersembunyi/tampil, Tandai Inisiatif pada surat terarsip lolos trigger 0021 dan rollback bila audit gagal, irama badge ≤1 request/60 detik |
 | **P5 Data lama & pelengkap** | Skrip backfill langkah 2 (dry-run → sign-off → `--apply`), flag `RANGKAIAN_DISPOSISI_LAMA_READ`, tutup massal data lama, **Koreksi Berkas** (endpoint + UI maker-checker), migrasi pengerasan `surat_distributions.rangkaian_id SET NOT NULL`, notifikasi batas waktu, ekspor "Balasan Untuk" sebagai nomor + kolom "Asal Naskah", PANDUAN; opsional: pg_trgm, re-key generalLimiter | P3, P4 | 3–4 | Skrip idempoten (dijalankan dua kali, jumlah baris identik); CSV pemetaan disetujui; peserta data lama tidak memberi akses saat flag mati; koreksi berkas hanya berhasil dengan GUC + baris approved oleh super_admin berbeda |
 
-**Total sekitar 24–29 hari kerja.** Urutan dependensi: P0 → P1 → P2 → P3 → P4 → P5. Pekerjaan UI P4 boleh dimulai paralel setelah kontrak `/lacak` P3 dibekukan. Setiap PR memperbarui `app-sidebar.groups.test.jsx` dan `SuratKeluarDetail.rules.test.jsx` (mock service baru) bila menyentuh area tersebut.
+**Total sekitar 25,5–31 hari kerja** (sebelumnya 24–29; D7 menambah 1,5–2 hari di P4). Urutan dependensi: P0 → P1 → P2 → P3 → P4 → P5. Pekerjaan UI P4 boleh dimulai paralel setelah kontrak `/lacak` P3 dibekukan. Setiap PR memperbarui `app-sidebar.groups.test.jsx` dan `SuratKeluarDetail.rules.test.jsx` (mock service baru) bila menyentuh area tersebut.
 
 ---
 
@@ -756,6 +802,7 @@ Kata "Kembalikan" **tidak** dipakai untuk penyerahan berkas karena sudah dipakai
   - 422 unit pengolah di luar jangkauan
   - `aksiDiizinkan` sesuai role
   - allowlist mode demo
+  - D7: kueri `perlu-dilengkapi` dan `/ringkasan` `.strict()` (kategori/bendera tak dikenal → 400), role belum terprovisi 403, `/perlu-dilengkapi` tidak tertangkap `GET /:id`, router D7 dipasang sebelum router utama, Tandai Inisiatif 400 untuk id bukan UUID atau body berisi field, 403 untuk role read-only
 - **Integrasi Postgres (`vitest.postgres.config.ts`):**
   - skenario a–e end-to-end
   - disposisi pra-deploy yang dibackfill langkah 1 lalu dibuka penerima
@@ -769,6 +816,8 @@ Kata "Kembalikan" **tidak** dipakai untuk penyerahan berkas karena sudah dipakai
   - koreksi berkas dengan dan tanpa GUC
   - Ajukan Akses via rangkaian
   - backfill langkah 2 pada fixture yang meniru agregat lama (ejaan label, label kosong, balasan lintas unit)
+  - D7 (PGlite rantai migrasi penuh): ringkasan Perlu Dilengkapi per pengguna × kategori (direktorat, TU pengawas, direktorat yang disposisinya ditolak, staff lama, super_admin); placeholder tersamar dengan himpunan kunci tetap dan pindai JSON (nomor, perihal, id surat, kode rangkaian tidak muncul); paritas "Buka surat" ↔ `checkRead`; data lama tersembunyi/tampil dan batas dari env maupun turunan data; urutan lewat batas deterministik
+  - D7 Tandai Inisiatif: berhasil pada surat keluar `approved` dan **terarsip** (baris `arsip` tertaut, sementara ubah perihal tetap ditolak trigger 0021); 404 untuk unit lain, pengawas bukan pemilik, staff, kelas di luar kebijakan list, surat terhapus; 409 untuk asal terisi, `balasan_untuk`, dan sisi `dari` relasi aktif; UPDATE dibatalkan bila audit gagal
 - **Properti:** kombinasi acak role/unit/sifat/grant/jangkauan menghasilkan hasil `checkRead` = hasil seed SQL.
 - **Migrasi:** PGlite migration-chain; precheck 0046 yang gagal pada data ganda; CHECK alasan NULL ditolak.
 - **Frontend (RTL):**
@@ -778,6 +827,7 @@ Kata "Kembalikan" **tidak** dipakai untuk penyerahan berkas karena sudah dipakai
   - konfirmasi dua langkah BerkaskanDialog
   - baris kotak disposisi tersamar
   - debounce/abort dan sinkronisasi URL di LacakSurat
+  - D7: tab Perlu Dilengkapi (aksi hanya dari `aksiDiizinkan`, baris tersamar tanpa tautan surat, konfirmasi Tandai Inisiatif, dialog Disposisi/Berkaskan/Tautkan menerima data baris, filter kategori dan data lama dikirim ke server); hook badge (tidak meminta untuk role read-only, ≤1 request per 60 detik, berhenti saat tab tersembunyi, memakai ringkasan yang diumumkan tab, abort saat unmount); badge sidebar dengan nama aksesibel dan "99+"
 - **Regresi:** kontrak `integration-contracts.test.js`, test distribusi dan notifikasi yang ada, test `tunjuk-silang.routes.test.ts`, dan test outbox SRIKANDI (payload tidak berubah).
 
 ---
@@ -802,6 +852,8 @@ Kata "Kembalikan" **tidak** dipakai untuk penyerahan berkas karena sudah dipakai
 | Rebase dengan PR #15 dan branch snapshot | Dimerge setelah PR #15; `getStats`, `arsip.service`, `ArchiveDialog`, `KlasifikasiPicker`, `dosir.service` tidak disentuh; hook diletakkan setelah insert |
 | Churn test create berbasis mock | Hook hanya berjalan bila payload tindak lanjut/disposisi ada dan dimuat dari modul yang dapat di-mock; waktunya sudah dianggarkan di P3 |
 | Instruksi multi-baris diratakan | `MULTILINE_FIELDS` |
+| Daftar Perlu Dilengkapi (D7) membocorkan isi surat terkendali atau menawarkan aksi yang ditolak server | Cakupan dan penyamaran dirakit dari fragmen `visibility-spec.ts` (tanpa predikat kedua); nilai sensitif di-NULL-kan di SQL; uji pindai JSON; aksi baca/tindak lanjut hanya bila `visibleSql 'read'` lolos (paritas `checkRead`); klien hanya merender `aksiDiizinkan` |
+| Badge sidebar membebani `generalLimiter` | Hanya FULL_ADMIN, ≤1 request per 60 detik per tab (irama notifikasi), berhenti saat tab tersembunyi, dan ringkasan dari tab dipakai ulang tanpa request |
 
 ---
 
@@ -829,12 +881,29 @@ Kata "Kembalikan" **tidak** dipakai untuk penyerahan berkas karena sudah dipakai
 - **D5 Role minimal.** Tidak ada role baru; hanya `super_admin` dan `admin_unit`. Kewenangan TU/pengawas ditentukan oleh unit (`unit_kerja.is_unit_pengawas`), bukan role. Petugas TU = `admin_unit` di unit `sesditjen`.
 - **D6 Bagian cukup label.** `bagian_kepegawaian/keuangan/umum` tidak menjadi target disposisi; label Kabag tetap chip label-saja tanpa routing.
 
-**Pertanyaan terbuka** (yang tersisa setelah D1–D6):
+**Keputusan tambahan (2026-09-27):**
+- **D7 Tab Perlu Dilengkapi.** Halaman Lacak Surat (P4) mendapat tab daftar kerja **Perlu Dilengkapi** dan badge hitungan pada entri sidebar ("Lacak Surat (12)"). Isinya enam kategori:
+  - `sm_belum_ditindaklanjuti`
+  - `disposisi_terbuka` (disorot bila lewat batas waktu)
+  - `sk_tanpa_nd_penjelas`
+  - `tindak_lanjut_tertahan`
+  - `siap_diberkaskan`
+  - `sk_tanpa_asal`
+
+  Setiap baris membawa tombol aksi langsung yang hanya tampil bila dikembalikan server di `aksiDiizinkan`.
+  - Visibilitas mengikuti §4 dengan `visibility-spec.ts` sebagai satu-satunya sumber predikat. Kelas terkendali tampil sebagai placeholder standar.
+  - Data lama (rangkaian `data_lama`, atau surat tanpa rangkaian yang dibuat sebelum batas `RANGKAIAN_DATA_LAMA_SEBELUM`) tersembunyi secara default.
+  - Hitungan badge dimuat paling sering sekali per 60 detik, mengikuti irama notifikasi.
+  - Endpoint baru Tandai Inisiatif hanya untuk pemilik, diaudit di transaksi yang sama, dan berlaku pada surat `approved`/terarsip.
+  - Tidak ada tabel baru. Estimasi +1,5–2 hari di P4. Rinciannya di §5, §7, §10, dan §11.
+
+**Pertanyaan terbuka** (yang tersisa setelah D1–D7):
 1. **Sign-off keamanan**, untuk:
    - penandaan `ditjen`/`sesditjen` sebagai unit pengawas
    - flag `RANGKAIAN_AJUKAN_AKSES`
    - kebijakan disposisi surat terkendali (§4.12), termasuk apakah persetujuan grant disposisi boleh didelegasikan dari super_admin ke admin pengawas pemilik
    - flag `RANGKAIAN_DISPOSISI_LAMA_READ` berdasarkan CSV dry-run
+   - otorisasi Tandai Inisiatif (D7), yang memakai kebijakan list unit pemilik, bukan `check()`, agar surat keluar lama berklasifikasi NULL (= Terbatas) dapat ditandai tanpa grant; yang diubah hanya metadata `asal_naskah`
 2. **Data lama di prod.** Apakah 2.047 surat masuk dari DB lama memang ada di prod saat ini, sehingga backfill langkah 2 diperlukan? Jawabannya ditentukan pre-flight P0.
 3. **pg_trgm.** Siapa yang berwenang menjalankan langkah privileged satu kali di Neon, dan apakah memang diperlukan setelah pengukuran P4?
 
