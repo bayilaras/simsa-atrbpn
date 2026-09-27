@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     select: vi.fn(),
     accessCheck: vi.fn(),
+    accessCheckRead: vi.fn(),
     markGrantUsed: vi.fn(),
     downloadFile: vi.fn(),
     audit: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('../../middlewares/validate.middleware.js', () => ({
 vi.mock('../../services/record-access.service.js', () => ({
     recordAccessService: {
         check: mocks.accessCheck,
+        checkRead: mocks.accessCheckRead,
         markGrantUsed: mocks.markGrantUsed,
     },
 }));
@@ -124,6 +126,7 @@ describe('authorized GCS file access', () => {
             mimeType: 'application/pdf',
             fileName: 'final.pdf',
         });
+        mocks.accessCheckRead.mockImplementation((...args: unknown[]) => mocks.accessCheck(...args));
     });
 
     it('pins an attachment download to attachment.objectGeneration', async () => {
@@ -189,6 +192,42 @@ describe('authorized GCS file access', () => {
         const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(404);
         expect(response.body).not.toHaveProperty('scanState');
         expect(mocks.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('records the rangkaian path when a participant streams a letter attachment', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([attachment]));
+        mocks.accessCheckRead.mockResolvedValueOnce({ exists: true, allowed: true, grantId: null, via: 'peserta', rangkaianId: '50000000-0000-4000-8000-000000000001' });
+        await request(app).get(`/api/files/attachment/${attachment.id}`).expect(200);
+        expect(mocks.accessCheckRead).toHaveBeenCalledWith(expect.anything(), 'surat_masuk', attachment.entityId);
+        expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
+            entityId: attachment.id,
+            changes: expect.objectContaining({ via: 'peserta', rangkaianId: '50000000-0000-4000-8000-000000000001' }),
+        }));
+    });
+
+    it('records the rangkaian path for a direct supervised letter stream', async () => {
+        mocks.select
+            .mockReturnValueOnce(limitedRows([{ filePath: `blob:${locator}`, fileName: 'final.pdf' }]))
+            .mockReturnValueOnce(unrestrictedRows([attachment]));
+        mocks.accessCheckRead.mockResolvedValueOnce({ exists: true, allowed: true, grantId: null, via: 'pengawas', rangkaianId: null });
+        await request(app).get(`/api/files/surat_masuk/${attachment.entityId}`).expect(200);
+        expect(mocks.accessCheck).not.toHaveBeenCalled();
+        expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
+            changes: expect.objectContaining({ via: 'pengawas', rangkaianId: null }),
+        }));
+    });
+
+    it('keeps archive attachments on the owner-only check', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType: 'arsip' }]));
+        await request(app).get(`/api/files/attachment/${attachment.id}`).expect(200);
+        expect(mocks.accessCheck).toHaveBeenCalledWith(expect.anything(), 'arsip', attachment.entityId);
+        expect(mocks.accessCheckRead).not.toHaveBeenCalled();
+    });
+
+    it('keeps owner audit payloads free of rangkaian fields', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([attachment]));
+        await request(app).get(`/api/files/attachment/${attachment.id}`).expect(200);
+        expect(mocks.audit.mock.calls[0][0].changes).not.toHaveProperty('via');
     });
 
     it('keeps the private registration guard for the matching surat locator', async () => {
