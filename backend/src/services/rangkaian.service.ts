@@ -601,20 +601,27 @@ export const rangkaianService = {
         let digabungDari: string | null = null;
 
         if (member && member.rangkaianId !== input.rangkaianId) {
+            // Review Task 12: kunci sumber + tujuan (ORDER BY id) SEBELUM menghitung
+            // jumlah anggota/status sumber, agar count/status tidak dibaca dari
+            // snapshot basi yang bisa dilewati anggota baru yang masuk bersamaan
+            // (gabung() sendiri mengunci ulang baris yang sama; tidak berefek ganda
+            // dalam transaksi yang sama).
+            const sumberId = member.rangkaianId;
+            const locked = await lockRangkaian(tx, [sumberId, input.rangkaianId]);
+            const sumberTerkunci = locked.find((row) => row.id === sumberId);
+            const tujuanTerkunci = locked.find((row) => row.id === input.rangkaianId);
+            if (!sumberTerkunci || !tujuanTerkunci) throw new NotFoundError('Rangkaian surat');
             const [{ jumlah }] = await tx.select({ jumlah: sql<number>`count(*)::int` })
                 .from(rangkaianAnggota)
                 .where(eq(rangkaianAnggota.rangkaianId, member.rangkaianId));
-            if (member.peran !== 'induk' || jumlah !== 1 || !isRangkaianTerbuka(member.status)) {
+            if (member.peran !== 'induk' || jumlah !== 1 || !isRangkaianTerbuka(sumberTerkunci.status)) {
                 throw new ConflictError('Surat sudah menjadi anggota rangkaian lain; gunakan Gabungkan Rangkaian');
             }
-            const [tujuan] = await tx.select({ kode: rangkaianSurat.kode })
-                .from(rangkaianSurat).where(eq(rangkaianSurat.id, input.rangkaianId)).limit(1);
-            if (!tujuan) throw new NotFoundError('Rangkaian surat');
             // Tautan induk rangkaian 1-anggota = gabung (tidak menyisakan rangkaian kosong aktif).
             await rangkaianService.gabung(tx, {
                 targetId: input.rangkaianId,
                 sumberId: member.rangkaianId,
-                alasan: `Tautan surat tunggal ${member.kode} ke rangkaian ${tujuan.kode}`,
+                alasan: `Tautan surat tunggal ${member.kode} ke rangkaian ${tujuanTerkunci.kode}`,
             }, actor);
             digabungDari = member.rangkaianId;
             member = await findMembership(tx, input.surat);

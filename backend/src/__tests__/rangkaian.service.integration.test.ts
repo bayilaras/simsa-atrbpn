@@ -186,6 +186,59 @@ function simulateGabungMidFindMembership(
     });
 }
 
+/**
+ * Simulasi deterministik race Task 12 review: anggota lain masuk ke rangkaian
+ * sumber (induk 1-anggota) TEPAT di antara pembacaan keanggotaan (`member`,
+ * panggilan select ke-2 = `findMembership`) dan keputusan gabung/tolak
+ * berikutnya. Trik sama seperti `simulateGabungMidFindMembership` Task 9/11:
+ * bungkus `tx.select` supaya panggilan select KE-3 milik `attach` — sebelum
+ * perbaikan review ini, itu adalah SELECT hitung jumlah anggota; SESUDAH
+ * perbaikan (yang mengunci sumber+tujuan lebih dulu), itu menjadi SELECT
+ * `lockRangkaian`, karena perbaikan menggeser urutannya satu langkah — hanya
+ * mengembalikan hasilnya ke pemanggil SETELAH `onIntercepted` (mutasi
+ * "bersamaan": anggota baru masuk ke sumber, dalam transaksi yang sama)
+ * benar-benar berjalan. Query manapun yang diintersepsi diekspos lewat
+ * `interceptedRows` supaya test bisa menyatakan query mana yang sebenarnya
+ * tertangkap (lihat catatan "target the count query" pada review).
+ */
+function simulateAnggotaBaruSebelumKeputusanGabung(
+    tx: any,
+    onIntercepted: () => Promise<void>,
+): { interceptedRows: unknown } {
+    const originalSelect = tx.select.bind(tx);
+    let outerSelectCount = 0;
+    const capture: { interceptedRows: unknown } = { interceptedRows: undefined };
+
+    function wrapThenable(target: any): any {
+        return new Proxy(target, {
+            get(obj, prop, receiver) {
+                const value = Reflect.get(obj, prop, receiver);
+                if (prop === 'then') {
+                    return (onFulfilled?: any, onRejected?: any) => value.call(obj, async (rows: unknown) => {
+                        capture.interceptedRows = rows;
+                        await onIntercepted();
+                        return onFulfilled ? onFulfilled(rows) : rows;
+                    }, onRejected);
+                }
+                if (typeof value === 'function') {
+                    return (...args: any[]) => {
+                        const result = value.apply(obj, args);
+                        return result && typeof result === 'object' ? wrapThenable(result) : result;
+                    };
+                }
+                return value;
+            },
+        });
+    }
+
+    vi.spyOn(tx, 'select').mockImplementation((columns: any) => {
+        const builder = originalSelect(columns);
+        outerSelectCount += 1;
+        return outerSelectCount === 3 ? wrapThenable(builder) : builder;
+    });
+    return capture;
+}
+
 beforeAll(async () => {
     database = new PGlite({ extensions: { pgcrypto } });
     await database.waitReady;
@@ -602,5 +655,44 @@ describe('rangkaianService.attach', () => {
             rangkaianId: r.rangkaianId, surat: { jenis: 'surat_keluar', id: ndTolak },
             keAnggotaId: r.anggotaId, jenisRelasi: 'merujuk',
         }, actor))).rejects.toMatchObject({ statusCode: 409 });
+    });
+});
+
+describe('rangkaianService.attach — race Task 12 review (interleaved dalam satu koneksi)', () => {
+    it('menolak tautan induk 1-anggota bila anggota lain masuk ke sumber tepat sebelum keputusan gabung diambil', async () => {
+        const sk = await suratKeluar('dir_bppt', 'approved');
+        const tunggal = await inTx((tx) => rangkaianService.ensureForSurat(tx, { jenis: 'surat_keluar', id: sk }, actor));
+        const sm = await suratMasuk('sesditjen');
+        const tujuan = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor));
+        const skBersamaan = await suratKeluar('dir_bppt', 'approved');
+
+        let capture: { interceptedRows: unknown } | undefined;
+        await expect(inTx(async (tx) => {
+            capture = simulateAnggotaBaruSebelumKeputusanGabung(tx, async () => {
+                // "Bersamaan": surat lain masuk sebagai anggota baru ke rangkaian
+                // tunggal (sumber) TEPAT setelah query yang diintersepsi mengambil
+                // snapshotnya, sebelum hasil itu diteruskan ke pemanggil attach().
+                await tx.insert(schema.rangkaianAnggota).values({
+                    rangkaianId: tunggal.rangkaianId,
+                    suratKeluarId: skBersamaan,
+                    unitKerjaId: 'dir_bppt',
+                    peran: 'anggota',
+                    sumber: 'aplikasi',
+                });
+            });
+            return rangkaianService.attach(tx, {
+                rangkaianId: tujuan.rangkaianId, surat: { jenis: 'surat_keluar', id: sk },
+                keAnggotaId: tujuan.anggotaId, jenisRelasi: 'merujuk',
+            }, actor);
+        })).rejects.toMatchObject({ statusCode: 409 });
+
+        // Dokumentasi: dengan perbaikan review, query yang diintersepsi adalah
+        // SELECT lockRangkaian (baris sumber+tujuan, masing-masing berkolom
+        // "kode") — bukan lagi SELECT hitung jumlah anggota, karena perbaikan
+        // memindahkan penguncian sebelum penghitungan.
+        expect(Array.isArray(capture?.interceptedRows)).toBe(true);
+        expect((capture!.interceptedRows as Array<Record<string, unknown>>)[0]).toHaveProperty('kode');
+
+        expect(await rangkaianRow(tunggal.rangkaianId)).toMatchObject({ status: 'aktif', digabung_ke_id: null });
     });
 });
