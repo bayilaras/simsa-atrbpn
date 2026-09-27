@@ -17,3 +17,38 @@ export function normalizeNomor(value: string | null | undefined): string {
 export function nomorNormSql(column: AnyColumn | SQL): SQL<string> {
     return sql<string>`lower(regexp_replace(coalesce(${column}, ''), '[^0-9A-Za-z]+', '', 'g'))`;
 }
+
+// ---- P3: Lacak Surat (§6) ----
+export const LACAK_Q_MIN = 3;
+export const LACAK_Q_MAX = 100;
+export const LACAK_MAX_TOKENS = 8;
+
+export type LacakJenisKueri = 'nomor' | 'perihal';
+
+export interface LacakQueryPlan {
+    q: string;
+    qLower: string;
+    qNorm: string;
+    jenis: LacakJenisKueri;
+    tokens: string[];
+    substringNomor: boolean;
+}
+
+/** Escape wildcard LIKE; selalu dipakai bersama LIKE_ESCAPE. */
+export function escapeLike(value: string): string {
+    return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+export const LIKE_ESCAPE = sql.raw("ESCAPE '\\'");
+
+/** Mode nomor bila q memuat digit dan salah satu / . -, atau qNorm ≥3 dengan digit; token = kata Unicode ≥2. */
+export function classifyLacakQuery(raw: string): LacakQueryPlan {
+    const q = raw.trim();
+    const qNorm = normalizeNomor(q);
+    const hasDigit = /\d/.test(q);
+    const jenis: LacakJenisKueri = hasDigit && (/[/.\-]/.test(q) || qNorm.length >= 3) ? 'nomor' : 'perihal';
+    const tokens = Array.from(new Set(
+        (q.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter((token) => token.length >= 2),
+    )).slice(0, LACAK_MAX_TOKENS);
+    return { q, qLower: q.toLowerCase(), qNorm, jenis, tokens, substringNomor: qNorm.length >= 5 };
+}
