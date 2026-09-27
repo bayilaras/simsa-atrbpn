@@ -9,13 +9,27 @@ import { TimelineItem } from '@/components/surat/TimelineItem'
 export const STATUS_RANGKAIAN_LABEL = { aktif: 'Aktif', selesai: 'Selesai', diberkaskan: 'Diberkaskan', digabung: 'Digabung' }
 export const STATUS_DISPOSISI_LABEL = { sent: 'Terkirim', received: 'Diterima', processed: 'Selesai', rejected: 'Ditolak' }
 export const JENIS_RELASI_LABEL = { balasan: 'Balasan', tindak_lanjut: 'Tindak lanjut', menjelaskan: 'Menjelaskan', merujuk: 'Merujuk' }
-const AKSES_LABEL = { pengawas: 'unit pengawas', peserta: 'peserta rangkaian' }
+// 'pengawas' tidak lagi dipetakan di sini -- lihat teks banner khusus di bawah.
+const AKSES_LABEL = { peserta: 'peserta rangkaian' }
 const DIKECUALIKAN = 'Dikecualikan'
+
+// Kelompokkan relasi per node asal: satu anggota bisa menjadi asal lebih dari
+// satu relasi keluar (mis. balasan DAN tindak lanjut ke anggota lain), jadi
+// setiap relasinya harus dipertahankan -- bukan hanya yang terakhir diproses.
+function relasiPerNodeAsal(relasiList) {
+    const map = new Map()
+    for (const relasi of relasiList) {
+        const list = map.get(relasi.dariAnggotaId)
+        if (list) list.push(relasi)
+        else map.set(relasi.dariAnggotaId, [relasi])
+    }
+    return map
+}
 
 function keItemLinimasa(node, relasiDari) {
     const type = node.jenis === 'surat_masuk' ? 'masuk' : 'keluar'
     if (node.masked) return { type, masked: true, unitNama: node.unitNama }
-    const relasi = relasiDari.get(node.anggotaId)
+    const relasiList = relasiDari.get(node.anggotaId) ?? []
     return {
         type,
         id: node.suratId,
@@ -25,7 +39,9 @@ function keItemLinimasa(node, relasiDari) {
         dari: node.dari ?? '-',
         kepada: node.kepada ?? '-',
         unitNama: node.unitNama,
-        relasiLabel: relasi ? JENIS_RELASI_LABEL[relasi.jenisRelasi] ?? relasi.jenisRelasi : null,
+        relasiLabel: relasiList.length > 0
+            ? relasiList.map((relasi) => JENIS_RELASI_LABEL[relasi.jenisRelasi] ?? relasi.jenisRelasi)
+            : null,
     }
 }
 
@@ -78,7 +94,7 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
 
     const d = state.data
     const r = d.rangkaian
-    const relasiDari = new Map(d.relasi.map((relasi) => [relasi.dariAnggotaId, relasi]))
+    const relasiDari = relasiPerNodeAsal(d.relasi)
 
     return (
         <Card>
@@ -92,7 +108,13 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                 </CardDescription>
                 {aksesMelalui !== 'owner' && (
                     <p role="note" className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-                        Dilihat melalui rangkaian {r.kode} sebagai {AKSES_LABEL[aksesMelalui] ?? 'peserta rangkaian'}. Akses baca saja.
+                        {aksesMelalui === 'pengawas'
+                            // Jalur pengawas bisa didapat lewat jangkauan rangkaian ATAU
+                            // lewat jangkauan record-level atas satu anggota saja (lihat
+                            // viaLintas di rangkaian-read.service.ts) -- jangan mengklaim
+                            // "melalui rangkaian" di sini, karena itu tidak selalu benar.
+                            ? 'Anda melihat surat ini sebagai unit pengawas (hanya baca).'
+                            : `Dilihat melalui rangkaian ${r.kode} sebagai ${AKSES_LABEL[aksesMelalui] ?? 'peserta rangkaian'}. Akses baca saja.`}
                     </p>
                 )}
             </CardHeader>

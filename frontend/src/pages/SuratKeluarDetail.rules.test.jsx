@@ -46,3 +46,14 @@ it('keeps the legacy reply link when the letter is not in a rangkaian', async ()
     render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
     expect(await screen.findByRole('link', { name: /lihat surat masuk/i })).toHaveAttribute('href', '/surat/masuk/sm-9')
 })
+
+it('hides dead-end links (Lihat di Arsip and the legacy balasan fallback) for cross-unit readers', async () => {
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: '004/2026', perihal: 'ND Lintas Unit', unitKerjaId: 'dir_bppt',
+        aksesMelalui: 'pengawas', isArchived: true, arsipId: 'arsip-1', balasanUntuk: 'sm-9',
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByText('ND Lintas Unit')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /lihat di arsip/i })).toBeNull()
+    expect(screen.queryByRole('link', { name: /lihat surat masuk/i })).toBeNull()
+})

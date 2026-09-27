@@ -456,7 +456,7 @@ export default function SuratKeluarDetail() {
                                 jenis="surat_keluar"
                                 suratId={surat.id}
                                 aksesMelalui={aksesMelalui}
-                                fallback={surat.balasanUntuk ? (
+                                fallback={aksesMelalui === 'owner' && surat.balasanUntuk ? (
                                     <>
                                         <Separator />
                                         <div className="space-y-2">
@@ -563,7 +563,7 @@ export default function SuratKeluarDetail() {
                                 </div>
                             </div>
 
-                            {surat.isArchived && surat.arsipId && (
+                            {surat.isArchived && surat.arsipId && aksesMelalui === 'owner' && (
                                 <Button variant="outline" className="w-full" size="sm" asChild>
                                     <Link to={`/arsip?id=${surat.arsipId}`}>
                                         <Eye className="mr-2 h-4 w-4" />

@@ -51,11 +51,16 @@ export function TimelineItem({ item, isLast }) {
                                 <Badge variant={isMasuk ? 'default' : 'secondary'} className={isMasuk ? 'bg-emerald-600' : 'bg-primary text-white'}>
                                     {isMasuk ? 'Surat Masuk' : 'Surat Keluar'}
                                 </Badge>
-                                {item.relasiLabel && <Badge variant="outline">{item.relasiLabel}</Badge>}
+                                {item.relasiLabel && (Array.isArray(item.relasiLabel) ? item.relasiLabel : [item.relasiLabel]).map((label, index) => (
+                                    <Badge key={`${label}-${index}`} variant="outline">{label}</Badge>
+                                ))}
                                 {item.tanggal && (
                                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                                         <Clock className="h-3 w-3" />
-                                        {format(parseISO(item.tanggal), 'dd MMMM yyyy, HH:mm', { locale: idLocale })}
+                                        {/* item.tanggal berasal dari tanggalSurat (kolom date, tanpa jam) di
+                                            semua pemanggil saat ini -- memformat dengan HH:mm akan selalu
+                                            menampilkan "00:00" yang palsu, jadi tanggal-saja diformat tanpa jam. */}
+                                        {format(parseISO(item.tanggal), 'dd MMMM yyyy', { locale: idLocale })}
                                     </span>
                                 )}
                             </div>

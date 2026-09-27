@@ -29,7 +29,12 @@ const detail = {
             naskahDinas: 'Nota Dinas', approvalStatus: 'draft', ditambahkanAt: '2026-09-07T01:00:00.000Z', masked: false, aksesMelalui: 'pengawas',
         },
     ],
-    relasi: [{ id: 'x1', dariAnggotaId: 'a2', keAnggotaId: 'a1', jenisRelasi: 'tindak_lanjut', keterangan: null, createdAt: '2026-09-07T01:00:00.000Z' }],
+    // Dua relasi keluar dari node yang sama (a2) -- F7b: keduanya harus tetap
+    // tampil, bukan hanya yang terakhir diproses.
+    relasi: [
+        { id: 'x1', dariAnggotaId: 'a2', keAnggotaId: 'a1', jenisRelasi: 'tindak_lanjut', keterangan: null, createdAt: '2026-09-07T01:00:00.000Z' },
+        { id: 'x2', dariAnggotaId: 'a2', keAnggotaId: 'a1', jenisRelasi: 'menjelaskan', keterangan: null, createdAt: '2026-09-07T02:00:00.000Z' },
+    ],
     disposisi: [{
         id: 'd1', suratMasukAnggotaId: 'a1', targetUnit: { id: 'dir_ptep', nama: 'Dit. PTEP' }, status: 'sent',
         sentAt: '2026-09-02T00:00:00.000Z', receivedAt: null, processedAt: null, batasWaktu: '2026-10-01',
@@ -50,15 +55,26 @@ const renderPanel = (props) => render(
 beforeEach(() => vi.clearAllMocks())
 afterEach(cleanup)
 
-it('menampilkan kode, status, alur unit, peserta, dan banner baca lintas unit', async () => {
+it('menampilkan kode, status, alur unit, peserta, dan banner baca untuk pengawas (tanpa klaim jalur rangkaian)', async () => {
     mocks.getBySurat.mockResolvedValue(detail)
     renderPanel({ aksesMelalui: 'pengawas' })
     expect(await screen.findByText('Alur Surat')).toBeInTheDocument()
     expect(mocks.getBySurat).toHaveBeenCalledWith('surat_masuk', 's1')
-    expect(screen.getByRole('note')).toHaveTextContent('Dilihat melalui rangkaian RS-2026-000002')
+    // F7c: jalur pengawas bisa berasal dari jangkauan record-level atas satu
+    // anggota saja, bukan selalu jangkauan rangkaian -- banner tidak lagi
+    // mengklaim "melalui rangkaian".
+    expect(screen.getByRole('note')).toHaveTextContent('Anda melihat surat ini sebagai unit pengawas (hanya baca).')
+    expect(screen.getByRole('note')).not.toHaveTextContent('melalui rangkaian')
     expect(screen.getByText('Aktif')).toBeInTheDocument()
     expect(screen.getByText('Sekretariat Ditjen → Dit. BPPT')).toBeInTheDocument()
     expect(within(screen.getByRole('list', { name: 'Peserta rangkaian' })).getByText('Dit. PTEP')).toBeInTheDocument()
+})
+
+it('menampilkan banner peserta dengan kode rangkaian (kata-kata lain tidak berubah)', async () => {
+    mocks.getBySurat.mockResolvedValue({ ...detail, aksesMelalui: 'peserta' })
+    renderPanel({ aksesMelalui: 'peserta' })
+    expect(await screen.findByText('Alur Surat')).toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent('Dilihat melalui rangkaian RS-2026-000002 sebagai peserta rangkaian. Akses baca saja.')
 })
 
 it('menampilkan status tindak lanjut per penerima dengan instruksi tersamar', async () => {
@@ -77,7 +93,10 @@ it('menampilkan linimasa dengan node tersamar, label relasi, rangkaian terkait, 
     const { container } = renderPanel({ aksesMelalui: 'pengawas' })
     const linimasa = within(await screen.findByRole('region', { name: 'Linimasa rangkaian' }))
     expect(linimasa.getByText('Tanggapan PTEP')).toBeInTheDocument()
+    // F7b: node a2 punya dua relasi keluar (tindak_lanjut dan menjelaskan);
+    // keduanya harus dirender, bukan hanya yang terakhir.
     expect(linimasa.getByText('Tindak lanjut')).toBeInTheDocument()
+    expect(linimasa.getByText('Menjelaskan')).toBeInTheDocument()
     expect(linimasa.getByText('Dikecualikan')).toBeInTheDocument()
     expect(container.querySelector('[data-masked="true"]')).not.toBeNull()
     expect(screen.getByRole('status')).toHaveTextContent('lebih dari 300')
