@@ -38,7 +38,7 @@ Pre-flight ini **hanya membaca** database produksi dan wajib selesai serta disah
 | `unit_kerja_id_direktorat_dash` | 0 baris | 0047 akan RAISE; putuskan pemetaan bersama pemilik data |
 | `distribusi_status_tak_dikenal` | 0 baris | Precheck 0046 RAISE; rekonsiliasi lewat aplikasi |
 | `distribusi_aktif_ganda` | 0 baris | Precheck 0046 RAISE; target menolak baris yang lebih baru |
-| `index_dan_objek_bentrok` | Hanya `idx_surat_keluar_balasan` yang boleh `true` | Objek lain yang sudah ada membuat 0046 gagal; selidiki asalnya |
+| `index_dan_objek_bentrok` | Hanya `idx_surat_keluar_balasan` yang boleh `true`; ini juga mencakup dua trigger 0046 (`unit_kerja_default_pengawas` pada `unit_kerja`, `surat_distributions_closed_guard` pada `surat_distributions`) | Objek lain yang sudah ada membuat 0046 gagal; selidiki asalnya. Kedua trigger dibuat tanpa `IF NOT EXISTS`/`OR REPLACE`, jadi trigger dengan nama sama yang sudah ada (dari deployment/migrasi manual lain) memblokir 0046 — hapus atau ganti nama trigger lama dulu |
 | `kolom_bentrok` | 0 baris | Selidiki perubahan skema manual |
 | `ekstensi` | Informasi | `pg_trgm` hanya dibutuhkan fase opsional P5 |
 | `data_lama_ringkasan`, `data_lama_per_unit_tahun` | Informasi | Menentukan apakah backfill langkah 2 (P5) diperlukan |

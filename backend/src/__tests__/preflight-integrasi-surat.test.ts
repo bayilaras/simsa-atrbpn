@@ -75,6 +75,13 @@ CREATE TABLE surat_keluar (id uuid PRIMARY KEY, unit_kerja_id varchar(50) NOT NU
 CREATE INDEX idx_surat_keluar_balasan ON surat_keluar (balasan_untuk) WHERE balasan_untuk IS NOT NULL;
 CREATE TABLE surat_distributions (id uuid PRIMARY KEY, surat_masuk_id uuid NOT NULL, source_unit_id varchar(50) NOT NULL,
     target_unit_id varchar(50) NOT NULL, status varchar(20) NOT NULL DEFAULT 'sent', sent_at timestamp NOT NULL DEFAULT now());
+-- Trigger yang sudah ada SEBELUM 0046 dijalankan (mis. dari deployment lama atau
+-- migrasi manual), simulasi bentrok nama trigger yang akan dibuat 0046.
+CREATE FUNCTION preflight_test_noop_trigger() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN RETURN NEW; END $$;
+CREATE TRIGGER unit_kerja_default_pengawas
+BEFORE INSERT ON unit_kerja
+FOR EACH ROW EXECUTE FUNCTION preflight_test_noop_trigger();
 `;
 
 let database: PGlite;
@@ -152,10 +159,16 @@ describe('pre-flight P0 integrasi surat di PGlite', () => {
         ]);
     });
 
-    it('menandai index manual yang ada dan tidak menemukan bentrok objek 0046', () => {
+    it('menandai index manual dan trigger yang sudah ada, dan tidak menemukan bentrok objek 0046 lainnya', () => {
         const objects = Object.fromEntries(byId('index_dan_objek_bentrok').rows.map((row: any) => [row.nama, row.sudah_ada]));
         expect(objects.idx_surat_keluar_balasan).toBe(true);
-        expect(Object.entries(objects).filter(([nama, ada]) => nama !== 'idx_surat_keluar_balasan' && ada)).toEqual([]);
+        // Trigger 0046 `unit_kerja_default_pengawas` (pada unit_kerja) sudah ada di fixture
+        // di atas untuk mensimulasikan bentrok nama trigger sebelum 0046 dijalankan;
+        // `surat_distributions_closed_guard` belum ada dan harus tetap false.
+        expect(objects.unit_kerja_default_pengawas).toBe(true);
+        expect(objects.surat_distributions_closed_guard).toBe(false);
+        const bolehTrue = new Set(['idx_surat_keluar_balasan', 'unit_kerja_default_pengawas']);
+        expect(Object.entries(objects).filter(([nama, ada]) => !bolehTrue.has(nama) && ada)).toEqual([]);
         expect(byId('kolom_bentrok').rows).toEqual([]);
         expect(byId('index_manual_surat').rows).toContainEqual(expect.objectContaining({
             tablename: 'surat_keluar', indexname: 'idx_surat_keluar_balasan',

@@ -116,12 +116,13 @@ WHERE target_unit_id = source_unit_id`,
   },
   {
     id: 'index_dan_objek_bentrok',
-    judul: 'Objek yang akan dibuat 0046 (index, constraint, tabel, sequence)',
-    keputusan: 'idx_surat_keluar_balasan boleh true atau false (0046 memakai IF NOT EXISTS). Semua objek lain harus false; bila true, 0046 akan gagal.',
+    judul: 'Objek yang akan dibuat 0046 (index, constraint, tabel, sequence, trigger)',
+    keputusan: 'idx_surat_keluar_balasan boleh true atau false (0046 memakai IF NOT EXISTS). Semua objek lain, termasuk kedua trigger, harus false; bila true, 0046 akan gagal (trigger dibuat tanpa IF NOT EXISTS/OR REPLACE).',
     sql: `SELECT o.nama, o.jenis,
        CASE o.jenis
          WHEN 'index' THEN EXISTS (SELECT 1 FROM pg_indexes i WHERE i.schemaname = 'public' AND i.indexname = o.nama)
          WHEN 'constraint' THEN EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conname = o.nama)
+         WHEN 'trigger' THEN EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgname = o.nama AND NOT t.tgisinternal)
          ELSE to_regclass('public.' || o.nama) IS NOT NULL
        END AS sudah_ada
 FROM (VALUES
@@ -139,7 +140,9 @@ FROM (VALUES
   ('rangkaian_peserta', 'relation'),
   ('rangkaian_koreksi_berkas', 'relation'),
   ('disposisi_label_unit', 'relation'),
-  ('rangkaian_surat_kode_seq', 'relation')
+  ('rangkaian_surat_kode_seq', 'relation'),
+  ('unit_kerja_default_pengawas', 'trigger'),
+  ('surat_distributions_closed_guard', 'trigger')
 ) AS o(nama, jenis)
 ORDER BY o.jenis, o.nama`,
   },
