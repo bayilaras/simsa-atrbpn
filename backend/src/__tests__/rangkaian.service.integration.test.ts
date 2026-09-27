@@ -121,6 +121,14 @@ async function auditRows(entityId: string) {
     return rows;
 }
 
+async function auditChanges(entityId: string, action: string) {
+    const { rows } = await database.query<{ changes: Record<string, unknown> }>(
+        `SELECT changes FROM audit_log WHERE entity_id = $1 AND action = $2 ORDER BY created_at, id`,
+        [entityId, action],
+    );
+    return rows.map((row) => row.changes);
+}
+
 async function rejectsWith(promise: Promise<unknown>, pattern: RegExp) {
     const error = await promise.then(() => null, (caught: unknown) => caught);
     expect(error, 'operasi seharusnya ditolak').not.toBeNull();
@@ -396,6 +404,22 @@ describe('rangkaianService jangkauan & recompute', () => {
         const row = await database.query(
             `SELECT status, selesai_manual, catatan_selesai, selesai_by FROM rangkaian_surat WHERE id = $1`, [rangkaianId]);
         expect(row.rows).toEqual([{ status: 'aktif', selesai_manual: false, catatan_selesai: null, selesai_by: null }]);
+
+        // Minor 2: audit pembukaan kembali otomatis wajib merekam nilai
+        // selesai_* sebelumnya (before) dan nilai yang dikosongkan (after),
+        // bukan hanya status.
+        const [changes] = await auditChanges(rangkaianId, 'status_change');
+        expect(changes).toMatchObject({
+            before: {
+                status: 'selesai', selesaiManual: true, catatanSelesai: 'Selesai lewat rapat koordinasi',
+            },
+            after: {
+                status: 'aktif', selesaiManual: false, selesaiAt: null, selesaiBy: null, catatanSelesai: null,
+            },
+        });
+        expect(changes!.before).toHaveProperty('selesaiBy', actorId);
+        expect(changes!.before).toHaveProperty('selesaiAt');
+        expect((changes!.before as Record<string, unknown>).selesaiAt).not.toBeNull();
     });
 
     it('status surat masuk diturunkan dari balasan disetujui, turun bila relasi dibatalkan, dan monoton untuk impor', async () => {
@@ -616,6 +640,14 @@ describe('rangkaianService.attach', () => {
         const r = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor, { unitPengolahId: 'dir_bppt' }));
         await disposisi(sm, 'dir_bppt', 'processed', r.rangkaianId);
         await inTx((tx) => rangkaianService.recomputeStatus(tx, [r.rangkaianId], actor));
+        // Tandai juga selesai_manual + catatan_selesai (bukan hanya selesai otomatis
+        // dari disposisi processed) supaya pembukaan kembali di bawah punya nilai
+        // selesai_by/catatan_selesai non-NULL yang berarti untuk diuji (Minor 2).
+        await database.query(
+            `UPDATE rangkaian_surat SET selesai_manual = true, selesai_by = $2,
+                    catatan_selesai = 'Ditutup manual sebelum ND tindak lanjut' WHERE id = $1`,
+            [r.rangkaianId, actorId],
+        );
         const nd = await suratKeluar('dir_bppt', 'draft');
 
         const result = await inTx((tx) => rangkaianService.attach(tx, {
@@ -627,6 +659,22 @@ describe('rangkaianService.attach', () => {
         const rel = await database.query(`SELECT jenis_relasi, keterangan, created_by FROM rangkaian_relasi WHERE id = $1`, [result.relasiId]);
         expect(rel.rows).toEqual([{ jenis_relasi: 'tindak_lanjut', keterangan: 'ND tindak lanjut', created_by: actorId }]);
         expect(await auditRows(result.relasiId)).toEqual([{ action: 'link', entity_type: 'rangkaian_relasi' }]);
+
+        // Minor 2: audit pembukaan kembali otomatis (bukaKembaliOtomatis) wajib
+        // merekam nilai selesai_* sebelumnya, bukan hanya status. Ambil baris
+        // status_change TERAKHIR: baris pertama adalah transisi otomatis
+        // aktif->selesai dari disposisi processed di atas.
+        const semuaPerubahan = await auditChanges(r.rangkaianId, 'status_change');
+        const changes = semuaPerubahan[semuaPerubahan.length - 1];
+        expect(changes).toMatchObject({
+            before: {
+                status: 'selesai', selesaiManual: true, catatanSelesai: 'Ditutup manual sebelum ND tindak lanjut',
+            },
+            after: {
+                status: 'aktif', selesaiManual: false, selesaiAt: null, selesaiBy: null, catatanSelesai: null,
+            },
+        });
+        expect(changes!.before).toHaveProperty('selesaiBy', actorId);
 
         await expect(inTx((tx) => rangkaianService.attach(tx, {
             rangkaianId: r.rangkaianId, surat: { jenis: 'surat_keluar', id: nd },

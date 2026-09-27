@@ -132,6 +132,12 @@ export interface RangkaianTerkunci {
     asal: RangkaianAsal;
     selesaiManual: boolean;
     unitPengolahId: string | null;
+    // Task review Minor 2: dibawa serta (bukan hanya status/selesaiManual) supaya
+    // pembukaan kembali otomatis (bukaKembaliOtomatis/recomputeStatus) bisa
+    // mengaudit nilai selesai_* SEBELUM dikosongkan, tanpa query tambahan.
+    selesaiAt: Date | null;
+    selesaiBy: string | null;
+    catatanSelesai: string | null;
 }
 
 async function lockRangkaian(tx: DbTransaction, ids: string[]): Promise<RangkaianTerkunci[]> {
@@ -144,6 +150,9 @@ async function lockRangkaian(tx: DbTransaction, ids: string[]): Promise<Rangkaia
         asal: rangkaianSurat.asal,
         selesaiManual: rangkaianSurat.selesaiManual,
         unitPengolahId: rangkaianSurat.unitPengolahId,
+        selesaiAt: rangkaianSurat.selesaiAt,
+        selesaiBy: rangkaianSurat.selesaiBy,
+        catatanSelesai: rangkaianSurat.catatanSelesai,
     })
         .from(rangkaianSurat)
         .where(inArray(rangkaianSurat.id, unique))
@@ -217,7 +226,20 @@ async function bukaKembaliOtomatis(
         action: 'status_change',
         entityType: 'rangkaian_surat',
         entityId: rangkaian.id,
-        changes: { before: { status: rangkaian.status }, after: { status: 'aktif' }, otomatis: true, alasan },
+        changes: {
+            // Task review Minor 2: sertakan nilai selesai_* SEBELUM dikosongkan,
+            // bukan hanya status, supaya jejak audit pembukaan kembali lengkap.
+            before: {
+                status: rangkaian.status, selesaiAt: rangkaian.selesaiAt,
+                selesaiBy: rangkaian.selesaiBy, catatanSelesai: rangkaian.catatanSelesai,
+                selesaiManual: rangkaian.selesaiManual,
+            },
+            after: {
+                status: 'aktif', selesaiAt: null, selesaiBy: null,
+                catatanSelesai: null, selesaiManual: false,
+            },
+            otomatis: true, alasan,
+        },
     });
 }
 
@@ -422,11 +444,25 @@ export const rangkaianService = {
                             catatanSelesai: null, selesaiManual: false, updatedAt: new Date(),
                         })
                     .where(eq(rangkaianSurat.id, rangkaian.id));
+                // Task review Minor 2: bila reopening (after === 'aktif'), sertakan
+                // nilai selesai_* SEBELUM dikosongkan di before, dan nilai yang
+                // dikosongkan di after — bukan hanya status.
+                const beforePayload: Record<string, unknown> = { status: rangkaian.status };
+                const afterPayload: Record<string, unknown> = { status: after };
+                if (after === 'aktif') {
+                    Object.assign(beforePayload, {
+                        selesaiAt: rangkaian.selesaiAt, selesaiBy: rangkaian.selesaiBy,
+                        catatanSelesai: rangkaian.catatanSelesai, selesaiManual: rangkaian.selesaiManual,
+                    });
+                    Object.assign(afterPayload, {
+                        selesaiAt: null, selesaiBy: null, catatanSelesai: null, selesaiManual: false,
+                    });
+                }
                 await catatAudit(tx, actor, {
                     action: 'status_change',
                     entityType: 'rangkaian_surat',
                     entityId: rangkaian.id,
-                    changes: { before: { status: rangkaian.status }, after: { status: after }, otomatis: true, fakta: facts },
+                    changes: { before: beforePayload, after: afterPayload, otomatis: true, fakta: facts },
                 });
             }
             changes.push({ id: rangkaian.id, before: rangkaian.status, after, changed });
