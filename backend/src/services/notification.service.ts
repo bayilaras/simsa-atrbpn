@@ -21,6 +21,7 @@ import {
     isValidNotificationId,
     MAX_NOTIFICATION_READ_IDS,
 } from '../utils/notification-id.js';
+import { klasifikasiInSql } from './access/visibility-spec';
 
 type SecurityClassScope = string[] | null | undefined;
 const ADMIN_NOTIFICATION_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
@@ -185,7 +186,8 @@ export class NotificationService {
             .where(and(
                 eq(suratMasuk.unitKerjaId, unitKerjaId),
                 eq(suratMasuk.isArchived, false),
-                eq(suratMasuk.isDeleted, false),
+                // Baris lama bisa ber-is_deleted NULL; hanya TRUE yang berarti terhapus.
+                sql`${suratMasuk.isDeleted} IS NOT TRUE`,
                 incomingSecurityCondition(securityClassifications),
             ))
             .orderBy(desc(suratMasuk.createdAt))
@@ -327,7 +329,9 @@ export class NotificationService {
             .where(and(
                 eq(suratDistributions.targetUnitId, unitKerjaId),
                 inArray(suratDistributions.status, ['sent', 'received']),
-                incomingSecurityCondition(securityClassifications),
+                sql`${suratMasuk.isDeleted} IS NOT TRUE`,
+                // Predikat yang sama dengan DistributionService.findInbox.
+                klasifikasiInSql(suratMasuk.sifatSurat, securityClassifications),
             ))
             .orderBy(desc(suratDistributions.updatedAt))
             .limit(50);
