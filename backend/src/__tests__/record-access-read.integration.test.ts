@@ -193,20 +193,48 @@ describe('resolveKonteksBaca: konteks tambahan', () => {
 });
 
 describe('jangkauanSql: alias pemanggil tidak boleh bertabrakan dengan alias internal jangkauanUnitsSql', () => {
-    // RANGKAIAN.rs1: unit_pengolah_id='dir_bppt' (dir_bppt benar-benar terkait).
-    // RANGKAIAN.rs2: unit_pengolah_id=NULL, tidak ada anggota/distribusi
-    // dir_bppt sama sekali — dir_bppt harus TIDAK muncul untuk rs2.
-    it.each(['r', 'a', 'd', 'p'])(
-        'alias pemanggil "%s" untuk rangkaian_surat tidak membocorkan rangkaian lain yang tidak terkait dengan dir_bppt',
-        async (alias) => {
+    // RANGKAIAN.rs1: dir_bppt benar-benar terkait (unit_pengolah_id, anggota,
+    // DAN tujuan distribusi). RANGKAIAN.rs2: TIDAK ada relasi dir_bppt lewat
+    // jalur apa pun — dir_bppt harus TIDAK pernah muncul untuk rs2.
+    //
+    // Setiap kasus memakai alias pemanggil PADA TABEL YANG SAMA dengan alias
+    // internal yang diuji (rangkaian_surat/rangkaian_anggota/
+    // surat_distributions/rangkaian_peserta), bukan selalu rangkaian_surat —
+    // memilih rangkaian_surat untuk semua kasus hanya menyentuh cabang
+    // r/r jangkauanUnitsSql dan lolos pada kode lama untuk alias a/d/p juga,
+    // sehingga tidak membuktikan apa pun untuk alias-alias itu.
+    it.each([
+        ['r', 'rangkaian_surat', 'id'],
+        ['a', 'rangkaian_anggota', 'rangkaian_id'],
+        ['d', 'surat_distributions', 'rangkaian_id'],
+    ] as const)(
+        'alias pemanggil "%s" pada tabel %s tidak membocorkan rangkaian lain yang tidak terkait dengan dir_bppt',
+        async (alias, table, column) => {
             const query = sql`
-                SELECT ${sql.raw(alias)}.id::text AS id
-                FROM rangkaian_surat ${sql.raw(alias)}
-                WHERE ${jangkauanSql(sql.raw(`${alias}.id`), 'dir_bppt', false)}
-                ORDER BY ${sql.raw(alias)}.id
+                SELECT DISTINCT ${sql.raw(`${alias}.${column}`)}::text AS id
+                FROM ${sql.raw(table)} ${sql.raw(alias)}
+                WHERE ${jangkauanSql(sql.raw(`${alias}.${column}`), 'dir_bppt', false)}
+                ORDER BY 1
             `;
             const rows = barisDari<{ id: string }>(await holder.db.execute(query));
             expect(rows.map(row => row.id)).toEqual([RANGKAIAN.rs1]);
         },
     );
+
+    it('alias pemanggil "p" pada rangkaian_peserta tidak membocorkan rangkaian lain (disposisiLamaRead aktif)', async () => {
+        // Cabang rangkaian_peserta hanya ikut saat disposisiLamaRead=true;
+        // dua baris peserta memastikan rs1 dan rs2 masing-masing punya baris
+        // sendiri untuk diuji tabrakan aliasnya.
+        await database.exec(`INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal) VALUES
+            ('${RANGKAIAN.rs1}','dir_bppt','disposisi_lama','BPPT'),
+            ('${RANGKAIAN.rs2}','dir_ptep','disposisi_lama','PTEP')`);
+        const query = sql`
+            SELECT DISTINCT p.rangkaian_id::text AS id
+            FROM rangkaian_peserta p
+            WHERE ${jangkauanSql(sql.raw('p.rangkaian_id'), 'dir_bppt', true)}
+            ORDER BY 1
+        `;
+        const rows = barisDari<{ id: string }>(await holder.db.execute(query));
+        expect(rows.map(row => row.id)).toEqual([RANGKAIAN.rs1]);
+    });
 });

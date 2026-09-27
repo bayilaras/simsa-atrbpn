@@ -134,6 +134,13 @@ describe('visibleSql', () => {
             expect(() => visibleSql(ctx(), { type: 'surat_keluar', alias })).toThrow(/alias/i);
         },
     );
+    it.each(['jk_ra', 'jk_r', 'jk_g', 'jk_j', 'jk_anything'])(
+        'menolak alias berprefiks cadangan jk_ (%s) yang dipakai builder jangkauan/grant',
+        alias => {
+            expect(() => visibleSql(ctx(), { type: 'surat_masuk', alias })).toThrow(/alias/i);
+            expect(() => visibleSql(ctx(), { type: 'surat_keluar', alias })).toThrow(/alias/i);
+        },
+    );
     it('menerima SQLWrapper sebagai id rangkaian dan mengikat unit sebagai parameter', () => {
         // pengawas: false agar literal konstanta cakupan pengawas tidak ikut dirender.
         const query = dialect.sqlToQuery(visibleSql(ctx({ pengawas: false }), { type: 'surat_masuk', alias: 'sm' }));

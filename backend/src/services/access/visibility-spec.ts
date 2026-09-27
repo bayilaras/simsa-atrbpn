@@ -84,17 +84,33 @@ export interface JangkauanOptions {
  * salinan. Satu-satunya definisi himpunan unit: P1 (jangkauanUnitIds, gabung),
  * P2 (jangkauanSql → checkRead/checkMany/visibleSql), P3 (deps), P4 (daftar),
  * dan P5 (flag data lama) semuanya melewati fungsi ini.
+ *
+ * KONTRAK ALIAS (wajib dibaca sebelum memanggil dengan `rangkaianId` berupa
+ * SQLWrapper mentah, mis. `sql.raw('x.rangkaian_id')`):
+ * - `rangkaianId` TIDAK divalidasi oleh `aliasAman` — ia SQL mentah, bebas
+ *   berisi apa pun yang pemanggil tulis. Validasi `aliasAman` hanya berlaku
+ *   untuk alias yang lewat `visibleSql`/`klasifikasiRekamanSql`/
+ *   `jangkauanRekamanSql` (parameter `alias: string` bertipe string biasa).
+ * - `rangkaianId` WAJIB berupa kolom yang dikualifikasi dengan alias tabel
+ *   pemanggil sendiri (mis. `x.rangkaian_id`, bukan `rangkaian_id` telanjang)
+ *   dan alias itu TIDAK BOLEH berprefiks `jk_` (lihat ALIAS_PREFIX_INTERNAL
+ *   di bawah) maupun sama dengan `ra`/`g`/`j`.
+ * - Kolom telanjang tanpa kualifikasi (mis. `sql.raw('rangkaian_id')` atau
+ *   `sql.raw('id')`) berisiko diam-diam terikat ke tabel internal fungsi ini
+ *   (`jk_r`/`jk_a`/`jk_d`/`jk_p`) alih-alih ke baris pemanggil, karena kolom
+ *   itu memang ada pada tabel-tabel tersebut.
+ * - Alasan: fungsi ini menyisipkan `rangkaianId` sebagai teks SQL langsung
+ *   ke dalam WHERE beberapa subkueri UNION. Sebelum alias internal dipindah
+ *   ke prefiks `jk_`, alias pemanggil polos `r`/`a`/`d`/`p` (persis nama
+ *   alias internal lama) membuat `r.id = ${rangkaianId}` diam-diam menjadi
+ *   tautologi yang terikat ke alias LOKAL, bukan ke baris pemanggil —
+ *   meloloskan SETIAP rangkaian lain yang unit pencatat/pengolah/anggota/
+ *   distribusi/pesertanya kebetulan sama. Prefiks `jk_` menutup celah itu
+ *   untuk alias pemanggil yang wajar, tetapi tidak bisa memvalidasi teks SQL
+ *   mentah — kepatuhan pemanggil pada kontrak di atas tetap wajib.
  */
 export function jangkauanUnitsSql(rangkaianId: SQLWrapper | string, options: JangkauanOptions = {}): SQL {
     const id = typeof rangkaianId === 'string' ? sql`${rangkaianId}::uuid` : rangkaianId;
-    // Alias internal berprefiks `jk_` (lihat ALIAS_PREFIX_INTERNAL): rangkaianId
-    // boleh berupa SQL mentah yang mereferensikan alias tabel pemanggil (mis.
-    // `sql.raw('r.id')` saat pemanggil menulis `FROM rangkaian_surat r`). Bila
-    // subkueri ini memakai alias polos `r`/`a`/`d`/`p` yang sama, `r.id = ${id}`
-    // diam-diam berubah jadi tautologi `r.id = r.id` yang terikat ke alias lokal
-    // ini sendiri, bukan ke baris pemanggil — meloloskan SETIAP rangkaian lain
-    // yang unit pencatat/pengolahnya sama. Prefiks ini menjaga agar identifier
-    // pemanggil (divalidasi aliasAman) tidak pernah bisa sama dengan alias di sini.
     const peserta = options.disposisiLama
         ? sql`UNION SELECT jk_p.unit_kerja_id FROM rangkaian_peserta jk_p
               WHERE jk_p.rangkaian_id = ${id} AND jk_p.berakhir_at IS NULL`
@@ -169,7 +185,14 @@ const ALIAS_RE = /^[a-z_][a-z0-9_]*$/;
 const ALIAS_PREFIX_INTERNAL = 'jk_';
 const ALIAS_INTERNAL_TERPAKAI: ReadonlySet<string> = new Set(['ra', 'g', 'j']);
 
-function aliasAman(alias: string): string {
+/**
+ * Validasi alias identifier SQL sederhana dan menolak prefiks/nama yang
+ * dicadangkan untuk subkueri internal berkas ini (lihat ALIAS_PREFIX_INTERNAL
+ * dan ALIAS_INTERNAL_TERPAKAI di atas). Diekspor agar modul lain yang menulis
+ * alias SQL mentah pada tabel rangkaian (mis. lingkupRangkaianSql di P4)
+ * dapat memakai validasi yang sama, bukan menyalin/menuliskan regex sendiri.
+ */
+export function aliasAman(alias: string): string {
     if (!ALIAS_RE.test(alias)) throw new Error(`Alias SQL tidak valid: ${alias}`);
     if (ALIAS_INTERNAL_TERPAKAI.has(alias) || alias.startsWith(ALIAS_PREFIX_INTERNAL)) {
         throw new Error(`Alias SQL '${alias}' dicadangkan untuk subkueri internal dan tidak boleh dipakai pemanggil`);
@@ -281,6 +304,13 @@ export function klasifikasiRekamanSql(type: JenisRekamanRangkaian, alias: string
  * Predikat "unit ∈ jangkauan(R)" (spec §4.5). Dirakit dari jangkauanUnitsSql
  * (P1, berkas ini) sehingga himpunan jangkauan hanya punya satu definisi;
  * cabang rangkaian_peserta hanya ikut bila disposisiLamaRead (flag P5) true.
+ *
+ * KONTRAK ALIAS `rangkaianId` — sama seperti jangkauanUnitsSql (lihat JSDoc
+ * di sana): SQL mentah, TIDAK divalidasi oleh `aliasAman`, WAJIB dikualifikasi
+ * dengan alias tabel pemanggil (mis. `x.rangkaian_id`) yang bukan `jk_*` dan
+ * bukan `ra`/`g`/`j`. Kolom telanjang atau alias yang bertumpang tindih
+ * dengan alias internal membuat jangkauan satu rangkaian membocorkan
+ * rangkaian lain yang tidak berkaitan.
  */
 export function jangkauanSql(rangkaianId: SQLWrapper, unitKerjaId: string, disposisiLamaRead: boolean): SQL {
     return sql`(${unitKerjaId} IN (SELECT jk_j.unit_kerja_id FROM ${jangkauanUnitsSql(rangkaianId, { disposisiLama: disposisiLamaRead })} AS jk_j))`;
@@ -297,6 +327,16 @@ export function jangkauanRekamanSql(ctx: KonteksBaca, type: JenisRekamanRangkaia
     return parts.length ? sql`(${sql.join(parts, sql` OR `)})` : sql`false`;
 }
 
+/**
+ * Predikat "ada grant approved & belum kedaluwarsa untuk (type, idCol) pada
+ * unitCol/kelasNorm saat ini". `idCol`/`unitCol`/`kelasNorm` disisipkan
+ * sebagai SQL mentah ke dalam `EXISTS (SELECT 1 FROM record_access_grants
+ * jk_g ...)`; sama seperti jangkauanUnitsSql/jangkauanSql, argumen-argumen
+ * ini TIDAK divalidasi oleh `aliasAman` dan WAJIB dikualifikasi dengan alias
+ * tabel pemanggil (mis. `x.id`, bukan `id` telanjang) yang bukan `jk_*` dan
+ * bukan `ra`/`g`/`j` — nama telanjang atau yang bertumpang tindih dengan
+ * alias internal (`jk_g`) diam-diam terikat ke record_access_grants sendiri.
+ */
 export function grantAktifSql(
     ctx: KonteksBaca,
     type: JenisRekamanRangkaian,
