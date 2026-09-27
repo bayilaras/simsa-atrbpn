@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
 import {
-    ARSIP_TERBATAS, PENGGUNA, SURAT,
+    ARSIP_TERBATAS, GRANT, PENGGUNA, SURAT,
     bootRangkaianDatabase, seedRangkaianFixture,
 } from './helpers/rangkaian-pglite';
 
@@ -42,5 +42,26 @@ describe('karakterisasi check() sebelum dan sesudah P2', () => {
             }
         }
         expect(hasil).toMatchSnapshot();
+    });
+
+    it('findActiveGrant mencari grant terikat unit dan kelas tanpa syarat unitAllowed', async () => {
+        const grant = await access.findActiveGrant(holder.db, PENGGUNA.ptep, 'surat_masuk', SURAT.smTerbatas, 'sesditjen', 'Terbatas');
+        expect(grant?.id).toBe(GRANT.ptepSmTerbatas);
+        expect(await access.findActiveGrant(holder.db, PENGGUNA.ptep, 'surat_masuk', SURAT.smTerbatas, 'dir_ptep', 'Terbatas')).toBeNull();
+        expect(await access.findActiveGrant(holder.db, PENGGUNA.ptep, 'surat_masuk', SURAT.smBiasa, 'sesditjen', 'Sangat Segera')).toBeNull();
+        expect(await access.findActiveGrant(holder.db, { ...PENGGUNA.ptep, id: null }, 'surat_masuk', SURAT.smTerbatas, 'sesditjen', 'Terbatas')).toBeNull();
+        expect(await access.findActiveGrant(holder.db, PENGGUNA.tu, 'surat_masuk', SURAT.smTerbatas, 'sesditjen', 'Terbatas')).toBeNull();
+        // check() tetap tidak memakai grant milik non-pemilik.
+        expect((await access.recordAccessService.check(PENGGUNA.ptep, 'surat_masuk', SURAT.smTerbatas)).grantId).toBeNull();
+    });
+
+    it('evaluateOwnerAccess mengabaikan grant bila unit tidak diizinkan', () => {
+        const metadata = { unitKerjaId: 'sesditjen', classification: 'terbatas', readable: true, mutable: true };
+        const grant = { id: GRANT.ptepSmTerbatas, purpose: 'x', accessMode: 'manage', expiresAt: new Date('2099-01-01T00:00:00Z') };
+        const result = access.evaluateOwnerAccess(PENGGUNA.ptep, metadata, grant);
+        expect(result).toMatchObject({ exists: true, allowed: false, mutable: false, grantId: null, grantAccessMode: null });
+        expect(access.evaluateOwnerAccess(PENGGUNA.tu, metadata, grant)).toMatchObject({ allowed: true, mutable: true, grantAccessMode: 'manage' });
+        expect(access.grantAccessModeOf({ ...grant, accessMode: 'aneh' })).toBe('view');
+        expect(access.grantAccessModeOf(null)).toBeNull();
     });
 });
