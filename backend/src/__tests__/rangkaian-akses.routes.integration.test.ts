@@ -73,6 +73,17 @@ describe('GET detail surat lintas unit', () => {
         expect(await auditRows()).toHaveLength(0);
     });
 
+    it('pemilik membaca dengan id huruf besar tetap 200 (F1)', async () => {
+        // Semua konstanta SURAT/RANGKAIAN/ANGGOTA di helper hanya berisi
+        // digit (tanpa a-f), jadi memakai id ad hoc sendiri di sini agar
+        // huruf besar benar-benar diuji, bukan no-op pada uppercase().
+        const idAsli = '3a0b0000-00c0-4d00-8e00-00000000000f';
+        await database.query(`INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, perihal, tanggal_surat)
+            VALUES ($1, 'sesditjen', 99, 2026, 'biasa', 'Uji id huruf besar rute', '2026-09-01')`, [idAsli]);
+        const response = await request(app).get(`/api/surat-masuk/${idAsli.toUpperCase()}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(response.body.data).toMatchObject({ id: idAsli, aksesMelalui: 'owner' });
+    });
+
     it('admin_sesditjen dengan unit NULL membaca sebagai pengawas', async () => {
         const response = await request(app).get(`/api/surat-keluar/${SURAT.skBpptBiasa}`).set(sebagai(PENGGUNA.adminSesNull)).expect(200);
         expect(response.body.data.aksesMelalui).toBe('pengawas');

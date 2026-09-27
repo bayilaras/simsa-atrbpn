@@ -25,6 +25,17 @@ const BASE_SIFAT_VALUES: Array<string | null> = [
     'Sangat Segera', 'biasa', 'Rahasia', 'Terbatas', '', null, ' Biasa ', 'sangat-segera', 'Biasa/Terbuka',
 ];
 
+// F2: nilai spasi-saja (tanpa karakter lain sama sekali) tidak diuji langsung
+// di manapun sebelum ini -- ' Biasa ' di atas menguji trim di SEKITAR isi,
+// bukan trim yang menghabiskan seluruh nilai. kelasBaruSql men-trim DULU,
+// baru menganggap hasil kosong sebagai 'biasa' (idempoten dengan
+// normalizeSecurityClassification('')==='biasa'); bila urutan itu dibalik
+// (coalesce/replace dulu, trim belakangan), nilai spasi-saja lolos sebagai
+// literal '_' bukan 'biasa'. Ditaruh SETELAH BASE_SIFAT_VALUES sebagai
+// daftarnya sendiri (bukan disisipkan ke BASE_SIFAT_VALUES) supaya indeks
+// 0-3 (L1..L4) di atas tidak tergeser.
+const WHITESPACE_ONLY_VALUES: Array<string> = [' ', '\t'];
+
 const PRODUCTION_SIFAT_VALUES = JSON.parse(
     readFileSync(new URL('./fixtures/sifat-surat-produksi.json', import.meta.url), 'utf8'),
 ) as Array<string | null>;
@@ -43,6 +54,7 @@ const ALIAS_DRIFT_VALUES: Array<string | null> = [
 
 const SIFAT_VALUES: Array<string | null> = [
     ...BASE_SIFAT_VALUES,
+    ...WHITESPACE_ONLY_VALUES,
     ...ALIAS_DRIFT_VALUES,
     ...JS_WHITESPACE.map(cp => {
         const ch = String.fromCharCode(cp);
@@ -194,6 +206,20 @@ describe('pre-flight P0 integrasi surat di PGlite', () => {
             .map(row => ({ nilai: row.nilai, sql: row.kelas_baru, ts: normalizeSecurityClassification(row.nilai) }));
         expect(mismatches).toEqual([]);
         expect(rows.find(row => row.nilai === 'Sangat Segera')).toMatchObject({ kelas_lama: 'sangat_segera', kelas_baru: 'biasa' });
+    });
+
+    // F2: nilai spasi-saja (' ' dan '\t') harus dinormalisasi ke 'biasa' lewat
+    // urutan trim-DULU-baru-anggap-kosong milik kelasBaruSql. Test generik di
+    // atas sudah mencakup nilai ini lewat SIFAT_VALUES/mismatches, tapi test
+    // ini menegaskannya secara langsung dan sengaja tidak bisa lolos vakum:
+    // membalik urutan trim di kelasBaruSql (coalesce/replace dulu, trim
+    // belakangan) membuat nilai ini menjadi literal '_', bukan 'biasa'.
+    it.each(WHITESPACE_ONLY_VALUES)('nilai spasi-saja %j dinormalisasi idempoten menjadi biasa (trim dulu, baru anggap kosong)', (nilai) => {
+        const rows = byId('sifat_surat_kelas').rows as Array<{ nilai: string | null; kelas_baru: string }>;
+        const row = rows.find(item => item.nilai === nilai);
+        expect(row).toBeDefined();
+        expect(row?.kelas_baru).toBe('biasa');
+        expect(normalizeSecurityClassification(nilai)).toBe('biasa');
     });
 
     it('menghitung disposisi terbuka per kelas lama dan baru', () => {

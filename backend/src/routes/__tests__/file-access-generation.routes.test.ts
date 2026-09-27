@@ -242,7 +242,12 @@ describe('authorized GCS file access', () => {
         const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(500);
 
         expect(response.body).not.toHaveProperty('data');
-        expect(JSON.stringify(response.body)).not.toContain('%PDF-cross-unit-must-not-leak');
+        // response.body is a raw Buffer here (Content-Type stayed application/pdf,
+        // so supertest never parses it as JSON) -- JSON.stringify on a Buffer emits
+        // {"type":"Buffer","data":[...]} and can never contain this ASCII substring,
+        // making that assertion pass unconditionally. Decode it first so a real leak
+        // would actually fail the test.
+        expect(Buffer.from(response.body).toString()).not.toContain('%PDF-cross-unit-must-not-leak');
         expect(destroy).toHaveBeenCalledOnce();
         expect(mocks.auditLogAction).not.toHaveBeenCalled();
     });

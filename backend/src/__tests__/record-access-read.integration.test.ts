@@ -124,6 +124,23 @@ describe('checkRead: matriks unit × role × kelas × grant × jangkauan', () =>
             expect(batch.get(mod.readRefKey(ref))).toEqual(await mod.recordAccessService.checkRead(PENGGUNA.tu, ref.type, ref.id));
         }
     });
+
+    // Findings F1: Postgres returns r.id::text lowercased, but validateIdParam
+    // and the demo allowlist accept uppercase UUIDs from route params. Every
+    // constant in SURAT/RANGKAIAN/ANGGOTA is all-digits (no a-f), so this uses
+    // its own id with hex letters to actually exercise the casing mismatch.
+    it('id huruf besar dari pemanggil tetap ditemukan dan diizinkan untuk pemilik (F1)', async () => {
+        const idAsli = '3a0b0000-00c0-4d00-8e00-00000000000f';
+        await database.exec(`INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, perihal, tanggal_surat)
+            VALUES ('${idAsli}', 'sesditjen', 99, 2026, 'biasa', 'Uji id huruf besar', '2026-09-01')`);
+        const hasilAsli = await mod.recordAccessService.checkRead(PENGGUNA.tu, 'surat_masuk', idAsli);
+        const hasilBesar = await mod.recordAccessService.checkRead(PENGGUNA.tu, 'surat_masuk', idAsli.toUpperCase());
+        expect(hasilBesar).toEqual(hasilAsli);
+        expect(hasilBesar).toMatchObject({ exists: true, allowed: true, via: 'owner' });
+
+        const batch = await mod.recordAccessService.checkMany(PENGGUNA.tu, [{ type: 'surat_masuk', id: idAsli.toUpperCase() }]);
+        expect(batch.get(mod.readRefKey({ type: 'surat_masuk', id: idAsli.toUpperCase() }))).toEqual(hasilAsli);
+    });
 });
 
 describe('findActiveGrant: pengikatan SQL eksplisit (bukan snapshot)', () => {

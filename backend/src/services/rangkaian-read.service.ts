@@ -217,7 +217,7 @@ async function muatAnggota(executor: ReadExecutor, rangkaianId: string): Promise
         LEFT JOIN surat_keluar sk ON sk.id = a.surat_keluar_id
         WHERE a.rangkaian_id = ${rangkaianId}::uuid
           AND coalesce(sm.is_deleted, sk.is_deleted) IS NOT TRUE
-        ORDER BY a.ditambahkan_at, a.id
+        ORDER BY (a.peran = 'induk') DESC, a.ditambahkan_at, a.id
         LIMIT ${BATAS_NODE_DETAIL + 1}
     `));
 }
@@ -451,7 +451,12 @@ export const rangkaianReadService = {
                 unitPencatat: { id: rs.unitPencatatId, nama: rs.unitPencatatNama },
                 unitPengolah: rs.unitPengolahId ? { id: rs.unitPengolahId, nama: rs.unitPengolahNama ?? rs.unitPengolahId } : null,
                 klasifikasiItemId: rs.klasifikasiItemId,
-                lanjutanDariId: rs.lanjutanDariId,
+                // Sama seperti rangkaianTerkait: seorang pembaca tanpa jangkauan
+                // pada level RANGKAIAN ini (penuh===false) yang hanya melihat
+                // payloadnya karena satu anggota kebetulan terbaca (viaLintas)
+                // tidak berhak mengetahui rangkaian lanjutan lain -- itu adalah
+                // fakta pada level rangkaian, bukan pada level surat anggota.
+                lanjutanDariId: penuh ? rs.lanjutanDariId : null,
                 selesaiAt: iso(rs.selesaiAt),
                 selesaiManual: rs.selesaiManual === true,
                 diberkaskanAt: iso(rs.diberkaskanAt),

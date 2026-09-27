@@ -246,7 +246,13 @@ export interface ReadAccessResult extends RecordAccessResult {
 export type ReadExecutor = Pick<typeof db, 'select' | 'execute'>;
 
 export function readRefKey(ref: ReadRef): string {
-    return `${ref.type}:${ref.id}`;
+    // Postgres always returns uuid text as lowercase (see findReadMetadata's
+    // `r.id::text`), but validateIdParam and the demo allowlist accept
+    // uppercase UUIDs from callers (route params). Normalising the id part
+    // here keeps every map/set built from this key -- the unique-ref set,
+    // the metadata map, and the results map in checkMany, plus checkRead's
+    // lookup -- consistent regardless of the caller's original casing.
+    return `${ref.type}:${ref.id.toLowerCase()}`;
 }
 
 function inaccessibleReadResult(): ReadAccessResult {
@@ -273,7 +279,7 @@ async function findReadMetadata(
     const table = type === 'surat_masuk' ? 'surat_masuk' : 'surat_keluar';
     const fk = type === 'surat_masuk' ? 'surat_masuk_id' : 'surat_keluar_id';
     const peserta = ctx.unitJangkauan
-        ? jangkauanSql(sql.raw('ra.rangkaian_id'), ctx.unitJangkauan, ctx.disposisiLamaRead)
+        ? jangkauanSql(sql.raw('ang.rangkaian_id'), ctx.unitJangkauan, ctx.disposisiLamaRead)
         : sql`false`;
     return barisDari<ReadMetadataRow>(await executor.execute(sql`
         SELECT r.id::text AS "id",
@@ -281,10 +287,10 @@ async function findReadMetadata(
                ${klasifikasiRekamanSql(type, 'r')} AS "classification",
                (r.is_deleted IS NOT TRUE) AS "readable",
                (r.is_deleted IS NOT TRUE AND r.is_archived IS NOT TRUE) AS "mutable",
-               ra.rangkaian_id::text AS "rangkaianId",
+               ang.rangkaian_id::text AS "rangkaianId",
                coalesce(${peserta}, false) AS "peserta"
         FROM ${sql.raw(table)} r
-        LEFT JOIN rangkaian_anggota ra ON ra.${sql.raw(fk)} = r.id
+        LEFT JOIN rangkaian_anggota ang ON ang.${sql.raw(fk)} = r.id
         WHERE r.id IN (${sql.join(ids.map(id => sql`${id}::uuid`), sql`, `)})
     `));
 }

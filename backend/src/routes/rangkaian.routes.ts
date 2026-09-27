@@ -15,7 +15,7 @@ function tidakDitemukan(res: Response) {
     return res.status(404).json({ success: false, error: 'Rangkaian tidak ditemukan' });
 }
 
-async function auditLintasUnit(req: AuthRequest, detail: RangkaianDetail) {
+async function auditLintasUnit(req: AuthRequest, detail: RangkaianDetail, extraChanges: Record<string, unknown> = {}) {
     if (detail.aksesMelalui === 'owner') return;
     await auditLogService.logActionOrThrow({
         userId: req.user?.id,
@@ -23,7 +23,10 @@ async function auditLintasUnit(req: AuthRequest, detail: RangkaianDetail) {
         action: 'view_via_rangkaian',
         entityType: 'rangkaian_surat',
         entityId: detail.rangkaian.id,
-        changes: { via: detail.aksesMelalui, rangkaianId: detail.rangkaian.id, dialihkanDari: detail.dialihkanDari?.id ?? null },
+        changes: {
+            via: detail.aksesMelalui, rangkaianId: detail.rangkaian.id, dialihkanDari: detail.dialihkanDari?.id ?? null,
+            ...extraChanges,
+        },
         ipAddress: req.ip,
     });
 }
@@ -44,7 +47,7 @@ router.get('/by-surat/:jenis/:suratId', validateIdParam('suratId'), async (req: 
         if (!rangkaianId) return res.json({ success: true, data: null });
         const detail = await rangkaianReadService.getDetail(req.user, rangkaianId);
         if (!detail) return tidakDitemukan(res);
-        await auditLintasUnit(req, detail);
+        await auditLintasUnit(req, detail, { jenis, suratId });
         res.json({ success: true, data: detail });
     } catch (error) {
         next(error);

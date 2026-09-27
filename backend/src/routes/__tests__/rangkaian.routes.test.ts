@@ -173,6 +173,7 @@ describe('GET /api/rangkaian/by-surat/:jenis/:suratId — gerbang checkRead sebe
             action: 'view_via_rangkaian',
             entityType: 'rangkaian_surat',
             entityId: RID,
+            changes: expect.objectContaining({ jenis: 'surat_masuk', suratId: SID }),
         }));
     });
 

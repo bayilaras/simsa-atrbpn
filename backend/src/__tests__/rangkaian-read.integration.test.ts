@@ -105,7 +105,7 @@ describe('rangkaianReadService.getDetail', () => {
         expect(detail.disposisi.every(row => row.masked === false)).toBe(true);
     });
 
-    it('rangkaian digabung dialihkan satu hop ke target', async () => {
+    it('rangkaian digabung dialihkan ke target (resolusi mengikuti seluruh rantai, bukan hanya satu hop)', async () => {
         await database.exec(`INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun, digabung_ke_id)
             VALUES ('${RANGKAIAN.rs3Digabung}','RS-2026-000003','surat_masuk','digabung','sesditjen','Sumber gabung',2026,'${RANGKAIAN.rs1}')`);
         const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rs3Digabung))!;
@@ -133,6 +133,29 @@ describe('rangkaianReadService.getDetail', () => {
         const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rsBesar))!;
         expect(detail.anggota).toHaveLength(300);
         expect(detail.truncated).toBe(true);
+    });
+
+    // F8a: induk harus tetap masuk 300 pertama walau ditambahkan_at-nya jauh
+    // lebih baru dari 301 anggota lain -- ORDER BY harus mendahulukan peran
+    // 'induk' sebelum ditambahkan_at/id, bukan hanya waktu penambahan.
+    it('induk tetap masuk 300 pertama walau ditambahkan setelah 301 anggota lain', async () => {
+        const suratIndukRsBesar = '40000000-0000-4000-8000-000000000010';
+        const anggotaIndukRsBesar = '51000000-0000-4000-8000-000000000099';
+        await database.exec(`
+            INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun)
+                VALUES ('${RANGKAIAN.rsBesar}','RS-2026-000005','inisiatif','aktif','sesditjen','Rangkaian besar',2026);
+            INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, perihal)
+                SELECT 'dir_plp', g, 2026, 'biasa', 'Massal ' || g FROM generate_series(1, 301) g;
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id, peran, sumber)
+                SELECT '${RANGKAIAN.rsBesar}', id, 'dir_plp', 'anggota', 'aplikasi' FROM surat_keluar WHERE unit_kerja_id = 'dir_plp';
+            INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, perihal)
+                VALUES ('${suratIndukRsBesar}', 'dir_plp', 999, 2026, 'biasa', 'Induk rangkaian besar');
+            INSERT INTO rangkaian_anggota (id, rangkaian_id, surat_keluar_id, unit_kerja_id, peran, sumber, ditambahkan_at)
+                VALUES ('${anggotaIndukRsBesar}', '${RANGKAIAN.rsBesar}', '${suratIndukRsBesar}', 'dir_plp', 'induk', 'aplikasi', '2027-01-01T00:00:00Z');`);
+        const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rsBesar))!;
+        expect(detail.anggota).toHaveLength(300);
+        expect(detail.truncated).toBe(true);
+        expect(detail.anggota.some(node => node.anggotaId === anggotaIndukRsBesar)).toBe(true);
     });
 
     it('memanggil checkMany sekali, tidak pernah checkRead per node', async () => {
@@ -167,9 +190,14 @@ describe('rangkaianReadService.getDetail', () => {
         // ikut jangkauan rangkaian ini) -- tier rangkaian = null untuk TU.
         // Anggota tindak lanjutnya sendiri milik dir_bppt, yang MEMANG dalam
         // cakupan pengawas TU, sehingga checkMany meloloskannya lewat 'pengawas'.
+        // lanjutan_dari_id nyata (menunjuk rs1) ditambahkan agar F8b bisa
+        // membedakan "nilainya null" dari "nilainya sengaja disembunyikan":
+        // reader ini tidak berhak tahu rangkaian lanjutan level-RANGKAIAN
+        // (tingkat===null, penuh===false), walau ia melihat payload-nya
+        // lewat satu anggota yang terbaca (viaLintas).
         await database.exec(`
-            INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun)
-                VALUES ('${RANGKAIAN.rsBagianUmum}','RS-2026-000006','surat_masuk','aktif','bagian_umum','Rangkaian bagian umum',2026);
+            INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun, lanjutan_dari_id)
+                VALUES ('${RANGKAIAN.rsBagianUmum}','RS-2026-000006','surat_masuk','aktif','bagian_umum','Rangkaian bagian umum',2026,'${RANGKAIAN.rs1}');
             INSERT INTO rangkaian_anggota (id, rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber, ditambahkan_at)
                 VALUES ('${ANGGOTA.rsBagianUmumInduk}','${RANGKAIAN.rsBagianUmum}','${SURAT.smBagian}','bagian_umum','induk','aplikasi','2026-09-10T01:00:00Z');
             INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, nomor_surat, perihal, kepada, naskah_dinas, tanggal_surat)
@@ -182,6 +210,9 @@ describe('rangkaianReadService.getDetail', () => {
         expect(detail.anggota).toEqual([
             expect.objectContaining({ anggotaId: ANGGOTA.rsBagianUmumSk, masked: false, aksesMelalui: 'pengawas' }),
         ]);
+        // F8b: tanpa jangkauan level-rangkaian, lanjutanDariId dinolkan
+        // meski DB punya nilai nyata (rs1) -- sama seperti rangkaianTerkait.
+        expect(detail.rangkaian.lanjutanDariId).toBeNull();
     });
 
     it('pembaca tanpa jalur lintas unit sama sekali (staff lama) tetap aksesMelalui owner', async () => {
