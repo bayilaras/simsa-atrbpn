@@ -465,6 +465,19 @@ BEGIN
         END IF;
     END IF;
 
+    -- Invarian status<->keputusan berlaku pada setiap UPDATE, terlepas apakah
+    -- status berubah pada statement ini: baris pending tidak boleh punya
+    -- keputusan, dan baris yang sudah diputuskan wajib punya keduanya.
+    IF NEW.status = 'pending' AND (NEW.diputuskan_by IS NOT NULL OR NEW.diputuskan_at IS NOT NULL) THEN
+        RAISE EXCEPTION 'Koreksi berkas % berstatus pending tidak boleh memiliki keputusan', OLD.id
+            USING ERRCODE = '23514';
+    END IF;
+    IF NEW.status IN ('approved', 'denied', 'applied')
+       AND (NEW.diputuskan_by IS NULL OR NEW.diputuskan_at IS NULL) THEN
+        RAISE EXCEPTION 'Koreksi berkas % berstatus % wajib mengisi diputuskan_by dan diputuskan_at', OLD.id, NEW.status
+            USING ERRCODE = '23514';
+    END IF;
+
     RETURN NEW;
 END $$;
 --> statement-breakpoint

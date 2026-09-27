@@ -1335,6 +1335,16 @@ describe('PostgreSQL migration chain', () => {
         await expect(database.exec(`
             UPDATE rangkaian_koreksi_berkas SET status = 'approved' WHERE id = '${koreksiId}'
         `)).rejects.toThrow(/harus mengisi diputuskan_by/);
+        // Mengisi keputusan tanpa mengubah status (tetap pending) tetap ditolak;
+        // baris pending tidak boleh punya diputuskan_by/at sama sekali.
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas
+            SET diputuskan_by = '${checker1}', diputuskan_at = now()
+            WHERE id = '${koreksiId}'
+        `)).rejects.toThrow(/berstatus pending tidak boleh memiliki keputusan/);
+        await expect(database.exec(`
+            UPDATE rangkaian_koreksi_berkas SET diputuskan_by = '${checker1}' WHERE id = '${koreksiId}'
+        `)).rejects.toThrow(/berstatus pending tidak boleh memiliki keputusan/);
 
         // Baris terpisah untuk jalur pending -> denied agar tidak mengganggu jalur approved di atas.
         const koreksiDitolakId = (await database.query<{ id: string }>(`
