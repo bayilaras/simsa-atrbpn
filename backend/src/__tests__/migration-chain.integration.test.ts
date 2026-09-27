@@ -804,4 +804,215 @@ describe('PostgreSQL migration chain', () => {
             WHERE role = 'admin_sesditjen'
         `)).rejects.toThrow(/users_role_unit_mandate_check|check constraint/i);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0046 menolak distribusi yang belum direkonsiliasi lalu meng-upgrade data lama tanpa memicu guard 0021', async () => {
+        const database = await createDatabase();
+        const index0046 = journal.entries.findIndex(({ tag }) => tag === '0046_rangkaian_surat');
+        expect(index0046).toBeGreaterThan(0);
+        for (const entry of journal.entries.slice(0, index0046)) {
+            await applyMigration(database, entry);
+        }
+
+        const smLama = '46000000-0000-4000-8000-000000000001';
+        const skBalasan = '46000000-0000-4000-8000-000000000002';
+        const skArsip = '46000000-0000-4000-8000-000000000003';
+        // Fixture meniru data lama: perihal NULL, balasan_untuk terisi, satu
+        // surat keluar terarsip sehingga trigger 0021 aktif saat 0046 meng-UPDATE.
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES
+                ('ditjen', 'Direktorat Jenderal'),
+                ('sesditjen', 'Sekretariat Direktorat Jenderal'),
+                ('unit-46-target', 'Unit Target 0046');
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal)
+            VALUES ('${smLama}', 'sesditjen', 1, 2025, 'B-12/PTPP.1/IX/2024', NULL);
+            INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal, balasan_untuk)
+            VALUES
+                ('${skBalasan}', 'sesditjen', 1, 2025, 'ND-1/2025', 'Balasan lama', '${smLama}'),
+                ('${skArsip}', 'sesditjen', 2, 2025, 'ND-2/2025', 'Balasan terarsip', '${smLama}');
+            INSERT INTO arsip (
+                unit_kerja_id, jenis_arsip, source_surat_id, tahun,
+                nomor_surat_original, perihal_original
+            ) VALUES ('sesditjen', 'keluar', '${skArsip}', 2025, 'ND-2/2025', 'Balasan terarsip');
+            INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status)
+            VALUES ('${smLama}', 'sesditjen', 'unit-46-target', 'diarsipkan');
+        `);
+
+        await expect(applyMigration(database, journal.entries[index0046]))
+            .rejects.toThrow(/0046: status surat_distributions tidak dikenal/);
+
+        await database.exec(`
+            UPDATE surat_distributions SET status = 'sent' WHERE surat_masuk_id = '${smLama}';
+            INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status)
+            VALUES ('${smLama}', 'sesditjen', 'unit-46-target', 'received');
+        `);
+        await expect(applyMigration(database, journal.entries[index0046]))
+            .rejects.toThrow(/0046: distribusi aktif ganda/);
+        const untouched = await database.query<{ relation: string | null }>(
+            `SELECT to_regclass('public.rangkaian_surat')::text AS relation`,
+        );
+        expect(untouched.rows).toEqual([{ relation: null }]);
+
+        await database.exec(`
+            UPDATE surat_distributions
+            SET status = 'rejected', rejection_reason = 'Salah alamat unit tujuan'
+            WHERE surat_masuk_id = '${smLama}' AND status = 'received';
+        `);
+        await applyMigration(database, journal.entries[index0046]);
+
+        const upgraded = await database.query<{
+            id: string;
+            asal_naskah: string | null;
+            is_archived: boolean;
+        }>(`SELECT id, asal_naskah, is_archived FROM surat_keluar ORDER BY id`);
+        expect(upgraded.rows).toEqual([
+            { id: skBalasan, asal_naskah: 'tindak_lanjut', is_archived: false },
+            { id: skArsip, asal_naskah: 'tindak_lanjut', is_archived: true },
+        ]);
+
+        const pengawas = await database.query<{ id: string; is_unit_pengawas: boolean }>(`
+            SELECT id, is_unit_pengawas FROM unit_kerja ORDER BY id COLLATE "C"
+        `);
+        expect(pengawas.rows).toEqual([
+            { id: 'ditjen', is_unit_pengawas: true },
+            { id: 'sesditjen', is_unit_pengawas: true },
+            { id: 'unit-46-target', is_unit_pengawas: false },
+        ]);
+
+        const distribusi = await database.query(`
+            SELECT status, rangkaian_id, penanggung_jawab, ditutup_pengawas
+            FROM surat_distributions ORDER BY status
+        `);
+        expect(distribusi.rows).toEqual([
+            { status: 'rejected', rangkaian_id: null, penanggung_jawab: false, ditutup_pengawas: false },
+            { status: 'sent', rangkaian_id: null, penanggung_jawab: false, ditutup_pengawas: false },
+        ]);
+
+        // Baris rejected boleh berulang; distribusi aktif ganda ditolak index parsial.
+        await database.exec(`
+            INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status)
+            VALUES ('${smLama}', 'sesditjen', 'unit-46-target', 'rejected')
+        `);
+        await expect(database.exec(`
+            INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status)
+            VALUES ('${smLama}', 'sesditjen', 'unit-46-target', 'sent')
+        `)).rejects.toThrow(/surat_distributions_active_target_uidx|duplicate key/i);
+        await expect(database.exec(`
+            UPDATE surat_distributions SET status = 'arsip' WHERE status = 'sent'
+        `)).rejects.toThrow(/surat_distributions_status_check|check constraint/i);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0046 menegakkan jejak alasan, index anggota, hak append-only, dan flag pengawas pada instalasi baru', async () => {
+        const database = await createDatabase();
+        for (const entry of journal.entries) {
+            await applyMigration(database, entry);
+        }
+
+        const userId = '46000000-0000-4000-8000-0000000000a1';
+        const sm = '46000000-0000-4000-8000-0000000000a2';
+        const sk = '46000000-0000-4000-8000-0000000000a3';
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES
+                ('ditjen', 'Ditjen'), ('sesditjen', 'Sesditjen'), ('unit-46-a', 'Unit A');
+            INSERT INTO users (id, email, role)
+            VALUES ('${userId}', 'rangkaian-0046@example.test', 'super_admin');
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal)
+            VALUES ('${sm}', 'sesditjen', 1, 2026, 'SM-1/2026', 'Surat induk');
+            INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal)
+            VALUES ('${sk}', 'unit-46-a', 1, 2026, 'ND-1/2026', 'Tindak lanjut');
+        `);
+
+        // Seed deployment berjalan SESUDAH migrasi; trigger insert memberi nilai awal.
+        const pengawas = await database.query<{ id: string; is_unit_pengawas: boolean }>(`
+            SELECT id, is_unit_pengawas FROM unit_kerja
+            WHERE id IN ('ditjen', 'sesditjen', 'unit-46-a') ORDER BY id COLLATE "C"
+        `);
+        expect(pengawas.rows).toEqual([
+            { id: 'ditjen', is_unit_pengawas: true },
+            { id: 'sesditjen', is_unit_pengawas: true },
+            { id: 'unit-46-a', is_unit_pengawas: false },
+        ]);
+
+        const rangkaianId = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_surat (kode, asal, unit_pencatat_id, judul, tahun)
+            VALUES ('RS-2026-000001', 'surat_masuk', 'sesditjen', 'Surat induk', 2026)
+            RETURNING id
+        `)).rows[0].id;
+
+        await expect(database.exec(`
+            UPDATE rangkaian_surat
+            SET status = 'selesai', selesai_manual = true, selesai_by = '${userId}'
+            WHERE id = '${rangkaianId}'
+        `)).rejects.toThrow(/rangkaian_selesai_manual_check/);
+        await expect(database.exec(`
+            UPDATE rangkaian_surat
+            SET status = 'selesai', selesai_manual = true, selesai_by = '${userId}',
+                catatan_selesai = '   pendek  '
+            WHERE id = '${rangkaianId}'
+        `)).rejects.toThrow(/rangkaian_selesai_manual_check/);
+        await expect(database.exec(`
+            UPDATE rangkaian_surat SET status = 'digabung' WHERE id = '${rangkaianId}'
+        `)).rejects.toThrow(/rangkaian_gabung_check/);
+
+        const indukId = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran)
+            VALUES ('${rangkaianId}', '${sm}', 'sesditjen', 'induk') RETURNING id
+        `)).rows[0].id;
+        const anggotaId = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id)
+            VALUES ('${rangkaianId}', '${sk}', 'unit-46-a') RETURNING id
+        `)).rows[0].id;
+        await expect(database.exec(`
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, surat_keluar_id, unit_kerja_id)
+            VALUES ('${rangkaianId}', '${sm}', '${sk}', 'sesditjen')
+        `)).rejects.toThrow(/rangkaian_anggota_satu_surat_check/);
+        await expect(database.exec(`
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id)
+            VALUES ('${rangkaianId}', '${sm}', 'sesditjen')
+        `)).rejects.toThrow(/rangkaian_anggota_sm_uidx|duplicate key/i);
+
+        const relasiId = (await database.query<{ id: string }>(`
+            INSERT INTO rangkaian_relasi (rangkaian_id, dari_anggota_id, ke_anggota_id, jenis_relasi)
+            VALUES ('${rangkaianId}', '${anggotaId}', '${indukId}', 'tindak_lanjut') RETURNING id
+        `)).rows[0].id;
+        await expect(database.exec(`
+            UPDATE rangkaian_relasi SET cancelled_at = now(), cancelled_by = '${userId}'
+            WHERE id = '${relasiId}'
+        `)).rejects.toThrow(/rangkaian_relasi_pembatalan_check/);
+        await expect(database.exec(`
+            INSERT INTO rangkaian_relasi (rangkaian_id, dari_anggota_id, ke_anggota_id, jenis_relasi)
+            VALUES ('${rangkaianId}', '${anggotaId}', '${indukId}', 'tindak_lanjut')
+        `)).rejects.toThrow(/rangkaian_relasi_active_uidx|duplicate key/i);
+
+        await expect(database.exec(`
+            INSERT INTO rangkaian_peserta (
+                rangkaian_id, unit_kerja_id, peran, berakhir_at, berakhir_by
+            ) VALUES ('${rangkaianId}', 'unit-46-a', 'disposisi_lama', now(), '${userId}')
+        `)).rejects.toThrow(/rangkaian_peserta_berakhir_check/);
+        await expect(database.exec(`
+            INSERT INTO rangkaian_koreksi_berkas (
+                rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+                klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by
+            ) VALUES ('${rangkaianId}', 'unit-46-a', 'sesditjen', 1, 1, '   ', '${userId}')
+        `)).rejects.toThrow(/rangkaian_koreksi_alasan_check/);
+
+        const privileges = await database.query<Record<string, boolean>>(`
+            SELECT
+                has_table_privilege('simsa_api_runtime', 'public.rangkaian_surat', 'DELETE') AS delete_surat,
+                has_table_privilege('simsa_api_runtime', 'public.rangkaian_anggota', 'DELETE') AS delete_anggota,
+                has_table_privilege('simsa_api_runtime', 'public.rangkaian_relasi', 'DELETE') AS delete_relasi,
+                has_table_privilege('simsa_api_runtime', 'public.rangkaian_peserta', 'DELETE') AS delete_peserta,
+                has_table_privilege('simsa_api_runtime', 'public.rangkaian_koreksi_berkas', 'DELETE') AS delete_koreksi,
+                has_table_privilege('simsa_api_runtime', 'public.rangkaian_surat', 'INSERT,UPDATE') AS write_surat,
+                has_sequence_privilege('simsa_api_runtime', 'public.rangkaian_surat_kode_seq', 'USAGE') AS kode_seq
+        `);
+        expect(privileges.rows).toEqual([{
+            delete_surat: false,
+            delete_anggota: false,
+            delete_relasi: false,
+            delete_peserta: false,
+            delete_koreksi: false,
+            write_surat: true,
+            kode_seq: true,
+        }]);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
 });
