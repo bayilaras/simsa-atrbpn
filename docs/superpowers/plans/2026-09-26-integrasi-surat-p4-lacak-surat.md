@@ -3842,7 +3842,7 @@ menjadi:
 
 ```ts
 import {
-    barisDari, cocokUnitRekamanSql, dalamCakupanPengawasSql, jangkauanSql, kecocokanUnitRekaman, resolveKonteksBaca,
+    aliasAman, barisDari, cocokUnitRekamanSql, dalamCakupanPengawasSql, jangkauanSql, kecocokanUnitRekaman, resolveKonteksBaca,
     type KonteksBaca,
 } from './access/visibility-spec.js';
 ```
@@ -3862,12 +3862,28 @@ async function lingkupSql(user: PenggunaDaftar): Promise<SQL> {
 menjadi:
 
 ```ts
-/** Lingkup rangkaian (pencatat ∨ pengawas ∨ jangkauan §4.5) untuk alias tabel rangkaian_surat; dipakai juga D7 (Task 16). */
+/**
+ * Lingkup rangkaian (pencatat ∨ pengawas ∨ jangkauan §4.5) untuk alias tabel
+ * rangkaian_surat; dipakai juga D7 (Task 16).
+ *
+ * Alias divalidasi dengan `aliasAman` yang diekspor dari `visibility-spec.ts`
+ * (bukan regex sendiri) supaya alias ini tunduk pada aturan yang sama dengan
+ * `visibleSql`/`jangkauanRekamanSql`/`klasifikasiRekamanSql`: menolak
+ * identifier bukan alias sederhana DAN menolak alias berprefiks `jk_` atau
+ * bernama `ra`/`g`/`j` (dicadangkan untuk subkueri internal
+ * jangkauanUnitsSql/jangkauanSql/grantAktifSql/jangkauanRekamanSql). `alias`
+ * di sini SELALU dikualifikasi (`${alias}.unit_pencatat_id`, `${alias}.id`)
+ * sebelum disisipkan sebagai SQLWrapper mentah ke `jangkauanSql` — jangan
+ * mengubahnya menjadi kolom telanjang, karena `jangkauanSql`/
+ * `jangkauanUnitsSql` tidak memvalidasi argumen `rangkaianId` itu sendiri
+ * (lihat JSDoc-nya di `visibility-spec.ts`); kolom telanjang berisiko diam-diam
+ * terikat ke tabel internal fungsi-fungsi itu.
+ */
 export function lingkupRangkaianSql(ctx: KonteksBaca, alias = 'r'): SQL {
-    if (!/^[a-z_][a-z0-9_]*$/.test(alias)) throw new Error(`Alias SQL tidak valid: ${alias}`);
-    const bagian: SQL[] = [cocokUnitRekamanSql(kecocokanUnitRekaman(ctx.user), sql.raw(`${alias}.unit_pencatat_id`))];
-    if (ctx.pengawas) bagian.push(dalamCakupanPengawasSql(sql.raw(`${alias}.unit_pencatat_id`)));
-    if (ctx.unitJangkauan) bagian.push(jangkauanSql(sql.raw(`${alias}.id`), ctx.unitJangkauan, ctx.disposisiLamaRead));
+    const a = aliasAman(alias);
+    const bagian: SQL[] = [cocokUnitRekamanSql(kecocokanUnitRekaman(ctx.user), sql.raw(`${a}.unit_pencatat_id`))];
+    if (ctx.pengawas) bagian.push(dalamCakupanPengawasSql(sql.raw(`${a}.unit_pencatat_id`)));
+    if (ctx.unitJangkauan) bagian.push(jangkauanSql(sql.raw(`${a}.id`), ctx.unitJangkauan, ctx.disposisiLamaRead));
     return sql`(${sql.join(bagian, sql` OR `)})`;
 }
 
@@ -6104,3 +6120,4 @@ Tambahan keputusan pengguna **D7** (tab Perlu Dilengkapi + badge sidebar) ke ren
 - **P3 tidak punya jalur untuk mengisi `asal_naskah` surat yang sudah ada** (`updateSuratKeluarSchema` meng-`omit` `asalNaskah`). Karena itu D7 menambah endpoint Tandai Inisiatif di P4. Trigger 0021 (`protect_archived_surat_source`) diverifikasi tidak menjaga `asal_naskah`/`updated_at`, sehingga endpoint berlaku pada surat terarsip tanpa mengubah migrasi.
 - **Konfigurasi baru:** env `RANGKAIAN_DATA_LAMA_SEBELUM`, dicatat di runbook deploy P4 (Task 22 Step 5). Tidak ada tabel, migrasi, role, flag, atau limiter baru; badge memakai `generalLimiter` yang ada.
 - **P5:** notifikasi batas waktu (P5) dan daftar kerja D7 memakai tanggal Jakarta yang sama (`jakartaDate()`). Tutup massal data lama (P5) mengurangi baris `siap_diberkaskan` berasal `data_lama` yang hanya tampil saat "Tampilkan data lama" dicentang. Tidak ada kontrak P5 yang berubah.
+- **(2026-09-27, terpisah dari D7)** Task 3 fase P2 (review fix round 2) mengganti validasi alias `lingkupRangkaianSql` (Task 16, blok kode di atas) dari regex `/^[a-z_][a-z0-9_]*$/` yang ditulis sendiri menjadi `aliasAman` yang diekspor dari `visibility-spec.ts`, sehingga alias di sini tunduk pada aturan yang sama: menolak alias berprefiks `jk_` dan nama bekas `ra`/`g`/`j` yang dicadangkan untuk subkueri internal `jangkauanUnitsSql`/`jangkauanSql`/`grantAktifSql`/`jangkauanRekamanSql` (lihat berkas P5 untuk latar belakang kebocoran lintas rangkaian yang mendorong prefiks `jk_`). `alias` yang disisipkan ke `jangkauanSql` di `lingkupRangkaianSql` tetap harus dikualifikasi (`${alias}.id`, bukan `id` telanjang) — `aliasAman` memvalidasi alias itu sendiri, bukan bagaimana ia dipakai di dalam SQL mentah.
