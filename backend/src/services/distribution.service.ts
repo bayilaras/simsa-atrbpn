@@ -27,7 +27,7 @@ export class DistributionService {
         suratMasukId: string;
         sourceUnitId: string;
         targetUnitId: string;
-        instruction?: string;
+        instruction?: string | null;
         ccUnits?: string[];
         sentBy?: string;
     }, auditContext?: CriticalAuditContext) {
@@ -85,7 +85,7 @@ export class DistributionService {
                         suratMasukId: data.suratMasukId,
                         sourceUnitId: data.sourceUnitId,
                         targetUnitId: data.targetUnitId,
-                        instruction: data.instruction,
+                        instruction: data.instruction ?? null,
                         status: 'sent',
                     },
                 },
