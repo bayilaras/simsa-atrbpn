@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import KoreksiBerkasSection from '../KoreksiBerkasSection'
 
@@ -21,6 +21,12 @@ vi.mock('@/components/KlasifikasiPicker', () => ({
         <button type="button" id={id} onClick={() => onChange('KU.02', { id: 7, kode: 'KU.02', jenis: 'Keuangan anggaran' })}>Pilih KU.02</button>
     ),
 }))
+
+/** Bentuk nyata: backend publicErrorResponse (error = nama kelas, message = pesan domain) lewat api.js createApiError. */
+function galatApi(status, kelas, pesan) {
+    const body = { success: false, error: kelas, message: pesan, code: status === 403 ? 'FORBIDDEN' : 'REQUEST_REJECTED' }
+    return Object.assign(new Error(pesan), { status, data: body, response: { status, data: body } })
+}
 
 const BPPT = { id: 'dir_bppt', nama: 'Dit. BPPT' }
 const PTEP = { id: 'dir_ptep', nama: 'Dit. PTEP' }
@@ -61,11 +67,24 @@ describe('KoreksiBerkasSection', () => {
         expect(mocks.getKoreksiBerkas).not.toHaveBeenCalled()
     })
 
-    it('tetap tersembunyi bila server menolak akses (403)', async () => {
-        mocks.getKoreksiBerkas.mockRejectedValue(Object.assign(new Error('Koreksi Berkas hanya dapat dilakukan oleh super_admin aktif.'), { status: 403 }))
+    // FE-M1: komponen sudah null sebelum penolakan selesai, jadi penolakan harus di-flush dulu
+    // agar test ini gagal bila cabang 403/404 berubah menjadi setError.
+    it.each([
+        [403, 'ForbiddenError', 'Koreksi Berkas hanya dapat dilakukan oleh super_admin aktif.'],
+        [404, 'NotFoundError', 'Rangkaian tidak ditemukan'],
+    ])('tetap tersembunyi bila server menolak akses (%i)', async (status, kelas, pesan) => {
+        mocks.getKoreksiBerkas.mockRejectedValue(galatApi(status, kelas, pesan))
         const { container } = render(<KoreksiBerkasSection rangkaianId="r1" status="diberkaskan" />)
         await waitFor(() => expect(mocks.getKoreksiBerkas).toHaveBeenCalledTimes(1))
-        await waitFor(() => expect(container).toBeEmptyDOMElement())
+        await act(async () => {})
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+        expect(container).toBeEmptyDOMElement()
+    })
+
+    it('galat muat selain 403/404 ditampilkan sebagai alert (kontrol positif)', async () => {
+        mocks.getKoreksiBerkas.mockRejectedValue(galatApi(500, 'Internal Server Error', 'Terjadi kesalahan pada server.'))
+        render(<KoreksiBerkasSection rangkaianId="r1" status="diberkaskan" />)
+        expect(await screen.findByRole('alert')).toHaveTextContent('Terjadi kesalahan pada server.')
     })
 
     it('tanpa hak mengajukan dari server, formulir tidak tampil', async () => {
@@ -124,7 +143,7 @@ describe('KoreksiBerkasSection', () => {
 
     it('galat pengajuan ditampilkan dan tidak memanggil onChanged', async () => {
         mocks.getKoreksiBerkas.mockResolvedValue(dataKosong)
-        mocks.ajukanKoreksiBerkas.mockRejectedValue(Object.assign(new Error('HTTP 422'), { data: { error: 'Disposisikan dulu ke unit ini.' } }))
+        mocks.ajukanKoreksiBerkas.mockRejectedValue(galatApi(422, 'AppError', 'Disposisikan dulu ke unit ini.'))
         const onChanged = vi.fn()
         render(<KoreksiBerkasSection rangkaianId="r1" status="diberkaskan" onChanged={onChanged} />)
         fireEvent.change(await screen.findByLabelText('Unit pengolah baru'), { target: { value: 'dir_ptep' } })
@@ -132,6 +151,7 @@ describe('KoreksiBerkasSection', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Lanjutkan' }))
         fireEvent.click(screen.getByRole('button', { name: 'Ajukan Koreksi Berkas' }))
         expect(await screen.findByRole('alert')).toHaveTextContent('Disposisikan dulu ke unit ini.')
+        expect(screen.getByRole('alert')).not.toHaveTextContent('AppError')
         expect(onChanged).not.toHaveBeenCalled()
     })
 

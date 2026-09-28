@@ -66,9 +66,10 @@ describe('AlurSuratActions', () => {
     })
 
     it('Buka Kembali meminta alasan dan menampilkan galat server tanpa menutup dialog', async () => {
-        const galat = new Error('Request failed')
-        galat.status = 409
-        galat.data = { error: 'Rangkaian selesai otomatis; tambahkan disposisi atau tindak lanjut baru untuk membukanya kembali' }
+        // Bentuk nyata backend publicErrorResponse + api.js createApiError: error = nama kelas, message = pesan domain.
+        const pesan = 'Rangkaian selesai otomatis; tambahkan disposisi atau tindak lanjut baru untuk membukanya kembali'
+        const body = { success: false, error: 'ConflictError', message: pesan, code: 'CONFLICT' }
+        const galat = Object.assign(new Error(pesan), { status: 409, data: body, response: { status: 409, data: body } })
         mocks.svc.bukaKembali.mockRejectedValueOnce(galat)
         const onChanged = vi.fn()
         render(<AlurSuratActions detail={detail(['buka_kembali'])} onChanged={onChanged} />)
@@ -77,6 +78,7 @@ describe('AlurSuratActions', () => {
         fireEvent.change(dialog.getByLabelText('Alasan'), { target: { value: 'Ada tindak lanjut susulan' } })
         fireEvent.click(dialog.getByRole('button', { name: 'Simpan' }))
         expect(await dialog.findByRole('alert')).toHaveTextContent('Rangkaian selesai otomatis')
+        expect(dialog.getByRole('alert')).not.toHaveTextContent('ConflictError')
         expect(mocks.svc.bukaKembali).toHaveBeenCalledWith('rs-1', 'Ada tindak lanjut susulan')
         expect(onChanged).not.toHaveBeenCalled()
         expect(screen.getByRole('dialog')).toBeInTheDocument()
