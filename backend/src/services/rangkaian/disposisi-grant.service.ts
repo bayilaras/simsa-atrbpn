@@ -57,7 +57,7 @@ export const disposisiGrantService = {
     },
 
     /**
-     * Dicabut di transaksi process()/reject()/tutup: approved → revoked, pending → denied.
+     * Dicabut di transaksi process()/reject()/tutup: pending → denied, approved → revoked.
      * Hanya grant surat masuk disposisi itu (T6-2): `purpose` bebas diisi lewat
      * POST /api/record-access-grants, jadi awalan `[disposisi:<id>]` saja tidak cukup.
      */
@@ -73,13 +73,22 @@ export const disposisiGrantService = {
             eq(recordAccessGrants.entityId, input.suratMasukId),
             like(recordAccessGrants.purpose, pola),
         );
-        const revoked = await tx.update(recordAccessGrants)
-            .set({ status: 'revoked', revokedBy: input.actorId, revokedAt: now, revocationReason: alasan, updatedAt: now })
-            .where(milikDisposisi('approved'))
-            .returning({ id: recordAccessGrants.id });
+        // Urutan pending → denied LALU approved → revoked disengaja (F1). approve()
+        // mengunci baris grant pending FOR UPDATE dan masih melihat distribusi
+        // 'sent' sampai transaksi ini commit. Di READ COMMITTED setiap statement
+        // mengambil snapshot baru: UPDATE 'pending' menunggu kunci approve(), lalu
+        // pemeriksaan ulang (EvalPlanQual) melihat 'approved' dan melewatinya;
+        // UPDATE 'approved' sesudahnya memakai snapshot baru yang sudah memuat
+        // commit approve() sehingga grant itu tetap dicabut. Urutan terbalik
+        // membuat UPDATE 'approved' melihat versi pending lama (tidak cocok, tidak
+        // menunggu) dan grant yang disetujui bersamaan lolos hingga kedaluwarsa.
         const denied = await tx.update(recordAccessGrants)
             .set({ status: 'denied', decidedBy: input.actorId, decidedAt: now, decisionReason: alasan, updatedAt: now })
             .where(milikDisposisi('pending'))
+            .returning({ id: recordAccessGrants.id });
+        const revoked = await tx.update(recordAccessGrants)
+            .set({ status: 'revoked', revokedBy: input.actorId, revokedAt: now, revocationReason: alasan, updatedAt: now })
+            .where(milikDisposisi('approved'))
             .returning({ id: recordAccessGrants.id });
         if (audit) {
             for (const { id } of revoked) {

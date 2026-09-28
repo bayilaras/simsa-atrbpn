@@ -1,4 +1,5 @@
 // backend/integration/ajukan-akses.postgres.test.ts
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { dbState } from './helpers/db-proxy.js';
 import { createRangkaianTestDatabase, type RangkaianTestDatabase, type TestUser } from './helpers/rangkaian-db.js';
@@ -154,6 +155,53 @@ describe.skipIf(!adaPostgres)('Ajukan Akses via rangkaian dan grant disposisi di
             expect(grantBppt1.status).toBe('approved');
             const [log] = await h.query<{ action: string }>("SELECT action FROM audit_log WHERE entity_id = $1 AND action = 'revoke_access'", [disposisiGrant.id]);
             expect(log).toEqual({ action: 'revoke_access' });
+        });
+
+        it('cabut tetap mencabut grant yang disetujui bersamaan (F1, READ COMMITTED)', async () => {
+            // Tiru approve(): kunci baris grant pending FOR UPDATE di koneksi lain,
+            // biarkan cabut() menunggu kunci itu, lalu commit sebagai 'approved'.
+            // cabut() hanya memakai id distribusi sebagai awalan `purpose`; id baru
+            // menghindari indeks unik distribusi aktif per (surat, unit tujuan).
+            const distribusiBalapan = randomUUID();
+            const [grant] = await h.query<{ id: string }>(`INSERT INTO record_access_grants
+                (requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status)
+                VALUES ($1, $2, 'surat_masuk', $3, 'sesditjen', 'rahasia', $4, 'view', 'pending') RETURNING id`,
+                [tu.id, bppt2.id, smRahasia, `${disposisiGrantPrefix(distribusiBalapan)} Tindak lanjut disposisi surat masuk dalam rangkaian ${rangkaianKode}`]);
+            const penyetuju = await h.pool.connect();
+            let cabutJalan: Promise<number> | undefined;
+            try {
+                await penyetuju.query('BEGIN');
+                const [{ pid }] = (await penyetuju.query('SELECT pg_backend_pid() AS pid')).rows as { pid: number }[];
+                await penyetuju.query("SELECT id FROM record_access_grants WHERE id = $1 AND status = 'pending' FOR UPDATE", [grant.id]);
+
+                cabutJalan = h.db.transaction((tx: any) => disposisiGrantService.cabut(tx,
+                    { distribusiId: distribusiBalapan, suratMasukId: smRahasia, actorId: tu.id, alasan: 'Disposisi ditolak oleh unit tujuan' }, audit(tu)));
+                cabutJalan.catch(() => undefined);   // ditunggu di bawah; cegah unhandled rejection sementara menunggu kunci
+
+                const batas = Date.now() + 10_000;
+                for (;;) {
+                    const [{ menunggu }] = await h.query<{ menunggu: boolean }>(
+                        'SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1::int = ANY (pg_blocking_pids(pid))) AS menunggu', [pid]);
+                    if (menunggu) break;
+                    if (Date.now() > batas) throw new Error('cabut() tidak pernah menunggu kunci grant');
+                    await new Promise(r => setTimeout(r, 25));
+                }
+
+                await penyetuju.query(`UPDATE record_access_grants SET status = 'approved', decided_by = $2, decided_at = now(),
+                    decision_reason = 'Disetujui untuk disposisi', expires_at = now() + interval '30 days', updated_at = now() WHERE id = $1`, [grant.id, superA.id]);
+                await penyetuju.query('COMMIT');
+            } catch (error) {
+                await penyetuju.query('ROLLBACK').catch(() => undefined);
+                throw error;
+            } finally {
+                penyetuju.release();
+            }
+
+            expect(await cabutJalan).toBe(1);
+            const [akhir] = await h.query<{ status: string; revoked_by: string | null }>('SELECT status, revoked_by FROM record_access_grants WHERE id = $1', [grant.id]);
+            expect(akhir).toEqual({ status: 'revoked', revoked_by: tu.id });
+            const log = await h.query<{ action: string }>("SELECT action FROM audit_log WHERE entity_id = $1 AND action IN ('revoke_access', 'deny_access')", [grant.id]);
+            expect(log).toEqual([{ action: 'revoke_access' }]);
         });
     });
 });
