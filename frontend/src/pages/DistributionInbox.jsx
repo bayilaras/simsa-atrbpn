@@ -41,6 +41,9 @@ const statusConfig = {
     rejected: { label: 'Ditolak', variant: 'destructive', icon: XCircle, className: '' },
 }
 
+/** Disposisi yang boleh dibuka dialog Penyelesaian: terbaca dan masih sent/received. */
+const dapatDiselesaikan = (row) => Boolean(row) && !row.masked && (row.status === 'sent' || row.status === 'received')
+
 export default function DistributionInbox() {
     const { toast } = useToast()
     const { user } = useAuth()
@@ -98,18 +101,24 @@ export default function DistributionInbox() {
         loadData()
     }, [loadData])
 
-    // Tombol Penyelesaian di detail surat menavigasi ke /distribusi?penyelesaian=<id>.
+    // Tautan lama /distribusi?penyelesaian=<id> (detail surat kini membuka dialog
+    // sendiri, F-I2). Fallback: baris di halaman ini, atau GET /distributions/:id
+    // bila tidak ada di halaman kotak yang sedang dimuat; hanya sent/received.
     useEffect(() => {
         const id = searchParams.get('penyelesaian')
-        if (!id || inboxData.length === 0) return
-        const baris = inboxData.find((item) => item.id === id && !item.masked)
-        if (baris) {
-            setPenyelesaianTarget(baris)
-        } else {
-            toast({ title: 'Disposisi tidak ditemukan pada halaman ini', variant: 'destructive' })
-        }
+        if (!id || loading) return
         setSearchParams({}, { replace: true })
-    }, [inboxData, searchParams, setSearchParams, toast])
+        const tolak = () => toast({ title: 'Disposisi tidak dapat diselesaikan', description: 'Disposisi tidak ditemukan, sudah selesai/ditolak, atau belum dapat Anda baca.', variant: 'destructive' })
+        const baris = inboxData.find((item) => item.id === id)
+        if (baris) {
+            if (dapatDiselesaikan(baris)) setPenyelesaianTarget(baris)
+            else tolak()
+            return
+        }
+        distributionService.getById(id)
+            .then((row) => (dapatDiselesaikan(row) ? setPenyelesaianTarget(row) : tolak()))
+            .catch(tolak)
+    }, [inboxData, loading, searchParams, setSearchParams, toast])
 
     const bukaTindakLanjut = (item) => navigate('/surat/keluar/tambah', {
         state: buildTindakLanjutState('surat_masuk', {

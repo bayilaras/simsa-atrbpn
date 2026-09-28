@@ -18,6 +18,7 @@ import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
 import { StatusSidebar } from '@/components/surat-masuk/StatusSidebar'
 import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
 import { TautkanDialog } from '@/components/surat/AlurSuratActions'
+import { PenyelesaianDialog } from '@/components/distribusi/PenyelesaianDialog'
 
 export default function SuratMasukDetail() {
     const { id } = useParams()
@@ -32,6 +33,7 @@ export default function SuratMasukDetail() {
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
     const [tautkanOpen, setTautkanOpen] = useState(false)
+    const [penyelesaianTarget, setPenyelesaianTarget] = useState(null)
     // Sinyal reload AlurSuratPanel yang dikendalikan halaman ini (N1): dinaikkan
     // hanya setelah Terima/Arsip/Distribusi SUKSES, tidak pernah dari refresh
     // yang dipicu onChanged panel sendiri -- lihat komentar muatUlangKe di
@@ -97,7 +99,30 @@ export default function SuratMasukDetail() {
             toast({ title: 'Error', description: error.message || 'Gagal menerima disposisi', variant: 'destructive' })
         }
     }
-    const handlePenyelesaian = () => navigate(`/distribusi?penyelesaian=${surat.distribusiUnitSaya.id}`)
+    // F-I2: Penyelesaian dibuka langsung di halaman ini dengan disposisi yang
+    // dimuat lewat GET /api/distributions/:id (tidak bergantung pada halaman 1
+    // Kotak Disposisi). Hanya disposisi terbaca yang masih sent/received.
+    const handlePenyelesaian = async () => {
+        try {
+            const distribusi = await distributionService.getById(surat.distribusiUnitSaya.id)
+            if (!distribusi || distribusi.masked || (distribusi.status !== 'sent' && distribusi.status !== 'received')) {
+                toast({
+                    title: 'Disposisi tidak dapat diselesaikan',
+                    description: 'Disposisi sudah selesai/ditolak atau belum dapat Anda baca.',
+                    variant: 'destructive',
+                })
+                fetchSurat()
+                return
+            }
+            setPenyelesaianTarget(distribusi)
+        } catch (error) {
+            toast({ title: 'Error', description: error.message || 'Gagal memuat disposisi', variant: 'destructive' })
+        }
+    }
+    const handlePenyelesaianSelesai = () => {
+        fetchSurat()
+        setAlurVersi((v) => v + 1)
+    }
     const handleTautkanBerhasil = () => {
         toast({ title: 'Berhasil', description: 'Surat ditautkan ke rangkaian' })
         fetchSurat()
@@ -188,6 +213,14 @@ export default function SuratMasukDetail() {
                 suratType="masuk"
                 suratData={surat}
                 onArchive={handleArchive}
+            />
+
+            <PenyelesaianDialog
+                open={Boolean(penyelesaianTarget)}
+                onOpenChange={(buka) => { if (!buka) setPenyelesaianTarget(null) }}
+                distribusi={penyelesaianTarget}
+                unitKerjaId={resolveEffectiveUnitKerjaId(user)}
+                onSelesai={handlePenyelesaianSelesai}
             />
 
             <TautkanDialog

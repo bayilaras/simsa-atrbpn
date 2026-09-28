@@ -3,11 +3,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
 // F2: handleTerima (Terima -> distributionService.receive -> refetch diam)
-// dan handlePenyelesaian (navigasi ke /distribusi?penyelesaian=<id>, kontrak
+// dan handlePenyelesaian (kini dialog di halaman detail, F-I2; semula navigasi, kontrak
 // Produces Task 19) sebelumnya tidak punya test yang bisa gagal.
-const mocks = vi.hoisted(() => ({ getById: vi.fn(), receive: vi.fn(), toast: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getById: vi.fn(), receive: vi.fn(), toast: vi.fn(), getDistribusi: vi.fn(), kandidat: vi.fn(), process: vi.fn() }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: { getById: mocks.getById, archive: vi.fn() } }))
-vi.mock('@/services/distribution.service', () => ({ default: { receive: mocks.receive } }))
+vi.mock('@/services/distribution.service', () => ({ default: { receive: mocks.receive, getById: mocks.getDistribusi, getKandidatPenyelesaian: mocks.kandidat, process: mocks.process } }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ canWrite: () => true, user: { id: 'user-a', role: 'admin_unit', unitKerjaId: 'dir_bppt' } }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false } }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
@@ -58,14 +58,39 @@ it('Terima Disposisi memanggil distributionService.receive lalu memuat ulang sur
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Berhasil' }))
 })
 
-it('Penyelesaian menavigasi ke /distribusi?penyelesaian=<distribusiId> (kontrak Produces T19)', async () => {
+// F-I2: Penyelesaian dibuka langsung di detail (tidak lagi bergantung pada
+// halaman 1 Kotak Disposisi); disposisi dimuat lewat GET /api/distributions/:id.
+it('Penyelesaian membuka dialog di halaman detail dengan disposisi dari GET /distributions/:id', async () => {
     mocks.getById.mockResolvedValue(surat)
+    mocks.getDistribusi.mockResolvedValue({ id: 'd-1', status: 'received', masked: false })
+    mocks.kandidat.mockResolvedValue([])
+    mocks.process.mockResolvedValue({ id: 'd-1', status: 'processed' })
     renderDetail()
     await screen.findByRole('heading', { name: 'Detail Surat Masuk' })
     const [tombolMenu] = screen.getAllByRole('button', { name: /Tindak Lanjut/ })
     fireEvent.keyDown(tombolMenu, { key: 'Enter' })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Penyelesaian' }))
-    expect(await screen.findByLabelText('Lokasi distribusi')).toHaveTextContent('/distribusi?penyelesaian=d-1')
+    const dialog = within(await screen.findByRole('dialog'))
+    expect(mocks.getDistribusi).toHaveBeenCalledWith('d-1')
+    expect(screen.queryByLabelText('Lokasi distribusi')).toBeNull()
+    await waitFor(() => expect(mocks.kandidat).toHaveBeenCalledWith('d-1', 'dir_bppt'))
+    fireEvent.click(dialog.getByRole('radio', { name: /Catatan penyelesaian/ }))
+    fireEvent.change(dialog.getByLabelText('Isi catatan penyelesaian'), { target: { value: 'Sudah ditindaklanjuti lewat rapat koordinasi' } })
+    fireEvent.click(dialog.getByRole('button', { name: 'Simpan Penyelesaian' }))
+    await waitFor(() => expect(mocks.process).toHaveBeenCalledWith('d-1', 'dir_bppt', { catatanPenyelesaian: 'Sudah ditindaklanjuti lewat rapat koordinasi' }))
+    await waitFor(() => expect(mocks.getById).toHaveBeenCalledTimes(2))
+})
+
+it('Penyelesaian atas disposisi yang sudah selesai tidak membuka dialog dan memberi tahu pengguna', async () => {
+    mocks.getById.mockResolvedValue(surat)
+    mocks.getDistribusi.mockResolvedValue({ id: 'd-1', status: 'processed', masked: false })
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Detail Surat Masuk' })
+    const [tombolMenu] = screen.getAllByRole('button', { name: /Tindak Lanjut/ })
+    fireEvent.keyDown(tombolMenu, { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Penyelesaian' }))
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Disposisi tidak dapat diselesaikan', variant: 'destructive' })))
+    expect(screen.queryByRole('dialog')).toBeNull()
 })
 
 // Task 25: onTautkan diteruskan ke DetailHeader sehingga item "Tautkan ke Rangkaian"

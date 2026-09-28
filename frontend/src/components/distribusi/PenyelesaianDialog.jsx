@@ -18,6 +18,9 @@ export function PenyelesaianDialog({ open, onOpenChange, distribusi, unitKerjaId
         if (!open || !distribusi) return undefined
         setPilihan('')
         setCatatan('')
+        // Dialog dapat dibuka dari detail surat maupun Kotak Disposisi: jangan
+        // tampilkan kandidat milik disposisi sebelumnya selama memuat.
+        setKandidat([])
         let aktif = true
         distributionService.getKandidatPenyelesaian(distribusi.id, unitKerjaId)
             .then((rows) => { if (aktif) setKandidat(rows) })

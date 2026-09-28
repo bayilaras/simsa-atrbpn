@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import DistributionInbox from './DistributionInbox'
 
 const mocks = vi.hoisted(() => ({
-    svc: { getInbox: vi.fn(), getOutbox: vi.fn(), getStats: vi.fn(), receive: vi.fn(), process: vi.fn(), reject: vi.fn(), getKandidatPenyelesaian: vi.fn() },
+    svc: { getInbox: vi.fn(), getOutbox: vi.fn(), getStats: vi.fn(), receive: vi.fn(), process: vi.fn(), reject: vi.fn(), getKandidatPenyelesaian: vi.fn(), getById: vi.fn() },
     toast: vi.fn(),
 }))
 vi.mock('@/services/distribution.service', () => ({ default: mocks.svc, distributionService: mocks.svc }))
@@ -82,6 +82,30 @@ describe('Kotak Disposisi', () => {
     it('?penyelesaian=<id> dari detail surat langsung membuka dialog penyelesaian', async () => {
         tampil('/distribusi?penyelesaian=d1')
         expect(await screen.findByRole('dialog', { name: 'Penyelesaian Disposisi' })).toBeInTheDocument()
+    })
+
+    // F-I2 fallback: disposisi di luar halaman kotak yang dimuat diambil lewat GET /distributions/:id.
+    it('?penyelesaian=<id> di luar halaman ini dimuat lewat getById lalu membuka dialog', async () => {
+        mocks.svc.getById.mockResolvedValue({ id: 'd9', status: 'sent', masked: false })
+        tampil('/distribusi?penyelesaian=d9')
+        expect(await screen.findByRole('dialog', { name: 'Penyelesaian Disposisi' })).toBeInTheDocument()
+        expect(mocks.svc.getById).toHaveBeenCalledWith('d9')
+        await waitFor(() => expect(mocks.svc.getKandidatPenyelesaian).toHaveBeenCalledWith('d9', 'dir_bppt'))
+    })
+
+    it('?penyelesaian=<id> kotak kosong / disposisi selesai: tidak ada dialog, pengguna diberi tahu', async () => {
+        mocks.svc.getInbox.mockResolvedValue([])
+        mocks.svc.getById.mockResolvedValue({ id: 'd9', status: 'processed', masked: false })
+        tampil('/distribusi?penyelesaian=d9')
+        await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Disposisi tidak dapat diselesaikan', variant: 'destructive' })))
+        expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    it('?penyelesaian=<id> pada baris tersamar tidak membuka dialog', async () => {
+        tampil('/distribusi?penyelesaian=d2')
+        await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Disposisi tidak dapat diselesaikan' })))
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(mocks.svc.getById).not.toHaveBeenCalled()
     })
 
     it('baris tersamar tetap tampil saat pencarian kosong', async () => {
