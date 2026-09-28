@@ -54,6 +54,8 @@ describe('mutation audit architecture policy', () => {
             'services/arsip-vital.service.ts',
             'services/arsip-terjaga.service.ts',
             'services/file-attachment.service.ts',
+            'services/rangkaian-koreksi.service.ts',
+            'services/rangkaian-data-lama.service.ts',
         ];
 
         for (const file of transactionalServices) {

@@ -49,6 +49,7 @@ import { retentionRoutes } from './routes/retention.routes';
 import bulkUploadRoutes from './routes/bulk-upload.routes';
 import distributionRoutes from './routes/distribution.routes';
 import rangkaianRoutes from './routes/rangkaian.routes';
+import rangkaianBerkasRoutes from './routes/rangkaian-berkas.routes';
 import { reportRoutes } from './routes/report.routes';
 import { settingsRoutes } from './routes/settings.routes';
 import searchRoutes from './routes/search.routes';
@@ -369,6 +370,7 @@ app.use('/api/dosir', dosirRoutes);
 app.use('/api/retention', retentionRoutes);
 app.use('/api/bulk-upload', bulkUploadRoutes);
 app.use('/api/distributions', distributionRoutes);
+app.use('/api/rangkaian', rangkaianBerkasRoutes); // P5 Task 8: /data-lama/*, /:id/koreksi-berkas, /koreksi-berkas/:koreksiId/putuskan (auth per-route); mount tepat sebelum router utama P2/P3. P4 belum ada di worktree ini — bila P4 rangkaianDaftarRoutes/rangkaianPerluDilengkapiRoutes digabung, keduanya dipasang sebelum baris ini (lihat Concerns laporan Task 8).
 app.use('/api/rangkaian', rangkaianRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);

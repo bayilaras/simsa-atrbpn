@@ -60,6 +60,8 @@ const ALLOWED_METADATA_ROUTES: readonly AllowedRoute[] = [
     { methods: POST, path: exact(`/rangkaian/${UUID}/(?:selesai|buka-kembali|berkaskan|tautan|gabung)`) },
     { methods: PUT, path: exact(`/rangkaian/${UUID}/unit-pengolah`) },
     { methods: POST, path: exact(`/rangkaian/relasi/${UUID}/batal`) },
+    { methods: GET, path: exact(`/rangkaian/(?:data-lama/ringkasan|${UUID}/koreksi-berkas)`) },
+    { methods: POST, path: exact(`/rangkaian/(?:data-lama/tutup-massal|${UUID}/koreksi-berkas|koreksi-berkas/${UUID}/putuskan)`) },
 
     { methods: GET, path: exact(`/arsip(?:/(?:expiring|stats|search/(?:fulltext|suggestions|keywords)|${UUID}(?:/(?:related|rule-history))?))?`) },
     { methods: POST, path: exact(`/arsip(?:/${UUID}/reconcile-rules)?`) },

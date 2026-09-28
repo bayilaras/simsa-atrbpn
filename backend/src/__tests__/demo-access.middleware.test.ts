@@ -99,6 +99,19 @@ describe('metadata-only demo API access', () => {
     });
 
     it.each([
+        ['GET', '/api/rangkaian/data-lama/ringkasan'],
+        ['POST', '/api/rangkaian/data-lama/tutup-massal'],
+        ['GET', `/api/rangkaian/${id}/koreksi-berkas`],
+        ['POST', `/api/rangkaian/${id}/koreksi-berkas`],
+        ['POST', `/api/rangkaian/koreksi-berkas/${secondId}/putuskan`],
+    ])('mengizinkan route berkas rangkaian P5 %s %s', async (method, url) => {
+        const { app, downstream } = testApp(true);
+        const call = method === 'GET' ? request(app).get(url) : request(app).post(url).send({ dryRun: true });
+        expect((await call).status).toBe(200);
+        expect(downstream.calls).toBe(1);
+    });
+
+    it.each([
         ['GET', `/api/upload/masuk/${id}`, 'file_storage'],
         ['POST', `/api/upload/masuk/${id}`, 'file_storage'],
         ['GET', `/api/files/surat_masuk/${id}`, 'file_storage'],
