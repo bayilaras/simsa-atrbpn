@@ -313,11 +313,8 @@ async function tingkatRangkaian(
  * dengan penjaga yang identik dengan getDetail (batas hop/siklus → null, C-8),
  * agar GET dan aksi tulis tidak pernah berbeda 404/403 pada id yang sama.
  */
-export async function tingkatAksesRangkaian(
-    user: RecordUser | undefined,
-    rangkaianId: string,
-    executor: ReadExecutor = db,
-): Promise<AksesRangkaian | 'anggota' | null> {
+/** Ikuti rantai digabung_ke_id dengan penjaga getDetail (batas hop/siklus → null, C-8). */
+async function ujungRantaiGabung(executor: ReadExecutor, rangkaianId: string): Promise<BarisRangkaian | null> {
     const dikunjungi = new Set<string>();
     let rs = await muatRangkaian(executor, rangkaianId);
     for (let hop = 0; rs && rs.status === 'digabung' && rs.digabungKeId; hop += 1) {
@@ -325,6 +322,32 @@ export async function tingkatAksesRangkaian(
         dikunjungi.add(rs.id);
         rs = await muatRangkaian(executor, rs.digabungKeId);
     }
+    return rs;
+}
+
+/**
+ * Tier baca LEVEL RANGKAIAN saja (tanpa jatuhan 'anggota'): super_admin →
+ * 'owner', pengawas unit pencatat → 'pengawas', peserta jangkauan → 'peserta',
+ * selain itu null. Inilah predikat `penuh` getDetail: hanya pembaca penuh yang
+ * boleh melihat placeholder anggota yang tidak terbaca (A-I3, Lacak).
+ */
+export async function tingkatRangkaianPenuh(
+    user: RecordUser | undefined,
+    rangkaianId: string,
+    executor: ReadExecutor = db,
+    konteks?: KonteksBaca,
+): Promise<AksesRangkaian | null> {
+    const rs = await ujungRantaiGabung(executor, rangkaianId);
+    if (!rs) return null;
+    return tingkatRangkaian(executor, konteks ?? await resolveKonteksBaca(user, executor), rs);
+}
+
+export async function tingkatAksesRangkaian(
+    user: RecordUser | undefined,
+    rangkaianId: string,
+    executor: ReadExecutor = db,
+): Promise<AksesRangkaian | 'anggota' | null> {
+    const rs = await ujungRantaiGabung(executor, rangkaianId);
     if (!rs) return null;
     const ctx = await resolveKonteksBaca(user, executor);
     const tingkat = await tingkatRangkaian(executor, ctx, rs);

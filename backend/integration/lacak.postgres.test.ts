@@ -100,6 +100,33 @@ describe('Lacak Surat di PostgreSQL', () => {
     // sendiri tanpa grant tetap muncul di `cocok[]` (kebijakan list, spec:558)
     // tapi pratinjau node-nya disamarkan sama seperti mode baca — grant
     // eksplisit wajib bahkan untuk unit pemilik sendiri (evaluateOwnerAccess).
+    // A-I3: pembaca tanpa tier level rangkaian (staff: unitJangkauan null) hanya
+    // melihat node yang dapat dibacanya — tanpa placeholder anggota unit lain —
+    // dan jumlahAnggota hanya menghitung node terbaca (setara GET /rangkaian/:id).
+    it('staff tanpa tier rangkaian: kartu hanya berisi node terbaca, tanpa placeholder unit lain', async () => {
+        const staffBppt = await h.seedUser('staff', 'dir_bppt');
+        const skStaf = await h.insertSuratKeluar({ unitKerjaId: 'dir_bppt', nomorSurat: 'ND-55/2026', perihal: 'Uji staf lacak', approvalStatus: 'approved' });
+        const smLain = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-55/2026', perihal: 'Masuk unit lain lacak' });
+        let rangkaianId = '';
+        let anggotaSmLain = '';
+        await h.db.transaction(async (tx: any) => {
+            const actor = aktor(bppt);
+            const r = await rangkaianService.ensureForSurat(tx, { jenis: 'surat_keluar', id: skStaf }, actor);
+            const lampir = await rangkaianService.attach(tx, { rangkaianId: r.rangkaianId, surat: { jenis: 'surat_masuk', id: smLain }, keAnggotaId: r.anggotaId, jenisRelasi: 'merujuk' }, actor);
+            rangkaianId = r.rangkaianId;
+            anggotaSmLain = lampir.anggotaId;
+        });
+        const hasil = await cari(staffBppt, 'ND-55/2026');
+        const kartu = hasil.kelompok.find((k: any) => k.kunci === rangkaianId);
+        expect(kartu).toBeDefined();
+        expect(kartu!.pratinjau.map((n: any) => [n.id, n.masked])).toEqual([[skStaf, false]]);
+        expect(kartu!.jumlahAnggota).toBe(1);
+        expect(JSON.stringify(kartu)).not.toContain(anggotaSmLain);
+        // Pembaca penuh (bppt, peserta sebagai penulis) tetap melihat seluruh anggota.
+        const penuh = (await cari(bppt, 'ND-55/2026')).kelompok.find((k: any) => k.kunci === rangkaianId);
+        expect(penuh!.jumlahAnggota).toBe(2);
+    });
+
     it('surat tunggal terbatas milik unit sendiri tanpa grant tampil di cocok tapi pratinjau tersamar', async () => {
         const hasil = await cari(bppt, 'Uji akses sendiri terbatas');
         expect(hasil.kelompok).toHaveLength(1);

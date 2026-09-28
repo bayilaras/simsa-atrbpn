@@ -2,8 +2,8 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../config/database.js';
 import { classifyLacakQuery, escapeLike, LIKE_ESCAPE, nomorNormSql, type LacakQueryPlan } from '../../utils/nomor-surat.js';
 import {
-    denganRetryDeadlock, isAjukanAksesEnabled, judulTersamar, LABEL_DIKECUALIKAN, readRefKey, recordAccessService,
-    requiresExplicitAccessGrant, resolveKonteksBaca, visibleSql,
+    BATAS_NODE_DETAIL, denganRetryDeadlock, isAjukanAksesEnabled, judulTersamar, LABEL_DIKECUALIKAN, readRefKey, recordAccessService,
+    requiresExplicitAccessGrant, resolveKonteksBaca, tingkatRangkaianPenuh, visibleSql,
     type KonteksBaca, type RecordUser, type SuratJenis, type Tx,
 } from './deps.js';
 import { rowsOf, textArraySql, uuidArraySql } from './sql-rows.js';
@@ -110,8 +110,22 @@ async function muatTunggal(tx: Tx, refs: LacakCocok[]): Promise<Map<string, Laca
     }]));
 }
 
-async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[]): Promise<LacakKelompok[]> {
+/** Placeholder node tunggal/tanpa kartu: tanpa anggotaId (kontrak P4: `string | null`). */
+function tersamarTunggal(node: Pick<LacakNode, 'jenis' | 'unitNama'>): LacakNodeTersamar {
+    return { anggotaId: null as never, jenis: node.jenis, unitNama: node.unitNama, label: LABEL_DIKECUALIKAN, masked: true, dapatAjukanAkses: false };
+}
+
+async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[], ctx: KonteksBaca): Promise<LacakKelompok[]> {
     const rangkaianIds = grup.filter((g) => g.rangkaian_id).map((g) => g.rangkaian_id as string);
+    // A-I3: tier LEVEL RANGKAIAN seperti `penuh` pada P2 getDetail. Hanya pembaca
+    // penuh (super_admin, pengawas unit pencatat, peserta) yang melihat
+    // placeholder anggota yang tidak terbaca; pembaca lain hanya node yang dapat
+    // dibacanya, dan kartu dibuang bila tak satu pun terbaca (GET /:id → 404).
+    // Paling banyak KELOMPOK_MAKS panggilan.
+    const penuh = new Set<string>();
+    for (const id of rangkaianIds) {
+        if (await tingkatRangkaianPenuh(user, id, tx as never, ctx)) penuh.add(id);
+    }
     const semuaCocok = grup.flatMap((g) => g.cocok.map((c) => `${c.jenis}:${c.id}`));
     const nodeRows = rangkaianIds.length === 0 ? [] : rowsOf<NodeRow>(await tx.execute(sql`
         SELECT * FROM (
@@ -137,17 +151,24 @@ async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[]): Promise<Laca
               LEFT JOIN surat_keluar sk ON sk.id = a.surat_keluar_id
              WHERE a.rangkaian_id = ANY(${uuidArraySql(rangkaianIds)})
                AND coalesce(sm.is_deleted, sk.is_deleted) IS NOT TRUE
-        ) x WHERE urut <= ${NODE_PRATINJAU}`));
+        ) x
+        -- Pembaca penuh: cukup pratinjau. Pembaca lain: muat hingga batas detail
+        -- P2 agar pratinjau/jumlah dihitung dari node yang TERBACA saja (A-I3).
+        WHERE urut <= CASE WHEN rangkaian_id = ANY(${uuidArraySql([...penuh])}) THEN ${NODE_PRATINJAU}::int ELSE ${BATAS_NODE_DETAIL}::int END`));
     const rangkaianRows = rangkaianIds.length === 0 ? [] : rowsOf<NonNullable<LacakKelompok['rangkaian']>>(await tx.execute(sql`
         SELECT id, kode, status, judul, tahun, asal FROM rangkaian_surat WHERE id = ANY(${uuidArraySql(rangkaianIds)})`));
-    // Kelompok surat tunggal (tanpa rangkaian) hanya pernah menampilkan
-    // cocok[0] sebagai pratinjau; batasi muat & checkMany ke ref itu saja.
-    const tunggalRefs = grup.filter((g) => !g.rangkaian_id).flatMap((g) => g.cocok.slice(0, 1));
+    const akses = await recordAccessService.checkMany(user, nodeRows.map((n) => ({ type: n.jenis, id: n.surat_id })), tx);
+    const terbaca = (n: NodeRow) => akses.get(readRefKey({ type: n.jenis, id: n.surat_id }))?.allowed === true;
+
+    // Kartu rangkaian yang tidak boleh tampil (pembaca tidak penuh, tak satu node
+    // pun terbaca) diperlakukan seperti surat tunggal: hanya cocok[0].
+    const tanpaKartu = new Set(rangkaianIds.filter((id) => !penuh.has(id) && !nodeRows.some((n) => n.rangkaian_id === id && terbaca(n))));
+    const sepertiTunggal = (g: GrupRow) => !g.rangkaian_id || tanpaKartu.has(g.rangkaian_id);
+    // Kelompok surat tunggal hanya pernah menampilkan cocok[0] sebagai
+    // pratinjau; batasi muat & checkMany ke ref itu saja.
+    const tunggalRefs = grup.filter(sepertiTunggal).flatMap((g) => g.cocok.slice(0, 1));
     const tunggal = await muatTunggal(tx, tunggalRefs);
-    const akses = await recordAccessService.checkMany(user, [
-        ...nodeRows.map((n) => ({ type: n.jenis, id: n.surat_id })),
-        ...tunggalRefs.map((c) => ({ type: c.jenis, id: c.id })),
-    ], tx);
+    const aksesTunggal = await recordAccessService.checkMany(user, tunggalRefs.map((c) => ({ type: c.jenis, id: c.id })), tx);
 
     const keNode = (n: NodeRow): LacakNode | LacakNodeTersamar => {
         const a = akses.get(readRefKey({ type: n.jenis, id: n.surat_id }));
@@ -170,32 +191,40 @@ async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[]): Promise<Laca
 
     return grup.map((g): LacakKelompok => {
         const dasar = { kunci: g.kunci, skor: g.skor, tanggalTerbaru: g.tanggal_terbaru, cocok: g.cocok };
-        if (!g.rangkaian_id) {
+        if (sepertiTunggal(g)) {
             const ref = g.cocok[0];
             const node = ref ? tunggal.get(readRefKey({ type: ref.jenis, id: ref.id })) : undefined;
             let pratinjau: Array<LacakNode | LacakNodeTersamar> = [];
             if (node) {
-                const a = akses.get(readRefKey({ type: ref!.jenis, id: ref!.id }));
+                const a = aksesTunggal.get(readRefKey({ type: ref!.jenis, id: ref!.id }));
                 // Kebijakan list (spec:558) tetap berlaku untuk `cocok[]` (bentuk
                 // dibekukan P4); hanya pratinjau node tunggal ini yang disamarkan
                 // agar setara mode baca (T4-3).
-                pratinjau = a?.allowed === true
-                    ? [node]
-                    : [{ anggotaId: null as never, jenis: node.jenis, unitNama: node.unitNama, label: LABEL_DIKECUALIKAN, masked: true, dapatAjukanAkses: false }];
+                pratinjau = a?.allowed === true ? [node] : [tersamarTunggal(node)];
             }
-            return { ...dasar, rangkaian: null, pratinjau, jumlahAnggota: node ? 1 : 0, pratinjauTerpotong: false };
+            // A-I3: kartu yang dibuang tidak boleh membawa id rangkaian di `kunci`.
+            const kunci = g.rangkaian_id && ref ? `surat:${ref.id}` : g.kunci;
+            return { ...dasar, kunci, rangkaian: null, pratinjau, jumlahAnggota: node ? 1 : 0, pratinjauTerpotong: false };
         }
-        const milik = nodeRows.filter((n) => n.rangkaian_id === g.rangkaian_id).sort((a, b) => a.urut - b.urut);
-        const r = rangkaianRows.find((row) => row.id === g.rangkaian_id)!;
+        const rangkaianId = g.rangkaian_id as string;
+        const milik = nodeRows.filter((n) => n.rangkaian_id === rangkaianId).sort((a, b) => a.urut - b.urut);
+        const r = rangkaianRows.find((row) => row.id === rangkaianId)!;
         const induk = milik.find((n) => n.peran === 'induk');
-        const indukTerlihat = induk ? akses.get(readRefKey({ type: induk.jenis, id: induk.surat_id }))?.allowed === true : false;
-        const jumlah = milik[0]?.jumlah ?? 0;
+        const indukTerlihat = induk ? terbaca(induk) : false;
+        const rangkaian = { ...r, judul: induk && indukTerlihat ? r.judul : judulTersamar(r.kode) };
+        if (penuh.has(rangkaianId)) {
+            const jumlah = milik[0]?.jumlah ?? 0;
+            return { ...dasar, rangkaian, pratinjau: milik.map(keNode), jumlahAnggota: jumlah, pratinjauTerpotong: jumlah > milik.length };
+        }
+        // Pembaca tanpa tier rangkaian: hanya node terbaca, dan jumlah hanya
+        // menghitung node terbaca (setara tier 'anggota' pada getDetail).
+        const milikTerbaca = milik.filter(terbaca);
         return {
             ...dasar,
-            rangkaian: { ...r, judul: induk && indukTerlihat ? r.judul : judulTersamar(r.kode) },
-            pratinjau: milik.map(keNode),
-            jumlahAnggota: jumlah,
-            pratinjauTerpotong: jumlah > milik.length,
+            rangkaian,
+            pratinjau: milikTerbaca.slice(0, NODE_PRATINJAU).map(keNode),
+            jumlahAnggota: milikTerbaca.length,
+            pratinjauTerpotong: milikTerbaca.length > NODE_PRATINJAU,
         };
     });
 }
@@ -236,7 +265,7 @@ export const lacakService = {
                  ORDER BY skor DESC, tanggal_terbaru DESC NULLS LAST, kunci ASC
                  LIMIT ${limit}`));
             if (grup.length === 0) return kosong;
-            return { ...kosong, kelompok: await ekspansi(tx, user, grup) };
+            return { ...kosong, kelompok: await ekspansi(tx, user, grup, ctx) };
         }));
     },
 };

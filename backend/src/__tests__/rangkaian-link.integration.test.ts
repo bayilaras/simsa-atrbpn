@@ -116,6 +116,16 @@ describe('tautan (PGlite)', () => {
         expect(await one('SELECT count(*)::int AS n FROM rangkaian_anggota WHERE surat_keluar_id = $1', [SK_TU])).toEqual({ n: 0 });
     });
 
+    it('M-4: keAnggotaId milik rangkaian lain → 404 yang sama dengan id tak dikenal, tanpa relasi', async () => {
+        const input = (keAnggotaId: string) => ({ jenis: 'surat_keluar' as const, suratId: SURAT.skBpptTunggal, keAnggotaId, jenisRelasi: 'merujuk' as const });
+        const lain = await link.tautan(PENGGUNA.bppt, RANGKAIAN.rs1, input(ANGGOTA.rs2Sm), audit(PENGGUNA.bppt)).catch((e) => e);
+        const takAda = await link.tautan(PENGGUNA.bppt, RANGKAIAN.rs1, input('51000000-0000-4000-8000-0000000000ff'), audit(PENGGUNA.bppt)).catch((e) => e);
+        expect(lain).toMatchObject({ statusCode: 404 });
+        expect(takAda).toMatchObject({ statusCode: 404 });
+        expect(lain.message).toBe(takAda.message);
+        expect(await one('SELECT count(*)::int AS n FROM rangkaian_anggota WHERE surat_keluar_id = $1', [SURAT.skBpptTunggal])).toEqual({ n: 0 });
+    });
+
     it('surat milik unit lain → 404 walau pengguna peserta rangkaian tujuan', async () => {
         await expect(link.tautan(PENGGUNA.bppt, RANGKAIAN.rs1,
             { jenis: 'surat_keluar', suratId: SK_TU, keAnggotaId: ANGGOTA.rs1Sm, jenisRelasi: 'merujuk' }, audit(PENGGUNA.bppt)))

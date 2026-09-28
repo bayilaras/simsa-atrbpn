@@ -770,7 +770,7 @@ export class DistributionService {
         actor: RecordUser,
         alasan: string,
         auditContext?: CriticalAuditContext,
-    ): Promise<SuratDistribution> {
+    ): Promise<SuratDistribution | ReturnType<typeof samarkanDistribusi>> {
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
             if (!actor.id) throw new ForbiddenError('Hanya admin unit pengawas yang dapat menutup disposisi.');
 
@@ -825,7 +825,11 @@ export class DistributionService {
             }, auditContext);
             if (result.rangkaianId) await recomputeRangkaian(tx, result.rangkaianId, auditContext);
             await recomputeSuratMasuk(tx, [result.suratMasukId], auditContext);
-            return result;
+            // A-I2 (§4.8): Tutup justru ada untuk baris yang hanya terlihat
+            // tersamar oleh pengawas; respons disamarkan bila pengawas tidak
+            // dapat membaca surat induk (dinilai di transaksi yang sama).
+            const baca = await recordAccessService.checkRead(actor, 'surat_masuk', result.suratMasukId, tx);
+            return baca.exists && baca.allowed ? result : samarkanDistribusi(result);
         }));
     }
 

@@ -232,6 +232,25 @@ describe('distribution route unit scoping', () => {
         expect(mocks.recordAccess.checkRead).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'surat_masuk', 'surat-1');
     });
 
+    it('A-I1: respons Tolak disamarkan bila surat induk tidak dapat dibaca pemanggil', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: false, unitKerjaId: 'sesditjen' });
+        mocks.distribution.reject.mockResolvedValue({
+            id: 'dist-1', status: 'rejected', suratMasukId: 'surat-1', instruction: 'Instruksi rahasia', rejectionReason: 'Bukan unit tujuan',
+        });
+        const res = await request(app).put('/distributions/dist-1/reject').send({ reason: 'Bukan unit tujuan' }).expect(200);
+        expect(mocks.distribution.samarkan).toHaveBeenCalledWith(expect.objectContaining({ id: 'dist-1', suratMasukId: 'surat-1' }));
+        expect(res.body.data).toMatchObject({ id: 'dist-1', masked: true, suratMasukId: null });
+        expect(res.text).not.toContain('surat-1');
+        expect(res.text).not.toContain('Instruksi rahasia');
+    });
+
+    it('A-I1: respons Tolak tetap utuh bila surat induk dapat dibaca', async () => {
+        mocks.distribution.reject.mockResolvedValue({ id: 'dist-1', status: 'rejected', suratMasukId: 'surat-1', instruction: 'Mohon hadir' });
+        const res = await request(app).put('/distributions/dist-1/reject').send({ reason: 'Bukan unit tujuan' }).expect(200);
+        expect(res.body.data).toMatchObject({ suratMasukId: 'surat-1', instruction: 'Mohon hadir' });
+        expect(mocks.distribution.samarkan).not.toHaveBeenCalled();
+    });
+
     it('lewatBatas=true diteruskan ke kotak disposisi', async () => {
         await request(app).get('/distributions/inbox?lewatBatas=true').expect(200);
         expect(mocks.distribution.findInbox).toHaveBeenCalledWith('unit-a', expect.objectContaining({ lewatBatas: true }), expect.anything());

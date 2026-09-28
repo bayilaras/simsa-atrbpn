@@ -264,8 +264,11 @@ export const rangkaianLinkService = {
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
             await assertPemilik(tx, user, input.jenis, input.suratId);
             await assertTerbaca(tx, user, rangkaianId);
+            // M-4: dibatasi ke rangkaian ini -- anggota rangkaian lain = 404 yang
+            // sama dengan id tak dikenal (tanpa oracle) dan tidak ikut dikunci.
             const [ke] = rowsOf<{ sm: string | null; sk: string | null }>(await tx.execute(sql`
-                SELECT surat_masuk_id::text AS sm, surat_keluar_id::text AS sk FROM rangkaian_anggota WHERE id = ${input.keAnggotaId}`));
+                SELECT surat_masuk_id::text AS sm, surat_keluar_id::text AS sk FROM rangkaian_anggota
+                 WHERE id = ${input.keAnggotaId} AND rangkaian_id = ${rangkaianId}`));
             if (!ke) throw new NotFoundError('Surat rujukan');
             const tujuan: SuratRef = ke.sm ? { jenis: 'surat_masuk', id: ke.sm } : { jenis: 'surat_keluar', id: ke.sk! };
             return denganLingkupTerkunci(tx, [{ jenis: input.jenis, id: input.suratId }, tujuan], [rangkaianId],

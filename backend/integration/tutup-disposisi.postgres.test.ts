@@ -103,6 +103,36 @@ describe.skipIf(!adaPostgres)('Tutup Disposisi oleh pengawas', () => {
             .rejects.toMatchObject({ statusCode: 404 });
     });
 
+    // A-I2: pengawas yang tidak dapat membaca surat Terbatas menerima respons tersamar.
+    it('respons Tutup tersamar bila pengawas tidak dapat membaca surat induk', async () => {
+        const smTerbatas = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'T-45/2026', perihal: 'Perihal terbatas tutup', sifatSurat: 'Terbatas' });
+        process.env.RANGKAIAN_AJUKAN_AKSES = 'true';
+        let distT: string;
+        try {
+            distT = (await distributionService.distribute({ suratMasukId: smTerbatas, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt',
+                sentBy: tu.id, instruction: 'Instruksi terbatas tutup' }, audit(tu))).id;
+        } finally {
+            delete process.env.RANGKAIAN_AJUKAN_AKSES;
+        }
+        const hasil = await distributionService.tutupOlehPengawas(distT, tu, 'Target tidak dapat memproses surat terbatas', audit(tu));
+        expect(hasil).toMatchObject({ id: distT, status: 'processed', ditutupPengawas: true, masked: true, suratMasukId: null, instruction: null, catatanPenyelesaian: null });
+        const teks = JSON.stringify(hasil);
+        for (const bocor of [smTerbatas, 'Instruksi terbatas tutup', 'Perihal terbatas tutup']) expect(teks).not.toContain(bocor);
+    });
+
+    // M-7 (CTRL-1): super_admin tidak pernah dapat Tutup Disposisi, baik tanpa unit maupun dengan unit pengawas.
+    it('super_admin ditolak 403 dan baris tidak berubah (CTRL-1)', async () => {
+        const sm = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-46/2026' });
+        const d = (await distributionService.distribute({ suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', sentBy: tu.id }, audit(tu))).id;
+        const superNull = await h.seedUser('super_admin', null);
+        for (const aktor of [superNull, { ...superNull, unitKerjaId: 'sesditjen' }]) {
+            await expect(distributionService.tutupOlehPengawas(d, aktor, 'Percobaan super admin menutup', audit(superNull)))
+                .rejects.toMatchObject({ statusCode: 403 });
+        }
+        const [row] = await h.query<{ status: string; ditutup_pengawas: boolean }>('SELECT status, ditutup_pengawas FROM surat_distributions WHERE id = $1', [d]);
+        expect(row).toEqual({ status: 'sent', ditutup_pengawas: false });
+    });
+
     // [T11-1 amendment] tutupOlehPengawas dan distribute berjalan bersamaan atas
     // SM yang sama: urutan kunci G-LOCK (surat_masuk → rangkaian → distribusi)
     // yang identik pada kedua jalur harus mencegah deadlock 40P01.

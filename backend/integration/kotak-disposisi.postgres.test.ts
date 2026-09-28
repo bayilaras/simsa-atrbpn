@@ -229,13 +229,16 @@ describe.skipIf(!adaPostgres)('kotak disposisi dan penyelesaian di PostgreSQL', 
         });
 
         it('Terima ditolak 403 untuk surat yang belum dapat dibaca, tetapi Tolak diizinkan', async () => {
-            const { dist } = await disposisiTerkendali({
+            const { sm, dist } = await disposisiTerkendali({
                 nomorSurat: 'T-38/2026', perihal: 'Tata ruang', sifatSurat: 'Terbatas', targetUnitId: 'dir_plp', instruction: 'Isi terbatas',
             });
             const plp = await h.seedUser('admin_unit', 'dir_plp');
             auth.state.user = plp;
             await request(app).put(`/api/distributions/${dist}/receive`).expect(403);
-            await request(app).put(`/api/distributions/${dist}/reject`).send({ reason: 'Bukan kewenangan unit kami' }).expect(200);
+            const tolak = await request(app).put(`/api/distributions/${dist}/reject`).send({ reason: 'Bukan kewenangan unit kami' }).expect(200);
+            // A-I1: respons Tolak untuk surat yang tidak terbaca wajib tersamar (§4.8).
+            expect(tolak.body.data).toMatchObject({ id: dist, suratMasukId: null, instruction: null, masked: true });
+            for (const bocor of [sm, 'Tata ruang', 'T-38/2026', 'Isi terbatas']) expect(tolak.text).not.toContain(bocor);
             const [row] = await h.query('SELECT status FROM surat_distributions WHERE id = $1', [dist]);
             expect(row.status).toBe('rejected');
         });

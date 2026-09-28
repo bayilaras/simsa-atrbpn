@@ -55,7 +55,8 @@ export type { KonteksBaca } from '../access/visibility-spec.js';
 export { scopeForAuthorizedRead } from '../../utils/record-unit-scope.js';
 export { LABEL_DIKECUALIKAN, judulTersamar } from '../rangkaian-read.service.js';
 /** Tier baca rangkaian P2 (T14-1): null → 404, 'anggota' → hanya anggota terbaca; dipakai Task 14–16. */
-export { tingkatAksesRangkaian } from '../rangkaian-read.service.js';
+export { tingkatAksesRangkaian, tingkatRangkaianPenuh } from '../rangkaian-read.service.js';
+export { BATAS_NODE_DETAIL } from '../rangkaian-read.service.js';
 /** G-RETRY; tinggal di utils agar layanan P0 dapat memakainya tanpa graf impor deps (C-4). */
 export { denganRetryDeadlock } from '../../utils/deadlock-retry.js';
 

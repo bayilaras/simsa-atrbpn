@@ -313,7 +313,8 @@ router.put('/:id/process', canWriteMiddleware(), validateBody(processDistributio
 /**
  * @route PUT /api/distributions/:id/reject
  * @desc Tolak & Kembalikan. Tetap tersedia untuk baris tersamar (target tidak
- *       perlu dapat membaca surat).
+ *       perlu dapat membaca surat); responsnya disamarkan bila surat induk tidak
+ *       terbaca oleh pemanggil (A-I1).
  */
 router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionSchema), async (req: AuthRequest, res, next) => {
     try {
@@ -325,7 +326,8 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
         }
         const unitKerjaId = resolveConcreteDistributionUnit(req, res);
         if (!unitKerjaId) return;
-        if (!(await distributionService.findById(id, unitKerjaId))) {
+        const record = await distributionService.findById(id, unitKerjaId);
+        if (!record) {
             return res.status(404).json({ error: 'Distribution not found' });
         }
 
@@ -336,7 +338,11 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
             { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
         );
 
-        res.json({ success: true, data: result });
+        // A-I1 (§4.8): Tolak tersedia untuk baris tersamar, jadi responsnya pun
+        // wajib tersamar bila pemanggil (setelah penolakan) tidak dapat membaca
+        // surat induk -- jangan bocorkan id surat, instruksi, atau catatan.
+        const baca = await recordAccessService.checkRead(req.user, 'surat_masuk', record.surat.id);
+        res.json({ success: true, data: baca.exists && baca.allowed ? result : distributionService.samarkan(result) });
     } catch (error) {
         next(error);
     }
