@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => ({
         check: vi.fn(),
         checkRead: vi.fn(),
     },
+    aksiPayload: vi.fn(async () => ({ aksiDiizinkan: [], statusAlur: 'terdaftar', distribusiUnitSaya: null, rangkaian: null })),
 }));
 
 vi.mock('../../middlewares/auth.middleware', () => ({
@@ -100,6 +101,8 @@ vi.mock('../../services/record-access.service', async importOriginal => ({
     ...await importOriginal<typeof import('../../services/record-access.service')>(),
     recordAccessService: mocks.recordAccess,
 }));
+
+vi.mock('../../services/rangkaian/aksi.js', () => ({ suratAksiPayload: mocks.aksiPayload }));
 
 vi.mock('../../services/blob-storage.service', () => ({
     blobStorageService: {
@@ -699,7 +702,11 @@ describe('surat and attachment route security policy', () => {
         mocks.suratMasuk.findById.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440030', unitKerjaId: 'sesditjen', perihal: 'Permohonan', filePath: null });
         const response = await request(app).get('/api/surat-masuk/550e8400-e29b-41d4-a716-446655440030').expect(200);
         expect(mocks.suratMasuk.findById).toHaveBeenCalledWith('550e8400-e29b-41d4-a716-446655440030', 'sesditjen');
-        expect(response.body.data).toMatchObject({ aksesMelalui: 'peserta', aksiDiizinkan: [] });
+        expect(response.body.data).toMatchObject({ aksesMelalui: 'peserta', aksiDiizinkan: [], statusAlur: 'terdaftar' });
+        expect(mocks.aksiPayload).toHaveBeenCalledWith(
+            expect.objectContaining({ role: mocks.role }), 'surat_masuk', '550e8400-e29b-41d4-a716-446655440030',
+            expect.objectContaining({ via: 'peserta', mutable: false }),
+        );
         expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
             action: 'view_via_rangkaian',
             entityType: 'surat_masuk',

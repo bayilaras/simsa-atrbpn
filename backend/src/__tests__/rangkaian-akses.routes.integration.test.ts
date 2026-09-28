@@ -4,7 +4,9 @@ import request from 'supertest';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
-import { ANGGOTA, PENGGUNA, RAHASIA, RANGKAIAN, SURAT, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
+import {
+    ANGGOTA, DISPOSISI, GRANT, PENGGUNA, RAHASIA, RANGKAIAN, SURAT, bootRangkaianDatabase, seedRangkaianFixture,
+} from './helpers/rangkaian-pglite';
 
 const holder = vi.hoisted(() => ({ db: null as any }));
 vi.mock('../config/database', () => ({
@@ -50,7 +52,10 @@ beforeEach(async () => { await seedRangkaianFixture(database); });
 describe('GET detail surat lintas unit', () => {
     it('pengawas (admin_unit@sesditjen) membaca ND BPPT dan tercatat view_via_rangkaian', async () => {
         const response = await request(app).get(`/api/surat-keluar/${SURAT.skBpptBiasa}`).set(sebagai(PENGGUNA.tu)).expect(200);
-        expect(response.body.data).toMatchObject({ id: SURAT.skBpptBiasa, unitKerjaId: 'dir_bppt', aksesMelalui: 'pengawas', aksiDiizinkan: [] });
+        expect(response.body.data).toMatchObject({ id: SURAT.skBpptBiasa, unitKerjaId: 'dir_bppt', aksesMelalui: 'pengawas' });
+        // T16-2: pengawas (bukan pemilik) atas SK 'Nota Dinas' → hanya tindak lanjut.
+        expect(response.body.data.aksiDiizinkan).toEqual(expect.arrayContaining(['saya_balas', 'buat_nota_dinas']));
+        expect(response.body.data.aksiDiizinkan).toHaveLength(2);
         const [audit] = await auditRows();
         expect(audit).toMatchObject({ action: 'view_via_rangkaian', entity_type: 'surat_keluar', entity_id: SURAT.skBpptBiasa });
         expect(audit.changes).toMatchObject({ via: 'pengawas' });
@@ -119,6 +124,72 @@ describe('GET detail surat lintas unit', () => {
         const sk = (await database.query<any>(`SELECT perihal, is_deleted FROM surat_keluar WHERE id = '${SURAT.skBpptNull}'`)).rows[0];
         expect(sk).toEqual({ perihal: RAHASIA.perihalSkNull, is_deleted: false });
         expect(await auditRows()).toHaveLength(0);
+    });
+});
+
+describe('aksiDiizinkan dan statusAlur dari server (T16)', () => {
+    it('pemilik (TU) surat masuk induk mendapat seluruh aksi pemilik', async () => {
+        const { body } = await request(app).get(`/api/surat-masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect([...body.data.aksiDiizinkan].sort()).toEqual(['arsipkan', 'buat_nota_dinas', 'disposisi', 'edit', 'hapus', 'saya_balas', 'tautkan']);
+        expect(body.data).toMatchObject({
+            statusAlur: 'ditindaklanjuti',
+            distribusiUnitSaya: null,
+            rangkaian: { id: RANGKAIAN.rs1, kode: 'RS-2026-000001', status: 'aktif' },
+        });
+    });
+
+    it('direktorat penerima disposisi (received) mendapat tindak lanjut dan penyelesaian, tanpa mengubah status disposisi', async () => {
+        const { body } = await request(app).get(`/api/surat-masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect([...body.data.aksiDiizinkan].sort()).toEqual(['buat_nota_dinas', 'penyelesaian', 'saya_balas']);
+        expect(body.data.distribusiUnitSaya).toEqual({ id: DISPOSISI.rs1Bppt, status: 'received' });
+        const [row] = (await database.query<any>(`SELECT status FROM surat_distributions WHERE id = '${DISPOSISI.rs1Bppt}'`)).rows;
+        expect(row.status).toBe('received');
+    });
+
+    it('pemilik surat masuk tunggal: statusAlur terdaftar tanpa rangkaian; staff lama tanpa aksi', async () => {
+        const tu = await request(app).get(`/api/surat-masuk/${SURAT.smTunggal}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(tu.body.data).toMatchObject({ statusAlur: 'terdaftar', rangkaian: null, distribusiUnitSaya: null });
+        expect(tu.body.data.aksiDiizinkan).toContain('disposisi');
+        const staff = await request(app).get(`/api/surat-masuk/${SURAT.smTunggal}`).set(sebagai(PENGGUNA.staffSes)).expect(200);
+        expect(staff.body.data.aksiDiizinkan).toEqual([]);
+    });
+
+    it('surat masuk terarsip: pemilik masih dapat menautkan, tanpa edit/hapus/disposisi (C-3)', async () => {
+        await database.exec(`UPDATE surat_masuk SET is_archived = true WHERE id = '${SURAT.smTunggal}'`);
+        const { body } = await request(app).get(`/api/surat-masuk/${SURAT.smTunggal}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(body.data.aksiDiizinkan).toContain('tautkan');
+        for (const aksi of ['edit', 'hapus', 'disposisi', 'arsipkan']) expect(body.data.aksiDiizinkan).not.toContain(aksi);
+    });
+
+    it('rangkaian dengan disposisi terbuka: pencatat pengawas mendapat Tutup Disposisi, bukan Tandai Selesai/Berkaskan', async () => {
+        const { body } = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect([...body.data.aksiDiizinkan].sort()).toEqual(['batal_relasi', 'gabung', 'tutup_disposisi', 'ubah_unit_pengolah']);
+    });
+
+    it('super_admin tanpa unit pengawas tidak ditawari Tutup Disposisi (CTRL-1)', async () => {
+        const { body } = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(PENGGUNA.superAdmin)).expect(200);
+        expect([...body.data.aksiDiizinkan].sort()).toEqual(['batal_relasi', 'gabung', 'ubah_unit_pengolah']);
+    });
+
+    it('tanpa penghalang: unit pengolah mendapat Tandai Selesai dan Berkaskan (by-surat juga)', async () => {
+        await database.exec(`
+            UPDATE surat_distributions SET status = 'processed', processed_at = now() WHERE id = '${DISPOSISI.rs1Bppt}';
+            UPDATE surat_keluar SET approval_status = 'approved' WHERE id IN ('${SURAT.skBpptBiasa}', '${SURAT.skBpptNull}');`);
+        const detail = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect([...detail.body.data.aksiDiizinkan].sort()).toEqual(['berkaskan', 'tandai_selesai']);
+        const bySurat = await request(app).get(`/api/rangkaian/by-surat/surat_masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect([...bySurat.body.data.aksiDiizinkan].sort()).toEqual(['berkaskan', 'tandai_selesai']);
+    });
+
+    it('node yang terbaca lewat grant: audit memuat grantIds, grant ditandai terpakai, dan grantIds tidak ada di body (T16-8)', async () => {
+        const { body } = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs2}`).set(sebagai(PENGGUNA.ptep)).expect(200);
+        expect(body.data).not.toHaveProperty('grantIds');
+        expect(JSON.stringify(body)).not.toContain(GRANT.ptepSmTerbatas);
+        const [audit] = await auditRows();
+        expect(audit).toMatchObject({ action: 'view_via_rangkaian', entity_type: 'rangkaian_surat', entity_id: RANGKAIAN.rs2 });
+        expect(audit.changes.grantIds).toEqual([GRANT.ptepSmTerbatas]);
+        const [grant] = (await database.query<any>(`SELECT last_used_at FROM record_access_grants WHERE id = '${GRANT.ptepSmTerbatas}'`)).rows;
+        expect(grant.last_used_at).not.toBeNull();
     });
 });
 

@@ -28,6 +28,7 @@ import {
     recordAccessService,
 } from '../services/record-access.service.js';
 import auditLogService from '../services/audit-log.service.js';
+import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
 const log = createLogger('SuratKeluarRoutes');
@@ -172,9 +173,11 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
             });
         }
 
+        // P3 (§7): aksiDiizinkan/statusAlur dari server; hanya membaca.
+        const aksi = await suratAksiPayload(req.user!, 'surat_keluar', id, access);
         res.json({
             success: true,
-            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), aksesMelalui: access.via, aksiDiizinkan: [] },
+            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), aksesMelalui: access.via, ...aksi },
         });
     } catch (error) {
         next(error);

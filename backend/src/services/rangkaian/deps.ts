@@ -50,7 +50,7 @@ export {
     requiresExplicitAccessGrant,
 } from '../record-access.service.js';
 export type { RecordEntityType, RecordUser } from '../record-access.service.js';
-export { isAjukanAksesEnabled, resolveKonteksBaca, visibleSql } from '../access/visibility-spec.js';
+export { dalamCakupanPengawasSql, isAjukanAksesEnabled, resolveKonteksBaca, visibleSql } from '../access/visibility-spec.js';
 export type { KonteksBaca } from '../access/visibility-spec.js';
 export { scopeForAuthorizedRead } from '../../utils/record-unit-scope.js';
 export { LABEL_DIKECUALIKAN, judulTersamar } from '../rangkaian-read.service.js';

@@ -20,8 +20,10 @@ vi.mock('../../services/rangkaian-read.service.js', () => ({
 }));
 
 vi.mock('../../services/record-access.service.js', () => ({
-    recordAccessService: { checkRead: vi.fn() },
+    recordAccessService: { checkRead: vi.fn(), markGrantUsed: vi.fn(async () => true) },
 }));
+
+vi.mock('../../services/rangkaian/aksi.js', () => ({ rangkaianAksiUntuk: vi.fn(async () => []), suratAksiPayload: vi.fn() }));
 
 vi.mock('../../services/audit-log.service.js', () => ({
     default: { logActionOrThrow: vi.fn() },
@@ -30,11 +32,14 @@ vi.mock('../../services/audit-log.service.js', () => ({
 import { rangkaianReadService } from '../../services/rangkaian-read.service.js';
 import { recordAccessService } from '../../services/record-access.service.js';
 import auditLogService from '../../services/audit-log.service.js';
+import { rangkaianAksiUntuk } from '../../services/rangkaian/aksi.js';
 
 const getDetail = rangkaianReadService.getDetail as ReturnType<typeof vi.fn>;
 const findRangkaianIdBySurat = rangkaianReadService.findRangkaianIdBySurat as ReturnType<typeof vi.fn>;
 const checkRead = recordAccessService.checkRead as ReturnType<typeof vi.fn>;
 const logActionOrThrow = auditLogService.logActionOrThrow as ReturnType<typeof vi.fn>;
+const markGrantUsed = recordAccessService.markGrantUsed as ReturnType<typeof vi.fn>;
+const aksiUntuk = rangkaianAksiUntuk as ReturnType<typeof vi.fn>;
 
 let app: express.Express;
 
@@ -56,6 +61,11 @@ function detail(overrides: Record<string, unknown> = {}) {
         truncated: false,
         ...overrides,
     };
+}
+
+/** getDetail asli menaruh grantIds sebagai properti internal non-enumerable (T16-8). */
+function denganGrant(hasil: Record<string, unknown>, grantIds: string[]) {
+    return Object.defineProperty(hasil, 'grantIds', { value: grantIds, enumerable: false });
 }
 
 function readAllowed(overrides: Record<string, unknown> = {}) {
@@ -121,6 +131,71 @@ describe('GET /api/rangkaian/:id — audit sebelum respons, fail-closed', () => 
 
         await request(app).get(`/api/rangkaian/${RID}`).expect(404);
 
+        expect(logActionOrThrow).not.toHaveBeenCalled();
+    });
+});
+
+describe('GET /api/rangkaian — aksiDiizinkan dan grant (T16)', () => {
+    const GRANT = '53000000-0000-4000-8000-000000000001';
+
+    it('aksiDiizinkan diisi server untuk id rangkaian yang sudah di-resolve', async () => {
+        aksiUntuk.mockResolvedValueOnce(['berkaskan', 'tandai_selesai']);
+        getDetail.mockResolvedValue(detail({ rangkaian: { ...detail().rangkaian, id: FINAL_ID }, dialihkanDari: { id: RID, kode: 'RS-1' } }));
+
+        const res = await request(app).get(`/api/rangkaian/${RID}`).expect(200);
+
+        expect(res.body.data.aksiDiizinkan).toEqual(['berkaskan', 'tandai_selesai']);
+        expect(aksiUntuk).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), FINAL_ID);
+    });
+
+    it('node yang terbaca lewat grant: grantIds masuk audit, grant ditandai terpakai, dan tidak ada di body', async () => {
+        const urutan: string[] = [];
+        logActionOrThrow.mockImplementation(async () => { urutan.push('audit'); });
+        markGrantUsed.mockImplementation(async () => { urutan.push('markGrantUsed'); return true; });
+        getDetail.mockResolvedValue(denganGrant(detail({ aksesMelalui: 'peserta' }), [GRANT]));
+
+        const res = await request(app).get(`/api/rangkaian/${RID}`).expect(200);
+
+        expect(logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({
+            action: 'view_via_rangkaian',
+            changes: expect.objectContaining({ via: 'peserta', grantIds: [GRANT] }),
+        }));
+        expect(markGrantUsed).toHaveBeenCalledWith(GRANT);
+        expect(urutan).toEqual(['audit', 'markGrantUsed']);
+        expect(res.body.data).not.toHaveProperty('grantIds');
+        expect(JSON.stringify(res.body)).not.toContain(GRANT);
+    });
+
+    it('by-surat juga mencatat grantIds dan menandai grant terpakai', async () => {
+        checkRead.mockResolvedValue(readAllowed({ via: 'peserta' }));
+        findRangkaianIdBySurat.mockResolvedValue(RID);
+        getDetail.mockResolvedValue(denganGrant(detail({ aksesMelalui: 'peserta' }), [GRANT]));
+
+        const res = await request(app).get(`/api/rangkaian/by-surat/surat_masuk/${SID}`).expect(200);
+
+        expect(logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({
+            changes: expect.objectContaining({ grantIds: [GRANT], jenis: 'surat_masuk', suratId: SID }),
+        }));
+        expect(markGrantUsed).toHaveBeenCalledWith(GRANT);
+        expect(res.body.data).not.toHaveProperty('grantIds');
+    });
+
+    it('audit gagal → 500 dan grant tidak ditandai terpakai', async () => {
+        logActionOrThrow.mockRejectedValueOnce(new Error('audit_log tidak dapat ditulis'));
+        getDetail.mockResolvedValue(denganGrant(detail({ aksesMelalui: 'peserta' }), [GRANT]));
+
+        const res = await request(app).get(`/api/rangkaian/${RID}`);
+
+        expect(res.status).toBe(500);
+        expect(markGrantUsed).not.toHaveBeenCalled();
+    });
+
+    it('tanpa grant tidak memanggil markGrantUsed; pemilik tanpa grant tetap tanpa audit', async () => {
+        getDetail.mockResolvedValue(detail({ aksesMelalui: 'owner' }));
+
+        await request(app).get(`/api/rangkaian/${RID}`).expect(200);
+
+        expect(markGrantUsed).not.toHaveBeenCalled();
         expect(logActionOrThrow).not.toHaveBeenCalled();
     });
 });

@@ -69,6 +69,11 @@ vi.mock('../../services/record-access.service', () => ({
     },
 }));
 
+// P3 (T16): bidang aksi dihitung dari DB; route test ini hanya memeriksa sebarannya.
+vi.mock('../../services/rangkaian/aksi.js', () => ({
+    suratAksiPayload: vi.fn(async () => ({ aksiDiizinkan: [], statusAlur: 'terdaftar', distribusiUnitSaya: null, rangkaian: null })),
+}));
+
 // Mock Audit Log
 vi.mock('../../services/audit-log.service', () => ({
     default: {
@@ -119,6 +124,9 @@ describe('SuratMasukRoutes', () => {
                 filePath: null,
                 aksesMelalui: 'owner',
                 aksiDiizinkan: [],
+                statusAlur: 'terdaftar',
+                distribusiUnitSaya: null,
+                rangkaian: null,
             });
         });
 

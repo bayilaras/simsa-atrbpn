@@ -52,6 +52,12 @@ describe('kontrak P2 yang dikonsumsi P3', () => {
         expect(deps.isPengawasRecordUnit('bagian_umum')).toBe(false);
     });
 
+    it('dalamCakupanPengawasSql P2 diteruskan untuk penawaran Tutup Disposisi (C-7)', () => {
+        const q = render(sql`SELECT ${deps.dalamCakupanPengawasSql(sql.raw('sm.unit_kerja_id'))}`);
+        expect(q.sql).toContain("sm.unit_kerja_id IN ('ditjen', 'sesditjen')");
+        expect(q.sql).toContain("left(sm.unit_kerja_id, 4) = 'dir_'");
+    });
+
     it('flag Ajukan Akses mati secara default dan hanya menyala dengan "true"', () => {
         expect(deps.isAjukanAksesEnabled({})).toBe(false);
         expect(deps.isAjukanAksesEnabled({ RANGKAIAN_AJUKAN_AKSES: '1' })).toBe(false);

@@ -77,6 +77,10 @@ vi.mock('../services/audit-log.service.js', () => ({
     default: auditLogService,
     auditLogService,
 }));
+// P3 (T16): aksiDiizinkan/statusAlur detail surat dihitung dari DB; di luar cakupan uji scoping ini.
+vi.mock('../services/rangkaian/aksi.js', () => ({
+    suratAksiPayload: vi.fn(async () => ({ aksiDiizinkan: [], statusAlur: 'terdaftar', distribusiUnitSaya: null, rangkaian: null })),
+}));
 vi.mock('../services/blob-storage.service.js', () => ({ blobStorageService: {} }));
 vi.mock('../services/print-template.service.js', () => ({ printTemplateService: {} }));
 vi.mock('../utils/logger.js', () => ({

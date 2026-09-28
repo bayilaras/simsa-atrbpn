@@ -129,6 +129,13 @@ export interface RangkaianDetail {
     truncated: boolean;
 }
 
+/**
+ * Hasil getDetail. `grantIds` (T16-8) adalah properti internal NON-enumerable:
+ * grant yang membuka node lintas unit, untuk audit `view_via_rangkaian` dan
+ * `markGrantUsed`. Handler wajib memisahkannya; JSON.stringify melewatinya.
+ */
+export type RangkaianDetailBaca = RangkaianDetail & { readonly grantIds?: string[] };
+
 interface BarisRangkaian {
     id: string; kode: string; asal: string; status: RangkaianDetail['rangkaian']['status'];
     judul: string; tahun: number;
@@ -354,7 +361,7 @@ export const rangkaianReadService = {
         user: RecordUser | undefined,
         rangkaianId: string,
         executor: ReadExecutor = db,
-    ): Promise<RangkaianDetail | null> {
+    ): Promise<RangkaianDetailBaca | null> {
         let rs = await muatRangkaian(executor, rangkaianId);
         if (!rs) return null;
         let dialihkanDari: RangkaianDetail['dialihkanDari'] = null;
@@ -401,10 +408,12 @@ export const rangkaianReadService = {
         // terlihat (checkMany per surat), dipakai sebagai jatuhan aksesMelalui
         // saat tier rangkaian (tingkat) null -- lihat komentar di aksesMelalui.
         let viaLintas: 'pengawas' | 'peserta' | null = null;
+        const grantIds = new Set<string>();
         for (const row of dipakai) {
             const a = aksesAnggota(row);
             if (a?.allowed && a.via) {
                 terlihat.add(row.anggotaId);
+                if (a.via !== 'owner' && a.grantId) grantIds.add(a.grantId);
                 if (a.via === 'pengawas') viaLintas = 'pengawas';
                 else if (a.via === 'peserta' && viaLintas !== 'pengawas') viaLintas = 'peserta';
                 anggota.push({
@@ -473,7 +482,7 @@ export const rangkaianReadService = {
             });
         }
 
-        return {
+        const detail: RangkaianDetail = {
             rangkaian: {
                 id: rs.id,
                 kode: rs.kode,
@@ -519,6 +528,8 @@ export const rangkaianReadService = {
             aksiDiizinkan: [],
             truncated,
         };
+        Object.defineProperty(detail, 'grantIds', { value: [...grantIds], enumerable: false });
+        return detail;
     },
 };
 

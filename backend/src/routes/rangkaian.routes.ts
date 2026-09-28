@@ -10,12 +10,13 @@ import {
 import auditLogService from '../services/audit-log.service.js';
 import { recordAccessService } from '../services/record-access.service.js';
 import { recordAccessGrantService } from '../services/record-access-grant.service.js';
-import { rangkaianReadService, type RangkaianDetail } from '../services/rangkaian-read.service.js';
+import { rangkaianReadService, type RangkaianDetail, type RangkaianDetailBaca } from '../services/rangkaian-read.service.js';
 import { distributionService } from '../services/distribution.service.js';
 import { isAjukanAksesEnabled } from '../services/rangkaian/deps.js';
 import { lacakService } from '../services/rangkaian/lacak.service.js';
 import { berkasService } from '../services/rangkaian/berkas.service.js';
 import { rangkaianLinkService } from '../services/rangkaian/rangkaian-link.service.js';
+import { rangkaianAksiUntuk } from '../services/rangkaian/aksi.js';
 import type { LacakParams } from '../services/rangkaian/lacak.types.js';
 import type { JenisRekamanRangkaian } from '../services/access/visibility-spec.js';
 
@@ -30,8 +31,13 @@ function tidakDitemukan(res: Response) {
     return res.status(404).json({ success: false, error: 'Rangkaian tidak ditemukan' });
 }
 
-async function auditLintasUnit(req: AuthRequest, detail: RangkaianDetail, extraChanges: Record<string, unknown> = {}) {
-    if (detail.aksesMelalui === 'owner') return;
+async function auditLintasUnit(
+    req: AuthRequest,
+    detail: RangkaianDetail,
+    grantIds: string[],
+    extraChanges: Record<string, unknown> = {},
+) {
+    if (detail.aksesMelalui === 'owner' && grantIds.length === 0) return;
     await auditLogService.logActionOrThrow({
         userId: req.user?.id,
         userEmail: req.user?.email,
@@ -40,10 +46,24 @@ async function auditLintasUnit(req: AuthRequest, detail: RangkaianDetail, extraC
         entityId: detail.rangkaian.id,
         changes: {
             via: detail.aksesMelalui, rangkaianId: detail.rangkaian.id, dialihkanDari: detail.dialihkanDari?.id ?? null,
+            grantIds,
             ...extraChanges,
         },
         ipAddress: req.ip,
     });
+}
+
+/**
+ * Respons GET rangkaian: aksiDiizinkan dari server (T16), audit lintas unit
+ * beserta grant yang dipakai, lalu markGrantUsed (T16-8). `grantIds` internal
+ * tidak pernah ikut ke body.
+ */
+async function kirimDetail(req: AuthRequest, res: Response, hasil: RangkaianDetailBaca, extraChanges: Record<string, unknown> = {}) {
+    const { grantIds = [], ...detail } = hasil;
+    detail.aksiDiizinkan = await rangkaianAksiUntuk(req.user!, detail.rangkaian.id);
+    await auditLintasUnit(req, detail, grantIds, extraChanges);
+    for (const grantId of grantIds) await recordAccessService.markGrantUsed(grantId);
+    res.json({ success: true, data: detail });
 }
 
 // GET /api/rangkaian/lacak — pencarian surat/rangkaian (§6). Harus terdaftar
@@ -119,8 +139,7 @@ router.get('/by-surat/:jenis/:suratId', validateIdParam('suratId'), async (req: 
         if (!rangkaianId) return res.json({ success: true, data: null });
         const detail = await rangkaianReadService.getDetail(req.user, rangkaianId);
         if (!detail) return tidakDitemukan(res);
-        await auditLintasUnit(req, detail, { jenis, suratId });
-        res.json({ success: true, data: detail });
+        await kirimDetail(req, res, detail, { jenis, suratId });
     } catch (error) {
         next(error);
     }
@@ -209,8 +228,7 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
     try {
         const detail = await rangkaianReadService.getDetail(req.user, String(req.params.id));
         if (!detail) return tidakDitemukan(res);
-        await auditLintasUnit(req, detail);
-        res.json({ success: true, data: detail });
+        await kirimDetail(req, res, detail);
     } catch (error) {
         next(error);
     }
