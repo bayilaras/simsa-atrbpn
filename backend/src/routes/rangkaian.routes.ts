@@ -16,7 +16,7 @@ import { isAjukanAksesEnabled } from '../services/rangkaian/deps.js';
 import { lacakService } from '../services/rangkaian/lacak.service.js';
 import { berkasService } from '../services/rangkaian/berkas.service.js';
 import { rangkaianLinkService } from '../services/rangkaian/rangkaian-link.service.js';
-import { rangkaianAksiUntuk } from '../services/rangkaian/aksi.js';
+import { disposisiDapatDitutup, rangkaianAksiUntuk } from '../services/rangkaian/aksi.js';
 import type { LacakParams } from '../services/rangkaian/lacak.types.js';
 import type { JenisRekamanRangkaian } from '../services/access/visibility-spec.js';
 
@@ -61,6 +61,11 @@ async function auditLintasUnit(
 async function kirimDetail(req: AuthRequest, res: Response, hasil: RangkaianDetailBaca, extraChanges: Record<string, unknown> = {}) {
     const { grantIds = [], ...detail } = hasil;
     detail.aksiDiizinkan = await rangkaianAksiUntuk(req.user!, detail.rangkaian.id);
+    // F-I3: tombol Tutup per baris mengikuti predikat endpoint Tutup (bukan hanya kode level rangkaian).
+    const dapatDitutup = detail.aksiDiizinkan.includes('tutup_disposisi')
+        ? await disposisiDapatDitutup(req.user!, detail.disposisi.map((row) => row.id))
+        : new Set<string>();
+    detail.disposisi = detail.disposisi.map((row) => ({ ...row, dapatDitutup: dapatDitutup.has(row.id) }));
     await auditLintasUnit(req, detail, grantIds, extraChanges);
     for (const grantId of grantIds) await recordAccessService.markGrantUsed(grantId);
     res.json({ success: true, data: detail });

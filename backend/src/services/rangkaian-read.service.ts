@@ -86,6 +86,8 @@ export interface DisposisiRangkaian {
     rejectionReason: string | null;
     penyelesaianAnggotaId: string | null;
     masked: boolean;
+    /** F-I3 (P3): diisi rute GET rangkaian — true bila pengguna dapat Tutup Disposisi baris ini. */
+    dapatDitutup?: boolean;
 }
 
 export interface PesertaRangkaian {

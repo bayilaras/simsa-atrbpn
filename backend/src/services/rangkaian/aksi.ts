@@ -1,12 +1,12 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../config/database.js';
 import {
-    dalamCakupanPengawasSql, deriveStatusAlur, isPengawas, pengawasUntukUnit, tingkatAksesRangkaian,
+    dalamCakupanPengawasSql, deriveStatusAlur, isPengawas, isPengawasRecordUnit, pengawasUntukUnit, tingkatAksesRangkaian,
     type RangkaianStatus, type RecordReadAccess, type RecordUser, type StatusAlur, type SuratJenis,
 } from './deps.js';
 import { rangkaianStatusService } from './rangkaian-status.service.js';
 import { FULL_ADMIN_ROLES, isFullAdmin, unitEfektif } from './roles.js';
-import { rowsOf } from './sql-rows.js';
+import { rowsOf, uuidArraySql } from './sql-rows.js';
 
 export type SuratAksi = 'edit' | 'hapus' | 'arsipkan' | 'saya_balas' | 'buat_nota_dinas' | 'buat_nd_penjelas'
     | 'disposisi' | 'tautkan' | 'terima' | 'penyelesaian';
@@ -191,6 +191,23 @@ export async function suratAksiPayload(
         distribusiUnitSaya,
         rangkaian: rangkaian ? { id: rangkaian.id, kode: rangkaian.kode, status: rangkaian.status } : null,
     };
+}
+
+/**
+ * F-I3: id disposisi (dari daftar yang diberikan) yang dapat ditutup pengguna
+ * ini — predikat yang sama dengan `tutupOlehPengawas` (CTRL-1: FULL_ADMIN +
+ * unit efektif pengawas, TANPA jalan pintas super_admin; unit surat masuk dalam
+ * cakupan pengawas) dan status sent/received. Per baris, sehingga rangkaian
+ * campuran (SM di luar cakupan setelah tautan/gabung) tidak menawarkan Tutup
+ * pada baris yang akan ditolak server.
+ */
+export async function disposisiDapatDitutup(user: RecordUser, distribusiIds: string[]): Promise<Set<string>> {
+    if (distribusiIds.length === 0 || !isFullAdmin(user) || !(await isPengawas(user))) return new Set();
+    const rows = rowsOf<{ id: string; unit: string | null }>(await db.execute(sql`
+        SELECT d.id::text AS id, sm.unit_kerja_id AS unit
+          FROM surat_distributions d JOIN surat_masuk sm ON sm.id = d.surat_masuk_id
+         WHERE d.id = ANY(${uuidArraySql(distribusiIds)}) AND d.status IN ('sent', 'received')`));
+    return new Set(rows.filter((row) => isPengawasRecordUnit(row.unit)).map((row) => row.id));
 }
 
 /** `aksiDiizinkan` untuk GET rangkaian (id rangkaian yang sudah di-resolve getDetail). */

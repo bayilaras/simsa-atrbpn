@@ -271,3 +271,40 @@ describe('GET /api/rangkaian', () => {
         await request(app).get('/api/rangkaian/by-surat/surat_masuk/bukan-uuid').set(sebagai(PENGGUNA.tu)).expect(400);
     });
 });
+
+// F-I3: tombol Tutup per baris — `dapatDitutup` dihitung dengan predikat Tutup
+// (CTRL-1, cakupan pengawas atas unit SM, status sent/received) per disposisi.
+describe('GET /api/rangkaian/:id — dapatDitutup per disposisi (F-I3)', () => {
+    const DIST_BAGIAN = '52000000-0000-4000-8000-0000000000f3';
+    beforeEach(async () => {
+        // SM Bagian Umum (di luar cakupan pengawas) masuk rs1 lewat tautan/gabung, dengan disposisi terbuka.
+        await database.exec(`
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber)
+                VALUES ('${RANGKAIAN.rs1}', '${SURAT.smBagian}', 'bagian_umum', 'anggota', 'tautan');
+            INSERT INTO surat_distributions (id, surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id)
+                VALUES ('${DIST_BAGIAN}', '${SURAT.smBagian}', 'bagian_umum', 'dir_plp', 'sent', '${RANGKAIAN.rs1}');
+        `);
+    });
+
+    const petaDitutup = (body: any) => Object.fromEntries(body.data.disposisi.map((d: any) => [d.id, d.dapatDitutup]));
+
+    it('pengawas: hanya baris terbuka dengan SM dalam cakupan yang dapat ditutup', async () => {
+        const res = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(res.body.data.aksiDiizinkan).toContain('tutup_disposisi');
+        expect(petaDitutup(res.body)).toMatchObject({
+            [DISPOSISI.rs1Bppt]: true,   // received, SM sesditjen
+            [DISPOSISI.rs1Ptep]: false,  // rejected
+            [DIST_BAGIAN]: false,        // SM bagian_umum di luar cakupan → server 403
+        });
+        // Setara endpoint: baris di luar cakupan memang ditolak server.
+        await request(app).post(`/api/rangkaian/disposisi/${DIST_BAGIAN}/tutup`).set(sebagai(PENGGUNA.tu))
+            .send({ alasan: 'Target tidak dapat memproses surat ini' }).expect(403);
+    });
+
+    it('super_admin (CTRL-1) dan admin non-pengawas: tidak ada baris yang dapat ditutup', async () => {
+        for (const pengguna of [PENGGUNA.superAdmin, PENGGUNA.bppt]) {
+            const res = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(pengguna)).expect(200);
+            expect(Object.values(petaDitutup(res.body)).every((v) => v === false)).toBe(true);
+        }
+    });
+});

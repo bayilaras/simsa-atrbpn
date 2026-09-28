@@ -215,7 +215,8 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                                             </td>
                                             {bolehTutup && (
                                                 <td className="py-2">
-                                                    {(row.status === 'sent' || row.status === 'received') && <TutupDisposisiButton distribusi={row} onChanged={muatUlang} />}
+                                                    {/* F-I3: server menilai per baris (predikat Tutup, CTRL-1). */}
+                                                    {row.dapatDitutup === true && <TutupDisposisiButton distribusi={row} onChanged={muatUlang} />}
                                                 </td>
                                             )}
                                         </tr>
