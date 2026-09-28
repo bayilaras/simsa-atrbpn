@@ -188,15 +188,37 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
     // Perlu Dilengkapi (D7) untuk pengawas TU dan super_admin: enam cabang
     // UNION ALL, dua visibleSql per baris, di bawah statement_timeout lokal
     // 2 s dan dipoll tiap 60 s. Angka p50/p95 selalu dicetak sebagai masukan
-    // gerbang rilis. Tanpa LACAK_PERF=1 kegagalan (mis. statement timeout di
-    // mesin CI bersama) hanya dicetak; dengan LACAK_PERF=1 kegagalan membuat
-    // uji merah.
+    // gerbang rilis.
+    // [Fix round 1 F1] Ini satu-satunya eksekusi kueri D7 pada Postgres nyata
+    // (sisanya PGlite), jadi bentuk hasil ringkasan dan list SELALU diasersi.
+    // Tanpa LACAK_PERF=1 hanya statement timeout (SQLSTATE 57014) di mesin CI
+    // bersama yang ditoleransi (dicetak); galat lain apa pun (galat SQL
+    // khusus Postgres, tipe UNION ALL tidak cocok, kolom hilang) membuat uji
+    // merah. Dengan LACAK_PERF=1 timeout pun membuat uji merah.
     it('waktu perluDilengkapiService.ringkasan untuk pengawas TU dan super_admin', async () => {
-        const { perluDilengkapiService } = await import('../src/services/perlu-dilengkapi.service.js');
+        const { perluDilengkapiService, KATEGORI_PERLU_DILENGKAPI } = await import('../src/services/perlu-dilengkapi.service.js');
         const pengguna: Array<[string, TestUser]> = [['sesditjen (pengawas)', sesditjen], ['super_admin', superAdmin]];
-        for (const [peran, user] of pengguna) {
+        const toleransiTimeout = async (label: string, langkah: () => Promise<void>) => {
             try {
+                await langkah();
+            } catch (error) {
+                if (PERF || !adalahStatementTimeout(error)) throw error;
+                console.warn(`[perlu-dilengkapi-ringkasan] ${label} statement timeout (57014) ditoleransi tanpa LACAK_PERF: ${(error as Error).message}`);
+            }
+        };
+        for (const [peran, user] of pengguna) {
+            await toleransiTimeout(`user=${peran} ringkasan`, async () => {
                 const awal = await perluDilengkapiService.ringkasan(user, { tampilkanDataLama: false });
+                expect(Object.keys(awal.perKategori).sort()).toEqual([...KATEGORI_PERLU_DILENGKAPI].sort());
+                for (const nilai of Object.values(awal.perKategori)) {
+                    expect(Number.isInteger(nilai)).toBe(true);
+                    expect(nilai).toBeGreaterThanOrEqual(0);
+                }
+                expect(awal.total).toBeGreaterThanOrEqual(0);
+                expect(awal.total).toBe(Object.values(awal.perKategori).reduce((a, b) => a + b, 0));
+                expect(awal.lewatBatas).toBeGreaterThanOrEqual(0);
+                expect(awal.lewatBatas).toBeLessThanOrEqual(awal.total);
+
                 const durasi: number[] = [];
                 for (let i = 0; i < 10; i += 1) {
                     const mulai = performance.now();
@@ -207,10 +229,26 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
                 const p50 = durasi[Math.ceil(0.5 * durasi.length) - 1];
                 const p95 = durasi[Math.ceil(0.95 * durasi.length) - 1];
                 console.info(`[perlu-dilengkapi-ringkasan] user=${peran} total=${awal.total} p50=${p50.toFixed(1)}ms p95=${p95.toFixed(1)}ms`);
-            } catch (error) {
-                console.warn(`[perlu-dilengkapi-ringkasan] user=${peran} GAGAL: ${(error as Error).message}`);
-                if (PERF) throw error;
-            }
+            });
+
+            // Jalur window count(*) OVER () + ORDER BY ... NULLS LAST di list()
+            // juga dijalankan sekali pada Postgres nyata.
+            await toleransiTimeout(`user=${peran} list`, async () => {
+                const halaman = await perluDilengkapiService.list(user, { tampilkanDataLama: false, page: 1, limit: 25 });
+                expect(Array.isArray(halaman.data)).toBe(true);
+                expect(halaman.data.length).toBeLessThanOrEqual(25);
+                expect(halaman.pagination.total).toBeGreaterThanOrEqual(halaman.data.length);
+                for (const item of halaman.data) expect(KATEGORI_PERLU_DILENGKAPI).toContain(item.kategori);
+            });
         }
     }, 300_000);
 });
+
+// SQLSTATE 57014 (query_canceled, termasuk statement_timeout), dicari juga di
+// rantai `cause` karena drizzle membungkus galat driver pg.
+function adalahStatementTimeout(error: unknown): boolean {
+    for (let e: unknown = error, i = 0; e && i < 5; e = (e as { cause?: unknown }).cause, i += 1) {
+        if ((e as { code?: unknown }).code === '57014') return true;
+    }
+    return false;
+}
