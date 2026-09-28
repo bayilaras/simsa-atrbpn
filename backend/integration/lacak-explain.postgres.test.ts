@@ -27,12 +27,18 @@ const PERF = process.env.LACAK_PERF === '1';
 const TANPA_INDEX = process.env.LACAK_EXPLAIN_TANPA_INDEX === '1';
 
 const JUMLAH = 50_000;
+// [B-I2/S-I2] Batas data lama D7 disematkan SEBELUM seed agar jalur Perlu Dilengkapi tidak
+// vakum: tanpa env, batas diturunkan dari rangkaian tertua atau "sekarang" sehingga semua surat
+// sintetis menjadi data lama (total=0). Seed memberi created_at lama pada ±98% surat (data lama,
+// seperti produksi pra-P3) dan created_at baru pada ±2% (g % 50 = 0) yang harus tampil.
+const BATAS_DATA_LAMA = new Date(Date.now() - 30 * 86_400_000).toISOString();
 
 let h: RangkaianTestDatabase;
 let dirBppt: TestUser; let sesditjen: TestUser; let superAdmin: TestUser;
 
 beforeAll(async () => {
     if (!adaPostgres) return;
+    vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', BATAS_DATA_LAMA);
     h = await createRangkaianTestDatabase('lacakexplain');
     dbState.db = h.db;
     await h.seedUnits();
@@ -50,26 +56,26 @@ beforeAll(async () => {
         // [P4-T7-2] Data campuran: sifat_surat/klasifikasi_keamanan mencakup
         // string kosong dan NULL, tersebar di 4 unit kerja.
         await c.query(`
-            INSERT INTO surat_masuk (unit_kerja_id, no_urut, tahun, nomor_surat, tanggal_surat, perihal, dari, sifat_surat)
+            INSERT INTO surat_masuk (unit_kerja_id, no_urut, tahun, nomor_surat, tanggal_surat, perihal, dari, sifat_surat, created_at)
             SELECT (ARRAY['dir_bppt','dir_ptep','sesditjen','ditjen'])[1 + g % 4], g, 2015 + (g % 10),
                    format('B-%s/PTPP.%s/%s/%s', g, g % 7, (ARRAY['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'])[1 + g % 12], 2015 + (g % 10)),
                    make_date(2015 + (g % 10), 1 + (g % 12), 1 + (g % 28)),
                    format('Perihal %s koordinasi %s', md5(g::text), (ARRAY['anggaran','pertanahan','tata ruang','pengukuran'])[1 + g % 4]),
                    format('Kantor Wilayah %s', g % 34),
-                   (ARRAY['Biasa','Biasa','Biasa','Terbatas','Rahasia',' ',NULL])[1 + g % 7]
+                   (ARRAY['Biasa','Biasa','Biasa','Terbatas','Rahasia',' ',NULL])[1 + g % 7],
+                   CASE WHEN g % 50 = 0 THEN now() ELSE now() - interval '400 days' END
             FROM generate_series(1, $1::int) AS g`, [JUMLAH]);
         await c.query(`
             INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun, naskah_dinas, nomor_surat, tanggal_surat, perihal, kepada,
-                klasifikasi_keamanan, approval_status)
+                klasifikasi_keamanan, approval_status, created_at)
             SELECT (ARRAY['dir_bppt','dir_ptep','sesditjen','ditjen'])[1 + g % 4], g, 2015 + (g % 10), 'Nota Dinas',
                    format('ND-%s/DJ-PTPP/%s', g, 2015 + (g % 10)),
                    make_date(2015 + (g % 10), 1 + (g % 12), 1 + (g % 28)),
                    format('Tindak lanjut %s %s', md5((g * 7)::text), (ARRAY['anggaran','pertanahan','tata ruang','pengukuran'])[1 + g % 4]),
                    format('Direktorat %s', g % 5),
-                   (ARRAY['biasa','biasa','terbatas','rahasia',NULL])[1 + g % 5], 'approved'
+                   (ARRAY['biasa','biasa','terbatas','rahasia',NULL])[1 + g % 5], 'approved',
+                   CASE WHEN g % 50 = 0 THEN now() ELSE now() - interval '400 days' END
             FROM generate_series(1, $1::int) AS g`, [JUMLAH]);
-        await c.query('ANALYZE surat_masuk');
-        await c.query('ANALYZE surat_keluar');
 
         if (PERF) {
             // [P4-T7-2] Satu rangkaian per 10 SM; separuhnya mendapat satu
@@ -97,6 +103,12 @@ beforeAll(async () => {
                 SELECT 1`);
         }
 
+        // [B-I2/S-I2] ANALYZE SETELAH seed PERF agar planner melihat statistik rangkaian_*/
+        // surat_distributions yang nyata (bukti EXPLAIN/p95 tidak miring).
+        await c.query('ANALYZE surat_masuk');
+        await c.query('ANALYZE surat_keluar');
+        await c.query('ANALYZE rangkaian_surat, rangkaian_anggota, surat_distributions');
+
         if (TANPA_INDEX) {
             // Bukti RED [P4-T7-1]: peran bawaan pool tidak boleh mengubah DDL;
             // simsa_migrator saja yang berwenang, sama seperti migrasi.
@@ -109,7 +121,10 @@ beforeAll(async () => {
     }
 }, 300_000);
 
-afterAll(async () => { await h?.close(); });
+afterAll(async () => {
+    vi.unstubAllEnvs();
+    await h?.close();
+});
 
 async function rencana(tabel: 'surat_masuk' | 'surat_keluar', pola: string): Promise<string> {
     const result = await h.db.execute(sql`EXPLAIN (FORMAT JSON)
@@ -137,7 +152,7 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
             // baru hasil spread) supaya method lain (mis. `execute`) yang
             // hidup di prototype drizzle tetap tersedia lewat proxy db-proxy.
             const originalTransaction = h.db.transaction.bind(h.db);
-            h.db.transaction = (callback: (tx: unknown) => unknown) => originalTransaction((tx: any) => {
+            h.db.transaction = ((callback: (tx: any) => Promise<unknown>) => originalTransaction((tx: any) => {
                 const originalExecute = tx.execute.bind(tx);
                 tx.execute = (query: unknown) => {
                     const rendered = dialect.sqlToQuery(query as never);
@@ -145,7 +160,7 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
                     return originalExecute(query);
                 };
                 return callback(tx);
-            });
+            })) as typeof h.db.transaction;
             try {
                 await rangkaianService.lacak(user, { q: 'koordinasi pertanahan', mode: 'lacak' });
             } finally {
@@ -206,9 +221,12 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
                 console.warn(`[perlu-dilengkapi-ringkasan] ${label} statement timeout (57014) ditoleransi tanpa LACAK_PERF: ${(error as Error).message}`);
             }
         };
+        const totalRingkasan = new Map<string, number>();
         for (const [peran, user] of pengguna) {
             await toleransiTimeout(`user=${peran} ringkasan`, async () => {
                 const awal = await perluDilengkapiService.ringkasan(user, { tampilkanDataLama: false });
+                totalRingkasan.set(peran, awal.total);
+                expect(awal.batasDataLama).toBe(BATAS_DATA_LAMA);
                 expect(Object.keys(awal.perKategori).sort()).toEqual([...KATEGORI_PERLU_DILENGKAPI].sort());
                 for (const nilai of Object.values(awal.perKategori)) {
                     expect(Number.isInteger(nilai)).toBe(true);
@@ -239,8 +257,16 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
                 expect(halaman.data.length).toBeLessThanOrEqual(25);
                 expect(halaman.pagination.total).toBeGreaterThanOrEqual(halaman.data.length);
                 for (const item of halaman.data) expect(KATEGORI_PERLU_DILENGKAPI).toContain(item.kategori);
+                if (user === superAdmin) {
+                    // Non-vakum: loop list benar-benar memproses baris pada Postgres nyata.
+                    expect(halaman.pagination.total).toBeGreaterThan(0);
+                    expect(halaman.data.length).toBeGreaterThan(0);
+                }
             });
         }
+        // [B-I2] Bukti non-vakum wajib: ringkasan super_admin harus berhasil (bukan timeout yang
+        // ditoleransi) dan melaporkan baris; total=0 tidak membuktikan apa pun.
+        expect(totalRingkasan.get('super_admin'), 'ringkasan super_admin harus berjalan pada PG nyata').toBeGreaterThan(0);
     }, 300_000);
 });
 

@@ -819,6 +819,23 @@ jobs:
           TEST_DB_BACKUP_PRINCIPAL: simsa_ci_backup
           TEST_DB_GRANT_ADMIN_PRINCIPAL: simsa_test
 
+      # P4 §10 / P4-T22-2: gerbang EXPLAIN seed Lacak nyata + p95 < 150 ms dan ringkasan D7
+      # hanya berjalan dengan LACAK_PERF=1 (seed rangkaian/anggota/distribusi penuh).
+      - name: Run Lacak EXPLAIN and p95 gate (LACAK_PERF)
+        run: npm run test:postgres-locks -- integration/lacak-explain.postgres.test.ts
+        working-directory: backend
+        env:
+          LACAK_PERF: '1'
+          TEST_POSTGRES_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
+          TEST_DB_API_PRINCIPAL: simsa-api-runtime@simsa-ci-db.iam
+          TEST_DB_EVENT_PRINCIPAL: simsa-event-runtime@simsa-ci-db.iam
+          TEST_DB_WORKER_PRINCIPAL: simsa-malware-worker@simsa-ci-db.iam
+          TEST_DB_FINAL_CLEANUP_PRINCIPAL: simsa-final-cleanup@simsa-ci-db.iam
+          TEST_DB_MAINTENANCE_PRINCIPAL: simsa_ci_maintenance
+          TEST_DB_MIGRATOR_PRINCIPAL: simsa_ci_migrator
+          TEST_DB_BACKUP_PRINCIPAL: simsa_ci_backup
+          TEST_DB_GRANT_ADMIN_PRINCIPAL: simsa_test
+
   backend-tests-required:
     name: Backend Tests
     if: ${{ always() }}
