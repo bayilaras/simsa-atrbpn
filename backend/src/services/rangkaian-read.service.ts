@@ -300,6 +300,37 @@ async function tingkatRangkaian(
     return null;
 }
 
+/**
+ * Tier baca rangkaian (sama dengan getDetail): null → 404; 'anggota' = hanya
+ * ≥1 anggota terbaca tanpa jangkauan level rangkaian. Mengikuti rantai digabung
+ * dengan penjaga yang identik dengan getDetail (batas hop/siklus → null, C-8),
+ * agar GET dan aksi tulis tidak pernah berbeda 404/403 pada id yang sama.
+ */
+export async function tingkatAksesRangkaian(
+    user: RecordUser | undefined,
+    rangkaianId: string,
+    executor: ReadExecutor = db,
+): Promise<AksesRangkaian | 'anggota' | null> {
+    const dikunjungi = new Set<string>();
+    let rs = await muatRangkaian(executor, rangkaianId);
+    for (let hop = 0; rs && rs.status === 'digabung' && rs.digabungKeId; hop += 1) {
+        if (hop >= BATAS_HOP_GABUNG || dikunjungi.has(rs.digabungKeId)) return null;
+        dikunjungi.add(rs.id);
+        rs = await muatRangkaian(executor, rs.digabungKeId);
+    }
+    if (!rs) return null;
+    const ctx = await resolveKonteksBaca(user, executor);
+    const tingkat = await tingkatRangkaian(executor, ctx, rs);
+    if (tingkat) return tingkat;
+    const anggota = await muatAnggota(executor, rs.id);
+    const akses = await recordAccessService.checkMany(
+        user,
+        anggota.slice(0, BATAS_NODE_DETAIL).map(row => ({ type: row.jenis, id: row.suratId })),
+        executor,
+    );
+    return [...akses.values()].some(a => a.allowed) ? 'anggota' : null;
+}
+
 export const rangkaianReadService = {
     async findRangkaianIdBySurat(
         jenis: JenisRekamanRangkaian,

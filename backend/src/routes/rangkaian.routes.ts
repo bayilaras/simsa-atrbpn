@@ -3,7 +3,9 @@ import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware
 import { validateBody, validateIdParam, validateQuery } from '../middlewares/validate.middleware';
 import { canReadMiddleware, canWriteMiddleware } from '../middlewares/role.middleware';
 import { lacakLimiter } from '../middlewares/rate-limiter.middleware';
-import { ajukanAksesSchema, alasanSchema, lacakQuerySchema } from '../validators/schemas';
+import {
+    ajukanAksesSchema, alasanSchema, berkaskanSchema, lacakQuerySchema, selesaiRangkaianSchema, unitPengolahSchema,
+} from '../validators/schemas';
 import auditLogService from '../services/audit-log.service.js';
 import { recordAccessService } from '../services/record-access.service.js';
 import { recordAccessGrantService } from '../services/record-access-grant.service.js';
@@ -11,6 +13,7 @@ import { rangkaianReadService, type RangkaianDetail } from '../services/rangkaia
 import { distributionService } from '../services/distribution.service.js';
 import { isAjukanAksesEnabled } from '../services/rangkaian/deps.js';
 import { lacakService } from '../services/rangkaian/lacak.service.js';
+import { berkasService } from '../services/rangkaian/berkas.service.js';
 import type { LacakParams } from '../services/rangkaian/lacak.types.js';
 import type { JenisRekamanRangkaian } from '../services/access/visibility-spec.js';
 
@@ -100,6 +103,55 @@ router.get('/by-surat/:jenis/:suratId', validateIdParam('suratId'), async (req: 
         next(error);
     }
 });
+
+// GET /api/rangkaian/:id/opsi-berkas — pilihan unit pengolah & klasifikasi induk untuk dialog Berkaskan (§9)
+router.get('/:id/opsi-berkas', validateIdParam(), async (req: AuthRequest, res, next) => {
+    try {
+        res.json({ success: true, data: await berkasService.opsiBerkas(req.user!, req.params.id as string) });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/rangkaian/:id/selesai — Tandai Selesai manual dengan catatan (§8)
+router.post('/:id/selesai', validateIdParam(), canWriteMiddleware(), validateBody(selesaiRangkaianSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            res.json({ success: true, data: await berkasService.tandaiSelesai(req.user!, req.params.id as string, req.body.catatan, auditOf(req)) });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+// POST /api/rangkaian/:id/buka-kembali — selesai (manual) → aktif dengan alasan (§8)
+router.post('/:id/buka-kembali', validateIdParam(), canWriteMiddleware(), validateBody(alasanSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            res.json({ success: true, data: await berkasService.bukaKembali(req.user!, req.params.id as string, req.body.alasan, auditOf(req)) });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+// POST /api/rangkaian/:id/berkaskan — pemberkasan dua langkah (konfirmasi: true wajib, §9)
+router.post('/:id/berkaskan', validateIdParam(), canWriteMiddleware(), validateBody(berkaskanSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            res.json({ success: true, data: await berkasService.berkaskan(req.user!, req.params.id as string, req.body, auditOf(req)) });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+// PUT /api/rangkaian/:id/unit-pengolah — ubah unit pengolah ke unit dalam jangkauan berkas (§5)
+router.put('/:id/unit-pengolah', validateIdParam(), canWriteMiddleware(), validateBody(unitPengolahSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            res.json({ success: true, data: await berkasService.ubahUnitPengolah(req.user!, req.params.id as string, req.body.unitPengolahId, auditOf(req)) });
+        } catch (error) {
+            next(error);
+        }
+    });
 
 // GET /api/rangkaian/:id — rangkaian lengkap, tersamar sesuai hak baca
 router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {

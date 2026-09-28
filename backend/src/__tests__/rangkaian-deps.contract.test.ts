@@ -68,7 +68,7 @@ describe('kontrak P2 yang dikonsumsi P3', () => {
 describe('pembungkus P3', () => {
     it.each([
         'lockSuratMasukRows', 'lockSuratKeluarRows', 'kunciSurat', 'aktorPenulis',
-        'pengawasUntukUnit', 'denganRetryDeadlock', 'readRefKey',
+        'pengawasUntukUnit', 'denganRetryDeadlock', 'readRefKey', 'tingkatAksesRangkaian',
     ])('deps.%s tersedia', (name) => {
         expect(typeof (deps as Record<string, unknown>)[name]).toBe('function');
     });
@@ -110,6 +110,43 @@ describe('pembungkus P3', () => {
         expect(isFullAdmin(null)).toBe(false);
         expect(unitEfektif({ role: 'admin_sesditjen', unitKerjaId: null })).toBe('sesditjen');
         expect(unitEfektif({ role: 'admin_unit', unitKerjaId: 'dir_bppt' })).toBe('dir_bppt');
+    });
+});
+
+describe('tingkatAksesRangkaian (T14-1, C-8)', () => {
+    /** Pelaksana palsu: baris rangkaian dicari dari parameter uuid pertama kueri muatRangkaian. */
+    function pelaksanaRangkaian(baris: Record<string, { status: string; digabungKeId: string | null; unitPencatatId?: string }>) {
+        const execute = vi.fn(async (query: SQL) => {
+            const q = render(query);
+            if (q.sql.includes('FROM rangkaian_surat rs')) {
+                const row = baris[String(q.params[0])];
+                return row ? [{ id: q.params[0], kode: 'RS-2026-000001', unitPencatatId: 'sesditjen', ...row }] : [];
+            }
+            return [];
+        });
+        return { execute, select: vi.fn() };
+    }
+
+    it('rantai digabung yang bersiklus atau melewati batas hop → null (sama dengan getDetail)', async () => {
+        const siklus = pelaksanaRangkaian({
+            a: { status: 'digabung', digabungKeId: 'b' },
+            b: { status: 'digabung', digabungKeId: 'a' },
+        });
+        await expect(deps.tingkatAksesRangkaian({ role: 'super_admin' }, 'a', siklus as never)).resolves.toBeNull();
+
+        const panjang: Record<string, { status: string; digabungKeId: string | null }> = {};
+        for (let i = 0; i < 20; i += 1) panjang[`r${i}`] = { status: 'digabung', digabungKeId: `r${i + 1}` };
+        panjang.r20 = { status: 'aktif', digabungKeId: null };
+        await expect(deps.tingkatAksesRangkaian({ role: 'super_admin' }, 'r0', pelaksanaRangkaian(panjang) as never)).resolves.toBeNull();
+    });
+
+    it('mengikuti rantai digabung pendek; super_admin → owner; tidak ada → null', async () => {
+        const rantai = pelaksanaRangkaian({
+            a: { status: 'digabung', digabungKeId: 'b' },
+            b: { status: 'aktif', digabungKeId: null },
+        });
+        await expect(deps.tingkatAksesRangkaian({ role: 'super_admin' }, 'a', rantai as never)).resolves.toBe('owner');
+        await expect(deps.tingkatAksesRangkaian({ role: 'super_admin' }, 'x', rantai as never)).resolves.toBeNull();
     });
 });
 

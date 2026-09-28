@@ -55,6 +55,10 @@ const ALLOWED_METADATA_ROUTES: readonly AllowedRoute[] = [
     { methods: GET, path: exact(`/rangkaian/(?:lacak|${UUID}|by-surat/(?:surat_masuk|surat_keluar)/${UUID})`) },
     { methods: POST, path: exact(`/rangkaian/anggota/${UUID}/ajukan-akses`) },
     { methods: POST, path: exact(`/rangkaian/disposisi/${UUID}/tutup`) },
+    { methods: GET, path: exact(`/rangkaian/${UUID}/(?:opsi-berkas|gabung/pratinjau)`) },
+    { methods: POST, path: exact(`/rangkaian/${UUID}/(?:selesai|buka-kembali|berkaskan|tautan|gabung)`) },
+    { methods: PUT, path: exact(`/rangkaian/${UUID}/unit-pengolah`) },
+    { methods: POST, path: exact(`/rangkaian/relasi/${UUID}/batal`) },
 
     { methods: GET, path: exact(`/arsip(?:/(?:expiring|stats|search/(?:fulltext|suggestions|keywords)|${UUID}(?:/(?:related|rule-history))?))?`) },
     { methods: POST, path: exact(`/arsip(?:/${UUID}/reconcile-rules)?`) },
