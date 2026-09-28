@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { appendInstruksi } from '@/lib/tindak-lanjut'
+import { appendInstruksi, hariIniJakarta } from '@/lib/tindak-lanjut'
 import { KABAG_LABELS, LEGACY_DISPOSISI_LABELS } from '@/lib/disposisi-labels'
 
 /**
@@ -58,7 +58,7 @@ export function DisposisiRegistrasiSection({
                     </fieldset>
                     <div className="space-y-1">
                         <Label htmlFor="batas-waktu-registrasi">Batas waktu</Label>
-                        <Input id="batas-waktu-registrasi" type="date" value={batasWaktu} onChange={(event) => onBatasWaktu(event.target.value)} disabled={disabled} />
+                        <Input id="batas-waktu-registrasi" type="date" min={hariIniJakarta()} value={batasWaktu} onChange={(event) => onBatasWaktu(event.target.value)} disabled={disabled} />
                     </div>
                     <div className="space-y-1">
                         <Label htmlFor="instruksi-registrasi">Instruksi disposisi</Label>

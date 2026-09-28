@@ -69,3 +69,11 @@ export function toTindakLanjutPayload(referensi) {
     const { jenis, suratId, jenisRelasi, distribusiId } = referensi
     return distribusiId ? { jenis, suratId, jenisRelasi, distribusiId } : { jenis, suratId, jenisRelasi }
 }
+
+/**
+ * Tanggal hari ini (YYYY-MM-DD) di Asia/Jakarta — batas bawah input Batas waktu
+ * disposisi, selaras batasWaktuSchema server yang menolak tanggal lampau (WIB).
+ */
+export function hariIniJakarta(now = new Date()) {
+    return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
+}

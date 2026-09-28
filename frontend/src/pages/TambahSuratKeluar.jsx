@@ -382,7 +382,9 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                     tahun: Number(formData.tanggalSurat?.slice(0, 4)) || new Date().getFullYear(),
                     // Tanpa referensi -> selalu inisiatif (spec:51,69), terlepas dari `mode`;
                     // dengan referensi -> tindakLanjut, server menetapkan asalNaskah: 'tindak_lanjut'.
-                    ...(referensi ? { tindakLanjut: toTindakLanjutPayload(referensi) } : { asalNaskah: 'inisiatif' }),
+                    // Mode inisiatif (UI "Inisiatif", tanpa picker) tidak pernah mengirim
+                    // referensi basi yang terbawa instance/state sebelumnya (M8).
+                    ...(referensi && mode !== 'inisiatif' ? { tindakLanjut: toTindakLanjutPayload(referensi) } : { asalNaskah: 'inisiatif' }),
                 }, filesEnabled ? selectedFile : null);
             }
             if (!mountedRef.current) return;

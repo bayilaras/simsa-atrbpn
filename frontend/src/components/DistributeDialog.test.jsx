@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DistributeDialog, PESAN_TERKENDALI } from './DistributeDialog'
+import { hariIniJakarta } from '@/lib/tindak-lanjut'
 
 const mocks = vi.hoisted(() => ({ getDistributableUnits: vi.fn(), getOpsi: vi.fn(), distributeMany: vi.fn(), toast: vi.fn() }))
 vi.mock('@/services/distribution.service', () => ({ default: mocks, distributionService: mocks }))
@@ -40,6 +41,14 @@ describe('DistributeDialog', () => {
             ],
             instruksi: 'Untuk diketahui\nMohon dikoordinasikan',
         }))
+    })
+
+    // Frontend M1: tanggal lampau (WIB) ditolak server; input membatasinya sejak awal.
+    it('Batas waktu tidak dapat diisi sebelum hari ini (Asia/Jakarta)', async () => {
+        tampil()
+        await screen.findByRole('checkbox', { name: 'Dit. BPPT' })
+        expect(screen.getByLabelText('Batas waktu')).toHaveAttribute('min', hariIniJakarta())
+        expect(hariIniJakarta(new Date('2026-09-30T18:30:00Z'))).toBe('2026-10-01')
     })
 
     it('surat terkendali diblokir selama jalur akses disposisi mati', async () => {

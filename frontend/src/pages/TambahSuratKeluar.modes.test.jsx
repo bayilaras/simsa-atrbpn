@@ -73,6 +73,24 @@ describe('mode TambahSuratKeluar', () => {
         expect(fixtures.create.mock.calls[0][0].tindakLanjut).toEqual({ jenis: 'surat_keluar', suratId: 'sk-kep', jenisRelasi: 'menjelaskan' })
     })
 
+    // Frontend M8: mode inisiatif tidak pernah mengirim referensi basi (mis. state
+    // navigasi yang terbawa) sebagai tindakLanjut, karena UI menampilkan "Inisiatif".
+    it('mode inisiatif mengabaikan referensi dari state navigasi dan tetap mengirim asalNaskah', async () => {
+        const state = buildTindakLanjutState('surat_keluar', { id: 'sk-kep', nomorSurat: 'KEP-7/2026', perihal: 'Penetapan tim' }, 'buat_nd_penjelas')
+        router = createMemoryRouter([
+            { path: '/surat/keluar/inisiatif', element: <TambahSuratKeluar mode="inisiatif" /> },
+            { path: '/surat/keluar', element: <h1>Daftar</h1> },
+        ], { initialEntries: [{ pathname: '/surat/keluar/inisiatif', state }] })
+        const view = render(<RouterProvider router={router} />)
+        expect(screen.getByText('Inisiatif: memulai rangkaian baru')).toBeInTheDocument()
+        fireEvent.change(document.getElementById('perihal-surat-keluar'), { target: { value: 'Penetapan tim terpadu' } })
+        isiDanKirim(view.container)
+        await waitFor(() => expect(fixtures.create).toHaveBeenCalled())
+        const payload = fixtures.create.mock.calls[0][0]
+        expect(payload).toMatchObject({ asalNaskah: 'inisiatif' })
+        expect(payload).not.toHaveProperty('tindakLanjut')
+    })
+
     it('create tanpa referensi, mode apa pun, mengirim asalNaskah: inisiatif', async () => {
         router = createMemoryRouter([
             { path: '/surat/keluar/tambah', element: <TambahSuratKeluar /> },

@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
 import { useDisposisiOpsi } from '@/hooks/use-disposisi-opsi'
 import distributionService from '@/services/distribution.service'
-import { appendInstruksi, isSifatTerkendali, PESAN_TERKENDALI } from '@/lib/tindak-lanjut'
+import { appendInstruksi, hariIniJakarta, isSifatTerkendali, PESAN_TERKENDALI } from '@/lib/tindak-lanjut'
 
 export { PESAN_TERKENDALI }
 
@@ -138,7 +138,7 @@ export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, 
 
                     <div className="space-y-2">
                         <Label htmlFor="batas-waktu-disposisi">Batas waktu</Label>
-                        <Input id="batas-waktu-disposisi" type="date" value={batasWaktu} onChange={(event) => setBatasWaktu(event.target.value)} disabled={diblokir} />
+                        <Input id="batas-waktu-disposisi" type="date" min={hariIniJakarta()} value={batasWaktu} onChange={(event) => setBatasWaktu(event.target.value)} disabled={diblokir} />
                     </div>
 
                     <div className="space-y-2">
