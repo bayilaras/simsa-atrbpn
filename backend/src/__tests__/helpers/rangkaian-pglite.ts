@@ -1,10 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { enterTestMigratorRole } from './database-role-fixture';
-import { applyMigrationTag, journalEntries } from './rangkaian-p5-pglite.js';
+import { applyMigrationTag, assertStopBeforeDikenal, journalEntries } from './rangkaian-p5-pglite.js';
 
 /** Rantai migrasi penuh sesuai urutan journal (termasuk 0048+), atau berhenti sebelum `stopBefore`. */
 export async function bootRangkaianDatabase(options: { stopBefore?: string } = {}): Promise<PGlite> {
+    assertStopBeforeDikenal(options.stopBefore);
     const database = new PGlite({ extensions: { pgcrypto } });
     await database.waitReady;
     await enterTestMigratorRole(database);

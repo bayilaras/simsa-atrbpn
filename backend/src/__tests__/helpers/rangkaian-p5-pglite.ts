@@ -24,8 +24,16 @@ export async function applyMigrationTag(database: PGlite, tag: string): Promise<
     for (const statement of statements) await database.exec(statement);
 }
 
+/** Minor 12: `stopBefore` yang salah ketik tidak boleh diam-diam menjalankan rantai penuh (sama dengan harness Postgres). */
+export function assertStopBeforeDikenal(stopBefore: string | undefined): void {
+    if (stopBefore !== undefined && !journalEntries.some((entry) => entry.tag === stopBefore)) {
+        throw new Error(`stopBefore tidak dikenal di journal migrasi: ${stopBefore}`);
+    }
+}
+
 /** Rantai migrasi lengkap (atau berhenti sebelum `stopBefore`) di PGlite terisolasi. */
 export async function createRangkaianP5Database(options: { stopBefore?: string } = {}): Promise<PGlite> {
+    assertStopBeforeDikenal(options.stopBefore);
     const database = new PGlite({ extensions: { pgcrypto } });
     await database.waitReady;
     await database.exec('CREATE EXTENSION IF NOT EXISTS pgcrypto');
