@@ -124,10 +124,6 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
     ] as const)('prefix nomor ternormalisasi pada %s memakai index ekspresi text_pattern_ops', async (tabel, pola) => {
         const plan = await rencana(tabel, pola);
         console.info(`[lacak-explain] ${tabel} ${plan}`);
-        if (tabel === 'surat_masuk' && TANPA_INDEX) {
-            expect(plan).not.toContain('"Index Name":"surat_masuk_nomor_norm_idx"');
-            return;
-        }
         expect(plan).toContain(`"Index Name":"${tabel}_nomor_norm_idx"`);
     });
 
@@ -168,7 +164,7 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
         }
     }, 120_000);
 
-    it.skipIf(!PERF)('p95 rangkaianService.lacak < 150 ms untuk kueri nomor dan perihal', async () => {
+    it('p95 rangkaianService.lacak < 150 ms untuk kueri nomor dan perihal', async () => {
         const { rangkaianService } = await import('../src/services/rangkaian/deps.js');
         for (const q of ['B-12345/PTPP', 'koordinasi pertanahan']) {
             await rangkaianService.lacak(dirBppt, { q, mode: 'lacak' });
