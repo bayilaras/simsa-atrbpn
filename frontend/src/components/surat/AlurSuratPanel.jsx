@@ -53,7 +53,7 @@ function keItemLinimasa(node, relasiDari) {
     }
 }
 
-export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null, onChanged, muatUlangKe = 0 }) {
+export function AlurSuratPanel({ jenis, suratId, rangkaianId = null, aksesMelalui = 'owner', fallback = null, onChanged, muatUlangKe = 0 }) {
     const [state, setState] = useState({ loading: true, data: null, error: false, notFound: false })
     // Kunci reload internal panel: dinaikkan hanya oleh muatUlang (mis. tombol
     // "Coba lagi", atau aksi panel di Task 25), TIDAK oleh render ulang biasa.
@@ -80,7 +80,9 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
         async function muat() {
             setState({ loading: true, data: null, error: false, notFound: false })
             try {
-                const data = await rangkaianService.getBySurat(jenis, suratId)
+                const data = rangkaianId
+                    ? await rangkaianService.getById(rangkaianId)
+                    : await rangkaianService.getBySurat(jenis, suratId)
                 if (aktif) {
                     setState({ loading: false, data, error: false, notFound: false })
                 }
@@ -93,7 +95,7 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
         }
         muat()
         return () => { aktif = false }
-    }, [jenis, suratId, muatKe, muatUlangKe])
+    }, [jenis, suratId, muatKe, muatUlangKe, rangkaianId])
 
     if (state.loading) {
         return (
@@ -126,6 +128,10 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
 
     const d = state.data
     const r = d.rangkaian
+    // Lacak (rangkaianId) tidak mengirim aksesMelalui lewat prop -- pakai nilai
+    // dari payload getById (P4-T9-3). Jalur P2/P3 (getBySurat) tetap memakai
+    // prop dari parent, tidak berubah.
+    const aksesEfektif = rangkaianId ? (d.aksesMelalui ?? 'owner') : aksesMelalui
     const relasiDari = relasiPerNodeAsal(d.relasi)
     const aksiDiizinkan = d.aksiDiizinkan ?? []
     const bolehTutup = aksiDiizinkan.includes('tutup_disposisi')
@@ -148,9 +154,9 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                 <CardDescription>
                     <span className="font-mono">{r.kode}</span> · {r.judul}
                 </CardDescription>
-                {aksesMelalui !== 'owner' && (
+                {aksesEfektif !== 'owner' && (
                     <p role="note" className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-                        {aksesMelalui === 'pengawas'
+                        {aksesEfektif === 'pengawas'
                             // Jalur pengawas bisa didapat lewat jangkauan rangkaian ATAU
                             // lewat jangkauan record-level atas satu anggota saja (lihat
                             // viaLintas di rangkaian-read.service.ts) -- jangan mengklaim
@@ -158,7 +164,7 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                             ? (aksiDiizinkan.length === 0
                                 ? 'Anda melihat surat ini sebagai unit pengawas (hanya baca).'
                                 : 'Anda melihat surat ini sebagai unit pengawas.')
-                            : `Dilihat melalui rangkaian ${r.kode} sebagai ${AKSES_LABEL[aksesMelalui] ?? 'peserta rangkaian'}.${aksiDiizinkan.length === 0 ? ' Akses baca saja.' : ''}`}
+                            : `Dilihat melalui rangkaian ${r.kode} sebagai ${AKSES_LABEL[aksesEfektif] ?? 'peserta rangkaian'}.${aksiDiizinkan.length === 0 ? ' Akses baca saja.' : ''}`}
                     </p>
                 )}
             </CardHeader>
