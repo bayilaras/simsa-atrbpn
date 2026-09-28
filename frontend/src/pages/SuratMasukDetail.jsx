@@ -17,6 +17,7 @@ import { InfoSection } from '@/components/surat-masuk/InfoSection'
 import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
 import { StatusSidebar } from '@/components/surat-masuk/StatusSidebar'
 import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
+import { TautkanDialog } from '@/components/surat/AlurSuratActions'
 
 export default function SuratMasukDetail() {
     const { id } = useParams()
@@ -30,6 +31,7 @@ export default function SuratMasukDetail() {
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
+    const [tautkanOpen, setTautkanOpen] = useState(false)
     // Sinyal reload AlurSuratPanel yang dikendalikan halaman ini (N1): dinaikkan
     // hanya setelah Terima/Arsip/Distribusi SUKSES, tidak pernah dari refresh
     // yang dipicu onChanged panel sendiri -- lihat komentar muatUlangKe di
@@ -96,6 +98,11 @@ export default function SuratMasukDetail() {
         }
     }
     const handlePenyelesaian = () => navigate(`/distribusi?penyelesaian=${surat.distribusiUnitSaya.id}`)
+    const handleTautkanBerhasil = () => {
+        toast({ title: 'Berhasil', description: 'Surat ditautkan ke rangkaian' })
+        fetchSurat()
+        setAlurVersi((v) => v + 1)
+    }
 
     if (loading) {
         return (
@@ -148,6 +155,7 @@ export default function SuratMasukDetail() {
                 onArchive={() => setArchiveDialogOpen(true)}
                 onTerima={handleTerima}
                 onPenyelesaian={handlePenyelesaian}
+                onTautkan={() => setTautkanOpen(true)}
                 isAdmin={isAdmin}
             />
 
@@ -180,6 +188,14 @@ export default function SuratMasukDetail() {
                 suratType="masuk"
                 suratData={surat}
                 onArchive={handleArchive}
+            />
+
+            <TautkanDialog
+                open={tautkanOpen}
+                onOpenChange={setTautkanOpen}
+                jenis="surat_masuk"
+                surat={surat}
+                onBerhasil={handleTautkanBerhasil}
             />
 
             <DistributeDialog

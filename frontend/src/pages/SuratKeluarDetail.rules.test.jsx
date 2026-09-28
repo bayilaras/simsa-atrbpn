@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SuratKeluarDetail from './SuratKeluarDetail'
@@ -99,4 +99,21 @@ it('menampilkan TindakLanjutMenu di blok aksi desktop dan mobile untuk peserta n
     expect(screen.getAllByRole('button', { name: /Tindak Lanjut/ })).toHaveLength(2)
     expect(screen.queryAllByRole('button', { name: /^edit$/i })).toHaveLength(0)
     expect(screen.queryAllByRole('button', { name: /^arsipkan$/i })).toHaveLength(0)
+})
+
+// Task 25: item "Tautkan ke Rangkaian" di menu Tindak Lanjut membuka TautkanDialog
+// untuk surat keluar ini (sebelumnya onTautkan tidak diteruskan sehingga item tersembunyi).
+it('Tautkan ke Rangkaian membuka dialog tautan untuk surat keluar', async () => {
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: 'SK-T/2026', perihal: 'ND untuk ditautkan', unitKerjaId: 'dir_bppt',
+        aksesMelalui: 'owner', approvalStatus: 'approved', aksiDiizinkan: ['tautkan'], isArchived: false,
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    await screen.findByText('ND untuk ditautkan')
+    const [tombolMenu] = screen.getAllByRole('button', { name: /Tindak Lanjut/ })
+    fireEvent.keyDown(tombolMenu, { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Tautkan ke Rangkaian' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Tautkan ke Rangkaian' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Tautkan' })).toBeDisabled()
 })

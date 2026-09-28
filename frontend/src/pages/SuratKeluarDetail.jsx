@@ -38,6 +38,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useAppConfig } from '@/context/app-config-context'
 import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
 import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu'
+import { TautkanDialog } from '@/components/surat/AlurSuratActions'
 
 export default function SuratKeluarDetail() {
     const { id } = useParams()
@@ -51,6 +52,7 @@ export default function SuratKeluarDetail() {
     const isAdmin = Boolean(surat && aksesMelalui === 'owner' && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+    const [tautkanOpen, setTautkanOpen] = useState(false)
     const [approvalHistory, setApprovalHistory] = useState([])
     const [approvers, setApprovers] = useState([])
     const [approvalAction, setApprovalAction] = useState(null)
@@ -157,6 +159,12 @@ export default function SuratKeluarDetail() {
             })
             throw error
         }
+    }
+
+    const handleTautkanBerhasil = () => {
+        toast({ title: 'Berhasil', description: 'Surat ditautkan ke rangkaian' })
+        fetchSurat()
+        setAlurVersi((v) => v + 1)
     }
 
     const openApprovalDialog = (action) => {
@@ -335,6 +343,7 @@ export default function SuratKeluarDetail() {
                                 jenis="surat_keluar"
                                 surat={surat}
                                 aksiDiizinkan={surat.aksiDiizinkan || []}
+                                onTautkan={() => setTautkanOpen(true)}
                                 variant="secondary"
                                 className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
                             />
@@ -368,6 +377,7 @@ export default function SuratKeluarDetail() {
                                 jenis="surat_keluar"
                                 surat={surat}
                                 aksiDiizinkan={surat.aksiDiizinkan || []}
+                                onTautkan={() => setTautkanOpen(true)}
                                 variant="secondary"
                                 className="bg-card/20 hover:bg-card/30 text-white border-0"
                             />
@@ -750,6 +760,14 @@ export default function SuratKeluarDetail() {
                 suratType="keluar"
                 suratData={surat}
                 onArchive={handleArchive}
+            />
+
+            <TautkanDialog
+                open={tautkanOpen}
+                onOpenChange={setTautkanOpen}
+                jenis="surat_keluar"
+                surat={surat}
+                onBerhasil={handleTautkanBerhasil}
             />
 
             <Dialog

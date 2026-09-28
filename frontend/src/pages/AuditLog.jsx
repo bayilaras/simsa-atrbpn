@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye } from 'lucide-react';
+import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye, GitMerge, Link, X, Send, Inbox, CheckCircle2, XCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,13 @@ const ACTION_CONFIG = {
     'deny_access': { label: 'Menolak Akses', icon: Shield, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
     'revoke_access': { label: 'Mencabut Akses', icon: Shield, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
     'view_via_rangkaian': { label: 'Lihat via Rangkaian', icon: Eye, color: 'bg-cyan-100 dark:bg-cyan-500/15 text-cyan-800 dark:text-cyan-300', borderColor: 'border-cyan-200', iconColor: 'text-cyan-600' },
+    'merge': { label: 'Menggabungkan', icon: GitMerge, color: 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-800 dark:text-indigo-300', borderColor: 'border-indigo-200', iconColor: 'text-indigo-600' },
+    'link': { label: 'Menautkan', icon: Link, color: 'bg-sky-100 dark:bg-sky-500/15 text-sky-800 dark:text-sky-300', borderColor: 'border-sky-200', iconColor: 'text-sky-600' },
+    'cancel': { label: 'Membatalkan', icon: X, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'distribute': { label: 'Mendisposisikan', icon: Send, color: 'bg-teal-100 dark:bg-teal-500/15 text-teal-800 dark:text-teal-300', borderColor: 'border-teal-200', iconColor: 'text-teal-600' },
+    'receive_distribution': { label: 'Menerima Disposisi', icon: Inbox, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300', borderColor: 'border-blue-200', iconColor: 'text-blue-600' },
+    'process_distribution': { label: 'Menyelesaikan Disposisi', icon: CheckCircle2, color: 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300', borderColor: 'border-green-200', iconColor: 'text-green-600' },
+    'reject_distribution': { label: 'Menolak Disposisi', icon: XCircle, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
 };
 
 const ENTITY_CONFIG = {
@@ -36,6 +43,8 @@ const ENTITY_CONFIG = {
     'user': { label: 'User', color: 'text-orange-600', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
     'record_access_grant': { label: 'Persetujuan Akses', color: 'text-amber-700', bgColor: 'bg-amber-50 dark:bg-amber-500/15' },
     'rangkaian_surat': { label: 'Rangkaian Surat', color: 'text-cyan-700', bgColor: 'bg-cyan-50 dark:bg-cyan-500/15' },
+    'rangkaian_relasi': { label: 'Relasi Rangkaian', color: 'text-sky-700', bgColor: 'bg-sky-50 dark:bg-sky-500/15' },
+    'surat_distribution': { label: 'Disposisi', color: 'text-teal-700', bgColor: 'bg-teal-50 dark:bg-teal-500/15' },
 };
 
 export default function AuditLog() {
@@ -229,6 +238,8 @@ export default function AuditLog() {
                                     <SelectItem value="user">User</SelectItem>
                                     <SelectItem value="record_access_grant">Persetujuan Akses</SelectItem>
                                     <SelectItem value="rangkaian_surat">Rangkaian Surat</SelectItem>
+                                    <SelectItem value="rangkaian_relasi">Relasi Rangkaian</SelectItem>
+                                    <SelectItem value="surat_distribution">Disposisi</SelectItem>
                                 </SelectContent>
                             </Select>
                             <Select value={action} onValueChange={applyFilter(setAction)}>
@@ -246,6 +257,13 @@ export default function AuditLog() {
                                     <SelectItem value="deny_access">Menolak Akses</SelectItem>
                                     <SelectItem value="revoke_access">Mencabut Akses</SelectItem>
                                     <SelectItem value="view_via_rangkaian">Lihat via Rangkaian</SelectItem>
+                                    <SelectItem value="merge">Menggabungkan</SelectItem>
+                                    <SelectItem value="link">Menautkan</SelectItem>
+                                    <SelectItem value="cancel">Membatalkan</SelectItem>
+                                    <SelectItem value="distribute">Mendisposisikan</SelectItem>
+                                    <SelectItem value="receive_distribution">Menerima Disposisi</SelectItem>
+                                    <SelectItem value="process_distribution">Menyelesaikan Disposisi</SelectItem>
+                                    <SelectItem value="reject_distribution">Menolak Disposisi</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
@@ -66,4 +66,18 @@ it('Penyelesaian menavigasi ke /distribusi?penyelesaian=<distribusiId> (kontrak 
     fireEvent.keyDown(tombolMenu, { key: 'Enter' })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Penyelesaian' }))
     expect(await screen.findByLabelText('Lokasi distribusi')).toHaveTextContent('/distribusi?penyelesaian=d-1')
+})
+
+// Task 25: onTautkan diteruskan ke DetailHeader sehingga item "Tautkan ke Rangkaian"
+// tampil (bila server mengizinkan) dan membuka TautkanDialog.
+it('Tautkan ke Rangkaian membuka dialog tautan untuk surat masuk', async () => {
+    mocks.getById.mockResolvedValue({ ...surat, aksiDiizinkan: ['tautkan'] })
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Detail Surat Masuk' })
+    const [tombolMenu] = screen.getAllByRole('button', { name: /Tindak Lanjut/ })
+    fireEvent.keyDown(tombolMenu, { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Tautkan ke Rangkaian' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Tautkan ke Rangkaian' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Tautkan' })).toBeDisabled()
 })
