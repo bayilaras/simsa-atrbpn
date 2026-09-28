@@ -64,8 +64,11 @@ export async function resolveBatasDataLama(executor: PelaksanaSql = db, env: Nod
         }
         return new Date(mentah).toISOString();
     }
-    const [row] = barisDari<{ batas: Date | string | null }>(await executor.execute(
-        sql`SELECT min(created_at) AS batas FROM rangkaian_surat WHERE asal <> 'data_lama'`,
+    // Diformat ke ISO UTC di SQL agar tidak bergantung pada TZ proses Node maupun TimeZone sesi
+    // (parser Date driver); created_at bertipe timestamptz.
+    const [row] = barisDari<{ batas: string | null }>(await executor.execute(
+        sql`SELECT to_char(min(created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS batas
+              FROM rangkaian_surat WHERE asal <> 'data_lama'`,
     ));
     return (row?.batas ? new Date(row.batas) : new Date()).toISOString();
 }
@@ -383,7 +386,7 @@ function aksiUntuk(row: BarisPerluDilengkapi, k: KonteksPd, akses: AksesBaris): 
     const a = row.surat_id !== null && row.jenis !== 'rangkaian'
         ? akses.get(readRefKey({ type: row.jenis, id: row.surat_id }))
         : undefined;
-    if (row.terbaca && a?.allowed === true && row.jenis !== 'rangkaian') {
+    if (row.terbaca && a?.allowed === true && !a.masked && row.jenis !== 'rangkaian') {
         const suratAksi = computeSuratAksi(role, {
             jenis: row.jenis, via: a.via, mutable: a.mutable === true, isArchived: Boolean(row.is_archived), naskahDinas: row.naskah,
             rangkaian: row.rangkaian_id && row.rangkaian_kode && row.rangkaian_status

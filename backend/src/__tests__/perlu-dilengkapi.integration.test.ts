@@ -228,6 +228,13 @@ describe('Perlu Dilengkapi (D7) — cakupan §4', () => {
         expect(await svc.resolveBatasDataLama(holder.db)).toBe(BATAS_UTC);
         vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', '');
         expect(await svc.resolveBatasDataLama(holder.db)).toBe('2026-03-04T05:06:07.000Z');
+        // Tidak bergantung pada TimeZone sesi (maupun TZ proses Node): nilai tetap instan UTC yang sama.
+        await database.exec(`SET TIME ZONE 'Asia/Jakarta'`);
+        try {
+            expect(await svc.resolveBatasDataLama(holder.db)).toBe('2026-03-04T05:06:07.000Z');
+        } finally {
+            await database.exec(`SET TIME ZONE 'UTC'`);
+        }
         vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', '2026-01-01');
         await expect(svc.resolveBatasDataLama(holder.db)).rejects.toThrow(/zona waktu/);
         vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', '');
