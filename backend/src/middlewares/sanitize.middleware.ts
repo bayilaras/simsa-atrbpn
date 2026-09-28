@@ -47,6 +47,15 @@ function normalizeMultiline(value: string): string {
 }
 
 /**
+ * Normalisasi bidang satu baris yang dipakai sanitizer JSON: buang tag, rapatkan
+ * spasi, trim. Diekspor agar pembanding nilai lama (guard rangkaian, F-I1) memakai
+ * normalisasi yang sama dengan jalur tulis.
+ */
+export function sanitizeSatuBaris(value: string): string {
+    return stripTags(value).replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Recursively sanitize all string values in an object
  */
 function sanitizeValue(value: any, key?: string): any {
@@ -57,10 +66,9 @@ function sanitizeValue(value: any, key?: string): any {
 
     if (typeof value === 'string') {
         // Strip HTML tags first; multi-line fields keep their line breaks (§5).
-        const stripped = stripTags(value);
         return key && MULTILINE_FIELDS.has(key)
-            ? normalizeMultiline(stripped)
-            : stripped.replace(/\s+/g, ' ').trim();
+            ? normalizeMultiline(stripTags(value))
+            : sanitizeSatuBaris(value);
     }
 
     if (Array.isArray(value)) {

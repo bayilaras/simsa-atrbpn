@@ -5,6 +5,7 @@
 import { sql } from 'drizzle-orm';
 import { ConflictError, ValidationError } from '../../utils/errors.js';
 import { PESAN_KONFLIK_BERSAMAAN } from '../../utils/deadlock-retry.js';
+import { sanitizeSatuBaris } from '../../middlewares/sanitize.middleware.js';
 import auditLogService, { type CriticalAuditContext } from '../audit-log.service.js';
 import { distributionService } from '../distribution.service.js';
 import type { DisposisiRoutingInput } from '../../validators/schemas.js';
@@ -65,6 +66,26 @@ export async function afterSuratMasukInsert(tx: Tx, ctx: {
 const KOLOM_SENSITIF = ['nomorSurat', 'perihal', 'sifatSurat'] as const;
 type KolomSensitif = (typeof KOLOM_SENSITIF)[number];
 
+/** NULL ≡ '' lalu normalisasi sanitizer jalur tulis (tag dibuang, spasi dirapatkan). */
+const teks = (nilai: unknown): string => sanitizeSatuBaris(nilai == null ? '' : String(nilai));
+
+/**
+ * F-I1/S-I4: nilai dibandingkan setelah normalisasi yang sama dengan jalur tulis,
+ * sehingga baris lama (impor Excel/multipart, sifat NULL, spasi ganda, tag) yang
+ * tidak diubah pengguna tidak pernah dianggap berubah. Sifat: kosong ≡ 'biasa'
+ * dan bentuk huruf/pemisah diseragamkan seperti langkah dasar (idempoten)
+ * normalizeSecurityClassification — TANPA meruntuhkan alias biasa, jadi
+ * 'segera' → 'sangat_segera' tetap perubahan yang wajib beralasan.
+ */
+const NORMALISASI: Record<KolomSensitif, (nilai: unknown) => string> = {
+    nomorSurat: teks,
+    perihal: teks,
+    sifatSurat: (nilai) => {
+        const t = teks(nilai);
+        return (t === '' ? 'biasa' : t).toLowerCase().replace(/[\s-]+/g, '_');
+    },
+};
+
 export interface GuardSuratMasukHasil {
     rangkaianId: string;
     /** T13-2: audit koreksi ditulis `afterSuratMasukMutation` hanya bila penulisan mengenai baris. */
@@ -95,7 +116,8 @@ export async function guardSuratMasukMutation(tx: Tx, ctx: {
     const perubahan = ctx.perubahan;
     const kolom: string[] = perubahan === 'hapus'
         ? ['hapus']
-        : KOLOM_SENSITIF.filter((nama) => perubahan[nama] !== undefined && perubahan[nama] !== lama[nama]);
+        : KOLOM_SENSITIF.filter((nama) => perubahan[nama] !== undefined
+            && NORMALISASI[nama](perubahan[nama]) !== NORMALISASI[nama](lama[nama]));
     if (kolom.length === 0) return null;
 
     const bacaKeanggotaan = async () => rowsOf<{ rangkaian_id: string }>(await tx.execute(sql`

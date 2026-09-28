@@ -128,6 +128,9 @@ const KETERANGAN_OPTIONS = [
     { value: 'disposisi_menteri', label: 'Disposisi Menteri', icon: '📜' },
 ];
 
+// Identitas surat yang perubahannya wajib beralasan bila surat anggota rangkaian (T24-3, F-I1).
+const KOLOM_IDENTITAS = ['nomorSurat', 'perihal', 'sifatSurat'];
+
 export default function TambahSuratMasuk() {
     const { id } = useParams(); // Get ID from URL for edit mode
     const isEditMode = Boolean(id);
@@ -425,9 +428,14 @@ export default function TambahSuratMasuk() {
             const { disposisiPj, disposisiBatasWaktu, disposisiInstruksi, disposisi: pilihan, ...dasar } = dataToSubmit;
 
             if (isEditMode) {
+                // F-I1: nomor/perihal/sifat hanya dikirim bila pengguna mengubahnya.
+                // Nilai lama yang tidak ternormalisasi (sifat NULL, spasi ganda dari
+                // impor) jangan sampai terbaca server sebagai koreksi identitas.
+                const identitasBerubah = Object.fromEntries(Object.entries(dasar)
+                    .filter(([kolom]) => !KOLOM_IDENTITAS.includes(kolom) || formData[kolom] !== originalRef.current[kolom]))
                 // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
                 await suratMasukService.update(id, {
-                    ...dasar,
+                    ...identitasBerubah,
                     disposisi: pilihan,
                     ...(perluAlasanKoreksi ? { alasan: alasanKoreksi.trim() } : {}),
                 }, filesEnabled ? selectedFile : null);

@@ -176,6 +176,38 @@ describe('edit mode: alasan koreksi dan gerbang aksiDiizinkan', () => {
         expect(mocks.masuk.update.mock.calls[0][1]).toMatchObject({ alasan: 'Perbaikan redaksi perihal surat', perihal: 'Perihal baru' })
     })
 
+    // F-I1/S-I4: baris lama hasil impor (sifat NULL, perihal berspasi ganda)
+    // tidak boleh terkirim ulang sebagai "koreksi identitas" yang ditolak server.
+    it('edit kolom lain pada surat lama tidak mengirim nomor/perihal/sifat yang tidak diubah', async () => {
+        const view = await mountEdit({ sifatSurat: null, nomorSurat: null })
+        fireEvent.change(screen.getByLabelText(/^Dari \(Pengirim\)/), { target: { value: 'Kanwil Baru' } })
+        fireEvent.submit(view.container.querySelector('form'))
+        await waitFor(() => expect(mocks.masuk.update).toHaveBeenCalled())
+        const payload = mocks.masuk.update.mock.calls[0][1]
+        expect(payload).toMatchObject({ dari: 'Kanwil Baru' })
+        expect(payload).not.toHaveProperty('nomorSurat')
+        expect(payload).not.toHaveProperty('perihal')
+        expect(payload).not.toHaveProperty('sifatSurat')
+        expect(payload).not.toHaveProperty('alasan')
+    })
+
+    it('perihal lama berspasi ganda yang tidak disentuh tidak ikut terkirim', async () => {
+        mocks.masuk.getById.mockResolvedValue({ ...recordDenganRangkaian, perihal: 'Perihal  lama   impor' })
+        router = createMemoryRouter([
+            { path: '/edit/:id', element: <TambahSuratMasuk /> },
+            { path: '/surat/masuk/:id', element: <h1>Detail</h1> },
+        ], { initialEntries: ['/edit/sm-1'] })
+        const view = render(<RouterProvider router={router} />)
+        await waitFor(() => expect(screen.getByLabelText(/^Perihal/)).toHaveValue('Perihal  lama   impor'))
+        fireEvent.change(screen.getByLabelText(/^Kepada \(Penerima\)/), { target: { value: 'Penerima baru' } })
+        fireEvent.submit(view.container.querySelector('form'))
+        await waitFor(() => expect(mocks.masuk.update).toHaveBeenCalled())
+        const payload = mocks.masuk.update.mock.calls[0][1]
+        expect(payload).toMatchObject({ kepada: 'Penerima baru' })
+        expect(payload).not.toHaveProperty('perihal')
+        expect(payload).not.toHaveProperty('alasan')
+    })
+
     it('tidak meminta alasan koreksi bila tidak ada rangkaian', async () => {
         const view = await mountEdit({ rangkaian: null })
         fireEvent.change(screen.getByLabelText(/^Perihal/), { target: { value: 'Perihal baru tanpa rangkaian' } })

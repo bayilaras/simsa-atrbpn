@@ -97,7 +97,11 @@ describe.each(pages)('form surat $kind', page => {
         fireEvent.submit(form);
         expect(fixtures[page.kind].update).toHaveBeenCalledTimes(1);
         expect(fixtures[page.kind].update).toHaveBeenCalledWith(record.id,
-            expect.objectContaining({ perihal: record.perihal, linkDokumen: undefined }), null);
+            expect.objectContaining({ kepada: record.kepada, linkDokumen: undefined }), null);
+        // F-I1: surat masuk tidak mengirim ulang identitas (nomor/perihal/sifat) yang tidak diubah.
+        const payload = fixtures[page.kind].update.mock.calls[0][1];
+        if (page.kind === 'masuk') expect(payload).not.toHaveProperty('perihal');
+        else expect(payload).toMatchObject({ perihal: record.perihal });
     });
 
     it('focuses a server error, retains the entered data, and allows retry', async () => {

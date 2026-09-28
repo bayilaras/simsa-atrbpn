@@ -45,6 +45,23 @@ describe('guard surat masuk anggota rangkaian (PGlite)', () => {
             .toMatchObject({ perihal: 'Permohonan data pertanahan', keterangan: 'Catatan tambahan' });
     });
 
+    it('F-I1/S-I4: baris lama (sifat NULL, perihal berspasi/bertag, nomor bertepi spasi) yang tidak diubah tidak mewajibkan alasan', async () => {
+        await database.query('UPDATE surat_masuk SET sifat_surat = NULL, perihal = $2, nomor_surat = $3 WHERE id = $1',
+            [SURAT.smBiasa, 'Permohonan  data\n pertanahan <b>', ' SM-1/2026 ']);
+        // Nilai yang dikirim ulang formulir/sanitizer untuk data yang sama.
+        await service.update(SURAT.smBiasa, {
+            sifatSurat: 'biasa', perihal: 'Permohonan data pertanahan', nomorSurat: 'SM-1/2026', keterangan: 'Catatan edit biasa',
+        } as any, 'sesditjen', undefined, audit);
+        expect(await hitungKoreksi()).toBe(0);
+        expect(await one('SELECT keterangan FROM surat_masuk WHERE id = $1', [SURAT.smBiasa])).toEqual({ keterangan: 'Catatan edit biasa' });
+        // Bentuk huruf/pemisah sifat saja bukan perubahan; perubahan nyata tetap wajib alasan.
+        await service.update(SURAT.smBiasa, { sifatSurat: 'Biasa' } as any, 'sesditjen', undefined, audit);
+        await expect(service.update(SURAT.smBiasa, { sifatSurat: 'segera' } as any, 'sesditjen', undefined, audit))
+            .rejects.toMatchObject({ statusCode: 400 });
+        await expect(service.update(SURAT.smBiasa, { perihal: 'Permohonan data pertanahan baru' } as any, 'sesditjen', undefined, audit))
+            .rejects.toMatchObject({ statusCode: 400 });
+    });
+
     it('ubah dengan alasan ≥10: tersimpan, alasan tidak bocor ke hasil, dan satu audit koreksi berisi before', async () => {
         const hasil = await service.update(SURAT.smBiasa, { perihal: 'Perihal baru', nomorSurat: 'SM-1/2026', alasan } as any,
             'sesditjen', undefined, audit);
