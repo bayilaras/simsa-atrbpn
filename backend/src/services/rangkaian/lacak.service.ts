@@ -2,11 +2,12 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../config/database.js';
 import { classifyLacakQuery, escapeLike, LIKE_ESCAPE, nomorNormSql, type LacakQueryPlan } from '../../utils/nomor-surat.js';
 import {
-    BATAS_NODE_DETAIL, denganRetryDeadlock, isAjukanAksesEnabled, judulTersamar, LABEL_DIKECUALIKAN, readRefKey, recordAccessService,
+    BATAS_NODE_DETAIL, denganRetryDeadlock, isAjukanAksesEnabled, LABEL_DIKECUALIKAN, readRefKey, recordAccessService,
     requiresExplicitAccessGrant, resolveKonteksBaca, tingkatRangkaianPenuh, visibleSql,
     type KonteksBaca, type RecordUser, type SuratJenis, type Tx,
 } from './deps.js';
 import { bentukKueriLacak, skorLacakSql } from '../lacak-skor.js';
+import { judulRangkaianTampil } from '../rangkaian-judul.js';
 import { rowsOf, textArraySql, uuidArraySql } from './sql-rows.js';
 import type { LacakCocok, LacakKelompok, LacakNode, LacakNodeTersamar, LacakParams, LacakResult } from './lacak.types.js';
 
@@ -202,7 +203,7 @@ async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[], ctx: KonteksB
         const r = rangkaianRows.find((row) => row.id === rangkaianId)!;
         const induk = milik.find((n) => n.peran === 'induk');
         const indukTerlihat = induk ? terbaca(induk) : false;
-        const rangkaian = { ...r, judul: induk && indukTerlihat ? r.judul : judulTersamar(r.kode) };
+        const rangkaian = { ...r, judul: judulRangkaianTampil(r.kode, r.judul, !(induk && indukTerlihat)) };
         if (penuh.has(rangkaianId)) {
             const jumlah = milik[0]?.jumlah ?? 0;
             return { ...dasar, rangkaian, pratinjau: milik.map(keNode), jumlahAnggota: jumlah, pratinjauTerpotong: jumlah > milik.length };
