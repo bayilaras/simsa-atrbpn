@@ -112,9 +112,9 @@ export const suratMasukService = {
         return response.data;
     },
 
-    // Delete surat masuk
-    async delete(id) {
-        await api.delete(`/api/surat-masuk/${id}`);
+    // Delete surat masuk (alasan wajib dicatat -- T13/T24-3)
+    async delete(id, { alasan } = {}) {
+        await api.delete(`/api/surat-masuk/${id}`, alasan ? { alasan } : undefined);
     },
 
     // Archive surat masuk (creates arsip record with full metadata)

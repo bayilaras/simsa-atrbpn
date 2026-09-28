@@ -162,6 +162,7 @@ it('protects outgoing text edits when cancel is declined', async () => {
 it('associates the incoming disposition error with the real multiselect trigger', async () => {
     const { form } = await renderForm(pages[0], { disposisi: [] });
     fireEvent.submit(form);
+    expect(window.confirm).toHaveBeenCalledWith('Surat belum didisposisikan. Simpan tanpa disposisi?');
     const trigger = screen.getByRole('combobox', { name: 'Penerima disposisi' });
     expect(trigger).toHaveAttribute('aria-invalid', 'true');
     expect(trigger).toHaveAccessibleDescription('Disposisi wajib diisi');
