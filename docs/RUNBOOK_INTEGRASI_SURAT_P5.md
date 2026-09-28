@@ -343,4 +343,7 @@ baru yang menjadi target rollback yang valid.
    backfill, dan `audit_log` tetap ada.
 3. Bila skema harus dibatalkan, jalankan migrasi maju
    `ALTER COLUMN rangkaian_id DROP NOT NULL` — jangan pernah mengedit skema
-   secara manual — atau pulihkan dari backup §2.
+   secara manual — atau pulihkan dari backup §2. Backup §2 adalah bundel
+   rantai 0047: pemulihannya wajib memakai helper dari **checkout C47**, dan
+   kode produksi harus ikut kembali ke **C47** (helper C48 menolak rantai
+   0047).

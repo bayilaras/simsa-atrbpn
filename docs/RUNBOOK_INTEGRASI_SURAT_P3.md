@@ -191,11 +191,18 @@ anggota rangkaian yang bukan `aktif`/`selesai`:
 - `status: 'digabung'` — sementara: gabung memindahkan anggota ke rangkaian
   tujuan. Jalankan ulang backfill; entri itu akan terisi ke rangkaian tujuan.
 - `status: 'diberkaskan'` — baris lama tidak dapat diisi (trigger 0046
-  mengunci berkas). Baris tetap ber-`rangkaian_id` NULL sampai Koreksi Berkas
-  (P5) tersedia. Kode P3 memperlakukannya konsisten: dihitung sebagai
-  penghalang rangkaian keanggotaannya dan ditolak 409 bila diubah. Catat
-  daftar entri; **pemutus**: pemilik spesifikasi bersama TU/pengawas unit
-  pencatat — dianggap selesai bila dicatat untuk P5.
+  mengunci berkas), dan **Koreksi Berkas (P5) tidak dapat memperbaikinya**:
+  Koreksi Berkas hanya mengoreksi unit pengolah/klasifikasi pada rangkaian
+  yang sudah `rangkaian_id`-nya terisi, bukan mengisi baris NULL
+  (`docs/RUNBOOK_INTEGRASI_SURAT_P5.md` §4, "Koreksi Berkas tidak dapat
+  memperbaikinya"). Baris ini adalah persis pemicu gerbang pre-0048 (query
+  pertama langkah 10 RILIS gabungan): selama ada baris NULL, **CTRL-2
+  diamandemen menahan seluruh P5** — bukan hanya migrasi 0048, tapi juga
+  merge dan deploy P5 (gerbang f). Kode P3 memperlakukan baris ini konsisten
+  sampai penahanan berakhir: dihitung sebagai penghalang rangkaian
+  keanggotaannya dan ditolak 409 bila diubah. Catat daftar entri;
+  **pemutus**: pemilik spesifikasi bersama TU/pengawas unit pencatat —
+  rilis P5 dilepas hanya setelah semua baris NULL terselesaikan.
 
 Catatan: rangkaian `selesai` yang menerima baris terbuka lewat backfill
 tetap `selesai` sampai hitung ulang berikutnya (mis. aksi apa pun pada

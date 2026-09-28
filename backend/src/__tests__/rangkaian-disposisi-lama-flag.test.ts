@@ -104,9 +104,15 @@ describe('RANGKAIAN_DISPOSISI_LAMA_READ', () => {
         });
         // Pengecualian tertutup: skema Drizzle (definisi tabel) dan rangkaian.service.ts P1
         // (gabung hanya MEMINDAHKAN baris peserta; bukan jalur baca, jangkauannya lewat jangkauanUnitsSql).
-        // rangkaian-data-lama.service.ts (B-I2): peserta hanya dibaca untuk MENGECUALIKAN rangkaian dari
-        // Tutup massal (predikat NOT, fail closed); tidak pernah memberi jangkauan baca.
-        const PENGECUALIAN = ['db/schema/rangkaian-surat.ts', 'services/rangkaian.service.ts', 'services/rangkaian-data-lama.service.ts'];
+        const PENGECUALIAN = ['db/schema/rangkaian-surat.ts', 'services/rangkaian.service.ts'];
+        // rangkaian-data-lama.service.ts (B-I2, dipersempit N-M1): peserta hanya dibaca untuk
+        // MENGECUALIKAN rangkaian dari Tutup massal (predikat NOT, fail closed); tidak pernah
+        // memberi jangkauan baca. Pengecualian dipersempit ke SATU baca yang ditandai penanda
+        // GUARD-EXEMPT-B-I2 di sekitar `calonPengolahBelumDiisiSql`, bukan seluruh file: baca
+        // rangkaian_peserta baru di file ini, di luar penanda, tetap gagal guard.
+        const DATA_LAMA_FILE = 'services/rangkaian-data-lama.service.ts';
+        const DATA_LAMA_MARKER_AWAL = '// GUARD-EXEMPT-B-I2:';
+        const DATA_LAMA_MARKER_AKHIR = '// /GUARD-EXEMPT-B-I2';
         // Pola baca baris rangkaian_peserta: FROM/JOIN (dengan skema opsional dan tanda kutip),
         // koma-join, atau simbol Drizzle rangkaianPeserta.
         const POLA_BACA = /\b(?:FROM|JOIN)\s+(?:"?public"?\.)?"?rangkaian_peserta\b|,\s*"?rangkaian_peserta\b|\brangkaianPeserta\b/i;
@@ -116,9 +122,20 @@ describe('RANGKAIAN_DISPOSISI_LAMA_READ', () => {
         const offenders = walk(root)
             .map((file) => ({ file, rel: path.relative(root, file).replaceAll('\\', '/') }))
             .filter(({ rel }) => !PENGECUALIAN.includes(rel))
-            .filter(({ file }) => POLA_BACA.test(fs.readFileSync(file, 'utf8')))
-            .filter(({ file }) => !LEWAT_FLAG.test(fs.readFileSync(file, 'utf8')))
-            .map(({ rel }) => rel);
+            .flatMap(({ file, rel }) => {
+                const content = fs.readFileSync(file, 'utf8');
+                if (!POLA_BACA.test(content)) return [];
+                if (LEWAT_FLAG.test(content)) return [];
+                if (rel !== DATA_LAMA_FILE) return [rel];
+                // Wilayah antar-penanda saja yang boleh memuat baca rangkaian_peserta.
+                const awal = content.indexOf(DATA_LAMA_MARKER_AWAL);
+                const akhir = content.indexOf(DATA_LAMA_MARKER_AKHIR);
+                if (awal < 0 || akhir < awal) return [rel]; // penanda hilang/rusak: gagal guard
+                const ditandai = content.slice(awal, akhir + DATA_LAMA_MARKER_AKHIR.length);
+                const sisaFile = content.slice(0, awal) + content.slice(akhir + DATA_LAMA_MARKER_AKHIR.length);
+                if (!POLA_BACA.test(ditandai)) return [rel]; // penanda tidak menandai baca apa pun
+                return POLA_BACA.test(sisaFile) ? [rel] : [];
+            });
         expect(offenders).toEqual([]);
     });
 

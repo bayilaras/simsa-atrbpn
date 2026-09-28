@@ -938,7 +938,7 @@ Panel notifikasi memiliki **3 tab** untuk memfilter notifikasi:
 
 #### Notifikasi Batas Waktu Disposisi
 
-Notifikasi disposisi berlabel **Distribusi** dan tampil di tab **Semua** (bukan tab tersendiri). Notifikasi ini ditandai mendesak bila batas waktu disposisi ≤ 2 hari, jatuh hari ini, atau sudah lewat batas waktu. Surat data lama yang sudah ditutup tidak dinotifikasi.
+Notifikasi disposisi berlabel **Distribusi** dan tampil di tab **Alur** dan **Semua**. Notifikasi ini ditandai mendesak bila batas waktu disposisi ≤ 2 hari, jatuh hari ini, atau sudah lewat batas waktu. Surat data lama yang sudah ditutup tidak dinotifikasi.
 
 #### Filter Unit Kerja (Super Admin)
 

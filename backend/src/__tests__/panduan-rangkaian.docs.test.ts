@@ -70,6 +70,7 @@ describe('dokumentasi Integrasi Surat P5', () => {
             'RANGKAIAN_TUTUP_MASSAL_DATA_LAMA=true',
             'tahan seluruh P5',
             'sifat_tak_dikenal',
+            'P0–P4 di-merge berurutan dengan CI hijau pada setiap head hasil rebase (§1); P5 **baru** di-merge di langkah 11 (§3), setelah pre-0048 langkah 10 bersih.',
         ]) expect(rilis, text).toContain(text);
         expect(read('docs/RUNBOOK_INTEGRASI_SURAT_P3.md')).toContain('Jalankan langkah ini dari commit merge P4');
     });

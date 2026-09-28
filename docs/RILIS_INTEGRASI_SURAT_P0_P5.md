@@ -23,7 +23,7 @@ Produksi memakai Vercel (`simsa-frontend` + `simsa-backend`) dan Neon. Semua con
 | 3 | `feat/integrasi-surat-p2` | `a57b0a3` | 26 | P1 | Akses lintas unit (`visibility-spec.ts`, `checkRead`), panel Alur Surat baca | |
 | 4 | `feat/integrasi-surat-p3` | `2a61bb7` | 49 (termasuk jalur frontend `feat/integrasi-surat-p3-frontend`, digabung di `d890ff2`) | P2 | Tindak lanjut, disposisi, inisiatif, backfill langkah 1, Lacak backend, runbook P3 | |
 | 5 | `feat/integrasi-surat-p4` | `060e3dc` | 38 | P3 | Lacak Surat UI, Berkas Rangkaian, Perlu Dilengkapi (D7) | |
-| 6 | `feat/integrasi-surat-p5` | `9b9ab15` | 20 | P4 | 0048, backfill data lama, Koreksi Berkas, Tutup massal, notifikasi, ekspor, PANDUAN, runbook P5 | |
+| 6 | `feat/integrasi-surat-p5` | ujung branch `feat/integrasi-surat-p5` saat PR dibuat | — | P4 | 0048, backfill data lama, Koreksi Berkas, Tutup massal, notifikasi, ekspor, PANDUAN, runbook P5 | |
 
 Aturan merge:
 
@@ -46,7 +46,7 @@ Aturan merge:
 
 ## 2. Prasyarat sebelum hari rilis
 
-- [ ] PR #15 di-merge. P0–P5 di-merge berurutan dengan CI hijau pada setiap head hasil rebase (§1).
+- [ ] PR #15 di-merge. P0–P4 di-merge berurutan dengan CI hijau pada setiap head hasil rebase (§1); P5 **baru** di-merge di langkah 11 (§3), setelah pre-0048 langkah 10 bersih.
 - [ ] Pre-flight P0 dijalankan dengan role Neon read-only (`docs/PREFLIGHT_INTEGRASI_SURAT_P0.md`):
   - laporan `docs/HASIL_PREFLIGHT_INTEGRASI_SURAT_P0_<tanggal>.md` dan fixture `sifat-surat-produksi.json` ter-commit;
   - `visibility-spec.parity.test.ts` PASS;
@@ -239,8 +239,8 @@ Prinsip umum:
 | Langkah 5–9 (kode C47 live, database 0047) | Redeploy rilis produksi terakhir (FE+BE bersama); `/ready` 200 | rilis produksi terakhir (runbook P3 §6) | Data P3 tetap ada. Saat roll-forward, jalankan lagi backfill sebelum dan sesudah deploy (P3 §6.3). Bila `RANGKAIAN_AJUKAN_AKSES` pernah menyala, cabut grant disposisi (P3 §6.4). Env `RANGKAIAN_DATA_LAMA_SEBELUM` boleh dibiarkan |
 | Langkah 10 (pre-0048 tidak bersih) | Tahan seluruh P5 (gerbang f): P5 tidak di-merge/dideploy; produksi tetap C47 di 0047 | kode C47 | Lihat langkah 10 untuk batasan selama penahanan |
 | Langkah 13 (deploy C48 di atas 0047) gagal | Redeploy C47 (FE+BE bersama); `/ready` 200 | kode C47 | Skema tidak berubah. Koreksi Berkas yang sempat diajukan tetap ada dan harus lolos pra-cek langkah 10 sebelum 0048 |
-| Langkah 14 (migrasi 0048) gagal | Transaksi digulung balik; database tetap 0047. Rekonsiliasi lalu ulangi | kode C48 (atau C47) | — |
-| Setelah 0048 diterapkan | Redeploy **kode P3+** terakhir yang stabil (FE+BE bersama) | **kode P3+** (runbook P5 §10) | Rilis pra-P3 menulis distribusi tanpa `rangkaian_id` → `23502`. Lantai "rilis produksi terakhir" di runbook P3 §6 **tidak berlaku**. Pembatalan skema hanya lewat migrasi maju `ALTER COLUMN rangkaian_id DROP NOT NULL` atau restore Backup #2 |
+| Langkah 14 (migrasi 0048) gagal | Transaksi digulung balik; database tetap 0047. Rekonsiliasi lalu ulangi | kode C48 (atau C47) | P5 **sudah** ada di `main` pada titik ini (di-merge langkah 11). Bila jeda perbaikan melewati jadwal backup terjadwal, ambil **backup manual** dengan helper checkout C47. Backup terjadwal (`backup-neon.yml`) akan terus gagal sampai 0048 berhasil diterapkan atau P5 dibalik dari `main` |
+| Setelah 0048 diterapkan | Redeploy **kode P3+** terakhir yang stabil (FE+BE bersama) | **kode P3+** (runbook P5 §10) | Rilis pra-P3 menulis distribusi tanpa `rangkaian_id` → `23502`. Lantai "rilis produksi terakhir" di runbook P3 §6 **tidak berlaku**. Pembatalan skema hanya lewat migrasi maju `ALTER COLUMN rangkaian_id DROP NOT NULL` atau restore Backup #2. Backup #2 adalah bundel rantai 0047: memulihkannya wajib memakai helper dari **checkout C47**, dan kode produksi harus ikut kembali ke **C47** (helper C48 menolak rantai 0047) |
 | Langkah 17 (`--apply` langkah 2) | Tidak dapat dibatalkan lewat aplikasi: runtime tidak punya DELETE pada `rangkaian_*`. Peserta `disposisi_lama` tetap **tanpa efek akses** selama flag mati. Apply yang terputus: dry-run → sign-off → apply ulang (idempoten) | — | Pembatalan penuh hanya dengan restore Backup #3 (kehilangan data sejak backup) |
 | Langkah 18 (`--isi-pengolah`) | Akses pengolah **tidak** dicabut oleh flag. Koreksi hanya lewat Koreksi Berkas setelah diberkaskan, ke unit dalam jangkauan | — | Karena itu gerbang (a) disahkan sebelum langkah ini |
 | Langkah 19 (Tutup massal) | Final: `diberkaskan` terminal. Unit pengolah dan klasifikasi hanya dapat dikoreksi lewat Koreksi Berkas. Hentikan pemakaian lebih lanjut dengan mengosongkan `RANGKAIAN_TUTUP_MASSAL_DATA_LAMA` lalu redeploy | — | — |

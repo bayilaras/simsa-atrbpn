@@ -71,6 +71,9 @@ const lingkupPengawas = (actor: DataLamaActor): SQL =>
  * pengolah NULL, induk `sumber = 'data_lama'`, dan peserta `disposisi_lama` berisi tepat satu unit
  * direktorat. Peserta yang sudah dicabut tetap dihitung (fail closed: rute label tetap memuatnya).
  */
+// GUARD-EXEMPT-B-I2: satu-satunya baca rangkaian_peserta yang diizinkan di file ini (N-M1).
+// Guard di backend/src/__tests__/rangkaian-disposisi-lama-flag.test.ts memeriksa bahwa baca
+// rangkaian_peserta lain di file ini — di luar penanda ini — tetap gagal guard.
 const calonPengolahBelumDiisiSql: SQL = sql`(
     rs.unit_pengolah_id IS NULL
     AND EXISTS (SELECT 1 FROM rangkaian_anggota cp_ra
@@ -79,6 +82,7 @@ const calonPengolahBelumDiisiSql: SQL = sql`(
            JOIN unit_kerja cp_uk ON cp_uk.id = cp_rp.unit_kerja_id
           WHERE cp_rp.rangkaian_id = rs.id AND cp_rp.peran = 'disposisi_lama'
             AND cp_uk.unit_type = 'direktorat') = 1)`;
+// /GUARD-EXEMPT-B-I2
 
 /**
  * Predikat kandidat Tutup massal: data lama berstatus selesai, dalam lingkup
