@@ -405,6 +405,18 @@ tidak mengubah langkah P3 di atas.
    non-`data_lama` (§7 D7). Nilai yang tidak valid membuat setiap panggilan
    Perlu Dilengkapi (`/api/rangkaian/perlu-dilengkapi*`, termasuk badge
    sidebar) gagal 500 — disengaja agar salah konfigurasi tidak senyap.
+
+   **Deploy gabungan P3+P4 (satu deploy).** Bila P3 dan P4 aktif dalam deploy
+   yang sama, waktu aktif P3 belum diketahui saat env diisi. Jangan menebak:
+   **biarkan `RANGKAIAN_DATA_LAMA_SEBELUM` kosong** pada deploy ini. Batas
+   kemudian diturunkan dari `min(created_at)` rangkaian non-`data_lama`, yaitu
+   waktu backfill langkah 1 P3 yang berjalan tepat sebelum kode P3 aktif.
+   Menebak instan yang lebih lambat dari go-live sebenarnya menyembunyikan surat
+   pasca-P3 yang sah (SK tanpa asal, SM tanpa disposisi) sebagai "data lama"
+   tanpa galat. Setelah deploy, jalankan uji asap env-kosong (langkah 4b),
+   catat `data.batasDataLama` yang dikembalikan (langkah 5), lalu **sematkan
+   nilai itu ke env pada deploy berikutnya** (deployment baru, lihat catatan
+   Vercel di atas) agar batas tidak bergeser bila rangkaian lama diubah.
 2. **Pastikan zona waktu sesi database = UTC.** `created_at` bertipe
    `timestamp` tanpa zona dan dibandingkan dengan `$batas::timestamptz`.
    Periksa dengan role runtime lewat pola prompt tersembunyi §4:
@@ -417,13 +429,64 @@ tidak mengubah langkah P3 di atas.
 
 3. **Tidak ada migrasi.** P4 tidak menambah migrasi, grant, role, flag, atau
    limiter; hash `grants/0002` dan pin Neon tidak berubah.
-4. **Smoke test pasca-deploy.** Sebagai pengguna FULL_ADMIN, panggil
+4. **Smoke test pasca-deploy (env terisi).** Sebagai pengguna FULL_ADMIN, panggil
    `GET /api/rangkaian/perlu-dilengkapi/ringkasan` dan harapkan 200 dengan
    `data.batasDataLama` sama dengan instan yang dikonfigurasi (boleh tampil
    dalam UTC). 500 berarti nilai env rusak: perbaiki env lalu redeploy.
+
+   **4b. Smoke test env kosong (deploy gabungan P3+P4).** Panggilan yang sama
+   harus 200. Harapkan `data.batasDataLama` ≈ waktu backfill langkah 1 P3
+   (bandingkan dengan log backfill atau
+   `SELECT min(created_at) FROM rangkaian_surat WHERE asal <> 'data_lama'`
+   lewat role runtime dan pola prompt tersembunyi §4), **bukan** "sekarang".
+   Nilai yang dekat dengan waktu panggilan berarti belum ada rangkaian non-data-lama,
+   artinya backfill langkah 1 belum berjalan: hentikan, jalankan backfill P3,
+   lalu ulangi uji ini sebelum membuka akses pengguna.
 5. **Catat nilainya.** Tulis nilai persis `RANGKAIAN_DATA_LAMA_SEBELUM` pada
-   hasil runbook ini. Backfill P5 wajib memakai nilai yang sama persis.
-6. **Rollback.** Redeploy rilis P3 terakhir. Nilai `asal_naskah='inisiatif'`
+   hasil runbook ini. Pada deploy gabungan, catat `data.batasDataLama` dari
+   langkah 4b dan sematkan ke env pada deploy berikutnya (langkah 1). Backfill
+   P5 wajib memakai nilai yang sama persis.
+6. **Uji asap manual di staging (gerbang rilis wajib).** Tidak dapat dijalankan
+   di mesin pengembang tanpa Postgres; jalankan pada deployment staging/preview
+   dengan kode head PR (frontend + backend) sebelum produksi, lalu catat hasil
+   setiap butir (lulus/gagal, pengguna uji, waktu) di deskripsi PR. Jangan
+   mengisi hasil yang tidak dijalankan. Checklist (Task 22 Step 5 + perbaikan
+   akhir P4):
+   1. Login sebagai `admin_unit` unit uji. Buka `/surat/lacak` lewat sidebar
+      **Surat ▸ Lacak Surat**.
+   2. Ketik nomor surat yang ada. URL berubah ke `?q=…` tanpa menambah entri
+      history (Back langsung keluar halaman).
+   3. Buka satu kartu. `?rangkaian=` muncul dan panel Alur Surat tampil di
+      dalam kartu.
+   4. Tab **Berkas Rangkaian** memuat daftar tanpa data lama.
+   5. Ctrl+K lalu cari nomor. Klik **Lihat rangkaian** (tab Network hanya
+      menampilkan `/api/search`, lalu `/api/rangkaian/lacak` setelah halaman
+      Lacak terbuka).
+   6. (D7) Sidebar **Lacak Surat** menampilkan badge jumlah. Di tab Network,
+      `/api/rangkaian/perlu-dilengkapi/ringkasan` muncul saat aplikasi dibuka,
+      lalu paling sering sekali per 60 detik, dan berhenti saat tab browser
+      disembunyikan.
+   7. (D7) Buka tab **Perlu Dilengkapi** (`?tab=perlu-dilengkapi`). Hitungan
+      kategori sama dengan badge, dan data lama tersembunyi sampai
+      **Tampilkan data lama** dicentang.
+   8. (D7) Pada baris **Surat keluar tanpa asal**, klik **Tandai Inisiatif**
+      lalu konfirmasi. Baris hilang, badge berkurang, dan Audit Log
+      (super_admin) memuat entri `surat_keluar`/`update` dengan `asalNaskah`
+      null → `inisiatif`.
+   9. (D7) Login sebagai `staff` unit uji. Badge tidak tampil dan tidak ada
+      request ringkasan dari sidebar.
+   10. (D7, dialog P3 asli) Dari tab Perlu Dilengkapi, buka **Disposisi**,
+       **Berkaskan ke Direktorat**, dan **Tautkan** pada baris yang
+       menawarkannya: dialog P3 asli terbuka dengan data baris (nomor/kode),
+       dan batal menutupnya tanpa perubahan.
+   11. (FR:35) Sebagai `staff`, di tab **Berkas Rangkaian** dan
+       **Perlu Dilengkapi**, setiap kode rangkaian yang ditautkan membuka
+       panel Alur Surat tanpa 404; kode yang tidak dapat dibuka tampil sebagai
+       teks biasa. Pada Berkas Rangkaian, kolom Anggota untuk rangkaian yang
+       tidak dapat dibuka menampilkan `—`.
+7. **Rollback.** Redeploy rilis P3 terakhir untuk **frontend dan backend
+   bersamaan** (satu deploy, sama seperti gerbang "satu deploy" §8.1); jangan
+   menggulung balik salah satunya saja. Nilai `asal_naskah='inisiatif'`
    yang ditulis Tandai Inisiatif tetap tersimpan dan diterima P3 (kolom dan
    CHECK-nya sudah ada sejak `0046_rangkaian_surat.sql`).
 
@@ -444,4 +507,7 @@ Setiap baris dicatat **disahkan** atau **ditolak** sebelum produksi:
 | Gerbang C-12 P3 (§7) disahkan sebelum P4 ke produksi | §7 | prasyarat |
 | CI "Backend Tests (PostgreSQL 16/17/18)" hijau pada head P4, termasuk `lacak-explain` dan semua `integration/*.postgres.test.ts` P3 | `ci.yml` | gerbang keras |
 | Frontend dan backend satu deploy (`aksiDiizinkan` otoritatif di UI) | P3 catatan rilis frontend | gerbang keras |
+| Langkah CI "Run Lacak EXPLAIN and p95 gate (LACAK_PERF)" hijau pada PG16/17/18; baris p95, tiga rencana EXPLAIN, dan ringkasan p50/p95 dari log CI ditempel di PR | `ci.yml`, §10-P4, P4-T22-2 | gerbang keras (bukti) |
+| Uji asap manual staging §8 langkah 6 (butir 1–11) dijalankan dan hasilnya dicatat di PR | §10-P4 D7 | gerbang keras (bukti) |
+| Nilai `RANGKAIAN_DATA_LAMA_SEBELUM` (atau `batasDataLama` dari uji env-kosong 4b) dicatat dan disematkan | §8 langkah 1, 4b, 5 | gerbang keras |
 | Anggaran `generalLimiter` per IP: (jumlah tab FULL_ADMIN di balik NAT kantor × 15 + polling notifikasi yang ada) < 500 per 15 menit — pemilik menerima, atau menjadwalkan re-key per pengguna (P5 Task 15) dengan sign-off | `rate-limiter.middleware.ts` | pemilik |
