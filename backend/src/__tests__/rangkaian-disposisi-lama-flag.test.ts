@@ -104,7 +104,9 @@ describe('RANGKAIAN_DISPOSISI_LAMA_READ', () => {
         });
         // Pengecualian tertutup: skema Drizzle (definisi tabel) dan rangkaian.service.ts P1
         // (gabung hanya MEMINDAHKAN baris peserta; bukan jalur baca, jangkauannya lewat jangkauanUnitsSql).
-        const PENGECUALIAN = ['db/schema/rangkaian-surat.ts', 'services/rangkaian.service.ts'];
+        // rangkaian-data-lama.service.ts (B-I2): peserta hanya dibaca untuk MENGECUALIKAN rangkaian dari
+        // Tutup massal (predikat NOT, fail closed); tidak pernah memberi jangkauan baca.
+        const PENGECUALIAN = ['db/schema/rangkaian-surat.ts', 'services/rangkaian.service.ts', 'services/rangkaian-data-lama.service.ts'];
         // Pola baca baris rangkaian_peserta: FROM/JOIN (dengan skema opsional dan tanda kutip),
         // koma-join, atau simbol Drizzle rangkaianPeserta.
         const POLA_BACA = /\b(?:FROM|JOIN)\s+(?:"?public"?\.)?"?rangkaian_peserta\b|,\s*"?rangkaian_peserta\b|\brangkaianPeserta\b/i;
