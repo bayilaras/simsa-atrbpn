@@ -39,13 +39,18 @@ beforeAll(async () => {
     spec = await import('../services/access/visibility-spec');
     await seedRangkaianFixture(database);
     const sm: string[] = []; const sk: string[] = [];
-    for (let g = 1; g <= 45; g += 1) {
+    // P4-T5-4 (FR:36): unit dan kelas ditarik independen (unit = g % |unit|,
+    // kelas = floor(g / |unit|) % |kelas|) sehingga setiap pasangan unit × kelas
+    // muncul minimal sekali, termasuk kelas SK NULL di setiap unit.
+    for (let g = 1; g <= UNIT_REKAMAN.length * SIFAT.length; g += 1) {
         const id = `31000000-0000-4000-8000-${String(g).padStart(12, '0')}`;
-        sm.push(`('${id}','${UNIT_REKAMAN[g % 5]}',${100 + g},2026,${literal(SIFAT[g % SIFAT.length])},'Varian masuk ${g}')`);
+        const sifat = SIFAT[Math.floor(g / UNIT_REKAMAN.length) % SIFAT.length];
+        sm.push(`('${id}','${UNIT_REKAMAN[g % UNIT_REKAMAN.length]}',${100 + g},2026,${literal(sifat)},'Varian masuk ${g}')`);
     }
-    for (let g = 1; g <= 25; g += 1) {
+    for (let g = 1; g <= UNIT_REKAMAN.length * KELAS_SK.length; g += 1) {
         const id = `41000000-0000-4000-8000-${String(g).padStart(12, '0')}`;
-        sk.push(`('${id}','${UNIT_REKAMAN[g % 5]}',${100 + g},2026,${literal(KELAS_SK[g % KELAS_SK.length])},'Varian keluar ${g}')`);
+        const kelas = KELAS_SK[Math.floor(g / UNIT_REKAMAN.length) % KELAS_SK.length];
+        sk.push(`('${id}','${UNIT_REKAMAN[g % UNIT_REKAMAN.length]}',${100 + g},2026,${literal(kelas)},'Varian keluar ${g}')`);
     }
     await database.exec(`
         INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, perihal) VALUES ${sm.join(',')};
@@ -85,6 +90,20 @@ beforeAll(async () => {
             VALUES
                 ('${USER_ID.auditorSes}','${USER_ID.auditorSes}','surat_masuk','${SURAT.smTerbatas}','sesditjen','terbatas','Uji properti: grant sudah dicabut atasan','view','revoked','${USER_ID.approver}','2026-09-01T00:00:00Z','Uji properti terverifikasi','2099-01-01T00:00:00Z','${USER_ID.approver}','2026-09-10T00:00:00Z','Uji properti dicabut'),
                 ('${USER_ID.auditorSes}','${USER_ID.auditorSes}','surat_keluar','${SURAT.skBpptNull}','dir_bppt','terbatas','Uji properti: grant sudah dicabut atasan','view','revoked','${USER_ID.approver}','2026-09-01T00:00:00Z','Uji properti terverifikasi','2099-01-01T00:00:00Z','${USER_ID.approver}','2026-09-10T00:00:00Z','Uji properti dicabut');
+        -- P4-T5-4 (FR:36): hapus lunak setelah anggota disisipkan — satu SM anggota rs1,
+        -- satu SK anggota rs2, dan target satu grant approved (SK, agar berbeda jenis).
+        UPDATE surat_masuk SET is_deleted = true WHERE id = (
+            SELECT a.surat_masuk_id FROM rangkaian_anggota a JOIN surat_masuk s ON s.id = a.surat_masuk_id
+            WHERE a.rangkaian_id = '${RANGKAIAN.rs1}'::uuid AND s.id::text LIKE '31000000%' AND s.is_deleted IS NOT TRUE
+            ORDER BY s.no_urut LIMIT 1);
+        UPDATE surat_keluar SET is_deleted = true WHERE id = (
+            SELECT a.surat_keluar_id FROM rangkaian_anggota a JOIN surat_keluar s ON s.id = a.surat_keluar_id
+            WHERE a.rangkaian_id = '${RANGKAIAN.rs2}'::uuid AND s.id::text LIKE '41000000%'
+            ORDER BY s.no_urut LIMIT 1);
+        UPDATE surat_keluar SET is_deleted = true WHERE id = (
+            SELECT g.entity_id FROM record_access_grants g JOIN surat_keluar s ON s.id = g.entity_id
+            WHERE g.entity_type = 'surat_keluar' AND g.status = 'approved' AND s.id::text LIKE '41000000%' AND s.is_deleted IS NOT TRUE
+            ORDER BY s.no_urut DESC LIMIT 1);
     `);
 }, 90_000);
 afterAll(async () => { await database?.close(); });
@@ -111,6 +130,26 @@ describe('paritas TS ↔ SQL', () => {
             sql`SELECT ${spec.klasifikasiNormSql(sql`${value}::text`)} AS "kelas"`,
         ));
         expect(row.kelas).toBe(spec.normalizeSecurityClassification(value));
+    });
+
+    it('generator mencakup setiap pasangan unit × kelas dan hapus lunak anggota rs1/rs2 serta target grant (P4-T5-4)', async () => {
+        const [cakupan] = spec.barisDari<{ sm: number; sk: number; skNull: number }>(await holder.db.execute(sql`
+            SELECT (SELECT count(DISTINCT (unit_kerja_id, coalesce(sifat_surat, '<null>')))::int FROM surat_masuk WHERE id::text LIKE '31000000%') AS "sm",
+                   (SELECT count(DISTINCT (unit_kerja_id, coalesce(klasifikasi_keamanan, '<null>')))::int FROM surat_keluar WHERE id::text LIKE '41000000%') AS "sk",
+                   (SELECT count(DISTINCT unit_kerja_id)::int FROM surat_keluar WHERE id::text LIKE '41000000%' AND klasifikasi_keamanan IS NULL) AS "skNull"`));
+        expect(cakupan).toEqual({ sm: UNIT_REKAMAN.length * SIFAT.length, sk: UNIT_REKAMAN.length * KELAS_SK.length, skNull: UNIT_REKAMAN.length });
+        const [hapus] = spec.barisDari<{ smRs1: number; skRs2: number; grant: number }>(await holder.db.execute(sql`
+            SELECT (SELECT count(*)::int FROM rangkaian_anggota a JOIN surat_masuk s ON s.id = a.surat_masuk_id
+                    WHERE a.rangkaian_id = ${RANGKAIAN.rs1}::uuid AND s.is_deleted) AS "smRs1",
+                   (SELECT count(*)::int FROM rangkaian_anggota a JOIN surat_keluar s ON s.id = a.surat_keluar_id
+                    WHERE a.rangkaian_id = ${RANGKAIAN.rs2}::uuid AND s.is_deleted) AS "skRs2",
+                   (SELECT count(*)::int FROM record_access_grants g
+                    LEFT JOIN surat_masuk m ON g.entity_type = 'surat_masuk' AND m.id = g.entity_id
+                    LEFT JOIN surat_keluar k ON g.entity_type = 'surat_keluar' AND k.id = g.entity_id
+                    WHERE g.status = 'approved' AND coalesce(m.is_deleted, k.is_deleted)) AS "grant"`));
+        expect(hapus.smRs1).toBeGreaterThan(0);
+        expect(hapus.skRs2).toBeGreaterThan(0);
+        expect(hapus.grant).toBeGreaterThan(0);
     });
 
     it('checkRead dan visibleSql(read) identik untuk 300 kombinasi acak', async () => {
@@ -185,10 +224,10 @@ describe('regresi: normalisasi klasifikasi idempoten (ruling controller)', () =>
     });
 
     it('check() pada surat_masuk bersifat murni whitespace tetap mengizinkan staff (biasa) seperti sebelumnya', async () => {
-        // g=1 dari seed di atas: unit_kerja_id='sesditjen', sifat_surat=' '.
+        // g=6 dari seed di atas (generator P4-T5-4): unit_kerja_id='sesditjen', sifat_surat=' '.
         const staff = { id: USER_ID.staffSes, role: 'staff', unitKerjaId: 'sesditjen' };
         const hasil = await access.recordAccessService.check(
-            staff as any, 'surat_masuk', '31000000-0000-4000-8000-000000000001',
+            staff as any, 'surat_masuk', '31000000-0000-4000-8000-000000000006',
         );
         expect(hasil).toMatchObject({ exists: true, allowed: true, mutable: true, classification: ' ' });
     });
