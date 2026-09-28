@@ -74,6 +74,9 @@ export function aktorPenulis(user: { id?: string | null } | null | undefined, au
 /** Unit rekaman dalam cakupan pengawas: ditjen, sesditjen, dir_* (§4.4). */
 export const isPengawasRecordUnit = dalamCakupanPengawas;
 
+/** Peran FULL_ADMIN (D5): super_admin, admin_unit, admin_dirjen, admin_sesditjen. */
+export { isFullAdmin } from './roles.js';
+
 /** Pengawas = FULL_ADMIN + unit efektif is_unit_pengawas (D5), dihitung P2. */
 export async function isPengawas(user: RecordUser | null | undefined, executor: Executor = db): Promise<boolean> {
     return (await resolveKonteksBaca(user ?? undefined, executor)).pengawas;

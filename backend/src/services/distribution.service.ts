@@ -11,6 +11,9 @@ import {
     aktorPenulis,
     denganRetryDeadlock,
     isAjukanAksesEnabled,
+    isFullAdmin,
+    isPengawas,
+    isPengawasRecordUnit,
     LABEL_DIKECUALIKAN,
     lockRangkaian,
     lockSuratKeluarRows,
@@ -701,6 +704,86 @@ export class DistributionService {
                 alasan: `Disposisi ditolak unit tujuan: ${reason}`,
             }, auditContext);
             if (result.rangkaianId) await recomputeRangkaian(tx, result.rangkaianId, auditContext);
+            return result;
+        }));
+    }
+
+    /**
+     * §2c/§5: pengawas menutup disposisi yang tidak dapat diproses target, agar
+     * rangkaian tidak macet. processed + ditutup_pengawas; grant disposisi dicabut.
+     * C-7/CTRL-1: predikat pengawas dijangkarkan pada unit surat masuk (bukan
+     * unit_pencatat rangkaian) dan TIDAK memakai jalan pintas super_admin
+     * (pengawasUntukUnit di deps); super_admin harus juga memenuhi aturan
+     * pengawas biasa (FULL_ADMIN + unit efektif is_unit_pengawas + cakupan).
+     */
+    async tutupOlehPengawas(
+        distribusiId: string,
+        actor: RecordUser,
+        alasan: string,
+        auditContext?: CriticalAuditContext,
+    ): Promise<SuratDistribution> {
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
+            if (!actor.id) throw new ForbiddenError('Hanya admin unit pengawas yang dapat menutup disposisi.');
+            const distribution = await this.kunciDisposisi(tx, eq(suratDistributions.id, distribusiId));
+            if (!distribution) throw new AppError('Distribution not found', 404);
+
+            const [sm] = await tx
+                .select({ unitKerjaId: suratMasuk.unitKerjaId })
+                .from(suratMasuk)
+                .where(eq(suratMasuk.id, distribution.suratMasukId))
+                .limit(1);
+            const pengawas = isFullAdmin(actor) && isPengawasRecordUnit(sm?.unitKerjaId) && await isPengawas(actor, tx);
+            if (!pengawas) {
+                // C-7/F1: 404 (bukan 403) bila aktor bukan pihak (source/target) dan
+                // tidak dapat membaca surat induk, agar tidak jadi oracle keberadaan.
+                const pihak = actor.unitKerjaId != null
+                    && (actor.unitKerjaId === distribution.sourceUnitId || actor.unitKerjaId === distribution.targetUnitId);
+                if (!pihak) {
+                    const baca = await recordAccessService.checkRead(actor, 'surat_masuk', distribution.suratMasukId, tx);
+                    if (!baca.allowed) throw new AppError('Distribution not found', 404);
+                }
+                throw new ForbiddenError('Hanya admin unit pengawas yang dapat menutup disposisi.');
+            }
+            if (distribution.status !== 'sent' && distribution.status !== 'received') {
+                throw new ConflictError('Disposisi sudah selesai atau ditolak');
+            }
+
+            const now = new Date();
+            const [result] = await tx
+                .update(suratDistributions)
+                .set({
+                    status: 'processed',
+                    ditutupPengawas: true,
+                    processedBy: actor.id,
+                    processedAt: now,
+                    catatanPenyelesaian: alasan.trim(),
+                    updatedAt: now,
+                })
+                .where(and(eq(suratDistributions.id, distribusiId), inArray(suratDistributions.status, ['sent', 'received'])))
+                .returning();
+            if (!result) throw new ConflictError('Disposisi sudah selesai atau ditolak');
+
+            if (auditContext) {
+                await auditLogService.logActionOrThrow({
+                    ...auditContext,
+                    action: 'process_distribution',
+                    entityType: 'surat_distribution',
+                    entityId: distribusiId,
+                    changes: {
+                        before: { status: distribution.status },
+                        after: { status: 'processed', ditutupPengawas: true },
+                        alasan: alasan.trim(),
+                    },
+                }, tx);
+            }
+            await disposisiGrantService.cabut(tx, {
+                distribusiId,
+                suratMasukId: distribution.suratMasukId,
+                actorId: actor.id,
+                alasan: `Disposisi ditutup pengawas: ${alasan.trim()}`,
+            }, auditContext);
+            if (result.rangkaianId) await recomputeRangkaian(tx, result.rangkaianId, auditContext);
+            await recomputeSuratMasuk(tx, [result.suratMasukId], auditContext);
             return result;
         }));
     }

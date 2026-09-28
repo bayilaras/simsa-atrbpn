@@ -3,11 +3,12 @@ import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware
 import { validateBody, validateIdParam, validateQuery } from '../middlewares/validate.middleware';
 import { canReadMiddleware, canWriteMiddleware } from '../middlewares/role.middleware';
 import { lacakLimiter } from '../middlewares/rate-limiter.middleware';
-import { ajukanAksesSchema, lacakQuerySchema } from '../validators/schemas';
+import { ajukanAksesSchema, alasanSchema, lacakQuerySchema } from '../validators/schemas';
 import auditLogService from '../services/audit-log.service.js';
 import { recordAccessService } from '../services/record-access.service.js';
 import { recordAccessGrantService } from '../services/record-access-grant.service.js';
 import { rangkaianReadService, type RangkaianDetail } from '../services/rangkaian-read.service.js';
+import { distributionService } from '../services/distribution.service.js';
 import { isAjukanAksesEnabled } from '../services/rangkaian/deps.js';
 import { lacakService } from '../services/rangkaian/lacak.service.js';
 import type { LacakParams } from '../services/rangkaian/lacak.types.js';
@@ -61,6 +62,17 @@ router.post('/anggota/:anggotaId/ajukan-akses', validateIdParam('anggotaId'), ca
             const grant = await recordAccessGrantService.requestViaRangkaian(
                 req.user!, String(req.params.anggotaId), req.body, auditOf(req));
             res.status(201).json({ success: true, data: grant });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+// POST /api/rangkaian/disposisi/:distribusiId/tutup — pengawas menutup disposisi macet (§2c/§5)
+router.post('/disposisi/:distribusiId/tutup', validateIdParam('distribusiId'), canWriteMiddleware(), validateBody(alasanSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            const data = await distributionService.tutupOlehPengawas(req.params.distribusiId as string, req.user!, req.body.alasan, auditOf(req));
+            res.json({ success: true, data });
         } catch (error) {
             next(error);
         }
