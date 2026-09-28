@@ -143,6 +143,12 @@ export const rangkaianKoreksiService = {
                 const berkas = await kunciBerkas(tx, rangkaianId);
                 if (!berkas) throw new NotFoundError('Rangkaian');
                 assertDiberkaskan(berkas);
+                // S-I3: pemeriksaan aplikasi di bawah kunci R yang sudah dipegang, karena indeks unik
+                // 0048 belum ada selama jendela §3→§5 atau hold CTRL-2. Indeks tetap jadi pengaman (23505).
+                const [terbuka] = await rows<{ id: string }>(tx, sql`
+                    SELECT id FROM rangkaian_koreksi_berkas
+                     WHERE rangkaian_id = ${rangkaianId} AND status IN ('pending', 'approved') LIMIT 1`);
+                if (terbuka) throw new ConflictError(PESAN_KOREKSI_TERBUKA);
                 if (berkas.unit_pengolah_id === input.unitPengolahBaru
                     && Number(berkas.klasifikasi_item_id) === input.klasifikasiBaru) {
                     throw new ValidationError('Koreksi tidak mengubah unit pengolah maupun klasifikasi.');
