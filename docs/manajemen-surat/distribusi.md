@@ -37,6 +37,8 @@ Distribusi adalah proses **mengirim/meneruskan surat masuk** kepada unit kerja a
 2. Tambahkan **catatan distribusi** jika diperlukan.
 3. Klik **"Distribusikan"** untuk mengonfirmasi.
 
+Batas waktu (opsional) menentukan urgensi notifikasi: mendesak saat tersisa 2 hari atau kurang dan saat lewat batas waktu.
+
 ### Langkah 4: Selesai!
 
 Surat akan muncul di **Inbox Distribusi** dari unit kerja tujuan.

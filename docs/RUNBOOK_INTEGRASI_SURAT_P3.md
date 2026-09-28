@@ -295,6 +295,12 @@ terakhir yang pernah dideploy** (sebelum rilis ini), dijalankan di atas skema
 pernah dirilis sehingga "redeploy P2" bukan pilihan. Bila skema harus
 dibatalkan, pulihkan dari backup §0.2 (RUNBOOK_P1 langkah 1).
 
+> **Catatan P5.** Lantai rollback di atas tidak berlaku setelah 0048
+> diterapkan; lantai rollback setelah 0048 adalah kode P3+, karena setiap rilis
+> lebih lama (termasuk rilis yang dijadikan lantai di sini) menulis
+> `surat_distributions` tanpa `rangkaian_id`, yang ditolak `23502` oleh 0048.
+> Lihat `docs/RUNBOOK_INTEGRASI_SURAT_P5.md` §9.
+
 1. **Redeploy** frontend dan backend rilis produksi terakhir bersamaan
    (keduanya dari revisi yang sama). Periksa `/ready` = 200.
 2. **Kompatibilitas data.** Kode rilis terakhir (pra-P1) tidak memakai tabel
