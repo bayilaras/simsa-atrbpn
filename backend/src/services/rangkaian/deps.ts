@@ -170,6 +170,42 @@ export async function lockRangkaian(tx: Tx, ids: string[]): Promise<RangkaianTer
     return rows.map((row) => ({ ...row, selesaiAt: keDate(row.selesaiAt) }));
 }
 
+/** Rangkaian keanggotaan surat masuk (paling banyak satu, indeks unik rangkaian_anggota_sm_uidx). */
+export async function rangkaianKeanggotaanSuratMasuk(executor: Executor, suratMasukId: string): Promise<string | null> {
+    const [row] = rowsOf<{ rangkaian_id: string }>(await executor.execute(sql`
+        SELECT rangkaian_id::text AS rangkaian_id FROM rangkaian_anggota WHERE surat_masuk_id = ${suratMasukId} LIMIT 1`));
+    return row?.rangkaian_id ?? null;
+}
+
+/** Surat masuk anggota rangkaian yang tidak terhapus (GC#29), urut id. */
+export async function suratMasukAnggotaHidup(executor: Executor, rangkaianId: string): Promise<string[]> {
+    return rowsOf<{ id: string }>(await executor.execute(sql`
+        SELECT ra.surat_masuk_id::text AS id
+          FROM rangkaian_anggota ra
+          JOIN surat_masuk sm ON sm.id = ra.surat_masuk_id AND sm.is_deleted IS NOT TRUE
+         WHERE ra.rangkaian_id = ${rangkaianId}
+         ORDER BY ra.surat_masuk_id`)).map((row) => row.id);
+}
+
+/**
+ * C-I1: prabaca TANPA kunci sebelum distribute. Bila surat masuk ini anggota
+ * rangkaian `selesai`, disposisi baru akan membukanya kembali dan status SEMUA
+ * surat masuk anggotanya wajib dihitung ulang — maka semuanya harus dikunci
+ * sebelum rangkaian (G-LOCK). Selain itu hanya surat itu sendiri.
+ */
+export async function suratMasukUntukDistribusi(executor: Executor, suratMasukId: string): Promise<string[]> {
+    const [row] = rowsOf<{ rangkaian_id: string; status: string }>(await executor.execute(sql`
+        SELECT ra.rangkaian_id::text AS rangkaian_id, rs.status
+          FROM rangkaian_anggota ra JOIN rangkaian_surat rs ON rs.id = ra.rangkaian_id
+         WHERE ra.surat_masuk_id = ${suratMasukId}
+         LIMIT 1`));
+    const ids = new Set<string>([suratMasukId]);
+    if (row?.status === 'selesai') {
+        for (const id of await suratMasukAnggotaHidup(executor, row.rangkaian_id)) ids.add(id);
+    }
+    return [...ids];
+}
+
 /**
  * Pemanggil WAJIB sudah memegang kunci baris surat terkait (G-LOCK) sebelum
  * memanggil; P1 mengunci ulang rangkaian di dalamnya.

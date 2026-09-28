@@ -44,7 +44,11 @@ export const disposisiGrantService = {
                 purpose,
                 accessMode: 'view',
                 status: 'pending',
-            }).returning({ id: recordAccessGrants.id });
+            // C-M5: requestViaRangkaian bersamaan (tanpa kunci SM) dapat menyisipkan
+            // grant pending/approved yang sama di antara cek dan INSERT; indeks unik
+            // parsial membuat baris ini no-op alih-alih 23505 yang membatalkan distribute.
+            }).onConflictDoNothing().returning({ id: recordAccessGrants.id });
+            if (!grant) continue;
             dibuat.push(grant.id);
             if (audit) {
                 await auditLogService.logActionOrThrow({

@@ -197,14 +197,22 @@ export function anggotaMemblokirSql(rangkaianId: SQL | string): SQL {
  * (GC#29, T12-3). Baris lama ber-`rangkaian_id` NULL milik surat masuk anggota
  * ikut dihitung (C-6), selaras trigger 0046 yang mengikat baris NULL lewat
  * keanggotaan surat masuknya; setelah backfill (NULL = 0) klausa ini no-op.
+ *
+ * C-M1: ditulis sebagai JUMLAH dua hitungan yang saling lepas (rangkaian_id = X
+ * vs rangkaian_id IS NULL) agar masing-masing dapat memakai indeks
+ * (surat_distributions_rangkaian_idx; rangkaian_anggota per rangkaian →
+ * distribusi per surat_masuk_id). Semantik identik dengan bentuk OR lama:
+ * rangkaian_anggota_sm_uidx menjamin satu baris anggota per surat masuk,
+ * sehingga JOIN tidak menggandakan baris seperti EXISTS.
  */
 export function disposisiTerbukaSql(rangkaianId: SQL | string): SQL {
-    return sql`(SELECT count(*)::int FROM surat_distributions d
+    return sql`((SELECT count(*)::int FROM surat_distributions d
         JOIN surat_masuk sm ON sm.id = d.surat_masuk_id AND sm.is_deleted IS NOT TRUE
-        WHERE d.status IN ('sent', 'received')
-          AND (d.rangkaian_id = ${rangkaianId}
-               OR (d.rangkaian_id IS NULL AND EXISTS (SELECT 1 FROM rangkaian_anggota ma
-                    WHERE ma.rangkaian_id = ${rangkaianId} AND ma.surat_masuk_id = d.surat_masuk_id))))`;
+        WHERE d.rangkaian_id = ${rangkaianId} AND d.status IN ('sent', 'received'))
+      + (SELECT count(*)::int FROM rangkaian_anggota ma
+        JOIN surat_distributions d ON ma.surat_masuk_id = d.surat_masuk_id AND d.rangkaian_id IS NULL
+        JOIN surat_masuk sm ON sm.id = d.surat_masuk_id AND sm.is_deleted IS NOT TRUE
+        WHERE ma.rangkaian_id = ${rangkaianId} AND d.status IN ('sent', 'received')))`;
 }
 
 type RangkaianFacts = {

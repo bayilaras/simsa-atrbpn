@@ -18,12 +18,15 @@ import {
     lockRangkaian,
     lockSuratKeluarRows,
     lockSuratMasukRows,
+    rangkaianKeanggotaanSuratMasuk,
     rangkaianService,
     readRefKey,
     recomputeRangkaian,
     recomputeSuratMasuk,
     recordAccessService,
     resolveKonteksBaca,
+    suratMasukAnggotaHidup,
+    suratMasukUntukDistribusi,
     visibleSql,
     type RecordUser,
     type Tx,
@@ -71,7 +74,12 @@ export const SURAT_TERKENDALI_DISPOSISI_MESSAGE =
     'Surat terkendali belum dapat didisposisikan; tangani di unit pencatat atau aktifkan jalur akses disposisi';
 
 export const PESAN_BELUM_DAPAT_MEMBACA = 'Surat belum dapat Anda baca. Ajukan akses atau hubungi TU sebelum menindaklanjuti disposisi.';
-const PESAN_PENYELESAIAN_TIDAK_SAH = 'Surat keluar penyelesaian harus sudah disetujui, milik unit Anda, dan anggota rangkaian yang sama.';
+const PESAN_KEANGGOTAAN_BERUBAH = 'Keanggotaan rangkaian surat sedang berubah; coba lagi.';
+
+/** Anggota SM rangkaian berubah di antara prabaca tanpa kunci dan kunci rangkaian; ulangi dari savepoint (C-I1). */
+class KeanggotaanBerubah extends Error {}
+
+const PESAN_PENYELESAIAN_TIDAK_SAH ='Surat keluar penyelesaian harus sudah disetujui, milik unit Anda, dan anggota rangkaian yang sama.';
 
 type InboxRow = {
     distribution: SuratDistribution;
@@ -141,8 +149,40 @@ export class DistributionService {
         return tx ? run(tx) : denganRetryDeadlock(() => db.transaction(run));
     }
 
+    /**
+     * C-I1: satu disposisi di dalam savepoint. Disposisi baru membuka kembali
+     * rangkaian `selesai` (juga Tandai Selesai), sehingga status SEMUA surat
+     * masuk anggotanya dihitung ulang (seperti T8-4/T9-2/T15-7). Anggota itu
+     * dikunci SEBELUM rangkaian dari prabaca tanpa kunci; bila setelah kunci
+     * rangkaian ternyata ada anggota yang belum dikunci (keanggotaan/status
+     * berubah bersamaan), savepoint digulung balik dan diulang sekali, lalu 409.
+     */
     private async distributeInTx(tx: Tx, data: DistributeInput, auditContext?: CriticalAuditContext): Promise<SuratDistribution> {
-        // Urutan kunci G-LOCK: baris surat_masuk → rangkaian (ensure) → distribusi.
+        for (let percobaan = 1; ; percobaan += 1) {
+            const smDikunci = new Set(await this.prabacaAnggotaDibukaKembali(tx, data.suratMasukId));
+            try {
+                return await tx.transaction((sp) => this.langkahDistribusi(sp, data, smDikunci, auditContext));
+            } catch (error) {
+                if (!(error instanceof KeanggotaanBerubah)) throw error;
+                if (percobaan >= 2) throw new ConflictError(PESAN_KEANGGOTAAN_BERUBAH);
+            }
+        }
+    }
+
+    /** Prabaca tanpa kunci (C-I1): surat ini + anggota SM rangkaian `selesai`-nya. */
+    async prabacaAnggotaDibukaKembali(tx: Tx, suratMasukId: string): Promise<string[]> {
+        return suratMasukUntukDistribusi(tx, suratMasukId);
+    }
+
+    private async langkahDistribusi(
+        tx: Tx,
+        data: DistributeInput,
+        smDikunci: Set<string>,
+        auditContext?: CriticalAuditContext,
+    ): Promise<SuratDistribution> {
+        // Urutan kunci G-LOCK: baris surat_masuk (SATU pernyataan ORDER BY id,
+        // termasuk anggota yang mungkin dibuka kembali) → rangkaian (ensure) → distribusi.
+        await lockSuratMasukRows(tx, [...smDikunci]);
         // Unit sumber yang dikirim klien wajib pemilik surat (fail closed 404).
         const [sourceSurat] = await tx
             .select({ id: suratMasuk.id, sifatSurat: suratMasuk.sifatSurat, unitKerjaId: suratMasuk.unitKerjaId })
@@ -302,10 +342,19 @@ export class DistributionService {
             }, auditContext);
         }
 
-        await recomputeRangkaian(tx, ensured.rangkaianId, auditContext);
-        // Membuka kembali rangkaian menghapus selesai_manual; status SM ikut (T7-5).
-        // Baris SM sudah terkunci oleh SELECT pertama.
-        await recomputeSuratMasuk(tx, [data.suratMasukId], auditContext);
+        const perubahan = await recomputeRangkaian(tx, ensured.rangkaianId, auditContext);
+        // Membuka kembali rangkaian menghapus selesai_manual; status SEMUA SM
+        // anggota ikut (T7-5, C-I1). Keanggotaan dibaca di bawah kunci rangkaian
+        // (stabil); setiap SM wajib sudah terkunci di awal langkah (G-LOCK).
+        const dibukaKembali = (perubahan ?? []).some((c) => c.changed && c.before === 'selesai' && c.after === 'aktif');
+        const suratMasukIds = [data.suratMasukId];
+        if (dibukaKembali) {
+            for (const id of await suratMasukAnggotaHidup(tx, ensured.rangkaianId)) {
+                if (!suratMasukIds.includes(id)) suratMasukIds.push(id);
+            }
+        }
+        if (suratMasukIds.some((id) => !smDikunci.has(id))) throw new KeanggotaanBerubah();
+        await recomputeSuratMasuk(tx, suratMasukIds, auditContext);
         return result;
     }
 
@@ -480,7 +529,7 @@ export class DistributionService {
      * FOR SHARE pada rangkaian SETELAH baris distribusi terkunci, jadi kunci
      * rangkaian wajib sudah dipegang sebelum UPDATE distribusi.
      */
-    private async kunciDisposisi(tx: Tx, where: SQL) {
+    private async kunciDisposisi(tx: Tx, where: SQL): Promise<{ distribution: SuratDistribution; rangkaianId: string | null } | undefined> {
         for (let ke = 0; ke < 2; ke += 1) {
             const [awal] = await tx
                 .select({ suratMasukId: suratDistributions.suratMasukId, rangkaianId: suratDistributions.rangkaianId })
@@ -489,8 +538,13 @@ export class DistributionService {
                 .limit(1);
             if (!awal) return undefined;
             await lockSuratMasukRows(tx, [awal.suratMasukId]);
-            if (awal.rangkaianId) {
-                const [rangkaian] = await lockRangkaian(tx, [awal.rangkaianId]);
+            // C-M2: baris lama ber-rangkaian_id NULL diikat trigger 0046 lewat
+            // keanggotaan surat masuknya; kunci & periksa rangkaian itu juga.
+            // Keanggotaan stabil karena baris SM sudah terkunci (gabung/attach
+            // mengunci SM lebih dulu).
+            const rangkaianAwal = awal.rangkaianId ?? await rangkaianKeanggotaanSuratMasuk(tx, awal.suratMasukId);
+            if (rangkaianAwal) {
+                const [rangkaian] = await lockRangkaian(tx, [rangkaianAwal]);
                 // Trigger 0046 akan menolak dengan 23514 (500); jawab 409 lebih dulu.
                 if (rangkaian?.status === 'diberkaskan') {
                     throw new ConflictError('Rangkaian surat sudah diberkaskan; disposisinya tidak dapat diubah.');
@@ -498,7 +552,9 @@ export class DistributionService {
             }
             const [distribution] = await tx.select().from(suratDistributions).where(where).limit(1).for('update');
             if (!distribution) return undefined;
-            if ((distribution.rangkaianId ?? null) === (awal.rangkaianId ?? null)) return distribution;
+            if ((distribution.rangkaianId ?? null) === (awal.rangkaianId ?? null)) {
+                return { distribution, rangkaianId: rangkaianAwal ?? null };
+            }
         }
         throw new ConflictError('Data disposisi berubah bersamaan; muat ulang lalu coba lagi.');
     }
@@ -514,7 +570,7 @@ export class DistributionService {
         auditContext?: CriticalAuditContext,
     ) {
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
-            const distribution = await this.kunciDisposisi(tx, this.targetRecordWhere(distributionId, unitScope));
+            const distribution = (await this.kunciDisposisi(tx, this.targetRecordWhere(distributionId, unitScope)))?.distribution;
             if (!distribution) {
                 throw new AppError('Distribution not found', 404);
             }
@@ -578,7 +634,7 @@ export class DistributionService {
             // mengambil FOR KEY SHARE pada SK (FK) setelah SM/rangkaian terkunci; tanpa
             // kunci awal ini jalur approve (SK → SM → rangkaian) dapat deadlock.
             if (skId) await lockSuratKeluarRows(tx, [skId]);
-            const distribution = await this.kunciDisposisi(tx, this.targetRecordWhere(distributionId, unitScope));
+            const { distribution, rangkaianId: rangkaianTerkunci } = (await this.kunciDisposisi(tx, this.targetRecordWhere(distributionId, unitScope))) ?? { distribution: undefined, rangkaianId: null };
             if (!distribution) throw new AppError('Distribution not found', 404);
             if (distribution.status !== 'sent' && distribution.status !== 'received') {
                 throw new ValidationError('Disposisi sudah selesai atau ditolak');
@@ -636,7 +692,9 @@ export class DistributionService {
                 actorId,
                 alasan: 'Disposisi telah diselesaikan oleh unit tujuan.',
             }, auditContext);
-            if (result.rangkaianId) await recomputeRangkaian(tx, result.rangkaianId, auditContext);
+            // C-M2: baris lama NULL → rangkaian keanggotaan SM-nya (penghalang C-6).
+            const rangkaianHitung = result.rangkaianId ?? rangkaianTerkunci;
+            if (rangkaianHitung) await recomputeRangkaian(tx, rangkaianHitung, auditContext);
             // Baris SM sudah terkunci oleh kunciDisposisi (G-LOCK).
             await recomputeSuratMasuk(tx, [result.suratMasukId], auditContext);
             return result;
@@ -654,7 +712,7 @@ export class DistributionService {
         auditContext?: CriticalAuditContext,
     ) {
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
-            const distribution = await this.kunciDisposisi(tx, this.targetRecordWhere(distributionId, unitScope));
+            const { distribution, rangkaianId: rangkaianTerkunci } = (await this.kunciDisposisi(tx, this.targetRecordWhere(distributionId, unitScope))) ?? { distribution: undefined, rangkaianId: null };
 
             if (!distribution) {
                 throw new AppError('Distribution not found', 404);
@@ -703,7 +761,9 @@ export class DistributionService {
                 actorId,
                 alasan: `Disposisi ditolak unit tujuan: ${reason}`,
             }, auditContext);
-            if (result.rangkaianId) await recomputeRangkaian(tx, result.rangkaianId, auditContext);
+            // C-M2: baris lama NULL → rangkaian keanggotaan SM-nya (penghalang C-6).
+            const rangkaianHitung = result.rangkaianId ?? rangkaianTerkunci;
+            if (rangkaianHitung) await recomputeRangkaian(tx, rangkaianHitung, auditContext);
             return result;
         }));
     }
@@ -779,7 +839,7 @@ export class DistributionService {
             // otorisasiTutupPengawas).
             await this.otorisasiTutupPengawas(tx, distribusiId, actor);
 
-            const distribution = await this.kunciDisposisi(tx, eq(suratDistributions.id, distribusiId));
+            const { distribution, rangkaianId: rangkaianTerkunci } = (await this.kunciDisposisi(tx, eq(suratDistributions.id, distribusiId))) ?? { distribution: undefined, rangkaianId: null };
             if (!distribution) throw new AppError('Distribution not found', 404);
 
             // Re-check otoritatif setelah kunci dipegang (baris bisa berubah
@@ -823,7 +883,9 @@ export class DistributionService {
                 actorId: actor.id,
                 alasan: `Disposisi ditutup pengawas: ${alasan.trim()}`,
             }, auditContext);
-            if (result.rangkaianId) await recomputeRangkaian(tx, result.rangkaianId, auditContext);
+            // C-M2: baris lama NULL → rangkaian keanggotaan SM-nya (penghalang C-6).
+            const rangkaianHitung = result.rangkaianId ?? rangkaianTerkunci;
+            if (rangkaianHitung) await recomputeRangkaian(tx, rangkaianHitung, auditContext);
             await recomputeSuratMasuk(tx, [result.suratMasukId], auditContext);
             // A-I2 (§4.8): Tutup justru ada untuk baris yang hanya terlihat
             // tersamar oleh pengawas; respons disamarkan bila pengawas tidak

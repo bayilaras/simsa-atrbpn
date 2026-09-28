@@ -45,17 +45,24 @@ const mockDb: any = {
         if (val instanceof Error) throw val;
         return val;
     },
+    // Hanya transaksi terluar yang dihitung; transaksi bersarang = savepoint
+    // (distributeInTx per target, C-I1) dan tidak meng-commit apa pun sendiri.
     transaction: async (fn: any) => {
+        const terluar = kedalamanTransaksi === 0;
+        kedalamanTransaksi += 1;
         try {
             const result = await fn(mockDb);
-            transactionCommits += 1;
+            if (terluar) transactionCommits += 1;
             return result;
         } catch (error) {
-            transactionRollbacks += 1;
+            if (terluar) transactionRollbacks += 1;
             throw error;
+        } finally {
+            kedalamanTransaksi -= 1;
         }
     },
 };
+let kedalamanTransaksi = 0;
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
@@ -78,6 +85,10 @@ vi.mock('../services/rangkaian/deps.js', () => ({
     LABEL_DIKECUALIKAN: 'Dikecualikan',
     recomputeRangkaian: rangkaianMocks.recomputeRangkaian,
     recomputeSuratMasuk: rangkaianMocks.recomputeSuratMasuk,
+    // C-I1/C-M2: prabaca keanggotaan (diuji nyata di disposisi-rangkaian-status.integration).
+    suratMasukUntukDistribusi: async (_tx: unknown, id: string) => [id],
+    suratMasukAnggotaHidup: async () => [],
+    rangkaianKeanggotaanSuratMasuk: async () => null,
 }));
 vi.mock('../services/rangkaian/disposisi-grant.service.js', () => ({
     disposisiGrantService: { ajukan: rangkaianMocks.ajukan, cabut: rangkaianMocks.cabut },
@@ -131,8 +142,10 @@ describe('DistributionService', () => {
 
         it('memakai transaksi luar bila tx diberikan', async () => {
             enqueue([SUMBER], [TARGET], [], [{ id: 'dist-1', status: 'sent' }], []);
-            await svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }, undefined, mockDb);
-            expect(transactionCommits).toBe(0);
+            // Dijalankan di dalam transaksi pemanggil: distribute hanya membuka
+            // savepoint (C-I1), tidak pernah transaksi terluar kedua.
+            await mockDb.transaction((luar: any) => svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }, undefined, luar));
+            expect(transactionCommits).toBe(1);
         });
 
         it('rolls back distribution creation when its critical audit insert fails', async () => {

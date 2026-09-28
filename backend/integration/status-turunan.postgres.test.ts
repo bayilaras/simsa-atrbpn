@@ -16,6 +16,7 @@ const { suratMasukService } = await import('../src/services/surat-masuk.service.
 const { distributionService } = await import('../src/services/distribution.service.js');
 const { approvalService } = await import('../src/services/approval.service.js');
 const { rangkaianStatusService } = await import('../src/services/rangkaian/rangkaian-status.service.js');
+const { berkasService } = await import('../src/services/rangkaian/berkas.service.js');
 const { rangkaianService, recomputeForSuratKeluar, recomputeRangkaian, recomputeSuratMasuk } = await import('../src/services/rangkaian/deps.js');
 const { hasPostgresErrorCode } = await import('../src/utils/postgres-errors.js');
 
@@ -204,5 +205,22 @@ describe.skipIf(!adaPostgres)('status turunan monoton dan diaudit', () => {
         expect(await statusSurat(sm)).toBe('sudah_dibalas');
         // Disposisi baru masih terbuka → rangkaian aktif, apa pun urutan commit-nya.
         expect(await statusRangkaianSurat('surat_masuk_id', sm)).toBe('aktif');
+    });
+
+    // C-I1: distribute yang membuka kembali rangkaian Tandai Selesai menghitung
+    // ulang SEMUA surat masuk anggota (assertKonsisten satu-SM tidak menangkapnya).
+    it('distribute membuka kembali rangkaian selesai manual: kedua SM kembali belum_dibalas', async () => {
+        const smA = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-60/2026' });
+        const smB = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-61/2026' });
+        const rs = await h.db.transaction(async (tx: any) => {
+            const r = await rangkaianService.ensureForSurat(tx, { jenis: 'surat_masuk', id: smA }, { userId: tu.id });
+            await rangkaianService.attach(tx, { rangkaianId: r.rangkaianId, surat: { jenis: 'surat_masuk', id: smB }, keAnggotaId: r.anggotaId, jenisRelasi: 'merujuk' }, { userId: tu.id });
+            return r.rangkaianId as string;
+        });
+        await berkasService.tandaiSelesai(tu as any, rs, 'Selesai ditangani langsung oleh TU', audit());
+        expect([await statusSurat(smA), await statusSurat(smB)]).toEqual(['sudah_dibalas', 'sudah_dibalas']);
+        await distributionService.distribute({ suratMasukId: smA, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', sentBy: tu.id }, audit());
+        expect(await statusRangkaianSurat('surat_masuk_id', smA)).toBe('aktif');
+        expect([await statusSurat(smA), await statusSurat(smB)]).toEqual(['belum_dibalas', 'belum_dibalas']);
     });
 });
