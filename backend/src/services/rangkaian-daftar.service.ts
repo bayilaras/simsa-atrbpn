@@ -7,7 +7,7 @@ import {
 } from './access/visibility-spec.js';
 import { readRefKey, recordAccessService, type ReadAccessResult, type ReadRef } from './record-access.service.js';
 import { judulRangkaianTampil } from './rangkaian-judul.js';
-import { tingkatAksesRangkaian } from './rangkaian-read.service.js';
+import { BATAS_NODE_DETAIL, tingkatAksesRangkaian } from './rangkaian-read.service.js';
 
 export type DaftarRangkaianFilter = {
     unitPengolahId?: string;
@@ -27,7 +27,11 @@ export type RangkaianRingkas = {
     judul: string;
     unitPencatat: { id: string; nama: string | null };
     unitPengolah: { id: string; nama: string | null } | null;
-    jumlahAnggota: number;
+    /**
+     * B-I1 (A-I3 / P4-D-15): pembaca penuh (owner/pengawas/peserta) = semua anggota;
+     * tier 'anggota' = anggota yang terbaca saja (setara getDetail); tidak dapat dibuka = null.
+     */
+    jumlahAnggota: number | null;
     selesaiAt: string | null;
     diberkaskanAt: string | null;
     /** FR:35: tautan/aksi memakai mode baca — true hanya bila GET /api/rangkaian/:id akan mengembalikan 200. */
@@ -76,6 +80,35 @@ export function lingkupRangkaianSql(ctx: KonteksBaca, alias = 'r'): SQL {
 
 async function lingkupSql(user: PenggunaDaftar): Promise<SQL> {
     return lingkupRangkaianSql(await resolveKonteksBaca(user, db));
+}
+
+/**
+ * Hitung anggota terbaca (checkMany, mode baca) per rangkaian dengan jendela dan urutan
+ * yang sama dengan P2 getDetail (induk → ditambahkan_at → id, BATAS_NODE_DETAIL, tanpa terhapus).
+ */
+async function hitungAnggotaTerbaca(user: PenggunaDaftar, rangkaianIds: string[]): Promise<Map<string, number>> {
+    const hasil = new Map<string, number>();
+    for (const rangkaianId of rangkaianIds) {
+        const anggota = barisDari<{ jenis: 'surat_masuk' | 'surat_keluar'; surat_id: string }>(await db.execute(sql`
+            SELECT CASE WHEN a.surat_masuk_id IS NOT NULL THEN 'surat_masuk' ELSE 'surat_keluar' END AS jenis,
+                   coalesce(a.surat_masuk_id, a.surat_keluar_id)::text AS surat_id
+              FROM rangkaian_anggota a
+              LEFT JOIN surat_masuk sm ON sm.id = a.surat_masuk_id
+              LEFT JOIN surat_keluar sk ON sk.id = a.surat_keluar_id
+             WHERE a.rangkaian_id = ${rangkaianId}::uuid
+               AND coalesce(sm.is_deleted, sk.is_deleted) IS NOT TRUE
+             ORDER BY (a.peran = 'induk') DESC, a.ditambahkan_at, a.id
+             LIMIT ${BATAS_NODE_DETAIL}`));
+        const akses = anggota.length
+            ? await recordAccessService.checkMany(user, anggota.map(row => ({ type: row.jenis, id: row.surat_id })))
+            : new Map<string, ReadAccessResult>();
+        // Sama dengan `terlihat` getDetail: allowed && via.
+        hasil.set(rangkaianId, anggota.filter((row) => {
+            const a = akses.get(readRefKey({ type: row.jenis, id: row.surat_id }));
+            return a?.allowed === true && Boolean(a.via);
+        }).length);
+    }
+    return hasil;
 }
 
 export const rangkaianDaftarService = {
@@ -127,8 +160,20 @@ export const rangkaianDaftarService = {
         };
 
         // FR:35: tautan/aksi memakai mode baca — rangkaian yang tercantum (lingkup list) belum tentu dapat dibuka (GET /:id).
-        const dapatDibuka = new Map<string, boolean>();
-        for (const row of rows) dapatDibuka.set(row.id, (await tingkatAksesRangkaian(user, row.id, db)) !== null);
+        const tingkat = new Map<string, Awaited<ReturnType<typeof tingkatAksesRangkaian>>>();
+        for (const row of rows) tingkat.set(row.id, await tingkatAksesRangkaian(user, row.id, db));
+
+        // B-I1: jumlah anggota tidak boleh membocorkan bentuk rantai kepada pembaca tanpa tier level
+        // rangkaian (A-I3). Tier 'anggota' = hitung anggota terbaca pada jendela getDetail.
+        const jumlahTerbaca = await hitungAnggotaTerbaca(
+            user, rows.filter(row => tingkat.get(row.id) === 'anggota').map(row => row.id),
+        );
+        const jumlahAnggota = (row: BarisRangkaian): number | null => {
+            const t = tingkat.get(row.id) ?? null;
+            if (t === null) return null;
+            if (t === 'anggota') return jumlahTerbaca.get(row.id) ?? 0;
+            return row.jumlah_anggota;
+        };
 
         const data: RangkaianRingkas[] = rows.map(row => ({
             id: row.id,
@@ -139,10 +184,10 @@ export const rangkaianDaftarService = {
             judul: judulRangkaianTampil(row.kode, row.judul, !indukTerbaca(row.id)),
             unitPencatat: { id: row.unit_pencatat_id, nama: row.unit_pencatat_nama },
             unitPengolah: row.unit_pengolah_id ? { id: row.unit_pengolah_id, nama: row.unit_pengolah_nama } : null,
-            jumlahAnggota: row.jumlah_anggota,
+            jumlahAnggota: jumlahAnggota(row),
             selesaiAt: row.selesai_at,
             diberkaskanAt: row.diberkaskan_at,
-            dapatDibuka: dapatDibuka.get(row.id) === true,
+            dapatDibuka: (tingkat.get(row.id) ?? null) !== null,
         }));
         return {
             data,

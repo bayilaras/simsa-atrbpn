@@ -39,7 +39,10 @@ function InfoBaris({ item }) {
             <p className="text-xs text-muted-foreground">
                 {item.unitNama}
                 {item.rangkaian?.kode && (
-                    <> · <Link to={lacakHref({ rangkaianId: item.rangkaian.id })} className="underline-offset-2 hover:underline">{item.rangkaian.kode}</Link></>
+                    // FR:35: tautan hanya bila server menyatakan GET /api/rangkaian/:id akan 200 (sama dengan Berkas Rangkaian).
+                    <> · {item.rangkaian.dapatDibuka === true
+                        ? <Link to={lacakHref({ rangkaianId: item.rangkaian.id })} className="underline-offset-2 hover:underline">{item.rangkaian.kode}</Link>
+                        : <span title="Rangkaian ini tidak dapat Anda buka">{item.rangkaian.kode}</span>}</>
                 )}
                 {item.disposisi && (
                     <> · Disposisi ke {item.disposisi.targetUnitNama} · {LABEL_STATUS_DISPOSISI[item.disposisi.status] ?? item.disposisi.status}

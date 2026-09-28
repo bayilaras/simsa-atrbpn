@@ -144,9 +144,8 @@ describe('paritas TS ↔ SQL', () => {
                    (SELECT count(*)::int FROM rangkaian_anggota a JOIN surat_keluar s ON s.id = a.surat_keluar_id
                     WHERE a.rangkaian_id = ${RANGKAIAN.rs2}::uuid AND s.is_deleted) AS "skRs2",
                    (SELECT count(*)::int FROM record_access_grants g
-                    LEFT JOIN surat_masuk m ON g.entity_type = 'surat_masuk' AND m.id = g.entity_id
-                    LEFT JOIN surat_keluar k ON g.entity_type = 'surat_keluar' AND k.id = g.entity_id
-                    WHERE g.status = 'approved' AND coalesce(m.is_deleted, k.is_deleted)) AS "grant"`));
+                    JOIN surat_keluar k ON k.id = g.entity_id
+                    WHERE g.entity_type = 'surat_keluar' AND g.status = 'approved' AND k.is_deleted) AS "grant"`));
         expect(hapus.smRs1).toBeGreaterThan(0);
         expect(hapus.skRs2).toBeGreaterThan(0);
         expect(hapus.grant).toBeGreaterThan(0);

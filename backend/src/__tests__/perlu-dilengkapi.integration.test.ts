@@ -228,6 +228,13 @@ describe('Perlu Dilengkapi (D7) — cakupan §4', () => {
         expect(await svc.resolveBatasDataLama(holder.db)).toBe(BATAS_UTC);
         vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', '');
         expect(await svc.resolveBatasDataLama(holder.db)).toBe('2026-03-04T05:06:07.000Z');
+        // Tidak bergantung pada TimeZone sesi (maupun TZ proses Node): nilai tetap instan UTC yang sama.
+        await database.exec(`SET TIME ZONE 'Asia/Jakarta'`);
+        try {
+            expect(await svc.resolveBatasDataLama(holder.db)).toBe('2026-03-04T05:06:07.000Z');
+        } finally {
+            await database.exec(`SET TIME ZONE 'UTC'`);
+        }
         vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', '2026-01-01');
         await expect(svc.resolveBatasDataLama(holder.db)).rejects.toThrow(/zona waktu/);
         vi.stubEnv('RANGKAIAN_DATA_LAMA_SEBELUM', '');
@@ -298,5 +305,64 @@ describe('amandemen pra-eksekusi P4 T16 item 13 — satu definisi "sudah ditinda
         await database.exec(`UPDATE surat_keluar SET is_deleted = true WHERE id = '${id.SK10}'`);
         expect((await daftar('tu')).data.some(item => item.kunci === kunci)).toBe(true);
         expect(await statusAlur()).toBe('terdaftar');
+    });
+});
+
+describe('FE-I1: rangkaian per baris mengikuti mode baca (dapatDibuka, FR:35)', () => {
+    it('rangkaian dikirim hanya bila GET /api/rangkaian/:id akan 200 — paritas getDetail untuk semua pengguna × baris', async () => {
+        const { rangkaianReadService } = await import('../services/rangkaian-read.service');
+        let diperiksa = 0;
+        for (const [nama, user] of Object.entries(pengguna)) {
+            const hasil = await svc.perluDilengkapiService.list(user, { tampilkanDataLama: true, page: 1, limit: 100 });
+            for (const item of hasil.data) {
+                if (!item.rangkaian) continue;
+                diperiksa += 1;
+                expect(item.rangkaian.dapatDibuka, `${nama} × ${item.kunci}`).toBe(true);
+                expect(await rangkaianReadService.getDetail(user, item.rangkaian.id, holder.db), `${nama} × ${item.kunci}`).not.toBeNull();
+            }
+        }
+        expect(diperiksa).toBeGreaterThan(0);
+    });
+
+    it('surat terlihat tetapi rangkaian barisnya tak dapat dibuka: kode/id rangkaian tidak dikirim (fail closed, setara Lacak)', async () => {
+        // Disposisi SM1 (biasa, terbaca staff TU) tercatat pada rangkaian lain yang hanya beranggotakan
+        // surat Rahasia: staff TU (tanpa tier level rangkaian) mendapat 404 pada GET /:id rangkaian itu.
+        const smR = await insertSuratMasuk(database, { n: 40, unit: 'sesditjen', nomor: 'R-40/2026', tanggal: '2026-09-21', perihal: 'PERIHAL-RAHASIA-40', sifat: 'Rahasia' });
+        const rR = await insertRangkaian(database, { n: 40, kode: 'RS-2026-000040', tahun: 2026, pencatat: 'sesditjen', judul: 'PERIHAL-RAHASIA-40',
+            anggota: [{ jenis: 'surat_masuk', id: smR, peran: 'induk', unit: 'sesditjen' }] });
+        await insertDisposisi(database, { suratMasukId: id.SM1, sumber: 'sesditjen', target: 'dir_ptep', status: 'sent', rangkaianId: rR.id });
+        const { rangkaianReadService } = await import('../services/rangkaian-read.service');
+        expect(await rangkaianReadService.getDetail(pengguna.staffTu, rR.id, holder.db)).toBeNull();
+
+        const hasil = await daftar('staffTu', { kategori: 'disposisi_terbuka' });
+        const baris = hasil.data.filter(item => !item.masked && item.surat?.id === id.SM1);
+        expect(baris).toHaveLength(1);
+        expect(baris[0].rangkaian).toBeNull();
+        const json = JSON.stringify(hasil);
+        expect(json).not.toContain('RS-2026-000040');
+        expect(json).not.toContain(rR.id);
+        // Kontrol non-vakum: super_admin (tier owner) tetap menerima rangkaian yang dapat dibuka.
+        const sa = (await daftar('superAdmin', { kategori: 'disposisi_terbuka' })).data.find(item => item.surat?.id === id.SM1);
+        expect(sa?.rangkaian).toMatchObject({ id: rR.id, kode: 'RS-2026-000040', dapatDibuka: true });
+    });
+
+    it('siap_diberkaskan yang tak dapat dibuka menjadi placeholder tanpa kode/id rangkaian dan tanpa aksi', async () => {
+        const smR = await insertSuratMasuk(database, { n: 41, unit: 'sesditjen', nomor: 'R-41/2026', tanggal: '2026-09-22', perihal: 'PERIHAL-RAHASIA-41', sifat: 'Rahasia' });
+        const rR = await insertRangkaian(database, { n: 41, kode: 'RS-2026-000041', tahun: 2026, pencatat: 'sesditjen', status: 'selesai', judul: 'PERIHAL-RAHASIA-41',
+            anggota: [{ jenis: 'surat_masuk', id: smR, peran: 'induk', unit: 'sesditjen' }] });
+        const { rangkaianReadService } = await import('../services/rangkaian-read.service');
+        expect(await rangkaianReadService.getDetail(pengguna.staffTu, rR.id, holder.db)).toBeNull();
+
+        const hasil = await daftar('staffTu', { kategori: 'siap_diberkaskan' });
+        const ringkasan = await svc.perluDilengkapiService.ringkasan(pengguna.staffTu, { tampilkanDataLama: false });
+        expect(hasil.pagination.total).toBe(ringkasan.perKategori.siap_diberkaskan);
+        const tersamar = hasil.data.filter(item => item.masked);
+        expect(tersamar).toHaveLength(1);
+        expect(tersamar[0]).toMatchObject({ kategori: 'siap_diberkaskan', jenis: 'rangkaian', label: 'Dikecualikan', rangkaian: null, surat: null, aksiDiizinkan: [] });
+        expect(tersamar[0].kunci).toMatch(/^siap_diberkaskan:tersamar-\d+$/);
+        const json = JSON.stringify(hasil);
+        for (const bocoran of ['RS-2026-000041', rR.id, 'PERIHAL-RAHASIA-41']) expect(json).not.toContain(bocoran);
+        // Kontrol: R6 (anggota terbaca bagi staff) tetap tampil dengan dapatDibuka.
+        expect(hasil.data.find(item => item.kunci === `siap_diberkaskan:${id.R6}`)?.rangkaian).toMatchObject({ id: id.R6, dapatDibuka: true });
     });
 });

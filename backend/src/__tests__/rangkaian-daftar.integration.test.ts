@@ -152,4 +152,26 @@ describe('GET /api/rangkaian — jangkauan daftar Berkas Rangkaian', () => {
         const staff = await daftar.list(pengguna.staffTu, { page: 1, limit: 50 });
         expect(staff.data.find(row => row.id === r.R7.id)).toMatchObject({ dapatDibuka: false });
     });
+
+    it('B-I1: jumlahAnggota setara getDetail — penuh = semua anggota, tier anggota = anggota terbaca, tak dapat dibuka = null', async () => {
+        const auditor: PenggunaUji = { id: uid(908), email: 'auditor@example.test', name: 'Auditor TU', role: 'auditor', unitKerjaId: 'sesditjen' };
+        await insertUser(database, auditor);
+        const { rangkaianReadService } = await import('../services/rangkaian-read.service');
+        for (const [namaPengguna, user] of Object.entries({ ...pengguna, auditor })) {
+            const hasil = await daftar.list(user, { page: 1, limit: 50 });
+            for (const row of hasil.data) {
+                const detail = await rangkaianReadService.getDetail(user, row.id, holder.db);
+                expect(row.jumlahAnggota, `${namaPengguna} × ${row.kode}`).toBe(detail ? detail.anggota.length : null);
+            }
+        }
+        for (const user of [pengguna.staffTu, auditor]) {
+            const hasil = await daftar.list(user, { page: 1, limit: 50 });
+            // R4: induk sesditjen terbaca, SK dir_ptep tidak — hanya 1 anggota terbaca (bukan 2).
+            expect(hasil.data.find(row => row.id === r.R4.id), user.role).toMatchObject({ dapatDibuka: true, jumlahAnggota: 1 });
+            // R7: Rahasia, tak dapat dibuka — bentuk rantai tidak dibocorkan.
+            expect(hasil.data.find(row => row.id === r.R7.id), user.role).toMatchObject({ dapatDibuka: false, jumlahAnggota: null });
+        }
+        const superHasil = await daftar.list(pengguna.superAdmin, { page: 1, limit: 50 });
+        expect(superHasil.data.find(row => row.id === r.R4.id)).toMatchObject({ jumlahAnggota: 2 });
+    });
 });
