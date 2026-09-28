@@ -337,6 +337,13 @@
       "when": 1789397418667,
       "tag": "0047_unit_kerja_direktorat",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1789397419667,
+      "tag": "0048_rangkaian_pengerasan",
+      "breakpoints": true
     }
   ]
 }

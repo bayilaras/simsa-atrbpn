@@ -1,18 +1,16 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { enterTestMigratorRole } from './database-role-fixture';
+import { applyMigrationTag, journalEntries } from './rangkaian-p5-pglite.js';
 
-export async function bootRangkaianDatabase(): Promise<PGlite> {
+/** Rantai migrasi penuh sesuai urutan journal (termasuk 0048+), atau berhenti sebelum `stopBefore`. */
+export async function bootRangkaianDatabase(options: { stopBefore?: string } = {}): Promise<PGlite> {
     const database = new PGlite({ extensions: { pgcrypto } });
     await database.waitReady;
     await enterTestMigratorRole(database);
-    const dir = fileURLToPath(new URL('../../db/migrations/', import.meta.url));
-    for (const file of readdirSync(dir).filter(name => /^\d{4}.*\.sql$/.test(name) && Number(name.slice(0, 4)) <= 47).sort()) {
-        for (const statement of readFileSync(`${dir}/${file}`, 'utf8').split('--> statement-breakpoint').filter(value => value.trim())) {
-            await database.exec(statement);
-        }
+    for (const entry of journalEntries) {
+        if (entry.tag === options.stopBefore) break;
+        await applyMigrationTag(database, entry.tag);
     }
     return database;
 }

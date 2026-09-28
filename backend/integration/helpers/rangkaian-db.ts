@@ -25,7 +25,7 @@ export function assertIsolatedTestTarget(raw = process.env.TEST_POSTGRES_URL): U
     return url;
 }
 
-export async function createRangkaianTestDatabase(label: string) {
+export async function createRangkaianTestDatabase(label: string, options: { stopBefore?: string } = {}) {
     if (!/^[a-z]{3,20}$/.test(label)) throw new Error('label harus 3-20 huruf kecil');
     const url = assertIsolatedTestTarget();
     const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
@@ -50,7 +50,10 @@ export async function createRangkaianTestDatabase(label: string) {
         ALTER SCHEMA public OWNER TO simsa_migrator;
         CREATE SCHEMA drizzle AUTHORIZATION simsa_migrator;
         SET ROLE simsa_migrator;`);
-        await migrateDatabase(connection, loadMigrations());
+        const semua = loadMigrations();
+        const batas = options.stopBefore ? semua.findIndex((migration: { tag: string }) => migration.tag === options.stopBefore) : -1;
+        if (options.stopBefore && batas < 0) throw new Error(`Migrasi ${options.stopBefore} tidak ada di journal`);
+        await migrateDatabase(connection, batas >= 0 ? semua.slice(0, batas) : semua);
         await connection.query('RESET ROLE');
     } finally {
         connection.release();
@@ -114,6 +117,11 @@ export async function createRangkaianTestDatabase(label: string) {
     }
 
     async function insertDistribusi(input: { suratMasukId: string; sourceUnitId: string; targetUnitId: string; status?: string; rangkaianId?: string | null; batasWaktu?: string | null }) {
+        // Sejak 0048 rangkaian_id NOT NULL: gagal keras di sini, bukan 23502 di tengah test.
+        // Hanya skenario data lama (database dibuat dengan stopBefore) boleh menyisipkan NULL. [P5-C-4]
+        if (input.rangkaianId == null && !options.stopBefore) {
+            throw new Error('rangkaianId wajib setelah 0048; buat database dengan stopBefore untuk skenario lama');
+        }
         const [row] = await query<{ id: string }>(`INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id, batas_waktu)
             VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [input.suratMasukId, input.sourceUnitId, input.targetUnitId,
             input.status ?? 'sent', input.rangkaianId ?? null, input.batasWaktu ?? null]);

@@ -342,25 +342,32 @@ async function indukMasukRaw(rangkaianId: string, suratMasukId: string) {
     return rows[0].id;
 }
 
-beforeAll(async () => {
-    database = new PGlite({ extensions: { pgcrypto } });
-    await database.waitReady;
-    await enterTestMigratorRole(database);
+/** Rantai journal penuh, atau berhenti sebelum `stopBefore` untuk skenario data lama. */
+async function siapkanDatabase(stopBefore?: string): Promise<{ database: PGlite; klasifikasiId: number }> {
+    const baru = new PGlite({ extensions: { pgcrypto } });
+    await baru.waitReady;
+    await enterTestMigratorRole(baru);
     for (const { tag } of journal.entries) {
+        if (tag === stopBefore) break;
         const statements = readFileSync(join(migrationsDir, `${tag}.sql`), 'utf8')
             .split('--> statement-breakpoint')
             .map((statement) => statement.trim())
             .filter(Boolean);
-        for (const statement of statements) await database.exec(statement);
+        for (const statement of statements) await baru.exec(statement);
     }
-    await database.exec(`
+    await baru.exec(`
         INSERT INTO unit_kerja (id, name) VALUES ('ditjen', 'Ditjen'), ('sesditjen', 'Sesditjen');
         INSERT INTO users (id, email, role) VALUES ('${actorId}', 'tu-sesditjen@example.test', 'super_admin');
     `);
-    klasifikasiId = (await database.query<{ id: number }>(`
+    const klasifikasi = (await baru.query<{ id: number }>(`
         INSERT INTO klasifikasi_arsip (kode, source_record_key, jenis, tipe)
         VALUES ('PT.01.01', 'test:rangkaian:0001', 'Uji rangkaian', 'substantif') RETURNING id
     `)).rows[0].id;
+    return { database: baru, klasifikasiId: klasifikasi };
+}
+
+beforeAll(async () => {
+    ({ database, klasifikasiId } = await siapkanDatabase());
     holder.db = drizzle(database, { schema });
     ({ rangkaianService, lockSuratMasukRows } = await import('../services/rangkaian.service'));
     ({ default: auditLogService } = await import('../services/audit-log.service'));
@@ -1092,13 +1099,29 @@ describe('status turunan P3 (Task 12) — fakta SQL nyata', () => {
         expect(await hitungPenghalang(rangkaianId)).toEqual({ disposisiTerbuka: 0, anggotaBlokir: 0 });
     });
 
-    it('disposisi terbuka ber-rangkaian_id NULL milik surat masuk anggota tetap menahan rangkaian (C-6)', async () => {
-        const induk = await suratMasuk('sesditjen');
-        const { rangkaianId } = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, induk, actor));
-        await disposisi(induk, 'dir_bppt', 'processed', rangkaianId);
-        await disposisi(induk, 'dir_ptep', 'sent', null);
-        expect(await statusSetelahRecompute(rangkaianId)).toBe('aktif');
-        expect(await hitungPenghalang(rangkaianId)).toEqual({ disposisiTerbuka: 1, anggotaBlokir: 0 });
+    // Baris disposisi ber-rangkaian_id NULL hanya dapat ada sebelum pengerasan 0048 (P5),
+    // jadi skenario data lama ini memakai database terpisah yang berhenti sebelum 0048.
+    describe('data lama sebelum pengerasan 0048', () => {
+        let penuh: { database: PGlite; klasifikasiId: number; db: unknown };
+        beforeAll(async () => {
+            penuh = { database, klasifikasiId, db: holder.db };
+            ({ database, klasifikasiId } = await siapkanDatabase('0048_rangkaian_pengerasan'));
+            holder.db = drizzle(database, { schema });
+        }, 180_000);
+        afterAll(async () => {
+            await database.close();
+            ({ database, klasifikasiId } = penuh);
+            holder.db = penuh.db;
+        });
+
+        it('disposisi terbuka ber-rangkaian_id NULL milik surat masuk anggota tetap menahan rangkaian (C-6)', async () => {
+            const induk = await suratMasuk('sesditjen');
+            const { rangkaianId } = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, induk, actor));
+            await disposisi(induk, 'dir_bppt', 'processed', rangkaianId);
+            await disposisi(induk, 'dir_ptep', 'sent', null);
+            expect(await statusSetelahRecompute(rangkaianId)).toBe('aktif');
+            expect(await hitungPenghalang(rangkaianId)).toEqual({ disposisiTerbuka: 1, anggotaBlokir: 0 });
+        });
     });
 
     it('hitungPenghalang: induk draft yang diturunkan oleh gabung tetap memblokir (T12-4 paritas)', async () => {

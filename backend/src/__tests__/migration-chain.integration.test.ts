@@ -8,6 +8,7 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as schema from '../db/schema/index.js';
 import { enterTestMigratorRole } from './helpers/database-role-fixture.js';
+import { P5_IDS, seedBerkasDiberkaskan, seedRangkaianBase } from './helpers/rangkaian-p5-pglite.js';
 
 type JournalEntry = {
     idx: number;
@@ -1018,7 +1019,9 @@ describe('PostgreSQL migration chain', () => {
 
     it('0046 mengunci rangkaian yang diberkaskan, mencegah siklus gabung, dan hanya menerima koreksi berkas yang disetujui', async () => {
         const database = await createDatabase();
-        for (const entry of journal.entries) {
+        // Semantik 0046 (termasuk jalur legacy rangkaian_id NULL dan lebih dari satu koreksi terbuka) diuji sebelum pengerasan 0048.
+        const sebelum0048 = journal.entries.findIndex((entry) => entry.tag === '0048_rangkaian_pengerasan');
+        for (const entry of sebelum0048 < 0 ? journal.entries : journal.entries.slice(0, sebelum0048)) {
             await applyMigration(database, entry);
         }
 
@@ -1278,7 +1281,9 @@ describe('PostgreSQL migration chain', () => {
 
     it('0046 menegakkan siklus hidup rangkaian_koreksi_berkas: pending -> approved/denied -> applied, dan terminal', async () => {
         const database = await createDatabase();
-        for (const entry of journal.entries) {
+        // Semantik 0046 (termasuk jalur legacy rangkaian_id NULL dan lebih dari satu koreksi terbuka) diuji sebelum pengerasan 0048.
+        const sebelum0048 = journal.entries.findIndex((entry) => entry.tag === '0048_rangkaian_pengerasan');
+        for (const entry of sebelum0048 < 0 ? journal.entries : journal.entries.slice(0, sebelum0048)) {
             await applyMigration(database, entry);
         }
 
@@ -1470,5 +1475,53 @@ describe('PostgreSQL migration chain', () => {
             .filter((name) => !modeled.has(name))
             .sort();
         expect(unmodeled).toEqual([]);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0048 menolak pengerasan selama masih ada disposisi tanpa rangkaian_id', async () => {
+        const database = await createDatabase();
+        const hardening = journal.entries.find((entry) => entry.tag === '0048_rangkaian_pengerasan');
+        expect(hardening).toBeDefined();
+        for (const entry of journal.entries) {
+            if (entry.tag === hardening!.tag) break;
+            await applyMigration(database, entry);
+        }
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES ('unit-p5-asal', 'Asal P5'), ('unit-p5-tujuan', 'Tujuan P5');
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun)
+            VALUES ('00000000-0000-4000-8000-000000000481', 'unit-p5-asal', 1, 2026);
+            INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status)
+            VALUES ('00000000-0000-4000-8000-000000000481', 'unit-p5-asal', 'unit-p5-tujuan', 'sent');
+        `);
+        await expect(applyMigration(database, hardening!))
+            .rejects.toThrow(/0048: surat_distributions\.rangkaian_id masih NULL/);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0048 mengeraskan rangkaian_id dan membatasi satu Koreksi Berkas terbuka', async () => {
+        const database = await createDatabase();
+        for (const entry of journal.entries) await applyMigration(database, entry);
+
+        const column = await database.query<{ is_nullable: string }>(`
+            SELECT is_nullable FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'surat_distributions' AND column_name = 'rangkaian_id'`);
+        expect(column.rows).toEqual([{ is_nullable: 'NO' }]);
+
+        const { klasA, klasB } = await seedRangkaianBase(database);
+        const { rangkaianId } = await seedBerkasDiberkaskan(database, klasA);
+        const insertKoreksi = (unit: string) => database.exec(`
+            INSERT INTO rangkaian_koreksi_berkas (rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+              klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by)
+            VALUES ('${rangkaianId}', 'dir_bppt', '${unit}', ${klasA}, ${klasB}, 'Salah pilih saat pemberkasan', '${P5_IDS.superA}')`);
+        await insertKoreksi('dir_ptep');
+        await expect(insertKoreksi('dir_bppt')).rejects.toThrow(/rangkaian_koreksi_berkas_terbuka_uidx/);
+        // Trigger BEFORE INSERT (0046) menolak status non-pending lebih dulu; CHECK berjalan sebelum indeks unik.
+        await expect(database.exec(`
+            INSERT INTO rangkaian_koreksi_berkas (rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+              klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by)
+            VALUES ('${rangkaianId}', 'dir_bppt', 'dir_bppt', ${klasA}, ${klasA}, 'Tidak mengubah apa pun', '${P5_IDS.superA}')`))
+            .rejects.toThrow(/rangkaian_koreksi_berkas_berubah_check/);
+        const putusan = await database.query<{ def: string }>(`
+            SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'rangkaian_koreksi_berkas_putusan_check'`);
+        expect(putusan.rows).toHaveLength(1);
+        expect(putusan.rows[0].def).toMatch(/diputuskan_by IS NULL/);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 });
