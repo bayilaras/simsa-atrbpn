@@ -82,11 +82,14 @@ describe('rangkaian berkas routes', () => {
         expect(mocks.tutupMassal).not.toHaveBeenCalled();
     });
 
-    it('router berkas dipasang sebelum router rangkaian utama', () => {
+    // [P5-T8-1] Urutan mount: P4 perlu-dilengkapi → P5 berkas → router utama P2/P3.
+    it('router berkas dipasang setelah router perlu-dilengkapi P4 dan sebelum router rangkaian utama', () => {
         const source = fs.readFileSync(path.resolve(process.cwd(), 'src/app.ts'), 'utf8');
+        const perluDilengkapi = source.indexOf("app.use('/api/rangkaian', rangkaianPerluDilengkapiRoutes)");
         const berkas = source.indexOf("app.use('/api/rangkaian', rangkaianBerkasRoutes)");
         const utama = source.indexOf("app.use('/api/rangkaian', rangkaianRoutes)");
-        expect(berkas).toBeGreaterThan(-1);
+        expect(perluDilengkapi).toBeGreaterThan(-1);
+        expect(berkas).toBeGreaterThan(perluDilengkapi);
         expect(utama).toBeGreaterThan(berkas);
     });
 });
