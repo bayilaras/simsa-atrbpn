@@ -8,7 +8,7 @@ import {
 } from './helpers/lacak-pglite';
 
 const holder = vi.hoisted(() => ({ db: null as any }));
-vi.mock('../config/database', () => ({ db: holder.db }));
+vi.mock('../config/database', () => ({ get db() { return holder.db; } }));
 
 let database: PGlite;
 let asalNaskahService: typeof import('../services/asal-naskah.service').asalNaskahService;
@@ -136,6 +136,25 @@ describe('asalNaskahService.tandaiInisiatif (D7)', () => {
         expect(await asalDari(anggota)).toBeNull();
         const log = await database.query('SELECT 1 FROM audit_log WHERE entity_id = $1', [anggota]);
         expect(log.rows).toHaveLength(0);
+    });
+
+    it('kunci surat_keluar diambil di pernyataan tersendiri sebelum pemeriksaan keanggotaan (F1, READ COMMITTED)', async () => {
+        // Pemeriksaan anggota/relasi harus berjalan di pernyataan SESUDAH kunci agar mendapat snapshot baru;
+        // FOR UPDATE di pernyataan yang sama memakai snapshot sebelum menunggu kunci (tanpa EvalPlanQual
+        // bila tautan P3 tidak mengubah baris surat_keluar). Balapan nyata: integration/asal-naskah.postgres.test.ts.
+        const log: string[] = [];
+        holder.db = drizzle(database, { schema, logger: { logQuery: (q: string) => { log.push(q); } } });
+        try {
+            await asalNaskahService.tandaiInisiatif(pengguna.bppt, sk.lama, audit(pengguna.bppt));
+        } finally {
+            holder.db = drizzle(database, { schema });
+        }
+        const kunci = log.findIndex((q) => /from\s+"?surat_keluar"?[\s\S]*for update/i.test(q));
+        const periksa = log.findIndex((q) => /rangkaian_anggota/i.test(q));
+        expect(kunci).toBeGreaterThanOrEqual(0);
+        expect(log[kunci]).not.toMatch(/rangkaian_anggota|rangkaian_relasi/i);
+        expect(periksa).toBeGreaterThan(kunci);
+        expect(log[periksa]).not.toMatch(/for update/i);
     });
 
     it('UPDATE dibatalkan bila audit gagal (transaksi yang sama)', async () => {
