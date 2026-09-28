@@ -28,6 +28,10 @@ const mockDb: any = {
 };
 
 vi.mock('../config/database.js', () => ({ db: mockDb }));
+const hookMocks = vi.hoisted(() => ({
+    afterSuratKeluarChanged: vi.fn(async () => undefined),
+}));
+vi.mock('../services/rangkaian/tindak-lanjut.hook.js', () => hookMocks);
 vi.mock('../services/email.service.js', () => ({
     emailService: emailMocks,
 }));
@@ -407,6 +411,78 @@ describe('approval and signature service security', () => {
             .rejects.toThrow('Langkah persetujuan telah diproses');
 
         expect(mockDb.insert).not.toHaveBeenCalled();
+    });
+
+    describe('status turunan rangkaian (Task 12)', () => {
+        const suratPending = {
+            id: 'surat-1',
+            unitKerjaId: 'ditjen',
+            approvalStatus: 'pending',
+            currentApproverId: adminDirjen.id,
+            isArchived: false,
+            isDeleted: false,
+            isSigned: false,
+        };
+        const requestPending = { id: 'request-1', requesterId: 'requester-1', currentStepOrder: 1, status: 'pending' };
+        const stepPending = { id: 'step-1', approverId: adminDirjen.id, status: 'pending' };
+        const antreanSampaiSurat = () => enqueue(
+            [adminDirjen], [suratPending], [requestPending], [stepPending],
+            [{ id: 'step-1' }], [{ id: 'request-1' }], [{ id: 'surat-1' }],
+        );
+
+        it('persetujuan final memanggil hook di transaksi yang sama setelah status surat diperbarui', async () => {
+            antreanSampaiSurat();
+            await expect(approvalService.approve('surat-1', adminDirjen, 'ditjen')).resolves.toEqual({ success: true });
+            expect(hookMocks.afterSuratKeluarChanged).toHaveBeenCalledTimes(1);
+            expect(hookMocks.afterSuratKeluarChanged).toHaveBeenCalledWith(mockDb, 'surat-1', { userId: adminDirjen.id });
+            const hookOrder = hookMocks.afterSuratKeluarChanged.mock.invocationCallOrder[0];
+            const lastUpdate = mockDb.update.mock.invocationCallOrder.at(-1)!;
+            expect(hookOrder).toBeGreaterThan(lastUpdate);
+        });
+
+        it('meneruskan ke penyetuju berikutnya tidak memicu hook (surat belum disetujui)', async () => {
+            vi.spyOn(approvalService as any, 'sendNotification').mockResolvedValueOnce(undefined);
+            const nextApprover = { id: 'admin-2', role: 'admin_dirjen', unitKerjaId: null, isActive: true };
+            enqueue(
+                [adminDirjen, nextApprover], [suratPending], [requestPending], [stepPending],
+                [{ id: 'step-1' }], [], [{ id: 'request-1' }], [{ id: 'surat-1' }],
+            );
+            await expect(approvalService.approve('surat-1', adminDirjen, 'ditjen', undefined, 'admin-2'))
+                .resolves.toEqual({ success: true });
+            expect(hookMocks.afterSuratKeluarChanged).not.toHaveBeenCalled();
+        });
+
+        it('penolakan memanggil hook di transaksi yang sama', async () => {
+            enqueue(
+                [adminDirjen], [suratPending], [requestPending], [stepPending],
+                [{ id: 'step-1' }], [{ id: 'request-1' }], [{ id: 'surat-1' }],
+            );
+            await expect(approvalService.reject('surat-1', adminDirjen, 'ditjen', 'Tidak sesuai'))
+                .resolves.toEqual({ success: true });
+            expect(hookMocks.afterSuratKeluarChanged).toHaveBeenCalledTimes(1);
+            expect(hookMocks.afterSuratKeluarChanged).toHaveBeenCalledWith(mockDb, 'surat-1', { userId: adminDirjen.id });
+        });
+
+        it('hook tidak dipanggil bila pembaruan bersyarat surat kalah balapan', async () => {
+            enqueue(
+                [adminDirjen], [suratPending], [requestPending], [stepPending],
+                [{ id: 'step-1' }], [{ id: 'request-1' }], [],
+            );
+            await expect(approvalService.approve('surat-1', adminDirjen, 'ditjen'))
+                .rejects.toThrow('Status surat telah berubah.');
+            expect(hookMocks.afterSuratKeluarChanged).not.toHaveBeenCalled();
+        });
+
+        it.each(['approve', 'reject'] as const)('%s mengulang transaksi sekali setelah deadlock (C-4)', async (aksi) => {
+            mockDb.transaction.mockRejectedValueOnce(Object.assign(new Error('Failed query'), { cause: { code: '40P01' } }));
+            antreanSampaiSurat();
+            const hasil = aksi === 'approve'
+                ? approvalService.approve('surat-1', adminDirjen, 'ditjen')
+                : approvalService.reject('surat-1', adminDirjen, 'ditjen', 'Tidak sesuai');
+            await expect(hasil).resolves.toEqual({ success: true });
+            expect(mockDb.transaction).toHaveBeenCalledTimes(2);
+            expect(hookMocks.afterSuratKeluarChanged).toHaveBeenCalledTimes(1);
+        });
     });
 
     it('never persists a simulated signature and reports PSrE signing as not operational', async () => {

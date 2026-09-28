@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import {
     rangkaianAnggota,
     rangkaianRelasi,
@@ -170,11 +170,49 @@ async function nextKode(tx: DbTransaction, tahun: number): Promise<string> {
 
 export interface StatusChange<T extends string> { id: string; before: T; after: T; changed: boolean }
 
+/**
+ * Himpunan penghalang §8 — SATU definisi untuk auto-selesai (recomputeStatus)
+ * dan berkaskan/tandai selesai (P3, `rangkaianStatusService.hitungPenghalang`).
+ * Anggota keluar hidup berstatus draft/pending/rejected memblokir KECUALI ia
+ * punya relasi keluar DAN seluruhnya sudah dibatalkan. Tidak bergantung pada
+ * `peran='induk'`: gabung() menurunkan induk yang digabung menjadi 'anggota'
+ * tanpa menyentuh relasinya, sehingga induk draft yang digabung masuk (tanpa
+ * relasi keluar) tetap memblokir.
+ */
+export function anggotaMemblokirSql(rangkaianId: SQL | string): SQL {
+    const blocking = sql.join(BLOCKING_APPROVAL_STATUSES.map((s) => sql`${s}`), sql`, `);
+    return sql`(SELECT count(*)::int FROM rangkaian_anggota a
+        JOIN surat_keluar k ON k.id = a.surat_keluar_id
+        WHERE a.rangkaian_id = ${rangkaianId}
+          AND k.is_deleted IS NOT TRUE
+          AND k.approval_status IN (${blocking})
+          AND NOT (
+              EXISTS (SELECT 1 FROM rangkaian_relasi r WHERE r.dari_anggota_id = a.id)
+              AND NOT EXISTS (SELECT 1 FROM rangkaian_relasi r WHERE r.dari_anggota_id = a.id AND r.cancelled_at IS NULL)
+          ))`;
+}
+
+/**
+ * Disposisi terbuka (sent/received) rangkaian — surat masuknya tidak terhapus
+ * (GC#29, T12-3). Baris lama ber-`rangkaian_id` NULL milik surat masuk anggota
+ * ikut dihitung (C-6), selaras trigger 0046 yang mengikat baris NULL lewat
+ * keanggotaan surat masuknya; setelah backfill (NULL = 0) klausa ini no-op.
+ */
+export function disposisiTerbukaSql(rangkaianId: SQL | string): SQL {
+    return sql`(SELECT count(*)::int FROM surat_distributions d
+        JOIN surat_masuk sm ON sm.id = d.surat_masuk_id AND sm.is_deleted IS NOT TRUE
+        WHERE d.status IN ('sent', 'received')
+          AND (d.rangkaian_id = ${rangkaianId}
+               OR (d.rangkaian_id IS NULL AND EXISTS (SELECT 1 FROM rangkaian_anggota ma
+                    WHERE ma.rangkaian_id = ${rangkaianId} AND ma.surat_masuk_id = d.surat_masuk_id))))`;
+}
+
 type RangkaianFacts = {
     open_disposisi: number;
     processed_disposisi: number;
     blocking_anggota: number;
     approved_tindak_lanjut: number;
+    surat_masuk_belum_ditangani: number;
 };
 
 type SuratMasukFacts = {
@@ -387,36 +425,13 @@ export const rangkaianService = {
                 changes.push({ id: rangkaian.id, before: rangkaian.status, after: rangkaian.status, changed: false });
                 continue;
             }
-            const blockingStatuses = sql.join(
-                BLOCKING_APPROVAL_STATUSES.map((status) => sql`${status}`),
-                sql`, `,
-            );
             const { rows: [facts] } = await tx.execute<RangkaianFacts>(sql`
                 SELECT
+                    ${disposisiTerbukaSql(rangkaian.id)} AS open_disposisi,
                     (SELECT count(*)::int FROM surat_distributions d
-                      WHERE d.rangkaian_id = ${rangkaian.id} AND d.status IN ('sent', 'received')) AS open_disposisi,
-                    (SELECT count(*)::int FROM surat_distributions d
+                      JOIN surat_masuk sm ON sm.id = d.surat_masuk_id AND sm.is_deleted IS NOT TRUE
                       WHERE d.rangkaian_id = ${rangkaian.id} AND d.status = 'processed') AS processed_disposisi,
-                    (SELECT count(*)::int FROM rangkaian_anggota a
-                      JOIN surat_keluar k ON k.id = a.surat_keluar_id
-                      WHERE a.rangkaian_id = ${rangkaian.id}
-                        AND k.is_deleted IS NOT TRUE
-                        AND k.approval_status IN (${blockingStatuses})
-                        -- Task review Important 1: sebuah anggota keluar hidup dalam status
-                        -- pending selalu memblokir KECUALI ia punya relasi keluar (dari a.id)
-                        -- DAN seluruh relasi keluar itu sudah dibatalkan. Tidak lagi
-                        -- bergantung pada peran='induk' — gabung() menurunkan induk yang
-                        -- digabung menjadi peran='anggota' tanpa menyentuh relasinya, jadi
-                        -- special-casing peran akan lolos untuk induk draft yang digabung
-                        -- masuk (tanpa relasi keluar apa pun) padahal seharusnya tetap
-                        -- memblokir.
-                        AND NOT (
-                            EXISTS (SELECT 1 FROM rangkaian_relasi r WHERE r.dari_anggota_id = a.id)
-                            AND NOT EXISTS (
-                                SELECT 1 FROM rangkaian_relasi r
-                                WHERE r.dari_anggota_id = a.id AND r.cancelled_at IS NULL
-                            )
-                        )) AS blocking_anggota,
+                    ${anggotaMemblokirSql(rangkaian.id)} AS blocking_anggota,
                     (SELECT count(*)::int FROM rangkaian_relasi r
                       JOIN rangkaian_anggota a ON a.id = r.dari_anggota_id
                       JOIN surat_keluar k ON k.id = a.surat_keluar_id
@@ -424,7 +439,23 @@ export const rangkaianService = {
                         AND r.cancelled_at IS NULL
                         AND r.jenis_relasi IN ('balasan', 'tindak_lanjut')
                         AND k.is_deleted IS NOT TRUE
-                        AND k.approval_status = 'approved') AS approved_tindak_lanjut
+                        AND k.approval_status = 'approved') AS approved_tindak_lanjut,
+                    -- P3 (§2d): surat masuk anggota hidup yang belum ditangani — tanpa
+                    -- disposisi processed di rangkaian ini DAN tanpa balasan/tindak lanjut
+                    -- aktif dari surat keluar hidup yang disetujui. Menahan rangkaian
+                    -- tetap aktif (mis. surat masuk baru lewat Nomor Referensi).
+                    (SELECT count(*)::int FROM rangkaian_anggota a
+                      JOIN surat_masuk sm ON sm.id = a.surat_masuk_id
+                      WHERE a.rangkaian_id = ${rangkaian.id}
+                        AND sm.is_deleted IS NOT TRUE
+                        AND NOT EXISTS (SELECT 1 FROM surat_distributions d
+                                         WHERE d.rangkaian_id = ${rangkaian.id} AND d.surat_masuk_id = sm.id AND d.status = 'processed')
+                        AND NOT EXISTS (SELECT 1 FROM rangkaian_relasi r
+                                          JOIN rangkaian_anggota da ON da.id = r.dari_anggota_id
+                                          JOIN surat_keluar k ON k.id = da.surat_keluar_id
+                                         WHERE r.ke_anggota_id = a.id AND r.cancelled_at IS NULL
+                                           AND r.jenis_relasi IN ('balasan', 'tindak_lanjut')
+                                           AND k.is_deleted IS NOT TRUE AND k.approval_status = 'approved')) AS surat_masuk_belum_ditangani
             `);
             const after = deriveRangkaianStatus({
                 current: rangkaian.status,
@@ -434,6 +465,7 @@ export const rangkaianService = {
                 processedDisposisi: facts.processed_disposisi,
                 blockingAnggota: facts.blocking_anggota,
                 approvedTindakLanjut: facts.approved_tindak_lanjut,
+                suratMasukBelumDitangani: facts.surat_masuk_belum_ditangani,
             });
             const changed = after !== rangkaian.status;
             if (changed) {

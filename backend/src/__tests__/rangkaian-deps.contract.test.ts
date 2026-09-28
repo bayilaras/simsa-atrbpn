@@ -230,3 +230,91 @@ describe('denganRetryDeadlock (G-RETRY)', () => {
         expect(run).toHaveBeenCalledTimes(3);
     });
 });
+
+describe('status turunan P3 (Task 12)', () => {
+    it('deriveStatusAlur dan builder fakta penghalang diteruskan lewat deps (T12-5, T12-1)', () => {
+        expect(typeof deps.deriveStatusAlur).toBe('function');
+        expect(deps.deriveStatusAlur({ rangkaianStatus: 'aktif', adaDisposisi: true, adaTindakLanjut: false }))
+            .toBe('didisposisikan');
+        expect(typeof deps.anggotaMemblokirSql).toBe('function');
+        expect(typeof deps.disposisiTerbukaSql).toBe('function');
+    });
+
+    it('anggotaMemblokirSql memakai predikat P1 (bukan peran induk) dan himpunan status pemblokir', () => {
+        const q = render(sql`SELECT ${deps.anggotaMemblokirSql('r-1')}`);
+        expect(q.params).toEqual(['r-1', 'draft', 'pending', 'rejected']);
+        expect(q.sql).toContain('k.is_deleted IS NOT TRUE');
+        expect(q.sql).toContain('r.cancelled_at IS NULL');
+        expect(q.sql).not.toContain('peran');
+    });
+
+    it('disposisiTerbukaSql menyaring surat masuk terhapus dan menghitung baris rangkaian_id NULL milik anggota (T12-3, C-6)', () => {
+        const q = render(sql`SELECT ${deps.disposisiTerbukaSql('r-1')}`);
+        expect(q.params).toEqual(['r-1', 'r-1']);
+        expect(q.sql).toContain('sm.is_deleted IS NOT TRUE');
+        expect(q.sql).toContain("d.status IN ('sent', 'received')");
+        expect(q.sql).toContain('d.rangkaian_id IS NULL');
+        expect(q.sql).toContain('ma.surat_masuk_id = d.surat_masuk_id');
+    });
+
+    it('rangkaianStatusService.hitungPenghalang dibangun dari builder yang sama dengan recomputeStatus', async () => {
+        const { rangkaianStatusService } = await import('../services/rangkaian/rangkaian-status.service.js');
+        const execute = vi.fn(async (_query: SQL) => ({ rows: [{ disposisi_terbuka: 2, anggota_blokir: 1 }] }));
+        await expect(rangkaianStatusService.hitungPenghalang({ execute } as never, 'r-9'))
+            .resolves.toEqual({ disposisiTerbuka: 2, anggotaBlokir: 1 });
+        const q = render(execute.mock.calls[0][0]);
+        const acuan = render(sql`SELECT ${deps.disposisiTerbukaSql('r-9')} AS disposisi_terbuka, ${deps.anggotaMemblokirSql('r-9')} AS anggota_blokir`);
+        const rata = (teks: string) => teks.replace(/\s+/g, ' ').trim();
+        expect(rata(q.sql)).toBe(rata(acuan.sql));
+        expect(q.params).toEqual(acuan.params);
+
+        const kosong = vi.fn(async () => ({ rows: [] }));
+        await expect(rangkaianStatusService.hitungPenghalang({ execute: kosong } as never, 'r-9'))
+            .resolves.toEqual({ disposisiTerbuka: 0, anggotaBlokir: 0 });
+    });
+
+    it('recomputeForSuratKeluar: tanpa keanggotaan tidak melakukan apa pun', async () => {
+        const execute = vi.fn(async () => ({ rows: [] }));
+        const status = vi.spyOn(deps.rangkaianService, 'recomputeStatus');
+        await deps.recomputeForSuratKeluar({ execute } as never, 'k-1', { userId: 'u-1' });
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(status).not.toHaveBeenCalled();
+        status.mockRestore();
+    });
+
+    it('recomputeForSuratKeluar mengunci surat masuk tujuan SEBELUM rangkaian lalu menghitung ulang keduanya (T12-2)', async () => {
+        const urutan: string[] = [];
+        const execute = vi.fn()
+            .mockResolvedValueOnce({ rows: [{ id: 'a-1', rangkaian_id: 'r-1' }] })
+            .mockResolvedValueOnce({ rows: [{ surat_masuk_id: 'm-2' }, { surat_masuk_id: 'm-1' }] });
+        const tx = {
+            execute,
+            select: () => ({
+                from: (table: Parameters<typeof getTableName>[0]) => {
+                    urutan.push(`lock:${getTableName(table)}`);
+                    const chain = {
+                        where: () => chain,
+                        orderBy: () => chain,
+                        for: async () => [],
+                    };
+                    return chain;
+                },
+            }),
+        };
+        const status = vi.spyOn(deps.rangkaianService, 'recomputeStatus').mockImplementation(async (_tx, ids, actor) => {
+            urutan.push(`rangkaian:${ids.join(',')}:${actor.userId}`);
+            return [];
+        });
+        const sm = vi.spyOn(deps.rangkaianService, 'recomputeSuratMasukStatus').mockImplementation(async (_tx, ids, actor) => {
+            urutan.push(`surat_masuk:${[...ids].sort().join(',')}:${actor.userId}`);
+            return [];
+        });
+        await deps.recomputeForSuratKeluar(tx as never, 'k-1', { userId: 'u-1' });
+        expect(urutan).toEqual(['lock:surat_masuk', 'rangkaian:r-1:u-1', 'surat_masuk:m-1,m-2:u-1']);
+        const q = render(execute.mock.calls[1][0]);
+        expect(q.params).toEqual(['a-1']);
+        expect(q.sql).toContain('ka.surat_masuk_id IS NOT NULL');
+        status.mockRestore();
+        sm.mockRestore();
+    });
+});

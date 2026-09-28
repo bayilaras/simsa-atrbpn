@@ -38,6 +38,10 @@ export type { JenisRelasi, RangkaianActor, RangkaianStatus } from '../rangkaian.
 
 export { rangkaianService, recordAccessService };
 export { lockSuratMasukRows } from '../rangkaian.service.js';            // P1, "Diekspor untuk P3"
+/** Himpunan penghalang §8 — satu definisi untuk recomputeStatus dan hitungPenghalang (T12-1). */
+export { anggotaMemblokirSql, disposisiTerbukaSql } from '../rangkaian.service.js';
+export { deriveStatusAlur } from '../rangkaian-status.js';
+export type { StatusAlur } from '../rangkaian-status.js';
 export {
     findActiveGrant,
     isAllowedForRecordUnit,
@@ -186,7 +190,25 @@ export function recomputeSuratMasuk(
         : rangkaianService.recomputeSuratMasukStatus(tx, [...new Set(suratMasukIds)], aktor(null, audit));
 }
 
-/** Dipanggil setelah surat keluar berubah (create/update/delete/approve/reject). Task 12 mengisi penuh. */
-export async function recomputeForSuratKeluar(_tx: Tx, _suratKeluarId: string, _audit?: CriticalAuditContext): Promise<void> {
-    return undefined;
+/**
+ * Setelah surat keluar berubah (update/delete/approve/reject): hitung ulang
+ * rangkaiannya dan surat masuk yang ditujunya (§5, §8).
+ *
+ * G-LOCK (T12-2): pemanggil sudah memegang baris surat_keluar ini (approve/
+ * reject mengunci FOR UPDATE; update/delete meng-UPDATE barisnya). Id surat
+ * masuk tujuan dibaca tanpa kunci, lalu dikunci SEBELUM rangkaian — urutan
+ * SK → SM → rangkaian, sama dengan distribute/penyelesaian.
+ */
+export async function recomputeForSuratKeluar(tx: Tx, suratKeluarId: string, audit?: CriticalAuditContext): Promise<void> {
+    const [anggota] = rowsOf<{ id: string; rangkaian_id: string }>(await tx.execute(sql`
+        SELECT id, rangkaian_id FROM rangkaian_anggota WHERE surat_keluar_id = ${suratKeluarId}`));
+    if (!anggota) return;
+    const tujuan = rowsOf<{ surat_masuk_id: string }>(await tx.execute(sql`
+        SELECT DISTINCT ka.surat_masuk_id FROM rangkaian_relasi r
+          JOIN rangkaian_anggota ka ON ka.id = r.ke_anggota_id
+         WHERE r.dari_anggota_id = ${anggota.id} AND ka.surat_masuk_id IS NOT NULL`)).map((row) => row.surat_masuk_id);
+    // GC#30: surat_masuk dikunci SEBELUM rangkaian (recomputeStatus mengunci rangkaian).
+    await lockSuratMasukRowsLokal(tx, tujuan);
+    await recomputeRangkaian(tx, anggota.rangkaian_id, audit);
+    await recomputeSuratMasuk(tx, tujuan, audit);
 }
