@@ -99,6 +99,31 @@ export const rangkaianService = {
     async ajukanAkses(anggotaId, purpose) {
         return (await api.post(`/api/rangkaian/anggota/${encodeURIComponent(anggotaId)}/ajukan-akses`, { purpose, accessMode: 'view' })).data
     },
+
+    /** GET /api/rangkaian/:id/koreksi-berkas (P5, super_admin) → { rangkaian, dapatMengajukan, kandidatUnit, koreksi }. */
+    async getKoreksiBerkas(rangkaianId) {
+        return (await api.get(`/api/rangkaian/${encodeURIComponent(rangkaianId)}/koreksi-berkas`)).data
+    },
+
+    /** POST /api/rangkaian/:id/koreksi-berkas — body { unitPengolahBaru, klasifikasiBaru, alasan }. */
+    async ajukanKoreksiBerkas(rangkaianId, payload) {
+        return (await api.post(`/api/rangkaian/${encodeURIComponent(rangkaianId)}/koreksi-berkas`, payload)).data
+    },
+
+    /** POST /api/rangkaian/koreksi-berkas/:koreksiId/putuskan — body { keputusan: 'setuju'|'tolak', catatan? }. */
+    async putuskanKoreksiBerkas(koreksiId, payload) {
+        return (await api.post(`/api/rangkaian/koreksi-berkas/${encodeURIComponent(koreksiId)}/putuskan`, payload)).data
+    },
+
+    /** GET /api/rangkaian/data-lama/ringkasan (P5). */
+    async getRingkasanDataLama() {
+        return (await api.get('/api/rangkaian/data-lama/ringkasan')).data
+    },
+
+    /** POST /api/rangkaian/data-lama/tutup-massal (P5). */
+    async tutupMassalDataLama(payload) {
+        return (await api.post('/api/rangkaian/data-lama/tutup-massal', payload)).data
+    },
 }
 
 export default rangkaianService

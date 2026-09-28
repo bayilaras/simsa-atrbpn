@@ -4,7 +4,9 @@ import { MemoryRouter } from 'react-router-dom'
 
 const mocks = vi.hoisted(() => ({
     getBySurat: vi.fn(), tandaiSelesai: vi.fn(), tutupDisposisi: vi.fn(), ajukanAkses: vi.fn(), batalRelasi: vi.fn(),
+    koreksiSection: vi.fn(() => null),
 }))
+vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: (props) => mocks.koreksiSection(props) }))
 vi.mock('@/services/rangkaian.service', () => {
     const svc = {
         getBySurat: mocks.getBySurat, tandaiSelesai: mocks.tandaiSelesai, tutupDisposisi: mocks.tutupDisposisi,
@@ -294,5 +296,17 @@ describe('aksi panel (Task 25)', () => {
         renderPanel({ aksesMelalui: 'pengawas' })
         await screen.findByText('Alur Surat')
         expect(screen.queryByRole('button', { name: /Batalkan Relasi/ })).toBeNull()
+    })
+
+    it('memasang Koreksi Berkas dengan id/status rangkaian dan muatUlang panel (P5-T9-2)', async () => {
+        const onChanged = vi.fn()
+        mocks.getBySurat.mockResolvedValue({ ...detail, rangkaian: { ...detail.rangkaian, status: 'diberkaskan' } })
+        renderPanel({ onChanged })
+        await screen.findByText('Alur Surat')
+        const props = mocks.koreksiSection.mock.lastCall[0]
+        expect(props).toMatchObject({ rangkaianId: 'r1', status: 'diberkaskan' })
+        props.onChanged()
+        await waitFor(() => expect(mocks.getBySurat).toHaveBeenCalledTimes(2))
+        expect(onChanged).toHaveBeenCalledTimes(1)
     })
 })

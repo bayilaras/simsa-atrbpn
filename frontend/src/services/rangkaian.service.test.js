@@ -64,3 +64,19 @@ describe('distributionService P3', () => {
         expect(apiMock.put).toHaveBeenCalledWith('/api/distributions/d1/process?unitKerjaId=dir_bppt', { catatanPenyelesaian: 'Sudah dikoordinasikan' })
     })
 })
+
+describe('rangkaianService P5', () => {
+    it('memanggil endpoint Koreksi Berkas dan Tutup massal yang tepat', async () => {
+        await rangkaianService.getKoreksiBerkas('r 1')
+        await rangkaianService.ajukanKoreksiBerkas('r1', { alasan: 'x' })
+        await rangkaianService.putuskanKoreksiBerkas('k1', { keputusan: 'setuju' })
+        await rangkaianService.getRingkasanDataLama()
+        expect(await rangkaianService.tutupMassalDataLama({ dryRun: true })).toEqual({ ok: true })
+        expect(apiMock.get.mock.calls).toEqual([['/api/rangkaian/r%201/koreksi-berkas'], ['/api/rangkaian/data-lama/ringkasan']])
+        expect(apiMock.post.mock.calls).toEqual([
+            ['/api/rangkaian/r1/koreksi-berkas', { alasan: 'x' }],
+            ['/api/rangkaian/koreksi-berkas/k1/putuskan', { keputusan: 'setuju' }],
+            ['/api/rangkaian/data-lama/tutup-massal', { dryRun: true }],
+        ])
+    })
+})

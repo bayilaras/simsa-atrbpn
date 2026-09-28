@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), getBySurat: vi.fn() }))
+vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/rangkaian.service', () => ({ default: mocks, rangkaianService: mocks }))
 import { AlurSuratPanel } from '../AlurSuratPanel'
 

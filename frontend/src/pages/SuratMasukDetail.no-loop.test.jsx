@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 // AlurSuratPanel ASLI (tidak di-mock) dengan getById yang ditunda, persis
 // seperti skenario pembuktian di temuan F1.
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), getBySurat: vi.fn(), toast: vi.fn() }))
+vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: { getById: mocks.getById, archive: vi.fn() } }))
 vi.mock('@/services/rangkaian.service', () => ({ default: { getBySurat: mocks.getBySurat } }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ canWrite: () => true, user: { id: 'user-a', role: 'admin_unit', unitKerjaId: 'dir_bppt' } }) }))

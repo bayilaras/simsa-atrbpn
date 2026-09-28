@@ -8,6 +8,7 @@ import rangkaianService from '@/services/rangkaian.service'
 import { TimelineItem } from '@/components/surat/TimelineItem'
 import { JENIS_RELASI_LABEL } from '@/lib/tindak-lanjut'
 import { AlurSuratActions, AjukanAksesButton, BatalRelasiButton, TutupDisposisiButton } from './AlurSuratActions'
+import KoreksiBerkasSection from './KoreksiBerkasSection'
 
 // Kontrak ekspor P2 dipertahankan; sumber tunggal kini lib/tindak-lanjut.js (Task 19).
 export { JENIS_RELASI_LABEL } from '@/lib/tindak-lanjut'
@@ -174,6 +175,7 @@ export function AlurSuratPanel({ jenis, suratId, rangkaianId = null, aksesMelalu
                     <span>{r.unitPencatat.nama} → {r.unitPengolah?.nama ?? 'Unit pengolah belum ditetapkan'}</span>
                 </div>
                 <AlurSuratActions detail={d} onChanged={muatUlang} />
+                <KoreksiBerkasSection rangkaianId={d.rangkaian.id} status={d.rangkaian.status} onChanged={muatUlang} />
 
                 {d.peserta.length > 0 && (
                     <div className="space-y-2">
