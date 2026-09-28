@@ -15,4 +15,4 @@ Rangkaian Surat menyatukan surat masuk, disposisi, tindak lanjut, dan surat kelu
 Super admin mengajukan koreksi unit pengolah/klasifikasi dengan alasan minimal 10 karakter; super admin **lain** menyetujui atau menolak. Status diberkaskan sendiri tidak dapat dibuka kembali.
 
 ## Surat data lama
-Surat dari aplikasi lama dirangkai sebagai data lama berstatus selesai. Label Kabag tetap label saja. Super admin atau admin unit pengawas dapat memakai **Tutup massal data lama** di tab Berkas Rangkaian setelah melihat pratinjau.
+Surat dari aplikasi lama dirangkai sebagai data lama berstatus selesai. Label Kabag tetap label saja. Super admin atau admin unit pengawas dapat memakai **Tutup massal data lama** di tab Berkas Rangkaian setelah melihat pratinjau. Rangkaian yang tidak memiliki pengolah diberkaskan ke unit pencatat.

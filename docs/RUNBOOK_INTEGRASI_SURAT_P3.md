@@ -299,7 +299,7 @@ dibatalkan, pulihkan dari backup §0.2 (RUNBOOK_P1 langkah 1).
 > diterapkan; lantai rollback setelah 0048 adalah kode P3+, karena setiap rilis
 > lebih lama (termasuk rilis yang dijadikan lantai di sini) menulis
 > `surat_distributions` tanpa `rangkaian_id`, yang ditolak `23502` oleh 0048.
-> Lihat `docs/RUNBOOK_INTEGRASI_SURAT_P5.md` §9.
+> Lihat `docs/RUNBOOK_INTEGRASI_SURAT_P5.md` §10.
 
 1. **Redeploy** frontend dan backend rilis produksi terakhir bersamaan
    (keduanya dari revisi yang sama). Periksa `/ready` = 200.

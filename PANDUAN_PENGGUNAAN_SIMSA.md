@@ -491,7 +491,7 @@ flowchart TD
 
 **Data lama.** Surat dari aplikasi lama dengan label disposisi (misalnya "BPPT", "Dit. PTEP") dirangkai sebagai rangkaian *data lama* berstatus selesai dan disembunyikan dari daftar kerja. Label "Kabag …" hanya label, tidak pernah menjadi tujuan disposisi. Direktorat pada label lama baru dapat membaca surat tersebut setelah pemilik keamanan menyetujui laporan pemetaan.
 
-**Tutup massal data lama** (super admin dan admin unit pengawas): tab Berkas Rangkaian ▸ pilih tahun (opsional) dan klasifikasi pengganti untuk rangkaian tanpa klasifikasi ▸ **Pratinjau** ▸ centang pernyataan ▸ **Tutup massal N rangkaian**. Bila jumlah berubah sejak pratinjau, sistem menolak dan Anda perlu mengulang pratinjau.
+**Tutup massal data lama** (super admin dan admin unit pengawas): tab Berkas Rangkaian ▸ pilih tahun (opsional) dan klasifikasi pengganti untuk rangkaian tanpa klasifikasi ▸ **Pratinjau** ▸ centang pernyataan ▸ **Tutup massal N rangkaian**. Bila jumlah berubah sejak pratinjau, sistem menolak dan Anda perlu mengulang pratinjau. Rangkaian yang tidak memiliki pengolah diberkaskan ke unit pencatat.
 
 ### 5.6 Perlu Dilengkapi
 

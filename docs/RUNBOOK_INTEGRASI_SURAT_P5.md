@@ -2,7 +2,7 @@
 
 Berlaku untuk rilis yang memuat migrasi `0048_rangkaian_pengerasan` dan skrip backfill
 `backend/scripts/backfill-rangkaian-lama.mjs`. Produksi memakai Vercel + Neon; jalur
-Cloud SQL/psql lain tidak dipakai untuk backfill data lama (§4).
+Cloud SQL/psql lain tidak dipakai untuk backfill data lama (§5).
 
 **Prasyarat runbook ini:** `docs/RUNBOOK_INTEGRASI_SURAT_P1.md`, `docs/RUNBOOK_INTEGRASI_SURAT_P3.md`
 (§7 dan §8) sudah dijalankan dan gerbang rilisnya disahkan; CI "Backend Tests
@@ -15,17 +15,11 @@ untuk setiap variabel `NEON_*_DATABASE_URL` di bawah.
 
 1. Jawaban tertulis pre-flight P0 §13 pertanyaan 2 ("apakah ada data lama di
    produksi?") harus sudah tersedia. **Bila tidak ada data lama**, hentikan
-   runbook ini setelah langkah 3 (migrasi 0048) — langkah 5–8 (dry-run, sign-off,
+   runbook ini setelah langkah 5 (migrasi 0048) — langkah 6–9 (dry-run, sign-off,
    apply, flag) tidak perlu dijalankan.
-2. Gerbang rilis P5 "Gerbang rilis P5" pada deskripsi PR (baris a–i, lihat §7)
+2. Gerbang rilis P5 "Gerbang rilis P5" pada deskripsi PR (baris a–i, lihat §8)
    sudah diisi (disahkan atau ditolak) untuk setiap baris yang berlaku sebelum
    langkah manapun di bawah dijalankan pada produksi.
-3. **Deploy kode P5 dengan `RANGKAIAN_DISPOSISI_LAMA_READ` tidak diset (mati)**,
-   sebelum langkah migrasi/backfill di bawah. Konfirmasi di Vercel env project
-   backend bahwa flag **tidak** bernilai persis `true` sebelum `--apply` (§5).
-   Kode produksi sudah menghormati flag ini sejak P2 (`visibility-spec.ts`), jadi
-   flag yang sudah menyala sebelum sign-off memberi akses baru fail-open segera
-   setelah baris peserta ditulis backfill.
 
 ## 2. Backup
 
@@ -34,9 +28,24 @@ di produksi** (pre-0048). Backup yang diambil **setelah** 0048 diterapkan wajib
 memakai helper dari checkout P5, karena manifest bundle backup mengikat rantai
 migrasi (`scripts/neon-backup-core.mjs:43-58`).
 
-## 3. Pre-0048: kueri NULL dan keputusan `dilewati` (gerbang rilis baris f)
+## 3. Deploy kode P5
 
-Sebagai role **read-only** (pola aman §0 `RUNBOOK_INTEGRASI_SURAT_P1.md`):
+**Deploy kode P5 dengan `RANGKAIAN_DISPOSISI_LAMA_READ` tidak diset (mati)**,
+sebelum langkah migrasi/backfill di bawah (jangan mendeploy sebelum backup
+§2 — backup harus diambil dengan kode produksi yang masih berjalan, lalu
+kode P5 didorong). Konfirmasi di Vercel env project backend bahwa flag
+**tidak** bernilai persis `true` sebelum `--apply` (§6). Kode produksi sudah
+menghormati flag ini sejak P2 (`visibility-spec.ts`), jadi flag yang sudah
+menyala sebelum sign-off memberi akses baru fail-open segera setelah baris
+peserta ditulis backfill.
+
+## 4. Pre-0048: kueri NULL dan keputusan `dilewati` (gerbang rilis baris f)
+
+Sebagai role **`simsa_api`** (lewat prompt tersembunyi, `DATABASE_URL` dari
+`NEON_RUNTIME_DATABASE_URL`, pola yang sama dengan §6/§8). Amandemen
+pra-eksekusi P5-T13-1 §3 mensyaratkan pemeriksaan ini berjalan sebagai
+`simsa_api`, bukan role read-only, karena kueri rincian di bawah menyentuh
+tabel `rangkaian_*` yang tidak semua role read-only berhak baca:
 
 ```sql
 SELECT count(*) FROM surat_distributions WHERE rangkaian_id IS NULL;
@@ -59,7 +68,10 @@ tahan 0048.** Migrasi `0048_rangkaian_pengerasan.sql` memuat pemeriksaan
 prelude yang mematikan trigger `surat_distributions_closed_guard`. Bila kueri
 di atas mengembalikan bukan 0, **jangan jalankan migrasi**: selesaikan dulu
 setiap entri `dilewati` (jalankan ulang backfill langkah 1 P3 untuk entri
-`digabung` yang transien; untuk entri `diberkaskan`, dokumentasikan keputusan
+`digabung` yang transien — bila proses ini berhenti dengan galat `40P01`
+(deadlock) atau `40001`, ikuti panduan jalankan-ulang di
+`RUNBOOK_INTEGRASI_SURAT_P3.md` §2 (skrip idempoten: jalankan ulang perintah
+yang sama sampai selesai); untuk entri `diberkaskan`, dokumentasikan keputusan
 pemilik spesifikasi bersama TU/pengawas unit pencatat — baris itu tetap
 ber-`rangkaian_id` NULL secara permanen sampai ada jalur baru).
 
@@ -68,7 +80,24 @@ ada disposisi terbuka); Koreksi Berkas **tidak** dapat memperbaikinya karena ia
 hanya mengubah `rangkaian_surat`, bukan `surat_distributions`, dan trigger
 `surat_distributions_closed_guard` (0046) tidak punya jalur bypass GUC.
 
-## 4. Migrasi 0048
+**Catatan audit — jalur rangkaian yang sudah ada (carry-forward P3).** Skrip
+`backfill-rangkaian-disposisi.mjs` P3 mengisi `rangkaian_id` pada jalur
+"rangkaian sudah ada" (`:109-111`) **tanpa** menulis baris `audit_log`; hanya
+pembuatan rangkaian baru yang diaudit (`:103-106`). Ini tidak diperbaiki di
+P5 (opsi ADVISORY pada amandemen pra-eksekusi, tidak diambil). Bila operator
+memerlukan jejak audit atas baris yang diisi lewat jalur ini, gunakan kueri
+berikut terhadap `surat_distributions.updated_at` (bandingkan dengan jendela
+waktu run backfill langkah 1 P3):
+
+```sql
+SELECT id, surat_masuk_id, rangkaian_id, updated_at
+  FROM surat_distributions
+ WHERE rangkaian_id IS NOT NULL
+   AND updated_at BETWEEN '<awal-run-backfill>' AND '<akhir-run-backfill>'
+ ORDER BY updated_at;
+```
+
+## 5. Migrasi 0048
 
 Sebagai bagian dari deploy (adapter Neon):
 
@@ -81,7 +110,7 @@ Sebagai bagian dari deploy (adapter Neon):
 kueri privilege `simsa_api` pada `RUNBOOK_INTEGRASI_SURAT_P1.md` langkah 4
 sebagai role runtime `simsa_api` setelah `verify-runtime` selesai.
 
-## 5. Dry-run backfill data lama
+## 6. Dry-run backfill data lama
 
 Jalankan sebagai role runtime **`simsa_api`** (bukan `simsa_maintenance`/
 `simsa_operator`), dengan `DATABASE_URL` diisi dari `NEON_RUNTIME_DATABASE_URL`
@@ -109,7 +138,7 @@ Skrip menulis empat berkas ke `--out`: `pemetaan-label.csv`, `balasan-ditinjau.c
 `calon-pengolah.csv`, dan `ringkasan.json` (memuat SHA-256 rencana). **Jangan
 commit laporan ini ke repo.** Kirim keempat berkas ke pemilik keamanan.
 
-## 6. Sign-off SHA
+## 7. Sign-off SHA
 
 Kirim `ringkasan.json` (berisi SHA-256) beserta ketiga CSV ke pemilik keamanan.
 Sign-off tertulis wajib menyebut SHA-256 persis dari `ringkasan.json` dry-run
@@ -121,7 +150,7 @@ di antara dry-run dan apply — pengeditan label lama, disposisi baru, atau
 tautan baru — memaksa dry-run dan sign-off baru. Jalankan dry-run → sign-off →
 apply dalam satu jendela waktu yang singkat.
 
-## 7. `--apply`
+## 8. `--apply`
 
 ```bash
 read -rs NEON_RUNTIME_DATABASE_URL && export NEON_RUNTIME_DATABASE_URL
@@ -138,7 +167,7 @@ ulang. **Bila apply berhenti di tengah jalan** (galat/koneksi putus), jangan
 menebak status: jalankan dry-run baru dan minta sign-off baru atas SHA yang
 baru sebelum mencoba `--apply` lagi.
 
-### 7.1 Gerbang (a): unit pengolah data lama
+### 8.1 Gerbang (a): unit pengolah data lama
 
 Spec:358 meminta unit pengolah dari label lama diisi otomatis. `ubahUnitPengolah`
 dan Koreksi Berkas hanya menerima unit yang sudah berada di
@@ -156,7 +185,7 @@ pemilik keamanan:
   npm --prefix backend run rangkaian:backfill-lama:isi-pengolah:apply -- --approved-sha256=<sha256>
   ```
 
-  Jalankan langkah ini **sebelum** Tutup massal data lama mana pun (§7.2) —
+  Jalankan langkah ini **sebelum** Tutup massal data lama mana pun (§8.2) —
   Tutup massal mengunci `unit_pengolah_id` secara terminal begitu rangkaian
   berstatus `diberkaskan`.
 - **"tidak"**: spec:358 diwaiver secara sadar; rangkaian data lama akan
@@ -166,13 +195,13 @@ Akses unit pengolah hasil mode ini **tidak dikendalikan** oleh
 `RANGKAIAN_DISPOSISI_LAMA_READ`: setelah mode pengolah dijalankan, mematikan
 flag tidak mencabut akses itu.
 
-### 7.2 Tutup massal data lama
+### 8.2 Tutup massal data lama
 
 Setelah keputusan gerbang (a) dijalankan (bila "isi"), super admin atau admin
 unit pengawas dapat memakai **Tutup massal data lama** di tab Berkas Rangkaian
 (lihat PANDUAN 5.5). Rangkaian tanpa pengolah diberkaskan ke unit pencatat.
 
-## 8. Nyalakan flag (terpisah, setelah sign-off terpisah)
+## 9. Nyalakan flag (terpisah, setelah sign-off terpisah)
 
 Nyalakan `RANGKAIAN_DISPOSISI_LAMA_READ=true` **hanya** setelah sign-off
 tertulis terpisah dari sign-off SHA backfill. Sampai saat itu peserta data
@@ -182,10 +211,10 @@ Menyalakan flag berarti mengisi variabel env di Vercel **dan me-redeploy** —
 Vercel hanya menerapkan perubahan env pada deployment baru. Rollback flag
 berarti mengosongkan variabel dan me-redeploy; ini mencabut semua akses lintas
 unit yang berasal dari backfill **hanya selama** `unit_pengolah_id` masih NULL
-(lihat §7.1 — bila mode pengolah sudah dijalankan, mematikan flag tidak
+(lihat §8.1 — bila mode pengolah sudah dijalankan, mematikan flag tidak
 mencabut akses pengolah).
 
-## 9. Rollback
+## 10. Rollback
 
 Migrasi **tidak pernah dibalik**. Setelah `0048_rangkaian_pengerasan`
 diterapkan, lantai rollback adalah **kode P3+**: rilis pra-P3 (dan P2, yang
