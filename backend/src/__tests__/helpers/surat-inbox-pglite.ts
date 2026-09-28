@@ -16,6 +16,7 @@ export interface InboxFixtureLetter {
 // notification.service (surat-distribution.ts, surat-masuk.ts, unit-kerja.ts).
 const SCHEMA_SQL = `
 CREATE TABLE unit_kerja (id varchar(50) PRIMARY KEY, name varchar(255) NOT NULL);
+CREATE TABLE rangkaian_surat (id uuid PRIMARY KEY, kode text NOT NULL);
 CREATE TABLE surat_masuk (
     id uuid PRIMARY KEY, unit_kerja_id varchar(50) NOT NULL, nomor_surat varchar(255), perihal text, dari text,
     tanggal_surat date, sifat_surat varchar(50), status varchar(50) DEFAULT 'belum_dibalas',

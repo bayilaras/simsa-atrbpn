@@ -77,6 +77,7 @@ describe('metadata-only demo API access', () => {
         ['GET', '/api/settings/preferences'],
         ['POST', '/api/record-access-grants'],
         ['GET', '/api/distributions/opsi'],
+        ['GET', `/api/distributions/${id}/kandidat-penyelesaian`],
     ])('allows reviewed metadata route %s %s', async (method, path) => {
         const { app, downstream } = testApp(true);
         const response = await request(app)[method.toLowerCase() as 'get'](path)
