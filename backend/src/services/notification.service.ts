@@ -23,6 +23,7 @@ import {
 } from '../utils/notification-id.js';
 import { klasifikasiInSql } from './access/visibility-spec';
 import { LABEL_DIKECUALIKAN, readRefKey, recordAccessService, type RecordUser } from './rangkaian/deps.js';
+import { jakartaDate } from '../utils/jakarta-date.js';
 
 type SecurityClassScope = string[] | null | undefined;
 const ADMIN_NOTIFICATION_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
@@ -117,6 +118,38 @@ function excerpt(value: string | null | undefined, length = 70): string {
     return text.length > length ? `${text.slice(0, length)}...` : text;
 }
 
+const DEADLINE_WINDOW_DAYS = 2;
+
+/** Spec §5: distribusi dengan batas_waktu ≤ 2 hari (atau terlewati) selalu mendesak. Tanggal dibanding pada kalender Jakarta. */
+export function deadlineUrgency(
+    batasWaktu: string | null | undefined,
+    today: string = jakartaDate(),
+): { type: 'urgent'; sisaHari: number } | null {
+    if (!batasWaktu) return null;
+    const sisaHari = Math.round(
+        (Date.parse(`${batasWaktu}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000,
+    );
+    if (!Number.isFinite(sisaHari) || sisaHari > DEADLINE_WINDOW_DAYS) return null;
+    return { type: 'urgent', sisaHari };
+}
+
+export function deadlineTitle(sisaHari: number): string {
+    if (sisaHari < 0) return `Disposisi lewat batas waktu ${Math.abs(sisaHari)} hari`;
+    if (sisaHari === 0) return 'Batas waktu disposisi hari ini';
+    return `Batas waktu disposisi ${sisaHari} hari lagi`;
+}
+
+/** Spec §5/§8: surat induk rangkaian data lama yang tertutup tidak masuk daftar kerja/notifikasi. */
+export function notDataLamaIncomingCondition(): SQL {
+    return sql`NOT EXISTS (
+        SELECT 1 FROM rangkaian_anggota notif_ra
+        JOIN rangkaian_surat notif_rs ON notif_rs.id = notif_ra.rangkaian_id
+        WHERE notif_ra.surat_masuk_id = ${suratMasuk.id}
+          AND notif_rs.asal = 'data_lama'
+          AND notif_rs.status <> 'aktif'
+    )`;
+}
+
 export interface Notification {
     id: string;
     type: 'urgent' | 'warning' | 'info';
@@ -192,6 +225,7 @@ export class NotificationService {
                 // Baris lama bisa ber-is_deleted NULL; hanya TRUE yang berarti terhapus.
                 sql`${suratMasuk.isDeleted} IS NOT TRUE`,
                 incomingSecurityCondition(securityClassifications),
+                notDataLamaIncomingCondition(),
             ))
             .orderBy(desc(suratMasuk.createdAt))
             .limit(50);
@@ -333,6 +367,7 @@ export class NotificationService {
             instruction: suratDistributions.instruction,
             sentAt: suratDistributions.sentAt,
             updatedAt: suratDistributions.updatedAt,
+            batasWaktu: suratDistributions.batasWaktu,
             nomorSurat: suratMasuk.nomorSurat,
             perihal: suratMasuk.perihal,
         })
@@ -355,18 +390,22 @@ export class NotificationService {
 
         return rows.map(row => {
             const urgency = ageUrgency(row.updatedAt || row.sentAt, new Date(), 1, 3);
+            const deadline = deadlineUrgency(row.batasWaktu);
+            const type = deadline ? deadline.type : urgency.type;
             const state = row.status === 'sent' ? 'awaiting_receipt' : 'awaiting_processing';
             const notification: Notification = {
-                id: statefulId('distribusi', row.id, state, urgency.type),
-                type: urgency.type,
+                id: statefulId('distribusi', row.id, state, type),
+                type,
                 category: 'distribusi',
-                title: row.status === 'sent'
-                    ? 'Distribusi menunggu penerimaan'
-                    : 'Distribusi menunggu tindak lanjut',
+                title: deadline
+                    ? deadlineTitle(deadline.sisaHari)
+                    : row.status === 'sent'
+                        ? 'Distribusi menunggu penerimaan'
+                        : 'Distribusi menunggu tindak lanjut',
                 message: bolehDibaca(row.suratMasukId)
                     ? `${row.nomorSurat || 'Surat'} - ${excerpt(row.instruction || row.perihal)}`
                     : LABEL_DIKECUALIKAN,
-                daysLeft: urgency.ageDays,
+                daysLeft: deadline ? deadline.sisaHari : urgency.ageDays,
                 referenceId: row.id,
                 createdAt: row.updatedAt || row.sentAt,
                 isRead: false,
