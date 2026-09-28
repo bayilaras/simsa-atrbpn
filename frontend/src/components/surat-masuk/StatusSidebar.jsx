@@ -1,13 +1,19 @@
 import { Link } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
-import { CheckCircle, Clock, Archive, Eye, Edit, Send, Reply } from 'lucide-react';
+import { CheckCircle, Clock, Archive, Eye, Edit } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu';
 
-export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive, isAdmin }) {
+export function StatusSidebar({ surat, onEdit, onDistribute, onArchive, onTerima, onPenyelesaian, isAdmin }) {
+    // Respons lama tanpa aksesMelalui berasal dari jalur pemilik.
+    const milik = (surat.aksesMelalui ?? 'owner') === 'owner';
+    const aksi = Array.isArray(surat.aksiDiizinkan) ? surat.aksiDiizinkan : null;
+    const bolehEdit = (aksi ? aksi.includes('edit') : isAdmin) && milik;
+    const bolehArsip = (aksi ? aksi.includes('arsipkan') : isAdmin) && milik;
     const formatDate = (dateString) => {
         if (!dateString) return '-';
         try {
@@ -129,38 +135,34 @@ export function StatusSidebar({ surat, onEdit, onReply, onDistribute, onArchive,
                 </CardContent>
             </Card>
 
-            {/* Quick Actions Card - Admin only */}
-            {isAdmin && (
+            {/* Quick Actions Card - hanya bila ada aksi pemilik atau aksiDiizinkan dari server */}
+            {(isAdmin || (surat.aksiDiizinkan || []).length > 0) && (
                 <Card className="shadow-sm">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-base">Aksi Cepat</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 pt-0">
-                        <Button
+                        {bolehEdit && (
+                            <Button
+                                variant="outline"
+                                className="w-full justify-start hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300 transition-colors"
+                                onClick={onEdit}
+                            >
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit Surat
+                            </Button>
+                        )}
+                        <TindakLanjutMenu
+                            jenis="surat_masuk"
+                            surat={surat}
+                            aksiDiizinkan={surat.aksiDiizinkan || []}
+                            onDisposisi={onDistribute}
+                            onTerima={onTerima}
+                            onPenyelesaian={onPenyelesaian}
                             variant="outline"
-                            className="w-full justify-start hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300 transition-colors"
-                            onClick={onEdit}
-                        >
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit Surat
-                        </Button>
-                        <Button
-                            variant="outline"
-                            className="w-full justify-start hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 hover:border-amber-200 dark:hover:bg-amber-950/30 dark:hover:text-amber-300 transition-colors"
-                            onClick={onReply}
-                        >
-                            <Reply className="mr-2 h-4 w-4" />
-                            Balas Surat
-                        </Button>
-                        <Button
-                            variant="outline"
-                            className="w-full justify-start hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-700 dark:hover:text-blue-300 hover:border-blue-200 dark:hover:bg-blue-950/30 dark:hover:text-blue-300 transition-colors"
-                            onClick={onDistribute}
-                        >
-                            <Send className="mr-2 h-4 w-4" />
-                            Distribusikan
-                        </Button>
-                        {!surat.isArchived && (
+                            className="w-full justify-between"
+                        />
+                        {bolehArsip && !surat.isArchived && (
                             <Button
                                 variant="outline"
                                 className="w-full justify-start hover:bg-purple-50 dark:hover:bg-purple-500/15 hover:text-purple-700 dark:hover:text-purple-300 hover:border-purple-200 dark:hover:bg-purple-950/30 dark:hover:text-purple-300 transition-colors"

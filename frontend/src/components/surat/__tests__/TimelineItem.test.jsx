@@ -38,3 +38,14 @@ it('tidak gagal saat tanggal tidak tersedia', () => {
     renderItem({ type: 'masuk', id: 's1', tanggal: null, perihal: 'Tanpa tanggal', nomorSurat: 'SM-9', dari: 'Kanwil' })
     expect(screen.getByText('Tanpa tanggal')).toBeInTheDocument()
 })
+
+it('merender slot aksi opsional pada node terlihat dan tersamar', () => {
+    const { unmount } = renderItem({ type: 'keluar', id: 's2', perihal: 'Tanggapan', nomorSurat: 'ND-1' })
+    expect(screen.queryByRole('button', { name: 'Aksi uji' })).toBeNull()
+    unmount()
+    render(<MemoryRouter><TimelineItem item={{ type: 'masuk', masked: true, unitNama: 'Sekretariat Ditjen' }} isLast aksi={<button type="button">Aksi uji</button>} /></MemoryRouter>)
+    expect(screen.getByRole('button', { name: 'Aksi uji' })).toBeInTheDocument()
+    cleanup()
+    render(<MemoryRouter><TimelineItem item={{ type: 'keluar', id: 's2', perihal: 'Tanggapan', nomorSurat: 'ND-1' }} isLast aksi={<button type="button">Aksi uji</button>} /></MemoryRouter>)
+    expect(screen.getByRole('button', { name: 'Aksi uji' })).toBeInTheDocument()
+})

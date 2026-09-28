@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { DistributeDialog } from '@/components/DistributeDialog'
 import suratMasukService from '@/services/surat-masuk.service'
+import distributionService from '@/services/distribution.service'
 import { useAuth } from '@/context/AuthContext'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 
@@ -16,6 +17,7 @@ import { InfoSection } from '@/components/surat-masuk/InfoSection'
 import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
 import { StatusSidebar } from '@/components/surat-masuk/StatusSidebar'
 import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
+import { TautkanDialog } from '@/components/surat/AlurSuratActions'
 
 export default function SuratMasukDetail() {
     const { id } = useParams()
@@ -29,12 +31,27 @@ export default function SuratMasukDetail() {
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
+    const [tautkanOpen, setTautkanOpen] = useState(false)
+    // Sinyal reload AlurSuratPanel yang dikendalikan halaman ini (N1): dinaikkan
+    // hanya setelah Terima/Arsip/Distribusi SUKSES, tidak pernah dari refresh
+    // yang dipicu onChanged panel sendiri -- lihat komentar muatUlangKe di
+    // AlurSuratPanel.jsx.
+    const [alurVersi, setAlurVersi] = useState(0)
+    // Sekali surat termuat untuk id ini, refresh berikutnya (mis. dari
+    // onChanged AlurSuratPanel, atau setelah Terima/Arsip/Distribusi) bersifat
+    // diam: tidak menyalakan `loading`, sehingga gerbang `if (loading) return
+    // <spinner>` di bawah tidak membongkar seluruh halaman (dan AlurSuratPanel
+    // di dalamnya) pada setiap refresh (F1).
+    const termuatRef = useRef(false)
+    useEffect(() => { termuatRef.current = false }, [id])
 
     const fetchSurat = useCallback(async () => {
-        setLoading(true)
+        const diam = termuatRef.current
+        if (!diam) setLoading(true)
         try {
             const data = await suratMasukService.getById(id)
             setSurat(data)
+            termuatRef.current = true
         } catch (error) {
             console.error('Error fetching surat:', error)
             toast({
@@ -43,7 +60,7 @@ export default function SuratMasukDetail() {
                 variant: 'destructive',
             })
         } finally {
-            setLoading(false)
+            if (!diam) setLoading(false)
         }
     }, [id, toast])
 
@@ -59,6 +76,7 @@ export default function SuratMasukDetail() {
                 description: `Surat ${surat.nomorSurat} telah diarsipkan`,
             })
             fetchSurat()
+            setAlurVersi((v) => v + 1)
         } catch (error) {
             toast({
                 title: 'Error',
@@ -69,17 +87,21 @@ export default function SuratMasukDetail() {
         }
     }
 
-    const handleReply = () => {
-        navigate('/surat/keluar/tambah', {
-            state: {
-                replyTo: {
-                    id: surat.id,
-                    nomorSurat: surat.nomorSurat,
-                    perihal: surat.perihal,
-                    dari: surat.dari,
-                }
-            }
-        })
+    const handleTerima = async () => {
+        try {
+            await distributionService.receive(surat.distribusiUnitSaya.id, resolveEffectiveUnitKerjaId(user))
+            toast({ title: 'Berhasil', description: 'Disposisi diterima' })
+            fetchSurat()
+            setAlurVersi((v) => v + 1)
+        } catch (error) {
+            toast({ title: 'Error', description: error.message || 'Gagal menerima disposisi', variant: 'destructive' })
+        }
+    }
+    const handlePenyelesaian = () => navigate(`/distribusi?penyelesaian=${surat.distribusiUnitSaya.id}`)
+    const handleTautkanBerhasil = () => {
+        toast({ title: 'Berhasil', description: 'Surat ditautkan ke rangkaian' })
+        fetchSurat()
+        setAlurVersi((v) => v + 1)
     }
 
     if (loading) {
@@ -129,9 +151,11 @@ export default function SuratMasukDetail() {
                 surat={surat}
                 onBack={() => navigate(-1)}
                 onEdit={() => navigate(`/surat/masuk/edit/${surat.id}`)}
-                onReply={handleReply}
                 onDistribute={() => setDistributeDialogOpen(true)}
                 onArchive={() => setArchiveDialogOpen(true)}
+                onTerima={handleTerima}
+                onPenyelesaian={handlePenyelesaian}
+                onTautkan={() => setTautkanOpen(true)}
                 isAdmin={isAdmin}
             />
 
@@ -139,7 +163,7 @@ export default function SuratMasukDetail() {
                 {/* Main Content */}
                 <div className="lg:col-span-2 space-y-6">
                     <InfoSection surat={surat} />
-                    <AlurSuratPanel jenis="surat_masuk" suratId={surat.id} aksesMelalui={aksesMelalui} />
+                    <AlurSuratPanel jenis="surat_masuk" suratId={surat.id} aksesMelalui={aksesMelalui} onChanged={fetchSurat} muatUlangKe={alurVersi} />
                     <FilePreviewSection surat={surat} />
                 </div>
 
@@ -148,9 +172,10 @@ export default function SuratMasukDetail() {
                     <StatusSidebar
                         surat={surat}
                         onEdit={() => navigate(`/surat/masuk/edit/${surat.id}`)}
-                        onReply={handleReply}
                         onDistribute={() => setDistributeDialogOpen(true)}
                         onArchive={() => setArchiveDialogOpen(true)}
+                        onTerima={handleTerima}
+                        onPenyelesaian={handlePenyelesaian}
                         isAdmin={isAdmin}
                     />
                 </div>
@@ -165,6 +190,14 @@ export default function SuratMasukDetail() {
                 onArchive={handleArchive}
             />
 
+            <TautkanDialog
+                open={tautkanOpen}
+                onOpenChange={setTautkanOpen}
+                jenis="surat_masuk"
+                surat={surat}
+                onBerhasil={handleTautkanBerhasil}
+            />
+
             <DistributeDialog
                 open={distributeDialogOpen}
                 onOpenChange={setDistributeDialogOpen}
@@ -172,6 +205,7 @@ export default function SuratMasukDetail() {
                     id: surat.id,
                     nomorSurat: surat.nomorSurat,
                     perihal: surat.perihal,
+                    sifatSurat: surat.sifatSurat,
                 }}
                 sourceUnitId={surat.unitKerjaId || resolveEffectiveUnitKerjaId(user)}
                 onSuccess={() => {
@@ -180,6 +214,8 @@ export default function SuratMasukDetail() {
                         title: 'Berhasil',
                         description: 'Surat berhasil didistribusikan',
                     })
+                    fetchSurat()
+                    setAlurVersi((v) => v + 1)
                 }}
             />
         </div>

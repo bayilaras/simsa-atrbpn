@@ -1,9 +1,17 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
-const mocks = vi.hoisted(() => ({ getBySurat: vi.fn() }))
-vi.mock('@/services/rangkaian.service', () => ({ default: { getBySurat: mocks.getBySurat } }))
+const mocks = vi.hoisted(() => ({
+    getBySurat: vi.fn(), tandaiSelesai: vi.fn(), tutupDisposisi: vi.fn(), ajukanAkses: vi.fn(), batalRelasi: vi.fn(),
+}))
+vi.mock('@/services/rangkaian.service', () => {
+    const svc = {
+        getBySurat: mocks.getBySurat, tandaiSelesai: mocks.tandaiSelesai, tutupDisposisi: mocks.tutupDisposisi,
+        ajukanAkses: mocks.ajukanAkses, batalRelasi: mocks.batalRelasi,
+    }
+    return { default: svc, rangkaianService: svc }
+})
 
 import { AlurSuratPanel } from '../AlurSuratPanel'
 
@@ -142,10 +150,144 @@ it('menampilkan pesan netral (bukan error) bila surat tidak tersedia (404)', asy
     expect(screen.queryByText('Alur surat tidak dapat dimuat.')).toBeNull()
 })
 
+// F1: onChanged HANYA boleh terpanggil lewat muatUlang (tombol "Coba lagi"),
+// TIDAK pada muat awal -- itulah pola yang dulu membentuk loop tak berujung
+// saat parent membongkar panel ini lewat gerbang `if (loading)`.
+it('tidak memanggil onChanged pada muat awal, hanya lewat tombol Coba Lagi setelah gagal', async () => {
+    const onChanged = vi.fn()
+    mocks.getBySurat.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(detail)
+    renderPanel({ aksesMelalui: 'pengawas', onChanged })
+    const alert = await screen.findByRole('alert')
+    expect(onChanged).not.toHaveBeenCalled()
+    fireEvent.click(within(alert).getByRole('button', { name: 'Coba lagi' }))
+    await screen.findByText('Alur Surat')
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(mocks.getBySurat).toHaveBeenCalledTimes(2)
+})
+
+// N1: parent (halaman detail) menaikkan muatUlangKe setelah aksi seperti
+// Terima/Arsip/Distribusi sukses -- ini HARUS memicu pemuatan ulang panel
+// (effect deps [jenis, suratId, muatKe, muatUlangKe]), tapi TIDAK boleh lewat
+// onChanged (yang hanya untuk jalur muatUlang/"Coba lagi" milik panel sendiri,
+// lihat F1), supaya tidak membentuk loop dengan fetchSurat parent.
+it('muatUlangKe yang dinaikkan parent memuat ulang panel tanpa memanggil onChanged', async () => {
+    const onChanged = vi.fn()
+    mocks.getBySurat.mockResolvedValue(detail)
+    const { rerender } = renderPanel({ aksesMelalui: 'pengawas', onChanged, muatUlangKe: 0 })
+    await screen.findByText('Alur Surat')
+    expect(mocks.getBySurat).toHaveBeenCalledTimes(1)
+    rerender(
+        <MemoryRouter>
+            <AlurSuratPanel jenis="surat_masuk" suratId="s1" aksesMelalui="pengawas" onChanged={onChanged} muatUlangKe={1} />
+        </MemoryRouter>,
+    )
+    await waitFor(() => expect(mocks.getBySurat).toHaveBeenCalledTimes(2))
+    expect(onChanged).not.toHaveBeenCalled()
+})
+
 it('menampilkan status memuat dengan role status dan aria-busy', () => {
     mocks.getBySurat.mockResolvedValue(detail)
     renderPanel({ aksesMelalui: 'pengawas' })
     const status = screen.getByRole('status')
     expect(status).toHaveAttribute('aria-busy', 'true')
     expect(status).toHaveTextContent('Memuat alur surat')
+})
+
+describe('aksi panel (Task 25)', () => {
+    it('banner pengawas tanpa kata "hanya baca" bila server menawarkan aksi', async () => {
+        mocks.getBySurat.mockResolvedValue({ ...detail, aksiDiizinkan: ['gabung'] })
+        renderPanel({ aksesMelalui: 'pengawas' })
+        expect(await screen.findByRole('note')).toHaveTextContent('Anda melihat surat ini sebagai unit pengawas.')
+        expect(screen.getByRole('note')).not.toHaveTextContent('hanya baca')
+    })
+
+    it('banner peserta tanpa "Akses baca saja" bila server menawarkan aksi', async () => {
+        mocks.getBySurat.mockResolvedValue({ ...detail, aksiDiizinkan: ['tandai_selesai'] })
+        renderPanel({ aksesMelalui: 'peserta' })
+        const note = await screen.findByRole('note')
+        expect(note).toHaveTextContent('Dilihat melalui rangkaian RS-2026-000002 sebagai peserta rangkaian.')
+        expect(note).not.toHaveTextContent('Akses baca saja')
+    })
+
+    it('aksi rangkaian memuat ulang panel dan memanggil onChanged', async () => {
+        const onChanged = vi.fn()
+        mocks.getBySurat.mockResolvedValue({ ...detail, aksiDiizinkan: ['tandai_selesai'] })
+        mocks.tandaiSelesai.mockResolvedValue({})
+        renderPanel({ aksesMelalui: 'pengawas', onChanged })
+        fireEvent.click(await screen.findByRole('button', { name: 'Tandai Selesai' }))
+        const dialog = within(await screen.findByRole('dialog'))
+        fireEvent.change(dialog.getByLabelText('Catatan penyelesaian'), { target: { value: 'Ditangani lewat rapat koordinasi' } })
+        fireEvent.click(dialog.getByRole('button', { name: 'Simpan' }))
+        await waitFor(() => expect(mocks.tandaiSelesai).toHaveBeenCalledWith('r1', 'Ditangani lewat rapat koordinasi'))
+        await waitFor(() => expect(mocks.getBySurat).toHaveBeenCalledTimes(2))
+        expect(onChanged).toHaveBeenCalledTimes(1)
+    })
+
+    it('kolom Aksi dan Tutup Disposisi hanya muncul dengan aksi tutup_disposisi', async () => {
+        const baris = [
+            detail.disposisi[0],
+            { ...detail.disposisi[0], id: 'd2', targetUnit: { id: 'dir_bppt', nama: 'Dit. BPPT' }, status: 'processed', penanggungJawab: false },
+        ]
+        mocks.getBySurat.mockResolvedValue({ ...detail, disposisi: baris, aksiDiizinkan: ['tutup_disposisi'] })
+        mocks.tutupDisposisi.mockResolvedValue({})
+        renderPanel({ aksesMelalui: 'pengawas' })
+        const tabel = within(await screen.findByRole('region', { name: 'Status tindak lanjut per penerima' }))
+        expect(tabel.getByRole('columnheader', { name: 'Aksi' })).toBeInTheDocument()
+        // Hanya baris sent/received yang dapat ditutup.
+        expect(tabel.getAllByRole('button', { name: 'Tutup Disposisi' })).toHaveLength(1)
+        fireEvent.click(tabel.getByRole('button', { name: 'Tutup Disposisi' }))
+        const dialog = within(await screen.findByRole('dialog'))
+        fireEvent.change(dialog.getByLabelText('Alasan'), { target: { value: 'Unit tujuan tidak dapat memproses' } })
+        fireEvent.click(dialog.getByRole('button', { name: 'Tutup Disposisi' }))
+        await waitFor(() => expect(mocks.tutupDisposisi).toHaveBeenCalledWith('d1', 'Unit tujuan tidak dapat memproses'))
+        await waitFor(() => expect(mocks.getBySurat).toHaveBeenCalledTimes(2))
+    })
+
+    it('tanpa tutup_disposisi tidak ada kolom Aksi', async () => {
+        mocks.getBySurat.mockResolvedValue(detail)
+        renderPanel({ aksesMelalui: 'pengawas' })
+        const tabel = within(await screen.findByRole('region', { name: 'Status tindak lanjut per penerima' }))
+        expect(tabel.queryByRole('columnheader', { name: 'Aksi' })).toBeNull()
+        expect(tabel.queryByRole('button', { name: 'Tutup Disposisi' })).toBeNull()
+    })
+
+    it('node tersamar menawarkan Ajukan Akses hanya bila dapatAjukanAkses', async () => {
+        const anggota = [{ ...detail.anggota[0], dapatAjukanAkses: true }, detail.anggota[1]]
+        mocks.getBySurat.mockResolvedValue({ ...detail, anggota })
+        mocks.ajukanAkses.mockResolvedValue({})
+        renderPanel({ aksesMelalui: 'pengawas' })
+        const linimasa = within(await screen.findByRole('region', { name: 'Linimasa rangkaian' }))
+        fireEvent.click(linimasa.getByRole('button', { name: 'Ajukan Akses' }))
+        const dialog = within(await screen.findByRole('dialog'))
+        fireEvent.change(dialog.getByLabelText('Tujuan akses'), { target: { value: 'Menyusun jawaban atas surat pengaduan' } })
+        fireEvent.click(dialog.getByRole('button', { name: 'Ajukan' }))
+        await waitFor(() => expect(mocks.ajukanAkses).toHaveBeenCalledWith('a1', 'Menyusun jawaban atas surat pengaduan'))
+    })
+
+    it('node tersamar tanpa dapatAjukanAkses tidak menawarkan Ajukan Akses', async () => {
+        mocks.getBySurat.mockResolvedValue(detail)
+        renderPanel({ aksesMelalui: 'pengawas' })
+        await screen.findByText('Alur Surat')
+        expect(screen.queryByRole('button', { name: 'Ajukan Akses' })).toBeNull()
+    })
+
+    it('Batalkan Relasi tampil per relasi aktif pada node asal hanya dengan aksi batal_relasi', async () => {
+        mocks.getBySurat.mockResolvedValue({ ...detail, aksiDiizinkan: ['batal_relasi'] })
+        mocks.batalRelasi.mockResolvedValue({})
+        renderPanel({ aksesMelalui: 'pengawas' })
+        const linimasa = within(await screen.findByRole('region', { name: 'Linimasa rangkaian' }))
+        expect(linimasa.getAllByRole('button', { name: /Batalkan Relasi/ })).toHaveLength(2)
+        fireEvent.click(linimasa.getByRole('button', { name: 'Batalkan Relasi Menjelaskan' }))
+        const dialog = within(await screen.findByRole('dialog'))
+        fireEvent.change(dialog.getByLabelText('Alasan'), { target: { value: 'Relasi dibuat keliru' } })
+        fireEvent.click(dialog.getByRole('button', { name: 'Batalkan' }))
+        await waitFor(() => expect(mocks.batalRelasi).toHaveBeenCalledWith('x2', 'Relasi dibuat keliru'))
+    })
+
+    it('tanpa batal_relasi tidak ada tombol Batalkan Relasi', async () => {
+        mocks.getBySurat.mockResolvedValue(detail)
+        renderPanel({ aksesMelalui: 'pengawas' })
+        await screen.findByText('Alur Surat')
+        expect(screen.queryByRole('button', { name: /Batalkan Relasi/ })).toBeNull()
+    })
 })

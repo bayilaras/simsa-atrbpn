@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SuratKeluarDetail from './SuratKeluarDetail'
@@ -60,4 +60,60 @@ it('hides dead-end links (Lihat di Arsip and the legacy balasan fallback) for cr
     expect(mocks.getBySurat).toHaveBeenCalledWith('surat_keluar', 'surat-id')
     expect(screen.queryByRole('link', { name: /lihat di arsip/i })).toBeNull()
     expect(screen.queryByRole('link', { name: /lihat surat masuk/i })).toBeNull()
+})
+
+// F2: T19-3/T19-4 -- bolehEdit/bolehArsip digerbang oleh aksiDiizinkan dari
+// server (bila berupa array) DAN status persetujuan, bukan oleh isAdmin saja.
+it.each([
+    { approvalStatus: 'draft', aksi: ['edit', 'arsipkan'], edit: true, arsip: false },
+    { approvalStatus: 'rejected', aksi: ['edit', 'arsipkan'], edit: true, arsip: false },
+    { approvalStatus: 'approved', aksi: ['edit', 'arsipkan'], edit: false, arsip: true },
+    { approvalStatus: 'draft', aksi: [], edit: false, arsip: false },
+    { approvalStatus: 'approved', aksi: [], edit: false, arsip: false },
+])('bolehEdit/bolehArsip x approvalStatus=$approvalStatus dengan aksiDiizinkan=$aksi', async ({ approvalStatus, aksi, edit, arsip }) => {
+    mocks.canWrite = true
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: 'SK-G/2026', perihal: 'Uji gating aksi', unitKerjaId: 'unit-a',
+        aksesMelalui: 'owner', approvalStatus, aksiDiizinkan: aksi, isArchived: false,
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    await screen.findByText('Uji gating aksi')
+    if (edit) expect(screen.getAllByRole('button', { name: /^edit$/i }).length).toBeGreaterThan(0)
+    else expect(screen.queryAllByRole('button', { name: /^edit$/i })).toHaveLength(0)
+    if (arsip) expect(screen.getAllByRole('button', { name: /^arsipkan$/i }).length).toBeGreaterThan(0)
+    else expect(screen.queryAllByRole('button', { name: /^arsipkan$/i })).toHaveLength(0)
+})
+
+// F2: T19-4 -- blok aksi mobile juga harus merender TindakLanjutMenu, dan
+// gerbang tampil harus melebar untuk peserta non-admin yang diberi satu aksi
+// server (mis. buat_nd_penjelas), bukan hanya untuk isAdmin.
+it('menampilkan TindakLanjutMenu di blok aksi desktop dan mobile untuk peserta non-admin dengan satu aksi server', async () => {
+    mocks.canWrite = false
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: 'SK-M/2026', perihal: 'ND lintas unit', unitKerjaId: 'dir_bppt',
+        aksesMelalui: 'peserta', approvalStatus: 'draft', aksiDiizinkan: ['buat_nd_penjelas'],
+        naskahDinas: 'Keputusan', isArchived: false,
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    await screen.findByText('ND lintas unit')
+    expect(screen.getAllByRole('button', { name: /Tindak Lanjut/ })).toHaveLength(2)
+    expect(screen.queryAllByRole('button', { name: /^edit$/i })).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /^arsipkan$/i })).toHaveLength(0)
+})
+
+// Task 25: item "Tautkan ke Rangkaian" di menu Tindak Lanjut membuka TautkanDialog
+// untuk surat keluar ini (sebelumnya onTautkan tidak diteruskan sehingga item tersembunyi).
+it('Tautkan ke Rangkaian membuka dialog tautan untuk surat keluar', async () => {
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: 'SK-T/2026', perihal: 'ND untuk ditautkan', unitKerjaId: 'dir_bppt',
+        aksesMelalui: 'owner', approvalStatus: 'approved', aksiDiizinkan: ['tautkan'], isArchived: false,
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    await screen.findByText('ND untuk ditautkan')
+    const [tombolMenu] = screen.getAllByRole('button', { name: /Tindak Lanjut/ })
+    fireEvent.keyDown(tombolMenu, { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Tautkan ke Rangkaian' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Tautkan ke Rangkaian' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Tautkan' })).toBeDisabled()
 })

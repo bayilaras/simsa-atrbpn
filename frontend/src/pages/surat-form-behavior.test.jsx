@@ -162,15 +162,16 @@ it('protects outgoing text edits when cancel is declined', async () => {
 it('associates the incoming disposition error with the real multiselect trigger', async () => {
     const { form } = await renderForm(pages[0], { disposisi: [] });
     fireEvent.submit(form);
+    expect(window.confirm).toHaveBeenCalledWith('Surat belum didisposisikan. Simpan tanpa disposisi?');
     const trigger = screen.getByRole('combobox', { name: 'Penerima disposisi' });
     expect(trigger).toHaveAttribute('aria-invalid', 'true');
     expect(trigger).toHaveAccessibleDescription('Disposisi wajib diisi');
     expect(screen.getByRole('alert')).toHaveFocus();
 });
 
-it('names the outgoing reply selector for keyboard and screen reader users', async () => {
+it('names the outgoing reference display for keyboard and screen reader users', async () => {
     await renderForm(pages[1]);
-    expect(screen.getByRole('combobox', { name: 'Surat masuk yang dibalas' })).toBeEnabled();
+    expect(screen.getByText('Nomor Referensi')).toBeInTheDocument();
 });
 
 it.each(pages)('associates the $kind document requirement with both available document controls', async page => {
