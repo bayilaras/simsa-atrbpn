@@ -40,10 +40,15 @@ beforeAll(async () => {
     holder.db = drizzle(database);
     service = (await import('../services/rangkaian-data-lama.service.js')).default;
 }, 180_000);
-afterAll(async () => { await database?.close(); });
+afterAll(async () => {
+    delete process.env.RANGKAIAN_TUTUP_MASSAL_DATA_LAMA;
+    await database?.close();
+});
 beforeEach(async () => {
     holder.audit.mockReset();
+    process.env.RANGKAIAN_TUTUP_MASSAL_DATA_LAMA = 'true';
     await database.exec(`
+        DELETE FROM rangkaian_peserta;
         ALTER TABLE rangkaian_surat DISABLE TRIGGER USER;
         ALTER TABLE rangkaian_anggota DISABLE TRIGGER USER;
         ALTER TABLE surat_masuk DISABLE TRIGGER USER;
@@ -137,5 +142,46 @@ describe('Tutup massal data lama', () => {
             VALUES ('${id(1)}', 'ditjen', 'dir_bppt', 'sent', '${id(51)}', true);`);
         const preview = await service.tutupMassal(superA, { dryRun: true });
         expect(preview).toMatchObject({ jumlah: 1, contoh: ['RS-2023-70003'] });
+    });
+
+    // B-I2 / CTRL-5: gerbang server; hanya nilai persis 'true' yang menyalakan.
+    it.each([undefined, 'false', 'TRUE', '1', ' true'])('flag %s: ringkasan dapatMenutup false dan tutup massal 409', async (nilai) => {
+        if (nilai === undefined) delete process.env.RANGKAIAN_TUTUP_MASSAL_DATA_LAMA;
+        else process.env.RANGKAIAN_TUTUP_MASSAL_DATA_LAMA = nilai;
+        const before = await status();
+        expect(await service.ringkasan(superA)).toEqual({ dapatMenutup: false, perTahun: [] });
+        expect(await service.ringkasan(tu)).toEqual({ dapatMenutup: false, perTahun: [] });
+        await expect(service.tutupMassal(superA, { dryRun: true }))
+            .rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining('belum diaktifkan') });
+        await expect(service.tutupMassal(superA, { dryRun: false, konfirmasi: true, expectedCount: 2 }))
+            .rejects.toMatchObject({ statusCode: 409 });
+        // Bukan pengawas tetap 403 (otorisasi diperiksa lebih dulu).
+        await expect(service.tutupMassal(bppt, { dryRun: true })).rejects.toMatchObject({ statusCode: 403 });
+        expect(await status()).toEqual(before);
+        expect(holder.audit).not.toHaveBeenCalled();
+    });
+
+    // B-I2: rangkaian yang calon pengolahnya (tepat satu direktorat disposisi_lama, induk data_lama,
+    // pengolah NULL) belum diisi --isi-pengolah tidak ikut pratinjau maupun eksekusi.
+    it('rangkaian dengan calon pengolah yang belum diisi dikecualikan dari pratinjau dan eksekusi', async () => {
+        await database.exec(`
+            INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal)
+            VALUES ('${id(53)}', 'dir_ptep', 'disposisi_lama', 'PTEP'),
+                   ('${id(53)}', 'sesditjen', 'disposisi_lama', 'Sesditjen'),
+                   ('${id(52)}', 'dir_ptep', 'disposisi_lama', 'PTEP'),
+                   ('${id(52)}', 'dir_ktpp', 'disposisi_lama', 'KTPP'),
+                   ('${id(51)}', 'dir_ktpp', 'disposisi_lama', 'KTPP');`);
+        // rs3: tepat satu direktorat + pengolah NULL → dikecualikan. rs2: dua direktorat → bukan calon.
+        // rs1: satu direktorat tetapi pengolah sudah terisi → tetap kandidat.
+        const preview = await service.tutupMassal(superA, { dryRun: true, klasifikasiItemId: klasB });
+        expect(preview).toMatchObject({ jumlah: 2, contoh: ['RS-2022-70001', 'RS-2022-70002'] });
+        const hasil = await service.tutupMassal(superA, { dryRun: false, konfirmasi: true, expectedCount: 2, klasifikasiItemId: klasB });
+        expect(hasil.diterapkan).toBe(2);
+        expect((await status()).find((row) => row.kode === 'RS-2023-70003'))
+            .toEqual({ kode: 'RS-2023-70003', status: 'selesai', unit_pengolah_id: null, klasifikasi_item_id: null });
+
+        // Setelah --isi-pengolah mengisi pengolah, rangkaian itu kembali menjadi kandidat.
+        await database.exec(`UPDATE rangkaian_surat SET unit_pengolah_id = 'dir_ptep' WHERE id = '${id(53)}'`);
+        expect(await service.tutupMassal(superA, { dryRun: true })).toMatchObject({ jumlah: 1, contoh: ['RS-2023-70003'] });
     });
 });

@@ -37,14 +37,48 @@ interface Kandidat {
     klasifikasi_final: number | null;
 }
 
-async function dapatMenutup(actor: DataLamaActor): Promise<boolean> {
+/**
+ * B-I2 / CTRL-5: gerbang server Tutup massal data lama. Bawaan mati; hanya nilai persis `'true'`
+ * yang menyalakan. Nyalakan hanya setelah keputusan gerbang rilis (a) `--isi-pengolah` dieksekusi
+ * atau ditolak (runbook P5 §8.1), karena Tutup massal mengisi pengolah = pencatat secara permanen.
+ */
+export function isTutupMassalDataLamaEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+    return env.RANGKAIAN_TUTUP_MASSAL_DATA_LAMA === 'true';
+}
+
+export const PESAN_TUTUP_MASSAL_NONAKTIF =
+    'Tutup massal data lama belum diaktifkan di server (RANGKAIAN_TUTUP_MASSAL_DATA_LAMA). '
+    + 'Fitur ini dinyalakan setelah keputusan pengisian unit pengolah data lama dijalankan.';
+
+async function berwenangMenutup(actor: DataLamaActor): Promise<boolean> {
     if (actor.role === 'super_admin') return true;
     return isPengawas(actor, db);
+}
+
+async function dapatMenutup(actor: DataLamaActor): Promise<boolean> {
+    if (!isTutupMassalDataLamaEnabled()) return false;
+    return berwenangMenutup(actor);
 }
 
 /** P5-T7-2: pengawas hanya atas rangkaian yang pencatatnya dalam cakupan pengawas (G-PENGAWAS). */
 const lingkupPengawas = (actor: DataLamaActor): SQL =>
     actor.role === 'super_admin' ? sql`true` : dalamCakupanPengawasSql(sql.raw('rs.unit_pencatat_id'));
+
+/**
+ * B-I2: rangkaian yang masih menunggu `--isi-pengolah` (gerbang rilis a) tidak boleh ditutup massal,
+ * sebab Tutup massal mengisi pengolah = pencatat secara permanen dan Koreksi Berkas tidak dapat
+ * memulihkan unit hasil label. Kriteria sama dengan CALON_PENGOLAH_ISI_SQL skrip backfill:
+ * pengolah NULL, induk `sumber = 'data_lama'`, dan peserta `disposisi_lama` berisi tepat satu unit
+ * direktorat. Peserta yang sudah dicabut tetap dihitung (fail closed: rute label tetap memuatnya).
+ */
+const calonPengolahBelumDiisiSql: SQL = sql`(
+    rs.unit_pengolah_id IS NULL
+    AND EXISTS (SELECT 1 FROM rangkaian_anggota cp_ra
+                 WHERE cp_ra.rangkaian_id = rs.id AND cp_ra.peran = 'induk' AND cp_ra.sumber = 'data_lama')
+    AND (SELECT count(DISTINCT cp_rp.unit_kerja_id) FROM rangkaian_peserta cp_rp
+           JOIN unit_kerja cp_uk ON cp_uk.id = cp_rp.unit_kerja_id
+          WHERE cp_rp.rangkaian_id = rs.id AND cp_rp.peran = 'disposisi_lama'
+            AND cp_uk.unit_type = 'direktorat') = 1)`;
 
 /**
  * Predikat kandidat Tutup massal: data lama berstatus selesai, dalam lingkup
@@ -57,6 +91,7 @@ function predikatKandidat(actor: DataLamaActor, filter: TutupMassalFilter): SQL 
         sql`rs.status = 'selesai'`,
         lingkupPengawas(actor),
         sql`(${anggotaMemblokirSql(sql.raw('rs.id'))} + ${disposisiTerbukaSql(sql.raw('rs.id'))}) = 0`,
+        sql`NOT ${calonPengolahBelumDiisiSql}`,
     ];
     if (filter.tahun !== undefined) syarat.push(sql`rs.tahun = ${filter.tahun}`);
     if (filter.unitPencatatId !== undefined) syarat.push(sql`rs.unit_pencatat_id = ${filter.unitPencatatId}`);
@@ -87,9 +122,10 @@ export const rangkaianDataLamaService = {
     },
 
     async tutupMassal(actor: DataLamaActor, filter: TutupMassalFilter, auditContext?: CriticalAuditContext) {
-        if (!(await dapatMenutup(actor))) {
+        if (!(await berwenangMenutup(actor))) {
             throw new ForbiddenError('Tutup massal data lama hanya untuk super_admin atau admin unit pengawas.');
         }
+        if (!isTutupMassalDataLamaEnabled()) throw new ConflictError(PESAN_TUTUP_MASSAL_NONAKTIF);
         if (filter.klasifikasiItemId !== undefined) {
             const [ada] = rowsOf<{ id: number }>(await db.execute(sql`SELECT id FROM klasifikasi_arsip WHERE id = ${filter.klasifikasiItemId}`));
             // P5-C-8: kode dan pesan sama dengan berkaskan P3.
