@@ -10,9 +10,17 @@
 //
 // Urutan kunci (G-LOCK, dipersempit untuk skrip berdiri sendiri ini): baris
 // surat_masuk (FOR UPDATE OF sm, ORDER BY sm.id, per batch) -> baris
-// rangkaian_surat yang sudah menjadi induknya (FOR UPDATE, satu per surat;
-// surat itu sendiri sudah terkunci sehingga tidak ada surat lain yang bisa
-// menyerobot) -> surat_distributions. [G-LOCK]
+// rangkaian_surat tempat surat itu menjadi ANGGOTA (peran apa pun, bukan hanya
+// induk; FOR UPDATE, satu per surat — surat itu sendiri sudah terkunci
+// sehingga keanggotaannya tidak dapat dipindah gabung bersamaan) ->
+// surat_distributions. [G-LOCK, C-M8]
+//
+// Terhadap kode P3 urutan ini bebas deadlock (setiap penulis distribusi P3
+// mengunci surat_masuk lebih dulu). Terhadap kode P2 yang masih live SEBELUM
+// deploy, receive/process/reject P2 mengunci baris distribusi lalu trigger 0046
+// mengambil FOR SHARE rangkaian (kebalikan R -> D di sini), sehingga run
+// pra-deploy dapat gagal 40P01/40001 dan keluar kode 1 dengan batch berjalan
+// digulung balik. Skrip idempoten: jalankan ulang saja (runbook §4). [C-M3]
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
