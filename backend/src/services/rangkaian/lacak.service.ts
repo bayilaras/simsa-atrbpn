@@ -112,7 +112,7 @@ async function muatTunggal(tx: Tx, refs: LacakCocok[]): Promise<Map<string, Laca
 
 /** Placeholder node tunggal/tanpa kartu: tanpa anggotaId (kontrak P4: `string | null`). */
 function tersamarTunggal(node: Pick<LacakNode, 'jenis' | 'unitNama'>): LacakNodeTersamar {
-    return { anggotaId: null as never, jenis: node.jenis, unitNama: node.unitNama, label: LABEL_DIKECUALIKAN, masked: true, dapatAjukanAkses: false };
+    return { anggotaId: null, jenis: node.jenis, unitNama: node.unitNama, label: LABEL_DIKECUALIKAN, masked: true, dapatAjukanAkses: false };
 }
 
 async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[], ctx: KonteksBaca): Promise<LacakKelompok[]> {
