@@ -701,6 +701,15 @@ export const tautanSchema = z.object({
     jenisRelasi: z.enum(['balasan', 'tindak_lanjut', 'menjelaskan', 'merujuk']),
     keterangan: z.string().trim().max(2000).nullish(),
 }).strict();
+/** §2b.3: tautan ke surat yang mungkin masih tunggal (rangkaiannya dipastikan di server). */
+export const tautanKeSuratSchema = z.object({
+    jenis: z.enum(['surat_masuk', 'surat_keluar']),
+    suratId: uuidSchema,
+    keJenis: z.enum(['surat_masuk', 'surat_keluar']),
+    keSuratId: uuidSchema,
+    jenisRelasi: z.enum(['balasan', 'tindak_lanjut', 'menjelaskan', 'merujuk']),
+    keterangan: z.string().trim().max(2000).nullish(),
+}).strict();
 export const gabungSchema = z.object({ sumberId: uuidSchema, alasan: alasanText }).strict();
 export const ajukanAksesSchema = z.object({
     purpose: z.string().trim().min(20, 'Tujuan akses minimal 20 karakter').max(2000),

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     tutup: vi.fn(),
     berkas: { tandaiSelesai: vi.fn(), bukaKembali: vi.fn(), berkaskan: vi.fn(), ubahUnitPengolah: vi.fn(), opsiBerkas: vi.fn() },
+    link: { tautan: vi.fn(), tautanKeSurat: vi.fn(), gabung: vi.fn(), pratinjau: vi.fn(), pratinjauGabung: vi.fn(), batalRelasi: vi.fn() },
     user: { id: 'user-tu', email: 't@example.test', name: 'T', role: 'admin_unit', unitKerjaId: 'sesditjen' },
 }));
 vi.mock('../config/database', () => ({ db: {} }));
@@ -13,6 +14,7 @@ vi.mock('../middlewares/auth.middleware', () => ({
 }));
 vi.mock('../services/distribution.service.js', () => ({ distributionService: { tutupOlehPengawas: mocks.tutup } }));
 vi.mock('../services/rangkaian/berkas.service.js', () => ({ berkasService: mocks.berkas }));
+vi.mock('../services/rangkaian/rangkaian-link.service.js', () => ({ rangkaianLinkService: mocks.link }));
 
 const { default: router } = await import('../routes/rangkaian.routes');
 const app = express();
@@ -90,5 +92,68 @@ describe('aksi berkas rangkaian', () => {
         await request(app).put(`/api/rangkaian/${RS}/unit-pengolah`).send({ unitPengolahId: 'dir_ptep' }).expect(403);
         for (const fn of ['tandaiSelesai', 'bukaKembali', 'berkaskan', 'ubahUnitPengolah'] as const) expect(mocks.berkas[fn]).not.toHaveBeenCalled();
         await request(app).get(`/api/rangkaian/${RS}/opsi-berkas`).expect(200);
+    });
+});
+
+describe('tautan, gabung, batal', () => {
+    beforeEach(() => {
+        for (const fn of Object.values(mocks.link)) (fn as any).mockReset();
+        mocks.user.role = 'admin_unit';
+    });
+
+    it('gabung wajib alasan ≥10; batal relasi wajib alasan ≥10; pratinjau wajib sumberId UUID', async () => {
+        mocks.link.gabung.mockResolvedValue({ targetId: RS });
+        mocks.link.batalRelasi.mockResolvedValue({ id: DIST, cancelled: true });
+        await request(app).post(`/api/rangkaian/${RS}/gabung`).send({ sumberId: DIST, alasan: 'pendek' }).expect(400);
+        await request(app).post(`/api/rangkaian/${RS}/gabung`).send({ sumberId: DIST, alasan: 'TU lupa Nomor Referensi' }).expect(200);
+        expect(mocks.link.gabung).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-tu' }), RS,
+            { sumberId: DIST, alasan: 'TU lupa Nomor Referensi' }, expect.objectContaining({ userId: 'user-tu' }));
+        await request(app).post(`/api/rangkaian/relasi/${DIST}/batal`).send({ alasan: 'x' }).expect(400);
+        await request(app).post(`/api/rangkaian/relasi/${DIST}/batal`).send({ alasan: 'Balasan salah ditautkan' }).expect(200);
+        expect(mocks.link.batalRelasi).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-tu' }), DIST,
+            'Balasan salah ditautkan', expect.objectContaining({ userId: 'user-tu' }));
+        await request(app).get(`/api/rangkaian/${RS}/gabung/pratinjau`).expect(400);
+        expect(mocks.link.pratinjau).not.toHaveBeenCalled();
+    });
+
+    it('pratinjau: sumberId berisi tanda hubung saja ditolak 400 (T15-10), UUID sah diteruskan dengan pengguna', async () => {
+        await request(app).get(`/api/rangkaian/${RS}/gabung/pratinjau`).query({ sumberId: '------------------------------------' }).expect(400);
+        expect(mocks.link.pratinjau).not.toHaveBeenCalled();
+        mocks.link.pratinjau.mockResolvedValue({ unitBaruDiTarget: ['dir_ptep'], unitBaruDiSumber: [] });
+        const res = await request(app).get(`/api/rangkaian/${RS}/gabung/pratinjau`).query({ sumberId: DIST }).expect(200);
+        expect(res.body.data).toEqual({ unitBaruDiTarget: ['dir_ptep'], unitBaruDiSumber: [] });
+        expect(mocks.link.pratinjau).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-tu' }), RS, DIST);
+    });
+
+    it('POST /tautan tidak tertangkap route /:id/tautan dan meneruskan payload', async () => {
+        mocks.link.tautanKeSurat.mockResolvedValue({ rangkaianId: RS });
+        const payload = { jenis: 'surat_keluar', suratId: DIST, keJenis: 'surat_keluar', keSuratId: RS, jenisRelasi: 'menjelaskan' };
+        await request(app).post('/api/rangkaian/tautan').send(payload).expect(201);
+        expect(mocks.link.tautanKeSurat).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-tu' }), payload, expect.objectContaining({ userId: 'user-tu' }));
+        expect(mocks.link.tautan).not.toHaveBeenCalled();
+        await request(app).post('/api/rangkaian/tautan').send({ ...payload, keJenis: 'arsip' }).expect(400);
+    });
+
+    it('POST /:id/tautan meneruskan payload; status 404/403 dari layanan diteruskan apa adanya (T15-3)', async () => {
+        const payload = { jenis: 'surat_keluar', suratId: DIST, keAnggotaId: RS, jenisRelasi: 'tindak_lanjut' };
+        mocks.link.tautan.mockResolvedValue({ rangkaianId: RS, relasiId: DIST, digabungDari: null });
+        await request(app).post(`/api/rangkaian/${RS}/tautan`).send(payload).expect(201);
+        expect(mocks.link.tautan).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-tu' }), RS, payload, expect.objectContaining({ userId: 'user-tu' }));
+        mocks.link.tautan.mockRejectedValueOnce(Object.assign(new Error('Rangkaian tidak ditemukan'), { statusCode: 404 }));
+        await request(app).post(`/api/rangkaian/${RS}/tautan`).send(payload).expect(404);
+        mocks.link.tautan.mockRejectedValueOnce(Object.assign(new Error('Unit Anda bukan peserta rangkaian tujuan.'), { statusCode: 403 }));
+        await request(app).post(`/api/rangkaian/${RS}/tautan`).send(payload).expect(403);
+        await request(app).post(`/api/rangkaian/${RS}/tautan`).send({ ...payload, jenisRelasi: 'lainnya' }).expect(400);
+    });
+
+    it('role read-only 403 untuk semua aksi tautan/gabung/batal/pratinjau; id bukan UUID 400', async () => {
+        await request(app).post('/api/rangkaian/xyz/gabung').send({ sumberId: DIST, alasan: 'TU lupa Nomor Referensi' }).expect(400);
+        await request(app).post('/api/rangkaian/relasi/xyz/batal').send({ alasan: 'Balasan salah ditautkan' }).expect(400);
+        mocks.user.role = 'staff';
+        await request(app).post(`/api/rangkaian/${RS}/gabung`).send({ sumberId: DIST, alasan: 'TU lupa Nomor Referensi' }).expect(403);
+        await request(app).post(`/api/rangkaian/relasi/${DIST}/batal`).send({ alasan: 'Balasan salah ditautkan' }).expect(403);
+        await request(app).get(`/api/rangkaian/${RS}/gabung/pratinjau`).query({ sumberId: DIST }).expect(403);
+        await request(app).post('/api/rangkaian/tautan').send({ jenis: 'surat_keluar', suratId: DIST, keJenis: 'surat_keluar', keSuratId: RS, jenisRelasi: 'menjelaskan' }).expect(403);
+        for (const fn of Object.values(mocks.link)) expect(fn).not.toHaveBeenCalled();
     });
 });

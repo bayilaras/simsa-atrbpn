@@ -20,7 +20,7 @@ import {
     isRangkaianTerbuka,
     judulRangkaian,
 } from './rangkaian-status.js';
-import { jangkauanUnitsSql, type JangkauanOptions } from './access/visibility-spec.js';
+import { barisDari, jangkauanUnitsSql, type JangkauanOptions } from './access/visibility-spec.js';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
 import type { RecordUser } from './record-access.service.js';
@@ -230,6 +230,10 @@ export interface GabungResult {
     distribusiDipindah: number;
     unitAksesBaru: string[];
     targetStatus: RangkaianStatus;
+    /** T15-5: id baris yang dipindah ke target (juga dicatat di audit `merge`). */
+    anggotaIds: string[];
+    distribusiIds: string[];
+    pesertaDipindahIds: string[];
 }
 
 export interface AttachInput {
@@ -629,7 +633,7 @@ export const rangkaianService = {
             .set({ rangkaianId: target.id, updatedAt: new Date() })
             .where(eq(suratDistributions.rangkaianId, sumber.id))
             .returning({ id: suratDistributions.id });
-        await tx.execute(sql`
+        const peserta = barisDari<{ id: string }>(await tx.execute(sql`
             UPDATE rangkaian_peserta p SET rangkaian_id = ${target.id}
             WHERE p.rangkaian_id = ${sumber.id}
               AND p.berakhir_at IS NULL
@@ -640,13 +644,17 @@ export const rangkaianService = {
                     AND t.peran = p.peran
                     AND t.berakhir_at IS NULL
               )
-        `);
+            RETURNING p.id
+        `));
         await tx.update(rangkaianSurat)
             .set({ status: 'digabung', digabungKeId: target.id, updatedAt: new Date() })
             .where(eq(rangkaianSurat.id, sumber.id));
 
         const unitAksesBaru = (await rangkaianService.jangkauanUnitIds(tx, target.id))
             .filter((unit) => !aksesSebelum.has(unit));
+        const anggotaIds = anggota.map((row) => row.id);
+        const distribusiIds = distribusi.map((row) => row.id);
+        const pesertaDipindahIds = peserta.map((row) => row.id);
         await catatAudit(tx, actor, {
             action: 'merge',
             entityType: 'rangkaian_surat',
@@ -659,8 +667,18 @@ export const rangkaianService = {
                 anggotaDipindah: anggota.length,
                 distribusiDipindah: distribusi.length,
                 unitAksesBaru,
+                anggotaIds,
+                distribusiIds,
+                pesertaDipindahIds,
             },
         });
+        // T15-6 (§8 "otomatis saat ada anggota/disposisi baru"): target yang
+        // selesai (manual maupun otomatis) dibuka kembali lebih dulu, diaudit
+        // dengan nilai selesai_* sebelumnya, selaras attach(); recompute di
+        // bawah boleh menutupnya lagi hanya bila tanpa penghalang.
+        if (target.status === 'selesai' && anggota.length > 0) {
+            await bukaKembaliOtomatis(tx, target, actor, 'Rangkaian lain digabungkan ke rangkaian ini');
+        }
         const [statusTarget] = await rangkaianService.recomputeStatus(tx, [target.id], actor);
         return {
             targetId: target.id,
@@ -669,6 +687,9 @@ export const rangkaianService = {
             distribusiDipindah: distribusi.length,
             unitAksesBaru,
             targetStatus: statusTarget?.after ?? target.status,
+            anggotaIds,
+            distribusiIds,
+            pesertaDipindahIds,
         };
     },
 

@@ -600,19 +600,38 @@ describe('rangkaianService.gabung', () => {
         const nd = await suratKeluar('dir_plp', 'approved');
         const relasiB = await relasi(b.rangkaianId, await anggotaKeluar(b.rangkaianId, nd), b.anggotaId, 'balasan');
         const distB = await disposisi(smB, 'dir_ptep', 'sent', b.rangkaianId);
+        const { rows: [pesertaB] } = await database.query<{ id: string }>(
+            `INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal) VALUES ($1, 'ditjen', 'disposisi_lama', 'Dirjen') RETURNING id`,
+            [b.rangkaianId]);
 
         const result = await inTx((tx) => rangkaianService.gabung(tx, {
             targetId: a.rangkaianId, sumberId: b.rangkaianId, alasan: 'TU lupa mengisi Nomor Referensi',
         }, actor));
 
-        expect(result).toEqual({
+        const anggotaSumber = (await database.query<{ id: string }>(
+            `SELECT id FROM rangkaian_anggota WHERE surat_masuk_id = $1 OR surat_keluar_id = $2 ORDER BY id`, [smB, nd])).rows.map((row) => row.id);
+        expect(result).toMatchObject({
             targetId: a.rangkaianId,
             sumberId: b.rangkaianId,
             anggotaDipindah: 2,
             distribusiDipindah: 1,
             unitAksesBaru: ['dir_plp', 'dir_ptep'],
             targetStatus: 'aktif',
+            distribusiIds: [distB],
+            pesertaDipindahIds: [pesertaB.id],
         });
+        // T15-5: id baris yang dipindah ikut dikembalikan dan diaudit.
+        expect([...result.anggotaIds].sort()).toEqual(anggotaSumber);
+        const [merge] = await auditChanges(b.rangkaianId, 'merge');
+        expect([...(merge.anggotaIds as string[])].sort()).toEqual(anggotaSumber);
+        expect(merge).toMatchObject({ distribusiIds: [distB], pesertaDipindahIds: [pesertaB.id], anggotaDipindah: 2, distribusiDipindah: 1 });
+        // T15-6: target 'selesai' dibuka kembali (diaudit) sebelum recompute.
+        expect(await auditChanges(a.rangkaianId, 'status_change')).toContainEqual(expect.objectContaining({
+            before: expect.objectContaining({ status: 'selesai' }),
+            after: expect.objectContaining({ status: 'aktif' }),
+            otomatis: true,
+            alasan: 'Rangkaian lain digabungkan ke rangkaian ini',
+        }));
         const anggota = await database.query<{ peran: string; sumber: string }>(
             `SELECT peran, sumber FROM rangkaian_anggota WHERE rangkaian_id = $1 ORDER BY peran, sumber`, [a.rangkaianId]);
         expect(anggota.rows).toEqual([

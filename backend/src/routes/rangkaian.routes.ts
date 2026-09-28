@@ -4,7 +4,8 @@ import { validateBody, validateIdParam, validateQuery } from '../middlewares/val
 import { canReadMiddleware, canWriteMiddleware } from '../middlewares/role.middleware';
 import { lacakLimiter } from '../middlewares/rate-limiter.middleware';
 import {
-    ajukanAksesSchema, alasanSchema, berkaskanSchema, lacakQuerySchema, selesaiRangkaianSchema, unitPengolahSchema,
+    ajukanAksesSchema, alasanSchema, berkaskanSchema, gabungSchema, lacakQuerySchema, selesaiRangkaianSchema, tautanKeSuratSchema,
+    tautanSchema, unitPengolahSchema, uuidSchema,
 } from '../validators/schemas';
 import auditLogService from '../services/audit-log.service.js';
 import { recordAccessService } from '../services/record-access.service.js';
@@ -14,6 +15,7 @@ import { distributionService } from '../services/distribution.service.js';
 import { isAjukanAksesEnabled } from '../services/rangkaian/deps.js';
 import { lacakService } from '../services/rangkaian/lacak.service.js';
 import { berkasService } from '../services/rangkaian/berkas.service.js';
+import { rangkaianLinkService } from '../services/rangkaian/rangkaian-link.service.js';
 import type { LacakParams } from '../services/rangkaian/lacak.types.js';
 import type { JenisRekamanRangkaian } from '../services/access/visibility-spec.js';
 
@@ -76,6 +78,26 @@ router.post('/disposisi/:distribusiId/tutup', validateIdParam('distribusiId'), c
         try {
             const data = await distributionService.tutupOlehPengawas(req.params.distribusiId as string, req.user!, req.body.alasan, auditOf(req));
             res.json({ success: true, data });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+// POST /api/rangkaian/tautan — tautkan surat ke surat lain yang mungkin masih tunggal (§2b.3).
+// Satu segmen path, jadi tidak pernah bertabrakan dengan '/:id/tautan'.
+router.post('/tautan', canWriteMiddleware(), validateBody(tautanKeSuratSchema), async (req: AuthRequest, res, next) => {
+    try {
+        res.status(201).json({ success: true, data: await rangkaianLinkService.tautanKeSurat(req.user!, req.body, auditOf(req)) });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/rangkaian/relasi/:relasiId/batal — pembuat relasi atau pengawas, alasan ≥10 (§5)
+router.post('/relasi/:relasiId/batal', validateIdParam('relasiId'), canWriteMiddleware(), validateBody(alasanSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            res.json({ success: true, data: await rangkaianLinkService.batalRelasi(req.user!, req.params.relasiId as string, req.body.alasan, auditOf(req)) });
         } catch (error) {
             next(error);
         }
@@ -152,6 +174,35 @@ router.put('/:id/unit-pengolah', validateIdParam(), canWriteMiddleware(), valida
             next(error);
         }
     });
+
+// POST /api/rangkaian/:id/tautan — tautkan surat milik unit ke anggota rangkaian ini (§5)
+router.post('/:id/tautan', validateIdParam(), canWriteMiddleware(), validateBody(tautanSchema), async (req: AuthRequest, res, next) => {
+    try {
+        res.status(201).json({ success: true, data: await rangkaianLinkService.tautan(req.user!, req.params.id as string, req.body, auditOf(req)) });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/rangkaian/:id/gabung/pratinjau?sumberId= — selisih akses sebelum Gabungkan (pengawas, T15-10)
+router.get('/:id/gabung/pratinjau', validateIdParam(), canWriteMiddleware(), async (req: AuthRequest, res, next) => {
+    try {
+        const sumber = uuidSchema.safeParse(req.query.sumberId);
+        if (!sumber.success) return res.status(400).json({ success: false, error: 'sumberId tidak valid' });
+        res.json({ success: true, data: await rangkaianLinkService.pratinjau(req.user!, req.params.id as string, sumber.data) });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// POST /api/rangkaian/:id/gabung — gabungkan rangkaian sumber ke rangkaian ini (pengawas, alasan ≥10)
+router.post('/:id/gabung', validateIdParam(), canWriteMiddleware(), validateBody(gabungSchema), async (req: AuthRequest, res, next) => {
+    try {
+        res.json({ success: true, data: await rangkaianLinkService.gabung(req.user!, req.params.id as string, req.body, auditOf(req)) });
+    } catch (error) {
+        next(error);
+    }
+});
 
 // GET /api/rangkaian/:id — rangkaian lengkap, tersamar sesuai hak baca
 router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
