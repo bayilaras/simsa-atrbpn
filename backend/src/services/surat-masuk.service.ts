@@ -25,7 +25,7 @@ import {
     type SuratNumberContext,
     type SuratNumberPreview,
 } from '../utils/surat-numbering.js';
-import { afterSuratMasukInsert } from './rangkaian/tindak-lanjut.hook.js';
+import { afterSuratMasukInsert, afterSuratMasukMutation, guardSuratMasukMutation } from './rangkaian/tindak-lanjut.hook.js';
 import type { DisposisiRoutingInput } from '../validators/schemas.js';
 import type { RecordUser } from './record-access.service.js';
 
@@ -323,7 +323,7 @@ export class SuratMasukService {
 
     async update(
         id: string,
-        data: Partial<SuratMasuk>,
+        data: Partial<SuratMasuk> & { alasan?: string },
         unitScope: RecordUnitScope,
         clientBlobClaim?: ClaimClientBlobUpload,
         auditContext?: CriticalAuditContext,
@@ -358,15 +358,19 @@ export class SuratMasukService {
             })
             : undefined;
 
-        return db.transaction(async (tx) => {
-            const current = hasSuratRuleSelection(data)
+        // C-4: hanya transaksi yang diulang; prepareExisting dan unggahan rute tetap di luar.
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
+            const { alasan, ...patch } = data;
+            // G-LOCK: kunci surat_masuk → rangkaian sebelum UPDATE (T13-1).
+            const guard = await guardSuratMasukMutation(tx, { suratMasukId: id, perubahan: patch, alasan, audit: auditContext });
+            const current = hasSuratRuleSelection(patch)
                 ? (await tx.select().from(suratMasuk).where(and(...conditions)).limit(1).for('update'))[0]
                 : undefined;
-            if (hasSuratRuleSelection(data) && !current) return undefined;
-            const ruleSelection = await prepareSuratRuleSelection(tx, 'masuk', data, current);
+            if (hasSuratRuleSelection(patch) && !current) return undefined;
+            const ruleSelection = await prepareSuratRuleSelection(tx, 'masuk', patch, current);
             const [result] = await tx
                 .update(suratMasuk)
-                .set({ ...data, ...ruleSelection, updatedAt: new Date() })
+                .set({ ...patch, ...ruleSelection, updatedAt: new Date() })
                 .where(and(...conditions))
                 .returning();
 
@@ -404,13 +408,14 @@ export class SuratMasukService {
                             fileOriginalName: result.fileOriginalName,
                             hasFile: Boolean(result.filePath),
                         },
-                        fields: Object.keys(data),
+                        fields: Object.keys(patch),
                         ruleSelection,
                     },
                 }, tx);
             }
+            if (result) await afterSuratMasukMutation(tx, guard, id, auditContext);
             return result ? (await hydrateSuratRuleSelections(tx, [result], 'masuk'))[0] : result;
-        });
+        }));
     }
 
     async delete(
@@ -418,6 +423,7 @@ export class SuratMasukService {
         deletedByUserId: string | undefined,
         unitScope: RecordUnitScope,
         auditContext?: CriticalAuditContext,
+        options: { alasan?: string } = {},
     ) {
         // Soft delete - mark as deleted instead of permanently removing
         const conditions = [
@@ -431,7 +437,9 @@ export class SuratMasukService {
             or(eq(suratMasuk.isArchived, false), isNull(suratMasuk.isArchived))!,
         ];
 
-        return db.transaction(async (tx) => {
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
+            // G-LOCK: kunci surat_masuk → rangkaian sebelum soft delete (T13-1).
+            const guard = await guardSuratMasukMutation(tx, { suratMasukId: id, perubahan: 'hapus', alasan: options.alasan, audit: auditContext });
             const [result] = await tx
                 .update(suratMasuk)
                 .set({
@@ -451,12 +459,13 @@ export class SuratMasukService {
                     entityId: id,
                     changes: {
                         before: { isDeleted: false, nomorSurat: result.nomorSurat, perihal: result.perihal },
-                        after: { isDeleted: true, deletedBy: deletedByUserId || null },
+                        after: { isDeleted: true, deletedBy: deletedByUserId || null, alasan: options.alasan ?? null },
                     },
                 }, tx);
             }
+            if (result) await afterSuratMasukMutation(tx, guard, id, auditContext);
             return result;
-        });
+        }));
     }
 
     async hardDelete(id: string) {

@@ -494,11 +494,13 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
                 error: 'Surat yang telah diarsipkan tidak dapat dihapus melalui CRUD.',
             });
         }
+        // §5/T13: alasan wajib untuk anggota rangkaian; express.json mengurai badan DELETE.
+        const alasan = typeof req.body?.alasan === 'string' ? req.body.alasan : undefined;
         const result = await suratMasukService.delete(id, req.user?.id, unitScope, {
             userId: req.user?.id,
             userEmail: req.user?.email,
             ipAddress: req.ip,
-        });
+        }, { alasan });
 
         if (!result) {
             return res.status(404).json({ error: 'Surat masuk not found' });

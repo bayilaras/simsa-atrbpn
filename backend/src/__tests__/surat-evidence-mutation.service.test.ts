@@ -26,10 +26,13 @@ const mockDb = {
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
-// Recompute rangkaian (Task 12) diuji terpisah; mock db di sini tidak punya `execute`.
+// Recompute rangkaian (Task 12) dan guard anggota rangkaian (Task 13) diuji
+// terpisah; mock db di sini tidak punya `execute`.
 vi.mock('../services/rangkaian/tindak-lanjut.hook.js', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../services/rangkaian/tindak-lanjut.hook.js')>()),
     afterSuratKeluarChanged: vi.fn(async () => undefined),
+    guardSuratMasukMutation: vi.fn(async () => null),
+    afterSuratMasukMutation: vi.fn(async () => undefined),
 }));
 
 const { SuratMasukService } = await import('../services/surat-masuk.service');
