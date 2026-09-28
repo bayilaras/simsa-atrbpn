@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 
@@ -101,6 +101,50 @@ describe('Halaman Lacak Surat', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Tutup rangkaian' }))
         expect(new URLSearchParams(router.state.location.search).get('rangkaian')).toBeNull()
         expect(panel()).toBeNull()
+    })
+
+    it('Buka rangkaian pada kartu ke-N memasang panel di dalam <li> kartu itu (ekspansi di tempat)', async () => {
+        mount('/surat/lacak?q=rapat')
+        await maju(300)
+        const daftar = screen.getByRole('list', { name: 'Hasil lacak surat' })
+        const kartuKedua = screen.getByRole('heading', { name: 'Judul RS-2024-000002' }).closest('li')
+        fireEvent.click(within(kartuKedua).getByRole('button', { name: 'Buka rangkaian' }))
+        expect(new URLSearchParams(router.state.location.search).get('rangkaian')).toBe(R2)
+        const item = screen.getByRole('heading', { name: 'Judul RS-2024-000002' }).closest('li')
+        expect(item.parentElement).toBe(daftar)
+        expect(Array.from(daftar.children).indexOf(item)).toBe(1)
+        expect(within(item).getByRole('region', { name: 'Panel Alur Surat' })).toHaveTextContent(R2)
+        expect(screen.getAllByRole('region', { name: 'Panel Alur Surat' })).toHaveLength(1)
+        expect(screen.queryByText('Rangkaian terpilih')).toBeNull()
+        expect(screen.queryByText(/ditampilkan pada bagian Rangkaian terpilih/)).toBeNull()
+    })
+
+    it('panel ?rangkaian= pindah dari kepala ke <li> kartunya (bukan kartu pertama) tanpa dipasang ulang', async () => {
+        const hasilTertunda = deferred()
+        mocks.lacak.mockImplementationOnce(() => hasilTertunda.promise)
+        mount(`/surat/lacak?q=rapat&rangkaian=${R2}`)
+        expect(screen.getByText('Rangkaian terpilih')).toBeVisible()
+        expect(panel()).toHaveTextContent(R2)
+        await maju(300)
+        await act(async () => { hasilTertunda.resolve(hasil('rapat', [kartu(R1, 'RS-2025-000001'), kartu(R2, 'RS-2024-000002')])) })
+        const daftar = screen.getByRole('list', { name: 'Hasil lacak surat' })
+        const item = screen.getByRole('heading', { name: 'Judul RS-2024-000002' }).closest('li')
+        expect(Array.from(daftar.children).indexOf(item)).toBe(1)
+        expect(within(item).getByRole('region', { name: 'Panel Alur Surat' })).toHaveTextContent(R2)
+        expect(screen.queryByText('Rangkaian terpilih')).toBeNull()
+        expect(mocks.panelDipasang).toHaveBeenCalledTimes(1)
+    })
+
+    it('?rangkaian= yang tidak ada di hasil tampil paling atas, hasil lain tetap tampil', async () => {
+        const R3 = '33333333-3333-4333-8333-333333333333'
+        mount(`/surat/lacak?q=rapat&rangkaian=${R3}`)
+        await maju(300)
+        const daftar = screen.getByRole('list', { name: 'Hasil lacak surat' })
+        expect(daftar.children).toHaveLength(3)
+        expect(within(daftar.children[0]).getByText('Rangkaian terpilih')).toBeVisible()
+        expect(within(daftar.children[0]).getByRole('region', { name: 'Panel Alur Surat' })).toHaveTextContent(R3)
+        expect(screen.getByRole('heading', { name: 'Judul RS-2025-000001' })).toBeVisible()
+        expect(screen.getByRole('heading', { name: 'Judul RS-2024-000002' })).toBeVisible()
     })
 
     it('tautan ?rangkaian= tanpa kueri tetap menampilkan panelnya', async () => {

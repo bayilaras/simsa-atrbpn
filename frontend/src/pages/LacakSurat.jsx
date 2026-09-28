@@ -71,6 +71,42 @@ export default function LacakSurat() {
         }
     }
 
+    // Rangkaian dari ?rangkaian= menempati satu <li> ber-key tetap. Slot 1 adalah kartunya bila ada
+    // di hasil (ekspansi di tempat), atau kepala "Rangkaian terpilih" selama memuat / bila tidak ada
+    // di hasil. Slot 2 adalah panelnya, di luar kartu, sehingga posisi pohonnya tidak pernah berubah
+    // dan panel dipasang sekali walau kartu lain datang dan pergi (P4-C-2, spec: ekspansi di tempat).
+    const indeksParam = rangkaianParam ? kelompok.findIndex(item => item.rangkaian?.id === rangkaianParam) : -1
+    const itemRangkaianParam = item => (
+        <li key={`rangkaian:${rangkaianParam}`} className="space-y-2">
+            {item ? (
+                <LacakKelompokCard kelompok={item} terbuka onToggle={() => toggle(rangkaianParam)} />
+            ) : (
+                <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-sm font-semibold">Rangkaian terpilih</h2>
+                    <Button type="button" variant="ghost" size="sm" onClick={tutupPanelUrl}>
+                        <X className="h-4 w-4" aria-hidden="true" />Tutup panel rangkaian
+                    </Button>
+                </div>
+            )}
+            <AlurSuratPanel key={rangkaianParam} rangkaianId={rangkaianParam} />
+        </li>
+    )
+
+    // Satu larik anak ber-key: React hanya mempertahankan anak ber-key di dalam larik yang sama.
+    // Bila kartu ?rangkaian= belum ada di hasil (memuat / tidak cocok), <li>-nya berada paling atas.
+    const itemHasil = kelompok.map((item, index) => {
+        if (index === indeksParam) return itemRangkaianParam(item)
+        const terbuka = Boolean(item.rangkaian) && item.rangkaian.id === rangkaianTerbuka
+        return (
+            <li key={item.kunci}>
+                <LacakKelompokCard kelompok={item} terbuka={terbuka} onToggle={() => toggle(item.rangkaian.id)}>
+                    {terbuka && <AlurSuratPanel key={item.rangkaian.id} rangkaianId={item.rangkaian.id} />}
+                </LacakKelompokCard>
+            </li>
+        )
+    })
+    if (rangkaianParam && indeksParam === -1) itemHasil.unshift(itemRangkaianParam(null))
+
     const ubahTab = value => ubahParam(next => {
         if (value === 'berkas') next.set('tab', 'berkas')
         else next.delete('tab')
@@ -115,18 +151,6 @@ export default function LacakSurat() {
                         Ketik minimal {LACAK_MIN_CHARS} karakter. Hasil dikelompokkan per rangkaian; surat yang tidak boleh Anda baca tampil sebagai “Dikecualikan”.
                     </p>
 
-                    {rangkaianParam && (
-                        <section aria-label="Rangkaian terpilih" className="space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                                <h2 className="text-sm font-semibold">Rangkaian terpilih</h2>
-                                <Button type="button" variant="ghost" size="sm" onClick={tutupPanelUrl}>
-                                    <X className="h-4 w-4" aria-hidden="true" />Tutup panel rangkaian
-                                </Button>
-                            </div>
-                            <AlurSuratPanel key={rangkaianParam} rangkaianId={rangkaianParam} />
-                        </section>
-                    )}
-
                     {lacak.status === 'invalid' && (
                         <p role="alert" className="text-sm text-destructive">Kata kunci maksimal {LACAK_MAX_CHARS} karakter.</p>
                     )}
@@ -146,27 +170,11 @@ export default function LacakSurat() {
                             Tidak ada surat yang cocok dengan “{lacak.q}” dalam jangkauan Anda.
                         </p>
                     )}
-                    {kelompok.length > 0 && (
-                        <>
-                            <p role="status" className="sr-only">{kelompok.length} hasil ditemukan.</p>
-                            <ol aria-label="Hasil lacak surat" className="space-y-3">
-                                {kelompok.map(item => {
-                                    const terbuka = Boolean(item.rangkaian) && item.rangkaian.id === rangkaianTerbuka
-                                    // Rangkaian dari ?rangkaian= sudah dipasang di bagian "Rangkaian terpilih";
-                                    // jangan pasang panel kedua di kartu (P4-C-2).
-                                    const dariUrl = terbuka && item.rangkaian.id === rangkaianParam
-                                    return (
-                                        <li key={item.kunci}>
-                                            <LacakKelompokCard kelompok={item} terbuka={terbuka} onToggle={() => toggle(item.rangkaian.id)}>
-                                                {terbuka && (dariUrl
-                                                    ? <p className="text-sm text-muted-foreground">Alur rangkaian ini ditampilkan pada bagian Rangkaian terpilih.</p>
-                                                    : <AlurSuratPanel key={item.rangkaian.id} rangkaianId={item.rangkaian.id} />)}
-                                            </LacakKelompokCard>
-                                        </li>
-                                    )
-                                })}
-                            </ol>
-                        </>
+                    {kelompok.length > 0 && <p role="status" className="sr-only">{kelompok.length} hasil ditemukan.</p>}
+                    {(rangkaianParam || kelompok.length > 0) && (
+                        <ol aria-label="Hasil lacak surat" className="space-y-3">
+                            {itemHasil}
+                        </ol>
                     )}
                 </TabsContent>
 
