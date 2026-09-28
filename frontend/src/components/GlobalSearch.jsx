@@ -209,7 +209,6 @@ export function GlobalSearch({ open, onOpenChange }) {
                                                     aria-selected={index === selectedIndex}
                                                     key={`${result.type}-${result.id}`}
                                                     onClick={() => handleSelect(result)}
-                                                    onMouseEnter={() => setSelectedIndex(index)}
                                                     className={`w-full text-left px-3 py-2 rounded-lg flex items-start gap-3 transition-colors ${index === selectedIndex
                                                             ? 'bg-accent text-accent-foreground'
                                                             : 'hover:bg-muted'
@@ -244,8 +243,8 @@ export function GlobalSearch({ open, onOpenChange }) {
                                                 title="Lihat rangkaian (Shift+Enter)"
                                                 onClick={() => openLacak(selectedLacakQuery)}
                                             >
-                                                <GitBranch className="h-4 w-4" aria-hidden="true" />
-                                                Lihat rangkaian
+                                                <GitBranch className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                                <span className="truncate">Lihat rangkaian: {selectedResult.title}</span>
                                             </Button>
                                         </div>
                                     )}

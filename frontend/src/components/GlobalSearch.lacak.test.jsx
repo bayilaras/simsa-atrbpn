@@ -103,6 +103,22 @@ describe('GlobalSearch → Lacak Surat', () => {
         expect(router.state.location.pathname).toBe('/surat/masuk/sm-1')
     })
 
+    it('hover mouse tidak memindahkan opsi aktif: klik tetap menargetkan opsi yang dipilih via keyboard/klik', async () => {
+        await bukaDanCari('B-12')
+        const opsi = screen.getAllByRole('option')
+        // Arahkan pointer ke opsi 0 lalu geser ke opsi 2 (arsip) — hover TIDAK boleh mengubah selectedIndex.
+        fireEvent.mouseEnter(opsi[0])
+        fireEvent.mouseEnter(opsi[2])
+        expect(opsi[0]).toHaveAttribute('aria-selected', 'true')
+        expect(opsi[2]).toHaveAttribute('aria-selected', 'false')
+        // Tombol aksi tetap ada meski opsi yang di-hover adalah arsip (tidak punya Lihat rangkaian).
+        const tombol = screen.getByRole('button', { name: 'Lihat rangkaian untuk B-12/PTPP.1/IX/2024' })
+        fireEvent.click(tombol)
+        expect(router.state.location.pathname).toBe('/surat/lacak')
+        expect(qDiUrl()).toBe('B-12/PTPP.1/IX/2024')
+        tanpaRequestTambahan()
+    })
+
     it('item Lacak rangkaian “q” meneruskan kueri yang diketik', async () => {
         await bukaDanCari('B-12')
         fireEvent.click(screen.getByRole('button', { name: 'Lacak rangkaian “B-12”' }))
