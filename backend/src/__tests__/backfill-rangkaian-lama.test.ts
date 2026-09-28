@@ -563,6 +563,12 @@ describe('apply', () => {
                 { surat_masuk_id: S(1), nomor_surat: 'B-1/2023', calon_unit_pengolah: 'dir_bppt', rangkaian_id: await induk(S(1)) },
             ]);
             expect(isi.total).toMatchObject({ pengolah_akan_diisi: 1 });
+            // Minor 7: CSV isi-pengolah memuat rangkaian_id yang akan ditulis.
+            const dir = mkdtempSync(join(tmpdir(), 'rangkaian-lama-isi-'));
+            writePlanFiles(dir, isi);
+            const [header, baris] = readFileSync(join(dir, 'calon-pengolah.csv'), 'utf8').split('\n');
+            expect(header).toBe('surat_masuk_id,nomor_surat,calon_unit_pengolah,rangkaian_id');
+            expect(baris).toBe(`${S(1)},B-1/2023,dir_bppt,${await induk(S(1))}`);
             await expect(isiPengolahPlan(database, { approvedSha256: biasa.sha256, batas: BATAS_UJI }))
                 .rejects.toThrow(/Rencana berubah sejak sign-off/);
             await expect(isiPengolahPlan(database, { approvedSha256: null, batas: BATAS_UJI }))

@@ -395,7 +395,9 @@ export function writePlanFiles(outDir, plan) {
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, 'pemetaan-label.csv'), toCsv(plan.pemetaan, PEMETAAN_COLUMNS));
   writeFileSync(join(outDir, 'balasan-ditinjau.csv'), toCsv(plan.balasan, BALASAN_COLUMNS));
-  writeFileSync(join(outDir, 'calon-pengolah.csv'), toCsv(plan.calonPengolah, CALON_PENGOLAH_COLUMNS));
+  // Minor 7: mode isi-pengolah menulis ke rangkaian_id; kolom itu ikut di CSV agar penanda tangan gerbang (a) melihatnya.
+  const kolomCalon = plan.mode === MODE_ISI_PENGOLAH ? [...CALON_PENGOLAH_COLUMNS, 'rangkaian_id'] : CALON_PENGOLAH_COLUMNS;
+  writeFileSync(join(outDir, 'calon-pengolah.csv'), toCsv(plan.calonPengolah, kolomCalon));
   writeFileSync(join(outDir, 'ringkasan.json'),
     `${JSON.stringify({ sha256: plan.sha256, batasDataLama: plan.batasDataLama, ...(plan.mode ? { mode: plan.mode } : {}), total: plan.total }, null, 2)}\n`);
 }
