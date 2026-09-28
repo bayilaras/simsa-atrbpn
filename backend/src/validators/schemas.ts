@@ -7,6 +7,7 @@ import {
 } from '../utils/notification-id.js';
 import { parseGcsLocator } from '../storage/locator.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
+import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
 
 // Common schemas
 export const uuidSchema = z.string().uuid('Invalid UUID format');
@@ -867,3 +868,17 @@ export const daftarRangkaianQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(50).default(20),
 }).strict();
 export type DaftarRangkaianQuery = z.infer<typeof daftarRangkaianQuerySchema>;
+
+// Perlu Dilengkapi (P4, D7). Kueri tak dikenal ditolak agar unitKerjaId tidak bisa menyelinap.
+const benderaQuerySchema = z.enum(['true', 'false']).default('false').transform((value) => value === 'true');
+export const perluDilengkapiQuerySchema = z.object({
+    kategori: z.enum(KATEGORI_PERLU_DILENGKAPI).optional(),
+    tampilkanDataLama: benderaQuerySchema,
+    page: z.coerce.number().int().min(1).max(10_000).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+}).strict();
+export type PerluDilengkapiQuery = z.infer<typeof perluDilengkapiQuerySchema>;
+export const ringkasanPerluDilengkapiQuerySchema = z.object({ tampilkanDataLama: benderaQuerySchema }).strict();
+export type RingkasanPerluDilengkapiQuery = z.infer<typeof ringkasanPerluDilengkapiQuerySchema>;
+// Body Tandai Inisiatif selalu kosong; express 5 membiarkan req.body undefined bila tidak ada body.
+export const tandaiInisiatifSchema = z.preprocess((value) => value ?? {}, z.object({}).strict());

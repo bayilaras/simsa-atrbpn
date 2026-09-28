@@ -50,6 +50,7 @@ import bulkUploadRoutes from './routes/bulk-upload.routes';
 import distributionRoutes from './routes/distribution.routes';
 import rangkaianRoutes from './routes/rangkaian.routes';
 import rangkaianDaftarRoutes from './routes/rangkaian-daftar.routes.js';
+import rangkaianPerluDilengkapiRoutes from './routes/rangkaian-perlu-dilengkapi.routes.js';
 import { reportRoutes } from './routes/report.routes';
 import { settingsRoutes } from './routes/settings.routes';
 import searchRoutes from './routes/search.routes';
@@ -371,6 +372,7 @@ app.use('/api/retention', retentionRoutes);
 app.use('/api/bulk-upload', bulkUploadRoutes);
 app.use('/api/distributions', distributionRoutes);
 app.use('/api/rangkaian', rangkaianDaftarRoutes);  // P4 Task 6: hanya GET / (auth per-route)
+app.use('/api/rangkaian', rangkaianPerluDilengkapiRoutes); // P4 Task 18 (D7), auth per-route; sebelum router berkas P5 dan router utama
 app.use('/api/rangkaian', rangkaianRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);
