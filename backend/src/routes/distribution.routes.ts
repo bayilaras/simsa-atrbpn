@@ -5,7 +5,9 @@ import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { canAccessUnit, Role } from '../config/permissions';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
-import { createDistributionSchema, rejectDistributionSchema } from '../validators/schemas';
+import { createDistributionSchema, rejectDistributionSchema, type CreateDistribution } from '../validators/schemas';
+import { INSTRUKSI_DISPOSISI } from '../config/instruksi-disposisi.js';
+import { isAjukanAksesEnabled } from '../services/rangkaian/deps.js';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope';
 import { sanitizeSuratRecord } from '../utils/sanitize-surat-response';
 import {
@@ -62,6 +64,14 @@ router.get('/units', async (req: AuthRequest, res, next) => {
     } catch (error) {
         next(error);
     }
+});
+
+/**
+ * @route GET /api/distributions/opsi
+ * @desc Chip instruksi statis dan status jalur akses disposisi surat terkendali
+ */
+router.get('/opsi', (_req: AuthRequest, res) => {
+    res.json({ success: true, data: { instruksi: INSTRUKSI_DISPOSISI, jalurAksesTerkendali: isAjukanAksesEnabled() } });
 });
 
 /**
@@ -185,10 +195,12 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
  */
 router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), async (req: AuthRequest, res, next) => {
     try {
-        const { suratMasukId, sourceUnitId, targetUnitId, instruction, ccUnits } = req.body;
+        // Bentuk tunggal lama (`targetUnitId`) dinormalkan skema menjadi satu target;
+        // responsnya tetap objek tunggal. Bentuk jamak (`targets`) mengembalikan array.
+        const { suratMasukId, sourceUnitId, targets, instruksi, ccUnits, bentuk } = req.body as CreateDistribution;
 
-        if (!suratMasukId || !sourceUnitId || !targetUnitId) {
-            return res.status(400).json({ error: 'suratMasukId, sourceUnitId, and targetUnitId are required' });
+        if (!suratMasukId || !sourceUnitId) {
+            return res.status(400).json({ error: 'suratMasukId dan sourceUnitId wajib diisi' });
         }
 
         // Prevent sending on behalf of another unit: the caller must be allowed to act
@@ -203,11 +215,11 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
             return res.status(404).json({ error: 'Data not found' });
         }
 
-        const result = await distributionService.distribute({
+        const rows = await distributionService.distributeMany({
             suratMasukId,
             sourceUnitId,
-            targetUnitId,
-            instruction,
+            targets: targets ?? [],
+            instruksi,
             ccUnits,
             sentBy: req.user?.id,
         }, {
@@ -216,7 +228,7 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
             ipAddress: req.ip,
         });
 
-        res.status(201).json({ success: true, data: result });
+        res.status(201).json({ success: true, data: bentuk === 'jamak' ? rows : rows[0] });
     } catch (error) {
         next(error);
     }

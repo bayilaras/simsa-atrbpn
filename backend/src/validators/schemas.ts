@@ -616,14 +616,37 @@ export type LinkSuratToDosir = z.infer<typeof linkSuratToDosirSchema>;
 
 // ==================== Distribution schemas ====================
 
+/**
+ * Bentuk tunggal lama (`targetUnitId`, `instruction`) tetap diterima dan
+ * dinormalkan menjadi satu target; bentuk jamak memakai `targets`. Tepat satu
+ * dari keduanya wajib diisi. Keluaran selalu `{ ..., instruksi, bentuk, targets }`.
+ */
 export const createDistributionSchema = z.object({
     suratMasukId: uuidSchema,
     sourceUnitId: z.string().min(1, 'Source unit is required').max(50),
-    targetUnitId: z.string().min(1, 'Target unit is required').max(50),
+    targetUnitId: z.string().min(1, 'Target unit is required').max(50).optional(),
     // DistributeDialog mengirim `instruction: null` bila instruksi dikosongkan.
     instruction: z.string().max(2000).nullish(),
     ccUnits: z.array(z.string().max(50)).optional(),
-});
+    batasWaktu: batasWaktuSchema.nullish(),
+    penanggungJawab: z.boolean().optional(),
+    targets: disposisiTargetsSchema.optional(),
+}).superRefine((value, ctx) => {
+    if (Boolean(value.targetUnitId) === Boolean(value.targets)) {
+        ctx.addIssue({ code: 'custom', path: ['targets'], message: 'Isi salah satu: targetUnitId atau targets' });
+    }
+}).transform((value) => ({
+    suratMasukId: value.suratMasukId,
+    sourceUnitId: value.sourceUnitId,
+    instruksi: value.instruction ?? null,
+    ccUnits: value.ccUnits,
+    bentuk: value.targets ? 'jamak' as const : 'tunggal' as const,
+    targets: value.targets ?? [{
+        unitKerjaId: value.targetUnitId as string,
+        batasWaktu: value.batasWaktu ?? null,
+        penanggungJawab: value.penanggungJawab ?? false,
+    }],
+}));
 
 export const rejectDistributionSchema = z.object({
     reason: z.string().min(1, 'Alasan penolakan harus diisi').max(2000),

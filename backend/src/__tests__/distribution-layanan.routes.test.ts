@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
         getHistoryBySurat: vi.fn(),
         findById: vi.fn(),
         distribute: vi.fn(),
+        distributeMany: vi.fn(),
         receive: vi.fn(),
         process: vi.fn(),
         reject: vi.fn(),
@@ -104,6 +105,7 @@ describe('distribution route unit scoping', () => {
             },
         });
         mocks.distribution.distribute.mockResolvedValue({ id: 'dist-1' });
+        mocks.distribution.distributeMany.mockResolvedValue([{ id: 'dist-1' }]);
         mocks.distribution.receive.mockResolvedValue({ id: 'dist-1', status: 'received' });
         mocks.distribution.process.mockResolvedValue({ id: 'dist-1', status: 'processed' });
         mocks.distribution.reject.mockResolvedValue({ id: 'dist-1', status: 'rejected' });
@@ -177,12 +179,12 @@ describe('distribution route unit scoping', () => {
         await request(app).put('/distributions/dist-1/process').expect(400);
     });
 
-    it.each(['distribute', 'receive', 'process', 'reject'] as const)('sanitizes %s errors regardless of misleading domain keywords', async action => {
+    it.each(['distributeMany', 'receive', 'process', 'reject'] as const)('sanitizes %s errors regardless of misleading domain keywords', async action => {
         mocks.recordAccess.check.mockResolvedValue({ exists: true, allowed: true, mutable: true, unitKerjaId: 'unit-a' });
         for (const keyword of ['Invalid', 'sudah didistribusikan sudah diproses tidak bisa', 'not found']) {
             const marker = `${keyword}: SYNTHETIC_DISTRIBUTION_DATABASE_SECRET`;
             mocks.distribution[action].mockRejectedValueOnce(new Error(marker));
-            const response = action === 'distribute' ? await request(app).post('/distributions').send({ suratMasukId: 'surat-1', sourceUnitId: 'unit-a', targetUnitId: 'unit-b' })
+            const response = action === 'distributeMany' ? await request(app).post('/distributions').send({ suratMasukId: 'surat-1', sourceUnitId: 'unit-a', targetUnitId: 'unit-b' })
                 : await request(app).put(`/distributions/dist-1/${action}`).send({ reason: 'Bukan unit tujuan' });
             expect(response.status).toBe(500);
             expect(response.body).toMatchObject({ code: 'INTERNAL_ERROR', requestId: 'distribution-fault-test' });

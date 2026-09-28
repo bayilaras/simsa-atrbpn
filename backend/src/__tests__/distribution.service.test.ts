@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
@@ -7,6 +7,16 @@ let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
 
 const auditMocks = vi.hoisted(() => ({ logActionOrThrow: vi.fn() }));
+const rangkaianMocks = vi.hoisted(() => ({
+    ensureForSuratMasuk: vi.fn(),
+    lockRangkaian: vi.fn(),
+    recomputeRangkaian: vi.fn(),
+    recomputeSuratMasuk: vi.fn(),
+    checkRead: vi.fn(),
+    checkMany: vi.fn(),
+    ajukan: vi.fn(),
+    cabut: vi.fn(),
+}));
 
 const mockChain: any = new Proxy({}, {
     get(_target, prop) {
@@ -18,11 +28,16 @@ const mockChain: any = new Proxy({}, {
     },
 });
 
-const mockDb = {
+const mockDb: any = {
     select: (..._a: any[]) => mockChain,
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
+    execute: async (..._a: any[]) => {
+        const val = resultQueue.shift() ?? [];
+        if (val instanceof Error) throw val;
+        return val;
+    },
     transaction: async (fn: any) => {
         try {
             const result = await fn(mockDb);
@@ -37,8 +52,32 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
+vi.mock('../services/rangkaian/deps.js', () => ({
+    rangkaianService: { ensureForSuratMasuk: rangkaianMocks.ensureForSuratMasuk },
+    recordAccessService: { checkRead: rangkaianMocks.checkRead, checkMany: rangkaianMocks.checkMany },
+    lockRangkaian: rangkaianMocks.lockRangkaian,
+    lockSuratMasukRows: vi.fn(async () => []),
+    kunciSurat: vi.fn(),
+    isPengawas: vi.fn(async () => false),
+    pengawasUntukUnit: vi.fn(async () => false),
+    isAjukanAksesEnabled: () => process.env.RANGKAIAN_AJUKAN_AKSES === 'true',
+    aktor: (user: any, audit?: any) => ({ ...(audit ?? {}), userId: audit?.userId ?? user?.id ?? '' }),
+    aktorPenulis: (u: any, a?: any) => ({ ...(a ?? {}), userId: a?.userId ?? u?.id ?? 'u' }),
+    denganRetryDeadlock: (run: () => Promise<unknown>) => run(),
+    readRefKey: (r: { type: string; id: string }) => `${r.type}:${r.id.toLowerCase()}`,
+    LABEL_DIKECUALIKAN: 'Dikecualikan',
+    recomputeRangkaian: rangkaianMocks.recomputeRangkaian,
+    recomputeSuratMasuk: rangkaianMocks.recomputeSuratMasuk,
+}));
+vi.mock('../services/rangkaian/disposisi-grant.service.js', () => ({
+    disposisiGrantService: { ajukan: rangkaianMocks.ajukan, cabut: rangkaianMocks.cabut },
+}));
 
-const { DistributionService } = await import('../services/distribution.service');
+const { DistributionService, SURAT_TERKENDALI_DISPOSISI_MESSAGE } = await import('../services/distribution.service');
+const { ConflictError } = await import('../utils/errors.js');
+
+const SUMBER = { id: 'sm-1', sifatSurat: 'biasa', unitKerjaId: 'ditjen' };
+const TARGET = { id: 'unit-1', name: 'Unit 1', unitType: 'direktorat', canReceiveDistribution: true };
 
 describe('DistributionService', () => {
     let svc: InstanceType<typeof DistributionService>;
@@ -48,101 +87,156 @@ describe('DistributionService', () => {
         resultQueue.length = 0;
         transactionCommits = 0;
         transactionRollbacks = 0;
-        auditMocks.logActionOrThrow.mockReset();
-        auditMocks.logActionOrThrow.mockResolvedValue(undefined);
+        auditMocks.logActionOrThrow.mockReset().mockResolvedValue(undefined);
+        rangkaianMocks.ensureForSuratMasuk.mockReset().mockResolvedValue({ rangkaianId: 'rs-1', kode: 'RS-2026-000001', anggotaId: 'ra-1', status: 'aktif', created: true });
+        rangkaianMocks.lockRangkaian.mockReset().mockResolvedValue([{ id: 'rs-1', kode: 'RS-2026-000001', status: 'aktif' }]);
+        rangkaianMocks.recomputeRangkaian.mockReset().mockResolvedValue(undefined);
+        rangkaianMocks.recomputeSuratMasuk.mockReset().mockResolvedValue(undefined);
+        rangkaianMocks.ajukan.mockReset().mockResolvedValue([]);
+        rangkaianMocks.cabut.mockReset().mockResolvedValue(0);
     });
+    afterEach(() => { delete process.env.RANGKAIAN_AJUKAN_AKSES; });
 
-    // ── distribute ──
     describe('distribute', () => {
-        it('should create distribution when no existing one', async () => {
-            enqueue([{ id: 'sm-1' }]); // source letter belongs to source unit
-            enqueue([]);  // existing check → none
-            enqueue([{ id: 'dist-1', status: 'sent' }]); // insert returning
-            const res = await svc.distribute({
-                suratMasukId: 'sm-1',
-                sourceUnitId: 'ditjen',
-                targetUnitId: 'unit-1',
-            });
-            expect(res.id).toBe('dist-1');
-            expect(res.status).toBe('sent');
+        it('membuat disposisi di rangkaian surat masuk dan menambahkan label', async () => {
+            enqueue([SUMBER], [TARGET], [], [{ id: 'dist-1', status: 'sent', rangkaianId: 'rs-1' }], []);
+            const res = await svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' });
+            expect(res).toMatchObject({ id: 'dist-1', status: 'sent', rangkaianId: 'rs-1' });
+            // aktorPenulis (T7-6); mock deps memberi 'u' bila tanpa pengirim maupun audit.
+            expect(rangkaianMocks.ensureForSuratMasuk).toHaveBeenCalledWith(mockDb, 'sm-1', { userId: 'u' }, undefined);
+            expect(rangkaianMocks.recomputeRangkaian).toHaveBeenCalledWith(mockDb, 'rs-1', undefined);
+            expect(rangkaianMocks.recomputeSuratMasuk).toHaveBeenCalledWith(mockDb, ['sm-1'], undefined);
+            expect(resultQueue).toHaveLength(0);
+        });
+
+        it('memakai transaksi luar bila tx diberikan', async () => {
+            enqueue([SUMBER], [TARGET], [], [{ id: 'dist-1', status: 'sent' }], []);
+            await svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }, undefined, mockDb);
+            expect(transactionCommits).toBe(0);
         });
 
         it('rolls back distribution creation when its critical audit insert fails', async () => {
-            enqueue([{ id: 'sm-1' }], [], [{ id: 'dist-1', status: 'sent' }]);
+            enqueue([SUMBER], [TARGET], [], [{ id: 'dist-1', status: 'sent' }], []);
             auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
-
-            await expect(svc.distribute({
-                suratMasukId: 'sm-1',
-                sourceUnitId: 'ditjen',
-                targetUnitId: 'unit-1',
-            }, { userId: 'user-1' })).rejects.toThrow('audit unavailable');
-
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }, { userId: 'user-1' }))
+                .rejects.toThrow('audit unavailable');
             expect(transactionCommits).toBe(0);
             expect(transactionRollbacks).toBe(1);
             expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
-                expect.objectContaining({ action: 'distribute', entityType: 'surat_distribution' }),
-                mockDb,
-            );
+                expect.objectContaining({ action: 'distribute', entityType: 'surat_distribution' }), mockDb);
         });
 
-        it('should throw when already distributed to same unit', async () => {
-            enqueue([{ id: 'sm-1' }]); // source letter belongs to source unit
-            enqueue([{ id: 'existing' }]); // existing check → found
-            await expect(svc.distribute({
-                suratMasukId: 'sm-1',
-                sourceUnitId: 'ditjen',
-                targetUnitId: 'unit-1',
-            })).rejects.toMatchObject({ statusCode: 400, message: 'Surat sudah didistribusikan ke unit ini' });
+        it('should throw when already actively distributed to same unit', async () => {
+            enqueue([SUMBER], [TARGET], [{ id: 'existing' }]);
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }))
+                .rejects.toThrow('sudah didistribusikan');
         });
 
         it('should fail closed when the source unit does not own the letter', async () => {
             enqueue([]);
-            await expect(svc.distribute({
-                suratMasukId: 'foreign-letter',
-                sourceUnitId: 'unit-a',
-                targetUnitId: 'unit-b',
-            })).rejects.toMatchObject({ statusCode: 404, message: 'Data not found' });
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'unit-a', targetUnitId: 'unit-1' }))
+                .rejects.toMatchObject({ statusCode: 404 });
         });
 
-        it('reuses the caller transaction and audits inside it', async () => {
-            enqueue([{ id: 'sm-1' }], [], [{ id: 'dist-1', status: 'sent' }]);
-            const outerTx = { ...mockDb, transaction: vi.fn() };
-            const res = await svc.distribute({
-                suratMasukId: 'sm-1',
-                sourceUnitId: 'sesditjen',
-                targetUnitId: 'dir_bppt',
-            }, { userId: 'user-1' }, outerTx as any);
-            expect(res.id).toBe('dist-1');
-            expect(outerTx.transaction).not.toHaveBeenCalled();
-            expect(transactionCommits).toBe(0);
-            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
-                expect.objectContaining({ action: 'distribute', entityType: 'surat_distribution' }),
-                outerTx,
-            );
+        it('menolak unit tujuan yang sama dengan unit sumber', async () => {
+            enqueue([SUMBER]);
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'ditjen' }))
+                .rejects.toMatchObject({ statusCode: 400 });
         });
 
-        it('rejects a distribution into a closed rangkaian with 409', async () => {
-            enqueue([{ id: 'sm-1' }], [{ id: 'rs-1', status: 'diberkaskan' }]);
-            await expect(svc.distribute({
-                suratMasukId: 'sm-1',
-                sourceUnitId: 'sesditjen',
-                targetUnitId: 'dir_bppt',
-                rangkaianId: 'rs-1',
-            })).rejects.toMatchObject({ statusCode: 409 });
+        it.each([
+            [{ ...TARGET, unitType: 'bagian' }],
+            [{ ...TARGET, canReceiveDistribution: false }],
+            [undefined],
+        ])('menolak unit tujuan yang tidak dapat menerima disposisi %#', async (target) => {
+            enqueue([SUMBER], target ? [target] : []);
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }))
+                .rejects.toMatchObject({ statusCode: 400 });
+            expect(rangkaianMocks.ensureForSuratMasuk).not.toHaveBeenCalled();
+        });
+
+        it('409 untuk surat terkendali selama flag Ajukan Akses mati', async () => {
+            enqueue([{ ...SUMBER, sifatSurat: 'Rahasia' }], [TARGET]);
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }))
+                .rejects.toMatchObject({ statusCode: 409, message: SURAT_TERKENDALI_DISPOSISI_MESSAGE });
+            expect(rangkaianMocks.ensureForSuratMasuk).not.toHaveBeenCalled();
+        });
+
+        it('flag menyala: grant disposisi diajukan dalam transaksi yang sama', async () => {
+            process.env.RANGKAIAN_AJUKAN_AKSES = 'true';
+            enqueue([{ ...SUMBER, sifatSurat: 'Rahasia' }], [TARGET], [], [{ id: 'dist-1', status: 'sent' }], []);
+            await svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1', sentBy: 'user-1' });
+            expect(rangkaianMocks.ajukan).toHaveBeenCalledWith(mockDb, {
+                distribusiId: 'dist-1', suratMasukId: 'sm-1', suratUnitKerjaId: 'ditjen', classification: 'rahasia',
+                targetUnitId: 'unit-1', requesterId: 'user-1', rangkaianKode: 'RS-2026-000001',
+            }, undefined);
+        });
+
+        it('flag menyala: surat terkendali tanpa pengirim ditolak 400 sebelum grant diajukan (T7-6)', async () => {
+            process.env.RANGKAIAN_AJUKAN_AKSES = 'true';
+            enqueue([{ ...SUMBER, sifatSurat: 'Rahasia' }], [TARGET], [], [{ id: 'dist-1', status: 'sent' }], []);
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }))
+                .rejects.toMatchObject({ statusCode: 400 });
+            expect(rangkaianMocks.ajukan).not.toHaveBeenCalled();
             expect(transactionRollbacks).toBe(1);
         });
 
-        it('maps a Drizzle-wrapped active-target unique violation to the duplicate message', async () => {
-            const pgError = Object.assign(new Error('duplicate key value violates unique constraint'), {
-                code: '23505',
-                constraint: 'surat_distributions_active_target_uidx',
-            });
-            enqueue([{ id: 'sm-1' }], [], Object.assign(new Error('Failed query: insert into "surat_distributions"'), { cause: pgError }));
-            await expect(svc.distribute({
-                suratMasukId: 'sm-1',
-                sourceUnitId: 'sesditjen',
-                targetUnitId: 'dir_bppt',
-            })).rejects.toMatchObject({ statusCode: 400, message: 'Surat sudah didistribusikan ke unit ini' });
+        it('409 bila rangkaian surat sudah diberkaskan (dilempar ensureForSuratMasuk P1)', async () => {
+            rangkaianMocks.ensureForSuratMasuk.mockRejectedValueOnce(new ConflictError('Rangkaian sudah diberkaskan'));
+            enqueue([SUMBER], [TARGET]);
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }))
+                .rejects.toMatchObject({ statusCode: 409 });
+        });
+
+        it('penanggung jawab menetapkan unit pengolah rangkaian', async () => {
+            enqueue([SUMBER], [TARGET], [], [], [{ id: 'dist-1', status: 'sent', penanggungJawab: true }], [{ unit_pengolah_id: null }], []);
+            await svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1', penanggungJawab: true, sentBy: 'u-tu' });
+            expect(rangkaianMocks.ensureForSuratMasuk).toHaveBeenCalledWith(mockDb, 'sm-1', { userId: 'u-tu' }, { unitPengolahId: 'unit-1' });
+            expect(resultQueue).toHaveLength(0);
+        });
+
+        it('penanggung jawab mengganti unit pengolah lain dengan jejak audit (T7-4)', async () => {
+            enqueue([SUMBER], [TARGET], [], [], [{ id: 'dist-1', status: 'sent', penanggungJawab: true }], [{ unit_pengolah_id: 'unit-9' }], [], []);
+            await svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1', penanggungJawab: true, sentBy: 'u-tu' },
+                { userId: 'u-tu' });
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({
+                action: 'update', entityType: 'rangkaian_surat', entityId: 'rs-1',
+                changes: { before: { unitPengolahId: 'unit-9' }, after: { unitPengolahId: 'unit-1' }, alasan: 'Penanggung jawab disposisi', distribusiId: 'dist-1' },
+            }), mockDb);
+            expect(resultQueue).toHaveLength(0);
+        });
+
+        it('penanggung jawab ganda dalam satu rangkaian ditolak 400', async () => {
+            enqueue([SUMBER], [TARGET], [], [{ id: 'dist-pj' }]);
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1', penanggungJawab: true, sentBy: 'u-tu' }))
+                .rejects.toMatchObject({ statusCode: 400 });
+        });
+
+        it('pelanggaran index aktif (race) dipetakan menjadi 400', async () => {
+            const race = Object.assign(new Error('insert gagal'), { cause: { code: '23505', constraint: 'surat_distributions_active_target_uidx' } });
+            enqueue([SUMBER], [TARGET], [], race);
+            await expect(svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }))
+                .rejects.toMatchObject({ statusCode: 400 });
+        });
+    });
+
+    describe('distributeMany', () => {
+        it('memakai satu transaksi untuk semua target', async () => {
+            enqueue([SUMBER], [TARGET], [], [{ id: 'dist-1' }], []);
+            enqueue([SUMBER], [{ ...TARGET, id: 'unit-2', name: 'Unit 2' }], [], [{ id: 'dist-2' }], []);
+            const rows = await svc.distributeMany({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen',
+                targets: [{ unitKerjaId: 'unit-1' }, { unitKerjaId: 'unit-2' }], instruksi: 'Mohon ditindaklanjuti' });
+            expect(rows.map((row: any) => row.id)).toEqual(['dist-1', 'dist-2']);
+            expect(transactionCommits).toBe(1);
+        });
+
+        it('gagal seluruhnya bila satu target tidak sah', async () => {
+            enqueue([SUMBER], [TARGET], [], [{ id: 'dist-1' }], []);
+            enqueue([SUMBER], []);
+            await expect(svc.distributeMany({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen',
+                targets: [{ unitKerjaId: 'unit-1' }, { unitKerjaId: 'bagian_umum' }] })).rejects.toMatchObject({ statusCode: 400 });
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
         });
     });
 

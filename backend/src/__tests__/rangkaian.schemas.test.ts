@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-    createSuratMasukSchema, disposisiRoutingSchema,
+    createDistributionSchema, createSuratMasukSchema, disposisiRoutingSchema,
     processDistributionSchema, updateSuratMasukSchema, berkaskanSchema, gabungSchema, ajukanAksesSchema,
 } from '../validators/schemas';
 
@@ -50,6 +50,17 @@ describe('skema registrasi surat masuk', () => {
 });
 
 describe('skema distribusi', () => {
+    it('bentuk tunggal lama dinormalkan menjadi satu target', () => {
+        expect(createDistributionSchema.parse({ suratMasukId: UUID, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', instruction: 'Segera' }))
+            .toEqual({ suratMasukId: UUID, sourceUnitId: 'sesditjen', instruksi: 'Segera', ccUnits: undefined, bentuk: 'tunggal',
+                targets: [{ unitKerjaId: 'dir_bppt', batasWaktu: null, penanggungJawab: false }] });
+    });
+
+    it('bentuk jamak memakai targets dan menolak isian ganda', () => {
+        expect(createDistributionSchema.parse({ suratMasukId: UUID, sourceUnitId: 'sesditjen', targets: [{ unitKerjaId: 'dir_bppt' }] }).bentuk).toBe('jamak');
+        expect(createDistributionSchema.safeParse({ suratMasukId: UUID, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', targets: [{ unitKerjaId: 'dir_ptep' }] }).success).toBe(false);
+    });
+
     it('penyelesaian: surat keluar ATAU catatan ≥10 karakter', () => {
         expect(processDistributionSchema.safeParse({ penyelesaianSuratKeluarId: UUID }).success).toBe(true);
         expect(processDistributionSchema.safeParse({ catatanPenyelesaian: 'Sudah dikoordinasikan' }).success).toBe(true);

@@ -1,12 +1,15 @@
 import { db } from '../config/database';
 import { suratDistributions, NewSuratDistribution, SuratDistribution, suratMasuk, unitKerja, users, rangkaianSurat } from '../db/schema';
-import { eq, and, desc, sql, or, notInArray } from 'drizzle-orm';
+import { eq, and, desc, sql, or, notInArray, inArray, ne, isNull } from 'drizzle-orm';
 import { klasifikasiInSql } from './access/visibility-spec';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { AppError, ConflictError, ValidationError } from '../utils/errors.js';
 import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
-import type { DbTransaction } from '../db/transaction';
+import { normalizeSecurityClassification, requiresExplicitAccessGrant } from './record-access.service.js';
+import { aktorPenulis, denganRetryDeadlock, isAjukanAksesEnabled, rangkaianService, recomputeRangkaian, recomputeSuratMasuk, type Tx } from './rangkaian/deps.js';
+import { disposisiGrantService } from './rangkaian/disposisi-grant.service.js';
+import { rowsOf } from './rangkaian/sql-rows.js';
 
 export interface DistributionFilters {
     unitKerjaId?: string;
@@ -28,72 +31,128 @@ export interface DistributeInput {
     instruction?: string | null;
     ccUnits?: string[];
     sentBy?: string;
-    /** Wajib diisi semua jalur mulai P3 (lewat rangkaianService.ensureForSuratMasuk). */
-    rangkaianId?: string | null;
     /** Tanggal 'YYYY-MM-DD'. */
     batasWaktu?: string | null;
     penanggungJawab?: boolean;
 }
 
+export interface DistributeManyInput {
+    suratMasukId: string;
+    sourceUnitId: string;
+    targets: Array<{ unitKerjaId: string; batasWaktu?: string | null; penanggungJawab?: boolean }>;
+    instruksi?: string | null;
+    ccUnits?: string[];
+    sentBy?: string;
+}
+
+export const SURAT_TERKENDALI_DISPOSISI_MESSAGE =
+    'Surat terkendali belum dapat didisposisikan; tangani di unit pencatat atau aktifkan jalur akses disposisi';
+
 export class DistributionService {
     /**
-     * Create a new distribution (send surat from Ditjen to target unit).
-     * Tanpa `tx`, membuka transaksi sendiri (perilaku lama). Dengan `tx`,
-     * memakai transaksi pemanggil dan audit ditulis ke transaksi tersebut.
+     * Buat satu disposisi. Tanpa `tx` membuka transaksinya sendiri (dibungkus
+     * G-RETRY); dengan `tx` memakai transaksi luar (registrasi surat masuk).
+     * Setiap baris WAJIB punya rangkaian_id lewat ensureForSuratMasuk di
+     * transaksi yang sama (§3).
      */
-    async distribute(
-        data: DistributeInput,
-        auditContext?: CriticalAuditContext,
-        tx?: DbTransaction,
-    ): Promise<SuratDistribution> {
-        if (tx) return this.distributeInTransaction(tx, data, auditContext);
-        return db.transaction((ownTx) => this.distributeInTransaction(ownTx, data, auditContext));
+    async distribute(data: DistributeInput, auditContext?: CriticalAuditContext, tx?: Tx): Promise<SuratDistribution> {
+        return tx
+            ? this.distributeInTx(tx, data, auditContext)
+            : denganRetryDeadlock(() => db.transaction((inner) => this.distributeInTx(inner, data, auditContext)));
     }
 
-    private async distributeInTransaction(
-        tx: DbTransaction,
-        data: DistributeInput,
-        auditContext?: CriticalAuditContext,
-    ): Promise<SuratDistribution> {
-        // The source unit supplied by the client must own the source letter. This
-        // prevents an authorised unit from distributing another unit's letter by ID.
+    /** Disposisi multi-direktorat: semua target berhasil atau semuanya batal. */
+    async distributeMany(data: DistributeManyInput, auditContext?: CriticalAuditContext, tx?: Tx): Promise<SuratDistribution[]> {
+        const run = async (inner: Tx) => {
+            const rows: SuratDistribution[] = [];
+            for (const target of data.targets) {
+                rows.push(await this.distributeInTx(inner, {
+                    suratMasukId: data.suratMasukId,
+                    sourceUnitId: data.sourceUnitId,
+                    targetUnitId: target.unitKerjaId,
+                    instruction: data.instruksi ?? null,
+                    ccUnits: data.ccUnits,
+                    sentBy: data.sentBy,
+                    batasWaktu: target.batasWaktu ?? null,
+                    penanggungJawab: target.penanggungJawab ?? false,
+                }, auditContext));
+            }
+            return rows;
+        };
+        return tx ? run(tx) : denganRetryDeadlock(() => db.transaction(run));
+    }
+
+    private async distributeInTx(tx: Tx, data: DistributeInput, auditContext?: CriticalAuditContext): Promise<SuratDistribution> {
+        // Urutan kunci G-LOCK: baris surat_masuk → rangkaian (ensure) → distribusi.
+        // Unit sumber yang dikirim klien wajib pemilik surat (fail closed 404).
         const [sourceSurat] = await tx
-            .select({ id: suratMasuk.id })
+            .select({ id: suratMasuk.id, sifatSurat: suratMasuk.sifatSurat, unitKerjaId: suratMasuk.unitKerjaId })
             .from(suratMasuk)
             .where(and(
                 eq(suratMasuk.id, data.suratMasukId),
                 eq(suratMasuk.unitKerjaId, data.sourceUnitId),
+                or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted)),
             ))
-            .limit(1);
+            .limit(1)
+            .for('update');
         if (!sourceSurat) {
             throw new AppError('Data not found', 404);
         }
-
-        if (data.rangkaianId) {
-            // Urutan kunci: surat -> rangkaian -> distribusi (trigger 0046 hanya FOR SHARE).
-            const [rangkaian] = await tx
-                .select({ id: rangkaianSurat.id, status: rangkaianSurat.status })
-                .from(rangkaianSurat)
-                .where(eq(rangkaianSurat.id, data.rangkaianId))
-                .for('update');
-            if (!rangkaian) throw new ValidationError('Rangkaian surat tidak ditemukan');
-            if (rangkaian.status === 'diberkaskan' || rangkaian.status === 'digabung') {
-                throw new ConflictError('Rangkaian surat sudah ditutup; disposisi baru tidak dapat ditambahkan');
-            }
+        if (data.targetUnitId === data.sourceUnitId) {
+            throw new ValidationError('Unit tujuan disposisi tidak boleh sama dengan unit pencatat');
+        }
+        const [target] = await tx
+            .select({
+                id: unitKerja.id,
+                name: unitKerja.name,
+                unitType: unitKerja.unitType,
+                canReceiveDistribution: unitKerja.canReceiveDistribution,
+            })
+            .from(unitKerja)
+            .where(eq(unitKerja.id, data.targetUnitId))
+            .limit(1);
+        if (!target || target.canReceiveDistribution === false || target.unitType === 'bagian') {
+            throw new ValidationError('Unit tujuan tidak dapat menerima disposisi');
+        }
+        const classification = normalizeSecurityClassification(sourceSurat.sifatSurat);
+        const terkendali = requiresExplicitAccessGrant(classification);
+        if (terkendali && !isAjukanAksesEnabled()) {
+            throw new ConflictError(SURAT_TERKENDALI_DISPOSISI_MESSAGE);
         }
 
-        // Check if already distributed to this target
+        // P1: mengunci baris surat → rangkaian; 409 bila rangkaian diberkaskan/digabung.
+        // Bila rangkaian baru atau pengolah masih NULL, P1 mengisi (dan mengaudit) pengolah.
+        const ensured = await rangkaianService.ensureForSuratMasuk(
+            tx,
+            data.suratMasukId,
+            aktorPenulis({ id: data.sentBy ?? null }, auditContext),
+            data.penanggungJawab ? { unitPengolahId: target.id } : undefined,
+        );
+
+        // Baris rejected diabaikan sehingga TU dapat mendisposisikan ulang (§2c).
         const [existing] = await tx
-            .select()
+            .select({ id: suratDistributions.id })
             .from(suratDistributions)
             .where(and(
                 eq(suratDistributions.suratMasukId, data.suratMasukId),
-                eq(suratDistributions.targetUnitId, data.targetUnitId)
+                eq(suratDistributions.targetUnitId, data.targetUnitId),
+                ne(suratDistributions.status, 'rejected'),
             ))
             .limit(1);
-
         if (existing) {
             throw new ValidationError('Surat sudah didistribusikan ke unit ini');
+        }
+        if (data.penanggungJawab) {
+            const [pj] = await tx
+                .select({ id: suratDistributions.id })
+                .from(suratDistributions)
+                .where(and(
+                    eq(suratDistributions.rangkaianId, ensured.rangkaianId),
+                    eq(suratDistributions.penanggungJawab, true),
+                    ne(suratDistributions.status, 'rejected'),
+                ))
+                .limit(1);
+            if (pj) throw new ValidationError('Penanggung jawab (Unit Pengolah) sudah ditetapkan untuk rangkaian ini');
         }
 
         let result: SuratDistribution;
@@ -109,7 +168,7 @@ export class DistributionService {
                     sentBy: data.sentBy,
                     status: 'sent',
                     sentAt: new Date(),
-                    rangkaianId: data.rangkaianId ?? null,
+                    rangkaianId: ensured.rangkaianId,
                     batasWaktu: data.batasWaktu ?? null,
                     penanggungJawab: data.penanggungJawab ?? false,
                 })
@@ -121,6 +180,34 @@ export class DistributionService {
             }
             throw error;
         }
+
+        if (data.penanggungJawab) {
+            // P1 ensureForSuratMasuk sudah mengisi (dan mengaudit) pengolah bila NULL;
+            // di sini hanya penggantian pengolah lain yang wajib diaudit (T7-4).
+            const [rs] = rowsOf<{ unit_pengolah_id: string | null }>(await tx.execute(
+                sql`SELECT unit_pengolah_id FROM rangkaian_surat WHERE id = ${ensured.rangkaianId}`)); // baris sudah terkunci oleh ensure
+            if (rs?.unit_pengolah_id && rs.unit_pengolah_id !== target.id) {
+                await tx.execute(sql`UPDATE rangkaian_surat SET unit_pengolah_id = ${target.id}, updated_at = now() WHERE id = ${ensured.rangkaianId}`);
+                if (auditContext) {
+                    await auditLogService.logActionOrThrow({
+                        ...auditContext,
+                        action: 'update',
+                        entityType: 'rangkaian_surat',
+                        entityId: ensured.rangkaianId,
+                        changes: {
+                            before: { unitPengolahId: rs.unit_pengolah_id },
+                            after: { unitPengolahId: target.id },
+                            alasan: 'Penanggung jawab disposisi',
+                            distribusiId: result.id,
+                        },
+                    }, tx);
+                }
+            }
+        }
+        // Label text[] lama tetap diisi server untuk tampilan/ekspor (§3 Kolom lama).
+        await tx.execute(sql`UPDATE surat_masuk
+            SET disposisi = array_append(coalesce(disposisi, '{}'::text[]), ${target.name}::text), updated_at = now()
+            WHERE id = ${data.suratMasukId} AND NOT (coalesce(disposisi, '{}'::text[]) @> ARRAY[${target.name}::text])`);
 
         if (auditContext) {
             await auditLogService.logActionOrThrow({
@@ -135,7 +222,7 @@ export class DistributionService {
                         targetUnitId: data.targetUnitId,
                         instruction: data.instruction ?? null,
                         status: 'sent',
-                        rangkaianId: data.rangkaianId ?? null,
+                        rangkaianId: ensured.rangkaianId,
                         batasWaktu: data.batasWaktu ?? null,
                         penanggungJawab: data.penanggungJawab ?? false,
                     },
@@ -143,6 +230,23 @@ export class DistributionService {
             }, tx);
         }
 
+        if (terkendali) {
+            if (!data.sentBy) throw new ValidationError('Pengirim disposisi terkendali wajib diketahui');
+            await disposisiGrantService.ajukan(tx, {
+                distribusiId: result.id,
+                suratMasukId: data.suratMasukId,
+                suratUnitKerjaId: sourceSurat.unitKerjaId,
+                classification,
+                targetUnitId: data.targetUnitId,
+                requesterId: data.sentBy,
+                rangkaianKode: ensured.kode,
+            }, auditContext);
+        }
+
+        await recomputeRangkaian(tx, ensured.rangkaianId, auditContext);
+        // Membuka kembali rangkaian menghapus selesai_manual; status SM ikut (T7-5).
+        // Baris SM sudah terkunci oleh SELECT pertama.
+        await recomputeSuratMasuk(tx, [data.suratMasukId], auditContext);
         return result;
     }
 

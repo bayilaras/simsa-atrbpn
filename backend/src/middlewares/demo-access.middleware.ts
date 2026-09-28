@@ -109,7 +109,7 @@ const ALLOWED_METADATA_ROUTES: readonly AllowedRoute[] = [
     { methods: POST, path: exact('/retention/disposal-report') },
     { methods: PUT, path: exact(`/retention/${UUID}/(?:hold|release)`) },
 
-    { methods: GET, path: exact(`/distributions(?:/(?:units|inbox|outbox|stats|surat/${UUID}|${UUID}))?`) },
+    { methods: GET, path: exact(`/distributions(?:/(?:units|opsi|inbox|outbox|stats|surat/${UUID}|${UUID}))?`) },
     { methods: POST, path: exact('/distributions') },
     { methods: PUT, path: exact(`/distributions/${UUID}/(?:receive|process|reject)`) },
 
