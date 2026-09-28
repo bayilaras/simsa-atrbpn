@@ -10,7 +10,7 @@ vi.mock('../src/config/database.js', () => import('./helpers/db-proxy.js'));
 const { distributionService } = await import('../src/services/distribution.service.js');
 const { berkasService } = await import('../src/services/rangkaian/berkas.service.js');
 const { rangkaianReadService } = await import('../src/services/rangkaian-read.service.js');
-const { rangkaianService, recomputeRangkaian } = await import('../src/services/rangkaian/deps.js');
+const { judulTersamar, rangkaianService, recomputeRangkaian, tingkatAksesRangkaian } = await import('../src/services/rangkaian/deps.js');
 const { hasPostgresErrorCode } = await import('../src/utils/postgres-errors.js');
 
 // Tanpa TEST_POSTGRES_URL suite ini dilewati bersih (tidak ada Postgres lokal);
@@ -127,6 +127,30 @@ describe.skipIf(!adaPostgres)('berkaskan dan status manual', () => {
         const opsi = await berkasService.opsiBerkas(bppt, r.id);
         expect(opsi).toMatchObject({ status: 'aktif', unitPengolahId: 'dir_bppt', klasifikasiInduk: { id: klasifikasi, kode: k.kode, jenis: k.jenis } });
         expect(opsi.unitDalamJangkauan.map((u) => u.id).sort()).toEqual(['dir_bppt', 'sesditjen']);
+    });
+
+    it('(c2) opsi berkas: induk Rahasia tanpa grant → peserta/pengawas 200 dengan klasifikasiInduk null; induk terbaca → terisi', async () => {
+        const r = await rangkaianBaru('B-6A/2026', [{ unitKerjaId: 'dir_bppt', penanggungJawab: true }]);
+        await h.query('UPDATE surat_masuk SET klasifikasi_item_id = $2 WHERE id = $1', [r.sm, klasifikasi]);
+        const [k] = await h.query<{ kode: string; jenis: string }>('SELECT kode, jenis FROM klasifikasi_arsip WHERE id = $1', [klasifikasi]);
+        // Induk dinaikkan ke kelas terkendali setelah disposisi; tidak ada grant untuk siapa pun.
+        await h.query("UPDATE surat_masuk SET sifat_surat = 'Rahasia' WHERE id = $1", [r.sm]);
+        const detail = await rangkaianReadService.getDetail(bppt, r.id);
+        expect(detail).not.toBeNull();
+        // P2 menyamarkan judul rangkaian untuk pembaca ini; opsiBerkas harus setara.
+        expect(detail!.rangkaian.judul).toBe(judulTersamar(detail!.rangkaian.kode));
+        for (const [pembaca, tier] of [[bppt, 'peserta'], [tu, 'pengawas']] as const) {
+            expect(await tingkatAksesRangkaian(pembaca, r.id)).toBe(tier);
+            const opsi = await berkasService.opsiBerkas(pembaca, r.id);
+            expect(opsi).toMatchObject({ status: 'aktif', unitPengolahId: 'dir_bppt', klasifikasiInduk: null });
+            expect(opsi.unitDalamJangkauan.map((u) => u.id).sort()).toEqual(['dir_bppt', 'sesditjen']);
+        }
+        // Induk kembali biasa → terbaca oleh pembaca yang sama → klasifikasi induk terisi.
+        await h.query("UPDATE surat_masuk SET sifat_surat = 'biasa' WHERE id = $1", [r.sm]);
+        for (const pembaca of [bppt, tu]) {
+            expect(await berkasService.opsiBerkas(pembaca, r.id))
+                .toMatchObject({ klasifikasiInduk: { id: klasifikasi, kode: k.kode, jenis: k.jenis } });
+        }
     });
 
     it('(d) buka kembali rangkaian selesai otomatis ditolak 409 (T14-3)', async () => {

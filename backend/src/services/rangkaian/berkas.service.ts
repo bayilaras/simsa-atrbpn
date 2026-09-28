@@ -3,8 +3,8 @@ import { db } from '../../config/database.js';
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import auditLogService, { type CriticalAuditContext } from '../audit-log.service.js';
 import {
-    denganRetryDeadlock, loadJangkauan, lockRangkaian, lockSuratMasukRows, recomputeSuratMasuk, tingkatAksesRangkaian,
-    type Executor, type RangkaianTerkunciP3, type RecordUser, type Tx,
+    denganRetryDeadlock, loadJangkauan, lockRangkaian, lockSuratMasukRows, readRefKey, recomputeSuratMasuk, recordAccessService,
+    tingkatAksesRangkaian, type Executor, type RangkaianTerkunciP3, type RecordUser, type SuratJenis, type Tx,
 } from './deps.js';
 import { rangkaianStatusService } from './rangkaian-status.service.js';
 import { isFullAdmin, unitEfektif } from './roles.js';
@@ -91,6 +91,9 @@ export const berkasService = {
     /**
      * C-5: null → 404; tier 'anggota' (hanya anggota terbaca) → 403 karena P2
      * menyembunyikan jangkauan dari pembaca tanpa tier; owner/pengawas/peserta → 200.
+     * klasifikasiInduk hanya diisi bila induk terbaca oleh pengguna ini (checkMany
+     * P2, sama dengan penyamaran judul rangkaian); selain itu null — fail-closed,
+     * pengguna memilih klasifikasi berkas sendiri.
      */
     async opsiBerkas(user: RecordUser, rangkaianId: string): Promise<{
         status: string;
@@ -107,18 +110,26 @@ export const berkasService = {
         const ids = await this.unitDalamJangkauanBerkas(db, rangkaianId);
         const unitDalamJangkauan = ids.length === 0 ? [] : rowsOf<{ id: string; name: string }>(await db.execute(sql`
             SELECT id, name FROM unit_kerja WHERE id = ANY(${textArraySql(ids)}) ORDER BY name`));
-        const [induk] = rowsOf<{ id: number; kode: string; jenis: string }>(await db.execute(sql`
-            SELECT k.id, k.kode, k.jenis
+        const [induk] = rowsOf<{ id: number; kode: string; jenis: string; suratJenis: SuratJenis; suratId: string }>(await db.execute(sql`
+            SELECT k.id, k.kode, k.jenis,
+                   CASE WHEN a.surat_masuk_id IS NOT NULL THEN 'surat_masuk' ELSE 'surat_keluar' END AS "suratJenis",
+                   coalesce(a.surat_masuk_id, a.surat_keluar_id)::text AS "suratId"
               FROM rangkaian_anggota a
               LEFT JOIN surat_masuk sm ON sm.id = a.surat_masuk_id
               LEFT JOIN surat_keluar sk ON sk.id = a.surat_keluar_id
               JOIN klasifikasi_arsip k ON k.id = coalesce(sm.klasifikasi_item_id, sk.klasifikasi_item_id)
              WHERE a.rangkaian_id = ${rangkaianId} AND a.peran = 'induk'
              LIMIT 1`));
+        let indukTerlihat = false;
+        if (induk) {
+            const ref = { type: induk.suratJenis, id: induk.suratId };
+            const akses = await recordAccessService.checkMany(user, [ref], db);
+            indukTerlihat = akses.get(readRefKey(ref))?.allowed === true;
+        }
         return {
             status: r.status,
             unitPengolahId: r.unitPengolahId,
-            klasifikasiInduk: induk ? { id: Number(induk.id), kode: induk.kode, jenis: induk.jenis } : null,
+            klasifikasiInduk: induk && indukTerlihat ? { id: Number(induk.id), kode: induk.kode, jenis: induk.jenis } : null,
             unitDalamJangkauan,
         };
     },

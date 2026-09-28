@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
         jangkauan: vi.fn(),
         penghalang: vi.fn(),
         audit: vi.fn(),
+        checkMany: vi.fn(),
     };
 });
 
@@ -47,6 +48,7 @@ vi.mock('../services/rangkaian/deps.js', async (importOriginal) => ({
     tingkatAksesRangkaian: mocks.tingkat,
     recomputeSuratMasuk: mocks.recompute,
     loadJangkauan: mocks.jangkauan,
+    recordAccessService: { checkMany: mocks.checkMany },
 }));
 
 const { berkasService } = await import('../services/rangkaian/berkas.service.js');
@@ -107,6 +109,9 @@ beforeEach(() => {
     mocks.jangkauan.mockReset().mockResolvedValue(['sesditjen', 'dir_bppt', 'dir_ptep']);
     mocks.penghalang.mockReset().mockResolvedValue({ disposisiTerbuka: 0, anggotaBlokir: 0 });
     mocks.audit.mockReset().mockResolvedValue(undefined);
+    // Bawaan: induk terbaca (allowed) — kasus tersamar menimpanya.
+    mocks.checkMany.mockReset().mockImplementation(async (_user: unknown, refs: Array<{ type: string; id: string }>) =>
+        new Map(refs.map((ref) => [`${ref.type}:${ref.id.toLowerCase()}`, { allowed: true, via: 'owner', masked: false }])));
 });
 
 const adaUpdate = () => mocks.state.executed.some((text) => text.startsWith('UPDATE'));
@@ -263,13 +268,33 @@ describe('opsiBerkas (C-5, T14-5)', () => {
         expect(mocks.state.executed.some((text) => text.includes('SELECT DISTINCT unit FROM'))).toBe(false);
 
         mocks.tingkat.mockResolvedValue('peserta');
-        mocks.state.induk = [{ id: 7, kode: 'PT.01', jenis: 'Uji pemberkasan' }];
+        mocks.state.induk = [{ id: 7, kode: 'PT.01', jenis: 'Uji pemberkasan', suratJenis: 'surat_masuk', suratId: 'SM-1' }];
         await expect(berkasService.opsiBerkas(pesertaLain, RS)).resolves.toEqual({
             status: 'aktif', unitPengolahId: 'dir_bppt',
             klasifikasiInduk: { id: 7, kode: 'PT.01', jenis: 'Uji pemberkasan' },
             unitDalamJangkauan: [{ id: 'dir_bppt', name: 'Dit. BPPT' }],
         });
+        expect(mocks.checkMany).toHaveBeenCalledWith(pesertaLain, [{ type: 'surat_masuk', id: 'SM-1' }], mocks.db);
         mocks.state.induk = [];
+        mocks.checkMany.mockClear();
+        await expect(berkasService.opsiBerkas(pesertaLain, RS)).resolves.toMatchObject({ klasifikasiInduk: null });
+        expect(mocks.checkMany).not.toHaveBeenCalled();
+    });
+
+    it('F1: induk tersamar bagi pembaca peserta/pengawas → 200 dengan klasifikasiInduk null', async () => {
+        mocks.state.induk = [{ id: 7, kode: 'PT.01', jenis: 'Uji pemberkasan', suratJenis: 'surat_keluar', suratId: 'sk-9' }];
+        mocks.checkMany.mockImplementation(async (_user: unknown, refs: Array<{ type: string; id: string }>) =>
+            new Map(refs.map((ref) => [`${ref.type}:${ref.id.toLowerCase()}`, { allowed: false, via: 'peserta', masked: true }])));
+        for (const [pembaca, tier] of [[pesertaLain, 'peserta'], [pengawasLuar, 'pengawas']] as const) {
+            mocks.tingkat.mockResolvedValue(tier);
+            await expect(berkasService.opsiBerkas(pembaca, RS)).resolves.toEqual({
+                status: 'aktif', unitPengolahId: 'dir_bppt', klasifikasiInduk: null,
+                unitDalamJangkauan: [{ id: 'dir_bppt', name: 'Dit. BPPT' }],
+            });
+            expect(mocks.checkMany).toHaveBeenLastCalledWith(pembaca, [{ type: 'surat_keluar', id: 'sk-9' }], mocks.db);
+        }
+        // Hasil checkMany tanpa entri untuk ref induk → tetap tertutup (null).
+        mocks.checkMany.mockResolvedValue(new Map());
         await expect(berkasService.opsiBerkas(pesertaLain, RS)).resolves.toMatchObject({ klasifikasiInduk: null });
     });
 });
