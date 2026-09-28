@@ -187,3 +187,44 @@ describe('backfill: melewati anggota rangkaian yang sudah diberkaskan', () => {
         expect(rangkaianIdBiasa).not.toBeNull();
     });
 });
+
+// [Concurrency T2 #14, fix-before-merge] Jalur rangkaian yang SUDAH ada: jalur
+// utama pada run ulang pasca-deploy. Surat anggota rangkaian aktif dengan baris
+// NULL (tercipta di jendela deploy) → tidak ada rangkaian/anggota baru; baris
+// diisi rangkaian yang sudah ada (d.rangkaian_id = a.rangkaian_id).
+describe('backfill: surat yang sudah anggota rangkaian aktif', () => {
+    let hAda: RangkaianTestDatabase;
+    let clientAda: Client;
+    let suratAda: string;
+    let rangkaianAda: string;
+
+    beforeAll(async () => {
+        hAda = await createRangkaianTestDatabase('sudahada');
+        dbState.db = hAda.db;
+        await hAda.seedUnits();
+        const tu = await hAda.seedUser('admin_unit', 'sesditjen');
+        suratAda = await hAda.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-6/2025', perihal: 'Sudah punya rangkaian' });
+        const { rangkaianService } = await import('../src/services/rangkaian.service.js');
+        rangkaianAda = await hAda.db.transaction(async (tx: any) =>
+            (await rangkaianService.ensureForSuratMasuk(tx, suratAda, { userId: tu.id })).rangkaianId);
+        await hAda.insertDistribusi({ suratMasukId: suratAda, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', status: 'sent', rangkaianId: null });
+        clientAda = clientFor(hAda);
+        await clientAda.connect();
+    }, 120_000);
+
+    afterAll(async () => {
+        await clientAda?.end();
+        await hAda?.close();
+    });
+
+    it('mengisi rangkaian yang sudah ada tanpa rangkaian/anggota baru', async () => {
+        const hasil = await backfillRangkaianDisposisi(clientAda);
+        expect(hasil).toMatchObject({ rangkaianDibuat: 0, distribusiDiisi: 1, sisaTanpaRangkaian: 0, dilewati: [] });
+        const rows = await hAda.query<{ rangkaian_id: string; anggota_rangkaian: string }>(
+            `SELECT d.rangkaian_id, a.rangkaian_id AS anggota_rangkaian FROM surat_distributions d
+               JOIN rangkaian_anggota a ON a.surat_masuk_id = d.surat_masuk_id WHERE d.surat_masuk_id = $1`, [suratAda]);
+        expect(rows).toEqual([{ rangkaian_id: rangkaianAda, anggota_rangkaian: rangkaianAda }]);
+        const [{ n }] = await hAda.query<{ n: number }>('SELECT count(*)::int AS n FROM rangkaian_anggota WHERE surat_masuk_id = $1', [suratAda]);
+        expect(n).toBe(1);
+    });
+});
