@@ -95,6 +95,30 @@ describe('Lacak mengikuti tier baca rangkaian P2 (A-I3)', () => {
         for (const bocor of [RS_BAGIAN, 'RS-2026-000077', AGT_BAGIAN_SM, AGT_BAGIAN_SK, 'Bagian Umum', 'Dit. BPPT']) expect(teks).not.toContain(bocor);
     });
 
+    it('jendela 300 node pembaca tanpa tier memakai urutan getDetail (N-1)', async () => {
+        // 300 SM Bagian Umum (tak terbaca oleh pengawas sesditjen) ditambahkan
+        // sebelum SK dir_bppt yang terbaca. getDetail memotong di 300 node urut
+        // induk → ditambahkan_at → id, sehingga SK itu berada di luar jendela dan
+        // GET /:id → 404. Lacak harus menilai jendela yang sama (bukan urutan
+        // cocok-dulu pratinjau), jadi kartu dibuang seperti surat tunggal.
+        await database.exec(`
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, nomor_surat, perihal, dari, tanggal_surat)
+                SELECT ('52000000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid, 'bagian_umum', 1000 + i, 2026, 'biasa',
+                       'PENGISI-' || i || '/2026', 'Pengisi jendela ' || i, 'Kanwil P', '2026-09-05'
+                  FROM generate_series(1, 300) AS i;
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber, ditambahkan_at)
+                SELECT '${RS_BAGIAN}', ('52000000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid, 'bagian_umum', 'anggota', 'aplikasi',
+                       '2026-09-05T01:00:00Z'::timestamptz + make_interval(secs => i)
+                  FROM generate_series(1, 300) AS i;
+        `);
+        expect(await rangkaianReadService.getDetail(PENGGUNA.tu as never, RS_BAGIAN)).toBeNull();
+        const hasil = await cari(PENGGUNA.tu, 'Surat inisiatif BPPT');
+        expect(hasil.kelompok.find((k) => k.kunci === RS_BAGIAN)).toBeUndefined();
+        const kartu = hasil.kelompok.find((k) => k.cocok.some((c) => c.id === SURAT.skBpptTunggal));
+        expect(kartu).toMatchObject({ kunci: `surat:${SURAT.skBpptTunggal}`, rangkaian: null, jumlahAnggota: 1 });
+        expect(JSON.stringify(kartu)).not.toContain('RS-2026-000077');
+    }, 30_000);
+
     it('staff tanpa jangkauan: rangkaian RS lain unit tidak muncul', async () => {
         expect(await rangkaianReadService.getDetail(PENGGUNA.staffSes as never, RANGKAIAN.rs2)).toBeNull();
         const hasil = await cari(PENGGUNA.staffSes, RAHASIA.nomorSmTerbatas);

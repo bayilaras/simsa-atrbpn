@@ -27,7 +27,7 @@ export interface LacakNode {
 }
 
 export interface LacakNodeTersamar {
-    anggotaId: string;
+    anggotaId: string | null;
     jenis: LacakSuratJenis;
     unitNama: string;
     label: 'Dikecualikan';

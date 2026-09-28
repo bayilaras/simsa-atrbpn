@@ -51,6 +51,12 @@ describe('AuditLogService', () => {
             expect(auditLogService.getActionLabel('reject_distribution')).toBe('Menolak Distribusi');
         });
 
+        it('memberi label aksi rangkaian surat (carry-in P3)', () => {
+            expect(auditLogService.getActionLabel('view_via_rangkaian')).toBe('Melihat via Rangkaian');
+            expect(auditLogService.getActionLabel('merge')).toBe('Menggabungkan');
+            expect(auditLogService.getActionLabel('link')).toBe('Menautkan');
+        });
+
         it('should return raw action string for unknown actions', () => {
             expect(auditLogService.getActionLabel('unknown_action')).toBe('unknown_action');
             expect(auditLogService.getActionLabel('')).toBe('');
@@ -71,6 +77,11 @@ describe('AuditLogService', () => {
 
         it('should return label for autentikasi type', () => {
             expect(auditLogService.getEntityTypeLabel('autentikasi')).toBe('Autentikasi Alih Media');
+        });
+
+        it('memberi label entitas rangkaian surat (carry-in P3)', () => {
+            expect(auditLogService.getEntityTypeLabel('rangkaian_surat')).toBe('Rangkaian Surat');
+            expect(auditLogService.getEntityTypeLabel('rangkaian_relasi')).toBe('Relasi Rangkaian');
         });
 
         it('should return raw entity type for unknown types', () => {

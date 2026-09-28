@@ -223,6 +223,9 @@ export const auditLogService = {
             'approve_access': 'Menyetujui Akses Rekod',
             'deny_access': 'Menolak Akses Rekod',
             'revoke_access': 'Mencabut Akses Rekod',
+            'view_via_rangkaian': 'Melihat via Rangkaian',
+            'merge': 'Menggabungkan',
+            'link': 'Menautkan',
         };
         return labels[action] || action;
     },
@@ -243,6 +246,8 @@ export const auditLogService = {
             'tunjuk_silang': 'Tunjuk Silang',
             'record_access_grant': 'Persetujuan Akses Rekod',
             'regulatory_rule_set': 'Rule Set Regulasi',
+            'rangkaian_surat': 'Rangkaian Surat',
+            'rangkaian_relasi': 'Relasi Rangkaian',
         };
         return labels[entityType] || entityType;
     },

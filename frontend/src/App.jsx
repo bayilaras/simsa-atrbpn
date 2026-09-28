@@ -23,6 +23,7 @@ import './index.css'
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const SuratMasuk = lazy(() => import('@/pages/SuratMasuk'))
 const SuratKeluar = lazy(() => import('@/pages/SuratKeluar'))
+const LacakSurat = lazy(() => import('@/pages/LacakSurat'))
 const TambahSuratMasuk = lazy(() => import('@/pages/TambahSuratMasuk'))
 const TambahSuratKeluar = lazy(() => import('@/pages/TambahSuratKeluar'))
 const Arsip = lazy(() => import('@/pages/Arsip'))
@@ -249,6 +250,7 @@ const router = createBrowserRouter([
       { path: "/surat/keluar/inisiatif", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar mode="inisiatif" /></RoleGuard> },
       { path: "/surat/keluar/:id", element: <SuratKeluarDetail /> },
       { path: "/surat/keluar/edit/:id", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><TambahSuratKeluar /></RoleGuard> },
+      { path: "/surat/lacak", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><LacakSurat /></RoleGuard> },
       { path: "/distribusi", element: <RoleGuard allowedRoles={ALL_ADMIN_ROLES}><DistributionInbox /></RoleGuard> },
       { path: "/arsip", element: <Navigate to="/arsip/keluar" replace /> },
       { path: "/arsip/detail/:id", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><ArsipDetail /></RoleGuard> },

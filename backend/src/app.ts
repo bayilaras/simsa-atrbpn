@@ -49,6 +49,8 @@ import { retentionRoutes } from './routes/retention.routes';
 import bulkUploadRoutes from './routes/bulk-upload.routes';
 import distributionRoutes from './routes/distribution.routes';
 import rangkaianRoutes from './routes/rangkaian.routes';
+import rangkaianDaftarRoutes from './routes/rangkaian-daftar.routes.js';
+import rangkaianPerluDilengkapiRoutes from './routes/rangkaian-perlu-dilengkapi.routes.js';
 import rangkaianBerkasRoutes from './routes/rangkaian-berkas.routes';
 import { reportRoutes } from './routes/report.routes';
 import { settingsRoutes } from './routes/settings.routes';
@@ -370,7 +372,9 @@ app.use('/api/dosir', dosirRoutes);
 app.use('/api/retention', retentionRoutes);
 app.use('/api/bulk-upload', bulkUploadRoutes);
 app.use('/api/distributions', distributionRoutes);
-app.use('/api/rangkaian', rangkaianBerkasRoutes); // P5 Task 8: /data-lama/*, /:id/koreksi-berkas, /koreksi-berkas/:koreksiId/putuskan (auth per-route); mount tepat sebelum router utama P2/P3. P4 belum ada di worktree ini — bila P4 rangkaianDaftarRoutes/rangkaianPerluDilengkapiRoutes digabung, keduanya dipasang sebelum baris ini (lihat Concerns laporan Task 8).
+app.use('/api/rangkaian', rangkaianDaftarRoutes);  // P4 Task 6: hanya GET / (auth per-route)
+app.use('/api/rangkaian', rangkaianPerluDilengkapiRoutes); // P4 Task 18 (D7), auth per-route; sebelum router berkas P5 dan router utama
+app.use('/api/rangkaian', rangkaianBerkasRoutes); // P5 Task 8: /data-lama/*, /:id/koreksi-berkas, /koreksi-berkas/:koreksiId/putuskan (auth per-route); mount tepat sebelum router utama P2/P3. Router P4 dipasang tepat sebelumnya.
 app.use('/api/rangkaian', rangkaianRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);

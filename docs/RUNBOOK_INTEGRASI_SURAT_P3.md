@@ -390,3 +390,58 @@ menjalankan runbook ini; butir yang ditolak menahan rilis sampai diperbaiki.
    apa pun dinyalakan.
 9. **Urutan merge**: P3 di-merge setelah P0, P1, dan P2 masuk `main`, lalu
    di-rebase dan CI §0.3 diulang pada hasil rebase.
+
+## 8. Deploy P4 (Lacak Surat + Perlu Dilengkapi)
+
+P4 ditumpuk di atas P3 dan dirilis setelah gerbang §7 disahkan. Bagian ini
+tidak mengubah langkah P3 di atas.
+
+1. **Isi env batas data lama sebelum kode P4 aktif.** Di Vercel (proyek
+   backend), isi `RANGKAIAN_DATA_LAMA_SEBELUM` dengan waktu kode P3 aktif di
+   produksi, ISO-8601 **berzona** (mis. `2026-10-05T00:00:00+07:00`). Vercel
+   hanya menerapkan perubahan env pada deployment **baru**: isi variabel
+   sebelum memicu deployment produksi P4, atau redeploy setelah mengisinya.
+   Bila dibiarkan kosong, batas diturunkan dari `min(created_at)` rangkaian
+   non-`data_lama` (§7 D7). Nilai yang tidak valid membuat setiap panggilan
+   Perlu Dilengkapi (`/api/rangkaian/perlu-dilengkapi*`, termasuk badge
+   sidebar) gagal 500 — disengaja agar salah konfigurasi tidak senyap.
+2. **Pastikan zona waktu sesi database = UTC.** `created_at` bertipe
+   `timestamp` tanpa zona dan dibandingkan dengan `$batas::timestamptz`.
+   Periksa dengan role runtime lewat pola prompt tersembunyi §4:
+
+   ```bash
+   read -rs NEON_RUNTIME_DATABASE_URL && export NEON_RUNTIME_DATABASE_URL
+   psql "$NEON_RUNTIME_DATABASE_URL" -c 'SHOW TimeZone;'   # harus UTC (bawaan Neon)
+   unset NEON_RUNTIME_DATABASE_URL
+   ```
+
+3. **Tidak ada migrasi.** P4 tidak menambah migrasi, grant, role, flag, atau
+   limiter; hash `grants/0002` dan pin Neon tidak berubah.
+4. **Smoke test pasca-deploy.** Sebagai pengguna FULL_ADMIN, panggil
+   `GET /api/rangkaian/perlu-dilengkapi/ringkasan` dan harapkan 200 dengan
+   `data.batasDataLama` sama dengan instan yang dikonfigurasi (boleh tampil
+   dalam UTC). 500 berarti nilai env rusak: perbaiki env lalu redeploy.
+5. **Catat nilainya.** Tulis nilai persis `RANGKAIAN_DATA_LAMA_SEBELUM` pada
+   hasil runbook ini. Backfill P5 wajib memakai nilai yang sama persis.
+6. **Rollback.** Redeploy rilis P3 terakhir. Nilai `asal_naskah='inisiatif'`
+   yang ditulis Tandai Inisiatif tetap tersimpan dan diterima P3 (kolom dan
+   CHECK-nya sudah ada sejak `0046_rangkaian_surat.sql`).
+
+### 8.1 Gerbang rilis P4 (keamanan / pemilik spec)
+
+Setiap baris dicatat **disahkan** atau **ditolak** sebelum produksi:
+
+| Item | Sumber | Keputusan |
+|---|---|---|
+| Tandai Inisiatif diotorisasi kebijakan list + unit pemilik, bukan `check()` | spec §13, rencana P4 D7 | sign-off keamanan |
+| O1: rangkaian hasil backfill langkah 1 (`asal='surat_masuk'`, `selesai`) muncul di `siap_diberkaskan` dan badge | spec §7 D7 | pemilik spec: dihitung data lama atau tidak |
+| G-F3: SK draf lintas unit terbaca; `tindak_lanjut_tertahan` menawarkan "Buka surat" | P3 G-F3 | sign-off keamanan (bawaan P3) |
+| p95 Lacak dan masukan pg_trgm | spec §6, §13 no. 3 | penerimaan pemilik bila p95 ≥ 150 ms |
+| Lacak menampilkan nomor/perihal node terbaca via pengawas/peserta/grant tanpa audit `view_via_rangkaian`/`markGrantUsed` (semantik list) | P3 carry-forward akses 5 | sign-off keamanan |
+| `POST /:id/tautan` lewat `anggotaId` menutup `sm_belum_ditindaklanjuti` untuk SM yang tidak dapat dibaca unit peserta | P3 carry-forward akses 7 | pemilik spec |
+| Baris grant (`ajukan-akses`, `record-access-grants/mine`) memperlihatkan `entityId`/kelas tersamar (P3 M-1) | P3 carry-forward akses 9 | sign-off keamanan, atau "diperbaiki" |
+| Baris kotak disposisi tersamar menampilkan `RS-YYYY-…` sementara placeholder D7 tanpa rangkaian | P3 T10 | pemilik spec (bawaan P3) |
+| Gerbang C-12 P3 (§7) disahkan sebelum P4 ke produksi | §7 | prasyarat |
+| CI "Backend Tests (PostgreSQL 16/17/18)" hijau pada head P4, termasuk `lacak-explain` dan semua `integration/*.postgres.test.ts` P3 | `ci.yml` | gerbang keras |
+| Frontend dan backend satu deploy (`aksiDiizinkan` otoritatif di UI) | P3 catatan rilis frontend | gerbang keras |
+| Anggaran `generalLimiter` per IP: (jumlah tab FULL_ADMIN di balik NAT kantor × 15 + polling notifikasi yang ada) < 500 per 15 menit — pemilik menerima, atau menjadwalkan re-key per pengguna (P5 Task 15) dengan sign-off | `rate-limiter.middleware.ts` | pemilik |

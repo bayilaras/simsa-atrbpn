@@ -60,6 +60,7 @@ describe('metadata-only demo API access', () => {
         ['POST', `/api/surat-keluar/${id}/archive-full`],
         ['GET', `/api/rangkaian/${id}`],
         ['GET', '/api/rangkaian/lacak'],
+        ['GET', '/api/rangkaian'],
         ['GET', `/api/rangkaian/by-surat/surat_masuk/${id}`],
         ['POST', `/api/rangkaian/anggota/${id}/ajukan-akses`],
         ['POST', `/api/rangkaian/disposisi/${id}/tutup`],

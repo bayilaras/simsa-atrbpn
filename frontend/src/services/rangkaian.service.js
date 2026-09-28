@@ -20,6 +20,40 @@ export const rangkaianService = {
         return response.data
     },
 
+    /** GET /api/rangkaian (P4). Respons utuh untuk usePaginatedResource. */
+    async list({ unitPengolahId, status, asal, page = 1, limit = 20 } = {}) {
+        return api.get('/api/rangkaian', { unitPengolahId, status, asal, page, limit })
+    },
+
+    // D6: unit ber-unitType 'bagian' tidak pernah menjadi unit pengolah;
+    // canReceiveDistribution === false juga dikeluarkan (P4-T9-4).
+    async unitKerjaOpsi() {
+        const response = await api.get('/api/unit-kerja')
+        return (response.data || [])
+            .filter((unit) => unit.unitType !== 'bagian' && unit.canReceiveDistribution !== false)
+            .map(({ id, name }) => ({ id, name }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'id'))
+    },
+
+    /** GET /api/rangkaian/perlu-dilengkapi (D7). Respons utuh untuk usePaginatedResource. */
+    async perluDilengkapi({ kategori, tampilkanDataLama = false, page = 1, limit = 20 } = {}) {
+        return api.get('/api/rangkaian/perlu-dilengkapi', {
+            kategori, tampilkanDataLama: tampilkanDataLama ? 'true' : undefined, page, limit,
+        })
+    },
+
+    /** GET /api/rangkaian/perlu-dilengkapi/ringkasan (D7) → { perKategori, total, lewatBatas, batasDataLama }. */
+    async ringkasanPerluDilengkapi({ tampilkanDataLama = false } = {}, { signal } = {}) {
+        const response = await api.get('/api/rangkaian/perlu-dilengkapi/ringkasan',
+            { tampilkanDataLama: tampilkanDataLama ? 'true' : undefined }, { signal })
+        return response.data
+    },
+
+    /** POST /api/rangkaian/surat-keluar/:id/tandai-inisiatif (D7). Body selalu kosong. */
+    async tandaiInisiatif(suratKeluarId) {
+        return (await api.post(`/api/rangkaian/surat-keluar/${encodeURIComponent(suratKeluarId)}/tandai-inisiatif`, {})).data
+    },
+
     async tandaiSelesai(id, catatan) {
         return (await api.post(`/api/rangkaian/${encodeURIComponent(id)}/selesai`, { catatan })).data
     },

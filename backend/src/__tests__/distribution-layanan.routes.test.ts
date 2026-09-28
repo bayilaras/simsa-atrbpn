@@ -251,6 +251,16 @@ describe('distribution route unit scoping', () => {
         expect(mocks.distribution.samarkan).not.toHaveBeenCalled();
     });
 
+    it('N-3: checkRead yang gagal setelah Tolak ter-commit mengembalikan bentuk tersamar, bukan 500', async () => {
+        mocks.recordAccess.checkRead.mockRejectedValueOnce(new Error('koneksi putus'));
+        mocks.distribution.reject.mockResolvedValue({ id: 'dist-1', status: 'rejected', suratMasukId: 'surat-1', instruction: 'Instruksi rahasia' });
+        const res = await request(app).put('/distributions/dist-1/reject').send({ reason: 'Bukan unit tujuan' }).expect(200);
+        expect(mocks.distribution.reject).toHaveBeenCalledTimes(1);
+        expect(res.body.data).toMatchObject({ id: 'dist-1', masked: true, suratMasukId: null });
+        expect(res.text).not.toContain('surat-1');
+        expect(res.text).not.toContain('Instruksi rahasia');
+    });
+
     it('lewatBatas=true diteruskan ke kotak disposisi', async () => {
         await request(app).get('/distributions/inbox?lewatBatas=true').expect(200);
         expect(mocks.distribution.findInbox).toHaveBeenCalledWith('unit-a', expect.objectContaining({ lewatBatas: true }), expect.anything());
@@ -276,8 +286,10 @@ describe('distribution route unit scoping', () => {
     });
 
     it('GET /:id sebagai pemilik tidak menulis audit view', async () => {
-        await request(app).get('/distributions/dist-1').expect(200);
+        const response = await request(app).get('/distributions/dist-1').expect(200);
         expect(mocks.audit.logActionOrThrow).not.toHaveBeenCalled();
+        // Cabang terbaca eksplisit masked:false (carry-forward akses 2).
+        expect(response.body.data.masked).toBe(false);
     });
 
     it('GET /:id/kandidat-penyelesaian memakai unit konkret dan pengguna pemanggil', async () => {
