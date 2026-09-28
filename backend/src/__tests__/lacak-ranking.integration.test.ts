@@ -96,6 +96,14 @@ describe('peringkat Lacak Surat (§6 + penyempurnaan P4)', () => {
         expect(pratinjau.find(node => !node.masked && node.id === nd)).toMatchObject({ relasi: 'menjelaskan', naskah: 'Nota Dinas' });
     });
 
+    it('tier DARI_KEPADA (20) berlaku untuk sk.kepada, di bawah perihal (40/45)', async () => {
+        const lewatKepada = await insertSuratKeluar(database, { n: 71, nomor: 'ND-71/2025', tanggal: '2025-03-01', perihal: 'Undangan rapat', kepada: 'Kepala Kanwil Maluku Utara' });
+        const lewatPerihal = await insertSuratKeluar(database, { n: 72, nomor: 'ND-72/2025', tanggal: '2025-01-01', perihal: 'Koordinasi kanwil maluku' });
+        const hasil = await rangkaianService.lacak(bppt, { q: 'kanwil maluku', mode: 'lacak' });
+        expect(kunci(hasil)).toEqual([`surat:${lewatPerihal}`, `surat:${lewatKepada}`]);
+        expect(hasil.kelompok.map(kelompok => kelompok.skor)).toEqual([45, 20]);
+    });
+
     it('maksimal 8 kelompok', async () => {
         for (let i = 0; i < 10; i += 1) {
             await insertSuratMasuk(database, { n: 40 + i, nomor: `UND-${i}/2024`, tanggal: `2024-10-${String(10 + i).padStart(2, '0')}`, perihal: 'Undangan rapat koordinasi' });
