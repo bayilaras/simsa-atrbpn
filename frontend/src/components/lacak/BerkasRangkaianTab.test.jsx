@@ -57,4 +57,12 @@ describe('Tab Berkas Rangkaian', () => {
         expect(await screen.findByText('RS-2026-000001')).toBeVisible()
         expect(screen.queryByRole('link', { name: 'RS-2026-000001' })).toBeNull()
     })
+
+    it('B-I1: jumlah anggota null (rangkaian tak dapat dibuka) tampil sebagai tanda pisah, bukan angka', async () => {
+        mocks.list.mockResolvedValue(respons([{ ...baris, dapatDibuka: false, jumlahAnggota: null }]))
+        mount()
+        const kode = await screen.findByText('RS-2026-000001')
+        const sel = kode.closest('tr').querySelectorAll('td')
+        expect(sel[5]).toHaveTextContent(/^—$/)
+    })
 })

@@ -84,7 +84,7 @@ export function BerkasRangkaianTab() {
                                 <td className="px-3 py-2"><Badge variant="secondary">{LABEL_STATUS_RANGKAIAN[row.status] ?? row.status}</Badge></td>
                                 <td className="px-3 py-2">{row.unitPengolah?.nama ?? '—'}</td>
                                 <td className="px-3 py-2">{row.tahun}</td>
-                                <td className="px-3 py-2">{row.jumlahAnggota}</td>
+                                <td className="px-3 py-2">{row.jumlahAnggota ?? '—'}</td>
                                 <td className="px-3 py-2">{tanggal(row.diberkaskanAt)}</td>
                             </tr>
                         ))}
