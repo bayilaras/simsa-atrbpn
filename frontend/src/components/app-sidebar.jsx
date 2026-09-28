@@ -54,6 +54,8 @@ import { Badge } from '@/components/ui/badge'
 import appConfig from '@/lib/app-config'
 import { PROVISIONED_ROLES } from '@/lib/provisioning-access'
 import { useAppConfig } from '@/context/app-config-context'
+import { usePerluDilengkapiCount } from '@/hooks/use-perlu-dilengkapi-count'
+import { formatJumlahBadge } from '@/lib/perlu-dilengkapi'
 
 // Role constants for menu access
 const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']
@@ -84,7 +86,7 @@ const menuGroups = [
                 subItems: [
                     { title: 'Surat Masuk', url: '/surat/masuk', icon: MailOpen },
                     { title: 'Surat Keluar', url: '/surat/keluar', icon: Send },
-                    { title: 'Lacak Surat', url: '/surat/lacak', icon: Search },
+                    { title: 'Lacak Surat', url: '/surat/lacak', icon: Search, badge: 'perluDilengkapi' },
                 ],
             },
             {
@@ -292,6 +294,8 @@ export function AppSidebar() {
     const { setOpenMobile, state, isMobile } = useSidebar()
     const { user } = useAuth()
     const userRole = user?.role || 'user'
+    // D7: hanya FULL_ADMIN yang memicu request ringkasan (role read-only tidak punya aksi di daftar kerja).
+    const perluDilengkapi = usePerluDilengkapiCount({ enabled: ADMIN_ROLES.includes(userRole) })
 
     useEffect(() => {
         setOpenMobile(false)
@@ -363,13 +367,27 @@ export function AppSidebar() {
                                                         </CollapsibleTrigger>
                                                         <CollapsibleContent>
                                                             <SidebarMenuSub>
-                                                                {item.subItems.map((subItem) => (
-                                                                    <SidebarMenuSubItem key={subItem.title}>
-                                                                        <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
-                                                                            <Link to={subItem.url} aria-current={isActive(subItem.url) ? 'page' : undefined}>{subItem.title}</Link>
-                                                                        </SidebarMenuSubButton>
-                                                                    </SidebarMenuSubItem>
-                                                                ))}
+                                                                {item.subItems.map((subItem) => {
+                                                                    const jumlah = subItem.badge === 'perluDilengkapi' ? perluDilengkapi.total : 0
+                                                                    return (
+                                                                        <SidebarMenuSubItem key={subItem.title}>
+                                                                            <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
+                                                                                <Link
+                                                                                    to={subItem.url}
+                                                                                    aria-current={isActive(subItem.url) ? 'page' : undefined}
+                                                                                    aria-label={jumlah > 0 ? `${subItem.title} (${jumlah} perlu dilengkapi)` : undefined}
+                                                                                >
+                                                                                    {subItem.title}
+                                                                                    {jumlah > 0 && (
+                                                                                        <Badge variant="secondary" aria-hidden="true" className="ml-auto h-5 min-w-5 px-1.5 text-[11px]">
+                                                                                            {formatJumlahBadge(jumlah)}
+                                                                                        </Badge>
+                                                                                    )}
+                                                                                </Link>
+                                                                            </SidebarMenuSubButton>
+                                                                        </SidebarMenuSubItem>
+                                                                    )
+                                                                })}
                                                             </SidebarMenuSub>
                                                         </CollapsibleContent>
                                                     </SidebarMenuItem>

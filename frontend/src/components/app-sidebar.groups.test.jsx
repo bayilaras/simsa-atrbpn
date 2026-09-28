@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { AppSidebar } from './app-sidebar'
@@ -7,6 +7,10 @@ import { SidebarProvider } from './ui/sidebar'
 const state = vi.hoisted(() => ({ role: 'super_admin' }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { role: state.role } }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ features: {}, capabilities: { files: true, advancedArchiveWorkflows: false } }) }))
+const perlu = vi.hoisted(() => ({ total: 0, opsi: [] }))
+vi.mock('@/hooks/use-perlu-dilengkapi-count', () => ({
+    usePerluDilengkapiCount: (opsi) => { perlu.opsi.push(opsi); return { total: perlu.total } },
+}))
 function RouteControl() {
     const navigate = useNavigate()
     return <button onClick={() => navigate('/users')}>Pergi ke pengguna</button>
@@ -16,6 +20,8 @@ function show({ route = '/', expanded = true } = {}) {
 }
 beforeEach(() => {
     state.role = 'super_admin'
+    perlu.total = 0
+    perlu.opsi.length = 0
     vi.stubGlobal('innerWidth', 1366)
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
 })
@@ -84,5 +90,27 @@ describe('sidebar task groups', () => {
             expect(screen.getByRole('link', { name: 'Surat Masuk', exact: true })).not.toHaveAttribute('aria-current')
             unmount()
         }
+    })
+    it('menampilkan badge Perlu Dilengkapi pada Lacak Surat hanya untuk admin, tanpa mengubah tujuan tautan', () => {
+        state.role = 'admin_unit'
+        perlu.total = 12
+        const pertama = show({ route: '/surat/lacak' })
+        const link = screen.getByRole('link', { name: 'Lacak Surat (12 perlu dilengkapi)' })
+        expect(link).toHaveAttribute('href', '/surat/lacak')
+        expect(link).toHaveAttribute('aria-current', 'page')
+        expect(within(link).getByText('12')).toHaveAttribute('aria-hidden', 'true')
+        expect(perlu.opsi.at(-1)).toEqual({ enabled: true })
+        pertama.unmount()
+
+        perlu.total = 150
+        const kedua = show({ route: '/surat/lacak' })
+        expect(within(screen.getByRole('link', { name: 'Lacak Surat (150 perlu dilengkapi)' })).getByText('99+')).toBeInTheDocument()
+        kedua.unmount()
+
+        state.role = 'staff'
+        perlu.total = 0
+        show({ route: '/surat/lacak' })
+        expect(perlu.opsi.at(-1)).toEqual({ enabled: false })
+        expect(screen.getByRole('link', { name: 'Lacak Surat' })).toHaveAttribute('href', '/surat/lacak')
     })
 })
