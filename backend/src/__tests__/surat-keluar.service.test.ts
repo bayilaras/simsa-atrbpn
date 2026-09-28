@@ -47,6 +47,11 @@ const mockDb = {
 };
 
 vi.mock('../config/database', () => ({ db: mockDb }));
+const hookMocks = vi.hoisted(() => ({
+    afterSuratKeluarInsert: vi.fn(async () => null as any),
+    afterSuratKeluarChanged: vi.fn(async () => undefined),
+}));
+vi.mock('../services/rangkaian/tindak-lanjut.hook.js', () => hookMocks);
 
 const { SuratKeluarService } = await import('../services/surat-keluar.service');
 const { auditLogService } = await import('../services/audit-log.service');
@@ -62,6 +67,8 @@ describe('SuratKeluarService', () => {
         svc = new SuratKeluarService();
         resultQueue.length = 0;
         capturedValues.length = 0;
+        hookMocks.afterSuratKeluarInsert.mockReset().mockResolvedValue(null);
+        hookMocks.afterSuratKeluarChanged.mockReset().mockResolvedValue(undefined);
     });
 
     // ── findAll ──
@@ -188,30 +195,38 @@ describe('SuratKeluarService', () => {
             expect(capturedValues).toHaveLength(0);
         });
 
-        it('should update surat masuk status when balasanUntuk is provided', async () => {
-            enqueue([], [templateRow]);
-            enqueue([{ noUrut: 1 }]);     // lastSurat
-            enqueue([{ id: 'sm-1' }]);    // same-unit reply target
-            enqueue([{ id: 'reply-1', noUrut: 2, balasanUntuk: 'sm-1' }]); // insert
-            enqueue([]);                   // update suratMasuk
-
-            const res = await svc.create({
-                unitKerjaId: 'u1',
-                tahun: 2026,
-                balasanUntuk: 'sm-1',
-            } as any);
-            expect(res.id).toBe('reply-1');
+        it('mendelegasikan balasanUntuk lama ke hook tindak lanjut setelah insert', async () => {
+            enqueue([], [templateRow], [{ noUrut: 1 }], [{ id: 'reply-1', noUrut: 2, unitKerjaId: 'u1', balasanUntuk: null }]);
+            hookMocks.afterSuratKeluarInsert.mockResolvedValueOnce({ balasanUntuk: 'sm-1' });
+            const actor = { id: 'user-1', role: 'admin_unit', unitKerjaId: 'u1' };
+            const res = await svc.create({ unitKerjaId: 'u1', tahun: 2026, balasanUntuk: 'sm-1', actor } as any);
+            expect(hookMocks.afterSuratKeluarInsert).toHaveBeenCalledWith(expect.anything(), {
+                user: actor,
+                inserted: { id: 'reply-1', unitKerjaId: 'u1' },
+                tindakLanjut: { jenis: 'surat_masuk', suratId: 'sm-1', jenisRelasi: 'balasan' },
+                audit: undefined,
+            });
+            expect(capturedValues.at(-1)).toMatchObject({ balasanUntuk: null, asalNaskah: 'tindak_lanjut' });
+            expect(res.balasanUntuk).toBe('sm-1');
         });
 
-        it('rejects a reply target outside the outgoing letter unit', async () => {
-            enqueue([], [templateRow], [{ noUrut: 1 }]); // template lock + lastSurat
-            enqueue([]);              // no live reply target in the same unit
+        it('tidak lagi menandai surat masuk sudah_dibalas saat draft dibuat (tanpa query tambahan)', async () => {
+            enqueue([], [templateRow], [{ noUrut: 1 }], [{ id: 'sk-1', noUrut: 2, unitKerjaId: 'u1' }]);
+            await svc.create({ unitKerjaId: 'u1', tahun: 2026, asalNaskah: 'inisiatif' } as any);
+            expect(resultQueue).toHaveLength(0);
+            expect(capturedValues.at(-1)).toMatchObject({ asalNaskah: 'inisiatif', balasanUntuk: null });
+            expect(hookMocks.afterSuratKeluarInsert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tindakLanjut: undefined }));
+        });
 
-            await expect(svc.create({
-                unitKerjaId: 'u1',
-                tahun: 2026,
-                balasanUntuk: 'sm-other-unit',
-            } as any)).rejects.toThrow('unit kerja yang sama');
+        it('mengulang transaksi create sekali setelah deadlock (C-4)', async () => {
+            const originalTransaction = mockDb.transaction.bind(mockDb);
+            const transaction = vi.spyOn(mockDb, 'transaction')
+                .mockRejectedValueOnce(Object.assign(new Error('Failed query'), { cause: { code: '40P01' } }))
+                .mockImplementation(originalTransaction);
+            enqueue([], [templateRow], [], [{ id: 'new', noUrut: 1, unitKerjaId: 'u1' }]);
+            const res = await svc.create({ unitKerjaId: 'u1', tahun: 2026 } as any);
+            expect(transaction).toHaveBeenCalledTimes(2);
+            expect(res.id).toBe('new');
         });
 
         it('aborts the surat transaction when prepared attachment persistence fails', async () => {
@@ -339,6 +354,28 @@ describe('SuratKeluarService', () => {
             expect(res).toEqual({ id: '1', perihal: 'Updated SK' });
         });
 
+        it('memicu recompute rangkaian setelah update', async () => {
+            enqueue([{ id: '1', perihal: 'Baru' }]);
+            await svc.update('1', { perihal: 'Baru' } as any, 'u1');
+            expect(hookMocks.afterSuratKeluarChanged).toHaveBeenCalledWith(expect.anything(), '1', undefined);
+        });
+
+        it('tidak memicu recompute bila tidak ada baris yang diubah', async () => {
+            enqueue([]);
+            expect(await svc.update('1', { perihal: 'Baru' } as any, 'u1')).toBeUndefined();
+            expect(hookMocks.afterSuratKeluarChanged).not.toHaveBeenCalled();
+        });
+
+        it('mengulang transaksi update sekali setelah deadlock (C-4)', async () => {
+            const originalTransaction = mockDb.transaction.bind(mockDb);
+            const transaction = vi.spyOn(mockDb, 'transaction')
+                .mockRejectedValueOnce(Object.assign(new Error('Failed query'), { cause: { code: '40P01' } }))
+                .mockImplementation(originalTransaction);
+            enqueue([{ id: '1', perihal: 'Baru' }]);
+            expect(await svc.update('1', { perihal: 'Baru' } as any, 'u1')).toEqual({ id: '1', perihal: 'Baru' });
+            expect(transaction).toHaveBeenCalledTimes(2);
+        });
+
         it('aborts the update transaction when critical audit persistence fails', async () => {
             enqueue([{ id: '1', perihal: 'Updated SK' }]);
             const audit = vi.spyOn(auditLogService, 'logActionOrThrow')
@@ -403,6 +440,22 @@ describe('SuratKeluarService', () => {
             enqueue([{ id: '1', perihal: 'To Delete' }]);
             const res = await svc.delete('1', undefined, 'u1');
             expect(res).toEqual({ id: '1', perihal: 'To Delete' });
+        });
+
+        it('memicu recompute rangkaian setelah soft delete', async () => {
+            enqueue([{ id: '1', perihal: 'To Delete' }]);
+            await svc.delete('1', undefined, 'u1');
+            expect(hookMocks.afterSuratKeluarChanged).toHaveBeenCalledWith(expect.anything(), '1', undefined);
+        });
+
+        it('mengulang transaksi delete sekali setelah deadlock (C-4)', async () => {
+            const originalTransaction = mockDb.transaction.bind(mockDb);
+            const transaction = vi.spyOn(mockDb, 'transaction')
+                .mockRejectedValueOnce(Object.assign(new Error('Failed query'), { cause: { code: '40P01' } }))
+                .mockImplementation(originalTransaction);
+            enqueue([{ id: '1', perihal: 'To Delete' }]);
+            expect(await svc.delete('1', undefined, 'u1')).toEqual({ id: '1', perihal: 'To Delete' });
+            expect(transaction).toHaveBeenCalledTimes(2);
         });
     });
 

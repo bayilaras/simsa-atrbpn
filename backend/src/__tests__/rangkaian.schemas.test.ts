@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-    createDistributionSchema, createSuratMasukSchema, disposisiRoutingSchema,
+    createDistributionSchema, createSuratKeluarSchema, createSuratMasukSchema, disposisiRoutingSchema,
     processDistributionSchema, updateSuratMasukSchema, berkaskanSchema, gabungSchema, ajukanAksesSchema,
 } from '../validators/schemas';
 
 const UUID = '550e8400-e29b-41d4-a716-446655440000';
 const UUID2 = '550e8400-e29b-41d4-a716-446655440001';
 const suratMasukDasar = { unitKerjaId: 'sesditjen', tanggalSurat: '2026-09-12', perihal: 'Permohonan', dari: 'Kantah' };
+const suratKeluarDasar = { unitKerjaId: 'dir_bppt', tanggalSurat: '2026-09-12', perihal: 'Balasan', kepada: 'Kantah' };
 
 afterEach(() => vi.useRealTimers());
 
@@ -46,6 +47,39 @@ describe('skema registrasi surat masuk', () => {
         expect(updateSuratMasukSchema.parse({ status: 'sudah_dibalas' })).toEqual({});
         expect(updateSuratMasukSchema.parse({ perihal: 'Koreksi', alasan: '  Salah ketik perihal  ' })).toEqual({ perihal: 'Koreksi', alasan: 'Salah ketik perihal' });
         expect(updateSuratMasukSchema.safeParse({ alasan: 'pendek' }).success).toBe(false);
+    });
+});
+
+describe('skema surat keluar', () => {
+    it('inisiatif bersama induk ditolak', () => {
+        expect(createSuratKeluarSchema.safeParse({ ...suratKeluarDasar, asalNaskah: 'inisiatif', balasanUntuk: UUID }).success).toBe(false);
+        expect(createSuratKeluarSchema.safeParse({ ...suratKeluarDasar, asalNaskah: 'inisiatif',
+            tindakLanjut: { jenis: 'surat_masuk', suratId: UUID, jenisRelasi: 'balasan' } }).success).toBe(false);
+    });
+
+    it('balasanUntuk lama dipetakan ke tindakLanjut balasan', () => {
+        const parsed = createSuratKeluarSchema.parse({ ...suratKeluarDasar, balasanUntuk: UUID });
+        expect(parsed.tindakLanjut).toEqual({ jenis: 'surat_masuk', suratId: UUID, jenisRelasi: 'balasan' });
+        expect(parsed.asalNaskah).toBe('tindak_lanjut');
+        expect(parsed).not.toHaveProperty('balasanUntuk');
+    });
+
+    it('ND penjelas memakai relasi menjelaskan ke surat keluar', () => {
+        const parsed = createSuratKeluarSchema.parse({ ...suratKeluarDasar, tindakLanjut: { jenis: 'surat_keluar', suratId: UUID, jenisRelasi: 'menjelaskan' } });
+        expect(parsed.asalNaskah).toBe('tindak_lanjut');
+    });
+
+    it('surat inisiatif murni diterima apa adanya', () => {
+        expect(createSuratKeluarSchema.parse({ ...suratKeluarDasar, asalNaskah: 'inisiatif' })).toMatchObject({ asalNaskah: 'inisiatif', tindakLanjut: undefined });
+    });
+
+    it('tindakLanjut multipart (JSON string) diterima; tindak_lanjut tanpa induk dan induk berbeda ditolak', () => {
+        const parsed = createSuratKeluarSchema.parse({ ...suratKeluarDasar,
+            tindakLanjut: JSON.stringify({ jenis: 'surat_masuk', suratId: UUID, jenisRelasi: 'tindak_lanjut' }) });
+        expect(parsed.tindakLanjut).toEqual({ jenis: 'surat_masuk', suratId: UUID, jenisRelasi: 'tindak_lanjut' });
+        expect(createSuratKeluarSchema.safeParse({ ...suratKeluarDasar, asalNaskah: 'tindak_lanjut' }).success).toBe(false);
+        expect(createSuratKeluarSchema.safeParse({ ...suratKeluarDasar, balasanUntuk: UUID2,
+            tindakLanjut: { jenis: 'surat_masuk', suratId: UUID, jenisRelasi: 'balasan' } }).success).toBe(false);
     });
 });
 

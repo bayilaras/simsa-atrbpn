@@ -208,20 +208,8 @@ router.post('/',
                 return res.status(403).json({ error: 'Unit kerja pengguna belum ditetapkan.' });
             }
 
-            if (bodyValidation.data.balasanUntuk) {
-                const sourceAccess = await recordAccessService.check(
-                    req.user,
-                    'surat_masuk',
-                    bodyValidation.data.balasanUntuk,
-                );
-                if (
-                    !sourceAccess.exists
-                    || !sourceAccess.mutable
-                    || sourceAccess.unitKerjaId !== serverUnitKerjaId
-                ) {
-                    return res.status(404).json({ error: 'Surat masuk balasan not found' });
-                }
-            }
+            // Wewenang tindak lanjut (pemilik induk / target disposisi hidup / pengawas)
+            // dan checkRead atas induk diperiksa di hook, di dalam transaksi create.
 
             if (file && bodyValidation.data.filePath) {
                 return res.status(400).json({
@@ -269,6 +257,7 @@ router.post('/',
                 ...bodyValidation.data,
                 unitKerjaId: serverUnitKerjaId,
                 createdBy: req.user?.id,
+                actor: req.user,
                 filePath,
                 fileOriginalName,
             }, {

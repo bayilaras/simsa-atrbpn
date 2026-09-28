@@ -231,6 +231,8 @@ const suratKeluarBaseSchema = z.object({
     kepada: z.string().min(1, 'Penerima is required').max(2000),
     linkDokumen: z.string().url().optional().or(z.literal('')),
     balasanUntuk: uuidSchema.optional().nullable(),
+    asalNaskah: z.enum(['inisiatif', 'tindak_lanjut']).optional(),
+    tindakLanjut: z.preprocess(parseJsonObjectString, tindakLanjutInputSchema).optional(),
     klasifikasiFasilitatifKode: z.string().max(50).optional(),
     klasifikasiFasilitatif: z.string().max(2000).optional(),
     klasifikasiSubstantifKode: z.string().max(50).optional(),
@@ -265,10 +267,27 @@ export const createSuratKeluarSchema = suratKeluarBaseSchema
                 message: 'Nomor surat wajib diisi pada mode manual',
             });
         }
+        const punyaInduk = Boolean(value.tindakLanjut || value.balasanUntuk);
+        if (value.asalNaskah === 'inisiatif' && punyaInduk) {
+            ctx.addIssue({ code: 'custom', path: ['asalNaskah'], message: 'Surat inisiatif tidak boleh memiliki surat induk' });
+        }
+        if (value.asalNaskah === 'tindak_lanjut' && !punyaInduk) {
+            ctx.addIssue({ code: 'custom', path: ['tindakLanjut'], message: 'Tindak lanjut memerlukan surat induk' });
+        }
+        if (value.tindakLanjut && value.balasanUntuk && value.tindakLanjut.suratId !== value.balasanUntuk) {
+            ctx.addIssue({ code: 'custom', path: ['balasanUntuk'], message: 'balasanUntuk harus sama dengan surat induk tindak lanjut' });
+        }
+    })
+    // balasanUntuk lama dipetakan ke relasi 'balasan'; kolom balasan_untuk
+    // diisi layanan tindak lanjut hanya untuk balasan same-unit (§3 Kolom lama).
+    .transform(({ balasanUntuk, ...value }) => {
+        const tindakLanjut = value.tindakLanjut
+            ?? (balasanUntuk ? { jenis: 'surat_masuk' as const, suratId: balasanUntuk, jenisRelasi: 'balasan' as const } : undefined);
+        return { ...value, tindakLanjut, asalNaskah: tindakLanjut ? 'tindak_lanjut' as const : value.asalNaskah };
     });
 
 export const updateSuratKeluarSchema = suratKeluarBaseSchema
-    .omit({ unitKerjaId: true, numberingMode: true })
+    .omit({ unitKerjaId: true, numberingMode: true, asalNaskah: true, tindakLanjut: true })
     .partial();
 
 export const querySuratKeluarSchema = paginationSchema.extend({
