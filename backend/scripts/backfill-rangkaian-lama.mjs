@@ -366,10 +366,10 @@ export function writePlanFiles(outDir, plan) {
 // ---------------------------------------------------------------------------
 // Task 5: --apply bergerbang SHA, idempoten, diaudit; mode --isi-pengolah (P5-C-2).
 //
-// Urutan kunci (G-LOCK, P5-G-4) per surat: surat_keluar balasan (FOR UPDATE ORDER BY id)
-// -> surat_masuk -> rangkaian_surat (satu baris, by id). Skrip tidak pernah menulis
-// surat_distributions. Id dibaca tanpa kunci, dikunci, lalu dibaca ulang. Satu batch
-// = satu transaksi, diulang maksimal 3x untuk 40P01/40001; penghitung ringkasan hanya
+// Urutan kunci (G-LOCK, P5-G-4) per TRANSAKSI batch, per fase (kunciBatch): semua surat_keluar
+// balasan (FOR UPDATE ORDER BY id) -> semua surat_masuk (ORDER BY id) -> semua rangkaian_surat
+// (ORDER BY id). Skrip tidak pernah menulis surat_distributions. Id dibaca tanpa kunci, dikunci,
+// lalu dibaca ulang. Satu batch = satu transaksi, diulang maksimal 3x untuk 40P01/40001; penghitung ringkasan hanya
 // dijumlahkan setelah COMMIT.
 // ---------------------------------------------------------------------------
 
@@ -441,35 +441,63 @@ async function seedLabelTable(client) {
 
 const galatUlang = (pesan) => Object.assign(new Error(pesan), { code: '40001' });
 
-async function applySurat(client, suratId, routes, hitung) {
-  // G-LOCK: surat_keluar (ORDER BY id) -> surat_masuk -> rangkaian_surat. [P5-T5-2]
+/**
+ * G-LOCK per transaksi batch (P5-G-4, spec:809). Kunci diambil per FASE untuk seluruh batch,
+ * bukan per surat, sehingga transaksi tidak pernah memegang SM/R suatu surat lalu meminta SK
+ * surat berikutnya (siklus dengan P3 tautanKeSurat: SK ORDER BY id -> SM -> R):
+ *   1. semua calon balasan surat_keluar batch, satu FOR UPDATE ORDER BY id;
+ *   2. semua surat_masuk batch, satu FOR UPDATE ORDER BY id;
+ *   3. keanggotaan dibaca tanpa kunci, semua rangkaian_surat yang ada dikunci ORDER BY id,
+ *      lalu keanggotaan dibaca ulang; bila berubah -> galat 40001 (batch diulang).
+ * Setelah itu applySurat hanya menulis; ia tidak mengambil kunci baris sendiri.
+ */
+async function kunciBatch(client, suratIds) {
   const { rows: calonBalasan } = await client.query(
     `SELECT sk.id FROM surat_keluar sk
-      WHERE sk.balasan_untuk = $1::uuid AND sk.is_deleted IS NOT TRUE AND sk.approval_status = 'approved'
-      ORDER BY sk.id`, [suratId]);
-  if (calonBalasan.length > 0) {
-    await client.query('SELECT id FROM surat_keluar WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
-      [calonBalasan.map(row => row.id)]);
-  }
-  const { rows: [sm] } = await client.query(
+      WHERE sk.balasan_untuk = ANY($1::uuid[]) AND sk.is_deleted IS NOT TRUE AND sk.approval_status = 'approved'
+      ORDER BY sk.id`, [suratIds]);
+  const skTerkunci = calonBalasan.length === 0 ? [] : (await client.query(
+    'SELECT id FROM surat_keluar WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+    [calonBalasan.map(row => row.id)])).rows.map(row => row.id);
+
+  const idUrut = [...suratIds].sort();
+  const { rows: smRows } = await client.query(
     `SELECT id, unit_kerja_id, tahun,
             COALESCE(NULLIF(regexp_replace(perihal, '${LABEL_NORM_TRIM_PATTERN}', '', 'g'), ''), nomor_surat, '(tanpa perihal)') AS judul
-       FROM surat_masuk WHERE id = $1::uuid AND is_deleted IS NOT TRUE FOR UPDATE`, [suratId]);
+       FROM surat_masuk WHERE id = ANY($1::uuid[]) AND is_deleted IS NOT TRUE ORDER BY id FOR UPDATE`, [idUrut]);
+  const suratMasuk = new Map(smRows.map(row => [row.id, row]));
+
+  const terkunciSm = smRows.map(row => row.id);
+  const keanggotaan = async () => new Map((await client.query(
+    `SELECT id AS anggota_id, rangkaian_id, surat_masuk_id FROM rangkaian_anggota
+      WHERE surat_masuk_id = ANY($1::uuid[])`, [terkunciSm])).rows.map(row => [row.surat_masuk_id, row]));
+  const awal = await keanggotaan();
+  const rangkaianIds = [...new Set([...awal.values()].map(row => row.rangkaian_id))].sort();
+  const rangkaian = new Map(rangkaianIds.length === 0 ? [] : (await client.query(
+    'SELECT id, status FROM rangkaian_surat WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+    [rangkaianIds])).rows.map(row => [row.id, row]));
+  const lagi = await keanggotaan();
+  // Surat sudah terkunci, jadi keanggotaannya tidak dapat dipindah; bila tetap berubah, ulang batch.
+  const induk = new Map();
+  for (const suratId of new Set([...awal.keys(), ...lagi.keys()])) {
+    const a = awal.get(suratId);
+    const rs = a && rangkaian.get(a.rangkaian_id);
+    if (!a || !rs || lagi.get(suratId)?.rangkaian_id !== a.rangkaian_id) {
+      throw galatUlang(`Keanggotaan surat ${suratId} berubah; batch diulang`);
+    }
+    induk.set(suratId, { anggota_id: a.anggota_id, rangkaian_id: rs.id, status: rs.status });
+  }
+  return { suratMasuk, induk, skTerkunci };
+}
+
+async function applySurat(client, suratId, routes, hitung, terkunci) {
+  // Semua kunci sudah diambil oleh kunciBatch (G-LOCK per transaksi); di sini hanya baca + tulis.
+  const sm = terkunci.suratMasuk.get(suratId);
   if (!sm) return;
   hitung.suratDiproses += 1;
 
-  const keanggotaan = async () => (await client.query(
-    'SELECT id AS anggota_id, rangkaian_id FROM rangkaian_anggota WHERE surat_masuk_id = $1::uuid', [suratId])).rows[0];
-  let induk = null;
-  const awal = await keanggotaan();
-  if (awal) {
-    const { rows: [rs] } = await client.query(
-      'SELECT id, status FROM rangkaian_surat WHERE id = $1::uuid FOR UPDATE', [awal.rangkaian_id]);
-    const lagi = await keanggotaan();
-    // Surat sudah terkunci, jadi keanggotaannya tidak dapat dipindah; bila tetap berubah, ulang batch.
-    if (!rs || lagi?.rangkaian_id !== awal.rangkaian_id) throw galatUlang(`Keanggotaan surat ${suratId} berubah; batch diulang`);
-    induk = { anggota_id: awal.anggota_id, rangkaian_id: rs.id, status: rs.status };
-  } else {
+  let induk = terkunci.induk.get(suratId) ?? null;
+  if (!induk) {
     const direktorat = [...new Set(routes.filter(route => route.unit_type === 'direktorat').map(route => route.unit_kerja_id))];
     const calonPengolah = direktorat.length === 1 ? direktorat[0] : null;
     const { rows: [rangkaian] } = await client.query(
@@ -516,7 +544,8 @@ async function applySurat(client, suratId, routes, hitung) {
       WHERE sk.balasan_untuk = $1::uuid AND sk.unit_kerja_id = $2::varchar
         AND sk.is_deleted IS NOT TRUE AND sk.approval_status = 'approved'
         AND NOT EXISTS (SELECT 1 FROM rangkaian_anggota ra WHERE ra.surat_keluar_id = sk.id)
-      ORDER BY sk.id`, [suratId, sm.unit_kerja_id]);
+        AND sk.id = ANY($3::uuid[]) -- hanya SK yang dikunci kunciBatch; sisanya ditaut run berikutnya
+      ORDER BY sk.id`, [suratId, sm.unit_kerja_id, terkunci.skTerkunci]);
   for (const sk of balasan) {
     if (tertutup) { hitung.balasanDilewatiDiberkaskan += 1; continue; }
     const { rows: [anggota] } = await client.query(
@@ -573,7 +602,8 @@ export async function applyPlan(client, { approvedSha256, batas } = {}) {
     }
     const hitung = await inTransaction(client, async () => {
       const lokal = summaryKosong();
-      for (const [suratId, routes] of grouped) await applySurat(client, suratId, routes, lokal);
+      const terkunci = await kunciBatch(client, [...grouped.keys()]);
+      for (const [suratId, routes] of grouped) await applySurat(client, suratId, routes, lokal, terkunci);
       return lokal;
     });
     for (const key of Object.keys(summary)) summary[key] += hitung[key];

@@ -422,6 +422,41 @@ describe('apply', () => {
         expect(await counts(database)).toEqual(before);
     });
 
+    it('G-LOCK per transaksi batch: semua surat_keluar → semua surat_masuk → semua rangkaian_surat, id menaik [P5-G-4]', async () => {
+        const RANK: Record<string, number> = { surat_keluar: 0, surat_masuk: 1, rangkaian_surat: 2 };
+        const transaksi: Array<Array<{ tabel: string; params: unknown[] | undefined }>> = [];
+        let aktif: Array<{ tabel: string; params: unknown[] | undefined }> | null = null;
+        const client = {
+            query: async (text: string, params?: unknown[]) => {
+                if (/^\s*BEGIN\s*$/.test(text)) { aktif = []; transaksi.push(aktif); }
+                if (/^\s*(COMMIT|ROLLBACK)\s*$/.test(text)) aktif = null;
+                const kunci = /FROM\s+(surat_keluar|surat_masuk|rangkaian_surat)\b[\s\S]*FOR UPDATE/.exec(text);
+                if (aktif && kunci) aktif.push({ tabel: kunci[1], params });
+                return database.query(text, params);
+            },
+        };
+        const plan = await buildPlan(database, { batas: BATAS_UJI });
+        const sudahAda = (await database.query<{ n: number }>(
+            `SELECT count(*)::int AS n FROM rangkaian_surat WHERE asal = 'data_lama'`)).rows[0].n > 0;
+        await applyPlan(client, { approvedSha256: plan.sha256, batas: BATAS_UJI });
+        const batch = transaksi.filter((kunci) => kunci.length > 0);
+        expect(batch.length).toBeGreaterThan(0);
+        for (const kunci of batch) {
+            // Satu pernyataan kunci per tabel per transaksi, dalam urutan SK → SM → R.
+            const urutan = kunci.map((entry) => RANK[entry.tabel]);
+            expect(urutan).toEqual([...urutan].sort((a, b) => a - b));
+            expect(new Set(kunci.map((entry) => entry.tabel)).size).toBe(kunci.length);
+            for (const entry of kunci) {
+                const ids = entry.params?.[0] as string[];
+                expect(Array.isArray(ids)).toBe(true);
+                expect(ids).toEqual([...ids].sort());
+            }
+        }
+        // Batch memuat S1 (balasan K1/K2); dalam urutan C-12 tiga rangkaian data lamanya sudah ada.
+        expect(batch[0].map((entry) => entry.tabel))
+            .toEqual(sudahAda ? ['surat_keluar', 'surat_masuk', 'rangkaian_surat'] : ['surat_keluar', 'surat_masuk']);
+    });
+
     it('tidak menghidupkan kembali peserta yang sudah dicabut', async () => {
         await database.exec(`UPDATE rangkaian_peserta SET berakhir_at = now(),
             berakhir_by = '00000000-0000-4000-8000-0000000005a1', alasan_berakhir = 'Bukan penerima disposisi sebenarnya'
