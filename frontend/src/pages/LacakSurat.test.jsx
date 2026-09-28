@@ -13,6 +13,7 @@ vi.mock('@/components/surat/AlurSuratPanel', async () => {
     return { default: Panel, AlurSuratPanel: Panel }
 })
 vi.mock('@/components/lacak/BerkasRangkaianTab', () => ({ BerkasRangkaianTab: () => <p>Isi tab berkas</p> }))
+vi.mock('@/components/lacak/PerluDilengkapiTab', () => ({ PerluDilengkapiTab: () => <p>Isi tab perlu dilengkapi</p> }))
 import LacakSurat from './LacakSurat'
 
 const R1 = '11111111-1111-4111-8111-111111111111'
@@ -218,5 +219,19 @@ describe('Halaman Lacak Surat', () => {
         mount('/surat/lacak?tab=berkas')
         expect(screen.getByText('Isi tab berkas')).toBeVisible()
         expect(screen.getByRole('tab', { name: 'Berkas Rangkaian' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('tab Perlu Dilengkapi lewat ?tab=perlu-dilengkapi tanpa memicu pencarian', async () => {
+        mount('/surat/lacak?tab=perlu-dilengkapi')
+        expect(screen.getByText('Isi tab perlu dilengkapi')).toBeVisible()
+        expect(screen.getByRole('tab', { name: 'Perlu Dilengkapi' })).toHaveAttribute('aria-selected', 'true')
+        await maju(1000)
+        expect(mocks.lacak).not.toHaveBeenCalled()
+    })
+
+    it('nilai tab yang tidak dikenal jatuh ke tab Lacak', () => {
+        mount('/surat/lacak?tab=lainnya')
+        expect(screen.getByRole('tab', { name: 'Lacak' })).toHaveAttribute('aria-selected', 'true')
+        expect(screen.queryByText('Isi tab perlu dilengkapi')).toBeNull()
     })
 })

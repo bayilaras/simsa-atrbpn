@@ -8,17 +8,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import AlurSuratPanel from '@/components/surat/AlurSuratPanel'
 import { LacakKelompokCard } from '@/components/lacak/LacakKelompokCard'
 import { BerkasRangkaianTab } from '@/components/lacak/BerkasRangkaianTab'
+import { PerluDilengkapiTab } from '@/components/lacak/PerluDilengkapiTab'
 import { useLacakSearch } from '@/hooks/use-lacak-search'
 import { LACAK_MAX_CHARS, LACAK_MIN_CHARS } from '@/lib/lacak-cache'
 
 const TAHUN_SEKARANG = new Date().getFullYear()
 const PILIHAN_TAHUN = Array.from({ length: 10 }, (_, index) => String(TAHUN_SEKARANG - index))
+const TAB_LAIN = ['berkas', 'perlu-dilengkapi']
 
 export default function LacakSurat() {
     const [searchParams, setSearchParams] = useSearchParams()
     const urlQ = searchParams.get('q') ?? ''
     const rangkaianParam = searchParams.get('rangkaian') ?? ''
-    const tab = searchParams.get('tab') === 'berkas' ? 'berkas' : 'lacak'
+    const tabParam = searchParams.get('tab')
+    const tab = TAB_LAIN.includes(tabParam) ? tabParam : 'lacak'
     const [input, setInput] = useState(urlQ)
     const [urlQTerakhir, setUrlQTerakhir] = useState(urlQ)
     const [tahun, setTahun] = useState('')
@@ -108,7 +111,7 @@ export default function LacakSurat() {
     if (rangkaianParam && indeksParam === -1) itemHasil.unshift(itemRangkaianParam(null))
 
     const ubahTab = value => ubahParam(next => {
-        if (value === 'berkas') next.set('tab', 'berkas')
+        if (TAB_LAIN.includes(value)) next.set('tab', value)
         else next.delete('tab')
     })
 
@@ -123,6 +126,7 @@ export default function LacakSurat() {
                 <TabsList>
                     <TabsTrigger value="lacak">Lacak</TabsTrigger>
                     <TabsTrigger value="berkas">Berkas Rangkaian</TabsTrigger>
+                    <TabsTrigger value="perlu-dilengkapi">Perlu Dilengkapi</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="lacak" className="space-y-4">
@@ -180,6 +184,9 @@ export default function LacakSurat() {
 
                 <TabsContent value="berkas">
                     <BerkasRangkaianTab />
+                </TabsContent>
+                <TabsContent value="perlu-dilengkapi">
+                    <PerluDilengkapiTab />
                 </TabsContent>
             </Tabs>
         </div>
