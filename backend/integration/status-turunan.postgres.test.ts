@@ -17,6 +17,7 @@ const { distributionService } = await import('../src/services/distribution.servi
 const { approvalService } = await import('../src/services/approval.service.js');
 const { rangkaianStatusService } = await import('../src/services/rangkaian/rangkaian-status.service.js');
 const { rangkaianService, recomputeForSuratKeluar, recomputeRangkaian, recomputeSuratMasuk } = await import('../src/services/rangkaian/deps.js');
+const { hasPostgresErrorCode } = await import('../src/utils/postgres-errors.js');
 
 // Tanpa TEST_POSTGRES_URL suite ini dilewati bersih (tidak ada Postgres lokal);
 // CI menjalankannya pada PG16/17/18.
@@ -171,17 +172,35 @@ describe.skipIf(!adaPostgres)('status turunan monoton dan diaudit', () => {
         const sm = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-58/2026' });
         const balasan = await buatKeluar({ tindakLanjut: { jenis: 'surat_masuk', suratId: sm, jenisRelasi: 'balasan' } });
         await ajukanPersetujuan(balasan.id);
-        const hasil = await Promise.allSettled([
-            approvalService.approve(balasan.id, penyetuju as any, 'sesditjen'),
-            distributionService.distribute({ suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', sentBy: tu.id }, audit()),
-        ]);
-        for (const r of hasil) {
-            if (r.status === 'rejected') {
-                const kode = (r.reason as any)?.code ?? (r.reason as any)?.cause?.code;
-                expect(kode).not.toBe('40P01');
+        // Kedua layanan dibungkus denganRetryDeadlock, yang menelan 40P01/40001 lalu
+        // mengulang; status akhir saja tidak dapat membuktikan G-LOCK. Maka setiap
+        // percobaan db.transaction diamati langsung: tidak boleh ada yang gagal
+        // karena deadlock/serialisasi, dan tiap panggilan layanan tepat satu
+        // transaksi (retry apa pun menambah hitungan).
+        const transaksiAsli = h.db.transaction.bind(h.db);
+        const gagalKonkurensi: string[] = [];
+        let jumlahTransaksi = 0;
+        const spy = vi.spyOn(h.db, 'transaction').mockImplementation(async (...args: any[]) => {
+            jumlahTransaksi += 1;
+            try {
+                return await (transaksiAsli as any)(...args);
+            } catch (error) {
+                for (const kode of ['40P01', '40001']) if (hasPostgresErrorCode(error, kode)) gagalKonkurensi.push(kode);
+                throw error;
             }
-            expect(r.status).toBe('fulfilled');
+        });
+        let hasil: PromiseSettledResult<unknown>[];
+        try {
+            hasil = await Promise.allSettled([
+                approvalService.approve(balasan.id, penyetuju as any, 'sesditjen'),
+                distributionService.distribute({ suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', sentBy: tu.id }, audit()),
+            ]);
+        } finally {
+            spy.mockRestore();
         }
+        expect(gagalKonkurensi).toEqual([]);
+        expect(jumlahTransaksi).toBe(2);
+        expect(hasil.map(r => r.status)).toEqual(['fulfilled', 'fulfilled']);
         expect(await statusSurat(sm)).toBe('sudah_dibalas');
         // Disposisi baru masih terbuka → rangkaian aktif, apa pun urutan commit-nya.
         expect(await statusRangkaianSurat('surat_masuk_id', sm)).toBe('aktif');
