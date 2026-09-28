@@ -106,7 +106,7 @@
 - `backend/src/app.ts` memasang `rangkaianDaftarRoutes` tepat sebelum `app.use('/api/rangkaian', rangkaianRoutes)` milik P2/P3.
 - `backend/src/middlewares/demo-access.middleware.ts` mendapat allowlist `GET /rangkaian`.
 - D7:
-  - `backend/src/services/rangkaian-daftar.service.ts` (Task 5) mengekspor `lingkupRangkaianSql(ctx, alias)` agar lingkup rangkaian tetap dirakit di satu tempat (Task 16).
+  - `backend/src/services/rangkaian-daftar.service.ts` (Task 16) mengekspor `lingkupRangkaianSql(ctx, alias)` agar lingkup rangkaian tetap dirakit di satu tempat (Task 16).
   - `backend/src/validators/schemas.ts` mendapat `perluDilengkapiQuerySchema`, `ringkasanPerluDilengkapiQuerySchema`, dan `tandaiInisiatifSchema` (Task 18).
   - `backend/src/app.ts` memasang `rangkaianPerluDilengkapiRoutes` tepat setelah `rangkaianDaftarRoutes` (Task 18).
   - `demo-access.middleware.ts` mendapat allowlist `GET /rangkaian/perlu-dilengkapi(/ringkasan)` dan `POST /rangkaian/surat-keluar/:uuid/tandai-inisiatif` (Task 18).

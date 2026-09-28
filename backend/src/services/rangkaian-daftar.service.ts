@@ -2,7 +2,8 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../config/database.js';
 import {
-    barisDari, cocokUnitRekamanSql, dalamCakupanPengawasSql, jangkauanSql, kecocokanUnitRekaman, resolveKonteksBaca,
+    aliasAman, barisDari, cocokUnitRekamanSql, dalamCakupanPengawasSql, jangkauanSql, kecocokanUnitRekaman, resolveKonteksBaca,
+    type KonteksBaca,
 } from './access/visibility-spec.js';
 import { readRefKey, recordAccessService, type ReadAccessResult, type ReadRef } from './record-access.service.js';
 import { judulRangkaianTampil } from './rangkaian-judul.js';
@@ -48,13 +49,33 @@ type BarisRangkaian = {
  *   staff/auditor = unitnya sendiri, tanpa jangkauan lintas unit — D5);
  * - pengawas: FULL_ADMIN + unit efektif is_unit_pengawas, atas pencatat ditjen/sesditjen/dir_*;
  * - peserta: unit efektif ∈ jangkauan(R) (§4.5; termasuk rangkaian_peserta bila flag data lama menyala).
+ *
+ * Lingkup rangkaian (pencatat ∨ pengawas ∨ jangkauan §4.5) untuk alias tabel
+ * rangkaian_surat; dipakai juga D7 (Task 16).
+ *
+ * Alias divalidasi dengan `aliasAman` yang diekspor dari `visibility-spec.ts`
+ * (bukan regex sendiri) supaya alias ini tunduk pada aturan yang sama dengan
+ * `visibleSql`/`jangkauanRekamanSql`/`klasifikasiRekamanSql`: menolak
+ * identifier bukan alias sederhana DAN menolak alias berprefiks `jk_` atau
+ * bernama `ra`/`g`/`j` (dicadangkan untuk subkueri internal
+ * jangkauanUnitsSql/jangkauanSql/grantAktifSql/jangkauanRekamanSql). `alias`
+ * di sini SELALU dikualifikasi (`${alias}.unit_pencatat_id`, `${alias}.id`)
+ * sebelum disisipkan sebagai SQLWrapper mentah ke `jangkauanSql` — jangan
+ * mengubahnya menjadi kolom telanjang, karena `jangkauanSql`/
+ * `jangkauanUnitsSql` tidak memvalidasi argumen `rangkaianId` itu sendiri
+ * (lihat JSDoc-nya di `visibility-spec.ts`); kolom telanjang berisiko diam-diam
+ * terikat ke tabel internal fungsi-fungsi itu.
  */
-async function lingkupSql(user: PenggunaDaftar): Promise<SQL> {
-    const ctx = await resolveKonteksBaca(user, db);
-    const bagian: SQL[] = [cocokUnitRekamanSql(kecocokanUnitRekaman(user), sql.raw('r.unit_pencatat_id'))];
-    if (ctx.pengawas) bagian.push(dalamCakupanPengawasSql(sql.raw('r.unit_pencatat_id')));
-    if (ctx.unitJangkauan) bagian.push(jangkauanSql(sql.raw('r.id'), ctx.unitJangkauan, ctx.disposisiLamaRead));
+export function lingkupRangkaianSql(ctx: KonteksBaca, alias = 'r'): SQL {
+    const a = aliasAman(alias);
+    const bagian: SQL[] = [cocokUnitRekamanSql(kecocokanUnitRekaman(ctx.user), sql.raw(`${a}.unit_pencatat_id`))];
+    if (ctx.pengawas) bagian.push(dalamCakupanPengawasSql(sql.raw(`${a}.unit_pencatat_id`)));
+    if (ctx.unitJangkauan) bagian.push(jangkauanSql(sql.raw(`${a}.id`), ctx.unitJangkauan, ctx.disposisiLamaRead));
     return sql`(${sql.join(bagian, sql` OR `)})`;
+}
+
+async function lingkupSql(user: PenggunaDaftar): Promise<SQL> {
+    return lingkupRangkaianSql(await resolveKonteksBaca(user, db));
 }
 
 export const rangkaianDaftarService = {

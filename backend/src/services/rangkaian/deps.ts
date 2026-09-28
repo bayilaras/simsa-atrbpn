@@ -26,6 +26,7 @@ import {
     dalamCakupanPengawas,
     isDisposisiLamaReadEnabled,
     resolveKonteksBaca,
+    type KonteksBaca,
 } from '../access/visibility-spec.js';
 import { rowsOf, uuidArraySql } from './sql-rows.js';
 import { isFullAdmin } from './roles.js';
@@ -90,18 +91,35 @@ export async function isPengawas(user: RecordUser | null | undefined, executor: 
 }
 
 /**
+ * G-PENGAWAS, bentuk murni: super_admin, atau FULL_ADMIN yang unit efektifnya
+ * pengawas (`ctx.pengawas`, sudah di-resolve) dan unit rekamannya (atau
+ * `unit_pencatat_id` rangkaian) dalam cakupan — identik dengan tier baca P2.
+ * Dipakai D7 (P4 Task 16) per baris tanpa kueri tambahan; satu definisi
+ * dengan `pengawasUntukUnit`. Tutup Disposisi TIDAK memakainya (CTRL-1).
+ */
+export function pengawasUntukKonteks(
+    user: RecordUser | null | undefined,
+    ctx: Pick<KonteksBaca, 'pengawas'>,
+    unitKerjaId: string | null | undefined,
+): boolean {
+    if (user?.role === 'super_admin') return true;
+    return isFullAdmin(user) && ctx.pengawas && dalamCakupanPengawas(unitKerjaId);
+}
+
+/**
  * G-PENGAWAS: super_admin, atau FULL_ADMIN pengawas yang unit rekamannya (atau
  * `unit_pencatat_id` rangkaian) dalam cakupan — identik dengan tier baca P2.
  * Tutup Disposisi TIDAK memakai jalan pintas super_admin ini (CTRL-1).
+ * Kueri unit pengawas hanya dijalankan bila hasilnya masih menentukan.
  */
 export async function pengawasUntukUnit(
     user: RecordUser | null | undefined,
     unitKerjaId: string | null | undefined,
     executor: Executor = db,
 ): Promise<boolean> {
+    if (!pengawasUntukKonteks(user, { pengawas: true }, unitKerjaId)) return false;
     if (user?.role === 'super_admin') return true;
-    if (!isFullAdmin(user) || !dalamCakupanPengawas(unitKerjaId)) return false;
-    return isPengawas(user, executor);
+    return pengawasUntukKonteks(user, await resolveKonteksBaca(user ?? undefined, executor), unitKerjaId);
 }
 
 /** Jangkauan §4.5 (dihitung langsung; peserta data lama hanya bila flag P5 menyala). */

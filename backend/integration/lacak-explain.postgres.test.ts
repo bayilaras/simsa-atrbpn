@@ -184,8 +184,33 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
         }
     }, 120_000);
 
-    // Catatan: uji "waktu ringkasan Perlu Dilengkapi (pengawas TU, super_admin)"
-    // [amandemen item 2, baris terakhir] ditunda: perluDilengkapiService belum
-    // ada pada basis P4 saat ini (Task 16 belum dijalankan). Akan ditambahkan
-    // sebagai sunting susulan berkas ini pada Task 16 Step 4, sesuai amandemen.
+    // [P4-T7-2] (ditambahkan Task 16, amandemen item 12) Waktu ringkasan
+    // Perlu Dilengkapi (D7) untuk pengawas TU dan super_admin: enam cabang
+    // UNION ALL, dua visibleSql per baris, di bawah statement_timeout lokal
+    // 2 s dan dipoll tiap 60 s. Angka p50/p95 selalu dicetak sebagai masukan
+    // gerbang rilis. Tanpa LACAK_PERF=1 kegagalan (mis. statement timeout di
+    // mesin CI bersama) hanya dicetak; dengan LACAK_PERF=1 kegagalan membuat
+    // uji merah.
+    it('waktu perluDilengkapiService.ringkasan untuk pengawas TU dan super_admin', async () => {
+        const { perluDilengkapiService } = await import('../src/services/perlu-dilengkapi.service.js');
+        const pengguna: Array<[string, TestUser]> = [['sesditjen (pengawas)', sesditjen], ['super_admin', superAdmin]];
+        for (const [peran, user] of pengguna) {
+            try {
+                const awal = await perluDilengkapiService.ringkasan(user, { tampilkanDataLama: false });
+                const durasi: number[] = [];
+                for (let i = 0; i < 10; i += 1) {
+                    const mulai = performance.now();
+                    await perluDilengkapiService.ringkasan(user, { tampilkanDataLama: false });
+                    durasi.push(performance.now() - mulai);
+                }
+                durasi.sort((a, b) => a - b);
+                const p50 = durasi[Math.ceil(0.5 * durasi.length) - 1];
+                const p95 = durasi[Math.ceil(0.95 * durasi.length) - 1];
+                console.info(`[perlu-dilengkapi-ringkasan] user=${peran} total=${awal.total} p50=${p50.toFixed(1)}ms p95=${p95.toFixed(1)}ms`);
+            } catch (error) {
+                console.warn(`[perlu-dilengkapi-ringkasan] user=${peran} GAGAL: ${(error as Error).message}`);
+                if (PERF) throw error;
+            }
+        }
+    }, 300_000);
 });
