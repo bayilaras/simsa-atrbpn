@@ -3,8 +3,10 @@ import type { PGlite } from '@electric-sql/pglite';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { drizzle } from 'drizzle-orm/pglite';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+    applyPlan,
     assertPemetaanSah,
     BASE_CTE,
     buildPlan,
@@ -12,7 +14,10 @@ import {
     LABEL_NORM_SPASI_PATTERN,
     LABEL_SEED,
     labelNormSql,
+    isiPengolahPlan,
     normalizeLabel,
+    parseArgs,
+    pastikanRoleRuntime,
     resolveBatasDataLama,
     resolveLabel,
     seedParams,
@@ -20,7 +25,14 @@ import {
     writePlanFiles,
 } from '../../scripts/backfill-rangkaian-lama.mjs';
 import { PG_TRIM_PATTERN, PG_SEPARATOR_PATTERN } from '../services/access/visibility-spec.js';
-import { createRangkaianP5Database, seedRangkaianBase } from './helpers/rangkaian-p5-pglite.js';
+import { createRangkaianP5Database, P5_IDS, seedRangkaianBase } from './helpers/rangkaian-p5-pglite.js';
+
+// Hanya test gabung (Task 5 amandemen butir 7) yang memakai layanan P1 lewat Drizzle di atas PGlite.
+const holder = vi.hoisted(() => ({ db: null as any }));
+vi.mock('../config/database.js', () => ({
+    get db() { return holder.db; },
+    pool: { end: async () => {} },
+}));
 
 // Batas data lama tetap dipakai semua test dry-run agar SHA deterministik (P5-T4-1).
 const BATAS_UJI = '2100-01-01T00:00:00.000Z';
@@ -327,5 +339,251 @@ describe('dry-run', () => {
         const awal = await buildPlan(database, { batas: '2000-01-01T00:00:00.000Z' });
         expect(awal.total).toMatchObject({ surat_target: 0, rangkaian_baru: 0, peserta_baru: 0 });
         expect(awal.sha256).not.toBe((await buildPlan(database, { batas: BATAS_UJI })).sha256);
+    });
+});
+
+// Urutan test di describe ini MENGIKAT (C-12): tiap test memakai hasil apply sebelumnya, dan test
+// "sudah diberkaskan" wajib terakhir karena memberkaskan rangkaian S1.
+describe('apply', () => {
+    const TARGET_HIDUP = '00000000-0000-4000-8000-0000000003a1';
+    const SM_HIDUP = '00000000-0000-4000-8000-0000000001a1';
+    const induk = async (suratMasukId: string) => (await database.query<{ id: string }>(
+        `SELECT rangkaian_id AS id FROM rangkaian_anggota WHERE surat_masuk_id = $1`, [suratMasukId])).rows[0]?.id;
+
+    beforeAll(async () => {
+        // -t "apply" saja melewati beforeAll describe('dry-run'); fixture legacy tetap dipasang sekali.
+        const { rows } = await database.query(`SELECT 1 FROM surat_masuk WHERE id = '${S(1)}'`);
+        if (rows.length === 0) await seedLegacy(database);
+    }, 180_000);
+
+    it('menolak tanpa SHA, dengan SHA berbeda, atau bila langkah 1 belum tuntas', async () => {
+        await expect(applyPlan(database, { approvedSha256: null, batas: BATAS_UJI })).rejects.toThrow(/--approved-sha256/);
+        await expect(applyPlan(database, { approvedSha256: 'f'.repeat(64), batas: BATAS_UJI }))
+            .rejects.toThrow(/Rencana berubah sejak sign-off/);
+        await expect(applyPlan(database, { approvedSha256: 'a'.repeat(64) })).rejects.toThrow(/batas/);
+        const stepOneIncomplete = { query: async () => ({ rows: [{ n: 3 }] }) };
+        await expect(applyPlan(stepOneIncomplete, { approvedSha256: 'a'.repeat(64), batas: BATAS_UJI }))
+            .rejects.toThrow(/Backfill langkah 1 belum tuntas: 3 baris/);
+        expect((await database.query(`SELECT count(*)::int AS n FROM rangkaian_surat WHERE asal = 'data_lama'`)).rows[0])
+            .toEqual({ n: 0 });
+    });
+
+    it('menerapkan rencana yang disetujui tanpa menulis ulang status surat masuk', async () => {
+        const statusBefore = (await database.query('SELECT id, status FROM surat_masuk ORDER BY id')).rows;
+        const plan = await buildPlan(database, { batas: BATAS_UJI });
+        const summary = await applyPlan(database, { approvedSha256: plan.sha256, batas: BATAS_UJI });
+        expect(summary).toEqual({
+            suratDiproses: 3, rangkaianBaru: 3, pesertaBaru: 4, balasanDitautkan: 1,
+            balasanDilewatiDiberkaskan: 0, pesertaDilewatiDiberkaskan: 0,
+        });
+        expect((await database.query('SELECT id, status FROM surat_masuk ORDER BY id')).rows).toEqual(statusBefore);
+
+        const rangkaian = (await database.query<any>(`
+            SELECT ra.surat_masuk_id, rs.asal, rs.status, rs.selesai_manual, rs.unit_pencatat_id, rs.unit_pengolah_id, rs.judul, ra.sumber
+              FROM rangkaian_surat rs JOIN rangkaian_anggota ra ON ra.rangkaian_id = rs.id AND ra.peran = 'induk'
+             WHERE rs.asal = 'data_lama' ORDER BY ra.surat_masuk_id`)).rows;
+        expect(rangkaian).toEqual([
+            { surat_masuk_id: S(1), asal: 'data_lama', status: 'selesai', selesai_manual: false, unit_pencatat_id: 'ditjen', unit_pengolah_id: null, judul: 'Pengadaan tanah jalan tol', sumber: 'data_lama' },
+            { surat_masuk_id: S(2), asal: 'data_lama', status: 'selesai', selesai_manual: false, unit_pencatat_id: 'ditjen', unit_pengolah_id: null, judul: 'ND-2/2023', sumber: 'data_lama' },
+            { surat_masuk_id: S(3), asal: 'data_lama', status: 'selesai', selesai_manual: false, unit_pencatat_id: 'ditjen', unit_pengolah_id: null, judul: '(tanpa perihal)', sumber: 'data_lama' },
+        ]);
+        const peserta = (await database.query<any>(`
+            SELECT ra.surat_masuk_id, rp.unit_kerja_id, rp.label_asal FROM rangkaian_peserta rp
+              JOIN rangkaian_anggota ra ON ra.rangkaian_id = rp.rangkaian_id AND ra.peran = 'induk'
+             ORDER BY ra.surat_masuk_id, rp.unit_kerja_id`)).rows;
+        expect(peserta.map((row) => `${row.surat_masuk_id.slice(-2)}:${row.unit_kerja_id}`))
+            .toEqual(['01:dir_bppt', '02:dir_ktpp', '02:dir_ptep', '03:sesditjen']);
+        expect((await database.query(`SELECT status, unit_pengolah_id FROM rangkaian_surat WHERE id = '${R8}'`)).rows)
+            .toEqual([{ status: 'aktif', unit_pengolah_id: null }]);
+        expect((await database.query(`SELECT jenis_relasi FROM rangkaian_relasi`)).rows).toEqual([{ jenis_relasi: 'balasan' }]);
+        expect((await database.query(`SELECT count(*)::int AS n FROM rangkaian_anggota WHERE surat_keluar_id IN ('${K(2)}','${K(3)}','${K(4)}')`)).rows[0]).toEqual({ n: 0 });
+        expect((await database.query(`SELECT label_norm, unit_kerja_id FROM disposisi_label_unit WHERE label_norm LIKE 'kabag%' ORDER BY 1`)).rows)
+            .toEqual([
+                { label_norm: 'kabag kepegawaian keuangan dan umum', unit_kerja_id: null },
+                { label_norm: 'kabag program dan hukum', unit_kerja_id: null },
+            ]);
+        expect((await database.query<{ n: number }>(`SELECT count(*)::int AS n FROM audit_log WHERE user_email = 'system:backfill-rangkaian-lama'`)).rows[0].n)
+            .toBeGreaterThanOrEqual(3 + 4 + 1);
+        // [P5-T5-1] pengolah turunan label tidak ditulis; hanya dicatat sebagai calon di audit.
+        const { rows: [auditS1] } = await database.query<{ changes: any }>(
+            `SELECT changes FROM audit_log WHERE user_email = 'system:backfill-rangkaian-lama' AND action = 'create'
+                AND entity_type = 'rangkaian_surat' AND changes->>'suratMasukId' = '${S(1)}'`);
+        expect(auditS1.changes).toMatchObject({ unitPengolahId: null, calonUnitPengolah: 'dir_bppt' });
+    });
+
+    it('idempoten: dijalankan dua kali, jumlah baris identik', async () => {
+        const before = await counts(database);
+        const plan = await buildPlan(database, { batas: BATAS_UJI });
+        expect(plan.total).toMatchObject({ rangkaian_baru: 0, peserta_baru: 0, balasan_akan_ditautkan: 0 });
+        expect(await applyPlan(database, { approvedSha256: plan.sha256, batas: BATAS_UJI })).toEqual({
+            suratDiproses: 3, rangkaianBaru: 0, pesertaBaru: 0, balasanDitautkan: 0,
+            balasanDilewatiDiberkaskan: 0, pesertaDilewatiDiberkaskan: 0,
+        });
+        expect(await counts(database)).toEqual(before);
+    });
+
+    it('tidak menghidupkan kembali peserta yang sudah dicabut', async () => {
+        await database.exec(`UPDATE rangkaian_peserta SET berakhir_at = now(),
+            berakhir_by = '00000000-0000-4000-8000-0000000005a1', alasan_berakhir = 'Bukan penerima disposisi sebenarnya'
+            WHERE unit_kerja_id = 'dir_ptep'`);
+        const plan = await buildPlan(database, { batas: BATAS_UJI });
+        await applyPlan(database, { approvedSha256: plan.sha256, batas: BATAS_UJI });
+        expect((await database.query(`SELECT count(*)::int AS n, bool_and(berakhir_at IS NOT NULL) AS dicabut
+            FROM rangkaian_peserta WHERE unit_kerja_id = 'dir_ptep'`)).rows).toEqual([{ n: 1, dicabut: true }]);
+    });
+
+    it('batch deadlock/serialization diulang; penghitung hanya dari transaksi yang commit', async () => {
+        let gagal = 0;
+        const client = {
+            query: async (text: string, params?: unknown[]) => {
+                if (gagal === 0 && /FROM surat_keluar sk\s+WHERE sk\.balasan_untuk/.test(text)) {
+                    gagal += 1;
+                    throw Object.assign(new Error('deadlock detected'), { code: '40P01' });
+                }
+                return database.query(text, params);
+            },
+        };
+        const before = await counts(database);
+        const plan = await buildPlan(database, { batas: BATAS_UJI });
+        expect(await applyPlan(client, { approvedSha256: plan.sha256, batas: BATAS_UJI }))
+            .toMatchObject({ suratDiproses: 3, rangkaianBaru: 0, pesertaBaru: 0 });
+        expect(gagal).toBe(1);
+        expect(await counts(database)).toEqual(before);
+    });
+
+    it('parseArgs hanya menerima argumen yang dikenal', () => {
+        expect(parseArgs(['--apply', `--approved-sha256=${'A'.repeat(64)}`, '--out=laporan-x']))
+            .toMatchObject({ apply: true, approvedSha256: 'a'.repeat(64) });
+        expect(parseArgs([])).toMatchObject({ apply: false, isiPengolah: false, approvedSha256: null, outDir: null });
+        expect(parseArgs(['--isi-pengolah'])).toMatchObject({ apply: false, isiPengolah: true });
+        expect(() => parseArgs(['--force'])).toThrow(/Argumen tidak dikenal/);
+        expect(() => parseArgs([`--approved-sha256=${'a'.repeat(64)}`])).toThrow(/hanya bersama --apply/);
+    });
+
+    it('mode tulis hanya sebagai role runtime simsa_api kecuali dikecualikan eksplisit (C-1)', () => {
+        expect(() => pastikanRoleRuntime({ db_user: 'simsa_maintenance' }, { apply: true, env: {} }))
+            .toThrow(/simsa_api/);
+        expect(() => pastikanRoleRuntime({ db_user: 'simsa_api' }, { apply: true, env: {} })).not.toThrow();
+        expect(() => pastikanRoleRuntime({ db_user: 'postgres' }, { apply: false, env: {} })).not.toThrow();
+        expect(() => pastikanRoleRuntime({ db_user: 'postgres' }, { apply: true, env: { ALLOW_NON_RUNTIME_ROLE: '1' } })).not.toThrow();
+    });
+
+    describe('mode isi pengolah [P5-C-2]', () => {
+        it('rencana isi-pengolah terikat mode dan hanya memuat rangkaian data lama selesai tanpa pengolah', async () => {
+            const biasa = await buildPlan(database, { batas: BATAS_UJI });
+            const isi = await buildPlan(database, { batas: BATAS_UJI, isiPengolah: true });
+            expect(isi.sha256).not.toBe(biasa.sha256);
+            expect(isi.calonPengolah).toEqual([
+                { surat_masuk_id: S(1), nomor_surat: 'B-1/2023', calon_unit_pengolah: 'dir_bppt', rangkaian_id: await induk(S(1)) },
+            ]);
+            expect(isi.total).toMatchObject({ pengolah_akan_diisi: 1 });
+            await expect(isiPengolahPlan(database, { approvedSha256: biasa.sha256, batas: BATAS_UJI }))
+                .rejects.toThrow(/Rencana berubah sejak sign-off/);
+            await expect(isiPengolahPlan(database, { approvedSha256: null, batas: BATAS_UJI }))
+                .rejects.toThrow(/--approved-sha256/);
+        });
+
+        it('baris yang berubah setelah sign-off dilewati di bawah kunci (tidak ditimpa)', async () => {
+            const rs1 = await induk(S(1));
+            const plan = await buildPlan(database, { batas: BATAS_UJI, isiPengolah: true });
+            let disela = false;
+            const client = {
+                query: async (text: string, params?: unknown[]) => {
+                    if (!disela && text === 'BEGIN') {
+                        disela = true;
+                        await database.query(`UPDATE rangkaian_surat SET unit_pengolah_id = 'dir_ktpp' WHERE id = $1`, [rs1]);
+                    }
+                    return database.query(text, params);
+                },
+            };
+            try {
+                expect(await isiPengolahPlan(client, { approvedSha256: plan.sha256, batas: BATAS_UJI }))
+                    .toEqual({ pengolahDiisi: 0, pengolahDilewati: 1 });
+                expect((await database.query(`SELECT unit_pengolah_id FROM rangkaian_surat WHERE id = $1`, [rs1])).rows)
+                    .toEqual([{ unit_pengolah_id: 'dir_ktpp' }]);
+            } finally {
+                await database.query(`UPDATE rangkaian_surat SET unit_pengolah_id = NULL WHERE id = $1`, [rs1]);
+            }
+        });
+
+        it('S1 mendapat dir_bppt dengan audit; run kedua tidak mengubah apa pun', async () => {
+            const rs1 = await induk(S(1));
+            const plan = await buildPlan(database, { batas: BATAS_UJI, isiPengolah: true });
+            expect(await isiPengolahPlan(database, { approvedSha256: plan.sha256, batas: BATAS_UJI }))
+                .toEqual({ pengolahDiisi: 1, pengolahDilewati: 0 });
+            expect((await database.query(`SELECT unit_pengolah_id, status FROM rangkaian_surat WHERE id = $1`, [rs1])).rows)
+                .toEqual([{ unit_pengolah_id: 'dir_bppt', status: 'selesai' }]);
+            const { rows: audit } = await database.query<{ action: string; changes: any }>(
+                `SELECT action, changes FROM audit_log WHERE entity_id = $1 AND changes ? 'aksesBaru'`, [rs1]);
+            expect(audit).toEqual([{
+                action: 'update',
+                changes: {
+                    before: { unitPengolahId: null }, after: { unitPengolahId: 'dir_bppt' },
+                    sumber: 'backfill-rangkaian-lama', aksesBaru: ['dir_bppt'], suratMasukId: S(1),
+                },
+            }]);
+
+            const before = await counts(database);
+            const lagi = await buildPlan(database, { batas: BATAS_UJI, isiPengolah: true });
+            expect(lagi.calonPengolah).toEqual([]);
+            expect(await isiPengolahPlan(database, { approvedSha256: lagi.sha256, batas: BATAS_UJI }))
+                .toEqual({ pengolahDiisi: 0, pengolahDilewati: 0 });
+            expect(await counts(database)).toEqual(before);
+        });
+    });
+
+    it('gabung rangkaian data lama ke rangkaian hidup: target tetap aktif (gerbang rilis g) dan peserta dicabut tidak hidup lagi', async () => {
+        holder.db = drizzle(database);
+        const { rangkaianService } = await import('../services/rangkaian.service.js');
+        await database.exec(`
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal, sifat_surat, status)
+            VALUES ('${SM_HIDUP}', 'ditjen', 301, 2026, 'B-301/2026', 'Rangkaian hidup', 'Biasa', 'belum_dibalas');
+            INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun, selesai_at)
+            VALUES ('${TARGET_HIDUP}', 'RS-2026-900301', 'surat_masuk', 'selesai', 'ditjen', 'Rangkaian hidup', 2026, now());
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran)
+            VALUES ('${TARGET_HIDUP}', '${SM_HIDUP}', 'ditjen', 'induk');
+            INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id)
+            VALUES ('${SM_HIDUP}', 'ditjen', 'dir_ktpp', 'processed', '${TARGET_HIDUP}');`);
+        const rs2 = await induk(S(2));
+        const actor = { userId: P5_IDS.superA, userEmail: 'super-a@example.test' };
+        const hasil = await holder.db.transaction((tx: any) => rangkaianService.gabung(
+            tx, { targetId: TARGET_HIDUP, sumberId: rs2, alasan: 'Uji gabung data lama ke rangkaian hidup' }, actor));
+        expect(hasil.targetStatus).toBe('aktif');
+        const [ulang] = await holder.db.transaction((tx: any) => rangkaianService.recomputeStatus(tx, [TARGET_HIDUP], actor));
+        expect(ulang).toMatchObject({ after: 'aktif', changed: false });
+        // Fakta P1 surat_masuk_belum_ditangani menghitung anggota SM sumber='data_lama' (gerbang rilis g).
+        const { rows: [fakta] } = await database.query<{ n: number }>(`
+            SELECT count(*)::int AS n FROM rangkaian_anggota a JOIN surat_masuk sm ON sm.id = a.surat_masuk_id
+             WHERE a.rangkaian_id = '${TARGET_HIDUP}' AND a.sumber = 'data_lama' AND sm.is_deleted IS NOT TRUE
+               AND NOT EXISTS (SELECT 1 FROM surat_distributions d WHERE d.rangkaian_id = a.rangkaian_id
+                                AND d.surat_masuk_id = sm.id AND d.status = 'processed')`);
+        expect(fakta.n).toBeGreaterThanOrEqual(1);
+
+        // Peserta dir_ptep yang dicabut tertinggal di rangkaian sumber (digabung); backfill ulang tidak
+        // boleh membuatnya lagi di rangkaian tujuan.
+        const before = await counts(database);
+        const plan = await buildPlan(database, { batas: BATAS_UJI });
+        expect(plan.total).toMatchObject({ rangkaian_baru: 0, peserta_baru: 0 });
+        expect(await applyPlan(database, { approvedSha256: plan.sha256, batas: BATAS_UJI }))
+            .toMatchObject({ rangkaianBaru: 0, pesertaBaru: 0 });
+        expect(await counts(database)).toEqual(before);
+        expect((await database.query(`SELECT count(*)::int AS n FROM rangkaian_peserta
+            WHERE rangkaian_id = '${TARGET_HIDUP}' AND unit_kerja_id = 'dir_ptep'`)).rows[0]).toEqual({ n: 0 });
+    }, 60_000);
+
+    it('tidak menambah peserta ke rangkaian yang sudah diberkaskan (fail closed, RB P1 butir 9)', async () => {
+        const { rows: [rs1] } = await database.query<{ id: string }>(`
+            SELECT ra.rangkaian_id AS id FROM rangkaian_anggota ra WHERE ra.surat_masuk_id = '${S(1)}' AND ra.peran = 'induk'`);
+        await database.exec(`
+            UPDATE surat_masuk SET disposisi = array_append(disposisi, 'PLP') WHERE id = '${S(1)}';
+            UPDATE rangkaian_surat SET status = 'diberkaskan', unit_pengolah_id = 'ditjen', klasifikasi_item_id = (SELECT min(id) FROM klasifikasi_arsip),
+                   diberkaskan_at = now(), diberkaskan_by = '${P5_IDS.superA}' WHERE id = '${rs1.id}';`);
+        const plan = await buildPlan(database, { batas: BATAS_UJI });
+        expect(plan.total).toMatchObject({ peserta_baru: 0, peserta_dilewati_diberkaskan: 1 });
+        const summary = await applyPlan(database, { approvedSha256: plan.sha256, batas: BATAS_UJI });
+        expect(summary).toMatchObject({ pesertaBaru: 0, pesertaDilewatiDiberkaskan: 1 });
+        expect((await database.query(`SELECT count(*)::int AS n FROM rangkaian_peserta WHERE rangkaian_id = '${rs1.id}' AND unit_kerja_id = 'dir_plp'`)).rows[0]).toEqual({ n: 0 });
+        // Mode isi-pengolah tidak pernah menyentuh rangkaian yang diberkaskan.
+        expect((await buildPlan(database, { batas: BATAS_UJI, isiPengolah: true })).calonPengolah).toEqual([]);
     });
 });

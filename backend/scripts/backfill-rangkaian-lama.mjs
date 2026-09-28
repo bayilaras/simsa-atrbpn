@@ -4,13 +4,17 @@
 // peserta rangkaian data lama. Default dry-run (tanpa tulis). --apply hanya
 // menerapkan rencana yang SHA-256-nya sama dengan laporan yang sudah disign-off.
 //
-// Bagian ini (Task 3): konstanta, pemetaan label (D6), normalisasi, validasi
-// pemetaan, dan batas data lama. Bagian Task 4: rencana/dry-run (buildPlan),
-// CSV, dan hash SHA-256 rencana. --apply (Task 5) menyusul di berkas yang sama.
+// Bagian Task 3: konstanta, pemetaan label (D6), normalisasi, validasi pemetaan,
+// dan batas data lama. Bagian Task 4: rencana/dry-run (buildPlan), CSV, dan hash
+// SHA-256 rencana. Bagian Task 5: --apply bergerbang SHA (applyPlan), mode
+// --isi-pengolah (isiPengolahPlan, P5-C-2), parseArgs, dan main().
 
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import pg from 'pg';
 
 export const ACTOR = 'system:backfill-rangkaian-lama';
 export const BATCH_SIZE = 500;
@@ -180,6 +184,25 @@ SELECT lb.label_norm,
  ORDER BY lb.label_norm`;
 
 /**
+ * [Task 5] Peserta `disposisi_lama` untuk (rangkaian, unit) dianggap SUDAH ADA bila pernah ada baris
+ * (termasuk yang sudah dicabut lewat `berakhir_at`) di rangkaian itu ATAU di rangkaian mana pun yang
+ * (berantai) digabung ke rangkaian itu. P1 `gabung` hanya memindahkan peserta yang masih aktif;
+ * tanpa garis gabung, peserta yang dicabut di rangkaian sumber akan dibuat ulang di rangkaian tujuan.
+ * `rangkaianExpr`/`unitExpr` adalah ekspresi SQL konstanta kode (kolom atau `$n`), bukan nilai pengguna.
+ */
+export function pesertaPernahAdaSql(rangkaianExpr, unitExpr) {
+  return `EXISTS (
+    WITH RECURSIVE garis(id) AS (
+      SELECT ${rangkaianExpr}
+      UNION
+      SELECT rs_g.id FROM rangkaian_surat rs_g JOIN garis g ON rs_g.digabung_ke_id = g.id
+    )
+    SELECT 1 FROM rangkaian_peserta rp_g
+      JOIN garis g ON g.id = rp_g.rangkaian_id
+     WHERE rp_g.unit_kerja_id = ${unitExpr} AND rp_g.peran = 'disposisi_lama')`;
+}
+
+/**
  * [P5-T4-1] `target` = surat yang punya rute (rute sudah mengecualikan pasangan sudah_didisposisikan).
  * `peserta_rows` menandai, per (surat, unit) yang perlu peserta baru, apakah rangkaian tujuannya sudah
  * `diberkaskan` (terminal, tidak bisa ditambah peserta lagi) — baris itu dihitung terpisah sebagai
@@ -193,10 +216,7 @@ target AS (
 ),
 peserta_rows AS (
   SELECT r.surat_masuk_id, r.unit_kerja_id, t.rangkaian_id, rs.status AS rangkaian_status,
-         EXISTS (SELECT 1 FROM rangkaian_peserta rp
-                  WHERE rp.rangkaian_id = t.rangkaian_id
-                    AND rp.unit_kerja_id = r.unit_kerja_id
-                    AND rp.peran = 'disposisi_lama') AS sudah_peserta
+         ${pesertaPernahAdaSql('t.rangkaian_id', 'r.unit_kerja_id')} AS sudah_peserta
     FROM rute r
     JOIN target t ON t.surat_masuk_id = r.surat_masuk_id
     LEFT JOIN rangkaian_surat rs ON rs.id = t.rangkaian_id
@@ -259,18 +279,44 @@ SELECT cc.surat_masuk_id, sm.nomor_surat, cc.unit_kerja_id AS calon_unit_pengola
  ORDER BY cc.surat_masuk_id`;
 
 /**
+ * [P5-C-2] Mode --isi-pengolah (run terpisah SETELAH --apply dan keputusan gerbang rilis (a) "isi"):
+ * kriteria calon sama (tepat satu unit direktorat pada rute), tetapi untuk rangkaian data lama yang
+ * SUDAH dibuat backfill dan masih `selesai` tanpa pengolah. Rangkaian diberkaskan, digabung, atau
+ * yang sudah berpengolah tidak ikut.
+ */
+const CALON_PENGOLAH_ISI_SQL = `WITH ${BASE_CTE},
+rute_direktorat AS (
+  SELECT r.surat_masuk_id, r.unit_kerja_id
+    FROM rute r
+    JOIN unit_kerja uk ON uk.id = r.unit_kerja_id
+   WHERE uk.unit_type = 'direktorat'
+),
+calon_count AS (
+  SELECT surat_masuk_id, count(DISTINCT unit_kerja_id) AS n, min(unit_kerja_id) AS unit_kerja_id
+    FROM rute_direktorat
+   GROUP BY surat_masuk_id
+)
+SELECT cc.surat_masuk_id, sm.nomor_surat, cc.unit_kerja_id AS calon_unit_pengolah, rs.id AS rangkaian_id
+  FROM calon_count cc
+  JOIN surat_masuk sm ON sm.id = cc.surat_masuk_id
+  JOIN rangkaian_anggota ra ON ra.surat_masuk_id = cc.surat_masuk_id AND ra.peran = 'induk' AND ra.sumber = 'data_lama'
+  JOIN rangkaian_surat rs ON rs.id = ra.rangkaian_id
+ WHERE cc.n = 1 AND rs.asal = 'data_lama' AND rs.status = 'selesai' AND rs.unit_pengolah_id IS NULL
+ ORDER BY rs.id`;
+
+/**
  * Rencana lengkap tanpa efek samping; SHA-256 menutup `batasDataLama`, pemetaan, balasan,
  * calonPengolah, dan total, sehingga penanda tangan gerbang rilis mengunci semuanya sekaligus.
  * `batas` WAJIB — pemanggil (CLI) menentukannya lewat `tentukanBatasDataLama` terlebih dahulu.
  */
-export async function buildPlan(client, { batas } = {}) {
+export async function buildPlan(client, { batas, isiPengolah = false } = {}) {
   if (!batas) throw new Error('buildPlan membutuhkan { batas } (lihat tentukanBatasDataLama)');
   await assertPemetaanSah(client);
   const batasDataLama = batas;
   const params = [...seedParams(), batasDataLama];
   const pemetaan = (await client.query(PEMETAAN_SQL, params)).rows;
   const balasan = (await client.query(BALASAN_SQL, params)).rows;
-  const calonPengolah = (await client.query(CALON_PENGOLAH_SQL, params)).rows;
+  const calonPengolah = (await client.query(isiPengolah ? CALON_PENGOLAH_ISI_SQL : CALON_PENGOLAH_SQL, params)).rows;
   const counted = (await client.query(TOTAL_SQL, params)).rows[0];
   const total = {
     surat_target: counted.surat_target,
@@ -281,11 +327,17 @@ export async function buildPlan(client, { batas } = {}) {
     sudah_didisposisikan: counted.sudah_didisposisikan,
     peserta_dilewati_diberkaskan: counted.peserta_dilewati_diberkaskan,
   };
-  const sha256 = createHash('sha256')
-    .update(JSON.stringify({ batasDataLama, pemetaan, balasan, calonPengolah, total }))
-    .digest('hex');
-  return { pemetaan, balasan, calonPengolah, total, batasDataLama, sha256 };
+  // [P5-C-2] Mode isi-pengolah ikut di-hash: SHA rencana biasa tidak pernah membuka mode ini.
+  const payload = { batasDataLama, pemetaan, balasan, calonPengolah, total };
+  if (isiPengolah) {
+    total.pengolah_akan_diisi = calonPengolah.length;
+    payload.mode = MODE_ISI_PENGOLAH;
+  }
+  const sha256 = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  return { pemetaan, balasan, calonPengolah, total, batasDataLama, sha256, ...(isiPengolah ? { mode: MODE_ISI_PENGOLAH } : {}) };
 }
+
+const MODE_ISI_PENGOLAH = 'isi-pengolah';
 
 /** Escape CSV aman-spreadsheet: apostrof di depan bila diawali =+-@\t\r (formula injection), lalu kutip bila perlu. */
 export function csvCell(value) {
@@ -308,5 +360,336 @@ export function writePlanFiles(outDir, plan) {
   writeFileSync(join(outDir, 'balasan-ditinjau.csv'), toCsv(plan.balasan, BALASAN_COLUMNS));
   writeFileSync(join(outDir, 'calon-pengolah.csv'), toCsv(plan.calonPengolah, CALON_PENGOLAH_COLUMNS));
   writeFileSync(join(outDir, 'ringkasan.json'),
-    `${JSON.stringify({ sha256: plan.sha256, batasDataLama: plan.batasDataLama, total: plan.total }, null, 2)}\n`);
+    `${JSON.stringify({ sha256: plan.sha256, batasDataLama: plan.batasDataLama, ...(plan.mode ? { mode: plan.mode } : {}), total: plan.total }, null, 2)}\n`);
+}
+
+// ---------------------------------------------------------------------------
+// Task 5: --apply bergerbang SHA, idempoten, diaudit; mode --isi-pengolah (P5-C-2).
+//
+// Urutan kunci (G-LOCK, P5-G-4) per surat: surat_keluar balasan (FOR UPDATE ORDER BY id)
+// -> surat_masuk -> rangkaian_surat (satu baris, by id). Skrip tidak pernah menulis
+// surat_distributions. Id dibaca tanpa kunci, dikunci, lalu dibaca ulang. Satu batch
+// = satu transaksi, diulang maksimal 3x untuk 40P01/40001; penghitung ringkasan hanya
+// dijumlahkan setelah COMMIT.
+// ---------------------------------------------------------------------------
+
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+const KODE_ULANG = new Set(['40P01', '40001']);
+const SHA_POLA = /^[a-f0-9]{64}$/;
+
+const BATCH_SQL = `WITH ${BASE_CTE},
+batch AS (
+  SELECT DISTINCT surat_masuk_id FROM rute
+   WHERE surat_masuk_id > $${SEED_PARAM_COUNT + 2}::uuid
+   ORDER BY 1 LIMIT ${BATCH_SIZE}
+)
+SELECT r.surat_masuk_id, r.pemilik, r.unit_kerja_id, r.label_asal, uk.unit_type
+  FROM rute r
+  JOIN batch b ON b.surat_masuk_id = r.surat_masuk_id
+  JOIN unit_kerja uk ON uk.id = r.unit_kerja_id
+ ORDER BY r.surat_masuk_id, r.unit_kerja_id`;
+
+async function inTransaction(client, work, percobaan = 3) {
+  for (let ke = 1; ; ke += 1) {
+    await client.query('BEGIN');
+    try {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('simsa:backfill-rangkaian-lama', 0))");
+      const result = await work();
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      if (ke < percobaan && KODE_ULANG.has(error?.code)) continue;
+      throw error;
+    }
+  }
+}
+
+/** Rencana dibaca dalam satu snapshot agar pemetaan, balasan, dan total konsisten satu sama lain. */
+async function dalamSnapshot(client, work) {
+  await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  try {
+    const result = await work();
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  }
+}
+
+async function audit(client, action, entityType, entityId, changes) {
+  await client.query(
+    `INSERT INTO audit_log (user_email, action, entity_type, entity_id, changes)
+     VALUES ($1::varchar, $2::varchar, $3::varchar, $4::uuid, $5::jsonb)`,
+    [ACTOR, action, entityType, entityId, JSON.stringify(changes)]);
+}
+
+async function seedLabelTable(client) {
+  const { rows } = await client.query(
+    `INSERT INTO disposisi_label_unit (label_norm, unit_kerja_id, perlu_verifikasi, catatan)
+     SELECT label_norm, unit_kerja_id, false, catatan FROM (VALUES ${seedValues}) AS seed(label_norm, unit_kerja_id, catatan)
+     ON CONFLICT (label_norm) DO UPDATE
+       SET unit_kerja_id = EXCLUDED.unit_kerja_id, perlu_verifikasi = EXCLUDED.perlu_verifikasi, catatan = EXCLUDED.catatan
+     WHERE (disposisi_label_unit.unit_kerja_id, disposisi_label_unit.perlu_verifikasi, disposisi_label_unit.catatan)
+           IS DISTINCT FROM (EXCLUDED.unit_kerja_id, EXCLUDED.perlu_verifikasi, EXCLUDED.catatan)
+     RETURNING label_norm, unit_kerja_id`, seedParams());
+  for (const row of rows) {
+    await audit(client, 'update', 'disposisi_label_unit', null, { labelNorm: row.label_norm, unitKerjaId: row.unit_kerja_id });
+  }
+}
+
+const galatUlang = (pesan) => Object.assign(new Error(pesan), { code: '40001' });
+
+async function applySurat(client, suratId, routes, hitung) {
+  // G-LOCK: surat_keluar (ORDER BY id) -> surat_masuk -> rangkaian_surat. [P5-T5-2]
+  const { rows: calonBalasan } = await client.query(
+    `SELECT sk.id FROM surat_keluar sk
+      WHERE sk.balasan_untuk = $1::uuid AND sk.is_deleted IS NOT TRUE AND sk.approval_status = 'approved'
+      ORDER BY sk.id`, [suratId]);
+  if (calonBalasan.length > 0) {
+    await client.query('SELECT id FROM surat_keluar WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+      [calonBalasan.map(row => row.id)]);
+  }
+  const { rows: [sm] } = await client.query(
+    `SELECT id, unit_kerja_id, tahun,
+            COALESCE(NULLIF(regexp_replace(perihal, '${LABEL_NORM_TRIM_PATTERN}', '', 'g'), ''), nomor_surat, '(tanpa perihal)') AS judul
+       FROM surat_masuk WHERE id = $1::uuid AND is_deleted IS NOT TRUE FOR UPDATE`, [suratId]);
+  if (!sm) return;
+  hitung.suratDiproses += 1;
+
+  const keanggotaan = async () => (await client.query(
+    'SELECT id AS anggota_id, rangkaian_id FROM rangkaian_anggota WHERE surat_masuk_id = $1::uuid', [suratId])).rows[0];
+  let induk = null;
+  const awal = await keanggotaan();
+  if (awal) {
+    const { rows: [rs] } = await client.query(
+      'SELECT id, status FROM rangkaian_surat WHERE id = $1::uuid FOR UPDATE', [awal.rangkaian_id]);
+    const lagi = await keanggotaan();
+    // Surat sudah terkunci, jadi keanggotaannya tidak dapat dipindah; bila tetap berubah, ulang batch.
+    if (!rs || lagi?.rangkaian_id !== awal.rangkaian_id) throw galatUlang(`Keanggotaan surat ${suratId} berubah; batch diulang`);
+    induk = { anggota_id: awal.anggota_id, rangkaian_id: rs.id, status: rs.status };
+  } else {
+    const direktorat = [...new Set(routes.filter(route => route.unit_type === 'direktorat').map(route => route.unit_kerja_id))];
+    const calonPengolah = direktorat.length === 1 ? direktorat[0] : null;
+    const { rows: [rangkaian] } = await client.query(
+      `INSERT INTO rangkaian_surat (kode, asal, status, unit_pencatat_id, unit_pengolah_id, judul, tahun, selesai_at, selesai_manual)
+       VALUES ('RS-' || $1::int || '-' || lpad(nextval('rangkaian_surat_kode_seq')::text, 6, '0'),
+               'data_lama', 'selesai', $2::varchar, NULL, $3::text, $1::int, now(), false)
+       RETURNING id, kode`, [sm.tahun, sm.unit_kerja_id, sm.judul]);
+    const { rows: [anggota] } = await client.query(
+      `INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber)
+       VALUES ($1::uuid, $2::uuid, $3::varchar, 'induk', 'data_lama') RETURNING id`,
+      [rangkaian.id, suratId, sm.unit_kerja_id]);
+    await audit(client, 'create', 'rangkaian_surat', rangkaian.id, {
+      kode: rangkaian.kode, asal: 'data_lama', status: 'selesai', suratMasukId: suratId,
+      unitPengolahId: null, calonUnitPengolah: calonPengolah, // spec:356: pengolah memberi jangkauan tanpa flag; ditunda sampai sign-off (gerbang rilis P5)
+    });
+    induk = { anggota_id: anggota.id, rangkaian_id: rangkaian.id, status: 'selesai' };
+    hitung.rangkaianBaru += 1;
+  }
+  // Hanya rangkaian terbuka yang menerima peserta/anggota; diberkaskan terminal (RB P1 butir 9). [P5-T5-3]
+  const tertutup = induk.status !== 'aktif' && induk.status !== 'selesai';
+
+  for (const route of routes) {
+    // Semua baris, termasuk yang berakhir dan yang tertinggal di rangkaian sumber gabung:
+    // peserta yang dicabut tidak dihidupkan lagi.
+    const { rows: [{ ada }] } = await client.query(
+      `SELECT ${pesertaPernahAdaSql('$1::uuid', '$2::varchar')} AS ada`, [induk.rangkaian_id, route.unit_kerja_id]);
+    if (ada) continue;
+    if (tertutup) { hitung.pesertaDilewatiDiberkaskan += 1; continue; }
+    const { rows: inserted } = await client.query(
+      `INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal)
+       SELECT $1::uuid, $2::varchar, 'disposisi_lama', $3::text
+        WHERE NOT ${pesertaPernahAdaSql('$1::uuid', '$2::varchar')}
+       RETURNING id`, [induk.rangkaian_id, route.unit_kerja_id, route.label_asal]);
+    if (inserted.length > 0) {
+      await audit(client, 'update', 'rangkaian_surat', induk.rangkaian_id, {
+        pesertaDisposisiLama: route.unit_kerja_id, labelAsal: route.label_asal, memberiAksesSaatFlagMati: false,
+      });
+      hitung.pesertaBaru += 1;
+    }
+  }
+
+  const { rows: balasan } = await client.query(
+    `SELECT sk.id, sk.unit_kerja_id FROM surat_keluar sk
+      WHERE sk.balasan_untuk = $1::uuid AND sk.unit_kerja_id = $2::varchar
+        AND sk.is_deleted IS NOT TRUE AND sk.approval_status = 'approved'
+        AND NOT EXISTS (SELECT 1 FROM rangkaian_anggota ra WHERE ra.surat_keluar_id = sk.id)
+      ORDER BY sk.id`, [suratId, sm.unit_kerja_id]);
+  for (const sk of balasan) {
+    if (tertutup) { hitung.balasanDilewatiDiberkaskan += 1; continue; }
+    const { rows: [anggota] } = await client.query(
+      `INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id, peran, sumber)
+       VALUES ($1::uuid, $2::uuid, $3::varchar, 'anggota', 'data_lama') RETURNING id`,
+      [induk.rangkaian_id, sk.id, sk.unit_kerja_id]);
+    const { rows: [relasi] } = await client.query(
+      `INSERT INTO rangkaian_relasi (rangkaian_id, dari_anggota_id, ke_anggota_id, jenis_relasi, keterangan)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, 'balasan', 'Data lama: balasan_untuk') RETURNING id`,
+      [induk.rangkaian_id, anggota.id, induk.anggota_id]);
+    await audit(client, 'create', 'rangkaian_relasi', relasi.id, {
+      rangkaianId: induk.rangkaian_id, suratKeluarId: sk.id, suratMasukId: suratId, jenisRelasi: 'balasan', sumber: 'data_lama',
+    });
+    hitung.balasanDitautkan += 1;
+  }
+}
+
+function periksaSha(approvedSha256) {
+  if (!SHA_POLA.test(approvedSha256 ?? '')) {
+    throw new Error('--apply membutuhkan --approved-sha256=<sha256 dari ringkasan.json dry-run yang sudah disetujui>');
+  }
+}
+
+async function rencanaDisetujui(client, { approvedSha256, batas, isiPengolah }) {
+  const plan = await dalamSnapshot(client, () => buildPlan(client, { batas, isiPengolah }));
+  if (plan.sha256 !== approvedSha256) {
+    throw new Error(`Rencana berubah sejak sign-off (sha256 kini ${plan.sha256}); jalankan dry-run ulang dan minta sign-off baru`);
+  }
+  return plan;
+}
+
+const summaryKosong = () => ({
+  suratDiproses: 0, rangkaianBaru: 0, pesertaBaru: 0, balasanDitautkan: 0,
+  balasanDilewatiDiberkaskan: 0, pesertaDilewatiDiberkaskan: 0,
+});
+
+export async function applyPlan(client, { approvedSha256, batas } = {}) {
+  periksaSha(approvedSha256);
+  if (!batas) throw new Error('applyPlan membutuhkan { batas } (lihat tentukanBatasDataLama)');
+  const { rows: [pending] } = await client.query('SELECT count(*)::int AS n FROM surat_distributions WHERE rangkaian_id IS NULL');
+  if (pending.n !== 0) throw new Error(`Backfill langkah 1 belum tuntas: ${pending.n} baris surat_distributions tanpa rangkaian_id`);
+  await rencanaDisetujui(client, { approvedSha256, batas, isiPengolah: false });
+
+  const summary = summaryKosong();
+  await inTransaction(client, () => seedLabelTable(client));
+  let after = ZERO_UUID;
+  for (;;) {
+    const { rows } = await client.query(BATCH_SQL, [...seedParams(), batas, after]);
+    if (rows.length === 0) break;
+    const grouped = new Map();
+    for (const row of rows) {
+      if (!grouped.has(row.surat_masuk_id)) grouped.set(row.surat_masuk_id, []);
+      grouped.get(row.surat_masuk_id).push(row);
+    }
+    const hitung = await inTransaction(client, async () => {
+      const lokal = summaryKosong();
+      for (const [suratId, routes] of grouped) await applySurat(client, suratId, routes, lokal);
+      return lokal;
+    });
+    for (const key of Object.keys(summary)) summary[key] += hitung[key];
+    after = [...grouped.keys()].at(-1);
+  }
+  return summary;
+}
+
+/**
+ * [P5-C-2] Mode isi-pengolah: menulis `calon_unit_pengolah` dari rencana isi-pengolah yang SHA-nya
+ * disetujui, hanya untuk rangkaian yang di bawah kunci masih data_lama + selesai + tanpa pengolah.
+ * Akses pengolah TIDAK dikendalikan flag RANGKAIAN_DISPOSISI_LAMA_READ.
+ */
+export async function isiPengolahPlan(client, { approvedSha256, batas } = {}) {
+  periksaSha(approvedSha256);
+  if (!batas) throw new Error('isiPengolahPlan membutuhkan { batas } (lihat tentukanBatasDataLama)');
+  const plan = await rencanaDisetujui(client, { approvedSha256, batas, isiPengolah: true });
+  const summary = { pengolahDiisi: 0, pengolahDilewati: 0 };
+  for (let i = 0; i < plan.calonPengolah.length; i += BATCH_SIZE) {
+    const potongan = plan.calonPengolah.slice(i, i + BATCH_SIZE);
+    const hitung = await inTransaction(client, async () => {
+      const lokal = { pengolahDiisi: 0, pengolahDilewati: 0 };
+      const { rows } = await client.query(
+        `SELECT id, asal, status, unit_pengolah_id FROM rangkaian_surat
+          WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`, [potongan.map(calon => calon.rangkaian_id)]);
+      const terkunci = new Map(rows.map(row => [row.id, row]));
+      for (const calon of potongan) {
+        const rs = terkunci.get(calon.rangkaian_id);
+        if (!rs || rs.asal !== 'data_lama' || rs.status !== 'selesai' || rs.unit_pengolah_id !== null) {
+          lokal.pengolahDilewati += 1;
+          continue;
+        }
+        await client.query(
+          'UPDATE rangkaian_surat SET unit_pengolah_id = $2::varchar, updated_at = now() WHERE id = $1::uuid',
+          [rs.id, calon.calon_unit_pengolah]);
+        await audit(client, 'update', 'rangkaian_surat', rs.id, {
+          before: { unitPengolahId: null }, after: { unitPengolahId: calon.calon_unit_pengolah },
+          sumber: 'backfill-rangkaian-lama', aksesBaru: [calon.calon_unit_pengolah], suratMasukId: calon.surat_masuk_id,
+        });
+        lokal.pengolahDiisi += 1;
+      }
+      return lokal;
+    });
+    summary.pengolahDiisi += hitung.pengolahDiisi;
+    summary.pengolahDilewati += hitung.pengolahDilewati;
+  }
+  return summary;
+}
+
+export function parseArgs(argv) {
+  const options = { apply: false, isiPengolah: false, approvedSha256: null, outDir: null };
+  for (const arg of argv) {
+    if (arg === '--apply') options.apply = true;
+    else if (arg === '--isi-pengolah') options.isiPengolah = true;
+    else if (arg.startsWith('--approved-sha256=')) options.approvedSha256 = arg.slice('--approved-sha256='.length).trim().toLowerCase();
+    else if (arg.startsWith('--out=')) options.outDir = resolve(arg.slice('--out='.length));
+    else throw new Error(`Argumen tidak dikenal: ${arg}`);
+  }
+  if (options.approvedSha256 !== null && !options.apply) {
+    throw new Error('--approved-sha256 hanya bersama --apply');
+  }
+  return options;
+}
+
+/** [P5-C-1] Mode tulis hanya sebagai role runtime; pengecualian eksplisit untuk dev lokal. */
+export function pastikanRoleRuntime(identitas, { apply, env = process.env }) {
+  if (apply && identitas?.db_user !== 'simsa_api' && env.ALLOW_NON_RUNTIME_ROLE !== '1') {
+    throw new Error(`Mode tulis harus dijalankan sebagai role runtime simsa_api (kini ${identitas?.db_user}); `
+      + 'set ALLOW_NON_RUNTIME_ROLE=1 hanya untuk database lokal');
+  }
+}
+
+// Dijalankan sebagai role runtime `simsa_api`: DATABASE_URL diisi dari NEON_RUNTIME_DATABASE_URL lewat prompt
+// tersembunyi (docs/RUNBOOK_INTEGRASI_SURAT_P1.md). Jangan memakai simsa_maintenance/simsa_operator: tanpa grant
+// rangkaian_*, dan menambah grant mengubah hash grants/0002 serta pin Neon (RB P1 butir 5, P3 T2-3).
+async function main() {
+  // [F3] pola P3: nilai diambil dari shell saja; skrip ini tidak memuat backend/.env sama sekali. [P5-C-1]
+  const urlShell = process.env.DATABASE_URL?.trim();
+  const batasShell = process.env.RANGKAIAN_DATA_LAMA_SEBELUM;
+  if (!urlShell) {
+    throw new Error('DATABASE_URL harus diset eksplisit di shell (NEON_RUNTIME_DATABASE_URL, role simsa_api); skrip ini tidak memakai backend/.env');
+  }
+  const options = parseArgs(process.argv.slice(2));
+  const client = new pg.Client({ connectionString: urlShell, connectionTimeoutMillis: 10_000 });
+  await client.connect();
+  try {
+    const { rows: [identitas] } = await client.query('SELECT current_user AS db_user, current_database() AS db_name');
+    const { batasDataLama, sumberBatas } = await tentukanBatasDataLama(client, { apply: options.apply, batasShell });
+    console.log(JSON.stringify({
+      dbUser: identitas.db_user, dbName: identitas.db_name, batasDataLama, sumberBatas,
+      mode: options.isiPengolah ? MODE_ISI_PENGOLAH : 'backfill', apply: options.apply,
+    }));
+    pastikanRoleRuntime(identitas, { apply: options.apply });
+    const outDir = options.outDir ?? mkdtempSync(join(tmpdir(), 'laporan-rangkaian-lama-'));
+    const plan = await dalamSnapshot(client, () => buildPlan(client, { batas: batasDataLama, isiPengolah: options.isiPengolah }));
+    writePlanFiles(outDir, plan);
+    console.log(`Dry-run selesai. Laporan: ${outDir}`);
+    console.log(`Total: ${JSON.stringify(plan.total)}`);
+    console.log(`SHA-256 rencana (untuk sign-off): ${plan.sha256}`);
+    if (options.apply && options.isiPengolah) {
+      const summary = await isiPengolahPlan(client, { approvedSha256: options.approvedSha256, batas: batasDataLama });
+      console.log(`Isi pengolah selesai: ${JSON.stringify(summary)}`);
+      console.log('Akses unit pengolah TIDAK dikendalikan flag RANGKAIAN_DISPOSISI_LAMA_READ.');
+    } else if (options.apply) {
+      const summary = await applyPlan(client, { approvedSha256: options.approvedSha256, batas: batasDataLama });
+      console.log(`Apply selesai: ${JSON.stringify(summary)}`);
+      console.log('Peserta data lama BELUM memberi akses sampai RANGKAIAN_DISPOSISI_LAMA_READ=true disetujui.');
+    }
+  } finally {
+    await client.end();
+  }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(error => {
+    console.error(`Backfill rangkaian lama gagal${error.code ? ` [${error.code}]` : ''}: ${error.message}`);
+    process.exitCode = 1;
+  });
 }
