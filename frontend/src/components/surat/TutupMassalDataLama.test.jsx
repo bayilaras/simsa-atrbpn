@@ -60,4 +60,51 @@ describe('TutupMassalDataLama', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Pilih KU.01' }))
         expect(screen.queryByRole('button', { name: /Tutup massal 5/ })).not.toBeInTheDocument()
     })
+
+    it('pratinjau kedua terlihat setelah penerapan pertama (F1)', async () => {
+        mocks.ringkasan.mockResolvedValue({ dapatMenutup: true, perTahun: [{ tahun: 2022, jumlah: 5 }] })
+        mocks.tutup
+            .mockResolvedValueOnce({ jumlah: 600, tanpaKlasifikasi: 0, contoh: [], contohTanpaKlasifikasi: [], terpotong: true, diterapkan: 0 })
+            .mockResolvedValueOnce({ jumlah: 600, tanpaKlasifikasi: 0, contoh: [], contohTanpaKlasifikasi: [], terpotong: true, diterapkan: 500 })
+            .mockResolvedValueOnce({ jumlah: 100, tanpaKlasifikasi: 0, contoh: [], contohTanpaKlasifikasi: [], terpotong: false, diterapkan: 0 })
+        render(<TutupMassalDataLama />)
+        fireEvent.click(await screen.findByRole('button', { name: 'Pratinjau' }))
+        await screen.findByText(/600 rangkaian siap diberkaskan/)
+        fireEvent.click(screen.getByLabelText(/Saya memahami/))
+        fireEvent.click(screen.getByRole('button', { name: 'Tutup massal 600 rangkaian' }))
+        expect(await screen.findByText('500 rangkaian diberkaskan.')).toBeInTheDocument()
+
+        // Klik Pratinjau lagi setelah penerapan: pratinjau baru harus tampil, bukan hasil lama yang tersembunyi.
+        fireEvent.click(screen.getByRole('button', { name: 'Pratinjau' }))
+        expect(await screen.findByText(/100 rangkaian siap diberkaskan/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Tutup massal 100 rangkaian' })).toBeInTheDocument()
+        expect(screen.queryByText('500 rangkaian diberkaskan.')).not.toBeInTheDocument()
+    })
+
+    it('mengabaikan respons pratinjau usang dan mengunci filter saat sibuk (F2)', async () => {
+        mocks.ringkasan.mockResolvedValue({ dapatMenutup: true, perTahun: [{ tahun: 2022, jumlah: 5 }, { tahun: 2023, jumlah: 2 }] })
+        let resolveDryRun
+        mocks.tutup.mockImplementationOnce(() => new Promise(resolve => { resolveDryRun = resolve }))
+        render(<TutupMassalDataLama />)
+
+        const tahunSelect = await screen.findByLabelText('Tahun')
+        fireEvent.change(tahunSelect, { target: { value: '2022' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Pratinjau' }))
+
+        // Selagi permintaan untuk filter tahun=2022 masih tertunda, filter dan tombol harus terkunci.
+        expect(tahunSelect).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Pratinjau' })).toBeDisabled()
+
+        // Simulasikan filter berubah sebelum respons lama tiba (mis. lewat kontrol yang seharusnya terkunci).
+        fireEvent.change(tahunSelect, { target: { value: '2023' } })
+
+        resolveDryRun({ jumlah: 5, tanpaKlasifikasi: 0, contoh: [], contohTanpaKlasifikasi: [], terpotong: false, diterapkan: 0 })
+        await waitFor(() => expect(tahunSelect).not.toBeDisabled())
+
+        // Respons usang (untuk tahun=2022) tidak boleh mengisi pratinjau setelah filter berganti ke 2023.
+        expect(screen.queryByText(/rangkaian siap diberkaskan/)).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Tutup massal/ })).not.toBeInTheDocument()
+        expect(mocks.tutup).toHaveBeenCalledTimes(1)
+        expect(mocks.tutup).toHaveBeenCalledWith({ tahun: 2022, dryRun: true })
+    })
 })
