@@ -106,6 +106,19 @@ interface MetaSurat {
     ada_tindak_lanjut: boolean;
 }
 
+/**
+ * "Sudah ditindaklanjuti" (spec §656, D7): ada relasi aktif `balasan`/`tindak_lanjut`
+ * ke anggota `a` dari surat keluar yang masih hidup (GC#29 — soft delete tidak
+ * membatalkan relasi, jadi SK terhapus harus disaring di sini). Relasi `menjelaskan`/
+ * `merujuk` bukan tindak lanjut. Sengaja tanpa syarat approval_status (spec: "hidup").
+ */
+const adaTindakLanjutSql = sql`EXISTS (SELECT 1 FROM rangkaian_relasi r
+                          JOIN rangkaian_anggota da ON da.id = r.dari_anggota_id
+                          JOIN surat_keluar k ON k.id = da.surat_keluar_id
+                         WHERE r.ke_anggota_id = a.id AND r.cancelled_at IS NULL
+                           AND r.jenis_relasi IN ('balasan', 'tindak_lanjut')
+                           AND k.is_deleted IS NOT TRUE)`;
+
 export interface SuratAksiPayload {
     aksiDiizinkan: SuratAksi[];
     statusAlur: StatusAlur;
@@ -125,7 +138,7 @@ export async function suratAksiPayload(
         ? sql`SELECT sm.is_archived, NULL::text AS naskah_dinas, rs.id::text AS rangkaian_id, rs.kode, rs.status,
                      rs.unit_pencatat_id, rs.unit_pengolah_id,
                      EXISTS (SELECT 1 FROM surat_distributions d WHERE d.surat_masuk_id = sm.id AND d.status <> 'rejected') AS ada_disposisi,
-                     EXISTS (SELECT 1 FROM rangkaian_relasi r WHERE r.ke_anggota_id = a.id AND r.cancelled_at IS NULL) AS ada_tindak_lanjut
+                     ${adaTindakLanjutSql} AS ada_tindak_lanjut
                 FROM surat_masuk sm
                 LEFT JOIN rangkaian_anggota a ON a.surat_masuk_id = sm.id
                 LEFT JOIN rangkaian_surat rs ON rs.id = a.rangkaian_id
@@ -133,7 +146,7 @@ export async function suratAksiPayload(
         : sql`SELECT sk.is_archived, sk.naskah_dinas, rs.id::text AS rangkaian_id, rs.kode, rs.status,
                      rs.unit_pencatat_id, rs.unit_pengolah_id,
                      false AS ada_disposisi,
-                     EXISTS (SELECT 1 FROM rangkaian_relasi r WHERE r.ke_anggota_id = a.id AND r.cancelled_at IS NULL) AS ada_tindak_lanjut
+                     ${adaTindakLanjutSql} AS ada_tindak_lanjut
                 FROM surat_keluar sk
                 LEFT JOIN rangkaian_anggota a ON a.surat_keluar_id = sk.id
                 LEFT JOIN rangkaian_surat rs ON rs.id = a.rangkaian_id

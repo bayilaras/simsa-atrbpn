@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
 import {
-    ANGGOTA, DISPOSISI, GRANT, PENGGUNA, RAHASIA, RANGKAIAN, SURAT, bootRangkaianDatabase, seedRangkaianFixture,
+    ANGGOTA, DISPOSISI, GRANT, PENGGUNA, RAHASIA, RANGKAIAN, SURAT, USER_ID, bootRangkaianDatabase, seedRangkaianFixture,
 } from './helpers/rangkaian-pglite';
 
 const holder = vi.hoisted(() => ({ db: null as any }));
@@ -144,6 +144,49 @@ describe('aksiDiizinkan dan statusAlur dari server (T16)', () => {
         expect(body.data.distribusiUnitSaya).toEqual({ id: DISPOSISI.rs1Bppt, status: 'received' });
         const [row] = (await database.query<any>(`SELECT status FROM surat_distributions WHERE id = '${DISPOSISI.rs1Bppt}'`)).rows;
         expect(row.status).toBe('received');
+    });
+
+    it('statusAlur tidak menghitung balasan dari surat keluar yang dihapus (soft delete) — spec §656, GC#29 (F1)', async () => {
+        // Satu-satunya relasi aktif ke SM induk: balasan dari SK yang sudah dihapus lunak.
+        await database.exec(`
+            UPDATE rangkaian_relasi SET jenis_relasi = 'balasan' WHERE dari_anggota_id = '${ANGGOTA.rs1SkBiasa}';
+            UPDATE rangkaian_relasi SET cancelled_at = now(), cancelled_by = '${USER_ID.tu}', cancellation_reason = 'Relasi penjelas dibatalkan untuk uji'
+                WHERE dari_anggota_id = '${ANGGOTA.rs1SkNull}';
+            UPDATE surat_keluar SET is_deleted = true WHERE id = '${SURAT.skBpptBiasa}';`);
+        const { body } = await request(app).get(`/api/surat-masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(body.data.statusAlur).toBe('didisposisikan');
+        // Tanpa disposisi hidup pun tetap terdaftar, bukan ditindaklanjuti.
+        await database.exec(`UPDATE surat_distributions SET status = 'rejected' WHERE surat_masuk_id = '${SURAT.smBiasa}';`);
+        const tanpaDisposisi = await request(app).get(`/api/surat-masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(tanpaDisposisi.body.data.statusAlur).toBe('terdaftar');
+    });
+
+    it('statusAlur tidak menganggap relasi menjelaskan/merujuk sebagai tindak lanjut (F1)', async () => {
+        // Relasi tindak_lanjut dari SK hidup diubah menjadi 'merujuk'; tersisa 'menjelaskan' (fixture) dan 'merujuk'.
+        await database.exec(`
+            UPDATE rangkaian_relasi SET jenis_relasi = 'merujuk' WHERE dari_anggota_id = '${ANGGOTA.rs1SkBiasa}';`);
+        const { body } = await request(app).get(`/api/surat-masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(body.data.statusAlur).toBe('didisposisikan');
+        // Kontrol: relasi yang sama sebagai balasan dari SK hidup → ditindaklanjuti.
+        await database.exec(`
+            UPDATE rangkaian_relasi SET jenis_relasi = 'balasan' WHERE dari_anggota_id = '${ANGGOTA.rs1SkBiasa}';`);
+        const balasan = await request(app).get(`/api/surat-masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(balasan.body.data.statusAlur).toBe('ditindaklanjuti');
+    });
+
+    it('statusAlur surat keluar: hanya balasan/tindak lanjut dari surat keluar hidup yang dihitung (F1)', async () => {
+        await database.exec(`
+            INSERT INTO rangkaian_relasi (rangkaian_id, dari_anggota_id, ke_anggota_id, jenis_relasi, keterangan)
+            VALUES ('${RANGKAIAN.rs1}','${ANGGOTA.rs1SkNull}','${ANGGOTA.rs1SkBiasa}','merujuk','Rujukan antar-ND');`);
+        const rujukan = await request(app).get(`/api/surat-keluar/${SURAT.skBpptBiasa}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect(rujukan.body.data.statusAlur).toBe('terdaftar');
+        await database.exec(`
+            UPDATE rangkaian_relasi SET jenis_relasi = 'tindak_lanjut' WHERE dari_anggota_id = '${ANGGOTA.rs1SkNull}' AND ke_anggota_id = '${ANGGOTA.rs1SkBiasa}';`);
+        const hidup = await request(app).get(`/api/surat-keluar/${SURAT.skBpptBiasa}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect(hidup.body.data.statusAlur).toBe('ditindaklanjuti');
+        await database.exec(`UPDATE surat_keluar SET is_deleted = true WHERE id = '${SURAT.skBpptNull}';`);
+        const dihapus = await request(app).get(`/api/surat-keluar/${SURAT.skBpptBiasa}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect(dihapus.body.data.statusAlur).toBe('terdaftar');
     });
 
     it('pemilik surat masuk tunggal: statusAlur terdaftar tanpa rangkaian; staff lama tanpa aksi', async () => {
