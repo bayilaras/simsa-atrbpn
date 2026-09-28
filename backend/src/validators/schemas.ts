@@ -856,3 +856,14 @@ export const markAllReadSchema = z.object({
 }).strict();
 
 export type MarkAllRead = z.infer<typeof markAllReadSchema>;
+
+// ==================== Daftar Berkas Rangkaian (P4) ====================
+// Kueri tak dikenal ditolak agar unitKerjaId tidak bisa menyelinap.
+export const daftarRangkaianQuerySchema = z.object({
+    unitPengolahId: z.string().trim().min(1).max(50).optional(),
+    status: z.enum(['aktif', 'selesai', 'diberkaskan']).optional(),
+    asal: z.enum(['surat_masuk', 'inisiatif', 'data_lama']).optional(),
+    page: z.coerce.number().int().min(1).max(10_000).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+}).strict();
+export type DaftarRangkaianQuery = z.infer<typeof daftarRangkaianQuerySchema>;
