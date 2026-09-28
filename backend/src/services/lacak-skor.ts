@@ -25,8 +25,8 @@ export interface KueriLacak {
 export interface KolomSkorLacak {
     nomor: SQL;
     perihal: SQL;
-    dari: SQL;
-    kepada: SQL;
+    /** Satu kolom pihak per cabang: `sm.dari` untuk surat masuk, `sk.kepada` untuk surat keluar. */
+    pihak: SQL;
 }
 
 const angka = (value: number) => sql.raw(String(value));
@@ -63,11 +63,11 @@ function semuaTokenSql(teks: SQL, tokens: string[]): SQL {
     return sql.join(tokens.map(token => sql`${teks} LIKE ${`%${escapeLike(token)}%`} ${LIKE_ESCAPE}`), sql` AND `);
 }
 
-/** Skor teks: semua token AND di perihal (40, +5 frasa utuh), atau di dari/kepada (20). */
+/** Skor teks: semua token AND di perihal (40, +5 frasa utuh), atau di kolom pihak dari/kepada (20). */
 export function skorTeksSql(kolom: KolomSkorLacak, k: KueriLacak): SQL {
     if (k.tokens.length === 0) return sql`0`;
     const perihal = sql`lower(coalesce(${kolom.perihal}, ''))`;
-    const pihak = sql`lower(coalesce(${kolom.dari}, '') || ' ' || coalesce(${kolom.kepada}, ''))`;
+    const pihak = sql`lower(coalesce(${kolom.pihak}, ''))`;
     const frasa = `%${escapeLike(k.qLower)}%`;
     return sql`(CASE
         WHEN ${semuaTokenSql(perihal, k.tokens)} THEN ${angka(SKOR_LACAK.PERIHAL_SEMUA_TOKEN)}

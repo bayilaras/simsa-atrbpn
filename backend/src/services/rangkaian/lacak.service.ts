@@ -6,6 +6,7 @@ import {
     requiresExplicitAccessGrant, resolveKonteksBaca, tingkatRangkaianPenuh, visibleSql,
     type KonteksBaca, type RecordUser, type SuratJenis, type Tx,
 } from './deps.js';
+import { bentukKueriLacak, skorLacakSql } from '../lacak-skor.js';
 import { rowsOf, textArraySql, uuidArraySql } from './sql-rows.js';
 import type { LacakCocok, LacakKelompok, LacakNode, LacakNodeTersamar, LacakParams, LacakResult } from './lacak.types.js';
 
@@ -41,32 +42,22 @@ export function skorSql(branch: Branch, plan: LacakQueryPlan, mode: LacakParams[
         if (!plan.qNorm) return null;
         return { skor: sql`CASE WHEN ${mentah} THEN 100 WHEN ${samaNorm} THEN 90 ELSE 0 END`, cocok: sql`(${mentah} OR ${samaNorm})` };
     }
-    const skor: SQL[] = [];
     const cocok: SQL[] = [];
     if (plan.jenis === 'nomor' && plan.qNorm) {
         const prefix = sql`${norm} LIKE ${`${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`;
-        const kasus = [sql`WHEN ${mentah} THEN 100`, sql`WHEN ${samaNorm} THEN 90`, sql`WHEN ${prefix} THEN 70`];
         cocok.push(mentah, samaNorm, prefix);
-        if (plan.substringNomor) {
-            const substring = sql`${norm} LIKE ${`%${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`;
-            kasus.push(sql`WHEN ${substring} THEN 50`);
-            cocok.push(substring);
-        }
-        skor.push(sql`CASE ${sql.join(kasus, sql` `)} ELSE 0 END`);
+        if (plan.substringNomor) cocok.push(sql`${norm} LIKE ${`%${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`);
     }
+    const perihal = sql.raw(`${branch.alias}.perihal`);
+    const pihak = sql.raw(branch.pihak);
     if (plan.tokens.length > 0) {
-        const perihal = sql.raw(`${branch.alias}.perihal`);
-        const pihak = sql.raw(branch.pihak);
-        const diPerihal = semuaToken(perihal, plan.tokens);
-        const diPihak = semuaToken(pihak, plan.tokens);
-        const frasa = sql`${perihal} ILIKE ${`%${escapeLike(plan.q)}%`} ${LIKE_ESCAPE}`;
-        skor.push(sql`CASE WHEN ${diPerihal} THEN 40 + CASE WHEN ${frasa} THEN 5 ELSE 0 END ELSE 0 END`);
-        skor.push(sql`CASE WHEN ${diPihak} THEN 20 ELSE 0 END`);
-        cocok.push(sql`(${diPerihal})`, sql`(${diPihak})`);
+        cocok.push(sql`(${semuaToken(perihal, plan.tokens)})`, sql`(${semuaToken(pihak, plan.tokens)})`);
     }
-    if (skor.length === 0) return null;
+    if (cocok.length === 0) return null;
+    // P4: satu sumber skor (§6 + prefix mentah berbatas 80, lacak-skor.ts). Predikat `cocok` P3 tidak
+    // diubah, sehingga visibleSql tetap berada di WHERE seed yang sama (tanpa oracle).
     return {
-        skor: skor.length === 1 ? skor[0] : sql`GREATEST(${sql.join(skor, sql`, `)})`,
+        skor: skorLacakSql({ nomor, perihal, pihak }, bentukKueriLacak(plan.q)),
         cocok: sql`(${sql.join(cocok, sql` OR `)})`,
     };
 }

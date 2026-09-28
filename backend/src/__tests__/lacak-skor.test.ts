@@ -10,8 +10,7 @@ let db: ReturnType<typeof drizzle>;
 const kolom = {
     nomor: sql.raw('t.nomor_surat'),
     perihal: sql.raw('t.perihal'),
-    dari: sql.raw('t.dari'),
-    kepada: sql.raw('t.kepada'),
+    pihak: sql.raw('t.dari'),
 };
 
 beforeAll(async () => {
