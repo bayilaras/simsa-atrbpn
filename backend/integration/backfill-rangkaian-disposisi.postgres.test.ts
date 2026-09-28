@@ -13,11 +13,15 @@ function clientFor(h: RangkaianTestDatabase) {
     return new Client({ connectionString: (h.pool as any).options.connectionString });
 }
 
+// Tanpa TEST_POSTGRES_URL suite ini dilewati bersih; CI menjalankannya pada PG16/17/18.
+const adaPostgres = Boolean(process.env.TEST_POSTGRES_URL);
+
 let h: RangkaianTestDatabase;
 let client: Client;
 const surat: Record<string, string> = {};
 
 beforeAll(async () => {
+    if (!adaPostgres) return;
     h = await createRangkaianTestDatabase('backfill');
     dbState.db = h.db;
     await h.seedUnits();
@@ -39,7 +43,7 @@ afterAll(async () => {
     await h?.close();
 });
 
-describe('backfill langkah 1: disposisi eksplisit', () => {
+describe.skipIf(!adaPostgres)('backfill langkah 1: disposisi eksplisit', () => {
     it('mengisi rangkaian_id semua baris (termasuk rejected) dengan batch kecil', async () => {
         const hasil = await backfillRangkaianDisposisi(client, { batchSize: 1 });
         expect(hasil).toMatchObject({ rangkaianDibuat: 3, distribusiDiisi: 5, sisaTanpaRangkaian: 0, dilewati: [] });
@@ -85,7 +89,7 @@ describe('backfill langkah 1: disposisi eksplisit', () => {
 // mensyaratkan bukti processed untuk 'selesai' — backfill langkah 1 sendiri
 // tidak menjalankan recompute, jadi baris ini hanya menutup rangkaian pada
 // saat dibuat.
-describe('backfill: rangkaian asal semua distribusi rejected', () => {
+describe.skipIf(!adaPostgres)('backfill: rangkaian asal semua distribusi rejected', () => {
     let hDitolak: RangkaianTestDatabase;
     let clientDitolak: Client;
     let suratDitolak: string;
@@ -129,7 +133,7 @@ describe('backfill: rangkaian asal semua distribusi rejected', () => {
 // dengan rangkaian_id NULL pada surat yang sudah diberkaskan lewat kode P3.
 // Backfill harus melewati surat itu (dilewati), bukan membiarkan seluruh
 // batch gagal 23514.
-describe('backfill: melewati anggota rangkaian yang sudah diberkaskan', () => {
+describe.skipIf(!adaPostgres)('backfill: melewati anggota rangkaian yang sudah diberkaskan', () => {
     let hBerkas: RangkaianTestDatabase;
     let clientBerkas: Client;
     let suratDiberkaskan: string;
@@ -192,7 +196,7 @@ describe('backfill: melewati anggota rangkaian yang sudah diberkaskan', () => {
 // utama pada run ulang pasca-deploy. Surat anggota rangkaian aktif dengan baris
 // NULL (tercipta di jendela deploy) → tidak ada rangkaian/anggota baru; baris
 // diisi rangkaian yang sudah ada (d.rangkaian_id = a.rangkaian_id).
-describe('backfill: surat yang sudah anggota rangkaian aktif', () => {
+describe.skipIf(!adaPostgres)('backfill: surat yang sudah anggota rangkaian aktif', () => {
     let hAda: RangkaianTestDatabase;
     let clientAda: Client;
     let suratAda: string;

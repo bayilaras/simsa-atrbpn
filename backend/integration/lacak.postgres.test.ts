@@ -1,13 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { dbState } from './helpers/db-proxy.js';
 import { createRangkaianTestDatabase, type RangkaianTestDatabase, type TestUser } from './helpers/rangkaian-db.js';
 
-const state = vi.hoisted(() => ({ db: null as any }));
-const proxy = () => ({ db: new Proxy({}, { get: (_t, key) => {
-    const value = state.db?.[key];
-    return typeof value === 'function' ? value.bind(state.db) : value;
-} }) });
-vi.mock('../src/config/database', proxy);
-vi.mock('../src/config/database.js', proxy);
+// Mock `db` bersama untuk suite Postgres P3 (T2-5). Sebelumnya berkas ini
+// meneruskan konstanta `proxy` ke vi.mock yang di-hoist ke atas deklarasinya
+// (ReferenceError TDZ saat koleksi, juga di CI) — kini pola helper bersama.
+vi.mock('../src/config/database', () => import('./helpers/db-proxy.js'));
+vi.mock('../src/config/database.js', () => import('./helpers/db-proxy.js'));
+
+// Tanpa TEST_POSTGRES_URL suite ini dilewati bersih; CI menjalankannya pada PG16/17/18.
+const adaPostgres = Boolean(process.env.TEST_POSTGRES_URL);
 
 const { lacakService } = await import('../src/services/rangkaian/lacak.service.js');
 const { rangkaianService, aktor } = await import('../src/services/rangkaian/deps.js');
@@ -20,8 +22,9 @@ const cari = (user: TestUser, q: string, extra: Record<string, unknown> = {}) =>
 const idPertama = (k: any) => k.cocok[0]?.id;
 
 beforeAll(async () => {
+    if (!adaPostgres) return;
     h = await createRangkaianTestDatabase('lacak');
-    state.db = h.db;
+    dbState.db = h.db;
     await h.seedUnits();
     pengawas = await h.seedUser('admin_unit', 'sesditjen');
     bppt = await h.seedUser('admin_unit', 'dir_bppt');
@@ -45,7 +48,7 @@ beforeAll(async () => {
 
 afterAll(async () => { await h?.close(); });
 
-describe('Lacak Surat di PostgreSQL', () => {
+describe.skipIf(!adaPostgres)('Lacak Surat di PostgreSQL', () => {
     it('nomor ternormalisasi menemukan surat masuk TU untuk pengawas (skor 90)', async () => {
         const hasil = await cari(pengawas, 'b12ptpp1ix2024');
         expect(hasil.jenisKueri).toBe('nomor');

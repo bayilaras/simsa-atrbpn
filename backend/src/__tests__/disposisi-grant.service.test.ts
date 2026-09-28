@@ -27,12 +27,12 @@ const input = {
 };
 
 describe('disposisiGrantService.ajukan (C-M5)', () => {
-    let onConflictDoNothing: ReturnType<typeof vi.fn>;
+    let onConflictDoNothing: ReturnType<typeof vi.fn<(...args: unknown[]) => void>>;
     let tx: any;
 
     beforeEach(() => {
         audit.logActionOrThrow.mockReset().mockResolvedValue(undefined);
-        onConflictDoNothing = vi.fn();
+        onConflictDoNothing = vi.fn<(...args: unknown[]) => void>();
         tx = {
             execute: vi.fn(async () => ({ rows: [{ id: 'u-admin-1' }, { id: 'u-admin-2' }] })),
             select: vi.fn(() => rantai([])),
