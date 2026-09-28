@@ -53,6 +53,13 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 
+const hookMocks = vi.hoisted(() => ({
+    afterSuratMasukInsert: vi.fn(async () => null as any),
+    guardSuratMasukMutation: vi.fn(async () => null as any),
+    afterSuratMasukMutation: vi.fn(async () => undefined),
+}));
+vi.mock('../services/rangkaian/tindak-lanjut.hook.js', () => hookMocks);
+
 const { SuratMasukService } = await import('../services/surat-masuk.service');
 const { srikandiBusinessProducer } = await import('../services/srikandi-producer.service');
 const { auditLogService } = await import('../services/audit-log.service');
@@ -344,6 +351,27 @@ describe('SuratMasukService', () => {
 
             expect(download).not.toHaveBeenCalled();
             expect(transaction).not.toHaveBeenCalled();
+        });
+
+        it('meneruskan routing disposisi ke hook dan menyimpan label tambahan saja', async () => {
+            enqueue([], [templateRow], [{ noUrut: 5 }], [{ id: 'new', noUrut: 6, unitKerjaId: 'u1' }], [{ id: 'new', noUrut: 6, disposisi: ['Kabag Umum', 'Dit. BPPT'] }]);
+            hookMocks.afterSuratMasukInsert.mockResolvedValueOnce({ referensi: null, disposisi: [{ id: 'dist-1' }] });
+            const actor = { id: 'user-tu', role: 'admin_unit', unitKerjaId: 'u1' };
+            const routing = { targets: [{ unitKerjaId: 'dir_bppt', penanggungJawab: true }], instruksi: 'Mohon ditindaklanjuti', labelTambahan: ['Kabag Umum'] };
+            const res = await svc.create({ unitKerjaId: 'u1', tahun: 2026, tanggalSurat: '2026-08-01', disposisi: routing, actor } as any);
+            expect(capturedValues.at(-1)).toMatchObject({ disposisi: ['Kabag Umum'] });
+            expect(hookMocks.afterSuratMasukInsert).toHaveBeenCalledWith(expect.anything(), {
+                user: actor, inserted: { id: 'new', unitKerjaId: 'u1' }, disposisi: routing, referensi: undefined, audit: undefined,
+            });
+            expect(res.disposisi).toEqual(['Kabag Umum', 'Dit. BPPT']);
+        });
+
+        it('label disposisi lama tetap disimpan tanpa memanggil hook berantai', async () => {
+            enqueue([], [templateRow], [], [{ id: 'new', noUrut: 1, unitKerjaId: 'u1' }]);
+            await svc.create({ unitKerjaId: 'u1', tahun: 2026, tanggalSurat: '2026-03-17', disposisi: ['Ditjen'] } as any);
+            expect(capturedValues.at(-1)).toMatchObject({ disposisi: ['Ditjen'] });
+            expect(hookMocks.afterSuratMasukInsert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ disposisi: undefined, referensi: undefined }));
+            expect(resultQueue).toHaveLength(0);
         });
     });
 

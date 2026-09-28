@@ -2,6 +2,7 @@ import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
 import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, inArray } from 'drizzle-orm';
 import { ConflictError, DatabaseError } from '../utils/errors';
+import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
 import {
     scopedRecordByIdWhere,
     type RecordUnitScope,
@@ -24,6 +25,15 @@ import {
     type SuratNumberContext,
     type SuratNumberPreview,
 } from '../utils/surat-numbering.js';
+import { afterSuratMasukInsert } from './rangkaian/tindak-lanjut.hook.js';
+import type { DisposisiRoutingInput } from '../validators/schemas.js';
+import type { RecordUser } from './record-access.service.js';
+
+export type CreateSuratMasukInput = Omit<NewSuratMasuk, 'disposisi'> & {
+    disposisi?: string[] | DisposisiRoutingInput | null;
+    referensi?: { jenis: 'surat_keluar'; id: string };
+    actor?: RecordUser | null;
+};
 
 export interface SuratMasukFilters {
     unitKerjaId?: string | null;
@@ -154,16 +164,21 @@ export class SuratMasukService {
     }
 
     async createImported(data: NewSuratMasuk, auditContext: CriticalAuditContext, options: SuratImportOptions = {}) {
-        return this.create(data, auditContext, undefined, undefined, options);
+        return this.create(data as CreateSuratMasukInput, auditContext, undefined, undefined, options);
     }
 
     async create(
-        data: NewSuratMasuk,
+        input: CreateSuratMasukInput,
         auditContext?: CriticalAuditContext,
         clientBlobClaim?: ClaimClientBlobUpload,
         attachment?: RegisterSuratAttachmentData,
         importOptions?: SuratImportOptions,
     ) {
+        const { disposisi: disposisiInput, referensi, actor, ...rest } = input;
+        const routing = disposisiInput && !Array.isArray(disposisiInput) ? disposisiInput : undefined;
+        // Label text[] hanya berisi label lama/Kabag; nama unit ditambahkan oleh distribute().
+        const labels = Array.isArray(disposisiInput) ? disposisiInput : routing?.labelTambahan;
+        const data = { ...rest, ...(labels ? { disposisi: labels } : {}) } as NewSuratMasuk;
         const calendar = resolveSuratCalendar({
             tahun: data.tahun,
             tanggalSurat: data.tanggalSurat,
@@ -190,7 +205,9 @@ export class SuratMasukService {
             : undefined;
 
         try {
-            const result = await db.transaction(async (tx: any) => {
+            // C-4: seluruh transaksi diulang pada 40P01/40001; prepareExisting di atas
+            // tetap di luar agar percobaan ulang tidak mengulang efek eksternal.
+            const result = await denganRetryDeadlock(() => db.transaction(async (tx: any) => {
                 // The unit template row is the numbering mutex. Unlike locking
                 // the last surat row, this also serializes an empty sequence.
                 const templates = await settingsService.lockSuratTemplates(tx, data.unitKerjaId);
@@ -250,6 +267,17 @@ export class SuratMasukService {
                     }, tx);
                 }
 
+                const registrasi = await afterSuratMasukInsert(tx, {
+                    user: actor ?? null,
+                    inserted: { id: inserted.id, unitKerjaId: inserted.unitKerjaId },
+                    disposisi: routing,
+                    referensi,
+                    audit: auditContext,
+                });
+                const tersimpan = registrasi
+                    ? (await tx.select().from(suratMasuk).where(eq(suratMasuk.id, inserted.id)).limit(1))[0]
+                    : inserted;
+
                 if (auditContext) {
                     await auditLogService.logActionOrThrow({
                         ...auditContext,
@@ -263,6 +291,8 @@ export class SuratMasukService {
                                 unitKerjaId: inserted.unitKerjaId,
                                 klasifikasiItemId: inserted.klasifikasiItemId,
                                 jraItemId: inserted.jraItemId,
+                                disposisiUnitIds: routing?.targets.map((t) => t.unitKerjaId) ?? null,
+                                referensiSuratKeluarId: referensi?.id ?? null,
                             },
                         },
                     }, tx);
@@ -278,8 +308,8 @@ export class SuratMasukService {
                     createdAt: inserted.createdAt,
                 }, auditContext?.userId || data.createdBy || undefined);
 
-                return (await hydrateSuratRuleSelections(tx, [inserted], 'masuk'))[0];
-            });
+                return (await hydrateSuratRuleSelections(tx, [tersimpan], 'masuk'))[0];
+            }));
 
             return result;
         } catch (error: any) {

@@ -4,8 +4,8 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import type { TindakLanjutInput } from '../../validators/schemas.js';
 import auditLogService, { type CriticalAuditContext } from '../audit-log.service.js';
 import {
-    aktorPenulis, kunciSurat, pengawasUntukUnit, rangkaianService, recomputeRangkaian, recomputeSuratMasuk,
-    recordAccessService, type RangkaianActor, type RecordUser, type SuratJenis, type Tx,
+    aktorPenulis, kunciSurat, lockSuratMasukRows, pengawasUntukUnit, rangkaianService, recomputeRangkaian,
+    recomputeSuratMasuk, recordAccessService, type RangkaianActor, type RecordUser, type SuratJenis, type Tx,
 } from './deps.js';
 import { rowsOf } from './sql-rows.js';
 
@@ -104,6 +104,58 @@ export const tindakLanjutService = {
                 }
             }
         }
+    },
+
+    /**
+     * Skenario (d): surat masuk membalas surat keluar kita. Rujukan aktif/selesai →
+     * gabung dengan relasi 'merujuk' (selesai dibuka kembali, diaudit); rujukan
+     * diberkaskan → rangkaian BARU dengan lanjutan_dari_id (tidak mewarisi jangkauan).
+     *
+     * [T9-2] Bila attach membuka kembali rangkaian `selesai`, hitung ulang SEMUA
+     * anggota surat masuk rangkaian itu (dikunci di sini — baris SM yang baru
+     * didaftarkan sudah dikunci oleh create() pemanggil; relock di sini no-op).
+     */
+    async referensiSuratMasuk(tx: Tx, params: {
+        user: RecordUser;
+        suratMasuk: { id: string; unitKerjaId: string };
+        referensi: { jenis: 'surat_keluar'; id: string };
+        audit?: CriticalAuditContext;
+    }): Promise<{ rangkaianId: string; lanjutanDariId: string | null; dibukaKembali: boolean }> {
+        const { user, suratMasuk: sm, referensi, audit } = params;
+        const akses = await recordAccessService.checkRead(user, 'surat_keluar', referensi.id, tx);
+        if (!akses.exists || !akses.allowed) throw new NotFoundError('Surat rujukan');
+        const actor = aktorPenulis(user, audit);
+        const rujukan = await rangkaianService.ensureForSurat(tx, { jenis: 'surat_keluar', id: referensi.id }, actor);
+        if (rujukan.status === 'diberkaskan') {
+            const baru = await rangkaianService.ensureForSuratMasuk(tx, sm.id, actor);
+            await tx.execute(sql`UPDATE rangkaian_surat SET lanjutan_dari_id = ${rujukan.rangkaianId}, updated_at = now() WHERE id = ${baru.rangkaianId}`);
+            if (audit) {
+                await auditLogService.logActionOrThrow({
+                    ...audit,
+                    action: 'update',
+                    entityType: 'rangkaian_surat',
+                    entityId: baru.rangkaianId,
+                    changes: { after: { lanjutanDariId: rujukan.rangkaianId }, suratMasukId: sm.id, rujukanSuratKeluarId: referensi.id },
+                }, tx);
+            }
+            return { rangkaianId: baru.rangkaianId, lanjutanDariId: rujukan.rangkaianId, dibukaKembali: false };
+        }
+        // P1 attach: anggota + relasi 'merujuk'; rangkaian 'selesai' dibuka kembali (audit status_change).
+        const hasil = await rangkaianService.attach(tx, {
+            rangkaianId: rujukan.rangkaianId,
+            surat: { jenis: 'surat_masuk', id: sm.id },
+            keAnggotaId: rujukan.anggotaId,
+            jenisRelasi: 'merujuk',
+            keterangan: null,
+            sumber: 'aplikasi',
+        }, actor);
+        await recomputeRangkaian(tx, hasil.rangkaianId, actor);
+        if (hasil.reopened) {
+            const suratMasukIds = await anggotaSuratMasuk(tx, hasil.rangkaianId);
+            await lockSuratMasukRows(tx, suratMasukIds);
+            await recomputeSuratMasuk(tx, suratMasukIds, actor);
+        }
+        return { rangkaianId: hasil.rangkaianId, lanjutanDariId: null, dibukaKembali: hasil.reopened };
     },
 };
 

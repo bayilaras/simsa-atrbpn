@@ -289,6 +289,7 @@ router.post('/',
             const result = await suratMasukService.create({
                 ...bodyValidation.data,
                 createdBy: req.user?.id,
+                actor: req.user,
                 unitKerjaId: serverUnitKerjaId,
                 filePath,
                 fileOriginalName,
