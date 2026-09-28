@@ -24,9 +24,12 @@ export async function seedUnits(database: PGlite, units: Array<{ id: string; nam
     }
 }
 
+/** Baris DB memenuhi users_role_unit_mandate_check (0027); objek di memori tetap apa adanya (unit null menguji jalur mandat). */
+const UNIT_MANDAT: Record<string, string> = { admin_sesditjen: 'sesditjen', admin_dirjen: 'ditjen' };
+
 export async function insertUser(database: PGlite, user: PenggunaUji): Promise<PenggunaUji> {
     await database.query('INSERT INTO users (id, email, name, role, unit_kerja_id) VALUES ($1, $2, $3, $4, $5)',
-        [user.id, user.email, user.name, user.role, user.unitKerjaId]);
+        [user.id, user.email, user.name, user.role, UNIT_MANDAT[user.role] ?? user.unitKerjaId]);
     return user;
 }
 
