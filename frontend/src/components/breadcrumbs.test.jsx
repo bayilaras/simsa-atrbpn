@@ -30,4 +30,10 @@ describe('breadcrumb destinations', () => {
         expect(screen.queryByRole('link', { name: label, exact: true })).not.toBeInTheDocument()
         expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/')
     })
+
+    it('menamai halaman Lacak Surat tanpa tautan perantara yang rusak', () => {
+        mount('/surat/lacak')
+        expect(screen.getByText('Lacak Surat')).toBeVisible()
+        expect(screen.queryByRole('link', { name: 'Surat', exact: true })).not.toBeInTheDocument()
+    })
 })

@@ -74,4 +74,15 @@ describe('sidebar task groups', () => {
         expect(screen.getByRole('link', { name: 'Monitoring Operasional' })).toHaveAttribute('href', '/monitoring-operasional')
         expect(screen.getByRole('link', { name: 'Monitoring Operasional' })).toHaveAttribute('aria-current', 'page')
     })
+    it('menawarkan Lacak Surat di grup Surat untuk setiap role terprovisi', () => {
+        for (const role of ['staff', 'auditor', 'admin_unit', 'super_admin']) {
+            state.role = role
+            const { unmount } = show({ route: '/surat/lacak' })
+            const link = screen.getByRole('link', { name: 'Lacak Surat' })
+            expect(link).toHaveAttribute('href', '/surat/lacak')
+            expect(link).toHaveAttribute('aria-current', 'page')
+            expect(screen.getByRole('link', { name: 'Surat Masuk', exact: true })).not.toHaveAttribute('aria-current')
+            unmount()
+        }
+    })
 })

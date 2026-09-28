@@ -26,6 +26,7 @@ import {
     GitBranch,
     Scale,
     Settings2,
+    Search,
 } from 'lucide-react'
 
 import {
@@ -83,6 +84,7 @@ const menuGroups = [
                 subItems: [
                     { title: 'Surat Masuk', url: '/surat/masuk', icon: MailOpen },
                     { title: 'Surat Keluar', url: '/surat/keluar', icon: Send },
+                    { title: 'Lacak Surat', url: '/surat/lacak', icon: Search },
                 ],
             },
             {
