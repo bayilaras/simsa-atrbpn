@@ -73,6 +73,14 @@ describe('SuratMasukService', () => {
 
     beforeEach(() => {
         vi.restoreAllMocks();
+        // [F2] vi.restoreAllMocks() (vitest 3+) hanya memulihkan vi.spyOn; hookMocks
+        // adalah vi.fn() hoisted level modul, riwayat panggilannya TIDAK ikut
+        // terhapus. Tanpa mockClear ini, asersi toHaveBeenCalledWith pada tes label
+        // lama lolos karena tes create() sebelumnya sudah memanggil hook dengan
+        // disposisi/referensi undefined — bukan karena tes ini benar.
+        hookMocks.afterSuratMasukInsert.mockClear();
+        hookMocks.guardSuratMasukMutation.mockClear();
+        hookMocks.afterSuratMasukMutation.mockClear();
         svc = new SuratMasukService();
         resultQueue.length = 0;
         capturedValues.length = 0;
@@ -370,7 +378,13 @@ describe('SuratMasukService', () => {
             enqueue([], [templateRow], [], [{ id: 'new', noUrut: 1, unitKerjaId: 'u1' }]);
             await svc.create({ unitKerjaId: 'u1', tahun: 2026, tanggalSurat: '2026-03-17', disposisi: ['Ditjen'] } as any);
             expect(capturedValues.at(-1)).toMatchObject({ disposisi: ['Ditjen'] });
-            expect(hookMocks.afterSuratMasukInsert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ disposisi: undefined, referensi: undefined }));
+            // [F2] Riwayat hook dibersihkan di beforeEach (mockClear), jadi
+            // toHaveBeenCalledTimes(1)/toHaveBeenLastCalledWith di sini benar-benar
+            // menguji panggilan create() INI — bukan sisa panggilan tes sebelumnya —
+            // dan akan merah bila label lama string/array ikut dikirim sebagai
+            // routing disposisi ke hook multi-unit.
+            expect(hookMocks.afterSuratMasukInsert).toHaveBeenCalledTimes(1);
+            expect(hookMocks.afterSuratMasukInsert).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ disposisi: undefined, referensi: undefined }));
             expect(resultQueue).toHaveLength(0);
         });
     });

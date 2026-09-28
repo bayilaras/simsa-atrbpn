@@ -34,11 +34,30 @@ async function skBaru(unit: string): Promise<string> {
     return id;
 }
 
+/** Surat masuk BARU (analog skBaru), belum jadi anggota rangkaian apa pun — untuk uji referensiSuratMasuk. */
+async function smBaru(unit: string): Promise<string> {
+    seq += 1;
+    const id = `31000000-0000-4000-8000-${String(seq).padStart(12, '0')}`;
+    await database.query(
+        `INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, nomor_surat, perihal, dari, tanggal_surat)
+         VALUES ($1, $2, $3, 2026, 'biasa', $4, 'Referensi uji', 'Kanwil Uji', '2026-09-20')`,
+        [id, unit, 200 + seq, `SM-${200 + seq}/2026`],
+    );
+    return id;
+}
+
 function attach(user: { id: string; role: string; unitKerjaId: string | null }, skId: string, unit: string,
     t: { jenis: 'surat_masuk' | 'surat_keluar'; suratId: string; jenisRelasi: 'balasan' | 'tindak_lanjut' | 'menjelaskan' | 'merujuk'; distribusiId?: string },
     dbUji: any = holder.db) {
     return dbUji.transaction((tx: any) => tindakLanjut.tindakLanjutService.attachSuratKeluar(tx, {
         user, suratKeluar: { id: skId, unitKerjaId: unit }, tindakLanjut: t, audit: audit(user.id),
+    }));
+}
+
+function referensi(user: { id: string; role: string; unitKerjaId: string | null }, smId: string, unit: string, skId: string,
+    dbUji: any = holder.db) {
+    return dbUji.transaction((tx: any) => tindakLanjut.tindakLanjutService.referensiSuratMasuk(tx, {
+        user, suratMasuk: { id: smId, unitKerjaId: unit }, referensi: { jenis: 'surat_keluar', id: skId }, audit: audit(user.id),
     }));
 }
 
@@ -278,5 +297,104 @@ describe('tindakLanjutService.attachSuratKeluar', () => {
         const sk = await skBaru('sesditjen');
         const hasil = await attach(PENGGUNA.tu, sk, 'sesditjen', { jenis: 'surat_keluar', suratId: SURAT.skBpptBiasa, jenisRelasi: 'merujuk' });
         expect(hasil).toMatchObject({ rangkaianId: RANGKAIAN.rs1, balasanUntuk: null, distribusiDiterima: null });
+    });
+});
+
+describe('tindakLanjutService.referensiSuratMasuk', () => {
+    // Kasus "rujukan diberkaskan" (rangkaian baru + lanjutan_dari_id) hanya di
+    // integration/registrasi-surat-masuk.postgres.test.ts: seperti pada
+    // attachSuratKeluar di atas, fixture PGlite ini tidak dapat membuat butir
+    // klasifikasi (katalog regulasi sudah dipublikasikan oleh migrasi), padahal
+    // status diberkaskan mewajibkannya (rangkaian_berkas_check).
+
+    it('rangkaian rujukan selesai dibuka kembali: SM (baru + anggota lama) dikunci sebelum R (G-LOCK) [F1]', async () => {
+        // Anggota SM kedua (bukan induk) sudah ada di rs1 sebelum rs1 ditutup.
+        await database.exec(`
+            INSERT INTO rangkaian_anggota (id, rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber)
+                VALUES ('${ANGGOTA_SM2}', '${RANGKAIAN.rs1}', '${SURAT.smTunggal}', 'sesditjen', 'anggota', 'aplikasi');
+            UPDATE surat_distributions SET status = 'processed', processed_at = now(),
+                catatan_penyelesaian = 'Sudah ditangani sepenuhnya' WHERE id = '${DISPOSISI.rs1Bppt}';
+            UPDATE rangkaian_surat SET status = 'selesai', selesai_at = now() WHERE id = '${RANGKAIAN.rs1}';
+        `);
+        const sm = await smBaru('sesditjen');
+        const log: Array<{ q: string; p: unknown[] }> = [];
+        const hasil = await referensi(PENGGUNA.tu, sm, 'sesditjen', SURAT.skBpptBiasa, dbTercatat(log));
+        expect(hasil.rangkaianId).toBe(RANGKAIAN.rs1);
+        expect(hasil.dibukaKembali).toBe(true);
+        expect(await one('SELECT rangkaian_id FROM rangkaian_anggota WHERE surat_masuk_id = $1', [sm]))
+            .toEqual({ rangkaian_id: RANGKAIAN.rs1 });
+        // [T9-1] recomputeRangkaian bisa menutupnya lagi sampai Task 12; hanya baris
+        // audit pembukaan kembali yang ditegaskan di sini (sama seperti Postgres Task 9).
+        const { n } = await one<{ n: number }>(
+            `SELECT count(*)::int AS n FROM audit_log WHERE entity_type = 'rangkaian_surat' AND action = 'status_change'
+               AND entity_id = $1 AND changes->'after'->>'status' = 'aktif'`,
+            [RANGKAIAN.rs1],
+        );
+        expect(n).toBeGreaterThanOrEqual(1);
+
+        // G-LOCK/[F1]: SM (sm baru + smBiasa induk + smTunggal anggota, SATU pernyataan)
+        // dikunci SEBELUM kunci rangkaian_surat pertama — sebelumnya terbalik (R lalu SM).
+        const iSm = log.findIndex(({ q, p }) => kunciSm(q) && p.includes(sm) && p.includes(SURAT.smBiasa) && p.includes(SURAT.smTunggal));
+        const iR = log.findIndex(({ q }) => kunciRangkaian(q));
+        expect(iSm).toBeGreaterThanOrEqual(0);
+        expect(iR).toBeGreaterThan(iSm);
+    });
+
+    it('anggota SM terhapus tidak dikunci atau dihitung ulang saat buka kembali (GC#29) [F1]', async () => {
+        await database.exec(`
+            UPDATE surat_masuk SET status = 'sudah_dibalas', is_deleted = true WHERE id = '${SURAT.smTunggal}';
+            INSERT INTO rangkaian_anggota (id, rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber)
+                VALUES ('${ANGGOTA_SM2}', '${RANGKAIAN.rs1}', '${SURAT.smTunggal}', 'sesditjen', 'anggota', 'aplikasi');
+            UPDATE surat_distributions SET status = 'processed', processed_at = now(),
+                catatan_penyelesaian = 'Sudah ditangani sepenuhnya' WHERE id = '${DISPOSISI.rs1Bppt}';
+            UPDATE rangkaian_surat SET status = 'selesai', selesai_at = now() WHERE id = '${RANGKAIAN.rs1}';
+        `);
+        const sm = await smBaru('sesditjen');
+        const log: Array<{ q: string; p: unknown[] }> = [];
+        await referensi(PENGGUNA.tu, sm, 'sesditjen', SURAT.skBpptBiasa, dbTercatat(log));
+        expect(log.some(({ q, p }) => kunciSm(q) && p.includes(SURAT.smTunggal))).toBe(false);
+        expect(await one('SELECT status FROM surat_masuk WHERE id = $1', [SURAT.smTunggal])).toEqual({ status: 'sudah_dibalas' });
+    });
+
+    it('keanggotaan berubah bersamaan setelah prabaca: diulang sekali lalu berhasil [F1]', async () => {
+        const asli = rangkaianP1.rangkaianService.ensureForSurat.bind(rangkaianP1.rangkaianService);
+        let panggilan = 0;
+        vi.spyOn(rangkaianP1.rangkaianService, 'ensureForSurat').mockImplementation(async (tx: any, ref, actor, opsi) => {
+            panggilan += 1;
+            if (panggilan === 1) {
+                // Simulasi transaksi lain yang commit di antara prabaca tanpa kunci dan
+                // kunci R: anggota SM baru + rangkaian selesai (attach membukanya kembali).
+                await tx.execute(MASUKKAN_SM2_KE_RS1);
+                await tx.execute(RS1_SELESAI);
+            }
+            return asli(tx, ref, actor, opsi);
+        });
+        const sm = await smBaru('sesditjen');
+        const hasil = await referensi(PENGGUNA.tu, sm, 'sesditjen', SURAT.skBpptBiasa);
+        expect(panggilan).toBe(2);
+        expect(hasil.rangkaianId).toBe(RANGKAIAN.rs1);
+        // Percobaan pertama digulung balik ke savepoint (termasuk simulasinya); percobaan kedua bersih.
+        expect((await database.query('SELECT id FROM rangkaian_anggota WHERE id = $1', [ANGGOTA_SM2])).rows).toEqual([]);
+        expect((await database.query('SELECT id FROM rangkaian_anggota WHERE surat_masuk_id = $1', [sm])).rows).toHaveLength(1);
+    });
+
+    it('keanggotaan berubah lagi pada percobaan kedua: 409 coba lagi tanpa efek [F1]', async () => {
+        const asli = rangkaianP1.rangkaianService.ensureForSurat.bind(rangkaianP1.rangkaianService);
+        const spy = vi.spyOn(rangkaianP1.rangkaianService, 'ensureForSurat').mockImplementation(async (tx: any, ref, actor, opsi) => {
+            await tx.execute(MASUKKAN_SM2_KE_RS1);
+            await tx.execute(RS1_SELESAI);
+            return asli(tx, ref, actor, opsi);
+        });
+        const sm = await smBaru('sesditjen');
+        await expect(referensi(PENGGUNA.tu, sm, 'sesditjen', SURAT.skBpptBiasa))
+            .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/coba lagi/i) });
+        expect(spy).toHaveBeenCalledTimes(2);
+        expect((await database.query('SELECT id FROM rangkaian_anggota WHERE surat_masuk_id = $1', [sm])).rows).toEqual([]);
+    });
+
+    it('rujukan yang tidak dapat dibaca pencatat → 404 tanpa efek', async () => {
+        const sm = await smBaru('dir_plp');
+        await expect(referensi(PENGGUNA.plp, sm, 'dir_plp', SURAT.skBpptBiasa)).rejects.toMatchObject({ statusCode: 404 });
+        expect((await database.query('SELECT id FROM rangkaian_anggota WHERE surat_masuk_id = $1', [sm])).rows).toEqual([]);
     });
 });

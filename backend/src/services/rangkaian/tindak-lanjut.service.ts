@@ -111,9 +111,18 @@ export const tindakLanjutService = {
      * gabung dengan relasi 'merujuk' (selesai dibuka kembali, diaudit); rujukan
      * diberkaskan → rangkaian BARU dengan lanjutan_dari_id (tidak mewarisi jangkauan).
      *
-     * [T9-2] Bila attach membuka kembali rangkaian `selesai`, hitung ulang SEMUA
-     * anggota surat masuk rangkaian itu (dikunci di sini — baris SM yang baru
-     * didaftarkan sudah dikunci oleh create() pemanggil; relock di sini no-op).
+     * Urutan kunci (G-LOCK/GC#30, [F1]): SM (sm.id yang baru didaftarkan — sudah
+     * dikunci oleh create() pemanggil — DAN, bila prabaca tanpa kunci menunjukkan
+     * rangkaian rujukan berstatus 'selesai', semua anggota SM-nya) → SATU
+     * pernyataan `lockSuratMasukRows` → ensureForSurat (SK rujukan, lalu R) →
+     * attach (mengunci ulang R; no-op). Ini SM → R, sama seperti attachSuratKeluar
+     * (T8), sehingga tidak berlawanan arah dengan kunciSurat di sana — inversi
+     * riil yang tersisa (SK create: SK→SM; registrasi ini: awalnya SM→SK lewat
+     * checkRead tanpa kunci) diterima sebagai residu, ditangani `denganRetryDeadlock`
+     * di batas transaksi terluar (C-4). Anggota yang dikunci berasal dari prabaca
+     * tanpa kunci; bila setelah attach (di bawah kunci R, keanggotaan stabil) ada
+     * anggota SM yang harus dihitung ulang tetapi belum dikunci, savepoint digulung
+     * balik (melepas kunci R) dan diulang sekali, lalu 409 "coba lagi" (pola T8-3/T10-1).
      */
     async referensiSuratMasuk(tx: Tx, params: {
         user: RecordUser;
@@ -125,39 +134,83 @@ export const tindakLanjutService = {
         const akses = await recordAccessService.checkRead(user, 'surat_keluar', referensi.id, tx);
         if (!akses.exists || !akses.allowed) throw new NotFoundError('Surat rujukan');
         const actor = aktorPenulis(user, audit);
-        const rujukan = await rangkaianService.ensureForSurat(tx, { jenis: 'surat_keluar', id: referensi.id }, actor);
-        if (rujukan.status === 'diberkaskan') {
-            const baru = await rangkaianService.ensureForSuratMasuk(tx, sm.id, actor);
-            await tx.execute(sql`UPDATE rangkaian_surat SET lanjutan_dari_id = ${rujukan.rangkaianId}, updated_at = now() WHERE id = ${baru.rangkaianId}`);
-            if (audit) {
-                await auditLogService.logActionOrThrow({
-                    ...audit,
-                    action: 'update',
-                    entityType: 'rangkaian_surat',
-                    entityId: baru.rangkaianId,
-                    changes: { after: { lanjutanDariId: rujukan.rangkaianId }, suratMasukId: sm.id, rujukanSuratKeluarId: referensi.id },
-                }, tx);
+
+        for (let percobaan = 1; ; percobaan += 1) {
+            // Prabaca tanpa kunci, sebelum kunci apa pun atas SM atau R (G-LOCK, [F1]).
+            const pra = await keanggotaanInduk(tx, 'surat_keluar', referensi.id);
+            const smDikunci = new Set<string>([sm.id]);
+            if (pra?.status === 'selesai') {
+                for (const id of await anggotaSuratMasuk(tx, pra.rangkaianId)) smDikunci.add(id);
             }
-            return { rangkaianId: baru.rangkaianId, lanjutanDariId: rujukan.rangkaianId, dibukaKembali: false };
+            try {
+                // Savepoint: bila keanggotaan berubah, rollback melepas kunci R yang
+                // sudah diambil sehingga percobaan ulang kembali mengunci SM lebih dulu.
+                return await tx.transaction((sp) => langkahReferensi(sp, {
+                    sm, referensi, actor, audit, smDikunci,
+                }));
+            } catch (error) {
+                if (!(error instanceof KeanggotaanBerubah)) throw error;
+                if (percobaan >= MAKS_PERCOBAAN) {
+                    throw new ConflictError('Keanggotaan rangkaian surat rujukan sedang berubah; coba lagi.');
+                }
+            }
         }
-        // P1 attach: anggota + relasi 'merujuk'; rangkaian 'selesai' dibuka kembali (audit status_change).
-        const hasil = await rangkaianService.attach(tx, {
-            rangkaianId: rujukan.rangkaianId,
-            surat: { jenis: 'surat_masuk', id: sm.id },
-            keAnggotaId: rujukan.anggotaId,
-            jenisRelasi: 'merujuk',
-            keterangan: null,
-            sumber: 'aplikasi',
-        }, actor);
-        await recomputeRangkaian(tx, hasil.rangkaianId, actor);
-        if (hasil.reopened) {
-            const suratMasukIds = await anggotaSuratMasuk(tx, hasil.rangkaianId);
-            await lockSuratMasukRows(tx, suratMasukIds);
-            await recomputeSuratMasuk(tx, suratMasukIds, actor);
-        }
-        return { rangkaianId: hasil.rangkaianId, lanjutanDariId: null, dibukaKembali: hasil.reopened };
     },
 };
+
+async function langkahReferensi(tx: Tx, p: {
+    sm: { id: string; unitKerjaId: string };
+    referensi: { jenis: 'surat_keluar'; id: string };
+    actor: RangkaianActor;
+    audit?: CriticalAuditContext;
+    smDikunci: Set<string>;
+}): Promise<{ rangkaianId: string; lanjutanDariId: string | null; dibukaKembali: boolean }> {
+    const { sm, referensi, actor, audit, smDikunci } = p;
+
+    // G-LOCK: SM (prabaca, satu pernyataan) → SK rujukan/R (ensureForSurat) → attach (R, no-op).
+    await lockSuratMasukRows(tx, [...smDikunci]);
+
+    const rujukan = await rangkaianService.ensureForSurat(tx, { jenis: 'surat_keluar', id: referensi.id }, actor);
+    if (rujukan.status === 'diberkaskan') {
+        const baru = await rangkaianService.ensureForSuratMasuk(tx, sm.id, actor);
+        await tx.execute(sql`UPDATE rangkaian_surat SET lanjutan_dari_id = ${rujukan.rangkaianId}, updated_at = now() WHERE id = ${baru.rangkaianId}`);
+        if (audit) {
+            await auditLogService.logActionOrThrow({
+                ...audit,
+                action: 'update',
+                entityType: 'rangkaian_surat',
+                entityId: baru.rangkaianId,
+                changes: { after: { lanjutanDariId: rujukan.rangkaianId }, suratMasukId: sm.id, rujukanSuratKeluarId: referensi.id },
+            }, tx);
+        }
+        return { rangkaianId: baru.rangkaianId, lanjutanDariId: rujukan.rangkaianId, dibukaKembali: false };
+    }
+
+    // P1 attach: anggota + relasi 'merujuk'; rangkaian 'selesai' dibuka kembali (audit status_change).
+    const hasil = await rangkaianService.attach(tx, {
+        rangkaianId: rujukan.rangkaianId,
+        surat: { jenis: 'surat_masuk', id: sm.id },
+        keAnggotaId: rujukan.anggotaId,
+        jenisRelasi: 'merujuk',
+        keterangan: null,
+        sumber: 'aplikasi',
+    }, actor);
+    await recomputeRangkaian(tx, hasil.rangkaianId, actor);
+
+    // Baca ulang anggota di bawah kunci R (keanggotaan stabil sekarang); bila ada
+    // anggota (mis. karena reopened tak terduga oleh prabaca) yang belum dikunci
+    // di atas, gulung balik ke savepoint dan ulangi dari prabaca [F1].
+    const suratMasukIds = [sm.id];
+    if (hasil.reopened) {
+        for (const id of await anggotaSuratMasuk(tx, hasil.rangkaianId)) {
+            if (!suratMasukIds.includes(id)) suratMasukIds.push(id);
+        }
+    }
+    if (suratMasukIds.some((id) => !smDikunci.has(id))) throw new KeanggotaanBerubah();
+
+    await recomputeSuratMasuk(tx, suratMasukIds, actor);
+    return { rangkaianId: hasil.rangkaianId, lanjutanDariId: null, dibukaKembali: hasil.reopened };
+}
 
 async function langkahAttach(tx: Tx, p: {
     user: RecordUser;
