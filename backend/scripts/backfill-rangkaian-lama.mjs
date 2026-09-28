@@ -65,6 +65,23 @@ const PG_WHITESPACE_CLASS = JS_WHITESPACE_CODEPOINTS
   .join('');
 export const LABEL_NORM_TRIM_PATTERN = `^[${PG_WHITESPACE_CLASS}]+|[${PG_WHITESPACE_CLASS}]+$`;
 export const LABEL_NORM_SPASI_PATTERN = `[${PG_WHITESPACE_CLASS}]+`;
+/** Salinan PG_SEPARATOR_PATTERN visibility-spec (whitespace JS + '-'); dijaga test paritas. */
+export const SIFAT_NORM_SEPARATOR_PATTERN = `[${PG_WHITESPACE_CLASS}-]+`;
+
+/**
+ * [P5-D-10] Kelas `sifat_surat` ternormalisasi yang dikenal visibility-spec P2: alias biasa
+ * (BIASA_SIFAT_ALIASES) + SECURITY_CLASSES. Salinan (skrip .mjs tidak dapat mengimpor .ts);
+ * kesamaannya dijaga test backfill-rangkaian-lama.test.ts.
+ */
+export const KELAS_SIFAT_DIKENAL = Object.freeze([
+  'biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting',
+  'terbatas', 'rahasia', 'sangat_rahasia',
+]);
+
+/** Padanan SQL normalisasi kelas visibility-spec (tanpa pemetaan alias; alias termasuk KELAS_SIFAT_DIKENAL). */
+function sifatNormSql(expr) {
+  return `regexp_replace(lower(coalesce(nullif(regexp_replace(${expr}, '${LABEL_NORM_TRIM_PATTERN}', '', 'g'), ''), 'biasa')), '${SIFAT_NORM_SEPARATOR_PATTERN}', '_', 'g')`;
+}
 
 /** Padanan SQL `normalizeLabel` untuk ekspresi `expr` (konstanta kode, bukan nilai pengguna). */
 export function labelNormSql(expr) {
@@ -78,12 +95,14 @@ const seedValues = LABEL_SEED
   .join(', ');
 
 // Seed kode menang atas baris tabel dengan label yang sama; baris tabel lain ikut dipakai dan ikut di-hash.
+// Baris tabel `perlu_verifikasi = true` tidak pernah dirutekan (fail closed); assertPemetaanSah menolaknya.
 export const PETA_CTE = `
 seed(label_norm, unit_kerja_id, catatan) AS (VALUES ${seedValues}),
 peta AS (
   SELECT d.label_norm::varchar AS label_norm, d.unit_kerja_id::varchar AS unit_kerja_id, d.catatan
     FROM disposisi_label_unit d
    WHERE NOT EXISTS (SELECT 1 FROM seed s WHERE s.label_norm = d.label_norm)
+     AND d.perlu_verifikasi IS NOT TRUE
   UNION ALL
   SELECT s.label_norm, s.unit_kerja_id, s.catatan FROM seed s
 )`;
@@ -118,8 +137,21 @@ rute AS (
    GROUP BY surat_masuk_id, pemilik, unit_kerja_id
 )`;
 
-/** D6 fail-closed: pemetaan tidak boleh menunjuk unit tak dikenal atau unit bagian. */
+/**
+ * D6 fail-closed: pemetaan tidak boleh menunjuk unit tak dikenal atau unit bagian, dan baris tabel
+ * yang masih `perlu_verifikasi = true` tidak boleh merutekan ke unit (ditolak, bukan diam-diam dipakai).
+ */
 export async function assertPemetaanSah(client) {
+  const { rows: belumTerverifikasi } = await client.query(`WITH ${PETA_CTE}
+    SELECT d.label_norm, d.unit_kerja_id
+      FROM disposisi_label_unit d
+     WHERE d.perlu_verifikasi IS TRUE AND d.unit_kerja_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM seed s WHERE s.label_norm = d.label_norm)
+     ORDER BY d.label_norm`, seedParams());
+  if (belumTerverifikasi.length > 0) {
+    const detail = belumTerverifikasi.map(row => `"${row.label_norm}" → ${row.unit_kerja_id}`).join(', ');
+    throw new Error(`Pemetaan tidak sah (baris perlu_verifikasi=true belum diverifikasi; verifikasi atau hapus dulu): ${detail}`);
+  }
   const { rows } = await client.query(`WITH ${PETA_CTE}
     SELECT p.label_norm, p.unit_kerja_id
       FROM peta p LEFT JOIN unit_kerja uk ON uk.id = p.unit_kerja_id
@@ -228,7 +260,10 @@ SELECT
     WHERE NOT sudah_peserta AND rangkaian_status IS DISTINCT FROM 'diberkaskan')::int AS peserta_baru,
   (SELECT count(*) FROM peserta_rows
     WHERE NOT sudah_peserta AND rangkaian_status = 'diberkaskan')::int AS peserta_dilewati_diberkaskan,
-  (SELECT count(DISTINCT (surat_masuk_id, unit_kerja_id)) FROM kandidat WHERE sudah_didisposisikan)::int AS sudah_didisposisikan`;
+  (SELECT count(DISTINCT (surat_masuk_id, unit_kerja_id)) FROM kandidat WHERE sudah_didisposisikan)::int AS sudah_didisposisikan,
+  (SELECT count(*) FROM (SELECT DISTINCT surat_masuk_id FROM rute) t
+     JOIN surat_masuk sm ON sm.id = t.surat_masuk_id
+    WHERE ${sifatNormSql('sm.sifat_surat')} NOT IN (${KELAS_SIFAT_DIKENAL.map(kelas => `'${kelas}'`).join(', ')}))::int AS sifat_tak_dikenal`;
 
 const BALASAN_SQL = `WITH ${BASE_CTE},
 target AS (SELECT DISTINCT surat_masuk_id FROM rute)
@@ -326,6 +361,8 @@ export async function buildPlan(client, { batas, isiPengolah = false } = {}) {
     balasan_lintas_unit: balasan.filter(row => row.tindakan === 'lintas_unit_ditinjau_tu').length,
     sudah_didisposisikan: counted.sudah_didisposisikan,
     peserta_dilewati_diberkaskan: counted.peserta_dilewati_diberkaskan,
+    // [P5-D-10] SM target berkelas sifat_surat tak dikenal: tetap tersamar bagi peserta meski flag menyala (gerbang P5-h).
+    sifat_tak_dikenal: counted.sifat_tak_dikenal,
   };
   // [P5-C-2] Mode isi-pengolah ikut di-hash: SHA rencana biasa tidak pernah membuka mode ini.
   const payload = { batasDataLama, pemetaan, balasan, calonPengolah, total };
@@ -668,12 +705,24 @@ export function parseArgs(argv) {
   return options;
 }
 
-/** [P5-C-1] Mode tulis hanya sebagai role runtime; pengecualian eksplisit untuk dev lokal. */
-export function pastikanRoleRuntime(identitas, { apply, env = process.env }) {
-  if (apply && identitas?.db_user !== 'simsa_api' && env.ALLOW_NON_RUNTIME_ROLE !== '1') {
-    throw new Error(`Mode tulis harus dijalankan sebagai role runtime simsa_api (kini ${identitas?.db_user}); `
-      + 'set ALLOW_NON_RUNTIME_ROLE=1 hanya untuk database lokal');
-  }
+const HOST_LOKAL = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * [P5-C-1] Mode tulis hanya sebagai role runtime. Pengecualian ALLOW_NON_RUNTIME_ROLE=1 hanya berlaku
+ * bila host koneksi persis lokal (localhost/127.0.0.1/::1); host lain tetap ditolak (fail closed).
+ */
+export function pastikanRoleRuntime(identitas, { apply, host, env = process.env }) {
+  if (!apply || identitas?.db_user === 'simsa_api') return;
+  if (env.ALLOW_NON_RUNTIME_ROLE === '1' && HOST_LOKAL.has(String(host ?? '').toLowerCase())) return;
+  throw new Error(`Mode tulis harus dijalankan sebagai role runtime simsa_api (kini ${identitas?.db_user}); `
+    + 'ALLOW_NON_RUNTIME_ROLE=1 hanya berlaku untuk database lokal (localhost/127.0.0.1/::1)');
+}
+
+/** Sesi skrip mematok TimeZone UTC (pola migrate-database.mjs) agar perbandingan batas tidak bergantung zona sesi. */
+export async function siapkanSesi(client) {
+  await client.query(`SET TIME ZONE 'UTC'`);
+  const { rows: [row] } = await client.query('SHOW TimeZone');
+  return row.TimeZone ?? row.timezone;
 }
 
 // Dijalankan sebagai role runtime `simsa_api`: DATABASE_URL diisi dari NEON_RUNTIME_DATABASE_URL lewat prompt
@@ -690,13 +739,14 @@ async function main() {
   const client = new pg.Client({ connectionString: urlShell, connectionTimeoutMillis: 10_000 });
   await client.connect();
   try {
+    const zonaWaktu = await siapkanSesi(client);
     const { rows: [identitas] } = await client.query('SELECT current_user AS db_user, current_database() AS db_name');
     const { batasDataLama, sumberBatas } = await tentukanBatasDataLama(client, { apply: options.apply, batasShell });
     console.log(JSON.stringify({
-      dbUser: identitas.db_user, dbName: identitas.db_name, batasDataLama, sumberBatas,
+      dbUser: identitas.db_user, dbName: identitas.db_name, dbHost: client.host, zonaWaktu, batasDataLama, sumberBatas,
       mode: options.isiPengolah ? MODE_ISI_PENGOLAH : 'backfill', apply: options.apply,
     }));
-    pastikanRoleRuntime(identitas, { apply: options.apply });
+    pastikanRoleRuntime(identitas, { apply: options.apply, host: client.host });
     const outDir = options.outDir ?? mkdtempSync(join(tmpdir(), 'laporan-rangkaian-lama-'));
     const plan = await dalamSnapshot(client, () => buildPlan(client, { batas: batasDataLama, isiPengolah: options.isiPengolah }));
     writePlanFiles(outDir, plan);

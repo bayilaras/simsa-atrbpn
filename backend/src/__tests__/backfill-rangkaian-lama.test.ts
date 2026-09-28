@@ -15,16 +15,19 @@ import {
     LABEL_SEED,
     labelNormSql,
     isiPengolahPlan,
+    KELAS_SIFAT_DIKENAL,
     normalizeLabel,
     parseArgs,
     pastikanRoleRuntime,
     resolveBatasDataLama,
     resolveLabel,
     seedParams,
+    siapkanSesi,
+    SIFAT_NORM_SEPARATOR_PATTERN,
     tentukanBatasDataLama,
     writePlanFiles,
 } from '../../scripts/backfill-rangkaian-lama.mjs';
-import { PG_TRIM_PATTERN, PG_SEPARATOR_PATTERN } from '../services/access/visibility-spec.js';
+import { BIASA_SIFAT_ALIASES, PG_TRIM_PATTERN, PG_SEPARATOR_PATTERN, SECURITY_CLASSES } from '../services/access/visibility-spec.js';
 import { createRangkaianP5Database, P5_IDS, seedRangkaianBase } from './helpers/rangkaian-p5-pglite.js';
 
 // Hanya test gabung (Task 5 amandemen butir 7) yang memakai layanan P1 lewat Drizzle di atas PGlite.
@@ -141,6 +144,29 @@ describe('pemetaan label disposisi lama', () => {
     it('kelas whitespace SQL skrip sama dengan visibility-spec P2', () => {
         expect(LABEL_NORM_TRIM_PATTERN).toBe(PG_TRIM_PATTERN);
         expect(LABEL_NORM_SPASI_PATTERN).toBe(PG_SEPARATOR_PATTERN.replace('-]+', ']+'));
+        expect(SIFAT_NORM_SEPARATOR_PATTERN).toBe(PG_SEPARATOR_PATTERN);
+        expect([...KELAS_SIFAT_DIKENAL].sort()).toEqual([...new Set([...BIASA_SIFAT_ALIASES, ...SECURITY_CLASSES])].sort());
+    });
+
+    it('baris tabel pemetaan perlu_verifikasi=true yang merutekan ditolak (fail closed, dilaporkan)', async () => {
+        await database.exec(`INSERT INTO disposisi_label_unit (label_norm, unit_kerja_id, perlu_verifikasi) VALUES
+            ('dit. plp baru', 'dir_plp', true), ('kabag baru', NULL, true);`);
+        try {
+            await expect(assertPemetaanSah(database)).rejects.toThrow(/perlu_verifikasi.*"dit\. plp baru" → dir_plp/);
+            // Baris label-saja (unit NULL) tidak merutekan, jadi tidak ikut ditolak.
+            const galat = await assertPemetaanSah(database).catch((error: Error) => error);
+            expect(String((galat as Error).message)).not.toContain('kabag baru');
+            await expect(buildPlan(database, { batas: BATAS_UJI })).rejects.toThrow(/perlu_verifikasi/);
+        } finally {
+            await database.exec(`DELETE FROM disposisi_label_unit WHERE label_norm IN ('dit. plp baru', 'kabag baru')`);
+        }
+        await expect(assertPemetaanSah(database)).resolves.toBeUndefined();
+    });
+
+    it('sesi skrip mematok TimeZone UTC sebelum membandingkan batas data lama', async () => {
+        await database.exec(`SET TIME ZONE 'Asia/Jakarta'`);
+        expect(await siapkanSesi(database)).toBe('UTC');
+        expect((await database.query<{ TimeZone: string }>('SHOW TimeZone')).rows[0]).toEqual({ TimeZone: 'UTC' });
     });
 
     it('pemetaan yang menunjuk unit bagian atau unit tak dikenal ditolak sebelum dry-run', async () => {
@@ -251,8 +277,26 @@ describe('dry-run', () => {
         expect(first.total).toEqual({
             surat_target: 3, rangkaian_baru: 3, peserta_baru: 4,
             balasan_akan_ditautkan: 1, balasan_lintas_unit: 2,
-            sudah_didisposisikan: 1, peserta_dilewati_diberkaskan: 0,
+            sudah_didisposisikan: 1, peserta_dilewati_diberkaskan: 0, sifat_tak_dikenal: 0,
         });
+    });
+
+    // P5-D-10: SM target dengan kelas sifat_surat tak dikenal (tetap tersamar bagi peserta meski flag menyala)
+    // dilaporkan di total dan ikut SHA (gerbang rilis P5-h).
+    it('melaporkan sifat_tak_dikenal pada surat target dan mengikatnya ke SHA', async () => {
+        const awal = await buildPlan(database, { batas: BATAS_UJI });
+        try {
+            await database.exec(`UPDATE surat_masuk SET sifat_surat = ' Sangat-Rahasia ' WHERE id = '${S(1)}';
+                                 UPDATE surat_masuk SET sifat_surat = 'Rahasia Negara' WHERE id = '${S(2)}';
+                                 UPDATE surat_masuk SET sifat_surat = 'Kilat' WHERE id = '${S(6)}';`);
+            const ubah = await buildPlan(database, { batas: BATAS_UJI });
+            // SM1 'sangat_rahasia' dikenal; SM2 tak dikenal; SM6 tak dikenal tetapi bukan target (label tak terpetakan).
+            expect(ubah.total.sifat_tak_dikenal).toBe(1);
+            expect(ubah.sha256).not.toBe(awal.sha256);
+        } finally {
+            await database.exec(`UPDATE surat_masuk SET sifat_surat = 'Biasa' WHERE id IN ('${S(1)}', '${S(2)}', '${S(6)}')`);
+        }
+        expect((await buildPlan(database, { batas: BATAS_UJI })).sha256).toBe(awal.sha256);
     });
 
     it('melaporkan label → unit → jumlah termasuk label kosong, label-saja, dan tak dikenal', async () => {
@@ -500,7 +544,14 @@ describe('apply', () => {
             .toThrow(/simsa_api/);
         expect(() => pastikanRoleRuntime({ db_user: 'simsa_api' }, { apply: true, env: {} })).not.toThrow();
         expect(() => pastikanRoleRuntime({ db_user: 'postgres' }, { apply: false, env: {} })).not.toThrow();
-        expect(() => pastikanRoleRuntime({ db_user: 'postgres' }, { apply: true, env: { ALLOW_NON_RUNTIME_ROLE: '1' } })).not.toThrow();
+        // ALLOW_NON_RUNTIME_ROLE hanya untuk database lokal.
+        for (const host of ['localhost', '127.0.0.1', '::1', '[::1]']) {
+            expect(() => pastikanRoleRuntime({ db_user: 'postgres' }, { apply: true, host, env: { ALLOW_NON_RUNTIME_ROLE: '1' } })).not.toThrow();
+        }
+        for (const host of ['ep-abc.ap-southeast-1.aws.neon.tech', 'localhost.evil.test', '10.0.0.5', undefined]) {
+            expect(() => pastikanRoleRuntime({ db_user: 'postgres' }, { apply: true, host, env: { ALLOW_NON_RUNTIME_ROLE: '1' } }))
+                .toThrow(/lokal/);
+        }
     });
 
     describe('mode isi pengolah [P5-C-2]', () => {
