@@ -46,6 +46,7 @@ export default function Settings() {
     const [unitKerjaForm, setUnitKerjaForm] = useState({
         name: '',
         description: '',
+        isUnitPengawas: false,
     });
 
     // Surat Templates state
@@ -138,6 +139,7 @@ export default function Settings() {
         setUnitKerjaForm({
             name: unit.name || '',
             description: unit.description || '',
+            isUnitPengawas: unit.isUnitPengawas === true,
         });
     };
 
@@ -145,7 +147,14 @@ export default function Settings() {
         if (!isSuperAdmin || !selectedUnitKerja) return;
         setSaving(true);
         try {
-            await settingsService.updateUnitKerja(selectedUnitKerja.id, unitKerjaForm);
+            // Penanda pengawas hanya dikirim bila berubah, agar penggantian nama
+            // tidak mengotori jejak audit pengawas (D5).
+            const { isUnitPengawas, ...lain } = unitKerjaForm;
+            const payload = isUnitPengawas !== (selectedUnitKerja.isUnitPengawas === true)
+                ? { ...lain, isUnitPengawas }
+                : lain;
+            await settingsService.updateUnitKerja(selectedUnitKerja.id, payload);
+            setSelectedUnitKerja((current) => (current ? { ...current, ...payload } : current));
             toast({
                 title: 'Berhasil',
                 description: 'Unit kerja berhasil diperbarui',
@@ -429,6 +438,9 @@ export default function Settings() {
                                                         }`}
                                                 >
                                                     <span className="truncate">{unit.name}</span>
+                                                    {unit.isUnitPengawas && (
+                                                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 h-auto">Pengawas</Badge>
+                                                    )}
                                                     {unit.unitType && (
                                                         <Badge
                                                             variant="outline"
@@ -488,6 +500,20 @@ export default function Settings() {
                                                     }
                                                     rows={3}
                                                     className="border-border focus:border-blue-400 focus:ring-ring/20 resize-none"
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                                                <div>
+                                                    <p className="font-medium text-foreground">Unit Pengawas (pencatat terpusat)</p>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        Admin unit ini dapat membaca rangkaian surat Ditjen, Sesditjen, dan seluruh direktorat
+                                                        (node terkendali tetap disamarkan tanpa izin akses). Perubahan dicatat di audit log.
+                                                    </p>
+                                                </div>
+                                                <Switch
+                                                    checked={unitKerjaForm.isUnitPengawas}
+                                                    onCheckedChange={(checked) => setUnitKerjaForm(current => ({ ...current, isUnitPengawas: checked }))}
+                                                    aria-label="Unit Pengawas (pencatat terpusat)"
                                                 />
                                             </div>
 
