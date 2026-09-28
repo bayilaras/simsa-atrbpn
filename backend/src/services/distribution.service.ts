@@ -709,6 +709,55 @@ export class DistributionService {
     }
 
     /**
+     * F2: pra-otorisasi TANPA kunci untuk tutupOlehPengawas. Predikat pengawas
+     * dan split 404/403 (C-7/F1) yang sama dipakai dua kali: sekali sebelum
+     * kunciDisposisi (agar 409 'sudah diberkaskan'/'berubah bersamaan' dari
+     * kunciDisposisi tidak bocor ke aktor yang bukan pihak dan tidak dapat
+     * membaca surat induk — oracle keberadaan/status yang justru dicegah C-7),
+     * sekali lagi setelah kunci dipegang (re-check otoritatif, memakai baris
+     * yang sudah dikunci). SELECT di sini polos, tanpa FOR UPDATE, sehingga
+     * tidak mengambil kunci baris dan tidak mengganggu urutan
+     * SM → rangkaian → distribusi yang disyaratkan G-LOCK.
+     */
+    private async otorisasiTutupPengawas(
+        tx: Tx,
+        distribusiId: string,
+        actor: RecordUser,
+        distribusiTerkunci?: Pick<SuratDistribution, 'suratMasukId' | 'sourceUnitId' | 'targetUnitId'>,
+    ): Promise<Pick<SuratDistribution, 'suratMasukId' | 'sourceUnitId' | 'targetUnitId'>> {
+        const distribution = distribusiTerkunci ?? await tx
+            .select({
+                suratMasukId: suratDistributions.suratMasukId,
+                sourceUnitId: suratDistributions.sourceUnitId,
+                targetUnitId: suratDistributions.targetUnitId,
+            })
+            .from(suratDistributions)
+            .where(eq(suratDistributions.id, distribusiId))
+            .limit(1)
+            .then((rows) => rows[0]);
+        if (!distribution) throw new AppError('Distribution not found', 404);
+
+        const [sm] = await tx
+            .select({ unitKerjaId: suratMasuk.unitKerjaId })
+            .from(suratMasuk)
+            .where(eq(suratMasuk.id, distribution.suratMasukId))
+            .limit(1);
+        const pengawas = isFullAdmin(actor) && isPengawasRecordUnit(sm?.unitKerjaId) && await isPengawas(actor, tx);
+        if (!pengawas) {
+            // C-7/F1: 404 (bukan 403) bila aktor bukan pihak (source/target) dan
+            // tidak dapat membaca surat induk, agar tidak jadi oracle keberadaan.
+            const pihak = actor.unitKerjaId != null
+                && (actor.unitKerjaId === distribution.sourceUnitId || actor.unitKerjaId === distribution.targetUnitId);
+            if (!pihak) {
+                const baca = await recordAccessService.checkRead(actor, 'surat_masuk', distribution.suratMasukId, tx);
+                if (!baca.allowed) throw new AppError('Distribution not found', 404);
+            }
+            throw new ForbiddenError('Hanya admin unit pengawas yang dapat menutup disposisi.');
+        }
+        return distribution;
+    }
+
+    /**
      * §2c/§5: pengawas menutup disposisi yang tidak dapat diproses target, agar
      * rangkaian tidak macet. processed + ditutup_pengawas; grant disposisi dicabut.
      * C-7/CTRL-1: predikat pengawas dijangkarkan pada unit surat masuk (bukan
@@ -724,26 +773,18 @@ export class DistributionService {
     ): Promise<SuratDistribution> {
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
             if (!actor.id) throw new ForbiddenError('Hanya admin unit pengawas yang dapat menutup disposisi.');
+
+            // F2: 404/403 harus diputuskan sebelum kunciDisposisi bisa melempar
+            // 409 'sudah diberkaskan'/'berubah bersamaan' (lihat komentar di
+            // otorisasiTutupPengawas).
+            await this.otorisasiTutupPengawas(tx, distribusiId, actor);
+
             const distribution = await this.kunciDisposisi(tx, eq(suratDistributions.id, distribusiId));
             if (!distribution) throw new AppError('Distribution not found', 404);
 
-            const [sm] = await tx
-                .select({ unitKerjaId: suratMasuk.unitKerjaId })
-                .from(suratMasuk)
-                .where(eq(suratMasuk.id, distribution.suratMasukId))
-                .limit(1);
-            const pengawas = isFullAdmin(actor) && isPengawasRecordUnit(sm?.unitKerjaId) && await isPengawas(actor, tx);
-            if (!pengawas) {
-                // C-7/F1: 404 (bukan 403) bila aktor bukan pihak (source/target) dan
-                // tidak dapat membaca surat induk, agar tidak jadi oracle keberadaan.
-                const pihak = actor.unitKerjaId != null
-                    && (actor.unitKerjaId === distribution.sourceUnitId || actor.unitKerjaId === distribution.targetUnitId);
-                if (!pihak) {
-                    const baca = await recordAccessService.checkRead(actor, 'surat_masuk', distribution.suratMasukId, tx);
-                    if (!baca.allowed) throw new AppError('Distribution not found', 404);
-                }
-                throw new ForbiddenError('Hanya admin unit pengawas yang dapat menutup disposisi.');
-            }
+            // Re-check otoritatif setelah kunci dipegang (baris bisa berubah
+            // antara pra-otorisasi tanpa kunci dan pengambilan kunci).
+            await this.otorisasiTutupPengawas(tx, distribusiId, actor, distribution);
             if (distribution.status !== 'sent' && distribution.status !== 'received') {
                 throw new ConflictError('Disposisi sudah selesai atau ditolak');
             }

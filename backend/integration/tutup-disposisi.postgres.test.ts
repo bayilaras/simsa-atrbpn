@@ -14,7 +14,7 @@ const { distributionService } = await import('../src/services/distribution.servi
 const adaPostgres = Boolean(process.env.TEST_POSTGRES_URL);
 
 let h: RangkaianTestDatabase;
-let tu: TestUser; let bppt: TestUser; let sesditjenLama: TestUser;
+let tu: TestUser; let bppt: TestUser; let ktpp: TestUser; let sesditjenLama: TestUser;
 let dist: string;
 const audit = (u: TestUser) => ({ userId: u.id, userEmail: u.email });
 
@@ -25,15 +25,32 @@ describe.skipIf(!adaPostgres)('Tutup Disposisi oleh pengawas', () => {
         await h.seedUnits();
         tu = await h.seedUser('admin_unit', 'sesditjen');
         bppt = await h.seedUser('admin_unit', 'dir_bppt');
+        ktpp = await h.seedUser('admin_unit', 'dir_ktpp');
         sesditjenLama = await h.seedUser('admin_sesditjen', null);
         const sm = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-40/2026' });
-        dist = (await distributionService.distribute({ suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_ktpp', sentBy: tu.id }, audit(tu))).id;
+        // Target dir_bppt (bukan dir_ktpp) agar `bppt` menjadi PIHAK (target) dari
+        // `dist` — lihat kasus 403 di bawah [F1 fix round 1]. `ktpp` sengaja tidak
+        // pernah jadi pihak pada distribusi manapun di suite ini, agar tetap
+        // berguna sebagai aktor "bukan pihak, tidak dapat membaca induk" (404).
+        dist = (await distributionService.distribute({ suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', sentBy: tu.id }, audit(tu))).id;
     }, 120_000);
     afterAll(async () => { await h?.close(); });
 
+    // [F1 fix round 1] `bppt` adalah target (pihak) dari `dist` tapi bukan
+    // pengawas (dir_bppt bukan is_unit_pengawas) → 403, bukan 404, sesuai
+    // split C-7/F1 (404 hanya untuk aktor yang BUKAN pihak dan tidak dapat
+    // membaca induk).
     it('admin direktorat (bukan pengawas) ditolak 403', async () => {
         await expect(distributionService.tutupOlehPengawas(dist, bppt, 'Target tidak dapat memproses', audit(bppt)))
             .rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    // [F1 fix round 1] `ktpp` bukan pihak (bukan source/target) dari `dist` dan
+    // tidak punya akses baca lain atas surat induknya (tanpa disposisi, bukan
+    // pemilik) → 404, menutup oracle keberadaan/status untuk aktor semacam ini.
+    it('bukan pihak dan tidak dapat membaca surat induk: 404', async () => {
+        await expect(distributionService.tutupOlehPengawas(dist, ktpp, 'Target tidak dapat memproses', audit(ktpp)))
+            .rejects.toMatchObject({ statusCode: 404 });
     });
 
     it('admin_sesditjen lama (unit NULL) tetap pengawas lewat mandat unit efektif', async () => {
@@ -48,14 +65,42 @@ describe.skipIf(!adaPostgres)('Tutup Disposisi oleh pengawas', () => {
             .rejects.toMatchObject({ statusCode: 409 });
     });
 
+    // [F2 fix round 1] Rangkaian sudah diberkaskan (kunciDisposisi akan
+    // melempar 409 'sudah diberkaskan'); aktor canWrite yang BUKAN pihak dan
+    // TIDAK dapat membaca induk harus tetap mendapat 404, bukan 409 — kalau
+    // tidak, keberadaan dan status diberkaskan-nya rangkaian bocor sebagai
+    // oracle sebelum otorisasi sempat berjalan.
+    it('rangkaian diberkaskan + aktor bukan pihak/pembaca: 404, bukan 409', async () => {
+        const smBerkas = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-41/2026' });
+        const distBerkas = await distributionService.distribute({ suratMasukId: smBerkas, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', sentBy: tu.id }, audit(tu));
+        const klasifikasi = await h.ensureKlasifikasi();
+        await h.query(`UPDATE rangkaian_surat SET status = 'diberkaskan', unit_pengolah_id = 'dir_bppt', klasifikasi_item_id = $2, diberkaskan_at = now(), diberkaskan_by = $3 WHERE id = $1`,
+            [distBerkas.rangkaianId, klasifikasi, tu.id]);
+        await expect(distributionService.tutupOlehPengawas(distBerkas.id, ktpp, 'Target tidak dapat memproses', audit(ktpp)))
+            .rejects.toMatchObject({ statusCode: 404 });
+    });
+
     // [T11-1 amendment] pengawas sesditjen menutup disposisi milik SM di luar
     // dalamCakupanPengawas (unit x_lain, bukan ditjen/sesditjen/dir_*): 403.
-    it('SM di luar cakupan pengawas: 403 walau aktor pengawas', async () => {
+    // [F1 fix round 1] Target diarahkan ke `sesditjen` (bukan `dir_ktpp`) agar
+    // `tu` menjadi PIHAK (target) — sehingga 403 di sini benar-benar berasal
+    // dari SM di luar cakupan, bukan dari `tu` yang bukan pihak.
+    it('SM di luar cakupan pengawas: 403 walau aktor pengawas dan pihak', async () => {
         await h.query(`INSERT INTO unit_kerja (id, name, unit_type, can_receive_distribution) VALUES ('x_lain', 'Unit Lain', 'lainnya', true) ON CONFLICT (id) DO NOTHING`);
         const smLuar = await h.insertSuratMasuk({ unitKerjaId: 'x_lain', nomorSurat: 'SM-42/2026' });
-        const distLuar = (await distributionService.distribute({ suratMasukId: smLuar, sourceUnitId: 'x_lain', targetUnitId: 'dir_ktpp', sentBy: bppt.id }, audit(bppt))).id;
+        const distLuar = (await distributionService.distribute({ suratMasukId: smLuar, sourceUnitId: 'x_lain', targetUnitId: 'sesditjen', sentBy: bppt.id }, audit(bppt))).id;
         await expect(distributionService.tutupOlehPengawas(distLuar, tu, 'Target tidak dapat memproses', audit(tu)))
             .rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    // [F1 fix round 1] Untuk SM yang sama (unit x_lain), `ktpp` bukan pihak
+    // (bukan source x_lain, bukan target sesditjen) dan tidak dapat membaca
+    // induknya → 404, melengkapi split 404/403 pada skenario di luar cakupan.
+    it('SM di luar cakupan pengawas, aktor bukan pihak: 404', async () => {
+        const smLuar2 = await h.insertSuratMasuk({ unitKerjaId: 'x_lain', nomorSurat: 'SM-44/2026' });
+        const distLuar2 = (await distributionService.distribute({ suratMasukId: smLuar2, sourceUnitId: 'x_lain', targetUnitId: 'sesditjen', sentBy: bppt.id }, audit(bppt))).id;
+        await expect(distributionService.tutupOlehPengawas(distLuar2, ktpp, 'Target tidak dapat memproses', audit(ktpp)))
+            .rejects.toMatchObject({ statusCode: 404 });
     });
 
     // [T11-1 amendment] tutupOlehPengawas dan distribute berjalan bersamaan atas
