@@ -231,21 +231,31 @@ SELECT sm.id AS surat_masuk_id, sm.nomor_surat AS nomor_masuk, sm.unit_kerja_id 
  ORDER BY sm.id, sk.id`;
 
 /**
- * [P5-T4-1, P5-C-2] Calon unit pengolah (spec §3 langkah 5): hanya diisi bila tepat satu unit
- * direktorat terpetakan untuk surat itu. Baris di sini adalah *kandidat*; menuliskannya ke
- * `unit_pengolah_id` adalah mode terpisah, SHA-bound, yang diputuskan pada gerbang rilis (a) — lihat
- * amandemen C-2. Tidak dieksekusi oleh Task 4.
+ * [P5-T4-1, P5-C-2] Calon unit pengolah (spec §3 langkah 5, plan applySurat plan:1596; aturan
+ * mengikat: Task 5 amandemen butir 1, dirujuk Task 4 amandemen 1): satu baris per rangkaian BARU
+ * (SM tanpa rangkaian_anggota) yang rutenya berisi tepat satu unit ber-`unit_type = 'direktorat'`.
+ * Unit non-direktorat (mis. sesditjen) tidak dihitung sebagai kandidat dan tidak mengganggu hitungan
+ * "tepat satu". Baris di sini adalah *kandidat*; menuliskannya ke `unit_pengolah_id` adalah mode
+ * terpisah, SHA-bound, yang diputuskan pada gerbang rilis (a) — lihat amandemen C-2. Tidak
+ * dieksekusi oleh Task 4.
  */
 const CALON_PENGOLAH_SQL = `WITH ${BASE_CTE},
+rute_direktorat AS (
+  SELECT r.surat_masuk_id, r.unit_kerja_id
+    FROM rute r
+    JOIN unit_kerja uk ON uk.id = r.unit_kerja_id
+   WHERE uk.unit_type = 'direktorat'
+),
 calon_count AS (
   SELECT surat_masuk_id, count(DISTINCT unit_kerja_id) AS n, min(unit_kerja_id) AS unit_kerja_id
-    FROM rute
+    FROM rute_direktorat
    GROUP BY surat_masuk_id
 )
 SELECT cc.surat_masuk_id, sm.nomor_surat, cc.unit_kerja_id AS calon_unit_pengolah
   FROM calon_count cc
   JOIN surat_masuk sm ON sm.id = cc.surat_masuk_id
- WHERE cc.n = 1
+  LEFT JOIN rangkaian_anggota ra ON ra.surat_masuk_id = cc.surat_masuk_id
+ WHERE cc.n = 1 AND ra.surat_masuk_id IS NULL
  ORDER BY cc.surat_masuk_id`;
 
 /**

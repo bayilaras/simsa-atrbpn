@@ -269,8 +269,44 @@ describe('dry-run', () => {
         const { calonPengolah } = await buildPlan(database, { batas: BATAS_UJI });
         const bySurat = Object.fromEntries(calonPengolah.map((item: any) => [item.surat_masuk_id, item.calon_unit_pengolah]));
         expect(bySurat[S(1)]).toBe('dir_bppt');
-        expect(bySurat[S(3)]).toBe('sesditjen');
+        // S3 rutenya hanya sesditjen (bukan direktorat) → tidak ada calon (Task 5 amandemen butir 1).
+        expect(bySurat[S(3)]).toBeUndefined();
         expect(bySurat[S(2)]).toBeUndefined(); // dua unit (dir_ptep, dir_ktpp) → tidak ada calon tunggal
+    });
+
+    it('calon unit pengolah: rute campuran direktorat + sesditjen menghasilkan unit direktorat, bukan sesditjen', async () => {
+        const S3B = '00000000-0000-4000-8000-000000000199';
+        await database.exec(`
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal, sifat_surat, disposisi, status, is_deleted)
+            VALUES ('${S3B}', 'ditjen', 199, 2023, 'B-199/2023', 'Rute campuran', 'Biasa', ARRAY['BPPT','SekDitjen'], 'belum_dibalas', false);
+        `);
+        try {
+            const { calonPengolah } = await buildPlan(database, { batas: BATAS_UJI });
+            const bySurat = Object.fromEntries(calonPengolah.map((item: any) => [item.surat_masuk_id, item.calon_unit_pengolah]));
+            expect(bySurat[S3B]).toBe('dir_bppt');
+        } finally {
+            await database.exec(`DELETE FROM surat_masuk WHERE id = '${S3B}'`);
+        }
+    });
+
+    it('calon unit pengolah: SM yang sudah punya rangkaian_anggota tidak menghasilkan baris meski rutenya tunggal-direktorat', async () => {
+        const S_SUDAH_RANGKAI = '00000000-0000-4000-8000-000000000198';
+        await database.exec(`
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal, sifat_surat, disposisi, status, is_deleted)
+            VALUES ('${S_SUDAH_RANGKAI}', 'ditjen', 198, 2023, 'B-198/2023', 'Sudah punya rangkaian tapi belum didisposisikan', 'Biasa', ARRAY['PTEP'], 'belum_dibalas', false);
+            INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran)
+            VALUES ('${R8}', '${S_SUDAH_RANGKAI}', 'ditjen', 'anggota');
+        `);
+        try {
+            const { calonPengolah } = await buildPlan(database, { batas: BATAS_UJI });
+            const bySurat = Object.fromEntries(calonPengolah.map((item: any) => [item.surat_masuk_id, item.calon_unit_pengolah]));
+            // Rutenya (dir_ptep) tunggal-direktorat dan belum didisposisikan, tapi SM sudah punya
+            // rangkaian_anggota → bukan rangkaian BARU, jadi tidak boleh menghasilkan baris calon.
+            expect(bySurat[S_SUDAH_RANGKAI]).toBeUndefined();
+        } finally {
+            await database.exec(`DELETE FROM rangkaian_anggota WHERE surat_masuk_id = '${S_SUDAH_RANGKAI}'`);
+            await database.exec(`DELETE FROM surat_masuk WHERE id = '${S_SUDAH_RANGKAI}'`);
+        }
     });
 
     it('menulis CSV yang aman dari formula spreadsheet', async () => {
