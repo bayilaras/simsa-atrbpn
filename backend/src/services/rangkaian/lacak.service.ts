@@ -136,6 +136,11 @@ async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[], ctx: KonteksB
                        ((CASE WHEN a.surat_masuk_id IS NOT NULL THEN 'surat_masuk:' ELSE 'surat_keluar:' END)
                            || coalesce(a.surat_masuk_id, a.surat_keluar_id)::text = ANY(${textArraySql(semuaCocok)})) DESC,
                        coalesce(sm.tanggal_surat, sk.tanggal_surat) ASC NULLS LAST, a.id)::int AS urut,
+                   -- N-1: jendela BATAS_NODE_DETAIL memakai urutan P2 getDetail
+                   -- (muatAnggota: induk → ditambahkan_at → id) agar Lacak dan
+                   -- GET /:id menilai 300 node yang sama.
+                   row_number() OVER (PARTITION BY a.rangkaian_id ORDER BY (a.peran = 'induk') DESC,
+                       a.ditambahkan_at, a.id)::int AS urut_detail,
                    count(*) OVER (PARTITION BY a.rangkaian_id)::int AS jumlah
               FROM rangkaian_anggota a
               JOIN unit_kerja uk ON uk.id = a.unit_kerja_id
@@ -146,7 +151,8 @@ async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[], ctx: KonteksB
         ) x
         -- Pembaca penuh: cukup pratinjau. Pembaca lain: muat hingga batas detail
         -- P2 agar pratinjau/jumlah dihitung dari node yang TERBACA saja (A-I3).
-        WHERE urut <= CASE WHEN rangkaian_id = ANY(${uuidArraySql([...penuh])}) THEN ${NODE_PRATINJAU}::int ELSE ${BATAS_NODE_DETAIL}::int END`));
+        WHERE CASE WHEN rangkaian_id = ANY(${uuidArraySql([...penuh])}) THEN urut <= ${NODE_PRATINJAU}::int
+                   ELSE urut_detail <= ${BATAS_NODE_DETAIL}::int END`));
     const rangkaianRows = rangkaianIds.length === 0 ? [] : rowsOf<NonNullable<LacakKelompok['rangkaian']>>(await tx.execute(sql`
         SELECT id, kode, status, judul, tahun, asal FROM rangkaian_surat WHERE id = ANY(${uuidArraySql(rangkaianIds)})`));
     const akses = await recordAccessService.checkMany(user, nodeRows.map((n) => ({ type: n.jenis, id: n.surat_id })), tx);

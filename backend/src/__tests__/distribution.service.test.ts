@@ -142,10 +142,21 @@ describe('DistributionService', () => {
 
         it('memakai transaksi luar bila tx diberikan', async () => {
             enqueue([SUMBER], [TARGET], [], [{ id: 'dist-1', status: 'sent' }], []);
-            // Dijalankan di dalam transaksi pemanggil: distribute hanya membuka
-            // savepoint (C-I1), tidak pernah transaksi terluar kedua.
-            await mockDb.transaction((luar: any) => svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }, undefined, luar));
-            expect(transactionCommits).toBe(1);
+            // N-4: tx pemanggil adalah objek TERPISAH dari db, sehingga transaksi
+            // top-level liar lewat `db.transaction` (atau kueri lewat `db`
+            // alih-alih tx) terdeteksi. distribute hanya boleh membuka savepoint
+            // (C-I1) pada tx yang diberikan.
+            let savepoint = 0;
+            const luar: any = {
+                ...mockDb,
+                transaction: async (fn: any) => { savepoint += 1; return fn(luar); },
+            };
+            await svc.distribute({ suratMasukId: 'sm-1', sourceUnitId: 'ditjen', targetUnitId: 'unit-1' }, undefined, luar);
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(0);
+            expect(savepoint).toBe(1);
+            expect(rangkaianMocks.ensureForSuratMasuk).toHaveBeenCalledWith(luar, 'sm-1', expect.anything(), undefined);
+            expect(rangkaianMocks.ensureForSuratMasuk).not.toHaveBeenCalledWith(mockDb, expect.anything(), expect.anything(), expect.anything());
         });
 
         it('rolls back distribution creation when its critical audit insert fails', async () => {

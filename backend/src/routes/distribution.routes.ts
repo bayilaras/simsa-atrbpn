@@ -15,8 +15,10 @@ import {
     recordAccessService,
 } from '../services/record-access.service';
 import auditLogService from '../services/audit-log.service.js';
+import { createLogger } from '../utils/logger';
 
 const router = Router();
+const log = createLogger('distribution-routes');
 
 function resolveConcreteDistributionUnit(req: AuthRequest, res: Response): string | null {
     const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || '';
@@ -201,6 +203,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
             data: {
                 ...result,
                 surat: sanitizeSuratRecord(result.surat, 'surat_masuk'),
+                masked: false,
             },
         });
     } catch (error) {
@@ -341,8 +344,17 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
         // A-I1 (§4.8): Tolak tersedia untuk baris tersamar, jadi responsnya pun
         // wajib tersamar bila pemanggil (setelah penolakan) tidak dapat membaca
         // surat induk -- jangan bocorkan id surat, instruksi, atau catatan.
-        const baca = await recordAccessService.checkRead(req.user, 'surat_masuk', record.surat.id);
-        res.json({ success: true, data: baca.exists && baca.allowed ? result : distributionService.samarkan(result) });
+        // N-3: penolakan sudah ter-commit; kegagalan cek baca pasca-commit tidak
+        // boleh menjadi 500 (klien akan mengira Tolak gagal). Gagal tertutup:
+        // kembalikan bentuk tersamar.
+        let dapatBaca = false;
+        try {
+            const baca = await recordAccessService.checkRead(req.user, 'surat_masuk', record.surat.id);
+            dapatBaca = baca.exists && baca.allowed;
+        } catch (error) {
+            log.error({ err: error, distribusiId: id }, 'Cek baca setelah Tolak gagal; respons disamarkan');
+        }
+        res.json({ success: true, data: dapatBaca ? result : distributionService.samarkan(result) });
     } catch (error) {
         next(error);
     }
