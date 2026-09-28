@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TutupMassalDataLama from './TutupMassalDataLama'
 
@@ -14,11 +14,29 @@ describe('TutupMassalDataLama', () => {
     beforeEach(() => vi.clearAllMocks())
     afterEach(cleanup)
 
-    it('tersembunyi bila pengguna bukan pengawas atau layanan belum tersedia', async () => {
+    // FE-M2: respons di-flush dengan act sebelum menilai, agar test gagal bila panel tetap tampil;
+    // cabang .catch (layanan belum tersedia / flag server mati → galat) ikut dijalankan.
+    it('kontrol positif: tampil bila server mengizinkan (dapatMenutup true)', async () => {
+        mocks.ringkasan.mockResolvedValue({ dapatMenutup: true, perTahun: [] })
+        render(<TutupMassalDataLama />)
+        expect(await screen.findByRole('heading', { name: 'Tutup massal data lama' })).toBeInTheDocument()
+    })
+
+    it('tersembunyi bila server menjawab dapatMenutup false (bukan pengawas atau flag server mati)', async () => {
         mocks.ringkasan.mockResolvedValue({ dapatMenutup: false, perTahun: [] })
         const { container } = render(<TutupMassalDataLama />)
         await waitFor(() => expect(mocks.ringkasan).toHaveBeenCalled())
+        await act(async () => {})
         expect(container).toBeEmptyDOMElement()
+    })
+
+    it('tersembunyi bila layanan ringkasan gagal (cabang .catch)', async () => {
+        mocks.ringkasan.mockRejectedValue(Object.assign(new Error('Not Found'), { status: 404 }))
+        const { container } = render(<TutupMassalDataLama />)
+        await waitFor(() => expect(mocks.ringkasan).toHaveBeenCalled())
+        await act(async () => {})
+        expect(container).toBeEmptyDOMElement()
+        expect(screen.queryByRole('heading', { name: 'Tutup massal data lama' })).not.toBeInTheDocument()
     })
 
     it('pratinjau lalu penerapan mengirim expectedCount dari pratinjau', async () => {
@@ -64,14 +82,15 @@ describe('TutupMassalDataLama', () => {
     it('pratinjau kedua terlihat setelah penerapan pertama (F1)', async () => {
         mocks.ringkasan.mockResolvedValue({ dapatMenutup: true, perTahun: [{ tahun: 2022, jumlah: 5 }] })
         mocks.tutup
-            .mockResolvedValueOnce({ jumlah: 600, tanpaKlasifikasi: 0, contoh: [], contohTanpaKlasifikasi: [], terpotong: true, diterapkan: 0 })
-            .mockResolvedValueOnce({ jumlah: 600, tanpaKlasifikasi: 0, contoh: [], contohTanpaKlasifikasi: [], terpotong: true, diterapkan: 500 })
+            // Backend membatasi jumlah ≤ 500 per panggilan; sisanya ditandai terpotong.
+            .mockResolvedValueOnce({ jumlah: 500, tanpaKlasifikasi: 0, contoh: [], contohTanpaKlasifikasi: [], terpotong: true, diterapkan: 0 })
+            .mockResolvedValueOnce({ jumlah: 500, tanpaKlasifikasi: 0, contoh: [], contohTanpaKlasifikasi: [], terpotong: true, diterapkan: 500 })
             .mockResolvedValueOnce({ jumlah: 100, tanpaKlasifikasi: 0, contoh: [], contohTanpaKlasifikasi: [], terpotong: false, diterapkan: 0 })
         render(<TutupMassalDataLama />)
         fireEvent.click(await screen.findByRole('button', { name: 'Pratinjau' }))
-        await screen.findByText(/600 rangkaian siap diberkaskan/)
+        await screen.findByText(/500 rangkaian siap diberkaskan/)
         fireEvent.click(screen.getByLabelText(/Saya memahami/))
-        fireEvent.click(screen.getByRole('button', { name: 'Tutup massal 600 rangkaian' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Tutup massal 500 rangkaian' }))
         expect(await screen.findByText('500 rangkaian diberkaskan.')).toBeInTheDocument()
 
         // Klik Pratinjau lagi setelah penerapan: pratinjau baru harus tampil, bukan hasil lama yang tersembunyi.

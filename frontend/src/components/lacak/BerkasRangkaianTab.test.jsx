@@ -43,7 +43,7 @@ describe('Tab Berkas Rangkaian', () => {
         await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'diberkaskan', unitPengolahId: 'dir_bppt' })))
     })
 
-    it('filter asal data lama meminta server secara eksplisit tanpa aksi mutasi (Tutup massal milik P5)', async () => {
+    it('filter asal data lama meminta server secara eksplisit', async () => {
         mount()
         await screen.findByRole('link', { name: 'RS-2026-000001' })
         fireEvent.change(screen.getByLabelText('Asal'), { target: { value: 'data_lama' } })
