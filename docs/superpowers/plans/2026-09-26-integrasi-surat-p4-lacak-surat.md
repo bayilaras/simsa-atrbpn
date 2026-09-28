@@ -175,7 +175,7 @@ Task ini gerbang, bukan TDD. Tugasnya memastikan nama dan bentuk yang dikonsumsi
   - P2 `record-access.service.ts`: `isAllowedForRecordUnit`
   - P3 `services/rangkaian/aksi.ts`: `computeSuratAksi(role, ctx: SuratAksiContext): SuratAksi[]` dan `computeRangkaianAksi(ctx: RangkaianAksiContext): RangkaianAksi[]`
   - P3 `services/rangkaian/roles.ts`: `isFullAdmin(user)`
-  - P1 `services/rangkaian-status.ts`: tipe `RangkaianStatus`
+  - P1 `services/rangkaian.service.ts`: tipe `RangkaianStatus` (re-export; `rangkaian-status.ts` tidak mengekspornya)
   - repo: `utils/jakarta-date.ts` `jakartaDate()`, `audit-log.service.ts` `auditLogService.logActionOrThrow(data, executor)` + `CriticalAuditContext`, `utils/errors.ts` `NotFoundError`/`ConflictError`
   - P3 frontend:
     - `lib/tindak-lanjut.js` `buildTindakLanjutState(jenis, surat, aksi)`
@@ -204,7 +204,7 @@ Task ini gerbang, bukan TDD. Tugasnya memastikan nama dan bentuk yang dikonsumsi
  * @property {boolean} pratinjauTerpotong
  *
  * @typedef {{anggotaId:string|null,jenis:'surat_masuk'|'surat_keluar',id:string,nomorSurat:string|null,perihal:string|null,tanggalSurat:string|null,tahun:number,naskah:string|null,unitKerjaId:string,unitNama:string,relasi:('balasan'|'tindak_lanjut'|'menjelaskan'|'merujuk'|null),masked:false}} LacakNode
- * @typedef {{anggotaId:string,jenis:'surat_masuk'|'surat_keluar',unitNama:string,label:'Dikecualikan',masked:true,dapatAjukanAkses:boolean}} LacakNodeTersamar
+ * @typedef {{anggotaId:string|null,jenis:'surat_masuk'|'surat_keluar',unitNama:string,label:'Dikecualikan',masked:true,dapatAjukanAkses:boolean}} LacakNodeTersamar
  */
 ```
 
@@ -4252,7 +4252,7 @@ Task 16–21 menambahkan keputusan **D7** (2026-09-27, spec §7 "Perlu Dilengkap
   - tipe `KonteksBaca`, `TargetVisibilitas`, `PelaksanaSql`
 - Consumes (P2, `record-access.service.ts`): `recordAccessService.checkRead`, khusus uji paritas
 - Consumes (P3): `computeSuratAksi(role, ctx: SuratAksiContext)` dan `computeRangkaianAksi(ctx: RangkaianAksiContext)` dari `services/rangkaian/aksi.ts`; `isFullAdmin(user)` dari `services/rangkaian/roles.ts`
-- Consumes (P1): tipe `RangkaianStatus` dari `services/rangkaian-status.ts`
+- Consumes (P1): tipe `RangkaianStatus` dari `services/rangkaian.service.ts` (re-export; `rangkaian-status.ts` tidak mengekspornya)
 - Consumes (repo): `jakartaDate()` (`utils/jakarta-date.ts`)
 - Consumes (Task 3–5): helper `lacak-pglite.ts`, `judulRangkaianTampil`, dan lingkup rangkaian Task 5 (diekspor di task ini)
 - Produces:
