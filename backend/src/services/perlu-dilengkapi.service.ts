@@ -13,6 +13,7 @@ import { BLOCKING_APPROVAL_STATUSES } from './rangkaian-status.js';
 import { readRefKey, recordAccessService, type ReadAccessResult, type ReadExecutor, type ReadRef } from './record-access.service.js';
 import { lingkupRangkaianSql } from './rangkaian-daftar.service.js';
 import { judulRangkaianTampil } from './rangkaian-judul.js';
+import { tingkatAksesRangkaian } from './rangkaian-read.service.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
 import { KATEGORI_PERLU_DILENGKAPI, type KategoriPerluDilengkapi } from './perlu-dilengkapi.constants.js';
 
@@ -42,6 +43,8 @@ export interface PerluDilengkapiItem {
     rangkaian: {
         id: string; kode: string; status: RangkaianStatus; judul: string | null;
         unitPencatatId: string | null; unitPengolahId: string | null; unitPengolahNama: string | null;
+        /** FR:35: selalu true — rangkaian yang tidak dapat dibuka (GET /:id → 404) tidak dikirim sama sekali. */
+        dapatDibuka: true;
     } | null;
     disposisi: { id: string; status: string; targetUnitNama: string | null; batasWaktu: string | null; lewatBatas: boolean } | null;
     dataLama: boolean;
@@ -329,6 +332,21 @@ function semuaSql(k: KonteksPd, kategori?: KategoriPerluDilengkapi): SQL {
 }
 
 type AksesBaris = Map<string, ReadAccessResult>;
+/** rangkaian_id → GET /api/rangkaian/:id akan 200 (mode baca, P4-D-25). */
+type DapatDibuka = Map<string, boolean>;
+
+/**
+ * FE-I1 / FR:35: satu `tingkatAksesRangkaian` per rangkaian berbeda pada halaman (≤ limit).
+ * Kolom rangkaian baris surat dirakit dari visibilitas list, yang tidak setara getDetail.
+ */
+async function dapatDibukaHalaman(rows: BarisPerluDilengkapi[], k: KonteksPd, tx: ReadExecutor): Promise<DapatDibuka> {
+    const hasil: DapatDibuka = new Map();
+    for (const row of rows) {
+        if (!row.rangkaian_id || hasil.has(row.rangkaian_id)) continue;
+        hasil.set(row.rangkaian_id, (await tingkatAksesRangkaian(k.user, row.rangkaian_id, tx)) !== null);
+    }
+    return hasil;
+}
 
 /** Satu checkMany per halaman, hanya id DB dari baris yang terbaca (FR:32). */
 async function aksesHalaman(rows: BarisPerluDilengkapi[], k: KonteksPd, tx: ReadExecutor): Promise<AksesBaris> {
@@ -386,13 +404,23 @@ function aksiUntuk(row: BarisPerluDilengkapi, k: KonteksPd, akses: AksesBaris): 
     return [...aksi].sort();
 }
 
-function keItem(row: BarisPerluDilengkapi, urutan: number, k: KonteksPd, akses: AksesBaris): PerluDilengkapiItem {
-    const aksiDiizinkan = aksiUntuk(row, k, akses);
+function keItem(row: BarisPerluDilengkapi, urutan: number, k: KonteksPd, akses: AksesBaris, dapatDibuka: DapatDibuka): PerluDilengkapiItem {
     const unitNama = row.unit_nama ?? row.unit_kerja_id;
     const disposisi = row.distribusi_id
         ? { id: row.distribusi_id, status: row.distribusi_status ?? '', targetUnitNama: row.target_unit_nama,
             batasWaktu: row.batas_waktu, lewatBatas: Boolean(row.lewat_batas) }
         : null;
+    // FE-I1: fail closed — rangkaian yang tidak dapat dibuka tidak pernah membawa kode/id ke klien (setara Lacak, plan:1151).
+    const rangkaianTerbuka = row.rangkaian_id !== null && dapatDibuka.get(row.rangkaian_id) === true;
+    if (row.jenis === 'rangkaian' && !rangkaianTerbuka) {
+        // Baris siap_diberkaskan milik rangkaian yang tak dapat dibuka: placeholder §4.8 tanpa aksi.
+        return {
+            kunci: `${row.kategori}:tersamar-${urutan + 1}`,
+            kategori: row.kategori, masked: true, label: 'Dikecualikan', jenis: row.jenis, unitNama,
+            surat: null, rangkaian: null, disposisi: null, dataLama: Boolean(row.data_lama), aksiDiizinkan: [],
+        };
+    }
+    const aksiDiizinkan = aksiUntuk(row, k, akses);
     if (row.masked) {
         // Placeholder §4.8: kategori, jenis, unit pemilik, dan metadata routing disposisi saja.
         return {
@@ -411,10 +439,11 @@ function keItem(row: BarisPerluDilengkapi, urutan: number, k: KonteksPd, akses: 
             kepada: jenisSurat === 'surat_keluar' ? row.pihak : null, sifatSurat: row.sifat,
             unitKerjaId: row.unit_kerja_id, approvalStatus: row.status_persetujuan,
         } : null,
-        rangkaian: row.rangkaian_id && row.rangkaian_kode && row.rangkaian_status ? {
+        rangkaian: rangkaianTerbuka && row.rangkaian_id && row.rangkaian_kode && row.rangkaian_status ? {
             id: row.rangkaian_id, kode: row.rangkaian_kode, status: row.rangkaian_status,
             judul: row.jenis === 'rangkaian' ? judulRangkaianTampil(row.rangkaian_kode, row.rangkaian_judul, !row.induk_terbaca) : null,
             unitPencatatId: row.rangkaian_pencatat, unitPengolahId: row.rangkaian_pengolah, unitPengolahNama: row.rangkaian_pengolah_nama,
+            dapatDibuka: true,
         } : null,
         disposisi, dataLama: Boolean(row.data_lama), aksiDiizinkan,
     };
@@ -447,8 +476,9 @@ export const perluDilengkapiService = {
                  LIMIT ${filter.limit} OFFSET ${offset}`));
             const total = Number(rows[0]?.total ?? 0);
             const akses = await aksesHalaman(rows, k, tx);
+            const dapatDibuka = await dapatDibukaHalaman(rows, k, tx);
             return {
-                data: rows.map((row, index) => keItem(row, offset + index, k, akses)),
+                data: rows.map((row, index) => keItem(row, offset + index, k, akses, dapatDibuka)),
                 pagination: { page: filter.page, limit: filter.limit, total, totalPages: Math.max(1, Math.ceil(total / filter.limit)) },
                 meta: { batasDataLama: k.batas, tampilkanDataLama: filter.tampilkanDataLama },
             };

@@ -55,7 +55,7 @@ const itemSiap = {
     kunci: `siap_diberkaskan:${R6}`, kategori: 'siap_diberkaskan', masked: false, jenis: 'rangkaian', unitNama: 'Sesditjen', surat: null,
     rangkaian: {
         id: R6, kode: 'RS-2026-000006', status: 'selesai', judul: 'Permohonan data enam',
-        unitPencatatId: 'sesditjen', unitPengolahId: 'dir_bppt', unitPengolahNama: 'Dit. BPPT',
+        unitPencatatId: 'sesditjen', unitPengolahId: 'dir_bppt', unitPengolahNama: 'Dit. BPPT', dapatDibuka: true,
     },
     disposisi: null, dataLama: false, aksiDiizinkan: ['berkaskan'],
 }
@@ -209,5 +209,23 @@ describe('Tab Perlu Dilengkapi (D7)', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Siap diberkaskan (1)' }))
         await waitFor(() => expect(mocks.perluDilengkapi).toHaveBeenLastCalledWith({ kategori: 'siap_diberkaskan', tampilkanDataLama: false, page: 1, limit: 20 }))
         expect(screen.getByRole('button', { name: 'Siap diberkaskan (1)' })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('FE-I1: kode rangkaian hanya ditautkan bila dapatDibuka (FR:35); selain itu teks biasa', async () => {
+        const R2 = '55555555-5555-4555-8555-555555555555'
+        const rangkaianTertutup = { id: R2, kode: 'RS-2026-000002', status: 'aktif', judul: null, unitPencatatId: 'sesditjen', unitPengolahId: null, unitPengolahNama: null }
+        mocks.perluDilengkapi.mockResolvedValue(respons([
+            { ...itemSm, rangkaian: { ...rangkaianTertutup, dapatDibuka: false } },
+            { ...itemSkTanpaAsal, rangkaian: rangkaianTertutup },
+            itemSiap,
+        ]))
+        mount()
+        const [sm, sk, siap] = await baris()
+        expect(within(sm).getByText('RS-2026-000002')).toBeVisible()
+        expect(within(sm).queryByRole('link', { name: 'RS-2026-000002' })).toBeNull()
+        expect(within(sm).getByText('RS-2026-000002')).toHaveAttribute('title', 'Rangkaian ini tidak dapat Anda buka')
+        // Tanpa flag (kontrak lama): fail closed, tidak ditautkan.
+        expect(within(sk).queryByRole('link', { name: 'RS-2026-000002' })).toBeNull()
+        expect(within(siap).getByRole('link', { name: 'RS-2026-000006' })).toHaveAttribute('href', `/surat/lacak?rangkaian=${R6}`)
     })
 })
