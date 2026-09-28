@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 
 const mocks = vi.hoisted(() => ({ list: vi.fn(), unitKerjaOpsi: vi.fn() }))
 vi.mock('@/services/rangkaian.service', () => ({ default: mocks, rangkaianService: mocks }))
+vi.mock('@/components/surat/TutupMassalDataLama', () => ({ default: () => <div data-testid="tutup-massal-slot" /> }))
 import { BerkasRangkaianTab } from './BerkasRangkaianTab'
 
 const R1 = '11111111-1111-4111-8111-111111111111'
@@ -48,7 +49,14 @@ describe('Tab Berkas Rangkaian', () => {
         fireEvent.change(screen.getByLabelText('Asal'), { target: { value: 'data_lama' } })
         await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ asal: 'data_lama' })))
         await screen.findByRole('link', { name: 'RS-2026-000001' })
-        expect(screen.queryByRole('button', { name: /Tutup massal/ })).toBeNull()
+    })
+
+    it('menyisipkan Tutup massal P5 hanya saat filter asal data lama', async () => {
+        mount()
+        await screen.findByRole('link', { name: 'RS-2026-000001' })
+        expect(screen.queryByTestId('tutup-massal-slot')).toBeNull()
+        fireEvent.change(screen.getByLabelText('Asal'), { target: { value: 'data_lama' } })
+        expect(await screen.findByTestId('tutup-massal-slot')).toBeInTheDocument()
     })
 
     it('kode rangkaian yang tidak dapat dibuka (dapatDibuka:false) tampil tanpa tautan', async () => {
