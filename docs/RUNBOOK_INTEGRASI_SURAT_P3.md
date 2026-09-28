@@ -507,7 +507,7 @@ Setiap baris dicatat **disahkan** atau **ditolak** sebelum produksi:
 | Gerbang C-12 P3 (§7) disahkan sebelum P4 ke produksi | §7 | prasyarat |
 | CI "Backend Tests (PostgreSQL 16/17/18)" hijau pada head P4, termasuk `lacak-explain` dan semua `integration/*.postgres.test.ts` P3 | `ci.yml` | gerbang keras |
 | Frontend dan backend satu deploy (`aksiDiizinkan` otoritatif di UI) | P3 catatan rilis frontend | gerbang keras |
-| Langkah CI "Run Lacak EXPLAIN and p95 gate (LACAK_PERF)" hijau pada PG16/17/18; baris p95, tiga rencana EXPLAIN, dan ringkasan p50/p95 dari log CI ditempel di PR | `ci.yml`, §10-P4, P4-T22-2 | gerbang keras (bukti) |
+| Langkah CI "Run Lacak EXPLAIN and p95 gate (LACAK_PERF)" hijau pada PG16/17/18 (EXPLAIN index dan non-vakum D7 adalah gerbang keras; p95 < 150 ms hanya dicetak, bukan diasersi — target spec:582). Gerbang rilis mencatat angka p50/p95 dari log CI, bersama penerimaan pemilik bila p95 ≥ 150 ms | `ci.yml`, §10-P4, P4-T22-2 | gerbang keras (bukti) |
 | Uji asap manual staging §8 langkah 6 (butir 1–11) dijalankan dan hasilnya dicatat di PR | §10-P4 D7 | gerbang keras (bukti) |
 | Nilai `RANGKAIAN_DATA_LAMA_SEBELUM` (atau `batasDataLama` dari uji env-kosong 4b) dicatat dan disematkan | §8 langkah 1, 4b, 5 | gerbang keras |
 | Anggaran `generalLimiter` per IP: (jumlah tab FULL_ADMIN di balik NAT kantor × 15 + polling notifikasi yang ada) < 500 per 15 menit — pemilik menerima, atau menjadwalkan re-key per pengguna (P5 Task 15) dengan sign-off | `rate-limiter.middleware.ts` | pemilik |

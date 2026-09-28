@@ -190,12 +190,19 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
                 durasi.push(performance.now() - mulai);
             }
             durasi.sort((a, b) => a - b);
+            const p50 = durasi[9];
             const p95 = durasi[Math.ceil(0.95 * durasi.length) - 1];
-            console.info(`[lacak-explain] q="${q}" p50=${durasi[9].toFixed(1)}ms p95=${p95.toFixed(1)}ms`);
-            // [P4-T7-3][P4-T7-4] Jangan menaikkan ambang bila gagal; catat
-            // angka p95 di deskripsi PR sebagai masukan pg_trgm (§13 no. 3)
+            console.info(`[lacak-explain] q="${q}" p50=${p50.toFixed(1)}ms p95=${p95.toFixed(1)}ms`);
+            // [Putusan pengontrol] p95 < 150 ms adalah TARGET (spec:582), bukan
+            // gerbang CI: rencana merutekan p95 >= 150 ms ke angka tercatat +
+            // penerimaan pemilik (plan:55, plan:1942-1943), bukan uji merah.
+            // Karena itu ambang ini hanya dicetak, tidak pernah diasersi keras,
+            // bahkan dengan LACAK_PERF=1. Jangan menaikkan ambang bila lambat;
+            // catat p50/p95 di deskripsi PR sebagai masukan pg_trgm (§13 no. 3)
             // dan eskalasi ke pemilik spec sebelum merge.
-            if (PERF) expect(p95).toBeLessThan(150);
+            if (p95 >= 150) {
+                console.warn(`[lacak-explain] q="${q}" p95=${p95.toFixed(1)}ms >= 150ms target (spec:582); catat di PR dan minta penerimaan pemilik (plan:1942-1943).`);
+            }
         }
     }, 120_000);
 
