@@ -489,9 +489,9 @@ flowchart TD
 2. Seorang **super_admin lain** membuka rangkaian yang sama dan memilih **Setujui** (lalu **Ya, terapkan koreksi**) atau **Tolak**. Pengaju tidak dapat memutuskan koreksinya sendiri.
 3. Hanya perubahan yang disetujui yang diterapkan, persis sesuai usulan, dan seluruh langkah tercatat di Audit Log.
 
-**Data lama.** Surat dari aplikasi lama dengan label disposisi (misalnya "BPPT", "Dit. PTEP") dirangkai sebagai rangkaian *data lama* berstatus selesai dan disembunyikan dari daftar kerja. Label "Kabag …" hanya label, tidak pernah menjadi tujuan disposisi. Direktorat pada label lama baru dapat membaca surat tersebut setelah pemilik keamanan menyetujui laporan pemetaan.
+**Data lama.** Surat dari aplikasi lama dengan label disposisi (misalnya "BPPT", "Dit. PTEP") dirangkai sebagai rangkaian *data lama* berstatus selesai dan disembunyikan dari daftar kerja. Label "Kabag …" hanya label, tidak pernah menjadi tujuan disposisi. Direktorat pada label lama baru dapat membaca surat tersebut setelah administrator menyalakan akses peserta data lama (flag `RANGKAIAN_DISPOSISI_LAMA_READ`) dengan sign-off keamanan tersendiri, terpisah dari persetujuan laporan pemetaan. Pengecualian: bila unit pengolah data lama diisi otomatis dari label (satu direktorat), direktorat pengolah itu dapat membaca rangkaiannya tanpa bergantung pada flag tersebut.
 
-**Tutup massal data lama** (super admin dan admin unit pengawas): tab Berkas Rangkaian ▸ pilih tahun (opsional) dan klasifikasi pengganti untuk rangkaian tanpa klasifikasi ▸ **Pratinjau** ▸ centang pernyataan ▸ **Tutup massal N rangkaian**. Bila jumlah berubah sejak pratinjau, sistem menolak dan Anda perlu mengulang pratinjau. Rangkaian yang tidak memiliki pengolah diberkaskan ke unit pencatat.
+**Tutup massal data lama** (super admin dan admin unit pengawas; panel baru tampil setelah administrator menyalakan fitur ini): tab Berkas Rangkaian ▸ pilih tahun (opsional) dan klasifikasi pengganti untuk rangkaian tanpa klasifikasi ▸ **Pratinjau** ▸ centang pernyataan ▸ **Tutup massal N rangkaian**. Bila jumlah berubah sejak pratinjau, sistem menolak dan Anda perlu mengulang pratinjau. Rangkaian yang tidak memiliki pengolah diberkaskan ke unit pencatat. Rangkaian yang calon unit pengolahnya (dari label lama) belum diisi tidak ikut Tutup massal; berkaskan satu per satu lewat panel Alur Surat.
 
 ### 5.6 Perlu Dilengkapi
 
@@ -936,7 +936,9 @@ Panel notifikasi memiliki **3 tab** untuk memfilter notifikasi:
 | **Arsip** | 📦 | Arsip yang **mendekati masa retensi/kadaluarsa** — ditandai dengan sisa hari |
 | **Semua** | 🔔 | Gabungan semua notifikasi dari kedua kategori |
 
-- **Distribusi**: mendesak bila batas waktu disposisi ≤ 2 hari, hari ini, atau lewat batas waktu. Surat data lama yang sudah ditutup tidak dinotifikasi.
+#### Notifikasi Batas Waktu Disposisi
+
+Notifikasi disposisi berlabel **Distribusi** dan tampil di tab **Semua** (bukan tab tersendiri). Notifikasi ini ditandai mendesak bila batas waktu disposisi ≤ 2 hari, jatuh hari ini, atau sudah lewat batas waktu. Surat data lama yang sudah ditutup tidak dinotifikasi.
 
 #### Filter Unit Kerja (Super Admin)
 
@@ -1015,7 +1017,7 @@ Di bagian bawah sidebar, terdapat link **📖 Panduan** yang mengarah ke dokumen
 
 ### 11.8 Ekspor Data
 - Pada halaman daftar surat/arsip, klik tombol **"Ekspor"** untuk mengunduh data dalam format PDF, Excel, atau CSV.
-- Ekspor Excel Surat Keluar menampilkan **Balasan Untuk** sebagai nomor surat masuk (bukan kode internal). Bila surat masuk berada di unit lain tertulis `(lintas unit)`, bila kelasnya tidak boleh Anda baca tertulis `Dikecualikan`, dan bila sudah dihapus tertulis `(tidak tersedia)`. Kolom **Asal Naskah** berisi `Inisiatif` atau `Tindak Lanjut`.
+- Ekspor Excel Surat Keluar menampilkan **Balasan Untuk** sebagai nomor surat masuk (bukan kode internal). Bila surat masuk berada di unit lain tertulis `(lintas unit)`, bila kelasnya tidak boleh Anda baca tertulis `Dikecualikan`, dan bila sudah dihapus tertulis `(tidak tersedia)`. Sejak integrasi rangkaian, sistem hanya mengisi relasi Balasan Untuk untuk balasan dari unit yang sama; rantai balasan lintas unit dilihat di panel Alur Surat. Relasi ini dikosongkan bila tautan balasannya dibatalkan, sehingga kolomnya ikut kosong. Kolom **Asal Naskah** berisi `Inisiatif` atau `Tindak Lanjut`.
 
 ---
 

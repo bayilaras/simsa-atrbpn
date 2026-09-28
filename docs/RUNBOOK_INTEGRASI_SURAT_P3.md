@@ -127,6 +127,13 @@ Contoh perintah adapter Neon memakai variabel yang sama dengan
    RUNBOOK_P1 langkah 4 sebagai `simsa_api` (`verify-runtime` tidak
    memeriksanya).
 
+   **Jalankan langkah ini dari commit merge P4** (journal berakhir di 0047),
+   bukan dari checkout yang sudah memuat P5/0048. Adapter menjalankan semua
+   migrasi tertunda dalam satu transaksi. Precheck 0048 akan RAISE selama
+   distribusi lama belum ber-`rangkaian_id`, dan seluruh transaksi digulung
+   balik. 0048 diterapkan terpisah sesudah kriteria keluar §3
+   (`RUNBOOK_INTEGRASI_SURAT_P5.md` §5).
+
    Jalur Cloud SQL/psql (bukan produksi): `npm --prefix backend run db:migrate`,
    lalu **segera**
    `EXPECTED_MIGRATIONS_JSON="$(python3 .github/scripts/build-migration-manifest.py)" npm --prefix backend run db:grants:converge`

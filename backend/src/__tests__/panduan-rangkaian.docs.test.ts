@@ -54,6 +54,23 @@ describe('dokumentasi Integrasi Surat P5', () => {
             'RANGKAIAN_DATA_LAMA_SEBELUM',
             'export DATABASE_URL="$NEON_RUNTIME_DATABASE_URL"',
             'tidak berlaku setelah 0048 diterapkan',
+            // Final fix wave P5: CTRL-2 diamandemen, pra-cek 0048 lengkap, TimeZone, CTRL-5.
+            'menahan SELURUH rilis P5',
+            "WHERE status IN ('pending', 'approved') GROUP BY rangkaian_id HAVING count(*) > 1",
+            "psql \"$NEON_RUNTIME_DATABASE_URL\" -c 'SHOW TimeZone;'",
+            'RANGKAIAN_TUTUP_MASSAL_DATA_LAMA',
+            'commit merge P4',
         ]) expect(runbook, text).toContain(text);
+    });
+
+    it('dokumen rilis gabungan memuat gerbang CTRL-5 dan penahanan seluruh P5', () => {
+        const rilis = read('docs/RILIS_INTEGRASI_SURAT_P0_P5.md');
+        for (const text of [
+            '| P5-CTRL5 |',
+            'RANGKAIAN_TUTUP_MASSAL_DATA_LAMA=true',
+            'tahan seluruh P5',
+            'sifat_tak_dikenal',
+        ]) expect(rilis, text).toContain(text);
+        expect(read('docs/RUNBOOK_INTEGRASI_SURAT_P3.md')).toContain('Jalankan langkah ini dari commit merge P4');
     });
 });
