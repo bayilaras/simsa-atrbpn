@@ -26,7 +26,9 @@ describe.skipIf(!adaPostgres)('Tutup Disposisi oleh pengawas', () => {
         tu = await h.seedUser('admin_unit', 'sesditjen');
         bppt = await h.seedUser('admin_unit', 'dir_bppt');
         ktpp = await h.seedUser('admin_unit', 'dir_ktpp');
-        sesditjenLama = await h.seedUser('admin_sesditjen', null);
+        // Baris DB wajib ber-unit 'sesditjen' (CHECK users_role_unit_mandate_check, migrasi 0027);
+        // objek pengguna di memori tetap ber-unit NULL untuk menguji jalur mandat unit efektif.
+        sesditjenLama = { ...(await h.seedUser('admin_sesditjen', 'sesditjen')), unitKerjaId: null };
         const sm = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-40/2026' });
         // Target dir_bppt (bukan dir_ktpp) agar `bppt` menjadi PIHAK (target) dari
         // `dist` — lihat kasus 403 di bawah [F1 fix round 1]. `ktpp` sengaja tidak
