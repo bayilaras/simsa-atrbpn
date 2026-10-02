@@ -464,6 +464,10 @@ async function dalamTransaksiBaca<T>(
 ): Promise<T> {
     return db.transaction(async (tx) => {
         await tx.execute(sql`SET LOCAL statement_timeout = '2s'`);
+        // JIT LLVM mengompilasi kueri berbiaya taksiran tinggi ini sebelum dieksekusi; pada
+        // image PostgreSQL CI itu menambah ~1-2 s dan menembus statement_timeout. Kueri
+        // interaktif ini tidak diuntungkan JIT, jadi dimatikan hanya untuk transaksi ini.
+        await tx.execute(sql`SET LOCAL jit = off`);
         const k: KonteksPd = {
             user, ctx: await resolveKonteksBaca(user, tx), batas: await resolveBatasDataLama(tx),
             tampilkanDataLama, hariIni: jakartaDate(),
