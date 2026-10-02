@@ -233,7 +233,7 @@ router.post('/',
                     requestCreatedObjectGeneration = blobFile.generation || null;
                     filePath = `blob:${blobFile.url}`;
                     fileOriginalName = file.originalname;
-                    log.info({ objectLocator: blobFile.url, fileName: file.originalname }, 'File uploaded to private object storage');
+                    log.info({ mimeType: file.mimetype, sizeBytes: file.size }, 'File uploaded to private object storage');
                 } catch (uploadError: any) {
                     log.error({ err: uploadError }, 'Failed to upload file to private object storage');
                     return res.status(500).json({
@@ -374,7 +374,7 @@ router.put('/:id', validateIdParam(),
                     requestCreatedObjectGeneration = blobFile.generation || null;
                     updateData.filePath = `blob:${blobFile.url}`;
                     updateData.fileOriginalName = file.originalname;
-                    log.info({ objectLocator: blobFile.url, fileName: file.originalname }, 'File uploaded to private object storage (update)');
+                    log.info({ mimeType: file.mimetype, sizeBytes: file.size }, 'File uploaded to private object storage (update)');
                 } catch (uploadError: any) {
                     log.error({ err: uploadError }, 'Failed to upload file to private object storage');
                     return res.status(500).json({
@@ -444,7 +444,7 @@ router.put('/:id', validateIdParam(),
                 entityId: req.params.id,
                 userId: req.user?.id,
             }, requestCreatedObjectGeneration);
-            log.error({ err: error, message: error?.message, stack: error?.stack }, '[PUT /surat-keluar/:id] Error:');
+            log.error({ err: error }, 'Failed to update outgoing letter');
             next(error);
         }
     }

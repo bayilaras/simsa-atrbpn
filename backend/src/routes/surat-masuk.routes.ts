@@ -108,20 +108,11 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
         const unitKerjaId = resolveListUnitKerjaId(req, requestedUnit);
         const { tahun } = req.query;
 
-        log.info({
-            userRole: req.user?.role,
-            userUnitKerjaId: req.user?.unitKerjaId,
-            resolvedUnitKerjaId: unitKerjaId,
-            tahun,
-        }, '[GET /stats] Fetching stats');
-
         const stats = await suratMasukService.getStats(
             unitKerjaId,
             tahun ? Number(tahun) : undefined,
             allowedSecurityClassifications(req.user),
         );
-
-        log.info({ stats }, '[GET /stats] Stats result');
 
         res.json({ success: true, data: stats });
     } catch (error) {
@@ -254,7 +245,7 @@ router.post('/',
                     requestCreatedObjectGeneration = blobFile.generation || null;
                     filePath = `blob:${blobFile.url}`;
                     fileOriginalName = file.originalname;
-                    log.info({ objectLocator: blobFile.url, fileName: file.originalname }, 'File uploaded to private object storage');
+                    log.info({ mimeType: file.mimetype, sizeBytes: file.size }, 'File uploaded to private object storage');
                 } catch (uploadError: any) {
                     log.error({ err: uploadError }, 'Failed to upload file to private object storage');
                     return res.status(500).json({
@@ -323,9 +314,6 @@ router.put('/:id', validateIdParam(),
             const id = req.params.id as string;
             const file = req.file;
 
-            log.info({ id, hasFile: !!file }, '[PUT /surat-masuk/:id] Request received');
-            log.info({ bodyKeys: Object.keys(req.body) }, '[PUT /surat-masuk/:id] Body keys');
-
             const unitScope = resolveRecordUnitScope(req);
             const existing = await suratMasukService.findById(id, unitScope);
 
@@ -344,11 +332,6 @@ router.put('/:id', validateIdParam(),
 
             // Validate and strip unknown fields from body
             const bodyValidation = updateSuratMasukSchema.safeParse(req.body);
-
-            log.info({ valid: bodyValidation.success }, '[PUT /surat-masuk/:id] Validation result');
-            if (!bodyValidation.success) {
-                log.info({ errors: bodyValidation.error.issues }, '[PUT /surat-masuk/:id] Validation errors');
-            }
 
             if (!bodyValidation.success) {
                 return sendValidationFailure(res, bodyValidation.error.issues);
@@ -383,7 +366,7 @@ router.put('/:id', validateIdParam(),
                     requestCreatedObjectGeneration = blobFile.generation || null;
                     updateData.filePath = `blob:${blobFile.url}`;
                     updateData.fileOriginalName = file.originalname;
-                    log.info({ objectLocator: blobFile.url, fileName: file.originalname }, 'File uploaded to private object storage (update)');
+                    log.info({ mimeType: file.mimetype, sizeBytes: file.size }, 'File uploaded to private object storage (update)');
                 } catch (uploadError: any) {
                     log.error({ err: uploadError }, 'Failed to upload file to private object storage');
                     return res.status(500).json({
@@ -393,8 +376,6 @@ router.put('/:id', validateIdParam(),
                     });
                 }
             }
-
-            log.info({ updateKeys: Object.keys(updateData) }, '[PUT /surat-masuk/:id] Update data keys');
 
             const isNewClientBlob = Boolean(
                 !file
@@ -455,7 +436,7 @@ router.put('/:id', validateIdParam(),
                 entityId: req.params.id,
                 userId: req.user?.id,
             }, requestCreatedObjectGeneration);
-            log.error({ err: error, message: error?.message, stack: error?.stack }, '[PUT /surat-masuk/:id] Error:');
+            log.error({ err: error }, 'Failed to update incoming letter');
             next(error);
         }
     }
