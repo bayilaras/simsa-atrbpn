@@ -132,6 +132,33 @@ async function rencana(tabel: 'surat_masuk' | 'surat_keluar', pola: string): Pro
     return JSON.stringify((result.rows[0] as Record<string, unknown>)['QUERY PLAN']);
 }
 
+/** Tangkap SQL seed (`WITH seed AS`) yang benar-benar dirender rangkaianService.lacak untuk satu pengguna. */
+async function tangkapSeed(user: TestUser, q: string): Promise<{ sql: string; params: unknown[] }> {
+    const { rangkaianService } = await import('../src/services/rangkaian/deps.js');
+    const dialect = new PgDialect();
+    let captured: { sql: string; params: unknown[] } | null = null;
+    // Tempel `transaction` langsung pada instans h.db (bukan objek baru hasil
+    // spread) supaya method lain (mis. `execute`) yang hidup di prototype
+    // drizzle tetap tersedia lewat proxy db-proxy.
+    const originalTransaction = h.db.transaction.bind(h.db);
+    h.db.transaction = ((callback: (tx: any) => Promise<unknown>) => originalTransaction((tx: any) => {
+        const originalExecute = tx.execute.bind(tx);
+        tx.execute = (query: unknown) => {
+            const rendered = dialect.sqlToQuery(query as never);
+            if (captured === null && rendered.sql.includes('WITH seed AS')) captured = rendered;
+            return originalExecute(query);
+        };
+        return callback(tx);
+    })) as typeof h.db.transaction;
+    try {
+        await rangkaianService.lacak(user, { q, mode: 'lacak' });
+    } finally {
+        h.db.transaction = originalTransaction;
+    }
+    if (captured === null) throw new Error(`SQL seed Lacak tidak tertangkap untuk q="${q}"`);
+    return captured;
+}
+
 describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sintetis (§6 Performa)', () => {
     it.each([
         ['surat_masuk', 'b12345ptpp%'],
@@ -142,69 +169,76 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
         expect(plan).toContain(`"Index Name":"${tabel}_nomor_norm_idx"`);
     });
 
-    it.skipIf(!PERF)('EXPLAIN seed Lacak nyata untuk tiga pengguna', async () => {
-        const { rangkaianService } = await import('../src/services/rangkaian/deps.js');
-        const dialect = new PgDialect();
-        const pengguna: Array<[string, TestUser]> = [['dir_bppt (admin_unit)', dirBppt], ['sesditjen (pengawas)', sesditjen], ['super_admin', superAdmin]];
-        for (const [peran, user] of pengguna) {
-            let capturedSql: unknown = null;
-            // Tempel `transaction` langsung pada instans h.db (bukan objek
-            // baru hasil spread) supaya method lain (mis. `execute`) yang
-            // hidup di prototype drizzle tetap tersedia lewat proxy db-proxy.
-            const originalTransaction = h.db.transaction.bind(h.db);
-            h.db.transaction = ((callback: (tx: any) => Promise<unknown>) => originalTransaction((tx: any) => {
-                const originalExecute = tx.execute.bind(tx);
-                tx.execute = (query: unknown) => {
-                    const rendered = dialect.sqlToQuery(query as never);
-                    if (capturedSql === null && rendered.sql.includes('WITH seed AS')) capturedSql = query;
-                    return originalExecute(query);
-                };
-                return callback(tx);
-            })) as typeof h.db.transaction;
-            try {
-                await rangkaianService.lacak(user, { q: 'koordinasi pertanahan', mode: 'lacak' });
-            } finally {
-                h.db.transaction = originalTransaction;
-            }
-            expect(capturedSql).not.toBeNull();
-            const { sql: renderedSql, params } = dialect.sqlToQuery(capturedSql as never);
+    // P5 Task 14: seed Lacak harus memakai index trigram 0049 (bukan seq scan) untuk kueri
+    // nomor dan perihal. Ini asersi bentuk rencana (kuat di mesin CI lambat); p95 tetap dicetak.
+    it.each([
+        ['B-12345/PTPP', 'nomor_norm'],
+        ['koordinasi pertanahan', 'perihal'],
+    ] as const)('seed Lacak q="%s" memakai index trigram %s untuk admin_unit dan pengawas', async (q, jenisIndex) => {
+        for (const [peran, user] of [['dir_bppt (admin_unit)', dirBppt], ['sesditjen (pengawas)', sesditjen]] as const) {
+            const { sql: renderedSql, params } = await tangkapSeed(user, q);
             const c = await h.pool.connect();
             try {
-                await c.query("SET statement_timeout = '300s'");
-                const { rows } = await c.query(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${renderedSql}`, params as unknown[]);
-                console.info(`[lacak-explain] user=${peran} plan=${JSON.stringify(rows[0]['QUERY PLAN'])}`);
+                const { rows } = await c.query(`EXPLAIN (FORMAT JSON) ${renderedSql}`, params as unknown[]);
+                const plan = JSON.stringify(rows[0]['QUERY PLAN']);
+                console.info(`[lacak-explain] trgm q="${q}" user=${peran} plan=${plan}`);
+                for (const tabel of ['surat_masuk', 'surat_keluar']) {
+                    expect(plan, `${peran} ${tabel}`).toContain(`"Index Name":"${tabel}_${jenisIndex}_trgm_idx"`);
+                    expect(plan, `${peran} ${tabel} tanpa seq scan`).not.toMatch(
+                        new RegExp(`"Node Type":"Seq Scan"[^{}]*"Relation Name":"${tabel}"`));
+                }
+                expect(plan).toContain('"Node Type":"Bitmap Index Scan"');
             } finally {
                 c.release();
             }
         }
     }, 120_000);
 
-    it('p95 rangkaianService.lacak < 150 ms untuk kueri nomor dan perihal', async () => {
-        const { rangkaianService } = await import('../src/services/rangkaian/deps.js');
+    it.skipIf(!PERF)('EXPLAIN ANALYZE seed Lacak nyata untuk tiga pengguna', async () => {
+        const pengguna: Array<[string, TestUser]> = [['dir_bppt (admin_unit)', dirBppt], ['sesditjen (pengawas)', sesditjen], ['super_admin', superAdmin]];
         for (const q of ['B-12345/PTPP', 'koordinasi pertanahan']) {
-            await denganAkarGalat(`lacak q="${q}" pemanasan`, () => rangkaianService.lacak(dirBppt, { q, mode: 'lacak' }));
-            const durasi: number[] = [];
-            for (let i = 0; i < 20; i += 1) {
-                const mulai = performance.now();
-                await denganAkarGalat(`lacak q="${q}" ulang ${i + 1}`, () => rangkaianService.lacak(dirBppt, { q, mode: 'lacak' }));
-                durasi.push(performance.now() - mulai);
-            }
-            durasi.sort((a, b) => a - b);
-            const p50 = durasi[9];
-            const p95 = durasi[Math.ceil(0.95 * durasi.length) - 1];
-            console.info(`[lacak-explain] q="${q}" p50=${p50.toFixed(1)}ms p95=${p95.toFixed(1)}ms`);
-            // [Putusan pengontrol] p95 < 150 ms adalah TARGET (spec:582), bukan
-            // gerbang CI: rencana merutekan p95 >= 150 ms ke angka tercatat +
-            // penerimaan pemilik (plan:55, plan:1942-1943), bukan uji merah.
-            // Karena itu ambang ini hanya dicetak, tidak pernah diasersi keras,
-            // bahkan dengan LACAK_PERF=1. Jangan menaikkan ambang bila lambat;
-            // catat p50/p95 di deskripsi PR sebagai masukan pg_trgm (§13 no. 3)
-            // dan eskalasi ke pemilik spec sebelum merge.
-            if (p95 >= 150) {
-                console.warn(`[lacak-explain] q="${q}" p95=${p95.toFixed(1)}ms >= 150ms target (spec:582); catat di PR dan minta penerimaan pemilik (plan:1942-1943).`);
+            for (const [peran, user] of pengguna) {
+                const { sql: renderedSql, params } = await tangkapSeed(user, q);
+                const c = await h.pool.connect();
+                try {
+                    await c.query("SET statement_timeout = '300s'");
+                    await c.query('SET jit = off');
+                    const { rows } = await c.query(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${renderedSql}`, params as unknown[]);
+                    const rencanaJson = rows[0]['QUERY PLAN'] as Array<{ 'Execution Time': number }>;
+                    console.info(`[lacak-explain] q="${q}" user=${peran} eksekusi=${rencanaJson[0]['Execution Time'].toFixed(1)}ms plan=${JSON.stringify(rencanaJson)}`);
+                } finally {
+                    c.release();
+                }
             }
         }
     }, 120_000);
+
+    it('p95 rangkaianService.lacak < 150 ms untuk kueri nomor dan perihal', async () => {
+        const { rangkaianService } = await import('../src/services/rangkaian/deps.js');
+        const pengguna: Array<[string, TestUser]> = [['dir_bppt (admin_unit)', dirBppt], ['sesditjen (pengawas)', sesditjen], ['super_admin', superAdmin]];
+        for (const q of ['B-12345/PTPP', 'koordinasi pertanahan']) {
+            for (const [peran, user] of pengguna) {
+                await denganAkarGalat(`lacak q="${q}" user=${peran} pemanasan`, () => rangkaianService.lacak(user, { q, mode: 'lacak' }));
+                const durasi: number[] = [];
+                for (let i = 0; i < 20; i += 1) {
+                    const mulai = performance.now();
+                    await denganAkarGalat(`lacak q="${q}" user=${peran} ulang ${i + 1}`, () => rangkaianService.lacak(user, { q, mode: 'lacak' }));
+                    durasi.push(performance.now() - mulai);
+                }
+                durasi.sort((a, b) => a - b);
+                const p50 = durasi[9];
+                const p95 = durasi[Math.ceil(0.95 * durasi.length) - 1];
+                console.info(`[lacak-explain] q="${q}" user=${peran} p50=${p50.toFixed(1)}ms p95=${p95.toFixed(1)}ms`);
+                // [Putusan pengontrol, CTRL-4] p95 < 150 ms adalah TARGET (spec:582), bukan
+                // gerbang CI: hanya dicetak, tidak pernah diasersi keras, bahkan dengan
+                // LACAK_PERF=1. Penjamin kinerja yang diasersi adalah bentuk rencana
+                // (index trigram 0049, uji di atas), yang tidak bergantung kecepatan mesin.
+                if (p95 >= 150) {
+                    console.warn(`[lacak-explain] q="${q}" user=${peran} p95=${p95.toFixed(1)}ms >= 150ms target (spec:582); catat di PR.`);
+                }
+            }
+        }
+    }, 240_000);
 
     // [P4-T7-2] (ditambahkan Task 16, amandemen item 12) Waktu ringkasan
     // Perlu Dilengkapi (D7) untuk pengawas TU dan super_admin: enam cabang
