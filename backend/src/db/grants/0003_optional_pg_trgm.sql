@@ -5,13 +5,21 @@
 -- membawa 0049_lacak_trgm:
 --   psql "$GRANT_ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/src/db/grants/0003_optional_pg_trgm.sql
 --
--- Database yang di-bootstrap dengan 0001 versi terbaru sudah memasang pg_trgm;
--- berkas ini untuk database yang di-bootstrap sebelum 0049 dijurnal (Neon,
--- Cloud SQL, lokal). Idempoten: aman dijalankan ulang.
+-- Ini SATU-SATUNYA jalur pemasangan pg_trgm di lingkungan yang dikelola:
+--   - GCP (maintenance/preview): `npm run db:roles:bootstrap` menjalankan 0001
+--     lalu berkas ini sebagai administrator grant yang sama;
+--   - CI dan profil backup-upgrade: langkah psql eksplisit sebelum db:migrate;
+--   - Neon: bootstrap kosong memasangnya sebagai administrator; Neon yang sudah
+--     berjalan menjalankan berkas ini sebelum `migrate --apply`.
+-- 0001 sengaja TIDAK memasang pg_trgm: drill restore Cloud SQL menjalankan
+-- ulang 0001 setelah pg_restore lalu membandingkan bukti secara persis, dan
+-- arsip pre_migration / pre_upgrade_0038 tidak memuat pg_trgm.
+-- Idempoten: aman dijalankan ulang.
 --
--- Rollback: DROP INDEX untuk enam index *_trgm_idx aman (hanya kinerja Lacak
--- yang turun); extension dibiarkan terpasang. 0049 tetap tercatat di journal,
--- jadi index harus dibuat ulang sebelum migrasi berikutnya bila dibutuhkan.
+-- Rollback: DROP INDEX untuk enam index *_trgm_idx aman (Lacak tetap benar,
+-- hanya kinerjanya turun); extension dibiarkan terpasang. 0049 tetap tercatat
+-- di journal, jadi index harus dibuat ulang sebelum migrasi berikutnya.
+\set ON_ERROR_STOP on
 BEGIN;
 DO $trgm_actor$
 BEGIN

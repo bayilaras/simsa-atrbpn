@@ -113,10 +113,11 @@ yang sudah ada:
 1. verifikasi exact principal dari output Terraform
    `database_maintenance.grant_admin_principal`;
 2. pada database aplikasi yang tepat, inventaris pemilik seluruh object
-   `public`/`drizzle` non-extension dan extension `pgcrypto`;
+   `public`/`drizzle` non-extension dan extension `pgcrypto` serta `pg_trgm`
+   (bila sudah ada);
 3. untuk database baru, beri `CREATEROLE` hanya kepada principal grant-admin;
-4. untuk database legacy, pindahkan hanya ownership aplikasi dan `pgcrypto`
-   dari owner lama ke grant-admin dalam sesi ter-review. Jangan melakukan
+4. untuk database legacy, pindahkan hanya ownership aplikasi, `pgcrypto`, dan
+   `pg_trgm` (bila ada) dari owner lama ke grant-admin dalam sesi ter-review. Jangan melakukan
    `REASSIGN OWNED` sebelum inventaris membuktikan owner lama tidak memiliki
    object lain yang berada di luar scope aplikasi;
 5. pastikan API, event, worker, final-cleanup, migrator, maintenance, dan backup
@@ -124,6 +125,17 @@ yang sudah ada:
    RLS;
 6. simpan transcript yang sudah disanitasi sebagai evidence operasi, bukan di
    repository. Password/token/ADC file tidak boleh masuk transcript.
+
+Extension yang dipasang grant-admin: `pgcrypto` oleh
+`grants/0001_bootstrap_cloud_sql_roles.sql`, dan `pg_trgm` (index trigram
+Lacak, migrasi `0049_lacak_trgm`) oleh langkah privileged terpisah
+`grants/0003_optional_pg_trgm.sql`. Fase `bootstrap` (`npm run
+db:roles:bootstrap`) menjalankan 0001 lalu 0003 dengan identitas grant-admin
+yang sama, sebelum fase `migrate`; 0003 menolak migrator dan idempoten.
+`pg_trgm` sengaja tidak dipasang di 0001: drill restore Cloud SQL
+(`backup-cloud-sql.yml`) menjalankan ulang 0001 setelah `pg_restore` dan
+membandingkan bukti extension secara persis, sehingga 0001 tidak boleh
+menambah extension yang tidak ada di arsip `pre_migration`/`pre_upgrade_0038`.
 
 Bootstrap fail-closed bila grant-admin bukan `session_user`, tidak memiliki
 `CREATEROLE`, owner legacy tidak sesuai, atau principal runtime beratribut

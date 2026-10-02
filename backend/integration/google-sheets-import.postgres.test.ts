@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadMigrations, migrateDatabase } from '../scripts/migrate-database.mjs';
+import { applyPgTrgmPrivilegedStep } from './helpers/rangkaian-db.js';
 
 const state = vi.hoisted(() => ({ databases: [] as any[], next: 0 }));
 // Inject real independent PostgreSQL pools into the canonical service. Neither
@@ -55,8 +56,9 @@ beforeAll(async () => {
                 END IF;
             END LOOP;
         END $$;
-        CREATE EXTENSION pgcrypto;
-        CREATE EXTENSION pg_trgm;
+        CREATE EXTENSION pgcrypto;`);
+        await applyPgTrgmPrivilegedStep(connection);
+        await connection.query(`
         ALTER SCHEMA public OWNER TO simsa_migrator;
         CREATE SCHEMA drizzle AUTHORIZATION simsa_migrator;
         SET ROLE simsa_migrator;`);

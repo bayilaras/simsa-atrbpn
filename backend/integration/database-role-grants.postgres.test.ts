@@ -48,14 +48,16 @@ afterAll(async () => {
 
 describe('least-privilege PostgreSQL runtime grants', () => {
     const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    it('preinstalls exactly pgcrypto and pg_trgm (0049 Lacak) besides plpgsql', async () => {
+    // pgcrypto dari bootstrap 0001; pg_trgm (0049 Lacak) dari langkah privileged terpisah
+    // grants/0003 yang CI jalankan sebagai administrator grant sebelum db:migrate.
+    it('preinstalls exactly pgcrypto (0001) and pg_trgm (0003, before 0049) besides plpgsql', async () => {
         const rows = await sql<{ extname: string }[]>`
             SELECT extname FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql' ORDER BY extname
         `;
         expect(rows.map(({ extname }) => extname)).toEqual(['pg_trgm', 'pgcrypto']);
     });
 
-    it.each(['pgcrypto', 'pg_trgm'])('preinstalls the exact %s extension outside migrator ownership', async (extensionName) => {
+    it.each(['pgcrypto', 'pg_trgm'])('preinstalls the exact %s extension owned by the grant administrator, never the migrator', async (extensionName) => {
         const [extension] = await sql<{
             extversion: string;
             default_version: string;

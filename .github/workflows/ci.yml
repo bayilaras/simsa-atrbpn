@@ -116,7 +116,6 @@ jobs:
               src/db/grants/0001_bootstrap_cloud_sql_roles.sql \
               src/db/grants/0002_converge_application_grants.sql \
               src/db/grants/0003_optional_pg_trgm.sql \
-              src/db/migrations/0049_lacak_trgm.sql \
               scripts/apply-database-grant-convergence.mjs
             do
               if [ ! -f "$required" ]; then
@@ -436,6 +435,16 @@ jobs:
               --set migrator_principal=simsa_ci_migrator \
               --set backup_principal=simsa_ci_backup \
               --file /grants/0001_bootstrap_cloud_sql_roles.sql
+          # Langkah privileged pg_trgm (migrasi 0049) oleh administrator grant,
+          # terpisah dari 0001 karena drill restore Cloud SQL menjalankan ulang
+          # 0001 dan membandingkan bukti extension secara persis.
+          docker run --rm --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/backend/src/db/grants:/grants:ro" \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on \
+              --file /grants/0003_optional_pg_trgm.sql
 
           MIGRATOR_DATABASE_URL='postgresql://simsa_ci_migrator:simsa_test_password@127.0.0.1:5432/simsa_test'
           MAINTENANCE_DATABASE_URL='postgresql://simsa_ci_maintenance:simsa_test_password@127.0.0.1:5432/simsa_test'

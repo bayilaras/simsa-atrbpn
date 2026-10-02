@@ -3,7 +3,9 @@
 // PG >= 16 — hal-hal yang PGlite (single-process, tanpa MVCC lintas koneksi
 // nyata) tidak dapat mensimulasikan. [T2-4]
 import { randomUUID } from 'node:crypto';
-import { Client, Pool } from 'pg';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { Client, Pool, type PoolClient } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { loadMigrations, migrateDatabase } from '../../scripts/migrate-database.mjs';
 
@@ -23,6 +25,16 @@ export function assertIsolatedTestTarget(raw = process.env.TEST_POSTGRES_URL): U
         throw new Error('Tes rangkaian memerlukan TEST_POSTGRES_URL loopback ke database simsa_test yang terisolasi.');
     }
     return url;
+}
+
+/**
+ * Langkah privileged pg_trgm yang SAMA dengan produksi (grants/0003_optional_pg_trgm.sql),
+ * dijalankan oleh administrator harness (bukan migrator) sebelum migrasi 0049. Hanya
+ * meta-command psql (`\set ...`) yang dibuang; isi transaksinya dieksekusi apa adanya.
+ */
+export async function applyPgTrgmPrivilegedStep(connection: Client | PoolClient): Promise<void> {
+    const raw = readFileSync(fileURLToPath(new URL('../../src/db/grants/0003_optional_pg_trgm.sql', import.meta.url)), 'utf8');
+    await connection.query(raw.split('\n').filter((line) => !line.startsWith('\\')).join('\n'));
 }
 
 export async function createRangkaianTestDatabase(label: string, options: { stopBefore?: string } = {}) {
@@ -46,8 +58,9 @@ export async function createRangkaianTestDatabase(label: string, options: { stop
                 END IF;
             END LOOP;
         END $$;
-        CREATE EXTENSION pgcrypto;
-        CREATE EXTENSION pg_trgm;
+        CREATE EXTENSION pgcrypto;`);
+        await applyPgTrgmPrivilegedStep(connection);
+        await connection.query(`
         ALTER SCHEMA public OWNER TO simsa_migrator;
         CREATE SCHEMA drizzle AUTHORIZATION simsa_migrator;
         SET ROLE simsa_migrator;`);

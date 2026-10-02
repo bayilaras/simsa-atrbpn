@@ -135,9 +135,11 @@ describe('PostgreSQL migration chain', () => {
             'surat_masuk_perihal_trgm_idx',
         ]);
         for (const row of rows) expect(row.indexdef).toMatch(/USING gin .*gin_trgm_ops/);
-        const ekstensi = await database.query<{ owner: string }>(
-            "SELECT pg_get_userbyid(extowner) AS owner FROM pg_extension WHERE extname = 'pg_trgm'");
-        expect(ekstensi.rows[0]?.owner).not.toBe('simsa_migrator');
+        // Review m7: pemiliknya harus administrator bootstrap (pemilik pgcrypto, di PGlite
+        // superuser `postgres`), bukan sekadar "bukan migrator".
+        const ekstensi = await database.query<{ extname: string; owner: string }>(
+            "SELECT extname, pg_get_userbyid(extowner) AS owner FROM pg_extension WHERE extname IN ('pgcrypto','pg_trgm') ORDER BY extname");
+        expect(ekstensi.rows).toEqual([{ extname: 'pg_trgm', owner: 'postgres' }, { extname: 'pgcrypto', owner: 'postgres' }]);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 
     it('has a contiguous, chronological journal with a SQL file for every entry', () => {

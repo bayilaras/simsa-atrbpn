@@ -354,40 +354,27 @@ $exact_membership_closure$;
 -- require cloudsqlsuperuser for extension installation. Install/verify it in
 -- this grant-admin phase so the deliberately unprivileged migrator only sees
 -- the idempotent CREATE EXTENSION IF NOT EXISTS in migrations 0016/0017.
--- pg_trgm (index trigram Lacak Surat, migrasi 0049) dipasang dengan cara yang
--- sama; 0049 hanya memverifikasi keberadaannya dan gagal keras bila tidak ada.
--- Database yang sudah ter-bootstrap sebelum 0049 memakai langkah satu kali
--- grants/0003_optional_pg_trgm.sql.
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 DO $extension_preflight$
 DECLARE
     expected_owner text := pg_catalog.current_setting('simsa_grants.expected_owner');
     extension_record record;
-    verified_count integer := 0;
 BEGIN
-    FOR extension_record IN
-        SELECT e.extname,
-               e.extversion,
-               available.default_version,
-               n.nspname AS schema_name,
-               pg_catalog.pg_get_userbyid(e.extowner) AS owner_name
-        FROM pg_catalog.pg_extension e
-        JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
-        JOIN pg_catalog.pg_available_extensions available ON available.name = e.extname
-        WHERE e.extname = ANY (ARRAY['pgcrypto', 'pg_trgm'])
-    LOOP
-        IF extension_record.extversion <> extension_record.default_version
-           OR extension_record.schema_name <> 'public'
-           OR extension_record.owner_name <> expected_owner THEN
-            RAISE EXCEPTION '% must use the engine default version in public and be owned by the grant administrator',
-                extension_record.extname;
-        END IF;
-        verified_count := verified_count + 1;
-    END LOOP;
+    SELECT e.extversion,
+           available.default_version,
+           n.nspname AS schema_name,
+           pg_catalog.pg_get_userbyid(e.extowner) AS owner_name
+    INTO extension_record
+    FROM pg_catalog.pg_extension e
+    JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+    JOIN pg_catalog.pg_available_extensions available ON available.name = e.extname
+    WHERE e.extname = 'pgcrypto';
 
-    IF verified_count <> 2 THEN
-        RAISE EXCEPTION 'pgcrypto and pg_trgm must use the engine default version in public and be owned by the grant administrator';
+    IF NOT FOUND
+       OR extension_record.extversion <> extension_record.default_version
+       OR extension_record.schema_name <> 'public'
+       OR extension_record.owner_name <> expected_owner THEN
+        RAISE EXCEPTION 'pgcrypto must use the engine default version in public and be owned by the grant administrator';
     END IF;
 END
 $extension_preflight$;

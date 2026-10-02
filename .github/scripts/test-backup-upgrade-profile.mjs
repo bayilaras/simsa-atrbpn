@@ -129,6 +129,17 @@ try {
   try { collect('reject expanded API grant on 0038', {}, true); }
   finally { await pg.query('REVOKE INSERT ON public.file_fixity_jobs FROM simsa_api_runtime'); }
   collect('0038 baseline remains valid after negative tests');
+  // Upgrade melewati 0049 (index trigram Lacak) mensyaratkan langkah privileged
+  // pg_trgm oleh administrator grant, persis urutan operator produksi. 0001
+  // sengaja tidak memasangnya, jadi bukti pre_upgrade_0038 di atas tanpa pg_trgm.
+  const trgmOwner = async () => (await pg.query(
+    "SELECT pg_get_userbyid(extowner) AS owner FROM pg_extension WHERE extname='pg_trgm'")).rows.map(row => row.owner);
+  assert.deepEqual(await trgmOwner(), [], '0001 must not install pg_trgm (restore-drill evidence)');
+  const trgmStep = readFileSync(join(root, 'backend/src/db/grants/0003_optional_pg_trgm.sql'), 'utf8');
+  psql('migrator cannot run the privileged pg_trgm step', trgmStep, { role: principals[5], rejected: true });
+  assert.deepEqual(await trgmOwner(), [], 'rejected migrator step must not leave pg_trgm behind');
+  psql('privileged pg_trgm step before 0049', trgmStep);
+  assert.deepEqual(await trgmOwner(), [admin], 'pg_trgm must be owned by the grant administrator');
   const upgrade = new Client({ host: '127.0.0.1', port: Number(url.port), database,
     user: principals[5], password: passwords[principals[5]] }); await upgrade.connect();
   try { assert.equal((await migrateDatabase(upgrade)).applied, manifest.length - baseline.length); }
