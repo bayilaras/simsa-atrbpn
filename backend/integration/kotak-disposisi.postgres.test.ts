@@ -220,7 +220,8 @@ describe.skipIf(!adaPostgres)('kotak disposisi dan penyelesaian di PostgreSQL', 
             auth.state.user = ptep;
             const res = await request(app).get(`/api/distributions/${dist}`).expect(200);
             expect(res.body.data).toMatchObject({ id: dist, suratMasukId: sm, instruction: 'Isi rahasia lain', surat: { id: sm, perihal: 'Aset strategis' } });
-            expect(res.body.data.masked).toBeUndefined();
+            // P4 (P4-D-21): GET /distributions/:id yang terbaca mengirim masked:false eksplisit.
+            expect(res.body.data.masked).toBe(false);
             const log = await h.query<{ user_id: string; changes: any }>(
                 "SELECT user_id, changes FROM audit_log WHERE action = 'view_via_rangkaian' AND entity_type = 'surat_masuk' AND entity_id = $1", [sm]);
             expect(log).toHaveLength(1);

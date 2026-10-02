@@ -182,11 +182,11 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
     it('p95 rangkaianService.lacak < 150 ms untuk kueri nomor dan perihal', async () => {
         const { rangkaianService } = await import('../src/services/rangkaian/deps.js');
         for (const q of ['B-12345/PTPP', 'koordinasi pertanahan']) {
-            await rangkaianService.lacak(dirBppt, { q, mode: 'lacak' });
+            await denganAkarGalat(`lacak q="${q}" pemanasan`, () => rangkaianService.lacak(dirBppt, { q, mode: 'lacak' }));
             const durasi: number[] = [];
             for (let i = 0; i < 20; i += 1) {
                 const mulai = performance.now();
-                await rangkaianService.lacak(dirBppt, { q, mode: 'lacak' });
+                await denganAkarGalat(`lacak q="${q}" ulang ${i + 1}`, () => rangkaianService.lacak(dirBppt, { q, mode: 'lacak' }));
                 durasi.push(performance.now() - mulai);
             }
             durasi.sort((a, b) => a - b);
@@ -224,11 +224,13 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
             try {
                 await langkah();
             } catch (error) {
-                if (PERF || !adalahStatementTimeout(error)) throw error;
-                console.warn(`[perlu-dilengkapi-ringkasan] ${label} statement timeout (57014) ditoleransi tanpa LACAK_PERF: ${(error as Error).message}`);
+                if (PERF || !adalahStatementTimeout(error)) throw new Error(`[perlu-dilengkapi-ringkasan] ${label}: ${akarGalat(error)}`, { cause: error });
+                timeoutTercatat.push(label);
+                console.warn(`[perlu-dilengkapi-ringkasan] ${label} statement timeout (57014) ditoleransi tanpa LACAK_PERF: ${akarGalat(error)}`);
             }
         };
         const totalRingkasan = new Map<string, number>();
+        const timeoutTercatat: string[] = [];
         for (const [peran, user] of pengguna) {
             await toleransiTimeout(`user=${peran} ringkasan`, async () => {
                 const awal = await perluDilengkapiService.ringkasan(user, { tampilkanDataLama: false });
@@ -273,7 +275,7 @@ describe.skipIf(!adaPostgres)('kinerja Lacak Surat pada 2 × 50 ribu baris sinte
         }
         // [B-I2] Bukti non-vakum wajib: ringkasan super_admin harus berhasil (bukan timeout yang
         // ditoleransi) dan melaporkan baris; total=0 tidak membuktikan apa pun.
-        expect(totalRingkasan.get('super_admin'), 'ringkasan super_admin harus berjalan pada PG nyata').toBeGreaterThan(0);
+        expect(totalRingkasan.get('super_admin'), `ringkasan super_admin harus berjalan pada PG nyata; timeout tercatat: ${timeoutTercatat.join(', ') || 'tidak ada'}`).toBeGreaterThan(0);
     }, 300_000);
 });
 
@@ -284,4 +286,23 @@ function adalahStatementTimeout(error: unknown): boolean {
         if ((e as { code?: unknown }).code === '57014') return true;
     }
     return false;
+}
+
+// Pesan galat drizzle memuat seluruh SQL (>4 KB) sehingga anotasi CI terpotong
+// sebelum penyebab aslinya. Taruh SQLSTATE + pesan akar di depan.
+function akarGalat(error: unknown): string {
+    let akar: unknown = error;
+    for (let i = 0; i < 5 && (akar as { cause?: unknown })?.cause; i += 1) akar = (akar as { cause?: unknown }).cause;
+    const kode = (akar as { code?: unknown })?.code;
+    const pesan = (akar as Error)?.message ?? String(akar);
+    return `SQLSTATE ${typeof kode === 'string' ? kode : '?'}: ${pesan.slice(0, 300)}`;
+}
+
+async function denganAkarGalat<T>(label: string, langkah: () => Promise<T>): Promise<T> {
+    const mulai = performance.now();
+    try {
+        return await langkah();
+    } catch (error) {
+        throw new Error(`[lacak-explain] ${label} gagal setelah ${(performance.now() - mulai).toFixed(0)} ms — ${akarGalat(error)}`, { cause: error });
+    }
 }
