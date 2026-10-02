@@ -249,6 +249,10 @@ export const lacakService = {
         const kosong: LacakResult = { q: plan.q, mode: params.mode, jenisKueri: plan.jenis, kelompok: [] };
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
             await tx.execute(sql`SET LOCAL statement_timeout = '2s'`);
+            // JIT LLVM mengompilasi kueri berbiaya taksiran tinggi ini sebelum dieksekusi; pada
+            // image PostgreSQL CI itu menambah ~1-2 s dan menembus statement_timeout. Kueri
+            // interaktif ini tidak diuntungkan JIT, jadi dimatikan hanya untuk transaksi ini.
+            await tx.execute(sql`SET LOCAL jit = off`);
             const ctx = await resolveKonteksBaca(user, tx as never);
             const jenisList: SuratJenis[] = params.jenis ? [params.jenis] : ['surat_masuk', 'surat_keluar'];
             const cabang = jenisList.map((jenis) => cabangSql(BRANCHES[jenis], plan, params, ctx)).filter((c): c is SQL => c !== null);
