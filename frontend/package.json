@@ -68,6 +68,7 @@
   "overrides": {
     "@vercel/routing-utils": {
       "path-to-regexp": "6.3.0"
-    }
+    },
+    "@grpc/grpc-js": "^1.14.5"
   }
 }
