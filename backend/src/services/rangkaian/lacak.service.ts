@@ -2,10 +2,12 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../config/database.js';
 import { classifyLacakQuery, escapeLike, LIKE_ESCAPE, nomorNormSql, type LacakQueryPlan } from '../../utils/nomor-surat.js';
 import {
-    BATAS_NODE_DETAIL, denganRetryDeadlock, isAjukanAksesEnabled, judulTersamar, LABEL_DIKECUALIKAN, readRefKey, recordAccessService,
+    BATAS_NODE_DETAIL, denganRetryDeadlock, isAjukanAksesEnabled, LABEL_DIKECUALIKAN, readRefKey, recordAccessService,
     requiresExplicitAccessGrant, resolveKonteksBaca, tingkatRangkaianPenuh, visibleSql,
     type KonteksBaca, type RecordUser, type SuratJenis, type Tx,
 } from './deps.js';
+import { bentukKueriLacak, skorLacakSql } from '../lacak-skor.js';
+import { judulRangkaianTampil } from '../rangkaian-judul.js';
 import { rowsOf, textArraySql, uuidArraySql } from './sql-rows.js';
 import type { LacakCocok, LacakKelompok, LacakNode, LacakNodeTersamar, LacakParams, LacakResult } from './lacak.types.js';
 
@@ -34,39 +36,35 @@ function semuaToken(column: SQL, tokens: string[]): SQL {
 /** Skor & predikat cocok per cabang (tabel skor §6). null = kueri tidak dapat dicocokkan. */
 export function skorSql(branch: Branch, plan: LacakQueryPlan, mode: LacakParams['mode']): { skor: SQL; cocok: SQL } | null {
     const nomor = sql.raw(`${branch.alias}.nomor_surat`);
-    const norm = nomorNormSql(nomor);
     const mentah = sql`lower(coalesce(${nomor}, '')) = ${plan.qLower}`;
-    const samaNorm = sql`${norm} = ${plan.qNorm}`;
     if (mode === 'cek') {
         if (!plan.qNorm) return null;
-        return { skor: sql`CASE WHEN ${mentah} THEN 100 WHEN ${samaNorm} THEN 90 ELSE 0 END`, cocok: sql`(${mentah} OR ${samaNorm})` };
+        // Ekspresi persis index `*_nomor_norm_idx`: `mentah` selalu menyiratkan
+        // norm yang sama, jadi WHERE cukup norm = qNorm dan tetap memakai index.
+        const samaNormIndex = sql`${nomorNormSql(nomor)} = ${plan.qNorm}`;
+        return { skor: sql`CASE WHEN ${mentah} THEN 100 WHEN ${samaNormIndex} THEN 90 ELSE 0 END`, cocok: samaNormIndex };
     }
-    const skor: SQL[] = [];
+    // Mode lacak memindai tabel (predikat ILIKE '%…%' tidak ber-index), jadi
+    // nomor ternormalisasi dihitung SEKALI per baris lewat LATERAL `lk_n`
+    // (lihat cabangSql) alih-alih regexp_replace di setiap cabang OR/CASE.
+    const norm = sql.raw('lk_n.n');
+    const samaNorm = sql`${norm} = ${plan.qNorm}`;
     const cocok: SQL[] = [];
     if (plan.jenis === 'nomor' && plan.qNorm) {
         const prefix = sql`${norm} LIKE ${`${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`;
-        const kasus = [sql`WHEN ${mentah} THEN 100`, sql`WHEN ${samaNorm} THEN 90`, sql`WHEN ${prefix} THEN 70`];
         cocok.push(mentah, samaNorm, prefix);
-        if (plan.substringNomor) {
-            const substring = sql`${norm} LIKE ${`%${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`;
-            kasus.push(sql`WHEN ${substring} THEN 50`);
-            cocok.push(substring);
-        }
-        skor.push(sql`CASE ${sql.join(kasus, sql` `)} ELSE 0 END`);
+        if (plan.substringNomor) cocok.push(sql`${norm} LIKE ${`%${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`);
     }
+    const perihal = sql.raw(`${branch.alias}.perihal`);
+    const pihak = sql.raw(branch.pihak);
     if (plan.tokens.length > 0) {
-        const perihal = sql.raw(`${branch.alias}.perihal`);
-        const pihak = sql.raw(branch.pihak);
-        const diPerihal = semuaToken(perihal, plan.tokens);
-        const diPihak = semuaToken(pihak, plan.tokens);
-        const frasa = sql`${perihal} ILIKE ${`%${escapeLike(plan.q)}%`} ${LIKE_ESCAPE}`;
-        skor.push(sql`CASE WHEN ${diPerihal} THEN 40 + CASE WHEN ${frasa} THEN 5 ELSE 0 END ELSE 0 END`);
-        skor.push(sql`CASE WHEN ${diPihak} THEN 20 ELSE 0 END`);
-        cocok.push(sql`(${diPerihal})`, sql`(${diPihak})`);
+        cocok.push(sql`(${semuaToken(perihal, plan.tokens)})`, sql`(${semuaToken(pihak, plan.tokens)})`);
     }
-    if (skor.length === 0) return null;
+    if (cocok.length === 0) return null;
+    // P4: satu sumber skor (§6 + prefix mentah berbatas 80, lacak-skor.ts). Predikat `cocok` P3 tidak
+    // diubah, sehingga visibleSql tetap berada di WHERE seed yang sama (tanpa oracle).
     return {
-        skor: skor.length === 1 ? skor[0] : sql`GREATEST(${sql.join(skor, sql`, `)})`,
+        skor: skorLacakSql({ nomor, nomorNorm: norm, perihal, pihak }, bentukKueriLacak(plan.q)),
         cocok: sql`(${sql.join(cocok, sql` OR `)})`,
     };
 }
@@ -82,9 +80,18 @@ function cabangSql(branch: Branch, plan: LacakQueryPlan, params: LacakParams, ct
     // internalnya (visibility-spec.ts:195-211); alias pemanggil tidak boleh
     // bertumpang tindih dengan nama itu (T4-1).
     return sql`SELECT ${branch.jenis}::text AS jenis, ${a}.id AS surat_id, ${a}.tanggal_surat, ${a}.nomor_surat, ${a}.perihal,
-            ${a}.tahun, lk_a.rangkaian_id, (${s.skor}) AS skor
+            ${a}.tahun,
+            -- Subkueri skalar atas index unik rangkaian_anggota_{sm,sk}_uidx (≤1 baris per surat):
+            -- satu probe index per baris. LEFT JOIN sebelumnya bisa direncanakan sebagai nested loop
+            -- atas Materialize seluruh rangkaian_anggota ketika planner salah menaksir jumlah baris
+            -- seed (68 vs 8.929 aktual → 4,3 s untuk pengawas TU pada 50 ribu baris).
+            (SELECT lk_a.rangkaian_id FROM rangkaian_anggota lk_a
+              WHERE lk_a.${sql.raw(branch.anggotaCol)} = ${a}.id) AS rangkaian_id,
+            (${s.skor}) AS skor
         FROM ${sql.raw(branch.table)} ${a}
-        LEFT JOIN rangkaian_anggota lk_a ON lk_a.${sql.raw(branch.anggotaCol)} = ${a}.id
+        -- OFFSET 0 mencegah planner meleburkan subkueri sehingga regexp_replace
+        -- benar-benar dievaluasi sekali per baris (≈2,4× lebih cepat pada 50 ribu baris).
+        CROSS JOIN LATERAL (SELECT ${nomorNormSql(sql.raw(`${branch.alias}.nomor_surat`))} AS n OFFSET 0) lk_n
         WHERE ${a}.is_deleted IS NOT TRUE ${tahun} AND ${s.cocok} AND (${visible})`;
 }
 
@@ -112,7 +119,7 @@ async function muatTunggal(tx: Tx, refs: LacakCocok[]): Promise<Map<string, Laca
 
 /** Placeholder node tunggal/tanpa kartu: tanpa anggotaId (kontrak P4: `string | null`). */
 function tersamarTunggal(node: Pick<LacakNode, 'jenis' | 'unitNama'>): LacakNodeTersamar {
-    return { anggotaId: null as never, jenis: node.jenis, unitNama: node.unitNama, label: LABEL_DIKECUALIKAN, masked: true, dapatAjukanAkses: false };
+    return { anggotaId: null, jenis: node.jenis, unitNama: node.unitNama, label: LABEL_DIKECUALIKAN, masked: true, dapatAjukanAkses: false };
 }
 
 async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[], ctx: KonteksBaca): Promise<LacakKelompok[]> {
@@ -144,6 +151,11 @@ async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[], ctx: KonteksB
                        ((CASE WHEN a.surat_masuk_id IS NOT NULL THEN 'surat_masuk:' ELSE 'surat_keluar:' END)
                            || coalesce(a.surat_masuk_id, a.surat_keluar_id)::text = ANY(${textArraySql(semuaCocok)})) DESC,
                        coalesce(sm.tanggal_surat, sk.tanggal_surat) ASC NULLS LAST, a.id)::int AS urut,
+                   -- N-1: jendela BATAS_NODE_DETAIL memakai urutan P2 getDetail
+                   -- (muatAnggota: induk → ditambahkan_at → id) agar Lacak dan
+                   -- GET /:id menilai 300 node yang sama.
+                   row_number() OVER (PARTITION BY a.rangkaian_id ORDER BY (a.peran = 'induk') DESC,
+                       a.ditambahkan_at, a.id)::int AS urut_detail,
                    count(*) OVER (PARTITION BY a.rangkaian_id)::int AS jumlah
               FROM rangkaian_anggota a
               JOIN unit_kerja uk ON uk.id = a.unit_kerja_id
@@ -154,7 +166,8 @@ async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[], ctx: KonteksB
         ) x
         -- Pembaca penuh: cukup pratinjau. Pembaca lain: muat hingga batas detail
         -- P2 agar pratinjau/jumlah dihitung dari node yang TERBACA saja (A-I3).
-        WHERE urut <= CASE WHEN rangkaian_id = ANY(${uuidArraySql([...penuh])}) THEN ${NODE_PRATINJAU}::int ELSE ${BATAS_NODE_DETAIL}::int END`));
+        WHERE CASE WHEN rangkaian_id = ANY(${uuidArraySql([...penuh])}) THEN urut <= ${NODE_PRATINJAU}::int
+                   ELSE urut_detail <= ${BATAS_NODE_DETAIL}::int END`));
     const rangkaianRows = rangkaianIds.length === 0 ? [] : rowsOf<NonNullable<LacakKelompok['rangkaian']>>(await tx.execute(sql`
         SELECT id, kode, status, judul, tahun, asal FROM rangkaian_surat WHERE id = ANY(${uuidArraySql(rangkaianIds)})`));
     const akses = await recordAccessService.checkMany(user, nodeRows.map((n) => ({ type: n.jenis, id: n.surat_id })), tx);
@@ -211,7 +224,7 @@ async function ekspansi(tx: Tx, user: RecordUser, grup: GrupRow[], ctx: KonteksB
         const r = rangkaianRows.find((row) => row.id === rangkaianId)!;
         const induk = milik.find((n) => n.peran === 'induk');
         const indukTerlihat = induk ? terbaca(induk) : false;
-        const rangkaian = { ...r, judul: induk && indukTerlihat ? r.judul : judulTersamar(r.kode) };
+        const rangkaian = { ...r, judul: judulRangkaianTampil(r.kode, r.judul, !(induk && indukTerlihat)) };
         if (penuh.has(rangkaianId)) {
             const jumlah = milik[0]?.jumlah ?? 0;
             return { ...dasar, rangkaian, pratinjau: milik.map(keNode), jumlahAnggota: jumlah, pratinjauTerpotong: jumlah > milik.length };
@@ -236,6 +249,10 @@ export const lacakService = {
         const kosong: LacakResult = { q: plan.q, mode: params.mode, jenisKueri: plan.jenis, kelompok: [] };
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
             await tx.execute(sql`SET LOCAL statement_timeout = '2s'`);
+            // JIT LLVM mengompilasi kueri berbiaya taksiran tinggi ini sebelum dieksekusi; pada
+            // image PostgreSQL CI itu menambah ~1-2 s dan menembus statement_timeout. Kueri
+            // interaktif ini tidak diuntungkan JIT, jadi dimatikan hanya untuk transaksi ini.
+            await tx.execute(sql`SET LOCAL jit = off`);
             const ctx = await resolveKonteksBaca(user, tx as never);
             const jenisList: SuratJenis[] = params.jenis ? [params.jenis] : ['surat_masuk', 'surat_keluar'];
             const cabang = jenisList.map((jenis) => cabangSql(BRANCHES[jenis], plan, params, ctx)).filter((c): c is SQL => c !== null);

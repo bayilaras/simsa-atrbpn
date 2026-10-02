@@ -186,6 +186,20 @@ describe('pengawas (G-PENGAWAS)', () => {
         await expect(deps.pengawasUntukUnit({ role: 'admin_unit', unitKerjaId: 'dir_bppt' }, 'ditjen', pelaksana(false) as never))
             .resolves.toBe(false);
     });
+
+    // P4 T16 item 14: D7 memakai bentuk murni; harus identik dengan pengawasUntukUnit.
+    it.each([
+        ['super_admin', { role: 'super_admin', unitKerjaId: null }, true, 'bagian_umum'],
+        ['pengawas dalam cakupan', { role: 'admin_unit', unitKerjaId: 'sesditjen' }, true, 'dir_ptep'],
+        ['pengawas di luar cakupan', { role: 'admin_unit', unitKerjaId: 'sesditjen' }, true, 'bagian_umum'],
+        ['FULL_ADMIN bukan pengawas', { role: 'admin_unit', unitKerjaId: 'dir_bppt' }, false, 'dir_ptep'],
+        ['staff di unit pengawas', { role: 'staff', unitKerjaId: 'sesditjen' }, true, 'dir_ptep'],
+        ['unit rekaman null', { role: 'admin_unit', unitKerjaId: 'sesditjen' }, true, null],
+    ] as const)('pengawasUntukKonteks = pengawasUntukUnit: %s', async (_nama, user, unitPengawas, unitRekaman) => {
+        const ctx = await deps.resolveKonteksBaca(user, pelaksana(unitPengawas) as never);
+        await expect(deps.pengawasUntukUnit(user, unitRekaman, pelaksana(unitPengawas) as never))
+            .resolves.toBe(deps.pengawasUntukKonteks(user, ctx, unitRekaman));
+    });
 });
 
 describe('penguncian (G-LOCK)', () => {

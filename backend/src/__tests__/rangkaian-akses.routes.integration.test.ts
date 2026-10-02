@@ -308,3 +308,26 @@ describe('GET /api/rangkaian/:id — dapatDitutup per disposisi (F-I3)', () => {
         }
     });
 });
+
+describe('PUT multipart surat masuk anggota rangkaian (N-2)', () => {
+    // Uji ini sengaja tanpa sanitizeInput global (app.ts memasangnya sebelum
+    // multer, sehingga isi multipart tidak pernah tersanitasi di sana). Route
+    // wajib menyanitasi isi multipart SEBELUM guard membandingkan nilai lama.
+    const koreksi = async () => (await database.query<any>(
+        `SELECT count(*)::int AS n FROM audit_log WHERE entity_type = 'rangkaian_surat' AND changes->>'koreksiAnggota' = 'true'`)).rows[0].n;
+
+    it('perihal yang hanya beda tag/spasi disimpan tersanitasi, bukan mentah', async () => {
+        await request(app).put(`/api/surat-masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.tu))
+            .field('perihal', 'Permohonan <b>data</b>   pertanahan').expect(200);
+        const sm = (await database.query<any>(`SELECT perihal FROM surat_masuk WHERE id = '${SURAT.smBiasa}'`)).rows[0];
+        expect(sm.perihal).toBe('Permohonan data pertanahan');
+        expect(await koreksi()).toBe(0);
+    });
+
+    it('perihal bertag yang benar-benar berubah tetap wajib alasan', async () => {
+        await request(app).put(`/api/surat-masuk/${SURAT.smBiasa}`).set(sebagai(PENGGUNA.tu))
+            .field('perihal', 'Permohonan <i>data</i> baru').expect(400);
+        const sm = (await database.query<any>(`SELECT perihal FROM surat_masuk WHERE id = '${SURAT.smBiasa}'`)).rows[0];
+        expect(sm.perihal).toBe('Permohonan data pertanahan');
+    });
+});

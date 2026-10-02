@@ -5,6 +5,7 @@ const routeNameMap = {
     'surat': 'Surat',
     'masuk': 'Masuk',
     'keluar': 'Keluar',
+    'lacak': 'Lacak Surat',
     'tambah': 'Tambah',
     'arsip': 'Arsip',
     'laporan': 'Laporan',

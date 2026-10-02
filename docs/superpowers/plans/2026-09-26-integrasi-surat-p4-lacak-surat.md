@@ -28,6 +28,44 @@
   - Badge sidebar hanya untuk FULL_ADMIN, paling sering satu request per 60 detik per tab (irama `useNotifications`), dan hanya saat tab terlihat.
   - Satu-satunya endpoint tulis P4 adalah Tandai Inisiatif. Endpoint ini memakai `canWriteMiddleware()`, `validateIdParam('suratKeluarId')`, dan `logActionOrThrow(..., tx)`, serta mengubah **hanya** `asal_naskah` (+ `updated_at`).
 
+#### Amandemen pra-eksekusi global (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Workspace root and base (BLOCKING) [P4-G-1] RECHECK-AFTER-P3.**
+   - Work in the P4 worktree on branch `feat/integrasi-surat-p4`. The controller creates it on the final P3 tip, which must contain both `feat/integrasi-surat-p3` (backend) and `feat/integrasi-surat-p3-frontend`.
+   - Every `cd "D:/Projects/New folder/simsa-atrbpn"` in this plan (for example P4:21, 178, 189, 215, 233, 242, 1263, 5943) means `cd <P4 worktree root>`. Never run P4 commands or commits in `D:/Projects/New folder/simsa-atrbpn`: that is the main checkout, on `fix/user-readiness`.
+   - Task 1 Step 1: use `git switch -c feat/integrasi-surat-p4 origin/main` only after the P3 PR has merged. Until then the worktree is stacked on the P3 tip, as the plan's own cross-phase convention allows (P4:184).
+   - **(delta P3) Corrected base.** The frontend track is already merged into the backend branch: `d890ff2 merge: gabungkan jalur frontend P3 (Tugas 18-25)`, and `feat/integrasi-surat-p3-frontend` @ 9cb75e3 is an ancestor of `feat/integrasi-surat-p3` @ b4d86fa (verified with `git merge-base --is-ancestor`). The P4 base is therefore the single branch `feat/integrasi-surat-p3`, at the tip **after** the P3 final-fix wave (`final-fix-brief.md`) has committed. Do not stack on b4d86fa: the fix wave rewrites `lacak.service.ts`, `rangkaian-read.service.ts`, `deps.ts`, `distribution.service.ts` and the P3 runbook, which P4 Tasks 4, 9, 16 and 22 anchor on.
+2. **Anchoring (REQUIRED) [P4-G-2].**
+   - Line numbers and the "persis" P3 snippets are hints. Edit by symbol, `describe` name or unique anchor text.
+   - The Task 1 stop rule applies to a missing name or shape (function, export, prop, field). It does not apply to text drift inside a P3 function body.
+3. **P3 contract (REQUIRED) [P4-G-3].** The amended P3 plan is the interface. Before Task 2, re-verify every `RECHECK-AFTER-P3` item in this file with the extended Task 1 greps.
+4. **Imports (REQUIRED) [P4-G-4].** Imports in plan snippets are additions. Merge each into the existing import statement of the same module.
+5. **Typecheck per backend task (REQUIRED) [P4-G-5].** Tasks 3, 4, 5, 6, 16, 17 and 18 run `cd backend && npx tsc --noEmit -p tsconfig.json` in their "Jalankan, pastikan lulus" step, before the commit.
+6. **Lint per frontend task (REQUIRED) [P4-G-6].** Every task that edits a frontend source file runs `cd frontend && npx eslint <file…>` on each file it touched, including P2/P3 files such as `src/components/surat/AlurSuratPanel.jsx`.
+7. **Release gate (REQUIRED) [P4-G-7].** The PR description gets a "Gerbang rilis P4 (keamanan / pemilik spec)" table. Each row is recorded as signed or refused before production:
+
+   | Item | Source | Decision needed |
+   |---|---|---|
+   | Tandai Inisiatif authorized by list policy + owner unit, not `check()` | spec:906, P4:6084 | security sign-off |
+   | O1: step-1 backfilled rangkaian (`asal='surat_masuk'`, `selesai`) appear in `siap_diberkaskan` and the badge | spec:660, 668-674 | spec owner: count them as data lama or not |
+   | G-F3: cross-unit draft SKs readable; D7 `tindak_lanjut_tertahan` offers "Buka surat" on them | P3 G-F3, spec:659 | security sign-off (carried from P3) |
+   | Lacak p95 result and pg_trgm input | spec:582, §13 no. 3 | owner acceptance if p95 ≥ 150 ms |
+   | (delta P3) Lacak shows nomor/perihal of nodes readable via pengawas/peserta/grant without a `view_via_rangkaian` audit or `markGrantUsed` (list semantics), while P2 `GET /:id` audits the same read | P3 `final-review-access.md` carry-forward 5 | security sign-off |
+   | (delta P3) `POST /:id/tautan` by `anggotaId` lets any participant unit link its SK as `balasan`/`tindak_lanjut` to an SM it cannot read; that relasi closes `sm_belum_ditindaklanjuti` in D7 and counts toward auto-selesai | P3 access carry-forward 7; spec:656 | spec owner |
+   | (delta P3) Grant rows from `POST /rangkaian/anggota/:id/ajukan-akses` and `GET /record-access-grants/mine` expose the masked `entityId`/class (P3 M-1), unless the P3 fix wave or P4 Task 22 item 5 fixes it | P3 access M-1, carry-forward 9 | security sign-off, or "fixed" |
+   | (delta P3) Masked kotak-disposisi rows show `RS-YYYY-…` while the D7 placeholder (spec:668) carries no rangkaian | P3 frontend release note; P3 T10 | spec owner (carried from P3) |
+   | (delta P3) P3 C-12 gate signed (includes the A-I3 Lacak tier ruling, CTRL-1, `RANGKAIAN_AJUKAN_AKSES`) before P4 reaches production; P4 stacks on P3 | P3 `final-review-spec.md` release gate | prerequisite |
+   | (delta P3) CI "Backend Tests (PostgreSQL 16/17/18)" green on the P4 head, including every P3 `integration/*.postgres.test.ts` (never run locally) plus `lacak-explain` | `ci.yml:809`; P3 ruling S-I3 | hard gate |
+   | (delta P3) Frontend and backend ship in one deploy (`aksiDiizinkan` is authoritative in the UI) | P3 `final-review-frontend.md` release note | hard gate |
+8. **Role middleware (ADVISORY) [P4-G-8].** In Tasks 6 and 18, use `canReadMiddleware()` from `../middlewares/role.middleware` instead of `roleMiddleware(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor'])`. It is the same predicate P3 `/lacak` uses. The route tests stay as written: 401 without token, 400 validation, and 200 for staff.
+
+
+**Kontroler:** P4 berbasis ujung P3 final 2a61bb7 (branch tunggal feat/integrasi-surat-p3, jalur frontend sudah di-merge). Aturan P3 tetap mengikat: urutan kunci surat_keluar -> surat_masuk -> rangkaian_surat ORDER BY id -> surat_distributions, denganRetryDeadlock, logActionOrThrow dalam tx sebelum respons, tanpa oracle keberadaan, aksiDiizinkan server otoritatif, CTRL-1 (Tutup tanpa jalan pintas super_admin).
+
+
 ## Review Focus
 
 1. **Respons basi menimpa hasil terbaru / abort tidak sampai ke `fetch`.** Kueri lama yang lambat (atau layanan yang mengabaikan sinyal) datang setelah kueri baru lalu mengganti kartu. Diuji di **Task 10** (`penjaga urutan: respons basi yang tidak menghormati abort tidak menimpa hasil terbaru`, `membatalkan permintaan lama begitu kueri berubah`) dan **Task 13** (`membatalkan permintaan sebelumnya ketika kueri berubah dan mengabaikan hasil basi`).
@@ -68,7 +106,7 @@
 - `backend/src/app.ts` memasang `rangkaianDaftarRoutes` tepat sebelum `app.use('/api/rangkaian', rangkaianRoutes)` milik P2/P3.
 - `backend/src/middlewares/demo-access.middleware.ts` mendapat allowlist `GET /rangkaian`.
 - D7:
-  - `backend/src/services/rangkaian-daftar.service.ts` (Task 5) mengekspor `lingkupRangkaianSql(ctx, alias)` agar lingkup rangkaian tetap dirakit di satu tempat (Task 16).
+  - `backend/src/services/rangkaian-daftar.service.ts` (Task 16) mengekspor `lingkupRangkaianSql(ctx, alias)` agar lingkup rangkaian tetap dirakit di satu tempat (Task 16).
   - `backend/src/validators/schemas.ts` mendapat `perluDilengkapiQuerySchema`, `ringkasanPerluDilengkapiQuerySchema`, dan `tandaiInisiatifSchema` (Task 18).
   - `backend/src/app.ts` memasang `rangkaianPerluDilengkapiRoutes` tepat setelah `rangkaianDaftarRoutes` (Task 18).
   - `demo-access.middleware.ts` mendapat allowlist `GET /rangkaian/perlu-dilengkapi(/ringkasan)` dan `POST /rangkaian/surat-keluar/:uuid/tandai-inisiatif` (Task 18).
@@ -137,7 +175,7 @@ Task ini gerbang, bukan TDD. Tugasnya memastikan nama dan bentuk yang dikonsumsi
   - P2 `record-access.service.ts`: `isAllowedForRecordUnit`
   - P3 `services/rangkaian/aksi.ts`: `computeSuratAksi(role, ctx: SuratAksiContext): SuratAksi[]` dan `computeRangkaianAksi(ctx: RangkaianAksiContext): RangkaianAksi[]`
   - P3 `services/rangkaian/roles.ts`: `isFullAdmin(user)`
-  - P1 `services/rangkaian-status.ts`: tipe `RangkaianStatus`
+  - P1 `services/rangkaian.service.ts`: tipe `RangkaianStatus` (re-export; `rangkaian-status.ts` tidak mengekspornya)
   - repo: `utils/jakarta-date.ts` `jakartaDate()`, `audit-log.service.ts` `auditLogService.logActionOrThrow(data, executor)` + `CriticalAuditContext`, `utils/errors.ts` `NotFoundError`/`ConflictError`
   - P3 frontend:
     - `lib/tindak-lanjut.js` `buildTindakLanjutState(jenis, surat, aksi)`
@@ -166,7 +204,7 @@ Task ini gerbang, bukan TDD. Tugasnya memastikan nama dan bentuk yang dikonsumsi
  * @property {boolean} pratinjauTerpotong
  *
  * @typedef {{anggotaId:string|null,jenis:'surat_masuk'|'surat_keluar',id:string,nomorSurat:string|null,perihal:string|null,tanggalSurat:string|null,tahun:number,naskah:string|null,unitKerjaId:string,unitNama:string,relasi:('balasan'|'tindak_lanjut'|'menjelaskan'|'merujuk'|null),masked:false}} LacakNode
- * @typedef {{anggotaId:string,jenis:'surat_masuk'|'surat_keluar',unitNama:string,label:'Dikecualikan',masked:true,dapatAjukanAkses:boolean}} LacakNodeTersamar
+ * @typedef {{anggotaId:string|null,jenis:'surat_masuk'|'surat_keluar',unitNama:string,label:'Dikecualikan',masked:true,dapatAjukanAkses:boolean}} LacakNodeTersamar
  */
 ```
 
@@ -247,6 +285,72 @@ cd "D:/Projects/New folder/simsa-atrbpn"
 Expected: kedua suite hijau. Catat jumlah file/tes sebagai baseline Task 22. Tidak ada commit pada task ini.
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 1 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Typedef (REQUIRED) [P4-T1-1] RECHECK-AFTER-P3.** In the frozen contract block, change the `LacakNodeTersamar` line to:
+   ```js
+    * @typedef {{anggotaId:string|null,jenis:'surat_masuk'|'surat_keluar',unitNama:string,label:'Dikecualikan',masked:true,dapatAjukanAkses:boolean}} LacakNodeTersamar
+   ```
+   A masked single-surat node (a group without a rangkaian) carries `anggotaId: null` (P3 T4-3).
+   - **(delta P3) Backend type as well.** Real P3 still declares `LacakNodeTersamar.anggotaId: string` (`backend/src/services/rangkaian/lacak.types.ts:30`) and emits the tunggal placeholder as `anggotaId: null as never` (`lacak.service.ts:184` @ b4d86fa; after the fix wave, a `tersamarTunggal()` helper with the same cast). In Task 1, change `lacak.types.ts:30` to `anggotaId: string | null;` and drop the `as never` cast. `LacakNode.anggotaId` is already `string | null` (`lacak.types.ts:15`). Run backend tsc. This is P3 `final-review-access.md` carry-forward 2 and ledger Task 4 minor (`progress.md:66`).
+2. **Consumes corrections (REQUIRED) [P4-T1-4].** Replace "P1 `services/rangkaian-status.ts`: tipe `RangkaianStatus`" (the Task 1 D7 list, and the Task 16 Interfaces line) with "P1 `services/rangkaian.service.ts`: tipe `RangkaianStatus` (re-export; `rangkaian-status.ts` tidak mengekspornya)". Add these D7 consumes:
+   - P3 builders `anggotaMemblokirSql(rangkaianId: SQL|string): SQL` and `disposisiTerbukaSql(rangkaianId: SQL|string): SQL`. P3 T12-1 exports them from `services/rangkaian.service.ts`, and `services/rangkaian/deps.ts` re-exports them.
+   - P2/P3 `rangkaian-read.service.ts`: `judulTersamar(kode)`, `LABEL_DIKECUALIKAN`, and `tingkatAksesRangkaian(user, rangkaianId, executor)` (P3 T14-1).
+   - P2 `record-access.service.ts`: `readRefKey`, `recordAccessService.checkMany`, and the types `ReadAccessResult`, `ReadExecutor` and `ReadRef`.
+3. **Step 2: append these greps (REQUIRED) [P4-T1-2] RECHECK-AFTER-P3.**
+   ```bash
+   grep -n "mutable\|pengawasDalamCakupan\|isFullAdmin" backend/src/services/rangkaian/aksi.ts
+   grep -n "pengawas\b\|selesaiManual\|adaPenghalang\|adaDisposisiTerbuka" backend/src/services/rangkaian/aksi.ts
+   grep -n "export function anggotaMemblokirSql\|export function disposisiTerbukaSql" backend/src/services/rangkaian.service.ts
+   grep -n "anggotaMemblokirSql\|disposisiTerbukaSql\|dalamCakupanPengawasSql\|judulTersamar\|LABEL_DIKECUALIKAN\|pengawasUntukUnit\|tingkatAksesRangkaian\|LIKE_ESCAPE" backend/src/services/rangkaian/deps.ts
+   grep -n "export async function tingkatAksesRangkaian\|export function judulTersamar\|export const LABEL_DIKECUALIKAN" backend/src/services/rangkaian-read.service.ts
+   grep -n "judulTersamar(r.kode)\|lk_a\|LIKE_ESCAPE" backend/src/services/rangkaian/lacak.service.ts
+   grep -n "export const LIKE_ESCAPE\|export function classifyLacakQuery\|export function escapeLike" backend/src/utils/nomor-surat.ts
+   ```
+   Expected output and what to record:
+   - `SuratAksiContext` has `mutable` and `pengawasDalamCakupan`. Record whether it also declares `isFullAdmin` (P3 C-3).
+   - `RangkaianAksiContext` has `pengawas`, `selesaiManual` and `adaPenghalang`. Record whether `adaDisposisiTerbuka` is still declared.
+   - Both builders exist.
+   - `tingkatAksesRangkaian` is exported.
+   - `lacak.service.ts` uses `judulTersamar(r.kode)`.
+
+   Task 16 builds its context objects with exactly the landed field set.
+
+   **(delta P3) Expected output, verified on real P3 @ b4d86fa:**
+   - `SuratAksiContext` (`aksi.ts:18-30`) = `jenis, via, mutable, isArchived, naskahDinas, rangkaian, distribusiUnitSaya, pengawasDalamCakupan`. There is **no** `isFullAdmin` field.
+   - `RangkaianAksiContext` (`aksi.ts:61-74`) = `role, unitEfektif, pengawas, pengawasTutup, rangkaian, selesaiManual, adaPenghalang, adaDisposisiTerbukaDalamCakupan`. There is **no** `adaDisposisiTerbuka`. `pengawasTutup` and `adaDisposisiTerbukaDalamCakupan` are required.
+   - Both builders are exported from `rangkaian.service.ts` (`anggotaMemblokirSql` :182, `disposisiTerbukaSql` :201) and re-exported by `deps.ts:42`.
+   - `deps.ts` re-exports `dalamCakupanPengawasSql` (:53), `judulTersamar`/`LABEL_DIKECUALIKAN` (:56), `tingkatAksesRangkaian` (:58), `denganRetryDeadlock` (:60), `isPengawas` (:87), `pengawasUntukUnit` (:96) and `loadJangkauan` (:107). `LIKE_ESCAPE` is **not** in deps; it is exported by `utils/nomor-surat.ts:42`.
+   - `export async function tingkatAksesRangkaian` is at `rangkaian-read.service.ts:316`. `judulTersamar` is at :188 and `LABEL_DIKECUALIKAN` at :32.
+   - `lacak.service.ts` has `lk_a` (:85-87). The judul expression is `induk && indukTerlihat ? r.judul : judulTersamar(r.kode)` (:195), **not** `judulTersamar(r.kode)` inside a `bolehLihat` ternary. So the grep for `judulTersamar(r.kode)` matches, but `bolehLihat` does not exist.
+   - In flux (fix wave A-I3): `deps.ts` will also export `tingkatRangkaianPenuh` and `BATAS_NODE_DETAIL`. The judul moves into one `const rangkaian = { ...r, judul: … }` that both branches use. Re-run the greps on the post-fix tip.
+4. **Step 3: frontend greps and Expected (REQUIRED) [P4-T1-3] RECHECK-AFTER-P3.** Append:
+   ```bash
+   grep -n "onChanged\|muatKe\|muatUlang\|AlurSuratActions" frontend/src/components/surat/AlurSuratPanel.jsx
+   grep -n "export const JENIS_RELASI_LABEL\|export function buildTindakLanjutState" frontend/src/lib/tindak-lanjut.js
+   grep -n "onBerhasil\|onSuccess\|suratData\|sourceUnitId" frontend/src/components/surat/BerkaskanDialog.jsx frontend/src/components/surat/AlurSuratActions.jsx frontend/src/components/DistributeDialog.jsx
+   grep -n "data: terakhir\|loading: true" frontend/src/hooks/use-lacak-search.js
+   ```
+   Replace the Expected bullet for `AlurSuratPanel` with this: the signature is `({ jenis, suratId, aksesMelalui = 'owner', fallback = null, onChanged })`. The loader is inside the inner async `muat()`, and the effect deps are `[jenis, suratId, muatKe]` (P3 T25-1). Also record whether the real P3 hook returns `data: terakhir` or `data: null` while loading; Task 10 depends on it.
+
+   **(delta P3) Corrected Expected, real P3 @ b4d86fa:**
+   - Panel signature `({ jenis, suratId, aksesMelalui = 'owner', fallback = null, onChanged, muatUlangKe = 0 })` at `AlurSuratPanel.jsx:56`. `muatUlangKe` is a parent-controlled reload signal added by P3 (comment :70-77).
+   - Loader at :83, inside `muat()` (:80). Effect deps `[jenis, suratId, muatKe, muatUlangKe]` at :96.
+   - `const d = state.data` at :127. `<AlurSuratActions detail={d} onChanged={muatUlang} />` at :170. `STATUS_RANGKAIAN_LABEL` is exported at :15.
+   - Dialog props match the P4 plan exactly: `DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, onSuccess })` (`DistributeDialog.jsx:17`), `BerkaskanDialog({ open, onOpenChange, rangkaian, onBerhasil })` (`BerkaskanDialog.jsx:19`), and named `TautkanDialog({ open, onOpenChange, jenis, surat, onBerhasil })` (`AlurSuratActions.jsx:303`).
+   - Hook: `data: null` while loading (`use-lacak-search.js:63`), default import `rangkaianService` (:2), plain `retry` (:54-57). Critic C-1 applies.
+   - `JENIS_RELASI_LABEL` at `lib/tindak-lanjut.js:6`; `buildTindakLanjutState` at :38.
+5. **(delta P3) Record-only decisions carried from the P3 final reviews (REQUIRED to record, no code unless stated).**
+   - **P3 go-live instant.** Record the exact instant the P3 code went live in production, taken from the deploy log, in the P4 PR. Task 22 item 3 writes it into `RANGKAIAN_DATA_LAMA_SEBELUM` (spec:669; P3 `final-review-spec.md` "P4 Task 1").
+   - **Legacy `balasanUntuk` on PUT surat keluar.** `surat-keluar.routes.ts:336-357` still accepts it (same-unit only) and writes the legacy column without a relasi (ledger Task 8 minor, `progress.md:120`). The frontend edit form re-sends it (P3 frontend M15). D7 already treats it as "handled" (`sm_belum_ditindaklanjuti`) and as "not inisiatif" (T16-5), so P4 stays correct either way. Default: no P4 change, recorded in the PR. Dropping it from `updateSuratKeluarSchema` is a spec-owner/P3-follow-up decision.
+   - **Per-row `aksiDiizinkan` on list endpoints** (P3 F3 open question, frontend carry-forward 4 / M13). Out of P4 scope; the D7 list already carries per-row `aksiDiizinkan`. Record as deferred.
+
+
 
 ### Task 2: Modul skor Lacak murni (`lacak-skor.ts`)
 
@@ -458,6 +562,17 @@ EOF
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 2 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Escape constant (ADVISORY) [P4-T2-1] RECHECK-AFTER-P3.** In `lacak-skor.ts`, import `LIKE_ESCAPE` from `../utils/nomor-surat.js` and use `${sql.raw(LIKE_ESCAPE)}` or the P3 helper wherever the plan writes the literal `ESCAPE '\\'`. The expected test results are unchanged (6/6).
+   - **(delta P3) Correction.** Real `LIKE_ESCAPE` is already an SQL chunk: `export const LIKE_ESCAPE = sql.raw("ESCAPE '\\'")` (`utils/nomor-surat.ts:42`). Interpolate it as `${LIKE_ESCAPE}`, exactly as P3 does (`lacak.service.ts:31, 47, 51, 62`). `sql.raw(LIKE_ESCAPE)` is a TS2345 type error, because `sql.raw` takes a string. `escapeLike` (`nomor-surat.ts:38`) is the paired value escaper.
+
+
 
 ### Task 3: Terapkan skor dan urutan kelompok di `rangkaianService.lacak` (fixture peringkat)
 
@@ -790,6 +905,23 @@ EOF
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 3 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Anchor (REQUIRED) [P4-T3-1] RECHECK-AFTER-P3.** Edit (b): locate `export function skorSql` in `backend/src/services/rangkaian/lacak.service.ts` and replace only its final `return { skor: …, cocok: … }` statement, keeping the preceding `if (skor.length === 0) return null;` guard or its real equivalent. Leave the `if (mode === 'cek')` branch and the `cocok` array untouched. Edit (c) is verify-only: check that the `teratas` CTE and the final group `ORDER BY` match the stated shape. If they differ, align only the ORDER BY/LIMIT clauses.
+   - **(delta P3) Confirmed verbatim** on real P3 @ b4d86fa. The "persis" block P4:726-731 is byte-identical to `lacak.service.ts:67-71`. `skorSql(branch, plan, mode)` is at :35 and the `cek` branch at :40-43. `teratas` (:217-221) and the group `ORDER BY skor DESC, tanggal_terbaru DESC NULLS LAST, kunci ASC` (:236) match edit (c). `Branch.jenis`/`alias`/`pihak` exist (:16-21), with `pihak` = `sm.dari` / `sk.kepada` (:19-20); this supports P4-T3-3. `skorSql` is untouched by the fix wave: the A-I3 diff edits only `ekspansi`/`search`.
+2. **No second classification (ADVISORY) [P4-T3-2].** In the replacement `return`, use `skorLacakSql(kolom, bentukKueriLacak(plan.q))` only if `bentukKueriLacak` is a pure mapping of `classifyLacakQuery`. Otherwise add an overload `bentukKueriDariRencana(plan)` in `lacak-skor.ts` that maps `plan.jenis`, `plan.qLower`, `plan.qNorm` and `plan.tokens` directly, and use it. If the P3 `skor` array in `skorSql` is no longer read, delete it.
+3. **Pihak column (ADVISORY) [P4-T3-3] RECHECK-AFTER-P3.** Use a single `pihak` column: `kolom.pihak = branch.jenis === 'surat_masuk' ? sql.raw(\`${a}.dari\`) : sql.raw(\`${a}.kepada\`)`. Change `skorTeksSql` in Task 2 to score `DARI_KEPADA` on that one column. Update the one Task 2 test that concatenates `dari`/`kepada` so that it uses a single column.
+4. **Run P3 Postgres suite (REQUIRED) [P4-T3-4] RECHECK-AFTER-P3.** Step 6 adds:
+   `cd backend && TEST_POSTGRES_URL="$TEST_POSTGRES_URL" npm run test:postgres-locks -- integration/lacak.postgres.test.ts`
+   Expected: PASS. If `TEST_POSTGRES_URL` is unavailable locally, record that and rely on the CI Postgres job before merge.
+5. **Typecheck (REQUIRED) [P4-G-5].** Add `cd backend && npx tsc --noEmit -p tsconfig.json` to Step 6.
+
+
+
 ### Task 4: Uji probing, node tersamar tidak pernah cocok, dan penyamaran judul
 
 **Files:**
@@ -979,6 +1111,48 @@ EOF
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 4 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Helper body (REQUIRED) [P4-T4-2].** Replace the `rangkaian-judul.ts` block with:
+   ```ts
+   // backend/src/services/rangkaian-judul.ts
+   import { judulTersamar } from './rangkaian-read.service.js';
+
+   /** Judul rangkaian untuk ditampilkan; SELALU disamarkan bila induk tidak boleh dibaca (§4.8). Satu sumber placeholder: judulTersamar (P2). */
+   export function judulRangkaianTampil(kode: string, judul: string | null | undefined, indukTersamar: boolean): string {
+       if (indukTersamar) return judulTersamar(kode);
+       const bersih = (judul ?? '').trim();
+       return bersih || `Rangkaian ${kode}`;
+   }
+   ```
+   `rangkaian-judul.test.ts` stays unchanged, because `judulTersamar('RS-…')` returns `Rangkaian RS-… (Dikecualikan)`.
+2. **Anchor (BLOCKING) [P4-T4-1] RECHECK-AFTER-P3.** Replace the "ganti baris P3 ini (persis)" instruction with this: in `ekspansi` of `backend/src/services/rangkaian/lacak.service.ts`, locate the object property that starts with `rangkaian: { ...r, judul:`. After P3 T4-4 its value reads `induk && bolehLihat(induk) ? r.judul : judulTersamar(r.kode)`. Replace only that value, giving:
+   ```ts
+               rangkaian: { ...r, judul: judulRangkaianTampil(r.kode, r.judul, !(induk && bolehLihat(induk))) },
+   ```
+   Keep P3's `induk`, `bolehLihat` and `readRefKey` computations. If `judulTersamar` is no longer referenced in `lacak.service.ts`, remove it from that file's deps import.
+   - **(delta P3) Corrected anchor, in flux.** Real P3 has no `bolehLihat`. At b4d86fa the property reads `rangkaian: { ...r, judul: induk && indukTerlihat ? r.judul : judulTersamar(r.kode) },` (`lacak.service.ts:195`), with `const indukTerlihat = induk ? akses.get(readRefKey(…))?.allowed === true : false` (:191).
+   - The fix wave (A-I3, uncommitted at scan time) moves it into one declaration that both the "penuh" and the non-penuh branch use: `const rangkaian = { ...r, judul: induk && indukTerlihat ? r.judul : judulTersamar(r.kode) };`, with `indukTerlihat = induk ? terbaca(induk) : false`.
+   - Anchor on whichever of the two exists on the P4 base (text `judul: induk && indukTerlihat ? r.judul : judulTersamar(r.kode)`), and replace only that value with `judulRangkaianTampil(r.kode, r.judul, !(induk && indukTerlihat))`.
+   - If `judulTersamar` is then unused in `lacak.service.ts`, drop it from the `./deps.js` import. `tersamarTunggal` does not use it.
+3. **RED step (ADVISORY) [P4-T4-3].** Step 3's Expected stays as written. The RED signal is the unresolved `../services/rangkaian-judul` import.
+4. **Typecheck (REQUIRED) [P4-G-5].** Add `cd backend && npx tsc --noEmit -p tsconfig.json` to Step 5.
+5. **(delta P3) Probing matrix after A-I3 (REQUIRED, carry-forward: P3 `final-review-access.md` item 1 and I-3).**
+   - After the fix wave, Lacak follows the P2 rangkaian tier. Only "penuh" readers (super_admin, pengawas of `unit_pencatat_id`, peserta in jangkauan) see placeholders for unreadable members.
+   - Every other reader gets only readable nodes. For them, `jumlahAnggota` and `pratinjauTerpotong` count readable nodes only. A group with no readable node becomes a tunggal-like group: `rangkaian: null`, `kunci: 'surat:<cocok[0].id>'`, and pratinjau from `cocok[0]`.
+   - Append these cases to `lacak-probing.integration.test.ts`, reusing the file's fixture:
+     1. **Staff reader (`staff`, `dir_bppt`).** A query that matches `skBiasa` gives a card with no `masked` node, `jumlahAnggota` = number of readable nodes, and `bocoran(hasil)` = `[]`.
+     2. **Out-of-scope pengawas.** An `admin_unit` of a pengawas unit whose scope covers `dir_bppt` but not the pencatat (tier `anggota`), or `staff` if no such unit exists in the fixture. Same assertions as case 1.
+     3. **No readable node.** A reader whose only match is list-visible but not readable (own-unit Terbatas without grant, staff) gets `kunci` starting with `surat:`, `rangkaian: null`, and no rangkaian kode/id anywhere in the JSON.
+   - The existing test at P4:898-910 stays valid: `bppt` is a peserta (disposisi target and anggota unit), so it is penuh and still sees the induk placeholder.
+   - Do not duplicate P3's own `src/__tests__/lacak-tingkat.integration.test.ts`, which the fix wave adds. Extend only the P4 probing matrix: staff/auditor and tier `anggota`.
+
+
 
 ### Task 5: Layanan daftar Berkas Rangkaian (`rangkaianDaftarService.list`) dengan paritas `checkRead`
 
@@ -1271,6 +1445,106 @@ EOF
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 5 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Step 0: property generator (BLOCKING, carry-forward FR:36) [P4-T5-4]. New step before Step 1, with its own commit.**
+   - Modify `backend/src/__tests__/visibility-parity.property.integration.test.ts`:
+     - SM rows: `UNIT_REKAMAN[g % UNIT_REKAMAN.length]` and `SIFAT[Math.floor(g / UNIT_REKAMAN.length) % SIFAT.length]`. Raise the SM loop bound so that every unit × SIFAT pair occurs at least once (`UNIT_REKAMAN.length * SIFAT.length` rows).
+     - SK rows: `UNIT_REKAMAN[g % UNIT_REKAMAN.length]` and `KELAS_SK[Math.floor(g / UNIT_REKAMAN.length) % KELAS_SK.length]`, with a bound of `UNIT_REKAMAN.length * KELAS_SK.length`. `KELAS_SK` must contain `null`.
+     - Keep the fixed seeds (mulberry32 or the existing ones) and the existing "300 kombinasi" draw.
+     - After the member inserts, soft-delete at least one SM member of rs1, one SK member of rs2, and the target row of one approved grant (`UPDATE … SET is_deleted = true WHERE id = …`).
+   - Run: `cd backend && npx vitest run src/__tests__/visibility-parity.property.integration.test.ts`. Expected: PASS, including "checkRead dan visibleSql(read) identik untuk 300 kombinasi acak" and "mode list hanya melonggarkan…".
+   - If a pair diverges, stop. That is a P2 finding: report it to the P2 owner, and do not weaken the test.
+   - Commit: `test(akses): perkuat generator properti paritas visibleSql↔checkRead sebelum Lacak (P2 FR:36)`.
+2. **Fixture helper, Task 3 file (BLOCKING) [P4-T5-1].** Replace `insertUser` in `backend/src/__tests__/helpers/lacak-pglite.ts` with:
+   ```ts
+   /** Baris DB memenuhi users_role_unit_mandate_check (0027); objek di memori tetap apa adanya (unit null menguji jalur mandat). */
+   const UNIT_MANDAT: Record<string, string> = { admin_sesditjen: 'sesditjen', admin_dirjen: 'ditjen' };
+
+   export async function insertUser(database: PGlite, user: PenggunaUji): Promise<PenggunaUji> {
+       await database.query('INSERT INTO users (id, email, name, role, unit_kerja_id) VALUES ($1, $2, $3, $4, $5)',
+           [user.id, user.email, user.name, user.role, UNIT_MANDAT[user.role] ?? user.unitKerjaId]);
+       return user;
+   }
+   ```
+   If Task 3 is already committed, make this edit in Task 5 and add the helper to Task 5's `git add`.
+3. **R7 judul expectation (BLOCKING) [P4-T5-2].** In the test "judul disamarkan bila induk tidak boleh dibaca pengguna", replace
+   ```ts
+           expect(superHasil.data.find(row => row.id === r.R7.id)?.judul).toBe('PERIHAL-RAHASIA-R7');
+   ```
+   with
+   ```ts
+           // Rahasia tanpa grant: super_admin pun tidak membaca induk (evaluateOwnerAccess), jadi judul tetap tersamar.
+           expect(superHasil.data.find(row => row.id === r.R7.id)?.judul).toBe('Rangkaian RS-2026-000007 (Dikecualikan)');
+           expect(superHasil.data.find(row => row.id === r.R1.id)?.judul).toBe('Undangan rapat 1');
+   ```
+   Verified in scratch: with the item 2 helper, 5/5 pass.
+4. **`dapatDibuka` (BLOCKING, carry-forward FR:35) [P4-T5-3] RECHECK-AFTER-P3.**
+   - Service: add `import { tingkatAksesRangkaian } from './rangkaian-read.service.js';`. After `indukTerbaca`, compute
+     ```ts
+             // FR:35: tautan/aksi memakai mode baca — rangkaian yang tercantum (lingkup list) belum tentu dapat dibuka (GET /:id).
+             const dapatDibuka = new Map<string, boolean>();
+             for (const row of rows) dapatDibuka.set(row.id, (await tingkatAksesRangkaian(user, row.id, db)) !== null);
+     ```
+     Then add `dapatDibuka: dapatDibuka.get(row.id) === true,` to each mapped row after `diberkaskanAt`.
+   - If `tingkatAksesRangkaian` does not exist in real P3 under that name or signature, use `(await rangkaianReadService.getDetail(user, row.id, db)) !== null`, which is the definitionally equal fallback. Do not re-implement the tier.
+   - **(delta P3) Confirmed.** The signature is `tingkatAksesRangkaian(user, rangkaianId, executor = db): Promise<'owner'|'pengawas'|'peserta'|'anggota'|null>` (`rangkaian-read.service.ts:316-339`).
+     - It follows the same `digabung` chain and hop/cycle guard as `getDetail` (:324 vs :377-384).
+     - It returns `'anggota'` exactly when `getDetail`'s `!penuh && some allowed` branch would return a payload (:332-338 vs :399-401), over the same first 300 members.
+     - Use it, not the fix wave's new `tingkatRangkaianPenuh`. That function omits the `'anggota'` fallback, so it would mark rows as not openable even though `GET /:id` returns 200.
+   - Produces: add `dapatDibuka: boolean` to the `RangkaianRingkas` item shape in the Task 5 Interfaces and in the Task 12 fixture.
+   - Tests: add to `rangkaian-daftar.integration.test.ts`:
+     ```ts
+         it('dapatDibuka mengikuti mode baca (paritas getDetail) untuk semua pengguna × R1–R7', async () => {
+             const { rangkaianReadService } = await import('../services/rangkaian-read.service');
+             for (const [namaPengguna, user] of Object.entries(pengguna)) {
+                 const hasil = await daftar.list(user, { page: 1, limit: 50 });
+                 for (const row of hasil.data) {
+                     const detail = await rangkaianReadService.getDetail(user, row.id, holder.db);
+                     expect(row.dapatDibuka, `${namaPengguna} × ${row.kode}`).toBe(detail !== null);
+                 }
+             }
+             const staff = await daftar.list(pengguna.staffTu, { page: 1, limit: 50 });
+             expect(staff.data.find(row => row.id === r.R7.id)).toMatchObject({ dapatDibuka: false });
+         });
+     ```
+   - Step 4 Expected: PASS (6 tests).
+5. **`jumlah_anggota` (ADVISORY) [P4-T5-5].** Replace the subquery with `(SELECT count(*)::int FROM rangkaian_anggota a LEFT JOIN surat_masuk xm ON xm.id = a.surat_masuk_id LEFT JOIN surat_keluar xk ON xk.id = a.surat_keluar_id WHERE a.rangkaian_id = r.id AND coalesce(xm.is_deleted, xk.is_deleted) IS NOT TRUE)`.
+6. **Typecheck (REQUIRED) [P4-G-5].** Add `cd backend && npx tsc --noEmit -p tsconfig.json` to Step 4. Add `backend/src/__tests__/helpers/lacak-pglite.ts` to `git add` if item 2 was made in this task.
+
+
+**C-5 (critic) — Task 5: `dapatDibuka` equivalence holds by contract but is untested; cost is per row — REQUIRED [P4-C-5]**
+
+
+- Equivalence with `getDetail` comes from the P3 contract:
+  - P3 T14-1 returns `'anggota'` when some member is readable, and C-8 returns `null` on a hop-limit or cycle (P3 `preflight-rulings.md:179, :331`);
+  - this mirrors `getDetail` (`rangkaian-read.service.ts:329-362`).
+- The new 6th test (the parity loop) was **not** executed in scratch. Only 5/5 is recorded, and `tc/parity.log` is the pre-amendment list-vs-getDetail probe. Run it in Task 5 Step 4, before Task 12 relies on the field.
+- Cost: one `tingkatAksesRangkaian` per page row, with `limit ≤ 50` (P4:1381), which is about 3–4 queries per row.
+  - Acceptable for v1. Record the page latency in the PR next to the Task 7 numbers.
+  - The `getDetail` fallback loads up to 300 nodes plus a `checkMany` per row. If the fallback is ever needed, cap `limit` at 20 for that path.
+
+
+**C-8 (critic) — Task 5 (Step 0): the property generator rewrite was not executed — ADVISORY [P4-C-8]**
+
+
+- The FR:36 Step 0 rewrite was not run in scratch.
+- The file derives grants and rangkaian membership from `no_urut` (`visibility-parity.property.integration.test.ts:57-67`), so the rewritten SM/SK loops change which rows carry grants and members. That is intended.
+- Run the file alone first and record its duration. A divergence is a P2 finding; Task 5 item 1 already says to stop.
+
+
+**C-9 (critic) — Tasks 5, 8: scan rows with no ruling — ADVISORY [P4-C-9]**
+
+
+- **Task 5:** `count(*) OVER()` gives `total = 0` on an out-of-range page (scan-p4-backend, Task 5 "Minor" row). Compute `total` with a separate `count(*)`, or clamp `page` to the last page.
+- **Task 8:** `lacak-link.js` treats a real nomor shaped like `/^S[MK]-\d+\/\d{4}$/` as a fallback title (scan-p4-frontend, Task 8 "edge case" row). Record this in the Self-Review as accepted.
+
+
+
 ### Task 6: Route `GET /api/rangkaian`, allowlist demo, dan pemasangan di `app.ts`
 
 **Files:**
@@ -1460,6 +1734,19 @@ EOF
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 6 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Allowlist (REQUIRED) [P4-T6-1] RECHECK-AFTER-P3.** In `demo-access.middleware.ts`, add `{ methods: GET, path: exact('/rangkaian') },` directly after the P3 rangkaian GET entry, the one whose pattern contains `lacak|${UUID}|by-surat` (P3 T4-5). In `backend/src/__tests__/demo-access.middleware.test.ts`, add `['GET', '/api/rangkaian']` to the existing allowed-routes `it.each` table. Step 4 also runs that test file.
+   - **(delta P3) Confirmed.** The entry is at `demo-access.middleware.ts:55`, and P3 added seven more rangkaian entries at :56-62. The `it.each` is at `demo-access.middleware.test.ts:51`, with its rangkaian rows at :61-69. `canReadMiddleware` is at `role.middleware.ts:49` and is used by P3 `/lacak` (`rangkaian.routes.ts:73`).
+2. **Role middleware (ADVISORY) [P4-G-8].** Use `canReadMiddleware()`.
+3. **Typecheck (REQUIRED) [P4-G-5].**
+
+
+
 ### Task 7: EXPLAIN pada 50 ribu baris sintetis dan p95 `/lacak` (Postgres nyata)
 
 **Files:**
@@ -1610,6 +1897,74 @@ EOF
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 7 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Harness (BLOCKING) [P4-T7-1] RECHECK-AFTER-P3.** Delete Step 1 and the Step 3/4 `psql … DROP INDEX` / `CREATE INDEX` commands. Rewrite the test header:
+   ```ts
+   // backend/integration/lacak-explain.postgres.test.ts
+   import { performance } from 'node:perf_hooks';
+   import { sql } from 'drizzle-orm';
+   import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+   vi.mock('../src/config/database', () => import('./helpers/db-proxy.js'));
+   vi.mock('../src/config/database.js', () => import('./helpers/db-proxy.js'));
+   import { dbState } from './helpers/db-proxy.js';
+   import { createRangkaianTestDatabase } from './helpers/rangkaian-db.js';
+   import { nomorNormSql } from '../src/utils/nomor-surat.js';
+
+   const PERF = process.env.LACAK_PERF === '1';
+   const TANPA_INDEX = process.env.LACAK_EXPLAIN_TANPA_INDEX === '1';
+   let h: Awaited<ReturnType<typeof createRangkaianTestDatabase>>;
+   ```
+   - `beforeAll`: `h = await createRangkaianTestDatabase('lacakexplain'); dbState.db = h.db; await h.seedUnits();`. Create the three users with `h.seedUser('admin_unit', 'dir_bppt')`, `h.seedUser('admin_unit', 'sesditjen')` (pengawas via `seedUnits`) and `h.seedUser('super_admin', null)`.
+   - Seed with `h.pool.query(... generate_series ...)` as in the plan, but with mixed data (item 2).
+   - If `TANPA_INDEX`, drop the index inside the random DB on one client: `SET ROLE simsa_migrator; DROP INDEX surat_masuk_nomor_norm_idx; RESET ROLE`. This is the RED proof that replaces the old Step 3.
+   - `afterAll`: `await h?.close()`.
+   - The old `pathname === 'simsa_test'` guard and the private `Pool`/`vi.hoisted` holder go, because `assertIsolatedTestTarget` in the harness already guards the target.
+   - New Step 3 (proof the test can fail): `cd backend && LACAK_EXPLAIN_TANPA_INDEX=1 TEST_POSTGRES_URL="$TEST_POSTGRES_URL" npm run test:postgres-locks -- integration/lacak-explain.postgres.test.ts`. Expected: FAIL on `"Index Name":"surat_masuk_nomor_norm_idx"`.
+   - New Step 4: the same command without the flag and with `LACAK_PERF=1`. Expected: PASS.
+2. **Mixed data and full-query evidence (REQUIRED, carry-forward FR:34 / P3 T4-6) [P4-T7-2] RECHECK-AFTER-P3.**
+   - SM `sifat_surat`: `(ARRAY['Biasa','Biasa','Biasa','Terbatas','Rahasia',' ',NULL])[1 + g % 7]`. SK `klasifikasi_keamanan`: `(ARRAY['biasa','biasa','terbatas','rahasia',NULL])[1 + g % 5]`. Spread rows over units `dir_bppt`, `dir_ptep`, `sesditjen` and `ditjen` with `(ARRAY[...])[1 + g % 4]`.
+   - After the seed, create one rangkaian per 10 SM with `h.pool.query`: `INSERT INTO rangkaian_surat … SELECT … FROM surat_masuk WHERE no_urut % 10 = 0`. Add induk `rangkaian_anggota` rows and, for half of them, a `surat_distributions` row to a different unit with `status='sent'` and `rangkaian_id` set.
+   - Add `it('EXPLAIN seed Lacak nyata untuk tiga pengguna', …)`. For each of the three users, run `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` of the SQL that `rangkaianService.lacak` executes, and print it as `[lacak-explain] user=<peran> plan=…`. The implementer obtains the SQL by calling P3's exported `seedSql`/`cabangSql` builder if one is exported; otherwise wrap `db.execute` in a spy that captures the `SQL` object of the seed statement. There is no hard assertion on node types. The existing prefix-index `it.each` stays, as informational evidence.
+   - **(delta P3) Correction.** Real P3 exports no seed builder: `cabangSql` (`lacak.service.ts:74`) is module-private, and only `skorSql` (:35) and `lacakService` (:203) are exported. `rangkaianService.lacak` (`rangkaian.service.ts:841`) delegates to `lacakService.search`, which runs **inside** `denganRetryDeadlock(() => db.transaction(async (tx) => …))` with `SET LOCAL statement_timeout = '2s'` (:208-209). A spy on `db.execute` therefore sees nothing.
+   - Capture the seed instead:
+     1. Wrap `dbState.db.transaction` so that the callback's `tx.execute` is spied.
+     2. Take the first `SQL` argument whose rendered text contains `WITH seed AS`.
+     3. After the call, render it to `{ sql, params }` with `new PgDialect().sqlToQuery(captured)` (`import { PgDialect } from 'drizzle-orm/pg-core'`).
+     4. Run `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) <text>` with the params on the dedicated 300 s client (C-4).
+   - The seed runs after `resolveKonteksBaca`, so the captured statement already contains the user's `visibleSql`. After the fix wave, `ekspansi` also calls `tingkatRangkaianPenuh` once per group (≤ 8). Include `ekspansi` in the p95 timing, not in the EXPLAIN.
+   - Add `it('waktu ringkasan Perlu Dilengkapi (pengawas TU, super_admin)', …)` **after Task 16 exists**. Until then, put it in Task 16's Step 4 as a follow-up edit to this file. It runs 20 × `perluDilengkapiService.ringkasan(user, { tampilkanDataLama: false })` and prints p50/p95. The only hard assertion is no thrown error, meaning the statement_timeout of 2 s was not hit.
+3. **p95 gate (REQUIRED) [P4-T7-3].** In the p95 test, keep the `console.info` line and replace `expect(p95).toBeLessThan(150);` with `if (PERF) expect(p95).toBeLessThan(150);`.
+4. **Escalation (REQUIRED) [P4-T7-4].** Replace the last two sentences of the Step 4 Expected ("Bila p95 perihal ≥ 150 ms…") with the following. If p95 ≥ 150 ms, do not raise the threshold. Record both numbers in the PR under "Gerbang rilis P4" as the pg_trgm input (§13 no. 3). Escalate to the P2 owner a normalize-once change to `visibility-spec.ts`; P4 must not edit `visibleSql`. Merge only with the spec owner's written acceptance of the recorded numbers. P5 Task 14 gate (a) reads this record.
+5. **Commit.** `git add backend/integration/lacak-explain.postgres.test.ts` only. No shared-DB state is changed.
+
+
+**C-4 (critic) — Task 7: the real harness has a 15 s statement timeout — REQUIRED, RECHECK-AFTER-P3 [P4-C-4]**
+
+
+- **(delta P3)** Re-confirmed @ b4d86fa: `createRangkaianTestDatabase(label)` :28, `statement_timeout: 15000` :38, return object :139, `SET ROLE simsa_migrator` inside the harness :52. The Task 7 `DROP INDEX` as `simsa_migrator` works for the same reason. `db-proxy.ts` is unchanged.
+- Real `backend/integration/helpers/rangkaian-db.ts` (P3 @ 15b5852) matches the calls in Task 7 item 1:
+  - `createRangkaianTestDatabase(label)` requires the label to match `/^[a-z]{3,20}$/`, so `'lacakexplain'` is valid;
+  - it returns `{ pool, db, databaseName, query, seedUnits, seedUser, insertSuratMasuk, insertSuratKeluar, insertDistribusi, ensureKlasifikasi, close }` (:139);
+  - `dbState` is in `helpers/db-proxy.ts`.
+- The harness pool, however, sets `statement_timeout: 15000` (:38). The original P4 used 120 000 ms for the 2 × 50k `generate_series` seeds (P4:1505). The amended seed adds more work:
+  - rangkaian, anggota and distribution rows, each firing `surat_distributions_closed_guard`/`rangkaian_anggota_closed_guard` (0046:398-408);
+  - `EXPLAIN (ANALYZE)` of the full seed for super_admin.
+- Binding:
+  - Run the seed, `ANALYZE` and the EXPLAIN/timing statements on one dedicated client: `const c = await h.pool.connect(); await c.query("SET statement_timeout = '300s'")`, then `c.release()` in `finally`.
+  - Never run them on the 15 s pool default.
+  - The `ringkasan` timing keeps the service's own `SET LOCAL statement_timeout = '2s'` (P4:4293).
+- ADVISORY (CI cost): `npm run test:postgres-locks` runs every `integration/*.test.ts` on each PG 16/17/18 leg.
+  - With `LACAK_PERF` unset, only the prefix-index `it.each` needs the seed. Gate the three-user EXPLAIN and the `ringkasan` timing on `PERF` as well.
+  - Record this file's CI duration in the PR.
+- The amended Task 7 has never been executed (there was no PG ≥ 16 in scratch). Treat its Step 3/4 Expected lines as unverified.
+
+
 
 ### Task 8: Utilitas klien `lacak-cache.js`, `lacak-link.js`, dan `lacak-labels.js`
 
@@ -1806,6 +2161,51 @@ EOF
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 8 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Labels (REQUIRED) [P4-T8-1] RECHECK-AFTER-P3.** Replace the `lib/lacak-labels.js` block with:
+   ```js
+   // frontend/src/lib/lacak-labels.js
+   // Satu sumber label relasi: lib/tindak-lanjut (P3 T19-1). Jangan menyalin ulang.
+   export { JENIS_RELASI_LABEL as LABEL_RELASI } from '@/lib/tindak-lanjut'
+
+   export const LABEL_STATUS_RANGKAIAN = Object.freeze({
+       aktif: 'Aktif',
+       selesai: 'Selesai',
+       diberkaskan: 'Diberkaskan',
+       digabung: 'Digabung',
+   })
+
+   export const LABEL_JENIS_SURAT = Object.freeze({
+       surat_masuk: 'Surat masuk',
+       surat_keluar: 'Surat keluar',
+   })
+   ```
+   If the Task 8 tests assert `LABEL_RELASI` values, they stay valid: P3 T19-1 keeps the four labels identical to `AlurSuratPanel.jsx:11`.
+   - **(delta P3) Confirmed.** `export const JENIS_RELASI_LABEL = Object.freeze({ balasan, tindak_lanjut, menjelaskan, merujuk })` is at `lib/tindak-lanjut.js:6-11`. The panel re-exports it (`AlurSuratPanel.jsx:13`), and `STATUS_RANGKAIAN_LABEL` (:15) includes `digabung`.
+2. **Cache key case (ADVISORY) [P4-T8-2] RECHECK-AFTER-P3.** Keep `.toLowerCase()` only if every predicate in the real `lacak.service.ts` is case-insensitive: `lower(...) =`, `ILIKE`, or normalized nomor. Otherwise remove it and update the one cache-key test.
+   - **(delta P3) Condition holds, with one caveat.** Every predicate is case-insensitive:
+     - `lower(coalesce(nomor,'')) = qLower` (:38);
+     - `nomorNormSql` on both sides (:37-39, 47, 51);
+     - `ILIKE` with lowercased tokens (:31, 51-52 of `nomor-surat.ts`);
+     - phrase `ILIKE` (:62).
+
+     `classifyLacakQuery` is case-independent for `jenis`, `qNorm` and `tokens`. The only case-carrying field is the echoed `LacakResult.q = plan.q` (:207). So keep `.toLowerCase()` in the key, and never read `data.q` for display; use the page's own `q` instead. The P3 hook key is case-sensitive (`use-lacak-search.js:24`), so this is a harmless behaviour change for the P3 pickers.
+3. **Cache delete (ADVISORY, supports P4-T10-4).** If you implement `refresh()`, add `hapus(key) { entries.delete(key) },` to the object returned by `createLacakCache`, with a one-line test.
+
+
+**C-9 (critic) — Tasks 5, 8: scan rows with no ruling — ADVISORY [P4-C-9]**
+
+
+- **Task 5:** `count(*) OVER()` gives `total = 0` on an out-of-range page (scan-p4-backend, Task 5 "Minor" row). Compute `total` with a separate `count(*)`, or clamp `page` to the last page.
+- **Task 8:** `lacak-link.js` treats a real nomor shaped like `/^S[MK]-\d+\/\d{4}$/` as a fallback title (scan-p4-frontend, Task 8 "edge case" row). Record this in the Self-Review as accepted.
+
+
+
 ### Task 9: Lengkapi `rangkaian.service.js` dan prop `rangkaianId` pada `AlurSuratPanel`
 
 **Files:**
@@ -1955,6 +2355,77 @@ EOF
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 9 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Panel edit (BLOCKING) [P4-T9-1] RECHECK-AFTER-P3.** Replace the Step 3 text from "Di `frontend/src/components/surat/AlurSuratPanel.jsx`, ubah signature komponen dan efek pemuatannya…" through the end of the JSX block with this minimal edit of the P3 panel. Do not rewrite the effect.
+   - Destructuring: add `rangkaianId = null` to the existing props, giving `({ jenis, suratId, rangkaianId = null, aksesMelalui = 'owner', fallback = null, onChanged })`. Keep every prop P3 added.
+   - Inside the existing async `muat()` of the load effect, replace only the loader line:
+     ```jsx
+                     const data = rangkaianId
+                         ? await rangkaianService.getById(rangkaianId)
+                         : await rangkaianService.getBySurat(jenis, suratId)
+     ```
+   - Append `rangkaianId` to the existing dependency array, for example `[jenis, suratId, muatKe]` → `[jenis, suratId, muatKe, rangkaianId]`.
+   - Keep the P2 `notFound` state and 404 branch, the P3 `muatUlang`/`onChanged` flow and the `AlurSuratActions` slot unchanged.
+
+   This variant was verified against the P2 panel: ESLint clean, the P2 panel test 10/10, and the Task 9 tests 2/2.
+   - **(delta P3) Corrected for real P3 @ b4d86fa.**
+     - Signature: `({ jenis, suratId, rangkaianId = null, aksesMelalui = 'owner', fallback = null, onChanged, muatUlangKe = 0 })` (`AlurSuratPanel.jsx:56`). Keep the P3 `muatUlangKe` prop.
+     - Loader: :83.
+     - Deps: `[jenis, suratId, muatKe, muatUlangKe]` → `[jenis, suratId, muatKe, muatUlangKe, rangkaianId]` (:96).
+   - Re-verified on the real P3 effect body with the P3 frontend ESLint config (`npx eslint --stdin --stdin-filename src/components/surat/AlurSuratPanel.jsx`, probe `delta/fe/panel-effect-probe.jsx`): 0 errors, including the `aksesEfektif` change in item 2.
+   - The P3 panel test file renders the real `AlurSuratActions` (no mock), with `rangkaianService` mocked as `{ default: svc, rangkaianService: svc }` (`__tests__/AlurSuratPanel.test.jsx:8-13`). Its `muatUlangKe` case is at :181.
+2. **Banner (ADVISORY) [P4-T9-3] RECHECK-AFTER-P3.** Where the panel reads the `aksesMelalui` prop for its banner, use `const aksesEfektif = rangkaianId ? (<detail var>.aksesMelalui ?? 'owner') : aksesMelalui` instead, combined with the P3 T25-2 banner rule. `<detail var>` is the panel's loaded detail object, `d` in P3 T25-1.
+3. **Tests (REQUIRED) [P4-T9-2].** Add to `AlurSuratPanel.rangkaian-id.test.jsx`:
+   ```jsx
+       it('rangkaianId yang 404 menampilkan keadaan netral, bukan galat', async () => {
+           mocks.getById.mockRejectedValue(Object.assign(new Error('Not Found'), { status: 404 }))
+           render(<MemoryRouter><AlurSuratPanel rangkaianId="11111111-1111-4111-8111-111111111111" /></MemoryRouter>)
+           expect(await screen.findByRole('status')).toHaveTextContent('Alur surat tidak tersedia untuk Anda.')
+           expect(screen.queryByRole('alert')).toBeNull()
+       })
+   ```
+   If the P3 panel renders `AlurSuratActions` once data loads, the file also needs `vi.mock('@/components/surat/AlurSuratActions', () => ({ default: () => null, AlurSuratActions: () => null, TautkanDialog: () => null }))`, matching the named exports that actually exist.
+   - **(delta P3) Corrected mock.**
+     - The real panel imports four named exports and no default: `import { AlurSuratActions, AjukanAksesButton, BatalRelasiButton, TutupDisposisiButton } from './AlurSuratActions'` (`AlurSuratPanel.jsx:10`). A factory that omits any of them makes Vitest throw `No "<name>" export is defined on the mock` as soon as that branch renders.
+     - Preferred: do not mock `AlurSuratActions` at all, as the P3 panel test does.
+     - Otherwise the factory is `() => ({ AlurSuratActions: () => null, AjukanAksesButton: () => null, BatalRelasiButton: () => null, TutupDisposisiButton: () => null, TautkanDialog: () => null })`.
+   - The service mock must expose both shapes: `vi.mock('@/services/rangkaian.service', () => ({ default: svc, rangkaianService: svc }))`. The panel uses the default import (:7), and `AlurSuratActions` also uses the default import (`AlurSuratActions.jsx:10`).
+4. **Step 4 run list (REQUIRED) [P4-T9-2, P4-G-6].** Use `cd frontend && npx vitest run src/services/rangkaian.service.lacak.test.js src/services/rangkaian.service.test.js src/components/surat/__tests__ && npx eslint src/components/surat/AlurSuratPanel.jsx src/services/rangkaian.service.js`. Expected: PASS (P2 panel 10 tests, P3 panel tests, Task 9: 3 tests) and ESLint with 0 errors.
+5. **Unit options (ADVISORY) [P4-T9-4].** In `unitKerjaOpsi`, before `.map`, add `.filter(unit => unit.unitType !== 'bagian' && unit.canReceiveDistribution !== false)`. Adjust the test fixture to include one `bagian_umum` row with `unitType: 'bagian'`, and expect it to be excluded.
+6. **(delta P3) Per-row `dapatDitutup` (ADVISORY, in flux; P3 frontend carry-forward 1 / fix-wave F-I3).**
+   - The fix wave adds a server flag `dapatDitutup` on each `DisposisiRangkaian` row. It is computed with the `tutupOlehPengawas` predicate: CTRL-1, no super_admin shortcut, pengawas scope on the SM unit.
+   - The panel then shows `TutupDisposisiButton` only on rows with `row.dapatDitutup === true`. At b4d86fa it still uses `bolehTutup && (sent|received)` (`AlurSuratPanel.jsx:131, 216-219`).
+   - P4 does not touch that code. Any P4 test fixture (Task 9, Task 13) that includes `disposisi` rows adds `dapatDitutup: false`, so that the Tutup button never renders unexpectedly.
+   - A Lacak panel opened through `rangkaianId` gets the same server flag, because `GET /api/rangkaian/:id` shares `getDetail`.
+
+
+**C-3 (critic) — Task 9: anchors confirmed on the real P3 panel — REQUIRED (verification), RECHECK-AFTER-P3 (P3 T25) [P4-C-3]**
+
+
+- Real P3-fe `components/surat/AlurSuratPanel.jsx` has everything the Task 9 minimal edit needs:
+  - `export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null, onChanged })` (:52);
+  - `const data = await rangkaianService.getBySurat(jenis, suratId)` inside `muat()` (:71);
+  - deps `[jenis, suratId, muatKe]` (:84);
+  - detail variable `const d = state.data` (:115);
+  - `rangkaianService.getById` (`services/rangkaian.service.js:6-9`).
+- **(delta P3) Superseded line numbers, merged P3 @ b4d86fa.**
+  - Signature at :56, with the added `muatUlangKe = 0`.
+  - Loader at :83.
+  - Deps `[jenis, suratId, muatKe, muatUlangKe]` at :96.
+  - `const d = state.data` at :127.
+  - `AlurSuratActions` has landed, with the slot at :170.
+  - `STATUS_RANGKAIAN_LABEL` is at :15.
+  - The Task 9 edit was re-linted on this body: 0 errors. See Task 9 item 1.
+- The minimal edit applies verbatim. The earlier ESLint and 10/10 verification ran on the P2 panel, so Step 4 must re-run `src/components/surat/__tests__` on the stacked P3 tip. P3 T25 (`AlurSuratActions`) has not landed yet.
+- ADVISORY: the real panel still defines `STATUS_RANGKAIAN_LABEL` (:14, including `digabung`). Task 8's `LABEL_STATUS_RANGKAIAN` becomes a second copy, so add a parity test in the Task 8 labels test: `expect(LABEL_STATUS_RANGKAIAN).toEqual(STATUS_RANGKAIAN_LABEL)`.
+
+
 
 ### Task 10: Lengkapi hook `useLacakSearch` (P3) — status, batas 100, `retry`, dan cache `lacak-cache.js`
 
@@ -2199,6 +2670,122 @@ EOF
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 10 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Hook implementation (BLOCKING) [P4-T10-1, P4-T10-2] RECHECK-AFTER-P3.** Replace the Step 3 block with:
+   ```js
+   // frontend/src/hooks/use-lacak-search.js
+   import { useEffect, useRef, useState } from 'react'
+   import { rangkaianService } from '@/services/rangkaian.service'
+   import { createLacakCache, lacakCacheKey, LACAK_MAX_CHARS, LACAK_MIN_CHARS } from '@/lib/lacak-cache'
+
+   export const LACAK_DEBOUNCE_MS = 300
+
+   /**
+    * Satu-satunya hook Lacak (§6): debounce 300 ms, minimal 3 / maksimal 100 karakter,
+    * AbortController per kueri, penjaga urutan basi, cache LRU 20 entri per instans.
+    * Kontrak P3 (T18-2) dipertahankan: selama `loading`, `data` = hasil sukses terakhir
+    * (bukan null); `status` memberi tahu pemanggil bahwa data itu belum untuk kueri sekarang.
+    */
+   export function useLacakSearch(term, { mode = 'lacak', jenis, tahun, enabled = true, debounceMs = LACAK_DEBOUNCE_MS } = {}) {
+       const [cache] = useState(() => createLacakCache())
+       const sequenceRef = useRef(0)
+       const [snapshot, setSnapshot] = useState(null)
+       const [terakhir, setTerakhir] = useState(null)
+       const [attempt, setAttempt] = useState(0)
+       const q = typeof term === 'string' ? term.trim() : ''
+       const tahunKunci = tahun === undefined || tahun === null || tahun === '' ? '' : String(tahun)
+       const valid = enabled && q.length >= LACAK_MIN_CHARS && q.length <= LACAK_MAX_CHARS
+       const key = valid ? lacakCacheKey({ q, mode, tahun: tahunKunci, jenis }) : null
+
+       useEffect(() => {
+           const sequence = ++sequenceRef.current
+           if (!key || cache.get(key) !== undefined) return undefined
+           const controller = new AbortController()
+           const timer = setTimeout(() => {
+               rangkaianService.lacak({ q, mode, jenis, tahun: tahunKunci || undefined }, { signal: controller.signal })
+                   .then(data => {
+                       cache.set(key, data)
+                       if (sequence === sequenceRef.current) {
+                           setSnapshot({ key, attempt, data, error: null })
+                           setTerakhir(data)
+                       }
+                   })
+                   .catch(error => {
+                       if (controller.signal.aborted || error?.name === 'AbortError') return
+                       if (sequence === sequenceRef.current) setSnapshot({ key, attempt, data: null, error })
+                   })
+           }, debounceMs)
+           return () => {
+               clearTimeout(timer)
+               controller.abort()
+           }
+       }, [cache, key, q, mode, jenis, tahunKunci, debounceMs, attempt])
+
+       const retry = () => setAttempt(value => value + 1)
+       const bentuk = (status, data = null, error = null) => ({ status, loading: status === 'loading', data, error, q, retry })
+
+       if (!key) return bentuk(enabled && q.length > LACAK_MAX_CHARS ? 'invalid' : 'idle')
+       const cached = cache.peek(key)
+       if (cached !== undefined) return bentuk('success', cached)
+       if (snapshot?.key === key && snapshot.attempt === attempt && snapshot.error) return bentuk('error', null, snapshot.error)
+       return bentuk('loading', terakhir)
+   }
+   ```
+   - Verified in scratch: the 8 plan P4 tests, the new test below and the 3 P3 hook tests all pass (12/12), and ESLint reports 0 problems.
+   - RECHECK-AFTER-P3: if Task 1 Step 3 records that the real P3 hook returns `data: null` while loading, change the last line to `return bentuk('loading')`, remove the `terakhir` state, and invert the new test (`expect(result.current.data).toBeNull()`). P4 must mirror P3; it must not pick a behaviour of its own.
+2. **Step 1: add this test (REQUIRED) [P4-T10-2].** Append to `use-lacak-search.p4.test.jsx`:
+   ```jsx
+   describe('useLacakSearch (kontrak P3 T18-2 dipertahankan)', () => {
+       it('selama loading kueri baru, data tetap hasil sukses terakhir dan status loading', async () => {
+           const { result, rerender } = renderHook(({ q }) => useLacakSearch(q), { initialProps: { q: 'rapat' } })
+           await maju(300)
+           expect(result.current.data.q).toBe('rapat')
+           rerender({ q: 'rapat koordinasi' })
+           expect(result.current.status).toBe('loading')
+           expect(result.current.loading).toBe(true)
+           expect(result.current.data.q).toBe('rapat')
+           await maju(300)
+           expect(result.current.status).toBe('success')
+           expect(result.current.data.q).toBe('rapat koordinasi')
+       })
+   })
+   ```
+3. **Step 2 Expected (REQUIRED).** Replace it with: FAIL, because `status`, `retry` and `invalid` are missing or differ from the real P3 hook. Record which tests fail; do not assume the pre-amendment P3 hook.
+4. **Step 4 (REQUIRED) [P4-T10-3] RECHECK-AFTER-P3.** Run: `cd frontend && npx vitest run src/hooks/use-lacak-search.p4.test.jsx src/hooks/use-lacak-search.test.jsx && npx vitest run $(rg -l "use-lacak-search|useLacakSearch|ReferensiSection|GabungDialog" src --glob "*.test.jsx" | tr '\n' ' ') && npx eslint src/hooks/use-lacak-search.js`. Expected: PASS (9 P4 tests, the P3 hook tests, and every P3 caller test) and ESLint with 0 errors.
+   - **(delta P3) Corrected consumer list.** On real P3 @ b4d86fa, the `rg` filter matches only `src/hooks/use-lacak-search.test.jsx` and `src/components/surat/__tests__/AlurSuratActions.test.jsx` (the GabungDialog there calls the hook; `AlurSuratActions.jsx:9`).
+     - It misses two P3 consumer suites: `src/pages/TambahSuratMasuk.registrasi.test.jsx`, which mocks `rangkaianService.lacak` for cek duplikat (:16), and `src/pages/surat-reply-picker.test.jsx`, which drives `ReferensiSection` through `@/services/api`. The latter asserts the exact `/api/rangkaian/lacak` params `{ q, mode: 'referensi', tahun: undefined, jenis: undefined, limit: 8 }` (:43).
+     - Replace the `rg` sub-command with the explicit list: `npx vitest run src/hooks/use-lacak-search.test.jsx src/components/surat/__tests__/AlurSuratActions.test.jsx src/pages/TambahSuratMasuk.registrasi.test.jsx src/pages/surat-reply-picker.test.jsx`.
+     - Every P3 hook consumer is `ReferensiSection.jsx`, `AlurSuratActions.jsx`, or `TambahSuratMasuk.jsx`; none reads `retry`.
+     - The P4 hook must keep calling `rangkaianService.lacak({ q, mode, jenis, tahun }, { signal })` with the raw, un-lowercased `q`, so that the reply-picker assertion holds.
+5. **Refresh (ADVISORY) [P4-T10-4].** Optionally add `const refresh = () => { if (key) cache.hapus(key); setAttempt(value => value + 1) }`, return it from `bentuk`, and use it in Task 13 (see there). Keep it a plain function; `useCallback` triggers the same lint error as `retry`.
+6. **(delta P3) P3 frontend review M10 / M17 (record, no change).**
+   - M10 asks to wrap `retry` in `useCallback` "since it is part of the P4 contract". This is rejected. Re-verified on the P3 ESLint config (unchanged since P2): the plan hook body with `useCallback(() => setAttempt(v => v + 1), [])` fails `react-hooks/preserve-manual-memoization` at `use-lacak-search.js:47`. No P3 consumer uses `retry`, so identity stability has no consumer.
+   - M10's "use `cache.has` instead of the `undefined` sentinel" is satisfied by the P4 `createLacakCache().peek`/`get` API (Task 8).
+   - M17's hook test gaps (error, retry, enabled=false) are covered by the plan's P4 tests at P4:2097 and P4:2104.
+
+
+**C-1 (critic) — Task 10: while loading, the hook returns `data: null` (supersedes the primary branch of Task 10 items 1–2) — BLOCKING, RECHECK-AFTER-P3 [P4-C-1]**
+
+
+- **(delta P3)** Re-confirmed on merged P3 @ b4d86fa: same file and line, and 5 tests at `use-lacak-search.test.jsx:17, 30, 45, 58, 68`.
+- Real P3 `frontend/src/hooks/use-lacak-search.js:63` returns `{ loading: true, error: null, data: null, retry }`. Commit 986e7b5 removed the `terakhir` state on purpose: stale results rendered as clickable items in consumers that do not check `loading` (ReferensiSection and others), "cabang loading kini selalu data: null (P4 Task 10 juga begini)".
+- Its tests `use-lacak-search.test.jsx:58` ("tidak menampilkan hasil kueri lama saat kueri baru sedang memuat") and `:30` assert `data === null` while a new query loads. The amended Task 10 hook (`bentuk('loading', terakhir)`) and the item-2 test therefore fail the P3 hook suite that Task 10 Step 4 runs. The scratch 12/12 was measured against the amended P3 *plan* hook, not the real one.
+- Binding now (the conditional branch of Task 10 item 1 applies):
+  - The last line is `return bentuk('loading')`. Remove `const [terakhir, setTerakhir] = useState(null)` and `setTerakhir(data)`.
+  - Replace the item-2 test with "selama loading kueri baru, data null (kontrak P3 986e7b5)": after `rerender({ q: 'rapat koordinasi' })` expect `status 'loading'`, `loading true`, `data` `toBeNull()`; after `await maju(300)` expect `status 'success'` and `data.q === 'rapat koordinasi'`.
+  - This restores the original P4 text (P4:2133-2137, 2179). The 8 plan tests do not assert loading data (checked in `snips/t10-hook.test.jsx`).
+- Step 4 counts: the real P3 hook file has **5** tests (`:17, :30, :45, :58, :68`), not 3. Expected: 9 P4 tests + 5 P3 hook tests + every P3 caller test.
+- Carry-over facts from the real hook:
+  - `rangkaianService` has both a named and a default export (`services/rangkaian.service.js:5, 70`), so the amended named import is valid.
+  - The P3 cache key is case-sensitive, `JSON.stringify([q, mode, jenis ?? null, tahun ?? null])` (`use-lacak-search.js:24`). P4-T8-2 lower-casing is therefore a behaviour change for the P3 pickers; keep it only under P4-T8-2's condition.
+
+
+
 ### Task 11: Komponen `LacakKelompokCard` (kartu rangkaian dengan pratinjau inline)
 
 **Files:**
@@ -2389,6 +2976,58 @@ EOF
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 11 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Component edits (BLOCKING, carry-forward FR:35) [P4-T11-1, P4-T11-2] RECHECK-AFTER-P3.** In the `LacakKelompokCard.jsx` block:
+   - After `const utama = cocok[0]`, add:
+     ```jsx
+         // Surat tunggal: tautan detail hanya bila node P3 (mode baca, checkMany) tidak tersamar (FR:35, P3 T4-3).
+         const nodeTunggal = rangkaian ? null : pratinjau[0]
+         const detailTerbuka = Boolean(utama) && nodeTunggal?.masked === false
+     ```
+   - Change `<Card aria-labelledby={judulId}>` to `<Card role="group" aria-labelledby={judulId}>`.
+   - Change the single-surat branch condition `) : utama ? (` to `) : detailTerbuka ? (`.
+   - Replace `{pratinjau.length > 0 && (` with:
+     ```jsx
+                     {!rangkaian && nodeTunggal?.masked && (
+                         <p data-masked="true" className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+                             <EyeOff className="h-4 w-4 shrink-0" aria-hidden="true" />
+                             <span>{LABEL_JENIS_SURAT[nodeTunggal.jenis] ?? 'Surat'} · {nodeTunggal.unitNama} · {nodeTunggal.label}</span>
+                         </p>
+                     )}
+                     {rangkaian && pratinjau.length > 0 && (
+     ```
+2. **Tests (BLOCKING) [P4-T11-1].**
+   - In the test "surat tunggal: tanpa tombol ekspansi, dengan tahun dan tautan detail", replace `pratinjau: [], jumlahAnggota: 1, pratinjauTerpotong: false } })` with the real P3 shape:
+     ```jsx
+                 pratinjau: [{ anggotaId: null, jenis: 'surat_masuk', id: 'sm-1', nomorSurat: 'SK-01/DJ-PTPP', perihal: 'Penetapan 2023', tanggalSurat: '2023-01-05', tahun: 2023, naskah: null, unitKerjaId: 'sesditjen', unitNama: 'Sesditjen', relasi: null, masked: false }],
+                 jumlahAnggota: 1, pratinjauTerpotong: false } })
+     ```
+     Append `expect(screen.getAllByText('SK-01/DJ-PTPP')).toHaveLength(1)` to that test.
+   - Add:
+     ```jsx
+         it('surat tunggal tersamar (mode baca): judul dari cocok tetap, tanpa tautan detail', () => {
+             mount({ kelompok: { kunci: 'surat:sm-2', skor: 90, tanggalTerbaru: '2026-09-01', rangkaian: null,
+                 cocok: [{ jenis: 'surat_masuk', id: 'sm-2', nomorSurat: 'T-2/2026', perihal: 'Terbatas tanpa grant', tahun: 2026, skor: 90 }],
+                 pratinjau: [{ anggotaId: null, jenis: 'surat_masuk', unitNama: 'Sesditjen', label: 'Dikecualikan', masked: true, dapatAjukanAkses: false }],
+                 jumlahAnggota: 1, pratinjauTerpotong: false } })
+             expect(screen.getByRole('heading', { name: 'T-2/2026' })).toBeVisible()
+             expect(screen.queryByRole('link', { name: 'Buka detail surat' })).toBeNull()
+             expect(screen.getByText('Surat masuk · Sesditjen · Dikecualikan')).toBeVisible()
+         })
+     ```
+   - Step 4 Expected: PASS (4 tests) and ESLint clean. Both were verified in scratch.
+   - **(delta P3) Confirmed shapes** from real `lacak.service.ts` @ b4d86fa:
+     - Readable tunggal node: `muatTunggal` :106-110 = `{ anggotaId: null, jenis, id, nomorSurat, perihal, tanggalSurat, tahun, naskah, unitKerjaId, unitNama, relasi: null, masked: false }`. This is exactly the amended fixture.
+     - Masked tunggal node: :184 = `{ anggotaId: null, jenis, unitNama, label: 'Dikecualikan', masked: true, dapatAjukanAkses: false }`.
+   - **(delta P3) In flux (A-I3).** A rangkaian group for which a non-penuh reader can read no member is emitted in the tunggal form: `rangkaian: null`, `kunci: 'surat:<cocok[0].id>'`, pratinjau from `cocok[0]`. The amended card already handles it through `rangkaian === null`; no extra code is needed.
+
+
 
 ### Task 12: Tab Berkas Rangkaian (`BerkasRangkaianTab`)
 
@@ -2588,6 +3227,33 @@ EOF
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 12 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Link gating (BLOCKING, carry-forward FR:35) [P4-T12-1].**
+   - In `BerkasRangkaianTab.jsx`, replace the kode cell's `<Link …>{row.kode}</Link>` with:
+     ```jsx
+                                         {row.dapatDibuka
+                                             ? <Link to={lacakHref({ rangkaianId: row.id })} className="underline-offset-2 hover:underline">{row.kode}</Link>
+                                             : <span title="Rangkaian ini tidak dapat Anda buka">{row.kode}</span>}
+     ```
+   - Tests: add `dapatDibuka: true` to the fixture `baris`, then add:
+     ```jsx
+         it('kode rangkaian yang tidak dapat dibuka (dapatDibuka:false) tampil tanpa tautan', async () => {
+             mocks.list.mockResolvedValue(respons([{ ...baris, dapatDibuka: false, judul: 'Rangkaian RS-2026-000001 (Dikecualikan)' }]))
+             mount()
+             expect(await screen.findByText('RS-2026-000001')).toBeVisible()
+             expect(screen.queryByRole('link', { name: 'RS-2026-000001' })).toBeNull()
+         })
+     ```
+   - Step 4 Expected: PASS (4 tests) and ESLint clean (verified). This edit does not move the P5 Task 10 anchor `<div className="overflow-x-auto rounded-md border">`.
+2. **Error/loading (ADVISORY, no change) [P4-T12-2].** Do not add an extra alert or loading line: `ResourcePagination` already renders both.
+
+
 
 ### Task 13: Halaman `LacakSurat.jsx` (input besar, kartu, ekspansi di tempat, dan sinkronisasi URL)
 
@@ -2941,6 +3607,36 @@ EOF
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 13 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Panel refresh (ADVISORY) [P4-T10-4].** If `refresh` exists in Task 10, pass `onChanged={lacak.refresh}` to both `<AlurSuratPanel …/>` usages, and add a test in which the panel mock calls `onChanged` and a second `lacak` request follows.
+2. **Stable panel during reload (ADVISORY) [P4-T13-1].** To avoid remounting an open panel on each debounced query, keep the last settled list while loading. The pattern below sets state during render, which is lint-clean and is the pattern the page already uses for `urlQTerakhir`:
+   ```jsx
+       const [hasilTerakhir, setHasilTerakhir] = useState(null)
+       if (lacak.status === 'success' && lacak.data !== hasilTerakhir) setHasilTerakhir(lacak.data)
+       const sumber = lacak.status === 'success' ? lacak.data : lacak.status === 'loading' ? hasilTerakhir : null
+       const kelompok = sumber?.kelompok ?? []
+   ```
+   With this, `aria-busy` on the list reflects loading. If adopted, add a test in which two queries resolving to the same single group mount the panel mock once. Implement it only if Task 10 keeps P3's semantics consistent (see P4-T10-2).
+3. **Under-3 test (ADVISORY) [P4-T13-2].** In "menampilkan petunjuk minimal 3 karakter, galat, dan Coba lagi", after `ketik('ab')` add `await maju(1000); expect(mocks.lacak).not.toHaveBeenCalled()`.
+
+
+**C-2 (critic) — Task 13: do not render stale result cards during loading (changes Task 13 item 2) — ADVISORY [P4-C-2]**
+
+
+- With C-1, `lacak.data` is null while loading, by P3 decision 986e7b5. Re-introducing the previous list at page level (`hasilTerakhir`, Task 13 item 2) renders clickable stale cards, which is the defect P3 just fixed.
+- Binding: never render stale cards while `lacak.status === 'loading'`. To avoid panel remounts and duplicate `view_via_rangkaian` audits, keep only an already open panel mounted:
+  - render the "Rangkaian terpilih" section from `?rangkaian=` (URL state) outside the result list, keyed by rangkaian id;
+  - do not render a second panel for the same rangkaian inside its card while it is open.
+- Test: with `?rangkaian=R` open, typing two debounced queries mounts the panel mock once.
+- Task 13 item 1 (`refresh`) is unaffected.
+
+
+
 ### Task 14: Route `/surat/lacak`, entri sidebar, dan breadcrumbs
 
 **Files:**
@@ -3075,6 +3771,17 @@ EOF
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 14 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Anchors (ADVISORY) [P4-T14-1] RECHECK-AFTER-P3.** The files are CRLF, so anchor on text, not bytes. After P3 adds the `/surat/keluar/inisiatif` route next to the edit route (P3:9067), insert the Lacak route after the `surat/keluar/:id/edit` route object, whatever follows it. No other change.
+   - **(delta P3) Corrected path.** The edit route is `{ path: "/surat/keluar/edit/:id", … }` (`App.jsx:251`), exactly as the plan text at P4:3038 says; `surat/keluar/:id/edit` does not exist. P3 placed `/surat/keluar/inisiatif` at :249, before `/surat/keluar/:id` (:250), so the P4 anchor is unaffected. `const SuratKeluar = lazy(…)` is at :25. The sidebar "Surat" `subItems` are at `app-sidebar.jsx:83-86` and unchanged by P3.
+
+
 
 ### Task 15: GlobalSearch, aksi "Lihat rangkaian" tanpa request tambahan
 
@@ -3515,6 +4222,16 @@ EOF
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 15 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Listbox a11y (ADVISORY) [P4-T15-1].** Keep Shift+Enter. Move the per-result "Lihat rangkaian" `<Button>` out of the `role="listbox"` element into one action row below the listbox, bound to the active option; alternatively keep it inside the option and describe it with `aria-describedby`. Update every `GlobalSearch.lacak.test.jsx` query that finds the button inside the listbox.
+
+
+
 ### Task 16: Layanan Perlu Dilengkapi (`perluDilengkapiService`) — enam kategori, penyamaran, dan data lama (D7)
 
 Task 16–21 menambahkan keputusan **D7** (2026-09-27, spec §7 "Perlu Dilengkapi"). Task ini menyiapkan satu kueri `UNION ALL` dengan enam cabang kategori. Kueri yang sama dipakai untuk daftar maupun ringkasan, sehingga angka badge tidak mungkin menyimpang dari isi tab.
@@ -3535,7 +4252,7 @@ Task 16–21 menambahkan keputusan **D7** (2026-09-27, spec §7 "Perlu Dilengkap
   - tipe `KonteksBaca`, `TargetVisibilitas`, `PelaksanaSql`
 - Consumes (P2, `record-access.service.ts`): `recordAccessService.checkRead`, khusus uji paritas
 - Consumes (P3): `computeSuratAksi(role, ctx: SuratAksiContext)` dan `computeRangkaianAksi(ctx: RangkaianAksiContext)` dari `services/rangkaian/aksi.ts`; `isFullAdmin(user)` dari `services/rangkaian/roles.ts`
-- Consumes (P1): tipe `RangkaianStatus` dari `services/rangkaian-status.ts`
+- Consumes (P1): tipe `RangkaianStatus` dari `services/rangkaian.service.ts` (re-export; `rangkaian-status.ts` tidak mengekspornya)
 - Consumes (repo): `jakartaDate()` (`utils/jakarta-date.ts`)
 - Consumes (Task 3–5): helper `lacak-pglite.ts`, `judulRangkaianTampil`, dan lingkup rangkaian Task 5 (diekspor di task ini)
 - Produces:
@@ -4353,6 +5070,210 @@ git commit -m "feat(perlu-dilengkapi): layanan daftar kerja enam kategori dengan
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 16 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Imports (BLOCKING) [P4-T16-1, P4-T16-2, P4-T16-4] RECHECK-AFTER-P3.** Replace the import block of `perlu-dilengkapi.service.ts` with the following, merging per P4-G-4:
+   ```ts
+   import { sql, type SQL } from 'drizzle-orm';
+   import { db } from '../config/database.js';
+   import {
+       barisDari, cocokUnitRekamanSql, dalamCakupanPengawas, dalamCakupanPengawasSql, jangkauanRekamanSql, kecocokanUnitRekaman,
+       resolveKonteksBaca, visibleSql, type KonteksBaca, type PelaksanaSql, type TargetVisibilitas,
+   } from './access/visibility-spec.js';
+   import { computeRangkaianAksi, computeSuratAksi } from './rangkaian/aksi.js';
+   import { isFullAdmin } from './rangkaian/roles.js';
+   import { anggotaMemblokirSql, disposisiTerbukaSql, type RangkaianStatus } from './rangkaian.service.js';
+   import { BLOCKING_APPROVAL_STATUSES } from './rangkaian-status.js';
+   import { readRefKey, recordAccessService, type ReadAccessResult, type ReadExecutor, type ReadRef } from './record-access.service.js';
+   import { lingkupRangkaianSql } from './rangkaian-daftar.service.js';
+   import { judulRangkaianTampil } from './rangkaian-judul.js';
+   import { jakartaDate } from '../utils/jakarta-date.js';
+   import { KATEGORI_PERLU_DILENGKAPI, type KategoriPerluDilengkapi } from './perlu-dilengkapi.constants.js';
+   ```
+   If real P3 exports the builders only through `./rangkaian/deps.js`, import them from there instead.
+   - **(delta P3) Confirmed on real P3 @ b4d86fa** (scratch tsc against extracted `backend/src`, `delta/tc3`):
+     - `computeRangkaianAksi`/`computeSuratAksi` are exported by `rangkaian/aksi.ts:36, 76`, and `isFullAdmin` by `rangkaian/roles.ts:5`.
+     - The builders and `type RangkaianStatus` are exported by `rangkaian.service.ts:182, 201, 28`.
+     - `BLOCKING_APPROVAL_STATUSES` is exported by `rangkaian-status.ts:4`, which still does not export `RangkaianStatus` (T16-1 holds).
+     - `dalamCakupanPengawasSql` is exported by P2 `visibility-spec.ts` and also re-exported by `deps.ts:53`.
+2. **Row shape (BLOCKING).**
+   - `KOLOM`: append `'selesai_manual', 'ada_penghalang', 'balasan_lama'` after `'data_lama'`.
+   - `BAWAAN`: add `selesai_manual: sql\`false\`, ada_penghalang: sql\`false\`, balasan_lama: sql\`false\`,`.
+   - `BarisPerluDilengkapi`: add `selesai_manual: boolean; ada_penghalang: boolean; balasan_lama: boolean;` before `total: number;`.
+3. **`disposisi_terbuka` target (REQUIRED) [P4-T16-6].** Replace `target_saya: milikSendiri(k, sql\`d.target_unit_id\`),` with `target_saya: k.user.role === 'super_admin' ? sql\`false\` : milikSendiri(k, sql\`d.target_unit_id\`),`.
+4. **`tindak_lanjut_tertahan` blocker set (BLOCKING) [P4-T16-3] RECHECK-AFTER-P3.** Replace `AND sk.approval_status IN ('draft', 'pending', 'rejected')` with:
+   ```ts
+         AND sk.approval_status IN (${sql.join(BLOCKING_APPROVAL_STATUSES.map(s => sql`${s}`), sql`, `)})
+         AND NOT (
+             EXISTS (SELECT 1 FROM rangkaian_relasi tr WHERE tr.dari_anggota_id = ag.id)
+             AND NOT EXISTS (SELECT 1 FROM rangkaian_relasi tr WHERE tr.dari_anggota_id = ag.id AND tr.cancelled_at IS NULL))
+   ```
+   This is the same per-member clause as P3 `anggotaMemblokirSql` (P3 T12-1). Keep `sk.is_deleted` filtering through `cakupanSurat`.
+5. **`siap_diberkaskan` blockers (BLOCKING) [P4-T16-4] RECHECK-AFTER-P3.** In `cabangSiapDiberkaskan`, after `tanggal_urut: sql\`rs.selesai_at\`, data_lama: dataLama,` add:
+   ```ts
+           selesai_manual: sql`coalesce(rs.selesai_manual, false)`,
+           // Builder P3 T12-1/C-6. Wajib alias luar `rs` (builder memakai a/k/r/d/sm/ma di dalam subkueri).
+           ada_penghalang: sql`(${anggotaMemblokirSql(sql.raw('rs.id'))} + ${disposisiTerbukaSql(sql.raw('rs.id'))}) > 0`,
+   ```
+   - **(delta P3) Confirmed, in flux.**
+     - At b4d86fa the inner aliases are `a`/`k`/`r` (`anggotaMemblokirSql`, `rangkaian.service.ts:184-192`) and `d`/`sm`/`ma` (`disposisiTerbukaSql`, :202-207). The per-member clause in item 4 is character-equivalent to :189-192.
+     - The fix wave (concurrency C-M1) rewrites `disposisiTerbukaSql` into a sum of two counts, so that `surat_distributions_rangkaian_idx` is used. The semantics stay identical and the signature stays `(rangkaianId: SQL | string): SQL`, but its inner aliases may change.
+     - The rule "pass only the outer `sql.raw('rs.id')`; never use an alias the builder uses internally" therefore still stands. Run the T16-3 parity test on the post-fix tip.
+     - `rangkaianStatusService.hitungPenghalang` (`rangkaian/rangkaian-status.service.ts:12-16`) is the P3 caller with the same sum. D7 reproduces it in SQL rather than calling it per row.
+6. **`sk_tanpa_asal` (REQUIRED) [P4-T16-5].** In `cabangSkTanpaAsal`, after `tanggal_urut: sql\`sk.created_at::timestamptz\`, data_lama: dataLama,` add `balasan_lama: sql\`sk.balasan_untuk IS NOT NULL\`,`.
+7. **Action computation (BLOCKING) [P4-T16-2, P4-T16-4] RECHECK-AFTER-P3.** Replace the whole block from `function viaBaris(` up to, but not including, `function keItem(` with:
+   ```ts
+   type AksesBaris = Map<string, ReadAccessResult>;
+
+   /** Satu checkMany per halaman, hanya id DB dari baris yang terbaca (FR:32). */
+   async function aksesHalaman(rows: BarisPerluDilengkapi[], k: KonteksPd, tx: ReadExecutor): Promise<AksesBaris> {
+       const refs: ReadRef[] = rows
+           .filter(row => row.terbaca && !row.masked && row.surat_id !== null && row.jenis !== 'rangkaian')
+           .map(row => ({ type: row.jenis as JenisSurat, id: row.surat_id as string }));
+       return refs.length ? recordAccessService.checkMany(k.user, refs, tx) : new Map();
+   }
+
+   /** Setara pengawasUntukUnit (P3 T1-5) dan tier pengawas P2 (rangkaian-read.service.ts:291-292), tanpa kueri tambahan. */
+   const pengawasUntuk = (k: KonteksPd, unit: string | null) =>
+       k.user.role === 'super_admin' || (k.ctx.pengawas && dalamCakupanPengawas(unit));
+
+   /** Aksi baris memakai aturan P3 (aksi.ts, konteks teramandemen). Aksi isi hanya bila visibleSql 'read' DAN checkMany mengizinkan. */
+   function aksiUntuk(row: BarisPerluDilengkapi, k: KonteksPd, akses: AksesBaris): PerluDilengkapiAksi[] {
+       const role = k.user.role ?? '';
+       if (row.kategori === 'siap_diberkaskan') {
+           const bolehBerkaskan = computeRangkaianAksi({
+               role, unitEfektif: k.ctx.unitJangkauan, pengawas: pengawasUntuk(k, row.rangkaian_pencatat),
+               rangkaian: { status: 'selesai', unitPencatatId: row.rangkaian_pencatat ?? '', unitPengolahId: row.rangkaian_pengolah },
+               adaDisposisiTerbuka: false, selesaiManual: Boolean(row.selesai_manual), adaPenghalang: Boolean(row.ada_penghalang),
+           }).includes('berkaskan');
+           return bolehBerkaskan ? ['berkaskan'] : [];
+       }
+       const aksi = new Set<PerluDilengkapiAksi>();
+       if (row.kategori === 'disposisi_terbuka' && row.target_saya && isFullAdmin(k.user)) aksi.add('buka_kotak_disposisi');
+       if (row.masked) return [...aksi];
+       if (row.kategori === 'sk_tanpa_asal' && row.unit_sendiri && isFullAdmin(k.user) && !row.balasan_lama) aksi.add('tandai_inisiatif');
+       const a = row.surat_id !== null && row.jenis !== 'rangkaian'
+           ? akses.get(readRefKey({ type: row.jenis, id: row.surat_id }))
+           : undefined;
+       if (row.terbaca && a?.allowed === true && row.jenis !== 'rangkaian') {
+           const suratAksi = computeSuratAksi(role, {
+               jenis: row.jenis, via: a.via, mutable: a.mutable === true, isArchived: Boolean(row.is_archived), naskahDinas: row.naskah,
+               rangkaian: row.rangkaian_id && row.rangkaian_kode && row.rangkaian_status
+                   ? { id: row.rangkaian_id, kode: row.rangkaian_kode, status: row.rangkaian_status,
+                       unitPencatatId: row.rangkaian_pencatat ?? '', unitPengolahId: row.rangkaian_pengolah }
+                   : null,
+               distribusiUnitSaya: null,
+               pengawasDalamCakupan: a.via === 'pengawas' || pengawasUntuk(k, row.unit_kerja_id),
+               isFullAdmin: isFullAdmin(k.user),
+           });
+           if (row.kategori === 'sm_belum_ditindaklanjuti') {
+               if (suratAksi.includes('saya_balas') || suratAksi.includes('buat_nota_dinas')) aksi.add('tindak_lanjut');
+               if (suratAksi.includes('disposisi')) aksi.add('disposisi');
+           }
+           if (row.kategori === 'sk_tanpa_nd_penjelas' && suratAksi.includes('buat_nd_penjelas')) aksi.add('buat_nd_penjelas');
+           if (row.kategori === 'sk_tanpa_asal' && suratAksi.includes('tautkan')) aksi.add('tautkan');
+           aksi.add('buka_surat');
+       }
+       return [...aksi].sort();
+   }
+   ```
+   Pass exactly the fields that the landed `SuratAksiContext` and `RangkaianAksiContext` declare (Task 1 Step 2 record):
+   - drop `isFullAdmin` if `SuratAksiContext` does not declare it;
+   - drop `adaDisposisiTerbuka` if `RangkaianAksiContext` no longer declares it.
+
+   **(delta P3) Binding corrected calls. Real P3 declares neither field.** As written above, the block fails tsc against real P3: `TS2353 'adaDisposisiTerbuka' does not exist in type 'RangkaianAksiContext'` and `TS2353 'isFullAdmin' does not exist in type 'SuratAksiContext'`. This was verified in scratch (`delta/tc3/perlu-dilengkapi.service.asis.ts.txt`). Use:
+   ```ts
+           const bolehBerkaskan = computeRangkaianAksi({
+               role, unitEfektif: k.ctx.unitJangkauan, pengawas: pengawasUntuk(k, row.rangkaian_pencatat),
+               rangkaian: { status: 'selesai', unitPencatatId: row.rangkaian_pencatat ?? '', unitPengolahId: row.rangkaian_pengolah },
+               // D7 hanya menawarkan berkaskan; tutup_disposisi (CTRL-1) tidak pernah ditawarkan dari sini.
+               pengawasTutup: false, adaDisposisiTerbukaDalamCakupan: false,
+               selesaiManual: Boolean(row.selesai_manual), adaPenghalang: Boolean(row.ada_penghalang),
+           }).includes('berkaskan');
+   ```
+   and remove the line `isFullAdmin: isFullAdmin(k.user),` from the `computeSuratAksi` context. `computeSuratAksi` already returns `[]` for non-FULL_ADMIN roles (`aksi.ts:37`). `isFullAdmin` stays imported, because `aksiUntuk` still uses it for `buka_kotak_disposisi` and `tandai_inisiatif`.
+
+   The corrected file typechecks clean against real P3 (`delta/tc3/perlu-dilengkapi.service.delta.ts`; the only residual errors are module-resolution noise inside the extracted P3 infra files `config/*`, not in P4 code).
+
+   Semantics check, by reading:
+   - In `computeRangkaianAksi`, `berkaskan` = `!adaPenghalang && (pengolah || pencatat || sa || pengawas)` (`aksi.ts:83-87`).
+   - The server's `assertPeran` admits `pengawas` only when `tingkatAksesRangkaian === 'pengawas'` (`berkas.service.ts:28-39`). That tier is `ctx.pengawas && dalamCakupanPengawas(unit_pencatat_id)` (`rangkaian-read.service.ts:300`), with super_admin as `'owner'` (:299). So `pengawasUntuk(k, pencatat)` is definitionally equal to the server check.
+8. **Plumbing (BLOCKING).**
+   - `keItem(row, urutan, k)` becomes `keItem(row: BarisPerluDilengkapi, urutan: number, k: KonteksPd, akses: AksesBaris)`, and its first line becomes `const aksiDiizinkan = aksiUntuk(row, k, akses);`.
+   - In `dalamTransaksiBaca`, the callback type becomes `kerja: (tx: ReadExecutor, k: KonteksPd) => Promise<T>`.
+   - In `list`, after `const total = …`, add `const akses = await aksesHalaman(rows, k, tx);` and map with `keItem(row, offset + index, k, akses)`.
+   - `ringkasan` is unchanged: it computes no actions.
+9. **Tests (REQUIRED) [P4-T16-3..6].** Append to `perlu-dilengkapi.integration.test.ts`. The 11 existing tests keep their expectations unchanged. Verified in scratch: 15/15 on PGlite with the full P2 chain and the amended P3 aksi logic, and tsc clean.
+   ```ts
+   describe('amandemen pra-eksekusi P4 T16', () => {
+       it('tindak_lanjut_tertahan mengikuti himpunan penghalang P1/P3: relasi keluar yang semuanya dibatalkan tidak memblokir', async () => {
+           const kunci = `tindak_lanjut_tertahan:${id.ND9}`;
+           expect((await daftar('tu')).data.some(item => item.kunci === kunci)).toBe(true);
+           await database.exec(`UPDATE rangkaian_relasi SET cancelled_at = now(), cancelled_by = '${pengguna.tu.id}', cancellation_reason = 'Relasi salah pilih saat uji' WHERE rangkaian_id = '${id.R2}'`);
+           expect((await daftar('tu')).data.some(item => item.kunci === kunci)).toBe(false);
+           const { anggotaMemblokirSql } = await import('../services/rangkaian.service');
+           const { sql } = await import('drizzle-orm');
+           const rows = (await holder.db.execute(sql`SELECT ${anggotaMemblokirSql(sql`${id.R2}::uuid`)} AS n`)).rows as Array<{ n: number }>;
+           expect(rows[0].n).toBe(0);
+       });
+
+       it('siap_diberkaskan tetap tampil tetapi tanpa berkaskan bila ada penghalang', async () => {
+           const sk = await insertSuratKeluar(database, { n: 62, unit: 'dir_bppt', nomor: 'ND-62/2026', tanggal: '2026-09-17', perihal: 'Draf lanjutan' });
+           await database.exec(`UPDATE surat_keluar SET approval_status = 'draft', asal_naskah = 'tindak_lanjut' WHERE id = '${sk}';
+               INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id, peran) VALUES ('${id.R6}', '${sk}', 'dir_bppt', 'anggota');`);
+           const item = (await daftar('bppt')).data.find(row => row.kunci === `siap_diberkaskan:${id.R6}`);
+           expect(item).toBeDefined();
+           expect(item!.aksiDiizinkan).toEqual([]);
+       });
+
+       it('pengawas di luar cakupan pencatat tidak ditawari berkaskan', async () => {
+           await seedUnits(database, [{ id: 'bagian_umum', name: 'Bagian Umum' }]);
+           const smB = await insertSuratMasuk(database, { n: 70, unit: 'bagian_umum', nomor: 'SM-70/2026', tanggal: '2026-09-20', perihal: 'Surat bagian' });
+           const rB = await insertRangkaian(database, { n: 70, kode: 'RS-2026-000070', tahun: 2026, pencatat: 'bagian_umum', status: 'selesai', judul: 'Surat bagian',
+               anggota: [{ jenis: 'surat_masuk', id: smB, peran: 'induk', unit: 'bagian_umum' }] });
+           await insertDisposisi(database, { suratMasukId: smB, sumber: 'bagian_umum', target: 'sesditjen', status: 'received', rangkaianId: rB.id });
+           await database.exec(`UPDATE surat_distributions SET status = 'processed', processed_at = now() WHERE surat_masuk_id = '${smB}'`);
+           const item = (await daftar('tu')).data.find(row => row.kunci === `siap_diberkaskan:${rB.id}`);
+           expect(item).toBeDefined();
+           expect(item!.aksiDiizinkan).toEqual([]);
+           expect((await daftar('superAdmin')).data.find(row => row.kunci === `siap_diberkaskan:${rB.id}`)!.aksiDiizinkan).toEqual(['berkaskan']);
+       });
+
+       it('tandai_inisiatif tidak ditawarkan untuk surat keluar ber-balasan_untuk; super_admin tidak mendapat buka_kotak_disposisi', async () => {
+           await database.exec(`UPDATE surat_keluar SET balasan_untuk = '${id.SM1}' WHERE id = '${id.SK10}'`);
+           expect((await daftar('bppt')).data.find(item => item.kunci === `sk_tanpa_asal:${id.SK10}`)!.aksiDiizinkan).toEqual(['buka_surat', 'tautkan']);
+           const disposisi = (await daftar('superAdmin', { kategori: 'disposisi_terbuka' })).data;
+           expect(disposisi.every(item => !item.aksiDiizinkan.includes('buka_kotak_disposisi'))).toBe(true);
+       });
+   });
+   ```
+   `daftar(nama, filter)` is the helper the plan's test file already defines, and `insertDisposisi` needs to be imported from `./helpers/lacak-pglite`. Step 4 Expected: PASS (15 + 6 Task 5 tests). If the P3 aksi table gives a different set for an existing expectation, stop and compare with `GET /api/surat-*/:id` `aksiDiizinkan` for the same fixture user. Do not edit the expectation to match.
+10. **Data-lama flag for NULL rows (ADVISORY) [P4-T16-7] RECHECK-AFTER-P3.** In `cabangDisposisiTerbuka`, use `const dataLama = sql\`(CASE WHEN d.rangkaian_id IS NULL THEN ${dataLamaSurat(k, t)} ELSE coalesce(rs.asal = 'data_lama', false) END)\`;`.
+    - **(delta P3) Qualified.** The P3 exit criterion (`RUNBOOK_INTEGRASI_SURAT_P3.md` §3, :62-76) requires `sisaTanpaRangkaian: 0`. However, backfill rows skipped as `dilewati` keep `rangkaian_id` NULL (script :70-76), and no runtime path can fill them: 0046 `rangkaian_guard_closed` (:257-312) has no GUC bypass. So NULL rows can persist in production until P5 decides (P5-C-3). They are `processed`/`rejected` by construction and never `sent`/`received`, so `disposisi_terbuka` stays unaffected in practice. Keep the clause as defence in depth.
+11. **Self-consistency (ADVISORY) [P4-T16-8].** In File Structure (P4:71), change "(Task 5) mengekspor `lingkupRangkaianSql`" to "(Task 16) mengekspor `lingkupRangkaianSql`".
+12. **Typecheck and follow-up (REQUIRED).** Step 4 adds `cd backend && npx tsc --noEmit -p tsconfig.json`. If Task 7 already exists, add the ringkasan timing case to `integration/lacak-explain.postgres.test.ts` (P4-T7-2) in this task's commit.
+13. **(delta P3) One definition of "sudah ditindaklanjuti" (REQUIRED; carry-forwards: P3 concurrency #5, spec review "P4 Task 1", ledger `progress.md:227`).**
+    - spec:656 counts a legacy `balasan_untuk` from a live SK as handled, and the D7 branch `cabangSmBelumDitindaklanjuti` does so (P4:4075).
+    - Real P3 `statusAlur` does not. `adaTindakLanjutSql` (`rangkaian/aksi.ts:115-120`) looks only at relasi, so an SM answered only through `balasan_untuk` shows `didisposisikan`/`terdaftar` on its detail page while being absent from the D7 queue.
+    - Binding: extend `adaTindakLanjutSql` to `(<existing EXISTS> OR EXISTS (SELECT 1 FROM surat_keluar bk WHERE bk.balasan_untuk = <sm id> AND bk.is_deleted IS NOT TRUE))`.
+      - This applies to the surat-masuk query only. Pass the SM id as a parameter (`sm.id` in the `surat_masuk` branch of `suratAksiPayload`, :138-145).
+      - For surat keluar (:146-153), keep the existing relasi check.
+    - Keep "no approval filter", as in both P3 and D7 (spec:656 says "hidup").
+    - Add one PGlite case in which an SM answered only by a legacy `balasan_untuk` gets `statusAlur` `ditindaklanjuti` and is absent from `sm_belum_ditindaklanjuti`.
+    - Record in the PR that P1's auto-selesai fact counts only approved replies (a different fact, intentionally).
+14. **(delta P3) Single pengawas predicate (ADVISORY; P3 access carry-forward 4).**
+    - P3 asks for one `pengawasMurniUntukUnit` in deps (no super_admin shortcut, CTRL-1), shared by Tutup, `aksi.ts` and `isGrantEligible`. That predicate is for Tutup and grant eligibility. D7 `berkaskan` needs the super_admin-inclusive tier (`pengawasUntukUnit`, `deps.ts:96-104`).
+    - Do not create a fourth copy. Either:
+      - (preferred) add to `deps.ts` a pure `pengawasUntukKonteks(user, ctx: KonteksBaca, unit)` = `user.role === 'super_admin' || (isFullAdmin(user) && ctx.pengawas && dalamCakupanPengawas(unit))`, make `pengawasUntukUnit` delegate to it, and use it for `pengawasUntuk` in D7; or
+      - keep the in-process `pengawasUntuk` with its comment, and add a unit test asserting equality with `pengawasUntukUnit` for super_admin, an in-scope pengawas, an out-of-scope pengawas and staff.
+15. **(delta P3) Spec-owner note for `sm_belum_ditindaklanjuti` (release gate, Global item 7).** A `tautan` by `anggotaId` from any participant unit closes this category for an SM that unit cannot read (P3 access carry-forward 7). D7 implements spec:656 as written. The gate row records whether the owner accepts this.
+
+
+
 ### Task 17: Tandai Inisiatif (`asalNaskahService.tandaiInisiatif`) — pemilik saja, diaudit, berlaku pada surat terarsip (D7)
 
 Skema update P3 tidak memuat `asalNaskah` (Task 1 Step 2), sehingga belum ada jalur untuk menandai surat keluar lama sebagai inisiatif. Task ini menambah jalur tunggal tersebut. Pemeriksaan pada `0021_archive_source_domain_integrity.sql`: fungsi `protect_archived_surat_source()` (trigger `surat_keluar_archived_source_guard`, `BEFORE UPDATE OR DELETE`) hanya menolak perubahan `id`, `is_archived`, `is_deleted`, serta `unit_kerja_id`/`tahun`/`nomor_surat`/`tanggal_surat`/`perihal`/kode klasifikasi yang menyimpang dari arsip. Karena `asal_naskah` dan `updated_at` tidak dijaga, pembaruan boleh dilakukan pada surat `approved` maupun terarsip. Tidak ada trigger lain pada `surat_keluar`.
@@ -4597,6 +5518,26 @@ git commit -m "feat(perlu-dilengkapi): tandai surat keluar lama sebagai inisiati
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 17 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Membership rejection (REQUIRED) [P4-T17-1] RECHECK-AFTER-P3.**
+   - Add `export const PESAN_SUDAH_ANGGOTA = 'Surat ini sudah menjadi anggota rangkaian; asal naskahnya mengikuti rangkaian itu.';`.
+   - In the SELECT, add `EXISTS (SELECT 1 FROM rangkaian_anggota ay WHERE ay.surat_keluar_id = sk.id) AS anggota,` and add `anggota: boolean` to `BarisSuratKeluar`.
+   - After the `asal_naskah !== null` check, insert `if (row.anggota) throw new ConflictError(PESAN_SUDAH_ANGGOTA);`.
+   - Add a test: an SK with `asal_naskah` NULL that is a rangkaian member with no active relasi (insert the `rangkaian_anggota` row directly) gets 409 `PESAN_SUDAH_ANGGOTA` and no audit row. Expected count: 14 tests.
+2. **Audit registry (REQUIRED) [P4-T17-2].** Files: modify `backend/src/__tests__/mutation-audit-policy.test.ts` by adding `'services/asal-naskah.service.ts',` to `transactionalServices`. Step 4 also runs `cd backend && npx vitest run src/__tests__/mutation-audit-policy.test.ts`. Add the file to `git add`.
+   - **(delta P3) Confirmed.** The registry is `transactionalServices` at `mutation-audit-policy.test.ts:38-57`. It resolves `src` from `process.cwd()` (:5), so it must run from `backend/`.
+   - **ADVISORY addition:** P3 registered none of its own mutation services. In the same edit, also add `'services/rangkaian/berkas.service.ts'`, `'services/rangkaian/rangkaian-link.service.ts'`, `'services/rangkaian/tindak-lanjut.service.ts'` and `'services/rangkaian/disposisi-grant.service.ts'`. Each contains `db.transaction` and `logActionOrThrow`, so the test passes today and guards them from now on. This relates to P3 access M-6 (conditional audit parameters).
+   - **Confirmed (T17-1).** P3 `tautan`/`tautanKeSurat` never write `asal_naskah` (`rangkaian-link.service.ts`, no occurrence), so a legacy SK linked by P3 stays `asal_naskah IS NULL` while being a member. The membership rejection is needed.
+3. **Release gate (REQUIRED) [P4-T17-3].** See Global item 7.
+4. **Typecheck (REQUIRED) [P4-G-5].**
+
+
 
 ### Task 18: Route Perlu Dilengkapi (`GET /perlu-dilengkapi`, `/ringkasan`, `POST …/tandai-inisiatif`), allowlist demo, dan pemasangan di `app.ts` (D7)
 
@@ -4883,6 +5824,17 @@ git commit -m "feat(perlu-dilengkapi): endpoint daftar, ringkasan, dan tandai in
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 18 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Anchors and middleware (ADVISORY) [P4-T18-1, P4-G-8] RECHECK-AFTER-P3.** Insert the mount directly after the `app.use('/api/rangkaian', rangkaianDaftarRoutes);` line, and the allowlist entries directly after the Task 6 `exact('/rangkaian')` entry, located by text. Use `canReadMiddleware()` for the two GETs. The route tests are unchanged. Add `cd backend && npx tsc --noEmit -p tsconfig.json` to Step 4.
+   - **(delta P3) Confirmed.** P3 has a single rangkaian mount, `app.use('/api/rangkaian', rangkaianRoutes);` (`app.ts:372`), after `distributionRoutes` (:371). P3 adds no second rangkaian router, so the P4 order daftar → D7 → utama holds.
+
+
+
 ### Task 19: Klien Perlu Dilengkapi — `lib/perlu-dilengkapi.js` dan metode `rangkaianService` (D7)
 
 **Files:**
@@ -5068,6 +6020,16 @@ git commit -m "feat(perlu-dilengkapi): layanan klien dan konstanta tab Perlu Dil
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 19 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Path encoding (REQUIRED) [P4-T19-1].** Use `return (await api.post(\`/api/rangkaian/surat-keluar/${encodeURIComponent(suratKeluarId)}/tandai-inisiatif\`, {})).data`. The test expectation for `'sk-1'` is unchanged.
+
+
 
 ### Task 20: Tab `PerluDilengkapiTab` dengan aksi baris, lalu dipasang di `LacakSurat` (`?tab=perlu-dilengkapi`) (D7)
 
@@ -5639,6 +6601,20 @@ git commit -m "feat(perlu-dilengkapi): tab Perlu Dilengkapi di Lacak Surat denga
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 20 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Single toast (ADVISORY) [P4-T20-1].** In the `berhasil` callback (P4:5453-5458), change `toast({ title: pesan })` to `if (pesan) toast({ title: pesan })`. The deps are unchanged. Change the `DistributeDialog` prop to `onSuccess={() => berhasil()}`, because P3's `DistributeDialog` already toasts "Surat didisposisikan ke N unit". Keep the messages for Berkaskan, Tautkan and Tandai Inisiatif, whose P3 dialogs do not toast.
+   - **(delta P3) Confirmed.** `DistributeDialog.jsx:61` toasts `Surat didisposisikan ke ${targets.length} unit` before calling `onSuccess?.()` (:64). `BerkaskanDialog` (:71) and `TautkanIsi` (`AlurSuratActions.jsx:328`) call only `onBerhasil?.()`, with no toast.
+2. **Dialog contract (ADVISORY) [P4-T20-2] RECHECK-AFTER-P3.** Before Step 1, re-run the Task 1 Step 3 dialog greps. If a prop name differs in real P3, follow P3.
+   - **(delta P3) Confirmed.** The props equal the plan's Interfaces (P4:144-146 and P4:5084-5086); see Task 1 item 4 for file:line.
+   - The `BerkaskanDialog` fetches `opsiBerkas(rangkaian.id)` on open, which returns 403 for tier `anggota` (`berkas.service.ts:104-106`). D7 offers `berkaskan` only to pengolah, pencatat, in-scope pengawas and super_admin (Task 16 item 7), so every offered row passes that check.
+
+
+
 ### Task 21: Badge "Perlu Dilengkapi" pada entri sidebar Lacak Surat (`usePerluDilengkapiCount`) (D7)
 
 Irama badge sama dengan notifikasi yang sudah ada: `useNotifications({ refreshInterval: 60000 })` di `app-header.jsx`, yang memakai `setInterval` 60 detik. Badge dimuat saat aplikasi dibuka, lalu paling sering sekali per 60 detik dan hanya saat tab browser terlihat. Ringkasan yang diumumkan tab Perlu Dilengkapi dipakai langsung. Hanya FULL_ADMIN (`ADMIN_ROLES` sidebar) yang memicu request. Semua request melewati `generalLimiter` (≤15 per 15 menit per tab).
@@ -5926,6 +6902,28 @@ git commit -m "feat(perlu-dilengkapi): badge hitungan pada entri sidebar Lacak S
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 21 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Test hygiene (REQUIRED) [P4-T21-1].**
+   - Files: add Modify `frontend/src/lib/optional-modules.test.jsx`.
+   - Add at the top, next to the existing mocks: `vi.mock('@/hooks/use-perlu-dilengkapi-count', () => ({ usePerluDilengkapiCount: () => ({ total: 0 }) }))`.
+   - Step 4 adds `src/lib/optional-modules.test.jsx` to the vitest run. Expected: PASS with no `[API] Network error … perlu-dilengkapi/ringkasan` lines in the output.
+
+
+**C-7 (critic) — Tasks 21, 22: per-IP `generalLimiter` budget in the release gate (Global item 7) — ADVISORY (production readiness) [P4-C-7]**
+
+
+- In production, `generalLimiter` allows 500 requests per 15 minutes per IP (`rate-limiter.middleware.ts:17-22`, mounted at `app.ts:345`).
+  - spec:588 moves the NAT problem to a separate task, and P5-T15-1 skips that task.
+  - P4 adds the badge poll (≤15 per 15 minutes per FULL_ADMIN tab, P4:5644) and debounced Lacak typing to the same bucket.
+- Add a row to "Gerbang rilis P4": "Anggaran `generalLimiter` per IP: (jumlah tab FULL_ADMIN di balik NAT kantor × 15 + polling notifikasi yang ada) < 500 per 15 menit — pemilik menerima, atau menjadwalkan re-key per pengguna (P5 Task 15) dengan sign-off."
+
+
+
 ### Task 22: Verifikasi akhir P4
 
 **Files:** tidak ada perubahan kode. Commit hanya dibuat bila ada perbaikan dari langkah ini.
@@ -5997,6 +6995,63 @@ EOF
 Lewati commit bila `git status` bersih.
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 22 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p4-lacak-surat/preflight-rulings.md`.
+
+
+1. **Frontend step (REQUIRED) [P4-T22-1, P4-G-6].** In Step 3, replace the `npx eslint src/pages/LacakSurat.jsx …` line with `npx eslint .`. Replace "(baseline + 9 file uji baru Task 8–15, ditambah 4 file uji D7 …)" with "(baseline + 10 file uji baru Task 8–15, ditambah 4 file uji D7 …; total baseline + 14)".
+2. **Postgres step (REQUIRED) [P4-T22-2] RECHECK-AFTER-P3.** Step 4 runs:
+   - `cd backend && LACAK_PERF=1 TEST_POSTGRES_URL="$TEST_POSTGRES_URL" npm run test:postgres-locks -- integration/lacak-explain.postgres.test.ts integration/lacak.postgres.test.ts`
+   - Expected: PASS. Copy the p95 lines, the three EXPLAIN plans (summary: node types and index names) and the ringkasan p50/p95 into the PR.
+3. **Env and runbook (REQUIRED) [P4-T22-3].** New Step 5b:
+   - Add to `backend/.env.example`:
+     ```
+     # Batas data lama Perlu Dilengkapi (D7, ISO-8601 berzona). Isi dengan waktu kode P3 aktif di produksi.
+     # RANGKAIAN_DATA_LAMA_SEBELUM=2026-10-05T00:00:00+07:00
+     ```
+   - Add a section "Deploy P4 (Lacak Surat + Perlu Dilengkapi)" to `docs/RUNBOOK_INTEGRASI_SURAT_P3.md`:
+     1. Before activating P4 code, set Vercel env `RANGKAIAN_DATA_LAMA_SEBELUM` (backend) to the P3 go-live time, zoned.
+     2. Confirm `SHOW TimeZone` = `UTC` for the runtime role (Neon default), because `created_at` is `timestamp` without zone.
+     3. There is no migration.
+     4. Rollback: redeploy P3.
+   - `git add backend/.env.example docs/RUNBOOK_INTEGRASI_SURAT_P3.md` in Step 6.
+   - **(delta P3) Runbook is in flux.** At b4d86fa the P3 runbook has sections §1 Pre-flight, §2 Urutan, §3 Kriteria keluar, §4 Peran (shell block with `export DATABASE_URL="$NEON_RUNTIME_DATABASE_URL"`, :99), §5 Flag, and §6 Rollback, which reads "Redeploy P2" (:129-133).
+     - The fix wave rewrites §2 (S-I1: real Neon commands `scripts/neon-database.mjs migrate --apply` + `verify-runtime`, CI Postgres gate, `/ready`, backfill before and after deploy) and §6 (S-I2: rollback floor = last deployed production release with 0047 kept). It also adds a "Gerbang rilis" section.
+     - Append "Deploy P4" as a new **last** section of the post-fix file, and edit no existing line. Step 2 ("Confirm `SHOW TimeZone`") uses the §4 shell pattern (`psql "$NEON_RUNTIME_DATABASE_URL"`). The rollback step reads "Redeploy the last P3 release" (C-6 item 4).
+4. **Commit step root (BLOCKING) [P4-G-1].** Steps 5 and 6 run from the P4 worktree root.
+5. **(delta P3) Carry-in hygiene from the P3 final reviews (ADVISORY; optional Step 5c, or an explicit PR deferral).** P3 labels these "(P4)" or "any phase". Each is small and local. For each one, either fix it here with a test, or list it in the PR under "Ditunda" with the owner named:
+   - (a) `audit-log.service.ts` `getActionLabel`/`getEntityTypeLabel` lack `view_via_rangkaian`, `rangkaian_surat`, `rangkaian_relasi`, `merge` and `link` (P3 carry-in, `progress.md:6`; access carry-forward 3).
+   - (b) `file-access.routes.ts:116-122` sets the PDF headers before `logActionOrThrow` (same sources).
+   - (c) `GET /api/distributions/:id`, readable branch, lacks `masked: false` (`distribution.routes.ts:199`; access carry-forward 2).
+   - (d) `validateIdParam` on every `/distributions/:id*` route, plus a `superRefine` guard on the jamak distribution form (spec review, "any phase").
+   - (e) Dedupe the two surat detail handlers (P2 T16-9 deferred; spec review "P4 (from P2)").
+   - (f) Grant rows exposing a masked `entityId`/class (access M-1, carry-forward 9), unless the P3 fix wave already fixed it. If it is not fixed, it stays a release-gate row (Global item 7).
+
+
+**C-6 (critic) — Task 22: "Deploy P4" runbook additions — REQUIRED (production readiness) [P4-C-6]**
+
+
+Append to the runbook section of Task 22 item 3:
+1. **Smoke test.** An invalid `RANGKAIAN_DATA_LAMA_SEBELUM` turns every D7 call into a 500 (P4:3950-3955; intended by spec:672). After the deploy, call `GET /api/rangkaian/perlu-dilengkapi/ringkasan` as a FULL_ADMIN and expect 200 with `batasDataLama` equal to the configured instant.
+2. **Env timing.** Vercel applies an env change only to new deployments. Set the variable before triggering the P4 production deployment, or redeploy after setting it.
+3. **Record the value.** Record the exact value in the runbook result. P5's backfill must reuse it verbatim (P5 critic C-1 and C-6).
+4. **Rollback.** Redeploy P3. `asal_naskah='inisiatif'` values written by Tandai Inisiatif stay, and P3 accepts them (the column and CHECK exist since `0046_rangkaian_surat.sql:229-231`).
+
+
+**C-7 (critic) — Tasks 21, 22: per-IP `generalLimiter` budget in the release gate (Global item 7) — ADVISORY (production readiness) [P4-C-7]**
+
+
+- In production, `generalLimiter` allows 500 requests per 15 minutes per IP (`rate-limiter.middleware.ts:17-22`, mounted at `app.ts:345`).
+  - spec:588 moves the NAT problem to a separate task, and P5-T15-1 skips that task.
+  - P4 adds the badge poll (≤15 per 15 minutes per FULL_ADMIN tab, P4:5644) and debounced Lacak typing to the same bucket.
+- Add a row to "Gerbang rilis P4": "Anggaran `generalLimiter` per IP: (jumlah tab FULL_ADMIN di balik NAT kantor × 15 + polling notifikasi yang ada) < 500 per 15 menit — pemilik menerima, atau menjadwalkan re-key per pengguna (P5 Task 15) dengan sign-off."
+
+
+**Carry-in P3 (kontroler, WAJIB di item 5):** perbaiki residual review ulang P3: N-1 urutan pemotongan 300 node Lacak (lacak.service.ts:143-157) samakan dengan getDetail; N-2 edit multipart surat masuk yang hanya beda tag/spasi tidak boleh melewati kewajiban alasan (tindak-lanjut.hook.ts:70-120, sanitasi multipart sebelum guard); N-3 jangan 500 setelah reject ter-commit bila checkRead pasca-commit gagal (distribution.routes.ts:344-345) — kembalikan bentuk tersamar; N-4 kuatkan test distribution.service.test.ts:143-148 agar mendeteksi transaksi top-level liar. Lihat simsa-integrasi-surat-p3/.superpowers/sdd/2026-09-26-integrasi-surat-p3-tindak-lanjut-inisiatif/final-rereview.md.
+
 
 ## Self-Review
 

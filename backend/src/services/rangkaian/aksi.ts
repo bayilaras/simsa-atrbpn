@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../config/database.js';
 import {
     dalamCakupanPengawasSql, deriveStatusAlur, isPengawas, isPengawasRecordUnit, pengawasUntukUnit, tingkatAksesRangkaian,
@@ -111,13 +111,23 @@ interface MetaSurat {
  * ke anggota `a` dari surat keluar yang masih hidup (GC#29 — soft delete tidak
  * membatalkan relasi, jadi SK terhapus harus disaring di sini). Relasi `menjelaskan`/
  * `merujuk` bukan tindak lanjut. Sengaja tanpa syarat approval_status (spec: "hidup").
+ *
+ * Untuk surat masuk (`suratMasukId` diisi), `balasan_untuk` lama dari surat keluar
+ * hidup juga dihitung (spec:656) — satu definisi dengan cabang D7
+ * `sm_belum_ditindaklanjuti` (P4 Task 16 amandemen item 13). Surat keluar tetap
+ * hanya memakai relasi. Fakta auto-selesai P1 (hanya balasan approved) sengaja berbeda.
  */
-const adaTindakLanjutSql = sql`EXISTS (SELECT 1 FROM rangkaian_relasi r
+function adaTindakLanjutSql(suratMasukId?: SQL): SQL {
+    const relasi = sql`EXISTS (SELECT 1 FROM rangkaian_relasi r
                           JOIN rangkaian_anggota da ON da.id = r.dari_anggota_id
                           JOIN surat_keluar k ON k.id = da.surat_keluar_id
                          WHERE r.ke_anggota_id = a.id AND r.cancelled_at IS NULL
                            AND r.jenis_relasi IN ('balasan', 'tindak_lanjut')
                            AND k.is_deleted IS NOT TRUE)`;
+    if (!suratMasukId) return relasi;
+    return sql`(${relasi} OR EXISTS (SELECT 1 FROM surat_keluar bk
+                          WHERE bk.balasan_untuk = ${suratMasukId} AND bk.is_deleted IS NOT TRUE))`;
+}
 
 export interface SuratAksiPayload {
     aksiDiizinkan: SuratAksi[];
@@ -138,7 +148,7 @@ export async function suratAksiPayload(
         ? sql`SELECT sm.is_archived, NULL::text AS naskah_dinas, rs.id::text AS rangkaian_id, rs.kode, rs.status,
                      rs.unit_pencatat_id, rs.unit_pengolah_id,
                      EXISTS (SELECT 1 FROM surat_distributions d WHERE d.surat_masuk_id = sm.id AND d.status <> 'rejected') AS ada_disposisi,
-                     ${adaTindakLanjutSql} AS ada_tindak_lanjut
+                     ${adaTindakLanjutSql(sql.raw('sm.id'))} AS ada_tindak_lanjut
                 FROM surat_masuk sm
                 LEFT JOIN rangkaian_anggota a ON a.surat_masuk_id = sm.id
                 LEFT JOIN rangkaian_surat rs ON rs.id = a.rangkaian_id
@@ -146,7 +156,7 @@ export async function suratAksiPayload(
         : sql`SELECT sk.is_archived, sk.naskah_dinas, rs.id::text AS rangkaian_id, rs.kode, rs.status,
                      rs.unit_pencatat_id, rs.unit_pengolah_id,
                      false AS ada_disposisi,
-                     ${adaTindakLanjutSql} AS ada_tindak_lanjut
+                     ${adaTindakLanjutSql()} AS ada_tindak_lanjut
                 FROM surat_keluar sk
                 LEFT JOIN rangkaian_anggota a ON a.surat_keluar_id = sk.id
                 LEFT JOIN rangkaian_surat rs ON rs.id = a.rangkaian_id

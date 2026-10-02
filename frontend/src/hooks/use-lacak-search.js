@@ -1,64 +1,53 @@
-import { useEffect, useState } from 'react'
-import rangkaianService from '@/services/rangkaian.service'
+import { useEffect, useRef, useState } from 'react'
+import { rangkaianService } from '@/services/rangkaian.service'
+import { createLacakCache, lacakCacheKey, LACAK_MAX_CHARS, LACAK_MIN_CHARS } from '@/lib/lacak-cache'
 
-const DEBOUNCE_MS = 300
-const MIN_KARAKTER = 3
-const BATAS_CACHE = 20
-const KOSONG = { loading: false, error: null, data: null }
-
-function simpan(prev, kunci, data) {
-    const next = new Map(prev)
-    next.delete(kunci)
-    next.set(kunci, data)
-    if (next.size > BATAS_CACHE) next.delete(next.keys().next().value)
-    return next
-}
+export const LACAK_DEBOUNCE_MS = 300
 
 /**
- * Pencarian Lacak dengan debounce, AbortController, penjaga respons basi, dan cache LRU 20 entri per hook (§6).
- * Tanpa setState sinkron di badan effect (react-hooks/set-state-in-effect): keadaan kosong/cache diturunkan saat render,
- * semua setState berada di callback timer.
+ * Satu-satunya hook Lacak (§6): debounce 300 ms, minimal 3 / maksimal 100 karakter,
+ * AbortController per kueri, penjaga urutan basi, cache LRU 20 entri per instans.
+ * Kontrak P3 (T18-2, commit 986e7b5) dipertahankan: selama `loading`, `data` tetap
+ * `null` (bukan hasil sukses lama), supaya konsumen yang tidak mengecek `loading`
+ * (mis. ReferensiSection) tidak menampilkan kartu kueri sebelumnya sebagai hasil kueri baru.
  */
-export function useLacakSearch(term, { mode = 'lacak', jenis, tahun, enabled = true } = {}) {
-    const q = (term || '').trim()
-    const kunci = enabled && q.length >= MIN_KARAKTER ? JSON.stringify([q, mode, jenis ?? null, tahun ?? null]) : null
-    const [cache, setCache] = useState(() => new Map())
-    const [gagal, setGagal] = useState({ kunci: null, error: null })
-    const [percobaan, setPercobaan] = useState(0)
-    const tersimpan = kunci ? cache.get(kunci) : undefined
+export function useLacakSearch(term, { mode = 'lacak', jenis, tahun, enabled = true, debounceMs = LACAK_DEBOUNCE_MS } = {}) {
+    const [cache] = useState(() => createLacakCache())
+    const sequenceRef = useRef(0)
+    const [snapshot, setSnapshot] = useState(null)
+    const [attempt, setAttempt] = useState(0)
+    const q = typeof term === 'string' ? term.trim() : ''
+    const tahunKunci = tahun === undefined || tahun === null || tahun === '' ? '' : String(tahun)
+    const valid = enabled && q.length >= LACAK_MIN_CHARS && q.length <= LACAK_MAX_CHARS
+    const key = valid ? lacakCacheKey({ q, mode, tahun: tahunKunci, jenis }) : null
 
     useEffect(() => {
-        if (!kunci) return undefined
-        if (tersimpan !== undefined) {
-            // Sentuh entri LRU (asinkron, bukan setState sinkron di effect).
-            const sentuh = setTimeout(() => setCache((prev) => (prev.get(kunci) === tersimpan ? simpan(prev, kunci, tersimpan) : prev)), 0)
-            return () => clearTimeout(sentuh)
-        }
+        const sequence = ++sequenceRef.current
+        if (!key || cache.get(key) !== undefined) return undefined
         const controller = new AbortController()
-        const timer = setTimeout(async () => {
-            try {
-                const data = await rangkaianService.lacak({ q, mode, jenis, tahun }, { signal: controller.signal })
-                if (controller.signal.aborted) return
-                setCache((prev) => simpan(prev, kunci, data))
-            } catch (error) {
-                if (controller.signal.aborted) return
-                setGagal({ kunci, error })
-            }
-        }, DEBOUNCE_MS)
+        const timer = setTimeout(() => {
+            rangkaianService.lacak({ q, mode, jenis, tahun: tahunKunci || undefined }, { signal: controller.signal })
+                .then(data => {
+                    cache.set(key, data)
+                    if (sequence === sequenceRef.current) setSnapshot({ key, attempt, data, error: null })
+                })
+                .catch(error => {
+                    if (controller.signal.aborted || error?.name === 'AbortError') return
+                    if (sequence === sequenceRef.current) setSnapshot({ key, attempt, data: null, error })
+                })
+        }, debounceMs)
         return () => {
             clearTimeout(timer)
             controller.abort()
         }
-    }, [kunci, tersimpan, q, mode, jenis, tahun, percobaan])
+    }, [cache, key, q, mode, jenis, tahunKunci, debounceMs, attempt])
 
-    /** Superset kontrak P3 (nama & tanda tangan sama dengan P4 Task 10): ulangi kueri yang gagal. */
-    const retry = () => {
-        setGagal({ kunci: null, error: null })
-        setPercobaan((n) => n + 1)
-    }
+    const retry = () => setAttempt(value => value + 1)
+    const bentuk = (status, data = null, error = null) => ({ status, loading: status === 'loading', data, error, q, retry })
 
-    if (!kunci) return { ...KOSONG, retry }
-    if (tersimpan !== undefined) return { loading: false, error: null, data: tersimpan, retry }
-    if (gagal.kunci === kunci) return { loading: false, error: gagal.error, data: null, retry }
-    return { loading: true, error: null, data: null, retry }
+    if (!key) return bentuk(enabled && q.length > LACAK_MAX_CHARS ? 'invalid' : 'idle')
+    const cached = cache.peek(key)
+    if (cached !== undefined) return bentuk('success', cached)
+    if (snapshot?.key === key && snapshot.attempt === attempt && snapshot.error) return bentuk('error', null, snapshot.error)
+    return bentuk('loading')
 }

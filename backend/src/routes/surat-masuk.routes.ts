@@ -30,6 +30,7 @@ import {
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
+import { sanitizeInput } from '../middlewares/sanitize.middleware.js';
 
 const log = createLogger('SuratMasukRoutes');
 
@@ -324,6 +325,10 @@ router.post('/',
 router.put('/:id', validateIdParam(),
     canWriteMiddleware(),
     upload.single('file'),
+    // N-2: sanitizeInput global (app.ts) berjalan sebelum multer, jadi isi
+    // multipart belum tersanitasi. Sanitasi di sini (idempoten untuk JSON)
+    // agar guard rangkaian membandingkan dan menyimpan nilai yang sama.
+    sanitizeInput,
     fileValidationMiddleware,
     async (req: AuthRequest, res, next) => {
         let requestCreatedBlobUrl: string | null = null;

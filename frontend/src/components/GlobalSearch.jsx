@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, FileText, Mail, Send, Archive, Folder, Loader2 } from 'lucide-react';
+import { Search, X, FileText, Mail, Send, Archive, Folder, Loader2, GitBranch } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import searchService from '@/services/search.service';
+import { lacakHref, lacakQueryForResult } from '@/lib/lacak-link';
+import { LACAK_MIN_CHARS } from '@/lib/lacak-cache';
 
 // Type icons mapping
 const TYPE_ICONS = {
@@ -29,6 +31,9 @@ const TYPE_COLORS = {
     arsip: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
     dosir: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
 };
+
+// Hanya surat yang dapat menjadi anggota Rangkaian Surat.
+const LACAK_TYPES = new Set(['surat_masuk', 'surat_keluar']);
 
 export function GlobalSearch({ open, onOpenChange }) {
     const navigate = useNavigate();
@@ -108,6 +113,17 @@ export function GlobalSearch({ open, onOpenChange }) {
         navigate(routes[result.type] || '/');
     };
 
+    // Lacak hanya bernavigasi; halaman Lacak yang melakukan pencarian (§6: Ctrl+K tidak menambah request).
+    const openLacak = (q) => {
+        if (!q) return;
+        onOpenChange(false);
+        navigate(lacakHref({ q }));
+    };
+    const lacakQueryFor = (result) => (LACAK_TYPES.has(result?.type) ? lacakQueryForResult(result) : '');
+    const trimmedQuery = query.trim();
+    const selectedResult = results?.results?.[selectedIndex] ?? null;
+    const selectedLacakQuery = lacakQueryFor(selectedResult);
+
     // Keyboard navigation
     const handleKeyDown = (e) => {
         if (loading || !results?.results?.length) return;
@@ -120,7 +136,12 @@ export function GlobalSearch({ open, onOpenChange }) {
             setSelectedIndex(i => Math.max(i - 1, 0));
         } else if (e.key === 'Enter') {
             e.preventDefault();
-            handleSelect(results.results[selectedIndex]);
+            const result = results.results[selectedIndex];
+            if (e.shiftKey) {
+                openLacak(lacakQueryFor(result));
+                return;
+            }
+            handleSelect(result);
         }
     };
 
@@ -176,39 +197,58 @@ export function GlobalSearch({ open, onOpenChange }) {
 
                             {/* Result List */}
                             {results.results.length > 0 ? (
-                                <div id="global-search-results" className="space-y-1" role="listbox" aria-label="Hasil pencarian">
-                                    {results.results.map((result, index) => {
-                                        const Icon = TYPE_ICONS[result.type] || FileText;
-                                        return (
-                                            <button
-                                                id={`global-search-option-${index}`}
+                                <>
+                                    <div id="global-search-results" className="space-y-1" role="listbox" aria-label="Hasil pencarian">
+                                        {results.results.map((result, index) => {
+                                            const Icon = TYPE_ICONS[result.type] || FileText;
+                                            return (
+                                                <button
+                                                    id={`global-search-option-${index}`}
+                                                    type="button"
+                                                    role="option"
+                                                    aria-selected={index === selectedIndex}
+                                                    key={`${result.type}-${result.id}`}
+                                                    onClick={() => handleSelect(result)}
+                                                    className={`w-full text-left px-3 py-2 rounded-lg flex items-start gap-3 transition-colors ${index === selectedIndex
+                                                            ? 'bg-accent text-accent-foreground'
+                                                            : 'hover:bg-muted'
+                                                        }`}
+                                                >
+                                                    <div className={`p-2 rounded-md ${TYPE_COLORS[result.type]}`}>
+                                                        <Icon className="h-4 w-4" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="font-medium truncate">{result.title}</div>
+                                                        <div className="text-sm text-muted-foreground truncate">
+                                                            {result.excerpt}
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground mt-1">
+                                                            {TYPE_LABELS[result.type]} • {result.subtitle}
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {/* [P4-T15-1] Di luar role="listbox" (anak listbox hanya boleh option): satu
+                                        tombol aksi yang mengikuti opsi aktif, bukan satu per hasil. */}
+                                    {selectedResult && selectedLacakQuery && (
+                                        <div className="px-1 pt-1">
+                                            <Button
                                                 type="button"
-                                                role="option"
-                                                aria-selected={index === selectedIndex}
-                                                key={`${result.type}-${result.id}`}
-                                                onClick={() => handleSelect(result)}
-                                                onMouseEnter={() => setSelectedIndex(index)}
-                                                className={`w-full text-left px-3 py-2 rounded-lg flex items-start gap-3 transition-colors ${index === selectedIndex
-                                                        ? 'bg-accent text-accent-foreground'
-                                                        : 'hover:bg-muted'
-                                                    }`}
+                                                variant="ghost"
+                                                size="sm"
+                                                className="w-full justify-start"
+                                                aria-label={`Lihat rangkaian untuk ${selectedResult.title}`}
+                                                title="Lihat rangkaian (Shift+Enter)"
+                                                onClick={() => openLacak(selectedLacakQuery)}
                                             >
-                                                <div className={`p-2 rounded-md ${TYPE_COLORS[result.type]}`}>
-                                                    <Icon className="h-4 w-4" />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="font-medium truncate">{result.title}</div>
-                                                    <div className="text-sm text-muted-foreground truncate">
-                                                        {result.excerpt}
-                                                    </div>
-                                                    <div className="text-xs text-muted-foreground mt-1">
-                                                        {TYPE_LABELS[result.type]} • {result.subtitle}
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                                                <GitBranch className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                                <span className="truncate">Lihat rangkaian: {selectedResult.title}</span>
+                                            </Button>
+                                        </div>
+                                    )}
+                                </>
                             ) : query.length >= 2 ? (
                                 <div className="text-center py-8 text-muted-foreground" role="status">
                                     Tidak ada hasil untuk "{query}"
@@ -236,9 +276,18 @@ export function GlobalSearch({ open, onOpenChange }) {
                     )}
                 </ScrollArea>
 
+                {trimmedQuery.length >= LACAK_MIN_CHARS && (
+                    <div className="border-t p-1">
+                        <Button type="button" variant="ghost" className="w-full justify-start" onClick={() => openLacak(trimmedQuery)}>
+                            <GitBranch className="h-4 w-4" aria-hidden="true" />
+                            Lacak rangkaian “{trimmedQuery}”
+                        </Button>
+                    </div>
+                )}
+
                 {/* Footer hints */}
                 <div className="border-t px-3 py-2 text-xs text-muted-foreground flex items-center justify-between">
-                    <span>↑↓ Navigasi • Enter Pilih • Esc Tutup</span>
+                    <span>↑↓ Navigasi • Enter Pilih • Shift+Enter Lihat rangkaian • Esc Tutup</span>
                     <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Ctrl K</kbd>
                 </div>
             </DialogContent>
