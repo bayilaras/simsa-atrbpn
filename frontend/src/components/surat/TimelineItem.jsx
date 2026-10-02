@@ -6,7 +6,8 @@ import { Clock, ExternalLink, Lock, MailMinus, MailPlus } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 
-export function TimelineItem({ item, isLast }) {
+/** `aksi` (opsional): node React yang dirender di akhir item, mis. tombol aksi panel Alur Surat (Task 25). */
+export function TimelineItem({ item, isLast, aksi = null }) {
     const isMasuk = item.type === 'masuk'
     const navigate = useNavigate()
 
@@ -24,6 +25,7 @@ export function TimelineItem({ item, isLast }) {
                         <Badge variant="outline">{isMasuk ? 'Surat Masuk' : 'Surat Keluar'}</Badge>
                         <p className="font-semibold text-muted-foreground">Dikecualikan</p>
                         {item.unitNama && <p className="text-sm text-muted-foreground">{item.unitNama}</p>}
+                        {aksi && <div className="flex flex-wrap gap-2 pt-2">{aksi}</div>}
                     </CardContent>
                 </Card>
             </div>
@@ -82,6 +84,7 @@ export function TimelineItem({ item, isLast }) {
                             </Button>
                         </div>
                     </div>
+                    {aksi && <div className="mt-3 flex flex-wrap gap-2">{aksi}</div>}
                 </CardContent>
             </Card>
         </div>

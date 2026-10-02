@@ -1,205 +1,164 @@
-import { useCallback, useState, useEffect } from 'react'
-import { Send, Loader2 } from 'lucide-react'
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog'
+import { useState } from 'react'
+import { Loader2, Send, ShieldAlert } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
+import { useDisposisiOpsi } from '@/hooks/use-disposisi-opsi'
 import distributionService from '@/services/distribution.service'
+import { appendInstruksi, hariIniJakarta, isSifatTerkendali, PESAN_TERKENDALI } from '@/lib/tindak-lanjut'
 
-/**
- * Dialog for distributing a surat to another unit
- * @param {Object} props
- * @param {boolean} props.open - Whether dialog is open
- * @param {Function} props.onOpenChange - Handler for open state change
- * @param {Object} props.suratData - Selected surat data { id, nomorSurat, perihal }
- * @param {string} props.sourceUnitId - Current user's unit ID
- * @param {Function} props.onSuccess - Callback after successful distribution
- */
+export { PESAN_TERKENDALI }
+
+/** Disposisi ke Direktorat (§7): multi-target, chip instruksi, batas waktu, penanggung jawab (Unit Pengolah). */
 export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, onSuccess }) {
     const { toast } = useToast()
     const [loading, setLoading] = useState(false)
-    const [units, setUnits] = useState([])
-    const [loadingUnits, setLoadingUnits] = useState(false)
-    const [targetUnitId, setTargetUnitId] = useState('')
+    const [targets, setTargets] = useState([])
+    const [penanggungJawab, setPenanggungJawab] = useState('')
+    const [batasWaktu, setBatasWaktu] = useState('')
     const [instruction, setInstruction] = useState('')
+    const { units, instruksi, jalurAksesTerkendali, loading: loadingUnits } = useDisposisiOpsi(open ? sourceUnitId : null)
+    const terkendali = isSifatTerkendali(suratData?.sifatSurat)
+    const diblokir = terkendali && !jalurAksesTerkendali
 
-    const loadUnits = useCallback(async () => {
-        setLoadingUnits(true)
-        try {
-            const response = await distributionService.getDistributableUnits(sourceUnitId)
-            setUnits(Array.isArray(response) ? response : [])
-        } catch (error) {
-            console.error('Error loading units:', error)
-            toast({
-                title: 'Error',
-                description: 'Gagal memuat daftar unit kerja',
-                variant: 'destructive',
-            })
-        } finally {
-            setLoadingUnits(false)
-        }
-    }, [sourceUnitId, toast])
+    const reset = () => {
+        setTargets([])
+        setPenanggungJawab('')
+        setBatasWaktu('')
+        setInstruction('')
+    }
 
-    // Load distributable units when dialog opens.
-    useEffect(() => {
-        if (open && sourceUnitId) {
-            void loadUnits()
-        }
-    }, [loadUnits, open, sourceUnitId])
+    const toggleTarget = (id) => {
+        setTargets((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]))
+        setPenanggungJawab((prev) => (prev === id ? '' : prev))
+    }
+    const tambahInstruksi = (teks) => setInstruction((prev) => appendInstruksi(prev, teks))
 
     const handleSubmit = async () => {
         if (!sourceUnitId) {
-            toast({
-                title: 'Unit kerja belum dipilih',
-                description: 'Distribusi memerlukan unit sumber yang konkret.',
-                variant: 'destructive',
-            })
+            toast({ title: 'Unit kerja belum dipilih', description: 'Disposisi memerlukan unit pencatat yang konkret.', variant: 'destructive' })
             return
         }
-        if (!targetUnitId) {
-            toast({
-                title: 'Validasi',
-                description: 'Pilih unit tujuan terlebih dahulu',
-                variant: 'destructive',
-            })
+        if (targets.length === 0) {
+            toast({ title: 'Validasi', description: 'Pilih minimal satu unit tujuan', variant: 'destructive' })
             return
         }
-
         setLoading(true)
         try {
-            await distributionService.distribute({
+            await distributionService.distributeMany({
                 suratMasukId: suratData.id,
                 sourceUnitId,
-                targetUnitId,
-                instruction: instruction || null,
+                targets: targets.map((unitKerjaId) => ({
+                    unitKerjaId,
+                    penanggungJawab: unitKerjaId === penanggungJawab,
+                    ...(batasWaktu ? { batasWaktu } : {}),
+                })),
+                instruksi: instruction.trim() || null,
             })
-
-            toast({
-                title: 'Berhasil',
-                description: `Surat berhasil didistribusikan ke ${units.find(u => u.id === targetUnitId)?.name}`,
-            })
-
-            // Reset form
-            setTargetUnitId('')
-            setInstruction('')
+            toast({ title: 'Berhasil', description: `Surat didisposisikan ke ${targets.length} unit` })
+            reset()
             onOpenChange(false)
             onSuccess?.()
         } catch (error) {
             console.error('Error distributing:', error)
-            toast({
-                title: 'Error',
-                description: error.response?.data?.error || 'Gagal mendistribusikan surat',
-                variant: 'destructive',
-            })
+            toast({ title: 'Error', description: error.response?.data?.error || error.message || 'Gagal mendisposisikan surat', variant: 'destructive' })
         } finally {
             setLoading(false)
         }
     }
 
     const handleClose = () => {
-        if (!loading) {
-            setTargetUnitId('')
-            setInstruction('')
-            onOpenChange(false)
-        }
+        if (loading) return
+        reset()
+        onOpenChange(false)
     }
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className="sm:max-w-[500px]">
+            <DialogContent className="sm:max-w-[560px]">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Send className="h-5 w-5 text-primary" />
-                        Distribusikan Surat
+                        Disposisi ke Direktorat
                     </DialogTitle>
-                    <DialogDescription>
-                        Kirim surat ini ke unit kerja tujuan untuk ditindaklanjuti
-                    </DialogDescription>
+                    <DialogDescription>Teruskan surat ke satu atau beberapa unit untuk ditindaklanjuti</DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-4 py-4">
-                    {/* Surat Info */}
+                <div className="max-h-[65vh] space-y-4 overflow-y-auto py-2">
                     {suratData && (
-                        <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Nomor Surat:</span>
-                                <span className="font-medium">{suratData.nomorSurat}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Perihal:</span>
-                                <span className="font-medium truncate max-w-[250px]">{suratData.perihal}</span>
-                            </div>
+                        <div className="space-y-1 rounded-lg bg-muted/50 p-3 text-sm">
+                            <p><span className="text-muted-foreground">Nomor Surat:</span> <span className="font-medium">{suratData.nomorSurat}</span></p>
+                            <p className="truncate"><span className="text-muted-foreground">Perihal:</span> {suratData.perihal}</p>
                         </div>
                     )}
+                    {diblokir && (
+                        <Alert variant="destructive">
+                            <ShieldAlert className="h-4 w-4" />
+                            <AlertDescription>{PESAN_TERKENDALI}</AlertDescription>
+                        </Alert>
+                    )}
+                    {terkendali && !diblokir && (
+                        <Alert>
+                            <ShieldAlert className="h-4 w-4" />
+                            <AlertDescription>Permohonan akses disposisi akan diajukan untuk admin unit tujuan dan menunggu persetujuan super admin.</AlertDescription>
+                        </Alert>
+                    )}
 
-                    {/* Target Unit Selection */}
-                    <div className="space-y-2">
-                        <Label htmlFor="targetUnit">Unit Tujuan <span className="text-destructive">*</span></Label>
-                        <Select value={targetUnitId} onValueChange={setTargetUnitId} disabled={loadingUnits}>
-                            <SelectTrigger>
-                                <SelectValue placeholder={loadingUnits ? "Memuat..." : "Pilih Unit Tujuan"} />
-                            </SelectTrigger>
-                            <SelectContent>
+                    <fieldset className="space-y-2" disabled={diblokir || loadingUnits}>
+                        <legend className="text-sm font-medium">Unit tujuan <span className="text-destructive">*</span></legend>
+                        {loadingUnits ? (
+                            <p className="text-sm text-muted-foreground">Memuat...</p>
+                        ) : (
+                            <div className="grid gap-2 sm:grid-cols-2">
                                 {units.map((unit) => (
-                                    <SelectItem key={unit.id} value={unit.id}>
-                                        <div className="flex items-center gap-2">
-                                            <span>{unit.name}</span>
-                                            {unit.unitType && (
-                                                <span className="text-xs text-muted-foreground">
-                                                    ({unit.unitType})
-                                                </span>
-                                            )}
-                                        </div>
-                                    </SelectItem>
+                                    <label key={unit.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                                        <input type="checkbox" checked={targets.includes(unit.id)} onChange={() => toggleTarget(unit.id)} />
+                                        {unit.name}
+                                    </label>
                                 ))}
-                            </SelectContent>
-                        </Select>
+                            </div>
+                        )}
+                    </fieldset>
+
+                    {targets.length > 0 && (
+                        <fieldset className="space-y-2" disabled={diblokir}>
+                            <legend className="text-sm font-medium">Penanggung jawab (Unit Pengolah)</legend>
+                            {targets.map((id) => (
+                                <label key={id} className="flex items-center gap-2 text-sm">
+                                    <input type="radio" name="penanggung-jawab" value={id} checked={penanggungJawab === id} onChange={() => setPenanggungJawab(id)} />
+                                    {units.find((unit) => unit.id === id)?.name || id}
+                                </label>
+                            ))}
+                        </fieldset>
+                    )}
+
+                    <div className="space-y-2">
+                        <Label htmlFor="batas-waktu-disposisi">Batas waktu</Label>
+                        <Input id="batas-waktu-disposisi" type="date" min={hariIniJakarta()} value={batasWaktu} onChange={(event) => setBatasWaktu(event.target.value)} disabled={diblokir} />
                     </div>
 
-                    {/* Instruction */}
                     <div className="space-y-2">
                         <Label htmlFor="instruction">Instruksi / Catatan</Label>
-                        <Textarea
-                            id="instruction"
-                            placeholder="Contoh: Mohon ditindaklanjuti sesuai tugas pokok dan fungsi..."
-                            value={instruction}
-                            onChange={(e) => setInstruction(e.target.value)}
-                            rows={3}
-                        />
+                        {instruksi.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                                {instruksi.map((teks) => (
+                                    <Button key={teks} type="button" size="sm" variant="outline" onClick={() => tambahInstruksi(teks)} disabled={diblokir}>{teks}</Button>
+                                ))}
+                            </div>
+                        )}
+                        <Textarea id="instruction" value={instruction} onChange={(event) => setInstruction(event.target.value)} rows={3} disabled={diblokir}
+                            placeholder="Contoh: Mohon ditindaklanjuti sesuai tugas pokok dan fungsi..." />
                     </div>
                 </div>
 
                 <DialogFooter>
-                    <Button variant="outline" onClick={handleClose} disabled={loading}>
-                        Batal
-                    </Button>
-                    <Button onClick={handleSubmit} disabled={loading || !sourceUnitId || !targetUnitId}>
-                        {loading ? (
-                            <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Mengirim...
-                            </>
-                        ) : (
-                            <>
-                                <Send className="mr-2 h-4 w-4" />
-                                Distribusikan
-                            </>
-                        )}
+                    <Button variant="outline" onClick={handleClose} disabled={loading}>Batal</Button>
+                    <Button onClick={handleSubmit} disabled={loading || diblokir || !sourceUnitId || targets.length === 0}>
+                        {loading ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />Mengirim...</>) : (<><Send className="mr-2 h-4 w-4" />Disposisikan</>)}
                     </Button>
                 </DialogFooter>
             </DialogContent>

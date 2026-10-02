@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import { Link, useNavigate } from 'react-router-dom';
-import { MailOpen, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, Reply, FolderArchive, ArrowUpDown, Send, RefreshCw, Trash2, FileText, AlertCircle, Inbox, Calendar, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
+import { MailOpen, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, FolderArchive, ArrowUpDown, Send, RefreshCw, Trash2, AlertCircle, Inbox, Calendar, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ExportButton } from '@/components/ExportButton';
@@ -106,6 +108,7 @@ export default function SuratMasuk() {
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedSurat, setSelectedSurat] = useState(null);
+    const [alasanHapus, setAlasanHapus] = useState('');
 
     // Load unit kerja list for super admin
     useEffect(() => {
@@ -253,6 +256,7 @@ export default function SuratMasuk() {
             id: surat.id,
             nomorSurat: surat.nomorSurat,
             perihal: surat.perihal,
+            sifatSurat: surat.sifatSurat,
             unitKerjaId: surat.unitKerjaId || resolvedUnitKerjaId,
         });
         setDistributeDialogOpen(true);
@@ -283,7 +287,7 @@ export default function SuratMasuk() {
 
     const handleDelete = async () => {
         try {
-            await suratMasukService.delete(selectedSurat.id);
+            await suratMasukService.delete(selectedSurat.id, { alasan: alasanHapus.trim() });
             toast({
                 title: 'Berhasil Dihapus',
                 description: `Surat ${selectedSurat.nomorSurat} telah dihapus`,
@@ -293,7 +297,7 @@ export default function SuratMasuk() {
         } catch (error) {
             toast({
                 title: 'Error',
-                description: error.message || 'Gagal menghapus surat',
+                description: error.response?.data?.error || error.message || 'Gagal menghapus surat',
                 variant: 'destructive',
             });
         }
@@ -798,7 +802,7 @@ export default function SuratMasuk() {
             />
 
             {/* Delete Confirmation Dialog */}
-            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => { setDeleteDialogOpen(open); if (!open) setAlasanHapus(''); }}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>Hapus Surat Masuk?</AlertDialogTitle>
@@ -807,9 +811,23 @@ export default function SuratMasuk() {
                             Tindakan ini tidak dapat dibatalkan.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="space-y-1">
+                        <Label htmlFor="alasan-hapus-surat-masuk">Alasan penghapusan <span className="text-destructive">*</span></Label>
+                        <Textarea
+                            id="alasan-hapus-surat-masuk"
+                            value={alasanHapus}
+                            onChange={(event) => setAlasanHapus(event.target.value)}
+                            placeholder="Jelaskan alasan penghapusan surat ini (minimal 10 karakter)..."
+                            rows={3}
+                        />
+                    </div>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Batal</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        <AlertDialogAction
+                            onClick={handleDelete}
+                            disabled={alasanHapus.trim().length < 10}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
                             Hapus
                         </AlertDialogAction>
                     </AlertDialogFooter>

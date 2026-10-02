@@ -20,9 +20,12 @@ const mocks = vi.hoisted(() => ({
         getHistoryBySurat: vi.fn(),
         findById: vi.fn(),
         distribute: vi.fn(),
+        distributeMany: vi.fn(),
         receive: vi.fn(),
         process: vi.fn(),
         reject: vi.fn(),
+        kandidatPenyelesaian: vi.fn(),
+        samarkan: vi.fn(),
     },
     layanan: {
         findAll: vi.fn(),
@@ -32,7 +35,9 @@ const mocks = vi.hoisted(() => ({
     },
     recordAccess: {
         check: vi.fn(),
+        checkRead: vi.fn(),
     },
+    audit: { logAction: vi.fn(), logActionOrThrow: vi.fn() },
 }));
 
 vi.mock('../middlewares/auth.middleware.js', () => ({
@@ -59,6 +64,7 @@ vi.mock('../middlewares/validate.middleware.js', () => ({
 
 vi.mock('../services/distribution.service.js', () => ({
     distributionService: mocks.distribution,
+    PESAN_BELUM_DAPAT_MEMBACA: 'Surat belum dapat Anda baca. Ajukan akses atau hubungi TU sebelum menindaklanjuti disposisi.',
 }));
 
 vi.mock('../services/layanan-arsip.service.js', () => ({
@@ -71,10 +77,9 @@ vi.mock('../services/record-access.service.js', () => ({
     isAllowedForClassification: () => true,
 }));
 
-const auditLogService = { logAction: vi.fn() };
 vi.mock('../services/audit-log.service.js', () => ({
-    default: auditLogService,
-    auditLogService,
+    default: mocks.audit,
+    auditLogService: mocks.audit,
 }));
 
 const { default: distributionRouter } = await import('../routes/distribution.routes.js');
@@ -104,6 +109,7 @@ describe('distribution route unit scoping', () => {
             },
         });
         mocks.distribution.distribute.mockResolvedValue({ id: 'dist-1' });
+        mocks.distribution.distributeMany.mockResolvedValue([{ id: 'dist-1' }]);
         mocks.distribution.receive.mockResolvedValue({ id: 'dist-1', status: 'received' });
         mocks.distribution.process.mockResolvedValue({ id: 'dist-1', status: 'processed' });
         mocks.distribution.reject.mockResolvedValue({ id: 'dist-1', status: 'rejected' });
@@ -113,6 +119,10 @@ describe('distribution route unit scoping', () => {
             unitKerjaId: 'unit-a',
             classification: 'biasa',
         });
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: true, unitKerjaId: 'unit-a', via: 'owner' });
+        mocks.distribution.kandidatPenyelesaian.mockResolvedValue([]);
+        mocks.distribution.samarkan.mockImplementation((row: any) => ({ id: row.id, masked: true, suratMasukId: null, surat: { id: null, perihal: null, label: 'Dikecualikan' } }));
+        mocks.audit.logActionOrThrow.mockResolvedValue(undefined);
     });
 
     it('forces list and statistics queries to the caller unit', async () => {
@@ -120,7 +130,7 @@ describe('distribution route unit scoping', () => {
         await request(app).get('/distributions/outbox?unitKerjaId=unit-b').expect(200);
         await request(app).get('/distributions/stats?unitKerjaId=unit-b').expect(200);
 
-        expect(mocks.distribution.findInbox).toHaveBeenCalledWith('unit-a', expect.any(Object), ['biasa']);
+        expect(mocks.distribution.findInbox).toHaveBeenCalledWith('unit-a', expect.objectContaining({ lewatBatas: false }), expect.objectContaining({ id: 'user-1' }));
         expect(mocks.distribution.findOutbox).toHaveBeenCalledWith('unit-a', expect.any(Object), ['biasa']);
         expect(mocks.distribution.getStats).toHaveBeenCalledWith('unit-a');
     });
@@ -129,7 +139,7 @@ describe('distribution route unit scoping', () => {
         await request(app).get('/distributions/dist-1?unitKerjaId=unit-b').expect(200);
         await request(app).get('/distributions/surat/surat-1?unitKerjaId=unit-b').expect(200);
         await request(app).put('/distributions/dist-1/receive').expect(200);
-        await request(app).put('/distributions/dist-1/process').expect(200);
+        await request(app).put('/distributions/dist-1/process').send({}).expect(200);
         await request(app).put('/distributions/dist-1/reject').send({ reason: 'Bukan unit tujuan' }).expect(200);
 
         expect(mocks.distribution.findById).toHaveBeenCalledWith('dist-1', 'unit-a');
@@ -138,7 +148,7 @@ describe('distribution route unit scoping', () => {
             'dist-1', 'user-1', 'unit-a', expect.objectContaining({ userId: 'user-1' }),
         );
         expect(mocks.distribution.process).toHaveBeenCalledWith(
-            'dist-1', 'unit-a', expect.objectContaining({ userId: 'user-1' }),
+            'dist-1', 'unit-a', expect.objectContaining({ userId: 'user-1' }), {}, expect.objectContaining({ id: 'user-1' }),
         );
         expect(mocks.distribution.reject).toHaveBeenCalledWith(
             'dist-1', 'Bukan unit tujuan', 'unit-a', expect.objectContaining({ userId: 'user-1' }),
@@ -150,11 +160,11 @@ describe('distribution route unit scoping', () => {
 
         await request(app).get('/distributions/dist-1').expect(200);
         await request(app).put('/distributions/dist-1/process').expect(400);
-        await request(app).put('/distributions/dist-1/process?unitKerjaId=unit-b').expect(200);
+        await request(app).put('/distributions/dist-1/process?unitKerjaId=unit-b').send({}).expect(200);
 
         expect(mocks.distribution.findById).toHaveBeenCalledWith('dist-1', 'unit-b');
         expect(mocks.distribution.process).toHaveBeenCalledWith(
-            'dist-1', 'unit-b', expect.objectContaining({ userId: 'user-1' }),
+            'dist-1', 'unit-b', expect.objectContaining({ userId: 'user-1' }), {}, expect.objectContaining({ id: 'user-1' }),
         );
     });
 
@@ -177,12 +187,12 @@ describe('distribution route unit scoping', () => {
         await request(app).put('/distributions/dist-1/process').expect(400);
     });
 
-    it.each(['distribute', 'receive', 'process', 'reject'] as const)('sanitizes %s errors regardless of misleading domain keywords', async action => {
+    it.each(['distributeMany', 'receive', 'process', 'reject'] as const)('sanitizes %s errors regardless of misleading domain keywords', async action => {
         mocks.recordAccess.check.mockResolvedValue({ exists: true, allowed: true, mutable: true, unitKerjaId: 'unit-a' });
         for (const keyword of ['Invalid', 'sudah didistribusikan sudah diproses tidak bisa', 'not found']) {
             const marker = `${keyword}: SYNTHETIC_DISTRIBUTION_DATABASE_SECRET`;
             mocks.distribution[action].mockRejectedValueOnce(new Error(marker));
-            const response = action === 'distribute' ? await request(app).post('/distributions').send({ suratMasukId: 'surat-1', sourceUnitId: 'unit-a', targetUnitId: 'unit-b' })
+            const response = action === 'distributeMany' ? await request(app).post('/distributions').send({ suratMasukId: 'surat-1', sourceUnitId: 'unit-a', targetUnitId: 'unit-b' })
                 : await request(app).put(`/distributions/dist-1/${action}`).send({ reason: 'Bukan unit tujuan' });
             expect(response.status).toBe(500);
             expect(response.body).toMatchObject({ code: 'INTERNAL_ERROR', requestId: 'distribution-fault-test' });
@@ -211,6 +221,70 @@ describe('distribution route unit scoping', () => {
 
         expect(mocks.distribution.findById).toHaveBeenCalledWith('dist-1', '');
         expect(mocks.distribution.process).not.toHaveBeenCalled();
+    });
+
+    it('menolak Terima untuk surat yang belum dapat dibaca, tetapi Tolak tetap diizinkan', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: false, unitKerjaId: 'sesditjen' });
+        const terima = await request(app).put('/distributions/dist-1/receive').expect(403);
+        expect(terima.body.error).toBe('Surat belum dapat Anda baca. Ajukan akses atau hubungi TU sebelum menindaklanjuti disposisi.');
+        await request(app).put('/distributions/dist-1/reject').send({ reason: 'Bukan unit tujuan' }).expect(200);
+        expect(mocks.distribution.receive).not.toHaveBeenCalled();
+        expect(mocks.recordAccess.checkRead).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'surat_masuk', 'surat-1');
+    });
+
+    it('A-I1: respons Tolak disamarkan bila surat induk tidak dapat dibaca pemanggil', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: false, unitKerjaId: 'sesditjen' });
+        mocks.distribution.reject.mockResolvedValue({
+            id: 'dist-1', status: 'rejected', suratMasukId: 'surat-1', instruction: 'Instruksi rahasia', rejectionReason: 'Bukan unit tujuan',
+        });
+        const res = await request(app).put('/distributions/dist-1/reject').send({ reason: 'Bukan unit tujuan' }).expect(200);
+        expect(mocks.distribution.samarkan).toHaveBeenCalledWith(expect.objectContaining({ id: 'dist-1', suratMasukId: 'surat-1' }));
+        expect(res.body.data).toMatchObject({ id: 'dist-1', masked: true, suratMasukId: null });
+        expect(res.text).not.toContain('surat-1');
+        expect(res.text).not.toContain('Instruksi rahasia');
+    });
+
+    it('A-I1: respons Tolak tetap utuh bila surat induk dapat dibaca', async () => {
+        mocks.distribution.reject.mockResolvedValue({ id: 'dist-1', status: 'rejected', suratMasukId: 'surat-1', instruction: 'Mohon hadir' });
+        const res = await request(app).put('/distributions/dist-1/reject').send({ reason: 'Bukan unit tujuan' }).expect(200);
+        expect(res.body.data).toMatchObject({ suratMasukId: 'surat-1', instruction: 'Mohon hadir' });
+        expect(mocks.distribution.samarkan).not.toHaveBeenCalled();
+    });
+
+    it('lewatBatas=true diteruskan ke kotak disposisi', async () => {
+        await request(app).get('/distributions/inbox?lewatBatas=true').expect(200);
+        expect(mocks.distribution.findInbox).toHaveBeenCalledWith('unit-a', expect.objectContaining({ lewatBatas: true }), expect.anything());
+    });
+
+    it('GET /:id menyamarkan disposisi bila surat induk tidak dapat dibaca, tanpa audit (C-1)', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: false, via: 'peserta' });
+        const response = await request(app).get('/distributions/dist-1').expect(200);
+        expect(response.body.data).toMatchObject({ id: 'dist-1', masked: true, suratMasukId: null, surat: { id: null, perihal: null } });
+        expect(JSON.stringify(response.body)).not.toContain('surat-1');
+        expect(mocks.recordAccess.checkRead).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'surat_masuk', 'surat-1');
+        expect(mocks.audit.logActionOrThrow).not.toHaveBeenCalled();
+    });
+
+    it('GET /:id lewat jalur non-pemilik mengaudit view_via_rangkaian (C-1)', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: true, via: 'peserta', rangkaianId: 'rs-1', grantId: 'g-1' });
+        await request(app).get('/distributions/dist-1').expect(200);
+        expect(mocks.audit.logActionOrThrow).toHaveBeenCalledTimes(1);
+        expect(mocks.audit.logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({
+            userId: 'user-1', action: 'view_via_rangkaian', entityType: 'surat_masuk', entityId: 'surat-1',
+            changes: { via: 'peserta', rangkaianId: 'rs-1', grantId: 'g-1', distribusiId: 'dist-1' },
+        }));
+    });
+
+    it('GET /:id sebagai pemilik tidak menulis audit view', async () => {
+        await request(app).get('/distributions/dist-1').expect(200);
+        expect(mocks.audit.logActionOrThrow).not.toHaveBeenCalled();
+    });
+
+    it('GET /:id/kandidat-penyelesaian memakai unit konkret dan pengguna pemanggil', async () => {
+        mocks.distribution.kandidatPenyelesaian.mockResolvedValue([{ id: 'sk-1', nomorSurat: 'ND-1', perihal: 'Balasan', tanggalSurat: '2026-09-20' }]);
+        const response = await request(app).get('/distributions/dist-1/kandidat-penyelesaian?unitKerjaId=unit-b').expect(200);
+        expect(response.body).toEqual({ success: true, data: [{ id: 'sk-1', nomorSurat: 'ND-1', perihal: 'Balasan', tanggalSurat: '2026-09-20' }] });
+        expect(mocks.distribution.kandidatPenyelesaian).toHaveBeenCalledWith('dist-1', 'unit-a', expect.objectContaining({ id: 'user-1' }));
     });
 
     it('returns 404 when no scoped distribution history is visible', async () => {

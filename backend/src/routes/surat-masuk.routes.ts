@@ -28,6 +28,7 @@ import {
     recordAccessService,
 } from '../services/record-access.service.js';
 import auditLogService from '../services/audit-log.service.js';
+import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
 const log = createLogger('SuratMasukRoutes');
@@ -194,9 +195,11 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
             });
         }
 
+        // P3 (§7): aksiDiizinkan/statusAlur dari server; hanya membaca.
+        const aksi = await suratAksiPayload(req.user!, 'surat_masuk', id, access);
         res.json({
             success: true,
-            data: { ...sanitizeSuratRecord(result, 'surat_masuk'), aksesMelalui: access.via, aksiDiizinkan: [] },
+            data: { ...sanitizeSuratRecord(result, 'surat_masuk'), aksesMelalui: access.via, ...aksi },
         });
     } catch (error) {
         next(error);
@@ -280,6 +283,7 @@ router.post('/',
             const result = await suratMasukService.create({
                 ...bodyValidation.data,
                 createdBy: req.user?.id,
+                actor: req.user,
                 unitKerjaId: serverUnitKerjaId,
                 filePath,
                 fileOriginalName,
@@ -474,11 +478,13 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
                 error: 'Surat yang telah diarsipkan tidak dapat dihapus melalui CRUD.',
             });
         }
+        // §5/T13: alasan wajib untuk anggota rangkaian; express.json mengurai badan DELETE.
+        const alasan = typeof req.body?.alasan === 'string' ? req.body.alasan : undefined;
         const result = await suratMasukService.delete(id, req.user?.id, unitScope, {
             userId: req.user?.id,
             userEmail: req.user?.email,
             ipAddress: req.ip,
-        });
+        }, { alasan });
 
         if (!result) {
             return res.status(404).json({ error: 'Surat masuk not found' });

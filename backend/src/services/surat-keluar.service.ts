@@ -24,6 +24,10 @@ import {
     type SuratNumberContext,
     type SuratNumberPreview,
 } from '../utils/surat-numbering.js';
+import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
+import type { TindakLanjutInput } from '../validators/schemas.js';
+import { afterSuratKeluarChanged, afterSuratKeluarInsert } from './rangkaian/tindak-lanjut.hook.js';
+import type { RecordUser } from './record-access.service.js';
 
 export interface SuratKeluarFilters {
     unitKerjaId?: string | null;
@@ -43,6 +47,8 @@ export interface SuratKeluarFilters {
 type CreateSuratKeluarInput = Omit<NewSuratKeluar, 'noUrut' | 'tahun'> & {
     tahun?: number;
     numberingMode?: 'auto' | 'manual';
+    tindakLanjut?: TindakLanjutInput;
+    actor?: RecordUser | null;
 };
 
 export class SuratKeluarService {
@@ -153,7 +159,12 @@ export class SuratKeluarService {
         attachment?: RegisterSuratAttachmentData,
         importOptions?: SuratImportOptions,
     ) {
-        const { numberingMode: requestedNumberingMode, ...recordData } = data;
+        const { numberingMode: requestedNumberingMode, tindakLanjut: tindakLanjutInput, actor, ...recordData } = data;
+        // Pemanggil layanan langsung yang masih memakai balasanUntuk dipetakan ke relasi 'balasan'.
+        const tindakLanjut: TindakLanjutInput | undefined = tindakLanjutInput
+            ?? (recordData.balasanUntuk
+                ? { jenis: 'surat_masuk', suratId: recordData.balasanUntuk, jenisRelasi: 'balasan' }
+                : undefined);
         const requestedNomorSurat = recordData.nomorSurat?.trim() || '';
         // Missing intent fails safe as automatic. Only an explicit `manual` flag
         // may make a client-provided number authoritative, so stale previews from
@@ -195,7 +206,9 @@ export class SuratKeluarService {
             : undefined;
 
         try {
-            const result = await db.transaction(async (tx) => {
+            // C-4: seluruh transaksi diulang pada 40P01/40001; prepareExisting di atas
+            // tetap di luar agar percobaan ulang tidak mengulang efek eksternal.
+            const result = await denganRetryDeadlock(() => db.transaction(async (tx) => {
                 // The unit template row is the numbering mutex. Unlike locking
                 // the last surat row, this also serializes an empty sequence.
                 const templates = await settingsService.lockSuratTemplates(tx, recordData.unitKerjaId);
@@ -231,23 +244,6 @@ export class SuratKeluarService {
                     ? requestedNomorSurat
                     : generatedNomorSurat;
 
-                // A reply can only target a live incoming letter in the same unit.
-                if (recordData.balasanUntuk) {
-                    const [replyTarget] = await tx
-                        .select({ id: suratMasuk.id })
-                        .from(suratMasuk)
-                        .where(and(
-                            eq(suratMasuk.id, recordData.balasanUntuk),
-                            eq(suratMasuk.unitKerjaId, recordData.unitKerjaId),
-                            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted)),
-                        ))
-                        .limit(1);
-
-                    if (!replyTarget) {
-                        throw new ValidationError('Surat masuk balasan tidak ditemukan pada unit kerja yang sama.');
-                    }
-                }
-
                 assertImportConnected(importOptions);
                 const ruleSelection = await prepareSuratRuleSelection(tx, 'keluar', recordData);
                 const [inserted] = await tx
@@ -255,6 +251,9 @@ export class SuratKeluarService {
                     .values({
                         ...recordData,
                         ...ruleSelection,
+                        // balasan_untuk diisi layanan tindak lanjut (hanya balasan same-unit).
+                        balasanUntuk: null,
+                        asalNaskah: tindakLanjut ? 'tindak_lanjut' : (recordData.asalNaskah ?? null),
                         // Direct service callers and older API clients receive
                         // the same safe, explicit default as the current form.
                         klasifikasiKeamanan: recordData.klasifikasiKeamanan || 'biasa',
@@ -281,17 +280,15 @@ export class SuratKeluarService {
                     }, tx);
                 }
 
-                // If this is a reply to surat masuk, update its status
-                if (recordData.balasanUntuk) {
-                    await tx
-                        .update(suratMasuk)
-                        .set({ status: 'sudah_dibalas', updatedAt: new Date() })
-                        .where(and(
-                            eq(suratMasuk.id, recordData.balasanUntuk),
-                            eq(suratMasuk.unitKerjaId, recordData.unitKerjaId),
-                            or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted)),
-                        ));
-                }
+                // Rangkaian: anggota + relasi + terima implisit. Status surat masuk
+                // TIDAK lagi di-flip saat draft; diturunkan saat approve (§8).
+                const tindakLanjutHasil = await afterSuratKeluarInsert(tx, {
+                    user: actor ?? null,
+                    inserted: { id: inserted.id, unitKerjaId: inserted.unitKerjaId },
+                    tindakLanjut,
+                    audit: auditContext,
+                });
+                const tersimpan = { ...inserted, balasanUntuk: tindakLanjutHasil?.balasanUntuk ?? null };
 
                 if (auditContext) {
                     await auditLogService.logActionOrThrow({
@@ -306,7 +303,9 @@ export class SuratKeluarService {
                                 unitKerjaId: inserted.unitKerjaId,
                                 klasifikasiItemId: inserted.klasifikasiItemId,
                                 jraItemId: inserted.jraItemId,
-                                balasanUntuk: inserted.balasanUntuk,
+                                balasanUntuk: tersimpan.balasanUntuk,
+                                asalNaskah: tersimpan.asalNaskah,
+                                tindakLanjut: tindakLanjut ?? null,
                             },
                         },
                     }, tx);
@@ -322,8 +321,8 @@ export class SuratKeluarService {
                     createdAt: inserted.createdAt,
                 }, auditContext?.userId || recordData.createdBy || undefined);
 
-                return (await hydrateSuratRuleSelections(tx, [inserted], 'keluar'))[0];
-            });
+                return (await hydrateSuratRuleSelections(tx, [tersimpan], 'keluar'))[0];
+            }));
 
             return result;
         } catch (error: any) {
@@ -385,7 +384,7 @@ export class SuratKeluarService {
                 expectedPurpose: 'surat_keluar',
             })
             : undefined;
-        return db.transaction(async (tx) => {
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
             const current = hasSuratRuleSelection(data)
                 ? (await tx.select().from(suratKeluar).where(and(...conditions)).limit(1).for('update'))[0]
                 : undefined;
@@ -434,8 +433,9 @@ export class SuratKeluarService {
                     },
                 }, tx);
             }
+            if (result) await afterSuratKeluarChanged(tx, id, auditContext);
             return result ? (await hydrateSuratRuleSelections(tx, [result], 'keluar'))[0] : result;
-        });
+        }));
     }
 
     async delete(
@@ -456,7 +456,7 @@ export class SuratKeluarService {
             or(eq(suratKeluar.isArchived, false), isNull(suratKeluar.isArchived))!,
             inArray(suratKeluar.approvalStatus, ['draft', 'rejected']),
         ];
-        return db.transaction(async (tx) => {
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
             const [result] = await tx
                 .update(suratKeluar)
                 .set({
@@ -480,8 +480,9 @@ export class SuratKeluarService {
                     },
                 }, tx);
             }
+            if (result) await afterSuratKeluarChanged(tx, id, auditContext);
             return result;
-        });
+        }));
     }
 
     async hardDelete(id: string, unitScope: RecordUnitScope) {

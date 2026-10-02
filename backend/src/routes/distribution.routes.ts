@@ -1,27 +1,22 @@
 import { Router, type Response } from 'express';
-import { distributionService } from '../services/distribution.service';
+import { distributionService, PESAN_BELUM_DAPAT_MEMBACA } from '../services/distribution.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { canAccessUnit, Role } from '../config/permissions';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
-import { createDistributionSchema, rejectDistributionSchema } from '../validators/schemas';
+import { createDistributionSchema, processDistributionSchema, rejectDistributionSchema, type CreateDistribution } from '../validators/schemas';
+import { INSTRUKSI_DISPOSISI } from '../config/instruksi-disposisi.js';
+import { isAjukanAksesEnabled } from '../services/rangkaian/deps.js';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope';
 import { sanitizeSuratRecord } from '../utils/sanitize-surat-response';
 import {
     allowedSecurityClassifications,
-    isAllowedForClassification,
     recordAccessService,
 } from '../services/record-access.service';
+import auditLogService from '../services/audit-log.service.js';
 
 const router = Router();
-
-async function canAccessDistributionRecord(req: AuthRequest, id: string) {
-    const record = await distributionService.findById(id, resolveRecordUnitScope(req));
-    return record && isAllowedForClassification(req.user, record.surat.sifatSurat)
-        ? record
-        : null;
-}
 
 function resolveConcreteDistributionUnit(req: AuthRequest, res: Response): string | null {
     const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || '';
@@ -36,13 +31,6 @@ function resolveConcreteDistributionUnit(req: AuthRequest, res: Response): strin
         return null;
     }
     return unitKerjaId;
-}
-
-async function canAccessDistributionInUnit(req: AuthRequest, id: string, unitKerjaId: string) {
-    const record = await distributionService.findById(id, unitKerjaId);
-    return record && isAllowedForClassification(req.user, record.surat.sifatSurat)
-        ? record
-        : null;
 }
 
 router.use(authMiddleware);
@@ -65,8 +53,17 @@ router.get('/units', async (req: AuthRequest, res, next) => {
 });
 
 /**
+ * @route GET /api/distributions/opsi
+ * @desc Chip instruksi statis dan status jalur akses disposisi surat terkendali
+ */
+router.get('/opsi', (_req: AuthRequest, res) => {
+    res.json({ success: true, data: { instruksi: INSTRUKSI_DISPOSISI, jalurAksesTerkendali: isAjukanAksesEnabled() } });
+});
+
+/**
  * @route GET /api/distributions/inbox
- * @desc Get incoming distributions for a unit
+ * @desc Kotak disposisi unit; baris surat yang tidak boleh dibaca tampil tersamar (§4.8).
+ *       `?lewatBatas=true` hanya menampilkan disposisi terbuka yang lewat batas waktu (WIB).
  */
 router.get('/inbox', async (req: AuthRequest, res, next) => {
     try {
@@ -80,7 +77,8 @@ router.get('/inbox', async (req: AuthRequest, res, next) => {
             status: status as string,
             page: page ? parseInt(page as string) : 1,
             limit: limit ? parseInt(limit as string) : 20,
-        }, allowedSecurityClassifications(req.user));
+            lewatBatas: req.query.lewatBatas === 'true',
+        }, req.user);
 
         res.json({ success: true, ...result });
     } catch (error) {
@@ -155,16 +153,47 @@ router.get('/surat/:suratId', async (req: AuthRequest, res, next) => {
 });
 
 /**
+ * @route GET /api/distributions/:id/kandidat-penyelesaian
+ * @desc Surat keluar approved milik unit target di rangkaian yang sama (picker Penyelesaian)
+ */
+router.get('/:id/kandidat-penyelesaian', async (req: AuthRequest, res, next) => {
+    try {
+        const unitKerjaId = resolveConcreteDistributionUnit(req, res);
+        if (!unitKerjaId) return;
+        const data = await distributionService.kandidatPenyelesaian(req.params.id as string, unitKerjaId, req.user);
+        res.json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
  * @route GET /api/distributions/:id
- * @desc Get distribution by ID
+ * @desc Detail disposisi. findById membatasi ke unit sumber ATAU target; setiap
+ *       pemanggil (termasuk unit sumber) melewati checkRead atas surat induk (C-1).
+ *       Tidak boleh membaca → bentuk tersamar (routing saja); jalur non-pemilik diaudit.
  */
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
         const result = await distributionService.findById(id, resolveRecordUnitScope(req));
-
-        if (!result || !isAllowedForClassification(req.user, result.surat.sifatSurat)) {
+        if (!result) {
             return res.status(404).json({ error: 'Distribution not found' });
+        }
+        const baca = await recordAccessService.checkRead(req.user, 'surat_masuk', result.surat.id);
+        if (!baca.exists || !baca.allowed) {
+            return res.json({ success: true, data: distributionService.samarkan(result) });
+        }
+        if (baca.via !== 'owner') {
+            await auditLogService.logActionOrThrow({
+                userId: req.user?.id,
+                userEmail: req.user?.email,
+                ipAddress: req.ip,
+                action: 'view_via_rangkaian',
+                entityType: 'surat_masuk',
+                entityId: result.surat.id,
+                changes: { via: baca.via, rangkaianId: baca.rangkaianId, grantId: baca.grantId, distribusiId: id },
+            });
         }
 
         res.json({
@@ -185,10 +214,12 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
  */
 router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), async (req: AuthRequest, res, next) => {
     try {
-        const { suratMasukId, sourceUnitId, targetUnitId, instruction, ccUnits } = req.body;
+        // Bentuk tunggal lama (`targetUnitId`) dinormalkan skema menjadi satu target;
+        // responsnya tetap objek tunggal. Bentuk jamak (`targets`) mengembalikan array.
+        const { suratMasukId, sourceUnitId, targets, instruksi, ccUnits, bentuk } = req.body as CreateDistribution;
 
-        if (!suratMasukId || !sourceUnitId || !targetUnitId) {
-            return res.status(400).json({ error: 'suratMasukId, sourceUnitId, and targetUnitId are required' });
+        if (!suratMasukId || !sourceUnitId) {
+            return res.status(400).json({ error: 'suratMasukId dan sourceUnitId wajib diisi' });
         }
 
         // Prevent sending on behalf of another unit: the caller must be allowed to act
@@ -203,11 +234,11 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
             return res.status(404).json({ error: 'Data not found' });
         }
 
-        const result = await distributionService.distribute({
+        const rows = await distributionService.distributeMany({
             suratMasukId,
             sourceUnitId,
-            targetUnitId,
-            instruction,
+            targets: targets ?? [],
+            instruksi,
             ccUnits,
             sentBy: req.user?.id,
         }, {
@@ -216,7 +247,7 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
             ipAddress: req.ip,
         });
 
-        res.status(201).json({ success: true, data: result });
+        res.status(201).json({ success: true, data: bentuk === 'jamak' ? rows : rows[0] });
     } catch (error) {
         next(error);
     }
@@ -224,15 +255,20 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
 
 /**
  * @route PUT /api/distributions/:id/receive
- * @desc Mark distribution as received
+ * @desc Terima eksplisit; hanya bila surat induk dapat dibaca (checkRead).
  */
 router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
         const unitKerjaId = resolveConcreteDistributionUnit(req, res);
         if (!unitKerjaId) return;
-        if (!(await canAccessDistributionInUnit(req, id, unitKerjaId))) {
+        const record = await distributionService.findById(id, unitKerjaId);
+        if (!record) {
             return res.status(404).json({ error: 'Distribution not found' });
+        }
+        const baca = await recordAccessService.checkRead(req.user, 'surat_masuk', record.surat.id);
+        if (!baca.exists || !baca.allowed) {
+            return res.status(403).json({ error: PESAN_BELUM_DAPAT_MEMBACA });
         }
         const result = await distributionService.receive(
             id,
@@ -249,20 +285,23 @@ router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, n
 
 /**
  * @route PUT /api/distributions/:id/process
- * @desc Mark distribution as processed/completed
+ * @desc Penyelesaian disposisi (surat keluar penyelesaian ATAU catatan ≥ 10 karakter).
+ *       checkRead atas induk diperiksa di layanan, di dalam transaksi berkunci.
  */
-router.put('/:id/process', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
+router.put('/:id/process', canWriteMiddleware(), validateBody(processDistributionSchema), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
         const unitKerjaId = resolveConcreteDistributionUnit(req, res);
         if (!unitKerjaId) return;
-        if (!(await canAccessDistributionInUnit(req, id, unitKerjaId))) {
+        if (!(await distributionService.findById(id, unitKerjaId))) {
             return res.status(404).json({ error: 'Distribution not found' });
         }
         const result = await distributionService.process(
             id,
             unitKerjaId,
             { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
+            req.body,
+            req.user,
         );
 
         res.json({ success: true, data: result });
@@ -273,7 +312,9 @@ router.put('/:id/process', canWriteMiddleware(), async (req: AuthRequest, res, n
 
 /**
  * @route PUT /api/distributions/:id/reject
- * @desc Reject distribution (return to sender)
+ * @desc Tolak & Kembalikan. Tetap tersedia untuk baris tersamar (target tidak
+ *       perlu dapat membaca surat); responsnya disamarkan bila surat induk tidak
+ *       terbaca oleh pemanggil (A-I1).
  */
 router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionSchema), async (req: AuthRequest, res, next) => {
     try {
@@ -285,7 +326,8 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
         }
         const unitKerjaId = resolveConcreteDistributionUnit(req, res);
         if (!unitKerjaId) return;
-        if (!(await canAccessDistributionInUnit(req, id, unitKerjaId))) {
+        const record = await distributionService.findById(id, unitKerjaId);
+        if (!record) {
             return res.status(404).json({ error: 'Distribution not found' });
         }
 
@@ -296,7 +338,11 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
             { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
         );
 
-        res.json({ success: true, data: result });
+        // A-I1 (§4.8): Tolak tersedia untuk baris tersamar, jadi responsnya pun
+        // wajib tersamar bila pemanggil (setelah penolakan) tidak dapat membaca
+        // surat induk -- jangan bocorkan id surat, instruksi, atau catatan.
+        const baca = await recordAccessService.checkRead(req.user, 'surat_masuk', record.surat.id);
+        res.json({ success: true, data: baca.exists && baca.allowed ? result : distributionService.samarkan(result) });
     } catch (error) {
         next(error);
     }

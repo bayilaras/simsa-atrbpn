@@ -1,9 +1,10 @@
 import express from 'express';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { INSTRUKSI_DISPOSISI } from '../config/instruksi-disposisi.js';
 
 const mocks = vi.hoisted(() => ({
-    distribution: { distribute: vi.fn() },
+    distribution: { distributeMany: vi.fn() },
     recordAccess: { check: vi.fn() },
 }));
 
@@ -39,34 +40,41 @@ const BASE = {
     targetUnitId: 'dir_bppt',
 };
 
+function expectDistributeMany(instruksi: string | null) {
+    expect(mocks.distribution.distributeMany).toHaveBeenCalledWith(
+        expect.objectContaining({ suratMasukId: BASE.suratMasukId, sourceUnitId: 'ditjen',
+            targets: [{ unitKerjaId: 'dir_bppt', batasWaktu: null, penanggungJawab: false }], instruksi }),
+        expect.objectContaining({ userId: 'user-1' }));
+}
+
 describe('POST /distributions dengan validator asli', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.recordAccess.check.mockResolvedValue({
             exists: true, allowed: true, mutable: true, unitKerjaId: 'ditjen', classification: 'biasa',
         });
-        mocks.distribution.distribute.mockResolvedValue({ id: 'dist-1', status: 'sent' });
+        mocks.distribution.distributeMany.mockResolvedValue([{ id: 'dist-1', status: 'sent' }]);
     });
 
     it('menerima instruction: null persis seperti yang dikirim DistributeDialog', async () => {
         const res = await request(app).post('/distributions').send({ ...BASE, instruction: null });
         expect(res.status).toBe(201);
-        expect(mocks.distribution.distribute).toHaveBeenCalledWith(
-            expect.objectContaining({ ...BASE, instruction: null }),
-            expect.objectContaining({ userId: 'user-1' }),
-        );
+        expectDistributeMany(null);
+        expect(res.body.data).toEqual({ id: 'dist-1', status: 'sent' });
     });
 
     it('menerima distribusi tanpa field instruction', async () => {
         const res = await request(app).post('/distributions').send(BASE);
         expect(res.status).toBe(201);
-        expect(mocks.distribution.distribute.mock.calls[0][0].instruction).toBeUndefined();
+        expectDistributeMany(null);
+        expect(res.body.data).toEqual({ id: 'dist-1', status: 'sent' });
     });
 
     it('tetap menerima instruksi berupa string', async () => {
         const res = await request(app).post('/distributions').send({ ...BASE, instruction: 'Mohon ditindaklanjuti' });
         expect(res.status).toBe(201);
-        expect(mocks.distribution.distribute.mock.calls[0][0].instruction).toBe('Mohon ditindaklanjuti');
+        expectDistributeMany('Mohon ditindaklanjuti');
+        expect(res.body.data).toEqual({ id: 'dist-1', status: 'sent' });
     });
 
     it.each([
@@ -80,6 +88,36 @@ describe('POST /distributions dengan validator asli', () => {
         expect(res.body.error).toBe('Validation failed');
         expect(res.body.details.map((detail: { field: string }) => detail.field)).toContain('instruction');
         expect(mocks.recordAccess.check).not.toHaveBeenCalled();
-        expect(mocks.distribution.distribute).not.toHaveBeenCalled();
+        expect(mocks.distribution.distributeMany).not.toHaveBeenCalled();
+    });
+
+    it('bentuk jamak memakai targets dan mengembalikan array', async () => {
+        mocks.distribution.distributeMany.mockResolvedValue([{ id: 'dist-1' }, { id: 'dist-2' }]);
+        const { targetUnitId: _abaikan, ...tanpaTarget } = BASE;
+        const res = await request(app).post('/distributions').send({ ...tanpaTarget,
+            targets: [{ unitKerjaId: 'dir_bppt', penanggungJawab: true }, { unitKerjaId: 'dir_ptep' }] });
+        expect(res.status).toBe(201);
+        expect(res.body.data).toEqual([{ id: 'dist-1' }, { id: 'dist-2' }]);
+        expect(mocks.distribution.distributeMany.mock.calls[0][0].targets).toEqual([
+            { unitKerjaId: 'dir_bppt', penanggungJawab: true }, { unitKerjaId: 'dir_ptep', penanggungJawab: false }]);
+    });
+
+    it('menolak targetUnitId bersama targets dengan 400', async () => {
+        const res = await request(app).post('/distributions').send({ ...BASE, targets: [{ unitKerjaId: 'dir_ptep' }] });
+        expect(res.status).toBe(400);
+        expect(mocks.distribution.distributeMany).not.toHaveBeenCalled();
+    });
+});
+
+describe('GET /distributions/opsi', () => {
+    afterEach(() => { delete process.env.RANGKAIAN_AJUKAN_AKSES; });
+
+    it('mengembalikan chip instruksi statis dan status jalur akses terkendali', async () => {
+        const mati = await request(app).get('/distributions/opsi');
+        expect(mati.status).toBe(200);
+        expect(mati.body).toEqual({ success: true, data: { instruksi: [...INSTRUKSI_DISPOSISI], jalurAksesTerkendali: false } });
+        process.env.RANGKAIAN_AJUKAN_AKSES = 'true';
+        const nyala = await request(app).get('/distributions/opsi');
+        expect(nyala.body.data.jalurAksesTerkendali).toBe(true);
     });
 });

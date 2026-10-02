@@ -3,6 +3,7 @@ import { db } from '../config/database';
 import {
     readRefKey,
     recordAccessService,
+    requiresExplicitAccessGrant,
     type ReadAccessResult,
     type ReadExecutor,
     type ReadVia,
@@ -85,6 +86,8 @@ export interface DisposisiRangkaian {
     rejectionReason: string | null;
     penyelesaianAnggotaId: string | null;
     masked: boolean;
+    /** F-I3 (P3): diisi rute GET rangkaian — true bila pengguna dapat Tutup Disposisi baris ini. */
+    dapatDitutup?: boolean;
 }
 
 export interface PesertaRangkaian {
@@ -127,6 +130,13 @@ export interface RangkaianDetail {
     aksiDiizinkan: string[];
     truncated: boolean;
 }
+
+/**
+ * Hasil getDetail. `grantIds` (T16-8) adalah properti internal NON-enumerable:
+ * grant yang membuka node lintas unit, untuk audit `view_via_rangkaian` dan
+ * `markGrantUsed`. Handler wajib memisahkannya; JSON.stringify melewatinya.
+ */
+export type RangkaianDetailBaca = RangkaianDetail & { readonly grantIds?: string[] };
 
 interface BarisRangkaian {
     id: string; kode: string; asal: string; status: RangkaianDetail['rangkaian']['status'];
@@ -299,6 +309,60 @@ async function tingkatRangkaian(
     return null;
 }
 
+/**
+ * Tier baca rangkaian (sama dengan getDetail): null → 404; 'anggota' = hanya
+ * ≥1 anggota terbaca tanpa jangkauan level rangkaian. Mengikuti rantai digabung
+ * dengan penjaga yang identik dengan getDetail (batas hop/siklus → null, C-8),
+ * agar GET dan aksi tulis tidak pernah berbeda 404/403 pada id yang sama.
+ */
+/** Ikuti rantai digabung_ke_id dengan penjaga getDetail (batas hop/siklus → null, C-8). */
+async function ujungRantaiGabung(executor: ReadExecutor, rangkaianId: string): Promise<BarisRangkaian | null> {
+    const dikunjungi = new Set<string>();
+    let rs = await muatRangkaian(executor, rangkaianId);
+    for (let hop = 0; rs && rs.status === 'digabung' && rs.digabungKeId; hop += 1) {
+        if (hop >= BATAS_HOP_GABUNG || dikunjungi.has(rs.digabungKeId)) return null;
+        dikunjungi.add(rs.id);
+        rs = await muatRangkaian(executor, rs.digabungKeId);
+    }
+    return rs;
+}
+
+/**
+ * Tier baca LEVEL RANGKAIAN saja (tanpa jatuhan 'anggota'): super_admin →
+ * 'owner', pengawas unit pencatat → 'pengawas', peserta jangkauan → 'peserta',
+ * selain itu null. Inilah predikat `penuh` getDetail: hanya pembaca penuh yang
+ * boleh melihat placeholder anggota yang tidak terbaca (A-I3, Lacak).
+ */
+export async function tingkatRangkaianPenuh(
+    user: RecordUser | undefined,
+    rangkaianId: string,
+    executor: ReadExecutor = db,
+    konteks?: KonteksBaca,
+): Promise<AksesRangkaian | null> {
+    const rs = await ujungRantaiGabung(executor, rangkaianId);
+    if (!rs) return null;
+    return tingkatRangkaian(executor, konteks ?? await resolveKonteksBaca(user, executor), rs);
+}
+
+export async function tingkatAksesRangkaian(
+    user: RecordUser | undefined,
+    rangkaianId: string,
+    executor: ReadExecutor = db,
+): Promise<AksesRangkaian | 'anggota' | null> {
+    const rs = await ujungRantaiGabung(executor, rangkaianId);
+    if (!rs) return null;
+    const ctx = await resolveKonteksBaca(user, executor);
+    const tingkat = await tingkatRangkaian(executor, ctx, rs);
+    if (tingkat) return tingkat;
+    const anggota = await muatAnggota(executor, rs.id);
+    const akses = await recordAccessService.checkMany(
+        user,
+        anggota.slice(0, BATAS_NODE_DETAIL).map(row => ({ type: row.jenis, id: row.suratId })),
+        executor,
+    );
+    return [...akses.values()].some(a => a.allowed) ? 'anggota' : null;
+}
+
 export const rangkaianReadService = {
     async findRangkaianIdBySurat(
         jenis: JenisRekamanRangkaian,
@@ -322,7 +386,7 @@ export const rangkaianReadService = {
         user: RecordUser | undefined,
         rangkaianId: string,
         executor: ReadExecutor = db,
-    ): Promise<RangkaianDetail | null> {
+    ): Promise<RangkaianDetailBaca | null> {
         let rs = await muatRangkaian(executor, rangkaianId);
         if (!rs) return null;
         let dialihkanDari: RangkaianDetail['dialihkanDari'] = null;
@@ -369,10 +433,12 @@ export const rangkaianReadService = {
         // terlihat (checkMany per surat), dipakai sebagai jatuhan aksesMelalui
         // saat tier rangkaian (tingkat) null -- lihat komentar di aksesMelalui.
         let viaLintas: 'pengawas' | 'peserta' | null = null;
+        const grantIds = new Set<string>();
         for (const row of dipakai) {
             const a = aksesAnggota(row);
             if (a?.allowed && a.via) {
                 terlihat.add(row.anggotaId);
+                if (a.via !== 'owner' && a.grantId) grantIds.add(a.grantId);
                 if (a.via === 'pengawas') viaLintas = 'pengawas';
                 else if (a.via === 'peserta' && viaLintas !== 'pengawas') viaLintas = 'peserta';
                 anggota.push({
@@ -395,7 +461,8 @@ export const rangkaianReadService = {
                 });
             } else if (penuh) {
                 tersamar.add(row.anggotaId);
-                anggota.push(samarkanAnggota(row, dapatAjukan && a?.masked === true));
+                // C-2: kelas tak dikenal juga tersamar, tetapi requestViaRangkaian menolaknya (409).
+                anggota.push(samarkanAnggota(row, dapatAjukan && a?.masked === true && requiresExplicitAccessGrant(a?.classification)));
             }
         }
         const tampil = (id: string) => terlihat.has(id) || tersamar.has(id);
@@ -440,7 +507,7 @@ export const rangkaianReadService = {
             });
         }
 
-        return {
+        const detail: RangkaianDetail = {
             rangkaian: {
                 id: rs.id,
                 kode: rs.kode,
@@ -486,6 +553,8 @@ export const rangkaianReadService = {
             aksiDiizinkan: [],
             truncated,
         };
+        Object.defineProperty(detail, 'grantIds', { value: [...grantIds], enumerable: false });
+        return detail;
     },
 };
 

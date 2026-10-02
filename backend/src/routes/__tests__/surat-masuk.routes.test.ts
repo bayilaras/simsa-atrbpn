@@ -33,6 +33,7 @@ vi.mock('../../services/surat-masuk.service', () => ({
         findById: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
+        delete: vi.fn(),
     },
 }));
 
@@ -66,6 +67,11 @@ vi.mock('../../services/record-access.service', () => ({
             masked: false,
         })),
     },
+}));
+
+// P3 (T16): bidang aksi dihitung dari DB; route test ini hanya memeriksa sebarannya.
+vi.mock('../../services/rangkaian/aksi.js', () => ({
+    suratAksiPayload: vi.fn(async () => ({ aksiDiizinkan: [], statusAlur: 'terdaftar', distribusiUnitSaya: null, rangkaian: null })),
 }));
 
 // Mock Audit Log
@@ -118,6 +124,9 @@ describe('SuratMasukRoutes', () => {
                 filePath: null,
                 aksesMelalui: 'owner',
                 aksiDiizinkan: [],
+                statusAlur: 'terdaftar',
+                distribusiUnitSaya: null,
+                rangkaian: null,
             });
         });
 
@@ -127,6 +136,15 @@ describe('SuratMasukRoutes', () => {
             const res = await request(app).get('/api/surat-masuk/999');
 
             expect(res.status).toBe(404);
+        });
+    });
+
+    describe('DELETE /api/surat-masuk/:id', () => {
+        it('meneruskan alasan koreksi ke layanan', async () => {
+            (suratMasukService.findById as any).mockResolvedValue({ id: '1', unitKerjaId: 'ditjen', isArchived: false });
+            (suratMasukService.delete as any).mockResolvedValue({ id: '1' });
+            await request(app).delete('/api/surat-masuk/1').send({ alasan: 'Registrasi ganda oleh operator' }).expect(200);
+            expect(suratMasukService.delete).toHaveBeenCalledWith('1', 'user-1', 'ditjen', expect.objectContaining({ userId: 'user-1' }), { alasan: 'Registrasi ganda oleh operator' });
         });
     });
 });

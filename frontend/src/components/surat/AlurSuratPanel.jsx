@@ -3,12 +3,17 @@ import { useEffect, useState } from 'react'
 import { GitBranch, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import rangkaianService from '@/services/rangkaian.service'
 import { TimelineItem } from '@/components/surat/TimelineItem'
+import { JENIS_RELASI_LABEL } from '@/lib/tindak-lanjut'
+import { AlurSuratActions, AjukanAksesButton, BatalRelasiButton, TutupDisposisiButton } from './AlurSuratActions'
+
+// Kontrak ekspor P2 dipertahankan; sumber tunggal kini lib/tindak-lanjut.js (Task 19).
+export { JENIS_RELASI_LABEL } from '@/lib/tindak-lanjut'
 
 export const STATUS_RANGKAIAN_LABEL = { aktif: 'Aktif', selesai: 'Selesai', diberkaskan: 'Diberkaskan', digabung: 'Digabung' }
 export const STATUS_DISPOSISI_LABEL = { sent: 'Terkirim', received: 'Diterima', processed: 'Selesai', rejected: 'Ditolak' }
-export const JENIS_RELASI_LABEL = { balasan: 'Balasan', tindak_lanjut: 'Tindak lanjut', menjelaskan: 'Menjelaskan', merujuk: 'Merujuk' }
 // 'pengawas' tidak lagi dipetakan di sini -- lihat teks banner khusus di bawah.
 const AKSES_LABEL = { peserta: 'peserta rangkaian' }
 const DIKECUALIKAN = 'Dikecualikan'
@@ -28,10 +33,13 @@ function relasiPerNodeAsal(relasiList) {
 
 function keItemLinimasa(node, relasiDari) {
     const type = node.jenis === 'surat_masuk' ? 'masuk' : 'keluar'
-    if (node.masked) return { type, masked: true, unitNama: node.unitNama }
+    if (node.masked) {
+        return { type, masked: true, unitNama: node.unitNama, anggotaId: node.anggotaId, dapatAjukanAkses: node.dapatAjukanAkses === true }
+    }
     const relasiList = relasiDari.get(node.anggotaId) ?? []
     return {
         type,
+        anggotaId: node.anggotaId,
         id: node.suratId,
         tanggal: node.tanggalSurat,
         perihal: node.perihal,
@@ -45,16 +53,37 @@ function keItemLinimasa(node, relasiDari) {
     }
 }
 
-export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null }) {
+export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallback = null, onChanged, muatUlangKe = 0 }) {
     const [state, setState] = useState({ loading: true, data: null, error: false, notFound: false })
+    // Kunci reload internal panel: dinaikkan hanya oleh muatUlang (mis. tombol
+    // "Coba lagi", atau aksi panel di Task 25), TIDAK oleh render ulang biasa.
+    // onChanged HANYA dipanggil dari muatUlang -- bukan dari jalur muat awal --
+    // supaya me-refresh parent (yang membongkar panel ini lewat gerbang
+    // `if (loading) return <spinner>`) tidak memicu panel memuat ulang lalu
+    // memanggil onChanged lagi tanpa henti (F1).
+    const [muatKe, setMuatKe] = useState(0)
+    const muatUlang = () => {
+        setMuatKe((n) => n + 1)
+        onChanged?.()
+    }
 
+    // muatUlangKe: sinyal reload yang dikendalikan PARENT (bukan panel), untuk
+    // aksi di level halaman yang mengubah data rangkaian/disposisi tapi tidak
+    // lewat muatUlang panel sendiri -- Terima Disposisi, Arsipkan, Distribusi,
+    // persetujuan (N1). Parent menaikkannya hanya setelah aksi tersebut
+    // sukses, TIDAK di jalur onChanged/fetchSurat biasa, supaya tidak
+    // membentuk loop dengan mekanisme F1 di atas: fetchSurat yang dipanggil
+    // dari sini tidak menaikkan muatUlangKe, hanya effect memuat data (yang
+    // memang harus jalan lagi) yang bergantung padanya.
     useEffect(() => {
         let aktif = true
         async function muat() {
             setState({ loading: true, data: null, error: false, notFound: false })
             try {
                 const data = await rangkaianService.getBySurat(jenis, suratId)
-                if (aktif) setState({ loading: false, data, error: false, notFound: false })
+                if (aktif) {
+                    setState({ loading: false, data, error: false, notFound: false })
+                }
             } catch (err) {
                 if (!aktif) return
                 const status = err?.status ?? err?.response?.status
@@ -64,7 +93,7 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
         }
         muat()
         return () => { aktif = false }
-    }, [jenis, suratId])
+    }, [jenis, suratId, muatKe, muatUlangKe])
 
     if (state.loading) {
         return (
@@ -86,7 +115,10 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
     if (state.error) {
         return (
             <Card role="alert">
-                <CardContent className="p-4 text-sm text-destructive">Alur surat tidak dapat dimuat.</CardContent>
+                <CardContent className="p-4 flex items-center justify-between gap-3 text-sm text-destructive">
+                    <span>Alur surat tidak dapat dimuat.</span>
+                    <Button type="button" variant="outline" size="sm" onClick={muatUlang}>Coba lagi</Button>
+                </CardContent>
             </Card>
         )
     }
@@ -95,6 +127,16 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
     const d = state.data
     const r = d.rangkaian
     const relasiDari = relasiPerNodeAsal(d.relasi)
+    const aksiDiizinkan = d.aksiDiizinkan ?? []
+    const bolehTutup = aksiDiizinkan.includes('tutup_disposisi')
+    // Relasi yang dimuat P2 hanya yang aktif (cancelled_at IS NULL); tombol hanya
+    // ditawarkan bila server mengizinkan batal_relasi (pengawas, T16-6).
+    const batalUntuk = (item) => {
+        if (!aksiDiizinkan.includes('batal_relasi')) return null
+        const relasiList = relasiDari.get(item.anggotaId) ?? []
+        if (relasiList.length === 0) return null
+        return relasiList.map((relasi) => <BatalRelasiButton key={relasi.id} relasi={relasi} onChanged={muatUlang} />)
+    }
 
     return (
         <Card>
@@ -113,8 +155,10 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                             // lewat jangkauan record-level atas satu anggota saja (lihat
                             // viaLintas di rangkaian-read.service.ts) -- jangan mengklaim
                             // "melalui rangkaian" di sini, karena itu tidak selalu benar.
-                            ? 'Anda melihat surat ini sebagai unit pengawas (hanya baca).'
-                            : `Dilihat melalui rangkaian ${r.kode} sebagai ${AKSES_LABEL[aksesMelalui] ?? 'peserta rangkaian'}. Akses baca saja.`}
+                            ? (aksiDiizinkan.length === 0
+                                ? 'Anda melihat surat ini sebagai unit pengawas (hanya baca).'
+                                : 'Anda melihat surat ini sebagai unit pengawas.')
+                            : `Dilihat melalui rangkaian ${r.kode} sebagai ${AKSES_LABEL[aksesMelalui] ?? 'peserta rangkaian'}.${aksiDiizinkan.length === 0 ? ' Akses baca saja.' : ''}`}
                     </p>
                 )}
             </CardHeader>
@@ -123,6 +167,7 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                     <Badge variant="outline">{STATUS_RANGKAIAN_LABEL[r.status] ?? r.status}</Badge>
                     <span>{r.unitPencatat.nama} → {r.unitPengolah?.nama ?? 'Unit pengolah belum ditetapkan'}</span>
                 </div>
+                <AlurSuratActions detail={d} onChanged={muatUlang} />
 
                 {d.peserta.length > 0 && (
                     <div className="space-y-2">
@@ -146,7 +191,8 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                                         <th className="py-1 pr-3 font-medium">Instruksi</th>
                                         <th className="py-1 pr-3 font-medium">Batas waktu</th>
                                         <th className="py-1 pr-3 font-medium">Status</th>
-                                        <th className="py-1 font-medium">Penyelesaian</th>
+                                        <th className={bolehTutup ? 'py-1 pr-3 font-medium' : 'py-1 font-medium'}>Penyelesaian</th>
+                                        {bolehTutup && <th className="py-1 font-medium">Aksi</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -167,6 +213,12 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                                                     ? DIKECUALIKAN
                                                     : (row.catatanPenyelesaian || row.rejectionReason || (row.penyelesaianAnggotaId ? 'Surat penyelesaian' : '-'))}
                                             </td>
+                                            {bolehTutup && (
+                                                <td className="py-2">
+                                                    {/* F-I3: server menilai per baris (predikat Tutup, CTRL-1). */}
+                                                    {row.dapatDitutup === true && <TutupDisposisiButton distribusi={row} onChanged={muatUlang} />}
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -178,9 +230,13 @@ export function AlurSuratPanel({ jenis, suratId, aksesMelalui = 'owner', fallbac
                 <section aria-label="Linimasa rangkaian" className="space-y-2">
                     <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Linimasa</h4>
                     <div>
-                        {d.anggota.map((node, index) => (
-                            <TimelineItem key={node.anggotaId} item={keItemLinimasa(node, relasiDari)} isLast={index === d.anggota.length - 1} />
-                        ))}
+                        {d.anggota.map((node, index) => {
+                            const item = keItemLinimasa(node, relasiDari)
+                            const aksi = item.masked && item.dapatAjukanAkses
+                                ? <AjukanAksesButton anggotaId={item.anggotaId} onChanged={muatUlang} />
+                                : batalUntuk(item)
+                            return <TimelineItem key={node.anggotaId} item={item} isLast={index === d.anggota.length - 1} aksi={aksi} />
+                        })}
                     </div>
                     {d.truncated && (
                         <p role="status" className="text-sm text-muted-foreground">

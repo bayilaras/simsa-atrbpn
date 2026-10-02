@@ -12,6 +12,8 @@ export type RangkaianStatusFacts = {
     processedDisposisi: number;
     blockingAnggota: number;
     approvedTindakLanjut: number;
+    /** P3 (§2d): surat masuk anggota hidup tanpa disposisi processed dan tanpa balasan/tindak lanjut approved. */
+    suratMasukBelumDitangani?: number;
 };
 
 export type SuratMasukStatusFacts = {
@@ -35,6 +37,7 @@ export function deriveRangkaianStatus(facts: RangkaianStatusFacts): RangkaianSta
     if (!isRangkaianTerbuka(facts.current)) return facts.current;
     if (facts.openDisposisi > 0 || facts.blockingAnggota > 0) return 'aktif';
     if (facts.selesaiManual) return 'selesai';
+    if ((facts.suratMasukBelumDitangani ?? 0) > 0 && facts.asal !== 'data_lama') return 'aktif';
     if (facts.processedDisposisi > 0 || facts.approvedTindakLanjut > 0 || facts.asal === 'inisiatif') {
         return 'selesai';
     }
@@ -60,4 +63,15 @@ export function judulRangkaian(surat: { perihal: string | null; nomorSurat: stri
     if (perihal) return perihal;
     const nomor = surat.nomorSurat?.trim();
     return nomor ? nomor : '(tanpa perihal)';
+}
+
+export type StatusAlur = 'terdaftar' | 'didisposisikan' | 'ditindaklanjuti' | 'selesai' | 'diberkaskan';
+
+/** §8: statusAlur turunan, dikembalikan API dan tidak disimpan. */
+export function deriveStatusAlur(input: { rangkaianStatus: RangkaianStatus | null; adaDisposisi: boolean; adaTindakLanjut: boolean }): StatusAlur {
+    if (input.rangkaianStatus === 'diberkaskan') return 'diberkaskan';
+    if (input.rangkaianStatus === 'selesai') return 'selesai';
+    if (input.adaTindakLanjut) return 'ditindaklanjuti';
+    if (input.adaDisposisi) return 'didisposisikan';
+    return 'terdaftar';
 }

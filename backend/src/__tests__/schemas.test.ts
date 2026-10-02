@@ -188,7 +188,7 @@ describe('createDistributionSchema', () => {
             instruction: null,
         });
         expect(result.success).toBe(true);
-        if (result.success) expect(result.data.instruction).toBeNull();
+        if (result.success) expect(result.data.instruksi).toBeNull();
     });
 
     it('rejects an instruction longer than 2000 characters', () => {

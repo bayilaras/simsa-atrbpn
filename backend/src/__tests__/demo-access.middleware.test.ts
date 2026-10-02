@@ -59,7 +59,20 @@ describe('metadata-only demo API access', () => {
         ['PUT', `/api/surat-keluar/${id}`],
         ['POST', `/api/surat-keluar/${id}/archive-full`],
         ['GET', `/api/rangkaian/${id}`],
+        ['GET', '/api/rangkaian/lacak'],
         ['GET', `/api/rangkaian/by-surat/surat_masuk/${id}`],
+        ['POST', `/api/rangkaian/anggota/${id}/ajukan-akses`],
+        ['POST', `/api/rangkaian/disposisi/${id}/tutup`],
+        ['POST', `/api/rangkaian/${id}/selesai`],
+        ['POST', `/api/rangkaian/${id}/buka-kembali`],
+        ['POST', `/api/rangkaian/${id}/berkaskan`],
+        ['PUT', `/api/rangkaian/${id}/unit-pengolah`],
+        ['GET', `/api/rangkaian/${id}/opsi-berkas`],
+        ['POST', `/api/rangkaian/${id}/gabung`],
+        ['GET', `/api/rangkaian/${id}/gabung/pratinjau`],
+        ['POST', `/api/rangkaian/${id}/tautan`],
+        ['POST', '/api/rangkaian/tautan'],
+        ['POST', `/api/rangkaian/relasi/${id}/batal`],
         ['GET', '/api/arsip/search/fulltext'],
         ['POST', `/api/arsip/${id}/reconcile-rules`],
         ['GET', `/api/approval/history/${id}`],
@@ -74,6 +87,8 @@ describe('metadata-only demo API access', () => {
         ['POST', `/api/retention-governance/permanent-transfers/${id}/cancellations/${secondId}/review`],
         ['GET', '/api/settings/preferences'],
         ['POST', '/api/record-access-grants'],
+        ['GET', '/api/distributions/opsi'],
+        ['GET', `/api/distributions/${id}/kandidat-penyelesaian`],
     ])('allows reviewed metadata route %s %s', async (method, path) => {
         const { app, downstream } = testApp(true);
         const response = await request(app)[method.toLowerCase() as 'get'](path)
@@ -107,7 +122,6 @@ describe('metadata-only demo API access', () => {
         ['POST', '/api/retention-governance/retention-events', 'file_storage'],
         ['POST', '/api/retention-governance/permanent-transfers', 'file_storage'],
         ['POST', `/api/retention-governance/permanent-transfers/${id}/handover`, 'file_storage'],
-        ['POST', `/api/rangkaian/${id}/gabung`, 'unsupported_route'],
         ['GET', '/api/docs', 'unsupported_route'],
         ['GET', '/api/not-reviewed-yet', 'unsupported_route'],
     ])('fails closed for %s %s', async (method, path, capability) => {

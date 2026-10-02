@@ -210,12 +210,17 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
             res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
             return;
         }
-        const { name, description, canReceiveDistribution } = req.body;
+        const { name, description, canReceiveDistribution, isUnitPengawas } = req.body;
+        if (isUnitPengawas !== undefined && typeof isUnitPengawas !== 'boolean') {
+            res.status(400).json({ error: 'isUnitPengawas harus bernilai boolean' });
+            return;
+        }
 
         const updated = await settingsService.updateUnitKerja(id as string, {
             name,
             description,
             canReceiveDistribution,
+            isUnitPengawas,
         }, {
             userId: user?.id, userEmail: user?.email, ipAddress: req.ip,
         });

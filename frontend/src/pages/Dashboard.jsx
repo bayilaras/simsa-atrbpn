@@ -404,6 +404,7 @@ export default function Dashboard() {
                 {isAdmin ? <>
                     <Button onClick={() => navigate('/surat/masuk/tambah')}><MailOpen aria-hidden="true" className="mr-2 h-4 w-4" />Catat Surat Masuk</Button>
                     <Button variant="outline" onClick={() => navigate('/surat/keluar/tambah')}><Send aria-hidden="true" className="mr-2 h-4 w-4" />Catat Surat Keluar</Button>
+                    <Button variant="outline" onClick={() => navigate('/surat/keluar/inisiatif')}><Plus aria-hidden="true" className="mr-2 h-4 w-4" />Buat Surat Inisiatif</Button>
                 </> : <>
                     <Button variant="outline" onClick={() => navigate('/surat/masuk')}><MailOpen aria-hidden="true" className="mr-2 h-4 w-4" />Lihat Surat Masuk</Button>
                     <Button variant="outline" onClick={() => navigate('/surat/keluar')}><Send aria-hidden="true" className="mr-2 h-4 w-4" />Lihat Surat Keluar</Button>

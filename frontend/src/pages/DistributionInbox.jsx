@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { Inbox, Send, Check, X, Clock, ArrowRight, RefreshCw, Eye, CheckCircle, XCircle, Search, Filter, Mail, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
+import { Inbox, Send, Check, X, Clock, ArrowRight, RefreshCw, Eye, CheckCircle, XCircle, Search, Filter, Mail, ArrowUpRight, ArrowDownLeft, ClipboardCheck, FilePlus2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -14,12 +15,6 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from '@/components/ui/tooltip'
 import {
     Dialog,
     DialogContent,
@@ -36,6 +31,8 @@ import { id as localeId } from 'date-fns/locale'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
+import { PenyelesaianDialog } from '@/components/distribusi/PenyelesaianDialog'
+import { buildTindakLanjutState } from '@/lib/tindak-lanjut'
 
 const statusConfig = {
     sent: { label: 'Menunggu', variant: 'outline', icon: Clock, className: 'text-yellow-600 dark:text-yellow-400 border-yellow-200 bg-yellow-50 dark:bg-yellow-500/15' },
@@ -43,6 +40,9 @@ const statusConfig = {
     processed: { label: 'Selesai', variant: 'default', icon: CheckCircle, className: 'bg-emerald-600 hover:bg-emerald-700' },
     rejected: { label: 'Ditolak', variant: 'destructive', icon: XCircle, className: '' },
 }
+
+/** Disposisi yang boleh dibuka dialog Penyelesaian: terbaca dan masih sent/received. */
+const dapatDiselesaikan = (row) => Boolean(row) && !row.masked && (row.status === 'sent' || row.status === 'received')
 
 export default function DistributionInbox() {
     const { toast } = useToast()
@@ -57,6 +57,11 @@ export default function DistributionInbox() {
     const [rejectReason, setRejectReason] = useState('')
     const [searchTerm, setSearchTerm] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
+    const [lewatBatas, setLewatBatas] = useState(false)
+    const [penyelesaianTarget, setPenyelesaianTarget] = useState(null)
+    const [searchParams, setSearchParams] = useSearchParams()
+    const navigate = useNavigate()
+    const hariIniJakarta = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
 
     const unitScope = useRequiredUnitKerjaScope(user)
     const unitKerjaId = unitScope.unitKerjaId
@@ -72,7 +77,7 @@ export default function DistributionInbox() {
         setLoading(true)
         try {
             const [inboxRes, outboxRes, statsRes] = await Promise.all([
-                distributionService.getInbox(unitKerjaId),
+                distributionService.getInbox(unitKerjaId, lewatBatas ? { lewatBatas: true } : {}),
                 distributionService.getOutbox(unitKerjaId),
                 distributionService.getStats(unitKerjaId),
             ])
@@ -90,11 +95,37 @@ export default function DistributionInbox() {
         } finally {
             setLoading(false)
         }
-    }, [toast, unitKerjaId])
+    }, [lewatBatas, toast, unitKerjaId])
 
     useEffect(() => {
         loadData()
     }, [loadData])
+
+    // Tautan lama /distribusi?penyelesaian=<id> (detail surat kini membuka dialog
+    // sendiri, F-I2). Fallback: baris di halaman ini, atau GET /distributions/:id
+    // bila tidak ada di halaman kotak yang sedang dimuat; hanya sent/received.
+    useEffect(() => {
+        const id = searchParams.get('penyelesaian')
+        if (!id || loading) return
+        setSearchParams({}, { replace: true })
+        const tolak = () => toast({ title: 'Disposisi tidak dapat diselesaikan', description: 'Disposisi tidak ditemukan, sudah selesai/ditolak, atau belum dapat Anda baca.', variant: 'destructive' })
+        const baris = inboxData.find((item) => item.id === id)
+        if (baris) {
+            if (dapatDiselesaikan(baris)) setPenyelesaianTarget(baris)
+            else tolak()
+            return
+        }
+        distributionService.getById(id)
+            .then((row) => (dapatDiselesaikan(row) ? setPenyelesaianTarget(row) : tolak()))
+            .catch(tolak)
+    }, [inboxData, loading, searchParams, setSearchParams, toast])
+
+    const bukaTindakLanjut = (item) => navigate('/surat/keluar/tambah', {
+        state: buildTindakLanjutState('surat_masuk', {
+            id: item.surat.id, nomorSurat: item.surat.nomorSurat, perihal: item.surat.perihal, dari: item.surat.dari,
+            rangkaian: item.rangkaian, distribusiUnitSaya: { id: item.id, status: item.status },
+        }, 'buat_nota_dinas'),
+    })
 
     const handleReceive = async (distributionId) => {
         setActionLoading(true)
@@ -106,23 +137,6 @@ export default function DistributionInbox() {
             toast({
                 title: 'Error',
                 description: error.response?.data?.error || 'Gagal menerima surat',
-                variant: 'destructive',
-            })
-        } finally {
-            setActionLoading(false)
-        }
-    }
-
-    const handleProcess = async (distributionId) => {
-        setActionLoading(true)
-        try {
-            await distributionService.process(distributionId, unitKerjaId)
-            toast({ title: 'Berhasil', description: 'Surat ditandai selesai diproses' })
-            loadData()
-        } catch (error) {
-            toast({
-                title: 'Error',
-                description: error.response?.data?.error || 'Gagal memproses surat',
                 variant: 'destructive',
             })
         } finally {
@@ -180,10 +194,11 @@ export default function DistributionInbox() {
         )
     }
 
-    const filteredInbox = inboxData.filter(item =>
-        item.surat?.perihal?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.surat?.nomorSurat?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    const kueriInbox = searchTerm.trim().toLowerCase()
+    const filteredInbox = inboxData.filter(item => !kueriInbox || (!item.masked && (
+        item.surat?.perihal?.toLowerCase().includes(kueriInbox) ||
+        item.surat?.nomorSurat?.toLowerCase().includes(kueriInbox)
+    )))
 
     const filteredOutbox = outboxData.filter(item =>
         item.surat?.perihal?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -299,6 +314,12 @@ export default function DistributionInbox() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
+                    {activeTab === 'inbox' && (
+                        <label className="flex items-center gap-2 text-sm">
+                            <input type="checkbox" checked={lewatBatas} onChange={(event) => setLewatBatas(event.target.checked)} />
+                            Lewat batas waktu
+                        </label>
+                    )}
                 </div>
 
                 {/* Inbox Content */}
@@ -321,6 +342,7 @@ export default function DistributionInbox() {
                                         <TableHead className="w-[180px]">Dari Unit</TableHead>
                                         <TableHead className="w-[180px]">Instruksi</TableHead>
                                         <TableHead className="w-[150px]">Tanggal Kirim</TableHead>
+                                        <TableHead className="w-[130px]">Batas Waktu</TableHead>
                                         <TableHead className="w-[120px]">Status</TableHead>
                                         <TableHead className="w-[140px] text-right">Aksi</TableHead>
                                     </TableRow>
@@ -328,13 +350,13 @@ export default function DistributionInbox() {
                                 <TableBody>
                                     {loading ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="p-0">
-                                                <TableSkeleton rows={5} columns={8} />
+                                            <TableCell colSpan={9} className="p-0">
+                                                <TableSkeleton rows={5} columns={9} />
                                             </TableCell>
                                         </TableRow>
                                     ) : filteredInbox.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
+                                            <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
                                                 <div className="flex flex-col items-center justify-center gap-2">
                                                     <Mail className="h-8 w-8 opacity-20" />
                                                     <p>{searchTerm ? 'Tidak ada surat yang cocok dengan pencarian' : 'Tidak ada surat distribusi yang masuk'}</p>
@@ -345,80 +367,66 @@ export default function DistributionInbox() {
                                         <TableRow key={item.id} className="group hover:bg-muted/30 transition-colors">
                                             <TableCell data-label="No." className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
                                             <TableCell data-label="Nomor Surat">
-                                                <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">
-                                                    {item.surat?.nomorSurat || '-'}
-                                                </code>
+                                                {item.masked ? (
+                                                    <Badge variant="outline" className="text-muted-foreground">Dikecualikan</Badge>
+                                                ) : (
+                                                    <Link to={`/surat/masuk/${item.surat.id}`} className="text-xs font-mono underline-offset-2 hover:underline">
+                                                        {item.surat?.nomorSurat || '-'}
+                                                    </Link>
+                                                )}
+                                                {item.rangkaian?.kode && <p className="mt-1 text-[10px] text-muted-foreground">{item.rangkaian.kode}</p>}
                                             </TableCell>
                                             <TableCell data-label="Perihal">
-                                                <span className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
-                                                    {item.surat?.perihal || '-'}
-                                                </span>
+                                                {item.masked ? (
+                                                    <span className="text-xs text-muted-foreground">Ajukan akses / hubungi TU</span>
+                                                ) : (
+                                                    <Link to={`/surat/masuk/${item.surat.id}`} className="font-medium text-sm line-clamp-2 hover:text-primary">
+                                                        {item.surat?.perihal || '-'}
+                                                    </Link>
+                                                )}
                                             </TableCell>
                                             <TableCell data-label="Dari Unit" className="text-sm text-muted-foreground">
                                                 {item.sourceUnit?.name || '-'}
                                             </TableCell>
-                                            <TableCell data-label="Instruksi" className="text-sm font-medium text-orange-600 dark:text-orange-400/90 italic">
-                                                "{item.instruction || '-'}"
+                                            <TableCell data-label="Instruksi" className="text-sm italic text-orange-600 dark:text-orange-400/90 whitespace-pre-line">
+                                                {item.masked ? '-' : (item.instruction || '-')}
                                             </TableCell>
                                             <TableCell data-label="Tanggal Kirim" className="text-xs text-muted-foreground whitespace-nowrap">
                                                 {formatDate(item.sentAt)}
                                             </TableCell>
+                                            <TableCell data-label="Batas Waktu" className="text-xs whitespace-nowrap">
+                                                {item.batasWaktu ? (
+                                                    <span className={item.batasWaktu < hariIniJakarta && ['sent', 'received'].includes(item.status) ? 'font-semibold text-destructive' : ''}>
+                                                        {format(new Date(`${item.batasWaktu}T00:00:00`), 'dd MMM yyyy', { locale: localeId })}
+                                                    </span>
+                                                ) : '-'}
+                                            </TableCell>
                                             <TableCell data-label="Status">{renderStatusBadge(item.status)}</TableCell>
                                             <TableCell data-label="Aksi" className="text-right">
                                                 <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                                                    {item.status === 'sent' && (
-                                                        <TooltipProvider>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <Button
-                                                                        variant="outline"
-                                                                        size="icon"
-                                                                        className="h-8 w-8 hover:bg-green-50 dark:hover:bg-green-500/15 hover:text-green-600 dark:hover:text-green-400 hover:border-green-200 transition-colors"
-                                                                        onClick={() => handleReceive(item.id)}
-                                                                        disabled={actionLoading}
-                                                                    >
-                                                                        <Check className="h-4 w-4" />
-                                                                    </Button>
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>Terima Surat</TooltipContent>
-                                                            </Tooltip>
-                                                        </TooltipProvider>
+                                                    {!item.masked && item.status === 'sent' && (
+                                                        <Button variant="outline" size="icon" className="h-8 w-8" aria-label="Terima Surat" title="Terima Surat"
+                                                            onClick={() => handleReceive(item.id)} disabled={actionLoading}>
+                                                            <Check className="h-4 w-4" />
+                                                        </Button>
                                                     )}
-                                                    {item.status === 'received' && (
-                                                        <TooltipProvider>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <Button
-                                                                        variant="default"
-                                                                        size="icon"
-                                                                        className="h-8 w-8 bg-emerald-600 hover:bg-emerald-700 shadow-sm"
-                                                                        onClick={() => handleProcess(item.id)}
-                                                                        disabled={actionLoading}
-                                                                    >
-                                                                        <CheckCircle className="h-4 w-4" />
-                                                                    </Button>
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>Tandai Selesai Diproses</TooltipContent>
-                                                            </Tooltip>
-                                                        </TooltipProvider>
+                                                    {!item.masked && ['sent', 'received'].includes(item.status) && (
+                                                        <>
+                                                            <Button variant="outline" size="icon" className="h-8 w-8" aria-label="Buat Tindak Lanjut" title="Buat Tindak Lanjut"
+                                                                onClick={() => bukaTindakLanjut(item)} disabled={actionLoading}>
+                                                                <FilePlus2 className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button variant="default" size="icon" className="h-8 w-8 bg-emerald-600 hover:bg-emerald-700" aria-label="Penyelesaian" title="Penyelesaian"
+                                                                onClick={() => setPenyelesaianTarget(item)} disabled={actionLoading}>
+                                                                <ClipboardCheck className="h-4 w-4" />
+                                                            </Button>
+                                                        </>
                                                     )}
-                                                    {(item.status === 'sent' || item.status === 'received') && (
-                                                        <TooltipProvider>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="icon"
-                                                                        className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                                                                        onClick={() => openRejectDialog(item)}
-                                                                        disabled={actionLoading}
-                                                                    >
-                                                                        <XCircle className="h-4 w-4" />
-                                                                    </Button>
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>Tolak & Kembalikan</TooltipContent>
-                                                            </Tooltip>
-                                                        </TooltipProvider>
+                                                    {['sent', 'received'].includes(item.status) && (
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" aria-label="Tolak & Kembalikan" title="Tolak & Kembalikan"
+                                                            onClick={() => openRejectDialog(item)} disabled={actionLoading}>
+                                                            <XCircle className="h-4 w-4" />
+                                                        </Button>
                                                     )}
                                                 </div>
                                             </TableCell>
@@ -501,6 +509,14 @@ export default function DistributionInbox() {
                 </TabsContent>
             </Tabs>
 
+            <PenyelesaianDialog
+                open={Boolean(penyelesaianTarget)}
+                onOpenChange={(value) => { if (!value) setPenyelesaianTarget(null) }}
+                distribusi={penyelesaianTarget}
+                unitKerjaId={unitKerjaId}
+                onSelesai={loadData}
+            />
+
             {/* Reject Dialog */}
             <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
                 <DialogContent>
@@ -515,7 +531,7 @@ export default function DistributionInbox() {
                     </DialogHeader>
                     <div className="py-4 space-y-4">
                         <div className="bg-muted/30 p-3 rounded-md text-sm border border-border/50">
-                            <span className="font-semibold text-foreground">Surat:</span> {selectedDistribution?.surat?.perihal}
+                            <span className="font-semibold text-foreground">Surat:</span> {selectedDistribution?.masked ? 'Dikecualikan' : selectedDistribution?.surat?.perihal}
                         </div>
                         <Textarea
                             placeholder="Tuliskan alasan penolakan di sini..."

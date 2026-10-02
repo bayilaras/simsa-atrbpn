@@ -46,6 +46,14 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('../config/database', () => ({ db: mocks.db }));
+// Recompute rangkaian (Task 12) dan guard anggota rangkaian (Task 13) diuji
+// terpisah; mock db di sini tidak punya `execute`.
+vi.mock('../services/rangkaian/tindak-lanjut.hook.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../services/rangkaian/tindak-lanjut.hook.js')>()),
+    afterSuratKeluarChanged: vi.fn(async () => undefined),
+    guardSuratMasukMutation: vi.fn(async () => null),
+    afterSuratMasukMutation: vi.fn(async () => undefined),
+}));
 vi.mock('../services/archive-rule-assignment.service', () => ({
     archiveRuleAssignmentService: { resolveClassification: mocks.classification, resolveRetention: mocks.retention },
 }));

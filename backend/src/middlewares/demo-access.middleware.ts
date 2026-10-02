@@ -52,7 +52,14 @@ const ALLOWED_METADATA_ROUTES: readonly AllowedRoute[] = [
     { methods: PUT, path: exact(`/surat-keluar/${UUID}`) },
     { methods: DELETE, path: exact(`/surat-keluar/${UUID}`) },
 
-    { methods: GET, path: exact(`/rangkaian/(?:${UUID}|by-surat/(?:surat_masuk|surat_keluar)/${UUID})`) },
+    { methods: GET, path: exact(`/rangkaian/(?:lacak|${UUID}|by-surat/(?:surat_masuk|surat_keluar)/${UUID})`) },
+    { methods: POST, path: exact(`/rangkaian/anggota/${UUID}/ajukan-akses`) },
+    { methods: POST, path: exact(`/rangkaian/disposisi/${UUID}/tutup`) },
+    { methods: POST, path: exact('/rangkaian/tautan') },
+    { methods: GET, path: exact(`/rangkaian/${UUID}/(?:opsi-berkas|gabung/pratinjau)`) },
+    { methods: POST, path: exact(`/rangkaian/${UUID}/(?:selesai|buka-kembali|berkaskan|tautan|gabung)`) },
+    { methods: PUT, path: exact(`/rangkaian/${UUID}/unit-pengolah`) },
+    { methods: POST, path: exact(`/rangkaian/relasi/${UUID}/batal`) },
 
     { methods: GET, path: exact(`/arsip(?:/(?:expiring|stats|search/(?:fulltext|suggestions|keywords)|${UUID}(?:/(?:related|rule-history))?))?`) },
     { methods: POST, path: exact(`/arsip(?:/${UUID}/reconcile-rules)?`) },
@@ -108,7 +115,7 @@ const ALLOWED_METADATA_ROUTES: readonly AllowedRoute[] = [
     { methods: POST, path: exact('/retention/disposal-report') },
     { methods: PUT, path: exact(`/retention/${UUID}/(?:hold|release)`) },
 
-    { methods: GET, path: exact(`/distributions(?:/(?:units|inbox|outbox|stats|surat/${UUID}|${UUID}))?`) },
+    { methods: GET, path: exact(`/distributions(?:/(?:units|opsi|inbox|outbox|stats|surat/${UUID}|${UUID}(?:/kandidat-penyelesaian)?))?`) },
     { methods: POST, path: exact('/distributions') },
     { methods: PUT, path: exact(`/distributions/${UUID}/(?:receive|process|reject)`) },
 

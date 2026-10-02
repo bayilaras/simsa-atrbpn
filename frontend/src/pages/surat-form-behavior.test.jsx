@@ -97,7 +97,11 @@ describe.each(pages)('form surat $kind', page => {
         fireEvent.submit(form);
         expect(fixtures[page.kind].update).toHaveBeenCalledTimes(1);
         expect(fixtures[page.kind].update).toHaveBeenCalledWith(record.id,
-            expect.objectContaining({ perihal: record.perihal, linkDokumen: undefined }), null);
+            expect.objectContaining({ kepada: record.kepada, linkDokumen: undefined }), null);
+        // F-I1: surat masuk tidak mengirim ulang identitas (nomor/perihal/sifat) yang tidak diubah.
+        const payload = fixtures[page.kind].update.mock.calls[0][1];
+        if (page.kind === 'masuk') expect(payload).not.toHaveProperty('perihal');
+        else expect(payload).toMatchObject({ perihal: record.perihal });
     });
 
     it('focuses a server error, retains the entered data, and allows retry', async () => {
@@ -162,15 +166,16 @@ it('protects outgoing text edits when cancel is declined', async () => {
 it('associates the incoming disposition error with the real multiselect trigger', async () => {
     const { form } = await renderForm(pages[0], { disposisi: [] });
     fireEvent.submit(form);
+    expect(window.confirm).toHaveBeenCalledWith('Surat belum didisposisikan. Simpan tanpa disposisi?');
     const trigger = screen.getByRole('combobox', { name: 'Penerima disposisi' });
     expect(trigger).toHaveAttribute('aria-invalid', 'true');
     expect(trigger).toHaveAccessibleDescription('Disposisi wajib diisi');
     expect(screen.getByRole('alert')).toHaveFocus();
 });
 
-it('names the outgoing reply selector for keyboard and screen reader users', async () => {
+it('names the outgoing reference display for keyboard and screen reader users', async () => {
     await renderForm(pages[1]);
-    expect(screen.getByRole('combobox', { name: 'Surat masuk yang dibalas' })).toBeEnabled();
+    expect(screen.getByText('Nomor Referensi')).toBeInTheDocument();
 });
 
 it.each(pages)('associates the $kind document requirement with both available document controls', async page => {
