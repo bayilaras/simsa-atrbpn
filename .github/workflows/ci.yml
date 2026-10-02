@@ -115,6 +115,8 @@ jobs:
               src/db/migrations/0039_shared_rate_limits.sql \
               src/db/grants/0001_bootstrap_cloud_sql_roles.sql \
               src/db/grants/0002_converge_application_grants.sql \
+              src/db/grants/0003_optional_pg_trgm.sql \
+              src/db/migrations/0049_lacak_trgm.sql \
               scripts/apply-database-grant-convergence.mjs
             do
               if [ ! -f "$required" ]; then

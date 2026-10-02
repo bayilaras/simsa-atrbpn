@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
@@ -344,9 +345,9 @@ async function indukMasukRaw(rangkaianId: string, suratMasukId: string) {
 
 /** Rantai journal penuh, atau berhenti sebelum `stopBefore` untuk skenario data lama. */
 async function siapkanDatabase(stopBefore?: string): Promise<{ database: PGlite; klasifikasiId: number }> {
-    const baru = new PGlite({ extensions: { pgcrypto } });
+    const baru = new PGlite({ extensions: { pgcrypto, pg_trgm } });
     await baru.waitReady;
-    await enterTestMigratorRole(baru);
+    await enterTestMigratorRole(baru, { pgTrgm: true });
     for (const { tag } of journal.entries) {
         if (tag === stopBefore) break;
         const statements = readFileSync(join(migrationsDir, `${tag}.sql`), 'utf8')

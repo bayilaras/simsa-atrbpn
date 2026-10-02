@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import { getTableColumns, getTableName, is } from 'drizzle-orm';
 import { PgTable } from 'drizzle-orm/pg-core';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -34,12 +35,14 @@ function migrationStatements(tag: string): string[] {
 }
 
 async function createDatabase(): Promise<PGlite> {
-    const database = new PGlite({ extensions: { pgcrypto } });
+    const database = new PGlite({ extensions: { pgcrypto, pg_trgm } });
     openDatabases.push(database);
     await database.waitReady;
     // Cloud SQL operations preinstall approved extensions with the grant
     // administrator; extension members remain outside ownership handoff.
     await database.exec('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    // 0049 (index trigram Lacak) mensyaratkan pg_trgm dari langkah privileged.
+    await database.exec('CREATE EXTENSION IF NOT EXISTS pg_trgm');
     // 0032 deliberately refuses to create roles: Production bootstraps these
     // with a separately approved CREATEROLE identity before the application
     // migrator runs. PGlite is an isolated database, so reproduce only the
@@ -101,6 +104,42 @@ afterEach(async () => {
 });
 
 describe('PostgreSQL migration chain', () => {
+    it('0049 gagal keras bila pg_trgm belum dipasang', async () => {
+        const database = new PGlite({ extensions: { pgcrypto } });
+        openDatabases.push(database);
+        await database.waitReady;
+        await database.exec('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+        await enterTestMigratorRole(database);
+        for (const entry of journal.entries) {
+            if (entry.tag === '0049_lacak_trgm') {
+                await expect(applyMigration(database, entry)).rejects.toThrow(/0049: extension pg_trgm belum dipasang/);
+                return;
+            }
+            await applyMigration(database, entry);
+        }
+        throw new Error('0049_lacak_trgm tidak dijurnal');
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0049 membuat enam index trigram Lacak bila pg_trgm terpasang', async () => {
+        const database = await createDatabase();
+        for (const entry of journal.entries) await applyMigration(database, entry);
+        const { rows } = await database.query<{ indexname: string; indexdef: string }>(`
+            SELECT indexname, indexdef FROM pg_indexes
+             WHERE schemaname = 'public' AND indexname LIKE '%\\_trgm\\_idx' ORDER BY indexname`);
+        expect(rows.map((row) => row.indexname)).toEqual([
+            'surat_keluar_kepada_trgm_idx',
+            'surat_keluar_nomor_norm_trgm_idx',
+            'surat_keluar_perihal_trgm_idx',
+            'surat_masuk_dari_trgm_idx',
+            'surat_masuk_nomor_norm_trgm_idx',
+            'surat_masuk_perihal_trgm_idx',
+        ]);
+        for (const row of rows) expect(row.indexdef).toMatch(/USING gin .*gin_trgm_ops/);
+        const ekstensi = await database.query<{ owner: string }>(
+            "SELECT pg_get_userbyid(extowner) AS owner FROM pg_extension WHERE extname = 'pg_trgm'");
+        expect(ekstensi.rows[0]?.owner).not.toBe('simsa_migrator');
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
     it('has a contiguous, chronological journal with a SQL file for every entry', () => {
         expect(journal.entries.length).toBeGreaterThan(0);
 

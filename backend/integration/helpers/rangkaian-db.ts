@@ -47,6 +47,7 @@ export async function createRangkaianTestDatabase(label: string, options: { stop
             END LOOP;
         END $$;
         CREATE EXTENSION pgcrypto;
+        CREATE EXTENSION pg_trgm;
         ALTER SCHEMA public OWNER TO simsa_migrator;
         CREATE SCHEMA drizzle AUTHORIZATION simsa_migrator;
         SET ROLE simsa_migrator;`);

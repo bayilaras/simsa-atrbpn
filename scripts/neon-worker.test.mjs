@@ -33,9 +33,10 @@ test('failed worker connections close without returning connection configuration
 const requireBackend = createRequire(new URL('../backend/package.json', import.meta.url));
 const { PGlite } = requireBackend('@electric-sql/pglite');
 const { pgcrypto } = requireBackend('@electric-sql/pglite/contrib/pgcrypto');
+const { pg_trgm } = requireBackend('@electric-sql/pglite/contrib/pg_trgm');
 
 test('worker login uses existing grants, cannot access credentials, and survives convergence without broadening API privileges', async () => {
-  const db = new PGlite({ extensions: { pgcrypto } });
+  const db = new PGlite({ extensions: { pgcrypto, pg_trgm } });
   const client = { query: async (sql, values) => {
     const r = values ? await db.query(sql, values) : (await db.exec(sql)).at(-1);
     return { ...r, rowCount: r.affectedRows ?? r.rows.length };

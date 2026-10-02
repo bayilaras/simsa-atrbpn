@@ -90,6 +90,25 @@ describe('versioned PostgreSQL role policy', () => {
             .toBeGreaterThanOrEqual(6);
     });
 
+    it('memasang pg_trgm hanya lewat langkah privileged administrator grant (0001 dan 0003), tidak pernah di migrasi', () => {
+        const baca = (relatif: string) => readFileSync(fileURLToPath(new URL(relatif, import.meta.url)), 'utf8');
+        // Bootstrap baru (0001) memasang pg_trgm sama seperti pgcrypto.
+        expect(bootstrapSql).toContain('CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public');
+        expect(bootstrapSql).toMatch(/e\.extname = ANY \(ARRAY\['pgcrypto', 'pg_trgm'\]\)/);
+        // Lingkungan yang sudah ter-bootstrap: langkah satu kali 0003.
+        const trgm = baca('../db/grants/0003_optional_pg_trgm.sql');
+        expect(trgm).toContain('CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public');
+        expect(trgm).toContain('extension_record.extversion <> extension_record.default_version');
+        expect(trgm).toContain("extension_record.schema_name <> 'public'");
+        expect(trgm).toContain('extension_record.owner_name <> current_user');
+        expect(trgm).toContain("pg_catalog.pg_has_role(current_user, 'simsa_migrator', 'USAGE')");
+        expect(trgm.indexOf('$trgm_actor$')).toBeLessThan(trgm.indexOf('CREATE EXTENSION'));
+        const migration = baca('../db/migrations/0049_lacak_trgm.sql');
+        expect(migration).not.toMatch(/CREATE\s+EXTENSION/i);
+        expect(migration).toContain("RAISE EXCEPTION '0049: extension pg_trgm belum dipasang");
+        expect(migration).not.toContain('\r');
+    });
+
     it('keeps event, worker, cleanup, and seed roles on explicit table grants', () => {
         expect(grantMigration).toContain('GRANT SELECT, UPDATE ON TABLE public.client_blob_uploads');
         expect(grantMigration).toContain('GRANT INSERT ON TABLE public.audit_log');

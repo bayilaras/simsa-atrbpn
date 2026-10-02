@@ -58,6 +58,8 @@ export async function bootstrapNeonDatabase(client, { database, admin, passwords
     for (const role of LOGIN_ROLES) await client.query(`CREATE ROLE ${identifier(role)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD ${literal(passwords[role])}`);
     for (const [role, policy] of Object.entries(ROLE_BINDINGS)) await client.query(`GRANT ${identifier(policy)} TO ${identifier(role)} WITH ADMIN FALSE, INHERIT TRUE, SET ${role === 'simsa_migration' ? 'TRUE' : 'FALSE'}`);
     await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public');
+    // Index trigram Lacak (migrasi 0049): dipasang administrator grant, tidak pernah oleh migrator.
+    await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public');
     await client.query(`REVOKE ALL ON DATABASE ${identifier(database)} FROM PUBLIC`);
     // An empty Neon Console database may grant its platform administrator an
     // explicit database ACL. Remove that ACL as the database owner; application

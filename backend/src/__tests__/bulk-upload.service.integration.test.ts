@@ -4,6 +4,7 @@ import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema/index.js';
@@ -60,9 +61,9 @@ async function applyMigrations() {
 }
 
 beforeAll(async () => {
-    database = new PGlite({ extensions: { pgcrypto } });
+    database = new PGlite({ extensions: { pgcrypto, pg_trgm } });
     await database.waitReady;
-    await enterTestMigratorRole(database);
+    await enterTestMigratorRole(database, { pgTrgm: true });
     await applyMigrations();
     databaseHolder.db = drizzle(database, { schema });
     const module = await import('../services/bulk-upload.service.js');

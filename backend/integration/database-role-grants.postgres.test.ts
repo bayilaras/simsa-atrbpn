@@ -48,7 +48,14 @@ afterAll(async () => {
 
 describe('least-privilege PostgreSQL runtime grants', () => {
     const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    it('preinstalls the exact pgcrypto extension outside migrator ownership', async () => {
+    it('preinstalls exactly pgcrypto and pg_trgm (0049 Lacak) besides plpgsql', async () => {
+        const rows = await sql<{ extname: string }[]>`
+            SELECT extname FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql' ORDER BY extname
+        `;
+        expect(rows.map(({ extname }) => extname)).toEqual(['pg_trgm', 'pgcrypto']);
+    });
+
+    it.each(['pgcrypto', 'pg_trgm'])('preinstalls the exact %s extension outside migrator ownership', async (extensionName) => {
         const [extension] = await sql<{
             extversion: string;
             default_version: string;
@@ -62,7 +69,7 @@ describe('least-privilege PostgreSQL runtime grants', () => {
             FROM pg_catalog.pg_extension e
             JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
             JOIN pg_catalog.pg_available_extensions available ON available.name = e.extname
-            WHERE e.extname = 'pgcrypto'
+            WHERE e.extname = ${extensionName}
         `;
         expect(extension).toEqual({
             extversion: extension.default_version,
