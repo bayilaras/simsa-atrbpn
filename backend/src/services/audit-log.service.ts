@@ -8,8 +8,8 @@ const log = createLogger('AuditLogService');
 export interface LogActionData {
     userId?: string;
     userEmail?: string;
-    action: 'create' | 'update' | 'delete' | 'cancel' | 'archive' | 'restore' | 'status_change' | 'distribute' | 'receive_distribution' | 'process_distribution' | 'reject_distribution' | 'view' | 'download' | 'verify_integrity' | 'hold' | 'release_hold' | 'request_access' | 'approve_access' | 'deny_access' | 'revoke_access';
-    entityType: 'surat_masuk' | 'surat_keluar' | 'arsip' | 'arsip_rule_assignment' | 'user' | 'unit_kerja' | 'surat_template' | 'user_preferences' | 'storage_location' | 'archive_lending' | 'surat_distribution' | 'autentikasi' | 'layanan_arsip' | 'dosir' | 'penyusutan' | 'file_attachment' | 'arsip_elektronik' | 'tunjuk_silang' | 'record_access_grant' | 'regulatory_rule_set';
+    action: 'create' | 'update' | 'delete' | 'cancel' | 'archive' | 'restore' | 'status_change' | 'distribute' | 'receive_distribution' | 'process_distribution' | 'reject_distribution' | 'view' | 'download' | 'verify_integrity' | 'hold' | 'release_hold' | 'request_access' | 'approve_access' | 'deny_access' | 'revoke_access' | 'merge' | 'link';
+    entityType: 'surat_masuk' | 'surat_keluar' | 'arsip' | 'arsip_rule_assignment' | 'user' | 'unit_kerja' | 'surat_template' | 'user_preferences' | 'storage_location' | 'archive_lending' | 'surat_distribution' | 'autentikasi' | 'layanan_arsip' | 'dosir' | 'penyusutan' | 'file_attachment' | 'arsip_elektronik' | 'tunjuk_silang' | 'record_access_grant' | 'regulatory_rule_set' | 'rangkaian_surat' | 'rangkaian_relasi';
     entityId?: string;
     changes?: {
         before?: Record<string, any>;

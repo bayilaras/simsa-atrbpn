@@ -27,7 +27,14 @@ CREATE TABLE surat_distributions (
     status varchar(20) NOT NULL DEFAULT 'sent', rejection_reason text,
     sent_at timestamp NOT NULL DEFAULT now(), received_at timestamp, processed_at timestamp,
     sent_by uuid, received_by uuid,
-    created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+    created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now(),
+    rangkaian_id uuid,
+    batas_waktu date,
+    penanggung_jawab boolean NOT NULL DEFAULT false,
+    processed_by uuid,
+    penyelesaian_surat_keluar_id uuid,
+    catatan_penyelesaian text,
+    ditutup_pengawas boolean NOT NULL DEFAULT false);
 `;
 
 export async function createInboxDatabase(letters: InboxFixtureLetter[]) {

@@ -12,7 +12,7 @@ const mockChain: any = new Proxy({}, {
     get(_target, prop) {
         if (prop === 'then') {
             const val = resultQueue.shift() ?? [];
-            return (resolve: any) => resolve(val);
+            return (resolve: any, reject: any) => (val instanceof Error ? reject(val) : resolve(val));
         }
         return (..._args: any[]) => mockChain;
     },
@@ -102,6 +102,47 @@ describe('DistributionService', () => {
                 sourceUnitId: 'unit-a',
                 targetUnitId: 'unit-b',
             })).rejects.toMatchObject({ statusCode: 404, message: 'Data not found' });
+        });
+
+        it('reuses the caller transaction and audits inside it', async () => {
+            enqueue([{ id: 'sm-1' }], [], [{ id: 'dist-1', status: 'sent' }]);
+            const outerTx = { ...mockDb, transaction: vi.fn() };
+            const res = await svc.distribute({
+                suratMasukId: 'sm-1',
+                sourceUnitId: 'sesditjen',
+                targetUnitId: 'dir_bppt',
+            }, { userId: 'user-1' }, outerTx as any);
+            expect(res.id).toBe('dist-1');
+            expect(outerTx.transaction).not.toHaveBeenCalled();
+            expect(transactionCommits).toBe(0);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
+                expect.objectContaining({ action: 'distribute', entityType: 'surat_distribution' }),
+                outerTx,
+            );
+        });
+
+        it('rejects a distribution into a closed rangkaian with 409', async () => {
+            enqueue([{ id: 'sm-1' }], [{ id: 'rs-1', status: 'diberkaskan' }]);
+            await expect(svc.distribute({
+                suratMasukId: 'sm-1',
+                sourceUnitId: 'sesditjen',
+                targetUnitId: 'dir_bppt',
+                rangkaianId: 'rs-1',
+            })).rejects.toMatchObject({ statusCode: 409 });
+            expect(transactionRollbacks).toBe(1);
+        });
+
+        it('maps a Drizzle-wrapped active-target unique violation to the duplicate message', async () => {
+            const pgError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+                code: '23505',
+                constraint: 'surat_distributions_active_target_uidx',
+            });
+            enqueue([{ id: 'sm-1' }], [], Object.assign(new Error('Failed query: insert into "surat_distributions"'), { cause: pgError }));
+            await expect(svc.distribute({
+                suratMasukId: 'sm-1',
+                sourceUnitId: 'sesditjen',
+                targetUnitId: 'dir_bppt',
+            })).rejects.toMatchObject({ statusCode: 400, message: 'Surat sudah didistribusikan ke unit ini' });
         });
     });
 

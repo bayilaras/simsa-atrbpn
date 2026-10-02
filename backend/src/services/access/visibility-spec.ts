@@ -1,4 +1,4 @@
-import { inArray, sql, type AnyColumn, type SQL } from 'drizzle-orm';
+import { inArray, sql, type AnyColumn, type SQL, type SQLWrapper } from 'drizzle-orm';
 
 /**
  * Sumber tunggal predikat klasifikasi keamanan (P0: normalisasi saja; P2
@@ -69,4 +69,33 @@ export function klasifikasiInSql(
     if (classes === undefined || classes === null) return undefined;
     if (classes.length === 0) return sql`false`;
     return inArray(klasifikasiNormSql(column), [...classes]);
+}
+
+// ─── P1: jangkauan rangkaian (spec §4.5) — satu-satunya definisi ─────────────
+export interface JangkauanOptions {
+    /** true hanya bila flag RANGKAIAN_DISPOSISI_LAMA_READ menyala (P2: isDisposisiLamaReadEnabled). */
+    disposisiLama?: boolean;
+}
+
+/**
+ * Jangkauan baca rangkaian (spesifikasi §4.5), diturunkan langsung tanpa
+ * salinan. Satu-satunya definisi himpunan unit: P1 (jangkauanUnitIds, gabung),
+ * P2 (jangkauanSql → checkRead/checkMany/visibleSql), P3 (deps), P4 (daftar),
+ * dan P5 (flag data lama) semuanya melewati fungsi ini.
+ */
+export function jangkauanUnitsSql(rangkaianId: SQLWrapper | string, options: JangkauanOptions = {}): SQL {
+    const id = typeof rangkaianId === 'string' ? sql`${rangkaianId}::uuid` : rangkaianId;
+    const peserta = options.disposisiLama
+        ? sql`UNION SELECT p.unit_kerja_id FROM rangkaian_peserta p
+              WHERE p.rangkaian_id = ${id} AND p.berakhir_at IS NULL`
+        : sql``;
+    return sql`(
+        SELECT r.unit_pencatat_id AS unit_kerja_id FROM rangkaian_surat r WHERE r.id = ${id}
+        UNION SELECT r.unit_pengolah_id FROM rangkaian_surat r
+              WHERE r.id = ${id} AND r.unit_pengolah_id IS NOT NULL
+        UNION SELECT a.unit_kerja_id FROM rangkaian_anggota a WHERE a.rangkaian_id = ${id}
+        UNION SELECT d.target_unit_id FROM surat_distributions d
+              WHERE d.rangkaian_id = ${id} AND d.status <> 'rejected'
+        ${peserta}
+    )`;
 }

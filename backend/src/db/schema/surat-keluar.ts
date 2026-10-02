@@ -19,6 +19,8 @@ export const suratKeluar = pgTable('surat_keluar', {
     kepada: text('kepada'),
     linkDokumen: text('link_dokumen'),
     balasanUntuk: uuid('balasan_untuk').references(() => suratMasuk.id),
+    // 0046: null = data lama; tidak dijaga trigger 0021.
+    asalNaskah: varchar('asal_naskah', { length: 15 }).$type<'inisiatif' | 'tindak_lanjut'>(),
     // Klasifikasi fields
     klasifikasiItemId: integer('klasifikasi_item_id').references(() => klasifikasiArsip.id, { onDelete: 'restrict' }),
     jraItemId: integer('jra_item_id').references(() => jadwalRetensiArsip.id, { onDelete: 'restrict' }),

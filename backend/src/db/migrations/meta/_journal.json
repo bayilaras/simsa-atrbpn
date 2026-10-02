@@ -323,6 +323,20 @@
       "when": 1789397416667,
       "tag": "0045_dosir_date_order",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1789397417667,
+      "tag": "0046_rangkaian_surat",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789397418667,
+      "tag": "0047_unit_kerja_direktorat",
+      "breakpoints": true
     }
   ]
 }

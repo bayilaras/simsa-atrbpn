@@ -121,7 +121,7 @@ export async function assertNeonRoleBoundaries(client, { database, role }) {
 
 export async function loadNeonGrantPolicy() {
   const source = (await readFile(resolve(import.meta.dirname, '../backend/src/db/grants/0002_converge_application_grants.sql'), 'utf8')).replaceAll('\r\n', '\n');
-  requireCondition(createHash('sha256').update(source).digest('hex') === 'b31cc300339509f5b1228d97bb23ea7151045d351484abf8f91c7abb741c73ad',
+  requireCondition(createHash('sha256').update(source).digest('hex') === '563163b99e87b2632dd4371181ebdd77b75842d8298df0045a7895850af7d0a5',
     'Versioned grant policy changed; review and update the Neon adapter before deployment');
   const marker = '\nALTER SCHEMA public OWNER TO simsa_migrator;\n';
   requireCondition(source.split(marker).length === 2 && source.endsWith('COMMIT;\n'), 'Reviewed grant policy shape changed; review the Neon adapter');

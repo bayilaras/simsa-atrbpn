@@ -1,7 +1,9 @@
-import { pgTable, uuid, varchar, text, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, date, boolean } from 'drizzle-orm/pg-core';
 import { suratMasuk } from './surat-masuk';
 import { unitKerja } from './unit-kerja';
 import { users } from './users';
+import { suratKeluar } from './surat-keluar';
+import { rangkaianSurat } from './rangkaian-surat';
 import { relations } from 'drizzle-orm';
 
 /**
@@ -21,6 +23,14 @@ export const suratDistributions = pgTable('surat_distributions', {
     processedAt: timestamp('processed_at'),
     sentBy: uuid('sent_by').references(() => users.id),
     receivedBy: uuid('received_by').references(() => users.id),
+    // Integrasi rangkaian (0046). rangkaian_id menjadi wajib setelah backfill P3/P5.
+    rangkaianId: uuid('rangkaian_id').references(() => rangkaianSurat.id),
+    batasWaktu: date('batas_waktu'),
+    penanggungJawab: boolean('penanggung_jawab').notNull().default(false),
+    processedBy: uuid('processed_by').references(() => users.id),
+    penyelesaianSuratKeluarId: uuid('penyelesaian_surat_keluar_id').references(() => suratKeluar.id),
+    catatanPenyelesaian: text('catatan_penyelesaian'),
+    ditutupPengawas: boolean('ditutup_pengawas').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

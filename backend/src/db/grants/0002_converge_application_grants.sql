@@ -530,6 +530,27 @@ REVOKE UPDATE, DELETE ON TABLE
 REVOKE INSERT, UPDATE, DELETE ON TABLE public.file_fixity_jobs FROM simsa_api_runtime;
 REVOKE DELETE ON TABLE public.arsip_terjaga_reports FROM simsa_api_runtime;
 REVOKE UPDATE, DELETE ON TABLE public.preservasi_track FROM simsa_api_runtime;
+
+-- Berkas rangkaian (0046) append-only bagi API. Kondisional agar konvergensi
+-- tetap berjalan pada restore/upgrade skema sebelum 0046.
+DO $rangkaian_append_only$
+DECLARE
+    relation_name text;
+BEGIN
+    FOREACH relation_name IN ARRAY ARRAY[
+        'rangkaian_surat',
+        'rangkaian_anggota',
+        'rangkaian_relasi',
+        'rangkaian_peserta',
+        'rangkaian_koreksi_berkas'
+    ] LOOP
+        IF pg_catalog.to_regclass(pg_catalog.format('public.%I', relation_name)) IS NOT NULL THEN
+            EXECUTE pg_catalog.format('REVOKE DELETE ON TABLE public.%I FROM simsa_api_runtime', relation_name);
+        END IF;
+    END LOOP;
+END
+$rangkaian_append_only$;
+
 GRANT SELECT, INSERT, UPDATE ON TABLE public.file_fixity_jobs TO simsa_worker_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.file_fixity_jobs TO simsa_maintenance;
 
