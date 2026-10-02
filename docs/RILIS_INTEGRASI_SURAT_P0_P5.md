@@ -14,16 +14,16 @@ Produksi memakai Vercel (`simsa-frontend` + `simsa-backend`) dan Neon. Semua con
 
 ## 1. Urutan merge
 
-**Status per 2026-09-29: tidak ada satu pun branch yang sudah di-push.** Semua PR masih berupa draf lokal. Heads di bawah adalah heads lokal. Setelah setiap rebase, catat head baru di kolom "Head setelah rebase".
+**Status per 2026-10-02: keenam branch sudah di-push ke `origin`.** Heads di bawah adalah heads di `origin` saat PR per fase dibuat (base bertumpuk: P0→`main`, P1→P0, …, P5→P4). CI sudah hijau penuh pada PG16/17/18 (termasuk `LACAK_PERF`, audit keamanan, lint, frontend) lewat PR uji #16 (P0–P3 @ `cbb6d0c`) dan #17 (P0–P5 @ `51071a9`); kedua PR uji itu ditutup setelah PR per fase ada. Setelah setiap rebase, catat head baru di kolom "Head setelah rebase".
 
-| Urutan | Branch | Head lokal | Commit di atas branch sebelumnya | Ditumpuk di atas | Isi singkat | Head setelah rebase |
+| Urutan | Branch | Head di `origin` | Commit di atas branch sebelumnya | Ditumpuk di atas | Isi singkat | Head setelah rebase |
 |---|---|---|---|---|---|---|
 | 1 | `feat/integrasi-surat-p0` | `164334c` | 15 (di atas `origin/main` `5f57b39`) | `origin/main` | Pre-flight read-only, perbaikan bug P0, paritas klasifikasi TS/SQL | |
 | 2 | `feat/integrasi-surat-p1` | `df0b247` | 29 | P0 | Migrasi 0046/0047, REVOKE DELETE `rangkaian_*`, `rangkaianService` inti, runbook P1 | |
 | 3 | `feat/integrasi-surat-p2` | `a57b0a3` | 26 | P1 | Akses lintas unit (`visibility-spec.ts`, `checkRead`), panel Alur Surat baca | |
-| 4 | `feat/integrasi-surat-p3` | `2a61bb7` | 49 (termasuk jalur frontend `feat/integrasi-surat-p3-frontend`, digabung di `d890ff2`) | P2 | Tindak lanjut, disposisi, inisiatif, backfill langkah 1, Lacak backend, runbook P3 | |
-| 5 | `feat/integrasi-surat-p4` | `060e3dc` | 38 | P3 | Lacak Surat UI, Berkas Rangkaian, Perlu Dilengkapi (D7) | |
-| 6 | `feat/integrasi-surat-p5` | ujung branch `feat/integrasi-surat-p5` saat PR dibuat | — | P4 | 0048, backfill data lama, Koreksi Berkas, Tutup massal, notifikasi, ekspor, PANDUAN, runbook P5 | |
+| 4 | `feat/integrasi-surat-p3` | `cbb6d0c` | 53 (termasuk jalur frontend yang digabung di `d890ff2`, plus perbaikan CI: fixture mandat dan pembaruan dependensi keamanan) | P2 | Tindak lanjut, disposisi, inisiatif, backfill langkah 1, Lacak backend, runbook P3 | |
+| 5 | `feat/integrasi-surat-p4` | `a545c3f` | 44 (termasuk perbaikan performa Lacak/Perlu Dilengkapi dan `SET LOCAL jit = off`) | P3 | Lacak Surat UI, Berkas Rangkaian, Perlu Dilengkapi (D7) | |
+| 6 | `feat/integrasi-surat-p5` | ujung branch `feat/integrasi-surat-p5` saat PR dibuat (per 2026-10-02: `51071a9` sebelum pembaruan dokumen ini) | 42 | P4 | 0048, 0049 `pg_trgm`, backfill data lama, Koreksi Berkas, Tutup massal, notifikasi, ekspor, PANDUAN, runbook P5 | |
 
 Aturan merge:
 
@@ -36,7 +36,7 @@ Aturan merge:
    - `npm run test:migration-manifest` di root;
    - mulai P5: journal berisi 50 entri (idx 0–49), termasuk `0049_lacak_trgm` dari Task 14. Bila `main` mendapat migrasi baru sebelum P5 di-merge, turunkan ulang `idx`/`when` 0048 dan 0049 dan ulangi `test:migration-manifest` (P5-C-11).
 
-   Suite PostgreSQL P3–P5 **belum pernah dijalankan di luar CI**. Run CI inilah bukti pertamanya. Catat URL run CI per fase di tabel gerbang (§4).
+   Suite PostgreSQL P3–P5 sudah dijalankan di CI (PR uji #16/#17, PG16/17/18) dan lokal pada PG18. Hasil itu berlaku untuk head sebelum rebase; **ulangi CI pada setiap head hasil rebase** dan catat URL run CI per fase di tabel gerbang (§4).
 4. **Merge ke `main` bukan rilis produksi.** Pastikan merge tidak memicu deploy produksi otomatis: promosi Vercel dilakukan manual dan terverifikasi (`docs/DEPLOY_VERCEL_NEON.md`).
 
    **[GABUNGAN] Backup terjadwal.** Workflow terjadwal `backup-neon.yml` berjalan dari branch bawaan, dan manifest backup mengikat rantai migrasi secara eksak (`scripts/neon-backup-core.mjs`). Selama rantai journal di `main` berbeda dengan rantai database produksi, backup terjadwal harian akan gagal. Ini terjadi sejak P1 masuk `main` sampai 0046/0047 diterapkan, dan sejak P5 masuk `main` sampai 0048/0049 diterapkan. Karena P5 baru di-merge ketika 0048 dapat langsung diterapkan (langkah 10–14), jarak kedua cukup pendek. Rapatkan jarak antara merge dan rilis, atau ambil backup manual dengan helper checkout yang cocok.
