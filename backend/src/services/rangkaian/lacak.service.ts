@@ -58,17 +58,30 @@ export function skorSql(branch: Branch, plan: LacakQueryPlan, mode: LacakParams[
     // predikat nomor memakai ekspresi `nomorNormSql(alias.nomor_surat)` yang
     // identik dengan ekspresi index `*_nomor_norm_trgm_idx` (BUKAN kolom LATERAL,
     // yang tidak pernah dapat memakai index). Cabang `lower(nomor) = qLower`
-    // tidak perlu di WHERE: kesamaan mentah selalu menyiratkan kesamaan norm.
+    // tidak ada di WHERE: kesamaan mentah menyiratkan kesamaan norm untuk huruf
+    // ASCII. Pengecualiannya karakter kompatibilitas yang di-lowercase menjadi
+    // ASCII (mis. tanda Kelvin U+212A, lihat nomor-surat.ts normalizeNomor):
+    // `lower('K…')` bisa sama dengan qLower padahal norm-nya berbeda. Mode `cek`
+    // memakai asumsi yang sama; kasus ini diterima sebagai tidak realistis.
     // Skor memakai `lk_n.n` (dihitung sekali per baris yang lolos WHERE) bila
     // kueri bermode nomor; lihat pakaiNormLateral.
     const normIndex = nomorNormSql(nomor);
     const cocok: SQL[] = [];
     if (plan.jenis === 'nomor' && plan.qNorm) {
-        cocok.push(
-            sql`${normIndex} = ${plan.qNorm}`,
-            sql`${normIndex} LIKE ${`${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`,
-        );
-        if (plan.substringNomor) cocok.push(sql`${normIndex} LIKE ${`%${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`);
+        if (plan.substringNomor) {
+            // Kesamaan dan prefix adalah himpunan bagian substring, jadi cukup SATU
+            // arm: tanpa index 0049 (jendela langkah 13→14, rilis tertahan, rollback
+            // §10.1) regexp_replace dievaluasi sekali per baris, bukan tiga kali;
+            // dengan 0049 index gin_trgm melayaninya.
+            cocok.push(sql`${normIndex} LIKE ${`%${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`);
+        } else {
+            // qNorm < 5: tanpa substring; kesamaan dan prefix dilayani btree
+            // text_pattern_ops `*_nomor_norm_idx` (0046).
+            cocok.push(
+                sql`${normIndex} = ${plan.qNorm}`,
+                sql`${normIndex} LIKE ${`${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`,
+            );
+        }
     }
     const perihal = sql.raw(`${branch.alias}.perihal`);
     const pihak = sql.raw(branch.pihak);
