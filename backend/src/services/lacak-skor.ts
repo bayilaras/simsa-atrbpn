@@ -24,6 +24,12 @@ export interface KueriLacak {
 
 export interface KolomSkorLacak {
     nomor: SQL;
+    /**
+     * Nomor ternormalisasi yang sudah dihitung pemanggil (mis. kolom LATERAL).
+     * Bila kosong, dihitung dari `nomor` dengan `nomorNormSql` — itu berarti
+     * `regexp_replace` dievaluasi ulang di setiap cabang CASE.
+     */
+    nomorNorm?: SQL;
     perihal: SQL;
     /** Satu kolom pihak per cabang: `sm.dari` untuk surat masuk, `sk.kepada` untuk surat keluar. */
     pihak: SQL;
@@ -43,9 +49,9 @@ export function bentukKueriLacak(raw: string): KueriLacak {
  * adalah pemisah atau akhir string, sehingga "1/23" → "1/23/PTPP/2024" (80)
  * mengalahkan "12/3/PTPP/2024" (70) yang hanya sama setelah normalisasi.
  */
-export function skorNomorSql(nomor: SQL, k: KueriLacak): SQL {
+export function skorNomorSql(nomor: SQL, k: KueriLacak, nomorNorm?: SQL): SQL {
     if (!k.modeNomor || k.qNorm.length === 0) return sql`0`;
-    const norm = nomorNormSql(nomor);
+    const norm = nomorNorm ?? nomorNormSql(nomor);
     const prefixNorm = `${escapeLike(k.qNorm)}%`;
     const berbatas = `^${escapeRegexAre(k.qLower)}([^0-9a-z]|$)`;
     const substring = k.qNorm.length >= MIN_PANJANG_SUBSTRING_NORM
@@ -77,5 +83,5 @@ export function skorTeksSql(kolom: KolomSkorLacak, k: KueriLacak): SQL {
 }
 
 export function skorLacakSql(kolom: KolomSkorLacak, k: KueriLacak): SQL {
-    return sql`GREATEST(${skorNomorSql(kolom.nomor, k)}, ${skorTeksSql(kolom, k)})`;
+    return sql`GREATEST(${skorNomorSql(kolom.nomor, k, kolom.nomorNorm)}, ${skorTeksSql(kolom, k)})`;
 }
