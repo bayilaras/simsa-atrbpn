@@ -2,6 +2,7 @@ import { and, eq, type AnyColumn, type SQL } from 'drizzle-orm';
 import type { AuthRequest } from '../middlewares/auth.middleware.js';
 import { resolveUnitKerjaId } from './resolve-unit-kerja.js';
 import { isNoAccessRole, type Role } from '../config/permissions.js';
+import type { ReadAccessResult } from '../services/record-access.service.js';
 
 /**
  * Scope used by record-by-ID queries.
@@ -44,4 +45,18 @@ export function scopedRecordByIdWhere(
     }
 
     return and(idCondition, eq(unitColumn, unitScope))!;
+}
+
+/**
+ * Scope pemuatan setelah checkRead lolos. Pemilik memakai scope biasanya;
+ * akses lintas unit (pengawas/peserta) dimuat tepat di unit rekaman. `null`
+ * tidak pernah dipakai di jalur lintas unit karena dicadangkan untuk super_admin.
+ */
+export function scopeForAuthorizedRead(
+    req: AuthRequest,
+    access: Pick<ReadAccessResult, 'allowed' | 'via' | 'unitKerjaId'>,
+): RecordUnitScope {
+    if (!access.allowed || !access.via) return NO_RECORD_UNIT_ACCESS;
+    if (access.via === 'owner') return resolveRecordUnitScope(req);
+    return access.unitKerjaId?.trim() || NO_RECORD_UNIT_ACCESS;
 }

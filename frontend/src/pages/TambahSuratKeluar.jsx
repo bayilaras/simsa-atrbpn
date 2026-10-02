@@ -5,6 +5,7 @@ import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useAppConfig } from '@/context/app-config-context';
+import { useToast } from '@/hooks/use-toast';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { suratKeluarService } from '@/services/surat-keluar.service';
 import { suratMasukService } from '@/services/surat-masuk.service';
@@ -123,6 +124,7 @@ export default function TambahSuratKeluar() {
     const isEditMode = Boolean(id);
     const { user } = useAuth();
     const { capabilities } = useAppConfig();
+    const { toast } = useToast();
     const reducedMotion = useReducedMotion();
     const filesEnabled = capabilities.letterFileUploads ?? capabilities.fileUploads;
     const navigate = useNavigate();
@@ -212,6 +214,19 @@ export default function TambahSuratKeluar() {
         setIsLoading(true);
         try {
             const data = await suratKeluarService.getById(id);
+            // getById now succeeds cross-unit and reports how: 'owner' for the
+            // owning unit, anything else (e.g. via a rangkaian as pengawas or
+            // peserta) is read-only. Never populate the form for a record we
+            // cannot mutate -- send the reader to the detail page instead.
+            if (data.aksesMelalui && data.aksesMelalui !== 'owner') {
+                toast({
+                    title: 'Tidak dapat diubah',
+                    description: 'Surat ini hanya dapat dilihat, tidak dapat diubah.',
+                    variant: 'destructive',
+                });
+                navigate(`/surat/keluar/${id}`);
+                return;
+            }
             if (!['draft', 'rejected'].includes(data.approvalStatus || 'draft')) {
                 setEditLocked(true);
                 return;
@@ -256,7 +271,7 @@ export default function TambahSuratKeluar() {
         } finally {
             setIsLoading(false);
         }
-    }, [id]);
+    }, [id, navigate, toast]);
 
     // Fetch existing data for edit mode.
     useEffect(() => {

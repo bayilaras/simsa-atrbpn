@@ -45,6 +45,8 @@ async function streamAuthorizedFile(
         grantAccessMode?: 'view' | 'download' | 'manage' | null;
         grantExpiresAt?: Date | null;
         classification?: string | null;
+        via?: 'owner' | 'pengawas' | 'peserta' | null;
+        rangkaianId?: string | null;
     },
 ) {
     const download = req.query.download === '1';
@@ -136,6 +138,9 @@ async function streamAuthorizedFile(
                         classification: details.classification,
                     }
                     : {}),
+                ...(details.via && details.via !== 'owner'
+                    ? { via: details.via, rangkaianId: details.rangkaianId ?? null }
+                    : {}),
             },
             ipAddress: req.ip,
         });
@@ -176,7 +181,9 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             }
 
             const parentType = attachment.entityType as RecordEntityType;
-            const access = await recordAccessService.check(req.user, parentType, attachment.entityId);
+            const access = parentType === 'arsip'
+                ? { ...(await recordAccessService.check(req.user, parentType, attachment.entityId)), via: 'owner' as const, rangkaianId: null }
+                : await recordAccessService.checkRead(req.user, parentType, attachment.entityId);
             if (!access.exists || !access.allowed) {
                 return res.status(404).json({ error: 'File not found' });
             }
@@ -205,6 +212,8 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 grantAccessMode: access.grantAccessMode,
                 grantExpiresAt: access.grantExpiresAt,
                 classification: access.classification,
+                via: access.via,
+                rangkaianId: access.rangkaianId,
             });
         }
 
@@ -212,7 +221,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             return res.status(400).json({ error: 'Unsupported entity type' });
         }
 
-        const access = await recordAccessService.check(req.user, entityType as RecordEntityType, entityId);
+        const access = await recordAccessService.checkRead(req.user, entityType as 'surat_masuk' | 'surat_keluar', entityId);
         if (!access.exists || !access.allowed) {
             return res.status(404).json({ error: 'File not found' });
         }
@@ -259,6 +268,8 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             grantAccessMode: access.grantAccessMode,
             grantExpiresAt: access.grantExpiresAt,
             classification: access.classification,
+            via: access.via,
+            rangkaianId: access.rangkaianId,
         });
     } catch (error) {
         log.error({ err: error }, 'Authorized file retrieval failed');

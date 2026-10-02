@@ -51,6 +51,20 @@ vi.mock('../../services/record-access.service', () => ({
             grantAccessMode: null,
             grantExpiresAt: null,
         })),
+        checkRead: vi.fn(async () => ({
+            exists: true,
+            allowed: true,
+            mutable: true,
+            unitKerjaId: 'ditjen',
+            classification: 'biasa',
+            grantId: null,
+            accessPurpose: null,
+            grantAccessMode: null,
+            grantExpiresAt: null,
+            via: 'owner',
+            rangkaianId: null,
+            masked: false,
+        })),
     },
 }));
 
@@ -102,6 +116,8 @@ describe('SuratMasukRoutes', () => {
                 ...mockSurat,
                 hasFile: false,
                 filePath: null,
+                aksesMelalui: 'owner',
+                aksiDiizinkan: [],
             });
         });
 

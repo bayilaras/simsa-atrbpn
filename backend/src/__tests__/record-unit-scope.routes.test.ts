@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
     },
     recordAccess: {
         check: vi.fn(),
+        checkRead: vi.fn(),
     },
 }));
 
@@ -117,6 +118,16 @@ describe('record route unit scoping', () => {
             mutable: true,
             unitKerjaId: 'unit-a',
             classification: 'biasa',
+        });
+        mocks.recordAccess.checkRead.mockResolvedValue({
+            exists: true,
+            allowed: true,
+            mutable: true,
+            unitKerjaId: 'unit-a',
+            classification: 'biasa',
+            via: 'owner',
+            rangkaianId: null,
+            masked: false,
         });
     });
 

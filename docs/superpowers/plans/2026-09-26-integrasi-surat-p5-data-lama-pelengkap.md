@@ -508,6 +508,22 @@ RANGKAIAN_DISPOSISI_LAMA_READ=false
 
 Lalu pastikan dua fungsi di `backend/src/services/access/visibility-spec.ts` berbentuk kanonik berikut (tidak ada fungsi jangkauan kedua, tidak ada berkas flag terpisah). Bila berbeda, **ubah fungsi yang sudah ada** — jangan menambah salinan:
 
+> **Alias internal WAJIB tetap berprefiks `jk_`** (`jk_r`, `jk_a`, `jk_d`,
+> `jk_p` di bawah). Task 3 fase P2 (review 2026-09-27) menemukan bahwa alias
+> polos `r`/`a`/`d`/`p` bertabrakan dengan alias tabel yang wajar dipakai
+> pemanggil (mis. P4 menulis `FROM rangkaian_surat r` lalu memanggil
+> `jangkauanSql(sql.raw('r.id'), ...)`): kondisi `r.id = ${id}` diam-diam
+> menjadi tautologi yang terikat ke alias LOKAL fungsi ini, bukan ke baris
+> pemanggil, sehingga jangkauan satu rangkaian membocorkan SEMUA rangkaian
+> lain yang unit pencatat/pengolah/anggota/distribusi/pesertanya kebetulan
+> sama. **Mengembalikan alias ke `r`/`a`/`d`/`p` (atau nama pendek apa pun
+> yang lazim dipakai pemanggil) akan mereproduksi kebocoran lintas rangkaian
+> ini.** `aliasAman` (diekspor dari `visibility-spec.ts`) menolak alias
+> pemanggil berprefiks `jk_` maupun nama bekas `ra`/`g`/`j`; setiap `SQLWrapper`
+> mentah yang disisipkan ke `jangkauanUnitsSql`/`jangkauanSql` (parameter
+> `rangkaianId`) harus dikualifikasi dengan alias tabel pemanggil yang BUKAN
+> `jk_*` — lihat JSDoc di atas kedua fungsi itu.
+
 ```ts
 // P2 — dibaca saat panggilan, tanpa cache modul.
 export function isDisposisiLamaReadEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -515,19 +531,21 @@ export function isDisposisiLamaReadEnabled(env: NodeJS.ProcessEnv = process.env)
 }
 
 // P1 — cabang rangkaian_peserta hanya ada bila options.disposisiLama (diisi dari flag di atas).
+// Alias jk_r/jk_a/jk_d/jk_p DICADANGKAN (lihat catatan di atas) — jangan
+// menggantinya dengan alias polos r/a/d/p.
 export function jangkauanUnitsSql(rangkaianId: SQLWrapper | string, options: JangkauanOptions = {}): SQL {
     const id = typeof rangkaianId === 'string' ? sql`${rangkaianId}::uuid` : rangkaianId;
     const peserta = options.disposisiLama
-        ? sql`UNION SELECT p.unit_kerja_id FROM rangkaian_peserta p
-              WHERE p.rangkaian_id = ${id} AND p.berakhir_at IS NULL`
+        ? sql`UNION SELECT jk_p.unit_kerja_id FROM rangkaian_peserta jk_p
+              WHERE jk_p.rangkaian_id = ${id} AND jk_p.berakhir_at IS NULL`
         : sql``;
     return sql`(
-        SELECT r.unit_pencatat_id AS unit_kerja_id FROM rangkaian_surat r WHERE r.id = ${id}
-        UNION SELECT r.unit_pengolah_id FROM rangkaian_surat r
-              WHERE r.id = ${id} AND r.unit_pengolah_id IS NOT NULL
-        UNION SELECT a.unit_kerja_id FROM rangkaian_anggota a WHERE a.rangkaian_id = ${id}
-        UNION SELECT d.target_unit_id FROM surat_distributions d
-              WHERE d.rangkaian_id = ${id} AND d.status <> 'rejected'
+        SELECT jk_r.unit_pencatat_id AS unit_kerja_id FROM rangkaian_surat jk_r WHERE jk_r.id = ${id}
+        UNION SELECT jk_r.unit_pengolah_id FROM rangkaian_surat jk_r
+              WHERE jk_r.id = ${id} AND jk_r.unit_pengolah_id IS NOT NULL
+        UNION SELECT jk_a.unit_kerja_id FROM rangkaian_anggota jk_a WHERE jk_a.rangkaian_id = ${id}
+        UNION SELECT jk_d.target_unit_id FROM surat_distributions jk_d
+              WHERE jk_d.rangkaian_id = ${id} AND jk_d.status <> 'rejected'
         ${peserta}
     )`;
 }
@@ -3584,3 +3602,5 @@ Perubahan dari tinjauan konsistensi P0–P5 terhadap berkas ini:
 - Task 8/10: kontrak Tutup massal tunggal (`{ tahun?, unitPencatatId?, klasifikasiItemId?, dryRun, konfirmasi?, expectedCount? }` → `{ jumlah, tanpaKlasifikasi, contoh, contohTanpaKlasifikasi, terpotong, diterapkan }`); UI P5 kini satu-satunya dan disisipkan ke `BerkasRangkaianTab.jsx` (P4) saat filter asal `data_lama`, dengan `onSelesai` → `resource.reload`. Urutan mount final `/api/rangkaian` dicantumkan.
 - Task 9: `KoreksiBerkasSection` dipasang setelah `<AlurSuratActions …/>` (P3 Task 25), tempat tombol Berkaskan/Gabung sebenarnya berada.
 - Branch `feat/integrasi-surat-p5` ditambahkan; Global Constraints flag disamakan (tanpa `trim`). Migrasi dikonfirmasi: 0048 `when` 1789397419667, opsional 0049 `when` 1789397420667; tidak diklaim fase lain.
+
+**2026-09-27** — Task 3 fase P2 (review fix round 1) mengganti seluruh alias internal `jangkauanUnitsSql`/`jangkauanSql`/`grantAktifSql`/`jangkauanRekamanSql` di `visibility-spec.ts` dari `r`/`a`/`d`/`p`/`j`/`g`/`ra` menjadi prefiks tercadang `jk_` (`jk_r`/`jk_a`/`jk_d`/`jk_p`/`jk_j`/`jk_g`/`jk_ra`), karena alias polos itu bertabrakan dengan alias tabel yang wajar dipakai pemanggil dan membocorkan jangkauan lintas rangkaian yang tidak berkaitan (lihat blok kode kanonik di atas, yang sudah diperbarui). Bagian ini P5 **wajib mempertahankan** alias `jk_`-berprefiks itu bila menyalin/mengubah `jangkauanUnitsSql`; `aliasAman` (kini diekspor) menolak alias pemanggil berprefiks `jk_` atau bernama `ra`/`g`/`j`.

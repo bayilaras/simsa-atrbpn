@@ -2170,7 +2170,7 @@ describe('rangkaianReadService.getDetail', () => {
         expect(detail.disposisi.every(row => row.masked === false)).toBe(true);
     });
 
-    it('rangkaian digabung dialihkan satu hop ke target', async () => {
+    it('rangkaian digabung dialihkan ke target (resolusi mengikuti seluruh rantai, bukan hanya satu hop)', async () => {
         await database.exec(`INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun, digabung_ke_id)
             VALUES ('${RANGKAIAN.rs3Digabung}','RS-2026-000003','surat_masuk','digabung','sesditjen','Sumber gabung',2026,'${RANGKAIAN.rs1}')`);
         const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rs3Digabung))!;
@@ -3718,7 +3718,7 @@ Tidak ada commit untuk langkah ini.
 4. `visibleSql` punya dua mode. `read` identik dengan `checkRead`. `list` hanya melonggarkan rekaman unit sendiri ke kebijakan list lama, sesuai §6 "unit sendiri memakai kebijakan list".
 5. Pembaca tanpa jangkauan (misalnya staff lama pemilik induk) hanya menerima node yang dapat dibacanya, tanpa placeholder, peserta, atau rangkaian terkait. super_admin mendapat tampilan penuh berlabel `owner`, dan node terkendali tetap tersamar tanpa grant.
 6. Relasi dengan salah satu ujung tersamar tetap tampil tanpa `keterangan`. Penyelesaian diekspos sebagai `penyelesaianAnggotaId`, bukan id surat. Rangkaian terkait tanpa judul.
-7. Rangkaian `digabung` dialihkan satu hop dengan `dialihkanDari`. Anggota yang di-soft-delete tidak ditampilkan.
+7. Rangkaian `digabung` dialihkan dengan mengikuti seluruh rantai `digabung_ke_id` (bukan hanya satu hop) sampai ke target akhir yang tidak lagi `digabung`, dibatasi 16 hop dan sebuah himpunan yang-sudah-dikunjungi sebagai penjaga defensif terhadap data rusak/siklik (rantai nyata bersifat asiklik dan pendek karena baris yang sudah digabung tidak dapat diubah lagi). `dialihkanDari` selalu menunjuk rangkaian yang ASLINYA diminta, bukan hop antara. Anggota yang di-soft-delete tidak ditampilkan.
 8. `aksiDiizinkan` selalu `[]` di P2. `dapatAjukanAkses` dihitung dari flag `RANGKAIAN_AJUKAN_AKSES` (mati → false) dan tombolnya dibangun di P3.
 9. Audit stream menambah `via`/`rangkaianId` hanya untuk akses non-owner, sehingga payload pemilik tidak berubah. Lampiran dengan induk `arsip` tetap memakai `check()`.
 10. Read model ditempatkan di `rangkaian-read.service.ts` terpisah agar tidak bentrok dengan `rangkaian.service.ts` milik P1 (mutasi). File route `rangkaian.routes.ts` dibuat di P2 dan diperluas P3.

@@ -9,9 +9,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     select: vi.fn(),
     accessCheck: vi.fn(),
+    accessCheckRead: vi.fn(),
     markGrantUsed: vi.fn(),
     downloadFile: vi.fn(),
     audit: vi.fn(),
+    auditLogAction: vi.fn(),
 }));
 
 vi.mock('../../config/database.js', () => ({
@@ -37,6 +39,7 @@ vi.mock('../../middlewares/validate.middleware.js', () => ({
 vi.mock('../../services/record-access.service.js', () => ({
     recordAccessService: {
         check: mocks.accessCheck,
+        checkRead: mocks.accessCheckRead,
         markGrantUsed: mocks.markGrantUsed,
     },
 }));
@@ -46,7 +49,7 @@ vi.mock('../../services/blob-storage.service.js', () => ({
 }));
 
 vi.mock('../../services/audit-log.service.js', () => ({
-    auditLogService: { logActionOrThrow: mocks.audit },
+    auditLogService: { logActionOrThrow: mocks.audit, logAction: mocks.auditLogAction },
 }));
 
 const { default: fileAccessRouter } = await import('../file-access.routes.js');
@@ -124,6 +127,7 @@ describe('authorized GCS file access', () => {
             mimeType: 'application/pdf',
             fileName: 'final.pdf',
         });
+        mocks.accessCheckRead.mockImplementation((...args: unknown[]) => mocks.accessCheck(...args));
     });
 
     it('pins an attachment download to attachment.objectGeneration', async () => {
@@ -189,6 +193,63 @@ describe('authorized GCS file access', () => {
         const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(404);
         expect(response.body).not.toHaveProperty('scanState');
         expect(mocks.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('records the rangkaian path when a participant streams a letter attachment', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([attachment]));
+        mocks.accessCheckRead.mockResolvedValueOnce({ exists: true, allowed: true, grantId: null, via: 'peserta', rangkaianId: '50000000-0000-4000-8000-000000000001' });
+        await request(app).get(`/api/files/attachment/${attachment.id}`).expect(200);
+        expect(mocks.accessCheckRead).toHaveBeenCalledWith(expect.anything(), 'surat_masuk', attachment.entityId);
+        expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
+            entityId: attachment.id,
+            changes: expect.objectContaining({ via: 'peserta', rangkaianId: '50000000-0000-4000-8000-000000000001' }),
+        }));
+    });
+
+    it('records the rangkaian path for a direct supervised letter stream', async () => {
+        mocks.select
+            .mockReturnValueOnce(limitedRows([{ filePath: `blob:${locator}`, fileName: 'final.pdf' }]))
+            .mockReturnValueOnce(unrestrictedRows([attachment]));
+        mocks.accessCheckRead.mockResolvedValueOnce({ exists: true, allowed: true, grantId: null, via: 'pengawas', rangkaianId: null });
+        await request(app).get(`/api/files/surat_masuk/${attachment.entityId}`).expect(200);
+        expect(mocks.accessCheck).not.toHaveBeenCalled();
+        expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
+            changes: expect.objectContaining({ via: 'pengawas', rangkaianId: null }),
+        }));
+    });
+
+    it('keeps archive attachments on the owner-only check', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType: 'arsip' }]));
+        await request(app).get(`/api/files/attachment/${attachment.id}`).expect(200);
+        expect(mocks.accessCheck).toHaveBeenCalledWith(expect.anything(), 'arsip', attachment.entityId);
+        expect(mocks.accessCheckRead).not.toHaveBeenCalled();
+    });
+
+    it('keeps owner audit payloads free of rangkaian fields', async () => {
+        mocks.select.mockReturnValueOnce(limitedRows([attachment]));
+        await request(app).get(`/api/files/attachment/${attachment.id}`).expect(200);
+        expect(mocks.audit.mock.calls[0][0].changes).not.toHaveProperty('via');
+    });
+
+    it('blocks the response with no body or stream when audit fails for a cross-unit read', async () => {
+        const stream = Readable.from([Buffer.from('%PDF-cross-unit-must-not-leak')]);
+        const destroy = vi.spyOn(stream, 'destroy');
+        mocks.select.mockReturnValueOnce(limitedRows([attachment]));
+        mocks.accessCheckRead.mockResolvedValueOnce({ exists: true, allowed: true, grantId: null, via: 'peserta', rangkaianId: '50000000-0000-4000-8000-000000000001' });
+        mocks.downloadFile.mockResolvedValueOnce({ stream, mimeType: 'application/pdf', fileName: 'final.pdf' });
+        mocks.audit.mockRejectedValueOnce(new Error('audit unavailable'));
+
+        const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(500);
+
+        expect(response.body).not.toHaveProperty('data');
+        // response.body is a raw Buffer here (Content-Type stayed application/pdf,
+        // so supertest never parses it as JSON) -- JSON.stringify on a Buffer emits
+        // {"type":"Buffer","data":[...]} and can never contain this ASCII substring,
+        // making that assertion pass unconditionally. Decode it first so a real leak
+        // would actually fail the test.
+        expect(Buffer.from(response.body).toString()).not.toContain('%PDF-cross-unit-must-not-leak');
+        expect(destroy).toHaveBeenCalledOnce();
+        expect(mocks.auditLogAction).not.toHaveBeenCalled();
     });
 
     it('keeps the private registration guard for the matching surat locator', async () => {

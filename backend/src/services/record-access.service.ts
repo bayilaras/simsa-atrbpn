@@ -1,7 +1,20 @@
 import { db } from '../config/database';
 import { arsip, recordAccessGrants, suratKeluar, suratMasuk } from '../db/schema';
-import { and, desc, eq, gt } from 'drizzle-orm';
-import { normalizeSecurityClassification, SECURITY_CLASSES } from './access/visibility-spec';
+import { and, desc, eq, gt, or, sql, type SQL } from 'drizzle-orm';
+import {
+    barisDari,
+    cocokUnitRekaman,
+    jalurJangkauan,
+    jangkauanSql,
+    kecocokanUnitRekaman,
+    kelasBolehDibacaLintasUnit,
+    kelasUntukRole,
+    klasifikasiRekamanSql,
+    normalizeSecurityClassification,
+    resolveKonteksBaca,
+    SECURITY_CLASSES,
+    type JenisRekamanRangkaian,
+} from './access/visibility-spec';
 
 // Impor lama `normalizeSecurityClassification` dari modul ini tetap berlaku.
 export { normalizeSecurityClassification };
@@ -34,27 +47,11 @@ const CONTROLLED_CLASSIFICATIONS = new Set(['terbatas', 'rahasia', 'sangat_rahas
 export function allowedSecurityClassifications(
     user: RecordUser | undefined,
 ): string[] {
-    // Even a super administrator is limited to classifications recognized by
-    // the records policy. Returning null here used to disable downstream SQL
-    // filters and accidentally expose records containing malformed/unknown
-    // classifications.
-    if (user?.role === 'super_admin') return [...RECOGNIZED_CLASSIFICATIONS];
-    if (['admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role || '')) {
-        return ['biasa', 'terbatas'];
-    }
-    if (['staff', 'auditor'].includes(user?.role || '')) return ['biasa'];
-    return [];
+    return kelasUntukRole(user?.role);
 }
 
 export function isAllowedForRecordUnit(user: RecordUser | undefined, unitKerjaId: string): boolean {
-    if (!user?.role) return false;
-    if (user.role === 'super_admin') return true;
-    if (user.role === 'admin_unit') return Boolean(user.unitKerjaId?.trim()) && user.unitKerjaId === unitKerjaId;
-    if (user.role === 'admin_dirjen') return unitKerjaId === 'ditjen';
-    if (user.role === 'admin_sesditjen') return unitKerjaId === 'sesditjen';
-    if (user.role === 'staff') return Boolean(user.unitKerjaId) && user.unitKerjaId === unitKerjaId;
-    if (user.role === 'auditor') return Boolean(user.unitKerjaId) && user.unitKerjaId === unitKerjaId;
-    return false;
+    return cocokUnitRekaman(kecocokanUnitRekaman(user), unitKerjaId);
 }
 
 export function isAllowedForClassification(
@@ -75,16 +72,25 @@ export function requiresExplicitAccessGrant(
     );
 }
 
-async function findAccessMetadata(
-    entityType: RecordEntityType,
-    entityId: string,
-    executor: Pick<typeof db, 'select'> = db,
-): Promise<{
+export interface AccessMetadata {
     unitKerjaId: string;
     classification: string | null;
     readable: boolean;
     mutable: boolean;
-} | null> {
+}
+
+export interface ActiveGrant {
+    id: string;
+    purpose: string;
+    accessMode: string;
+    expiresAt: Date | null;
+}
+
+async function findAccessMetadata(
+    entityType: RecordEntityType,
+    entityId: string,
+    executor: Pick<typeof db, 'select'> = db,
+): Promise<AccessMetadata | null> {
     if (entityType === 'surat_masuk') {
         const [record] = await executor
             .select({
@@ -143,6 +149,185 @@ async function findAccessMetadata(
     } : null;
 }
 
+export function activeGrantConditions(
+    userId: string,
+    entityType: RecordEntityType,
+    entityId: string,
+    unitKerjaId: string,
+    normalizedClassification: string,
+): SQL {
+    return and(
+        eq(recordAccessGrants.targetUserId, userId),
+        eq(recordAccessGrants.entityType, entityType),
+        eq(recordAccessGrants.entityId, entityId),
+        // A grant follows the record scope captured at approval time. Moving a
+        // record to another unit must invalidate the old authorization.
+        eq(recordAccessGrants.unitKerjaId, unitKerjaId),
+        eq(recordAccessGrants.requiredClassification, normalizedClassification),
+        eq(recordAccessGrants.status, 'approved'),
+        gt(recordAccessGrants.expiresAt, new Date()),
+    )!;
+}
+
+/**
+ * Grant aktif untuk satu rekaman. Tidak memeriksa kewenangan unit: pemanggil
+ * (check() untuk pemilik, checkMany() untuk jangkauan rangkaian) yang
+ * menentukan apakah grant boleh dipertimbangkan.
+ */
+export async function findActiveGrant(
+    executor: Pick<typeof db, 'select'>,
+    user: RecordUser | undefined,
+    entityType: RecordEntityType,
+    entityId: string,
+    unitKerjaId: string,
+    classification: string | null | undefined,
+): Promise<ActiveGrant | null> {
+    const normalized = normalizeSecurityClassification(classification);
+    if (!user?.id || !requiresExplicitAccessGrant(normalized)) return null;
+    const [activeGrant] = await executor
+        .select({
+            id: recordAccessGrants.id,
+            purpose: recordAccessGrants.purpose,
+            accessMode: recordAccessGrants.accessMode,
+            expiresAt: recordAccessGrants.expiresAt,
+        })
+        .from(recordAccessGrants)
+        .where(activeGrantConditions(user.id, entityType, entityId, unitKerjaId, normalized))
+        .orderBy(desc(recordAccessGrants.decidedAt))
+        .limit(1);
+    return activeGrant || null;
+}
+
+export function grantAccessModeOf(grant: ActiveGrant | null): RecordGrantAccessMode | null {
+    if (!grant) return null;
+    return grant.accessMode === 'download' || grant.accessMode === 'manage' ? grant.accessMode : 'view';
+}
+
+/** Keputusan pemilik yang identik dengan check() sebelum P2 (dijaga snapshot). */
+export function evaluateOwnerAccess(
+    user: RecordUser | undefined,
+    metadata: AccessMetadata | null,
+    grant: ActiveGrant | null,
+): RecordAccessResult {
+    const unitKerjaId = metadata?.unitKerjaId || null;
+    const normalizedClassification = normalizeSecurityClassification(metadata?.classification);
+    const unitAllowed = Boolean(unitKerjaId) && metadata?.readable === true &&
+        isAllowedForRecordUnit(user, unitKerjaId!);
+    const controlled = requiresExplicitAccessGrant(normalizedClassification);
+    const ownerGrant = unitAllowed && user?.id && controlled ? grant : null;
+    const classificationAllowed = controlled
+        ? Boolean(ownerGrant)
+        : isAllowedForClassification(user, normalizedClassification);
+    const grantAccessMode = grantAccessModeOf(ownerGrant);
+
+    return {
+        exists: Boolean(unitKerjaId),
+        allowed: unitAllowed && classificationAllowed,
+        mutable: unitAllowed && classificationAllowed &&
+            metadata?.mutable === true &&
+            user?.role !== 'auditor' &&
+            (!controlled || grantAccessMode === 'manage'),
+        unitKerjaId,
+        classification: metadata?.classification || null,
+        grantId: ownerGrant?.id || null,
+        accessPurpose: ownerGrant?.purpose || null,
+        grantAccessMode,
+        grantExpiresAt: ownerGrant?.expiresAt || null,
+    };
+}
+
+export type ReadVia = 'owner' | 'pengawas' | 'peserta';
+export interface ReadRef { type: JenisRekamanRangkaian; id: string }
+export interface ReadAccessResult extends RecordAccessResult {
+    via: ReadVia | null;
+    rangkaianId: string | null;
+    masked: boolean;
+}
+export type ReadExecutor = Pick<typeof db, 'select' | 'execute'>;
+
+export function readRefKey(ref: ReadRef): string {
+    // Postgres always returns uuid text as lowercase (see findReadMetadata's
+    // `r.id::text`), but validateIdParam and the demo allowlist accept
+    // uppercase UUIDs from callers (route params). Normalising the id part
+    // here keeps every map/set built from this key -- the unique-ref set,
+    // the metadata map, and the results map in checkMany, plus checkRead's
+    // lookup -- consistent regardless of the caller's original casing.
+    return `${ref.type}:${ref.id.toLowerCase()}`;
+}
+
+function inaccessibleReadResult(): ReadAccessResult {
+    return {
+        exists: false, allowed: false, mutable: false, unitKerjaId: null, classification: null,
+        grantId: null, accessPurpose: null, grantAccessMode: null, grantExpiresAt: null,
+        via: null, rangkaianId: null, masked: false,
+    };
+}
+
+interface ReadMetadataRow extends AccessMetadata {
+    id: string;
+    rangkaianId: string | null;
+    peserta: boolean;
+}
+
+async function findReadMetadata(
+    executor: ReadExecutor,
+    ctx: Awaited<ReturnType<typeof resolveKonteksBaca>>,
+    type: JenisRekamanRangkaian,
+    ids: string[],
+): Promise<ReadMetadataRow[]> {
+    if (ids.length === 0) return [];
+    const table = type === 'surat_masuk' ? 'surat_masuk' : 'surat_keluar';
+    const fk = type === 'surat_masuk' ? 'surat_masuk_id' : 'surat_keluar_id';
+    const peserta = ctx.unitJangkauan
+        ? jangkauanSql(sql.raw('ang.rangkaian_id'), ctx.unitJangkauan, ctx.disposisiLamaRead)
+        : sql`false`;
+    return barisDari<ReadMetadataRow>(await executor.execute(sql`
+        SELECT r.id::text AS "id",
+               r.unit_kerja_id AS "unitKerjaId",
+               ${klasifikasiRekamanSql(type, 'r')} AS "classification",
+               (r.is_deleted IS NOT TRUE) AS "readable",
+               (r.is_deleted IS NOT TRUE AND r.is_archived IS NOT TRUE) AS "mutable",
+               ang.rangkaian_id::text AS "rangkaianId",
+               coalesce(${peserta}, false) AS "peserta"
+        FROM ${sql.raw(table)} r
+        LEFT JOIN rangkaian_anggota ang ON ang.${sql.raw(fk)} = r.id
+        WHERE r.id IN (${sql.join(ids.map(id => sql`${id}::uuid`), sql`, `)})
+    `));
+}
+
+async function findActiveGrantsMany(
+    executor: ReadExecutor,
+    user: RecordUser | undefined,
+    items: Array<{ type: JenisRekamanRangkaian; id: string; unitKerjaId: string; classification: string | null }>,
+): Promise<Map<string, ActiveGrant>> {
+    const grants = new Map<string, ActiveGrant>();
+    if (!user?.id) return grants;
+    const controlled = items
+        .map(item => ({ ...item, normalized: normalizeSecurityClassification(item.classification) }))
+        .filter(item => requiresExplicitAccessGrant(item.normalized));
+    if (controlled.length === 0) return grants;
+    const rows = await executor
+        .select({
+            id: recordAccessGrants.id,
+            purpose: recordAccessGrants.purpose,
+            accessMode: recordAccessGrants.accessMode,
+            expiresAt: recordAccessGrants.expiresAt,
+            entityType: recordAccessGrants.entityType,
+            entityId: recordAccessGrants.entityId,
+        })
+        .from(recordAccessGrants)
+        .where(or(...controlled.map(item =>
+            activeGrantConditions(user.id!, item.type, item.id, item.unitKerjaId, item.normalized))))
+        .orderBy(desc(recordAccessGrants.decidedAt));
+    for (const row of rows) {
+        const key = `${row.entityType}:${row.entityId}`;
+        if (!grants.has(key)) {
+            grants.set(key, { id: row.id, purpose: row.purpose, accessMode: row.accessMode, expiresAt: row.expiresAt });
+        }
+    }
+    return grants;
+}
+
 export const recordAccessService = {
     async inspect(
         user: RecordUser | undefined,
@@ -172,75 +357,89 @@ export const recordAccessService = {
         executor: Pick<typeof db, 'select'> = db,
     ): Promise<RecordAccessResult> {
         const metadata = await findAccessMetadata(entityType, entityId, executor);
-        const unitKerjaId = metadata?.unitKerjaId || null;
-        const normalizedClassification = normalizeSecurityClassification(
-            metadata?.classification,
-        );
-        const unitAllowed = Boolean(unitKerjaId) && metadata?.readable === true &&
-            isAllowedForRecordUnit(user, unitKerjaId!);
+        const unitAllowed = Boolean(metadata?.unitKerjaId) && metadata?.readable === true &&
+            isAllowedForRecordUnit(user, metadata!.unitKerjaId);
+        const grant = unitAllowed
+            ? await findActiveGrant(executor, user, entityType, entityId, metadata!.unitKerjaId, metadata!.classification)
+            : null;
+        return evaluateOwnerAccess(user, metadata, grant);
+    },
 
-        let grant: {
-            id: string;
-            purpose: string;
-            accessMode: string;
-            expiresAt: Date | null;
-        } | null = null;
+    /**
+     * Keputusan baca batch (read-only). Pemilik dinilai persis seperti check();
+     * bila gagal, jangkauan pengawas/peserta dihitung ulang setiap panggilan.
+     * Kueri: konteks (≤1) + metadata per tipe (≤2) + grant (≤1).
+     */
+    async checkMany(
+        user: RecordUser | undefined,
+        refs: ReadRef[],
+        executor: ReadExecutor = db,
+    ): Promise<Map<string, ReadAccessResult>> {
+        const unique = [...new Map(refs.map(ref => [readRefKey(ref), ref])).values()];
+        const results = new Map<string, ReadAccessResult>();
+        if (unique.length === 0) return results;
 
-        if (
-            unitAllowed &&
-            user?.id &&
-            requiresExplicitAccessGrant(normalizedClassification)
-        ) {
-            const [activeGrant] = await executor
-                .select({
-                    id: recordAccessGrants.id,
-                    purpose: recordAccessGrants.purpose,
-                    accessMode: recordAccessGrants.accessMode,
-                    expiresAt: recordAccessGrants.expiresAt,
-                })
-                .from(recordAccessGrants)
-                .where(and(
-                    eq(recordAccessGrants.targetUserId, user.id),
-                    eq(recordAccessGrants.entityType, entityType),
-                    eq(recordAccessGrants.entityId, entityId),
-                    // A grant follows the record scope captured at approval
-                    // time. Moving a record to another unit must invalidate the
-                    // old authorization instead of silently carrying it over.
-                    eq(recordAccessGrants.unitKerjaId, unitKerjaId!),
-                    eq(recordAccessGrants.requiredClassification, normalizedClassification),
-                    eq(recordAccessGrants.status, 'approved'),
-                    gt(recordAccessGrants.expiresAt, new Date()),
-                ))
-                .orderBy(desc(recordAccessGrants.decidedAt))
-                .limit(1);
-            grant = activeGrant || null;
+        const ctx = await resolveKonteksBaca(user, executor);
+        const metadata = new Map<string, ReadMetadataRow>();
+        for (const type of ['surat_masuk', 'surat_keluar'] as const) {
+            const ids = unique.filter(ref => ref.type === type).map(ref => ref.id);
+            for (const row of await findReadMetadata(executor, ctx, type, ids)) {
+                metadata.set(readRefKey({ type, id: row.id }), row);
+            }
         }
+        const grants = await findActiveGrantsMany(executor, user, unique.flatMap(ref => {
+            const row = metadata.get(readRefKey(ref));
+            return row ? [{ type: ref.type, id: ref.id, unitKerjaId: row.unitKerjaId, classification: row.classification }] : [];
+        }));
 
-        const controlled = requiresExplicitAccessGrant(normalizedClassification);
-        const classificationAllowed = controlled
-            ? Boolean(grant)
-            : isAllowedForClassification(user, normalizedClassification);
-        const grantAccessMode: RecordGrantAccessMode | null =
-            grant?.accessMode === 'download' || grant?.accessMode === 'manage'
-                ? grant.accessMode
-                : grant
-                    ? 'view'
-                    : null;
+        for (const ref of unique) {
+            const key = readRefKey(ref);
+            const row = metadata.get(key);
+            if (!row) {
+                results.set(key, inaccessibleReadResult());
+                continue;
+            }
+            const grant = grants.get(key) ?? null;
+            const owner = evaluateOwnerAccess(user, row, grant);
+            if (owner.allowed) {
+                results.set(key, { ...owner, via: 'owner', rangkaianId: row.rangkaianId, masked: false });
+                continue;
+            }
+            const jalur = row.readable ? jalurJangkauan(ctx, row.unitKerjaId, row.peserta === true) : null;
+            if (!jalur) {
+                results.set(key, { ...owner, via: null, rangkaianId: null, masked: false });
+                continue;
+            }
+            const kelas = normalizeSecurityClassification(row.classification);
+            const allowed = kelasBolehDibacaLintasUnit(user, kelas, Boolean(grant));
+            const crossGrant = allowed && requiresExplicitAccessGrant(kelas) ? grant : null;
+            results.set(key, {
+                exists: true,
+                allowed,
+                mutable: false,
+                unitKerjaId: row.unitKerjaId,
+                classification: row.classification || null,
+                grantId: crossGrant?.id || null,
+                accessPurpose: crossGrant?.purpose || null,
+                grantAccessMode: grantAccessModeOf(crossGrant),
+                grantExpiresAt: crossGrant?.expiresAt || null,
+                via: jalur,
+                rangkaianId: row.rangkaianId,
+                masked: !allowed,
+            });
+        }
+        return results;
+    },
 
-        return {
-            exists: Boolean(unitKerjaId),
-            allowed: unitAllowed && classificationAllowed,
-            mutable: unitAllowed && classificationAllowed &&
-                metadata?.mutable === true &&
-                user?.role !== 'auditor' &&
-                (!controlled || grantAccessMode === 'manage'),
-            unitKerjaId,
-            classification: metadata?.classification || null,
-            grantId: grant?.id || null,
-            accessPurpose: grant?.purpose || null,
-            grantAccessMode,
-            grantExpiresAt: grant?.expiresAt || null,
-        };
+    async checkRead(
+        user: RecordUser | undefined,
+        entityType: JenisRekamanRangkaian,
+        entityId: string,
+        executor: ReadExecutor = db,
+    ): Promise<ReadAccessResult> {
+        const ref = { type: entityType, id: entityId };
+        const results = await recordAccessService.checkMany(user, [ref], executor);
+        return results.get(readRefKey(ref)) ?? inaccessibleReadResult();
     },
 
     async markGrantUsed(grantId: string): Promise<boolean> {

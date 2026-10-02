@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield } from 'lucide-react';
+import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,7 @@ const ACTION_CONFIG = {
     'approve_access': { label: 'Menyetujui Akses', icon: Shield, color: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300', borderColor: 'border-emerald-200', iconColor: 'text-emerald-600' },
     'deny_access': { label: 'Menolak Akses', icon: Shield, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
     'revoke_access': { label: 'Mencabut Akses', icon: Shield, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
+    'view_via_rangkaian': { label: 'Lihat via Rangkaian', icon: Eye, color: 'bg-cyan-100 dark:bg-cyan-500/15 text-cyan-800 dark:text-cyan-300', borderColor: 'border-cyan-200', iconColor: 'text-cyan-600' },
 };
 
 const ENTITY_CONFIG = {
@@ -34,6 +35,7 @@ const ENTITY_CONFIG = {
     'arsip': { label: 'Arsip', color: 'text-purple-600', bgColor: 'bg-purple-50 dark:bg-purple-500/15' },
     'user': { label: 'User', color: 'text-orange-600', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
     'record_access_grant': { label: 'Persetujuan Akses', color: 'text-amber-700', bgColor: 'bg-amber-50 dark:bg-amber-500/15' },
+    'rangkaian_surat': { label: 'Rangkaian Surat', color: 'text-cyan-700', bgColor: 'bg-cyan-50 dark:bg-cyan-500/15' },
 };
 
 export default function AuditLog() {
@@ -226,6 +228,7 @@ export default function AuditLog() {
                                     <SelectItem value="arsip">Arsip</SelectItem>
                                     <SelectItem value="user">User</SelectItem>
                                     <SelectItem value="record_access_grant">Persetujuan Akses</SelectItem>
+                                    <SelectItem value="rangkaian_surat">Rangkaian Surat</SelectItem>
                                 </SelectContent>
                             </Select>
                             <Select value={action} onValueChange={applyFilter(setAction)}>
@@ -242,6 +245,7 @@ export default function AuditLog() {
                                     <SelectItem value="approve_access">Menyetujui Akses</SelectItem>
                                     <SelectItem value="deny_access">Menolak Akses</SelectItem>
                                     <SelectItem value="revoke_access">Mencabut Akses</SelectItem>
+                                    <SelectItem value="view_via_rangkaian">Lihat via Rangkaian</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>

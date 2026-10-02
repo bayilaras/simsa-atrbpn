@@ -17,7 +17,7 @@ import {
 import { createLogger } from '../utils/logger';
 import { blobStorageService } from '../services/blob-storage.service';
 import { deleteRequestCreatedBlob } from '../utils/blob-upload-compensation.js';
-import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
+import { resolveRecordUnitScope, scopeForAuthorizedRead } from '../utils/record-unit-scope.js';
 import {
     sanitizeSuratKeluarWithLinks,
     sanitizeSuratRecord,
@@ -27,6 +27,7 @@ import {
     isAllowedForClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
+import auditLogService from '../services/audit-log.service.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
 const log = createLogger('SuratKeluarRoutes');
@@ -147,21 +148,34 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
     }
 });
 
-// GET /api/surat-keluar/:id
+// GET /api/surat-keluar/:id - pemilik, atau lintas unit via rangkaian (selalu read-only)
 router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await suratKeluarService.findById(id, resolveRecordUnitScope(req));
-
-        if (!result) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
-        }
-        const access = await recordAccessService.check(req.user, 'surat_keluar', id);
+        const access = await recordAccessService.checkRead(req.user, 'surat_keluar', id);
         if (!access.exists || !access.allowed) {
             return res.status(404).json({ error: 'Surat keluar not found' });
         }
+        const result = await suratKeluarService.findById(id, scopeForAuthorizedRead(req, access));
+        if (!result) {
+            return res.status(404).json({ error: 'Surat keluar not found' });
+        }
+        if (access.via !== 'owner') {
+            await auditLogService.logActionOrThrow({
+                userId: req.user?.id,
+                userEmail: req.user?.email,
+                action: 'view_via_rangkaian',
+                entityType: 'surat_keluar',
+                entityId: id,
+                changes: { via: access.via, rangkaianId: access.rangkaianId, grantId: access.grantId },
+                ipAddress: req.ip,
+            });
+        }
 
-        res.json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
+        res.json({
+            success: true,
+            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), aksesMelalui: access.via, aksiDiizinkan: [] },
+        });
     } catch (error) {
         next(error);
     }
