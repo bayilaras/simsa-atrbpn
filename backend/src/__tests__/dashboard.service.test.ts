@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
@@ -63,35 +63,32 @@ describe('DashboardService', () => {
     });
 
     describe('getStats', () => {
+        beforeEach(() => {
+            vi.spyOn(arsipService, 'getExpiring').mockResolvedValue([]);
+        });
+        afterEach(() => { vi.mocked(arsipService.getExpiring).mockRestore(); });
+
         it('should return dashboard stats object', async () => {
-            // Mock the parallel count queries
-            // totalMasuk, totalKeluar, totalArsip, arsipMasuk, arsipKeluar, segmenKadaluarsa
-            // masukBulanIni, keluarBulanIni, monthlyTrend, statusBreakdown
+            const month = new Date().getMonth() + 1;
             enqueue([{ count: 50 }]);   // totalMasuk
             enqueue([{ count: 30 }]);   // totalKeluar
-            enqueue([{ count: 25 }]);   // totalArsip
-            enqueue([{ count: 15 }]);   // arsipMasuk
-            enqueue([{ count: 10 }]);   // arsipKeluar
-            enqueue([{ count: 5 }]);    // segmenKadaluarsa
-            enqueue([{ count: 8 }]);    // masukBulanIni
-            enqueue([{ count: 4 }]);    // keluarBulanIni
-            enqueue([]);                 // monthly trend
+            enqueue([{ total: 25, masuk: 15, keluar: 10 }]);
+            enqueue([{ month, count: 8 }]);
+            enqueue([{ month, count: 4 }]);
             enqueue([]);                 // masuk status breakdown
             enqueue([]);                 // keluar status breakdown
 
             const result = await dashboardService.getStats();
-            expect(result).toHaveProperty('totalMasuk');
-            expect(result).toHaveProperty('totalKeluar');
-            expect(result).toHaveProperty('totalArsip');
-            expect(result).toHaveProperty('masukBulanIni');
-            expect(result).toHaveProperty('keluarBulanIni');
+            expect(result).toMatchObject({ totalMasuk: 50, totalKeluar: 30,
+                totalArsip: 25, arsipMasuk: 15, arsipKeluar: 10,
+                masukBulanIni: 8, keluarBulanIni: 4, segmenKadaluarsa: 0 });
             expect(result).toHaveProperty('monthlyTrend');
         });
 
         it('should accept optional unitKerjaId filter', async () => {
             // Same mock pattern, filtered by unitKerjaId
-            for (let i = 0; i < 11; i++) {
-                enqueue(i < 8 ? [{ count: 0 }] : []);
+            for (let i = 0; i < 7; i++) {
+                enqueue(i < 2 ? [{ count: 0 }] : []);
             }
 
             const result = await dashboardService.getStats('ditjen');
@@ -100,8 +97,8 @@ describe('DashboardService', () => {
         });
 
         it('should accept optional tahun parameter', async () => {
-            for (let i = 0; i < 11; i++) {
-                enqueue(i < 8 ? [{ count: 0 }] : []);
+            for (let i = 0; i < 7; i++) {
+                enqueue(i < 2 ? [{ count: 0 }] : []);
             }
 
             const result = await dashboardService.getStats(null, 2024);
