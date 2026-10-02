@@ -75,12 +75,10 @@ export function skorSql(branch: Branch, plan: LacakQueryPlan, mode: LacakParams[
             // dengan 0049 index gin_trgm melayaninya.
             cocok.push(sql`${normIndex} LIKE ${`%${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`);
         } else {
-            // qNorm < 5: tanpa substring; kesamaan dan prefix dilayani btree
-            // text_pattern_ops `*_nomor_norm_idx` (0046).
-            cocok.push(
-                sql`${normIndex} = ${plan.qNorm}`,
-                sql`${normIndex} LIKE ${`${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`,
-            );
+            // qNorm < 5: tanpa substring. Kesamaan adalah himpunan bagian prefix,
+            // jadi cukup SATU arm prefix (regexp_replace sekali per baris tanpa
+            // index); dengan index dilayani btree text_pattern_ops `*_nomor_norm_idx` (0046).
+            cocok.push(sql`${normIndex} LIKE ${`${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`);
         }
     }
     const perihal = sql.raw(`${branch.alias}.perihal`);
