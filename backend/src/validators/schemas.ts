@@ -554,7 +554,8 @@ export const createDistributionSchema = z.object({
     suratMasukId: uuidSchema,
     sourceUnitId: z.string().min(1, 'Source unit is required').max(50),
     targetUnitId: z.string().min(1, 'Target unit is required').max(50),
-    instruction: z.string().max(2000).optional(),
+    // DistributeDialog mengirim `instruction: null` bila instruksi dikosongkan.
+    instruction: z.string().max(2000).nullish(),
     ccUnits: z.array(z.string().max(50)).optional(),
 });
 

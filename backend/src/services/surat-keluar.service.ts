@@ -51,7 +51,8 @@ export class SuratKeluarService {
         const offset = (page - 1) * limit;
 
         const conditions = [
-            eq(suratKeluar.isDeleted, false),  // Exclude soft-deleted records
+            // Baris lama bisa ber-is_deleted NULL; hanya TRUE yang berarti terhapus.
+            sql`${suratKeluar.isDeleted} IS NOT TRUE`,
         ];
         if (securityClassifications !== undefined && securityClassifications !== null) {
             conditions.push(securityClassifications.length > 0

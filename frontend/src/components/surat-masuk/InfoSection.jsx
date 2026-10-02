@@ -1,4 +1,4 @@
-import { FileText, Calendar, Clock, Building, User, Sparkles, Link2, ExternalLink } from 'lucide-react';
+import { FileText, Calendar, Hash, Building, User, Sparkles, Link2, ExternalLink, Send } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -6,6 +6,45 @@ import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { useAppConfig } from '@/context/app-config-context';
 import { SuratRetentionSummary } from '@/components/SuratRetentionSummary';
+
+const SIFAT_LABELS = new Map([
+    ['biasa', 'Biasa'],
+    ['biasa/terbuka', 'Biasa/Terbuka'],
+    ['terbuka', 'Terbuka'],
+    ['segera', 'Segera'],
+    ['sangat_segera', 'Sangat Segera'],
+    ['undangan', 'Undangan'],
+    ['penting', 'Penting'],
+    ['terbatas', 'Terbatas'],
+    ['rahasia', 'Rahasia'],
+    ['sangat_rahasia', 'Sangat Rahasia'],
+]);
+const SIFAT_DESTRUCTIVE = new Set(['sangat_segera', 'rahasia', 'sangat_rahasia']);
+const SIFAT_EMPHASIS = new Set(['segera', 'terbatas']);
+
+// Normalisasi sama dengan normalizeSecurityClassification (backend) tanpa
+// pemetaan kelas, agar nilai impor seperti "Sangat Segera" atau "RAHASIA"
+// tidak tampil sebagai "Biasa".
+function sifatKey(value) {
+    const raw = typeof value === 'string' && value.length > 0 ? value : 'biasa';
+    return raw.trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function sifatBadge(value) {
+    const key = sifatKey(value);
+    const fallback = typeof value === 'string' && value.trim() ? value.trim() : 'Biasa';
+    return {
+        label: SIFAT_LABELS.get(key) || fallback,
+        variant: SIFAT_DESTRUCTIVE.has(key) ? 'destructive' : SIFAT_EMPHASIS.has(key) ? 'default' : 'secondary',
+    };
+}
+
+function disposisiLabels(value) {
+    if (!Array.isArray(value)) return [];
+    return value
+        .filter((label) => typeof label === 'string' && label.trim().length > 0)
+        .map((label) => label.trim());
+}
 
 export function InfoSection({ surat }) {
     const { capabilities } = useAppConfig();
@@ -17,6 +56,12 @@ export function InfoSection({ surat }) {
             return dateString;
         }
     };
+    const sifat = sifatBadge(surat.sifatSurat);
+    const disposisi = disposisiLabels(surat.disposisi);
+    const keterangan = typeof surat.keterangan === 'string' ? surat.keterangan.trim() : '';
+    const noAgenda = surat.noUrut !== null && surat.noUrut !== undefined && surat.noUrut !== ''
+        ? String(surat.noUrut)
+        : '-';
 
     return (
         <Card className="shadow-sm hover:shadow-md transition-shadow duration-200">
@@ -52,15 +97,11 @@ export function InfoSection({ surat }) {
                         </p>
                     </div>
                     <div className="space-y-1 p-3 bg-muted/30 rounded-lg">
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tanggal Diterima</label>
-                        <p className="flex items-center gap-2 text-sm">
-                            <Clock className="h-4 w-4 text-blue-600" />
-                            {formatDate(surat.tanggalDiterima)}
-                        </p>
-                    </div>
-                    <div className="space-y-1 p-3 bg-muted/30 rounded-lg">
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">No. Agenda</label>
-                        <p className="text-sm">{surat.noAgenda || <span className="text-muted-foreground italic">Belum ada</span>}</p>
+                        <p className="flex items-center gap-2 text-sm">
+                            <Hash className="h-4 w-4 text-blue-600" />
+                            <span>{noAgenda}</span>
+                        </p>
                     </div>
                 </div>
 
@@ -92,12 +133,8 @@ export function InfoSection({ surat }) {
                     </div>
                     <div className="space-y-1">
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sifat Surat</label>
-                        <Badge
-                            variant={surat.sifatSurat === 'sangat_segera' ? 'destructive' : surat.sifatSurat === 'segera' ? 'default' : 'secondary'}
-                            className="mt-1"
-                        >
-                            {surat.sifatSurat === 'sangat_segera' ? 'Sangat Segera' :
-                                surat.sifatSurat === 'segera' ? 'Segera' : 'Biasa'}
+                        <Badge variant={sifat.variant} className="mt-1">
+                            {sifat.label}
                         </Badge>
                     </div>
                     <div className="space-y-1 col-span-2 sm:col-span-1">
@@ -105,6 +142,25 @@ export function InfoSection({ surat }) {
                         <p className="text-sm font-medium">{surat.klasifikasiKode || surat.klasifikasi || '-'}</p>
                         {surat.klasifikasiUraian && <p className="text-sm text-muted-foreground">{surat.klasifikasiUraian}</p>}
                     </div>
+                </div>
+
+                {/* Disposisi (label tampilan; routing ada di Kotak Disposisi) */}
+                <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                        <Send className="h-3 w-3" />
+                        Disposisi
+                    </label>
+                    {disposisi.length > 0 ? (
+                        <ul aria-label="Disposisi" className="flex flex-wrap gap-2">
+                            {disposisi.map((label, index) => (
+                                <li key={`${index}-${label}`}>
+                                    <Badge variant="outline">{label}</Badge>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-sm text-muted-foreground italic">Belum ada disposisi</p>
+                    )}
                 </div>
 
                 <SuratRetentionSummary surat={surat} />
@@ -133,14 +189,14 @@ export function InfoSection({ surat }) {
                     </>
                 )}
 
-                {/* Catatan */}
-                {surat.catatan && (
+                {/* Keterangan */}
+                {keterangan && (
                     <>
                         <Separator />
                         <div className="space-y-2">
-                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Catatan</label>
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Keterangan</label>
                             <div className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg border border-amber-100 dark:border-amber-900/50">
-                                <p className="text-sm leading-relaxed">{surat.catatan}</p>
+                                <p className="text-sm leading-relaxed whitespace-pre-line">{keterangan}</p>
                             </div>
                         </div>
                     </>

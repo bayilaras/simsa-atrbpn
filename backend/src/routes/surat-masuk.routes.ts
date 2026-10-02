@@ -477,7 +477,7 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
 });
 
 // POST /api/surat-masuk/:id/archive - Archive with metadata (creates arsip entry)
-router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
+router.post('/:id/archive-full', validateIdParam(), canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
         const existing = await suratMasukService.findById(id, resolveRecordUnitScope(req));
@@ -536,7 +536,7 @@ router.post('/:id/archive', canWriteMiddleware(), async (req: AuthRequest, res, 
 });
 
 // GET /api/surat-masuk/:id/balasan - Get surat keluar yang merupakan balasan
-router.get('/:id/balasan', async (req: AuthRequest, res, next) => {
+router.get('/:id/balasan', validateIdParam(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
         const parent = await suratMasukService.findById(id, resolveRecordUnitScope(req));
@@ -564,7 +564,7 @@ router.get('/:id/balasan', async (req: AuthRequest, res, next) => {
 });
 
 // GET /api/surat-masuk/:id/with-links - Get surat with all linked data
-router.get('/:id/with-links', async (req: AuthRequest, res, next) => {
+router.get('/:id/with-links', validateIdParam(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
         const result = await suratMasukService.findByIdWithLinks(id, resolveRecordUnitScope(req));

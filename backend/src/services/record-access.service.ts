@@ -1,6 +1,10 @@
 import { db } from '../config/database';
 import { arsip, recordAccessGrants, suratKeluar, suratMasuk } from '../db/schema';
 import { and, desc, eq, gt } from 'drizzle-orm';
+import { normalizeSecurityClassification, SECURITY_CLASSES } from './access/visibility-spec';
+
+// Impor lama `normalizeSecurityClassification` dari modul ini tetap berlaku.
+export { normalizeSecurityClassification };
 
 export type RecordEntityType = 'surat_masuk' | 'surat_keluar' | 'arsip';
 export type RecordGrantAccessMode = 'view' | 'download' | 'manage';
@@ -23,7 +27,7 @@ export interface RecordAccessResult {
     grantExpiresAt: Date | null;
 }
 
-const RECOGNIZED_CLASSIFICATIONS = ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'];
+const RECOGNIZED_CLASSIFICATIONS: string[] = [...SECURITY_CLASSES];
 const RECOGNIZED_CLASSIFICATION_SET = new Set(RECOGNIZED_CLASSIFICATIONS);
 const CONTROLLED_CLASSIFICATIONS = new Set(['terbatas', 'rahasia', 'sangat_rahasia']);
 
@@ -40,30 +44,6 @@ export function allowedSecurityClassifications(
     }
     if (['staff', 'auditor'].includes(user?.role || '')) return ['biasa'];
     return [];
-}
-
-export function normalizeSecurityClassification(
-    classification?: string | null,
-): string {
-    const normalized = (classification || 'biasa')
-        .trim()
-        .toLowerCase()
-        .replace(/[\s-]+/g, '_');
-
-    // The legacy surat `sifatSurat` field mixes urgency/type with security.
-    // Its non-secret controlled values are ordinary security class records.
-    if ([
-        'biasa',
-        'biasa/terbuka',
-        'terbuka',
-        'segera',
-        'sangat_segera',
-        'undangan',
-        'penting',
-    ].includes(normalized)) {
-        return 'biasa';
-    }
-    return normalized;
 }
 
 export function isAllowedForRecordUnit(user: RecordUser | undefined, unitKerjaId: string): boolean {

@@ -1,6 +1,7 @@
 import { db } from '../config/database';
 import { suratDistributions, NewSuratDistribution, SuratDistribution, suratMasuk, unitKerja, users } from '../db/schema';
-import { eq, and, desc, sql, or, notInArray, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql, or, notInArray } from 'drizzle-orm';
+import { klasifikasiInSql } from './access/visibility-spec';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { AppError, ValidationError } from '../utils/errors.js';
@@ -13,15 +14,9 @@ export interface DistributionFilters {
 }
 
 function incomingSecurityCondition(classes: string[] | null | undefined) {
-    if (classes === undefined || classes === null) return undefined;
-    if (classes.length === 0) return sql`false`;
-    const normalized = sql<string>`CASE
-        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
-            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
-        THEN 'biasa'
-        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
-    END`;
-    return inArray(normalized, classes);
+    // Normalisasi identik dengan normalizeSecurityClassification (TS) yang
+    // dipakai check(); lihat services/access/visibility-spec.ts.
+    return klasifikasiInSql(suratMasuk.sifatSurat, classes);
 }
 
 export class DistributionService {
@@ -32,7 +27,7 @@ export class DistributionService {
         suratMasukId: string;
         sourceUnitId: string;
         targetUnitId: string;
-        instruction?: string;
+        instruction?: string | null;
         ccUnits?: string[];
         sentBy?: string;
     }, auditContext?: CriticalAuditContext) {
@@ -90,7 +85,7 @@ export class DistributionService {
                         suratMasukId: data.suratMasukId,
                         sourceUnitId: data.sourceUnitId,
                         targetUnitId: data.targetUnitId,
-                        instruction: data.instruction,
+                        instruction: data.instruction ?? null,
                         status: 'sent',
                     },
                 },

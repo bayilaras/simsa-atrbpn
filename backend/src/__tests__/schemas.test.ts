@@ -180,6 +180,27 @@ describe('createDistributionSchema', () => {
         expect(result.success).toBe(true);
     });
 
+    it('accepts instruction: null as sent by DistributeDialog', () => {
+        const result = createDistributionSchema.safeParse({
+            suratMasukId: validUUID,
+            sourceUnitId: 'unit-a',
+            targetUnitId: 'unit-b',
+            instruction: null,
+        });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.instruction).toBeNull();
+    });
+
+    it('rejects an instruction longer than 2000 characters', () => {
+        const result = createDistributionSchema.safeParse({
+            suratMasukId: validUUID,
+            sourceUnitId: 'unit-a',
+            targetUnitId: 'unit-b',
+            instruction: 'x'.repeat(2001),
+        });
+        expect(result.success).toBe(false);
+    });
+
     it('rejects missing required fields', () => {
         const result = createDistributionSchema.safeParse({
             suratMasukId: validUUID,
