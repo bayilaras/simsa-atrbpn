@@ -159,9 +159,22 @@ describe('authorized GCS file access', () => {
         expect(mocks.downloadFile).not.toHaveBeenCalled();
     });
 
-    it.each(['surat_masuk', 'surat_keluar'])('previews and downloads private %s attachments with no hash or completed scan', async entityType => {
+    it.each(['surat_masuk', 'surat_keluar'])('quarantines private Blob %s attachments until the scan releases them', async entityType => {
+        for (const [pending, scanState] of [
+            [{ malwareScanStatus: 'not_scanned', integrityStatus: 'baseline_recorded' }, 'pending'],
+            [{ malwareScanStatus: 'not_required', integrityStatus: 'not_required', sha256: null }, 'pending'],
+            [{ malwareScanStatus: 'infected', integrityStatus: 'verified' }, 'blocked'],
+        ] as const) {
+            mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType, fileUrl: privateBlobLocator, objectGeneration: null, ...pending }]));
+            const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(423);
+            expect(response.body.scanState).toBe(scanState);
+        }
+        expect(mocks.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it.each(['surat_masuk', 'surat_keluar'])('previews and downloads released private Blob %s attachments', async entityType => {
         for (const download of ['', '?download=1']) {
-            mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType, fileUrl: privateBlobLocator, objectGeneration: null, malwareScanStatus: 'not_scanned', integrityStatus: 'unverified', sha256: null }]));
+            mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType, fileUrl: privateBlobLocator, objectGeneration: null }]));
             mocks.downloadFile.mockResolvedValueOnce({ stream: Readable.from([Buffer.from('%PDF-direct')]), mimeType: 'application/pdf', fileName: 'final.pdf' });
             const response = await request(app).get(`/api/files/attachment/${attachment.id}${download}`).expect(200);
             expect(response.headers['content-disposition']).toMatch(download ? /^attachment;/ : /^inline;/);
@@ -185,13 +198,21 @@ describe('authorized GCS file access', () => {
                 { ...attachment, fileUrl: privateBlobLocator, objectGeneration: null, storageAccess: 'public' },
             ]));
         const response = await request(app).get(`/api/files/surat_masuk/${attachment.entityId}`).expect(423);
-        expect(response.body).not.toHaveProperty('scanState');
+        expect(response.body.scanState).toBe('blocked');
         expect(mocks.downloadFile).not.toHaveBeenCalled();
     });
 
-    it.each(['surat_masuk', 'surat_keluar'])('opens the matching old %s registration regardless of missing inspection evidence', async entityType => {
+    it.each(['surat_masuk', 'surat_keluar'])('does not open the matching legacy %s registration without inspection evidence', async entityType => {
         mocks.select.mockReturnValueOnce(limitedRows([{ filePath: `blob:${privateBlobLocator}`, fileName: 'final.pdf' }]))
-            .mockReturnValueOnce(unrestrictedRows([{ ...attachment, entityType, fileUrl: privateBlobLocator, objectGeneration: null, sha256: null, malwareScanStatus: 'not_scanned', integrityStatus: 'unverified' }]));
+            .mockReturnValueOnce(unrestrictedRows([{ ...attachment, entityType, fileUrl: privateBlobLocator, objectGeneration: null, sha256: null, malwareScanStatus: 'not_required', integrityStatus: 'not_required' }]));
+        const response = await request(app).get(`/api/files/${entityType}/${attachment.entityId}`).expect(423);
+        expect(response.body.scanState).toBe('pending');
+        expect(mocks.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it.each(['surat_masuk', 'surat_keluar'])('opens the matching %s registration once it is released', async entityType => {
+        mocks.select.mockReturnValueOnce(limitedRows([{ filePath: `blob:${privateBlobLocator}`, fileName: 'final.pdf' }]))
+            .mockReturnValueOnce(unrestrictedRows([{ ...attachment, entityType, fileUrl: privateBlobLocator, objectGeneration: null }]));
         await request(app).get(`/api/files/${entityType}/${attachment.entityId}`).expect(200);
         expect(mocks.downloadFile).toHaveBeenCalledWith(privateBlobLocator, { generation: undefined, abortSignal: expect.any(AbortSignal) });
     });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Readable } from 'node:stream';
 
@@ -246,7 +247,7 @@ describe('SuratKeluarService', () => {
                     entityType: 'surat_keluar',
                     mimeType: 'application/pdf',
                     sizeBytes: 8,
-                    sha256: null,
+                    sha256: createHash('sha256').update('%PDF-1.7').digest('hex'),
                 }),
                 expect.objectContaining({ insert: expect.any(Function) }),
             );

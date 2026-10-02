@@ -12,7 +12,6 @@ import { ARCHIVE_UPLOAD_MAX_BYTES, assertPdfUpload, isPdfUploadMetadata } from '
 import { AppError, ValidationError } from '../utils/errors.js';
 import { arsipAttachmentUploadService } from '../services/arsip-attachment-upload.service.js';
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
-import { isLetterAttachmentType, requiresAttachmentInspection } from '../services/file-release-policy.js';
 
 
 
@@ -140,7 +139,7 @@ router.post(
                 ipAddress: req.ip,
             });
 
-            if (requiresAttachmentInspection(entityType, attachment.fileUrl || attachment.driveFileId)) scheduleMalwareScanWake();
+            scheduleMalwareScanWake();
             res.status(201).json({
                 success: true,
                 data: publicAttachment(attachment),
@@ -169,14 +168,6 @@ router.post('/:suratType/:suratId/scan', authMiddleware, canWriteMiddleware(), s
             }
             const access = await recordAccessService.check(req.user, entityType, req.params.suratId as string);
             if (!access.exists || !access.allowed) return res.status(404).json({ error: 'Record not found' });
-            if (isLetterAttachmentType(entityType)) {
-                const attachments = await fileAttachmentService.findBySurat(req.params.suratId as string, req.params.suratType as string);
-                if (attachments.length > 0 && attachments.every(attachment =>
-                    !requiresAttachmentInspection(entityType, attachment.fileUrl || attachment.driveFileId))) {
-                    return res.status(200).json({ success: true, status: 'not_required',
-                        message: 'Lampiran surat dapat dibuka langsung setelah tersimpan.' });
-                }
-            }
             if (!scheduleMalwareScanWake()) return res.status(503).json({ success: false,
                 code: 'MALWARE_SCAN_WAKE_UNAVAILABLE', message: 'Pemindaian belum dapat dijadwalkan. Berkas tetap menunggu pemeriksaan.' });
             return res.status(202).json({ success: true, status: 'pending',

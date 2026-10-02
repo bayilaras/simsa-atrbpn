@@ -22,7 +22,7 @@ import {
 import { requireImmutableObjectGeneration } from '../storage/locator.js';
 import { inspectBitstream } from './bitstream-integrity.js';
 import { ARCHIVE_UPLOAD_MAX_BYTES, assertPdfUpload } from '../config/archive-upload.js';
-import { isLetterAttachmentType, requiresAttachmentInspection } from './file-release-policy.js';
+import { isLetterAttachmentType } from './file-release-policy.js';
 
 export const ATTACHMENT_PREFLIGHT_MAX_BYTES = ARCHIVE_UPLOAD_MAX_BYTES;
 export const ATTACHMENT_PREFLIGHT_TIMEOUT_MS = 30_000;
@@ -59,7 +59,7 @@ export interface PreparedExistingAttachmentData {
     locator: string;
     mimeType: string;
     sizeBytes: number;
-    sha256: string | null;
+    sha256: string;
     uploadedById?: string;
     objectGeneration: string | null;
 }
@@ -113,8 +113,7 @@ export class FileAttachmentService {
         let mimeType = data.mimeType || 'application/octet-stream';
         let sizeBytes = data.buffer?.length || 0;
         let objectGeneration: string | null;
-        const inspect = requiresAttachmentInspection(options.expectedPurpose || options.clientBlobClaim?.purpose, locator);
-        const digest = inspect ? crypto.createHash('sha256') : null;
+        const digest = crypto.createHash('sha256');
         let prefix = Buffer.alloc(0);
 
         if (data.buffer) {
@@ -126,7 +125,7 @@ export class FileAttachmentService {
             }
             objectGeneration = requireImmutableObjectGeneration(locator, data.objectGeneration);
             prefix = Buffer.from(data.buffer.subarray(0, 5));
-            digest?.update(data.buffer);
+            digest.update(data.buffer);
         } else {
             const claim = options.clientBlobClaim;
             if (!claim) {
@@ -192,7 +191,7 @@ export class FileAttachmentService {
                                 throw new PayloadTooLargeError('Lampiran melebihi batas 10 MiB.');
                             }
                             if (prefix.length < 5) prefix = Buffer.concat([prefix, bytes.subarray(0, 5 - prefix.length)]);
-                            digest?.update(bytes);
+                            digest.update(bytes);
                         }
                     })(),
                     timeoutPromise,
@@ -214,7 +213,7 @@ export class FileAttachmentService {
             locator,
             mimeType,
             sizeBytes,
-            sha256: digest?.digest('hex') || null,
+            sha256: digest.digest('hex'),
             uploadedById: data.uploadedById,
             objectGeneration,
         };
@@ -225,7 +224,6 @@ export class FileAttachmentService {
         data: PreparedExistingAttachmentData & Pick<RegisterExistingAttachmentData, 'entityId' | 'entityType'>,
         executor: Pick<typeof db, 'insert'> = db,
     ): Promise<FileAttachment> {
-        const inspect = requiresAttachmentInspection(data.entityType, data.locator);
         const [attachment] = await executor.insert(fileAttachments).values({
             entityId: data.entityId,
             entityType: data.entityType,
@@ -234,11 +232,11 @@ export class FileAttachmentService {
             objectGeneration: data.objectGeneration,
             mimeType: data.mimeType,
             sizeBytes: data.sizeBytes,
-            sha256: inspect ? data.sha256 : null,
+            sha256: data.sha256,
             storageAccess: 'private',
             uploadedBy: data.uploadedById || null,
-            integrityStatus: inspect ? 'baseline_recorded' : 'not_required',
-            malwareScanStatus: inspect ? 'not_scanned' : 'not_required',
+            integrityStatus: 'baseline_recorded',
+            malwareScanStatus: 'not_scanned',
         }).returning();
 
         return attachment;
@@ -281,8 +279,7 @@ export class FileAttachmentService {
         );
 
         try {
-            const inspect = requiresAttachmentInspection(mapSuratTypeToEntityType(data.suratType), blobFile.url);
-            const hash = inspect ? crypto.createHash('sha256').update(data.buffer).digest('hex') : null;
+            const hash = crypto.createHash('sha256').update(data.buffer).digest('hex');
             const persist = async (tx: Pick<typeof db, 'insert'>) => {
                 const [attachment] = await tx
                     .insert(fileAttachments)
@@ -297,8 +294,8 @@ export class FileAttachmentService {
                         sha256: hash,
                         storageAccess: 'private',
                         uploadedBy: data.uploadedById || null,
-                        integrityStatus: inspect ? 'baseline_recorded' : 'not_required',
-                        malwareScanStatus: inspect ? 'not_scanned' : 'not_required',
+                        integrityStatus: 'baseline_recorded',
+                        malwareScanStatus: 'not_scanned',
                     })
                     .returning();
 
@@ -373,8 +370,7 @@ export class FileAttachmentService {
             .from(fileAttachments)
             .where(eq(fileAttachments.id, id))
             .limit(1);
-        if (!attachment || !requiresAttachmentInspection(attachment.entityType, attachment.fileUrl || attachment.driveFileId)
-            || !attachment.sha256 || !/^[a-f0-9]{64}$/i.test(attachment.sha256)) return null;
+        if (!attachment || !attachment.sha256 || !/^[a-f0-9]{64}$/i.test(attachment.sha256)) return null;
 
         const locator = attachment.fileUrl || attachment.driveFileId;
         if (!locator) return null;

@@ -100,28 +100,29 @@ describe('operational collector uses the workers actual SQL membership', () => {
             ('bad-hash','clean','verified','invalid'), ('new','not_scanned','pending',repeat('a',64)),
             ('retry','retry:2:1789430400','pending',repeat('a',64)), ('claim','scanning:1:1789430400','pending',repeat('a',64)),
             ('clean-complete','clean','verified',repeat('a',64));
-            INSERT INTO file_attachments(id,entity_type,file_url,sha256) VALUES ('exempt-letter','surat_masuk','https://qa.private.blob.vercel-storage.com/qa.pdf',NULL);`);
+            INSERT INTO file_attachments(id,entity_type,file_url,sha256) VALUES ('blob-letter','surat_masuk','https://qa.private.blob.vercel-storage.com/qa.pdf',NULL);`);
         const result = await collectOperationsStatus();
-        expect(check(result, 'scan_queue').counts).toEqual({ waiting: 6, overdue: 6, errors: 0 });
+        expect(check(result, 'scan_queue').counts).toEqual({ waiting: 7, overdue: 7, errors: 0 });
         expect(check(result, 'scan_queue').status).toBe('attention');
         expect(io.query.mock.calls[0][0].query_timeout).toBe(5000);
     });
-    it('excludes historical jobs that fixity workers cannot claim but keeps eligible archive jobs visible', async () => {
+    it('excludes historical jobs that fixity workers cannot claim but keeps eligible archive and letter jobs visible', async () => {
         await database.exec(`INSERT INTO file_attachments(id,entity_type,file_url,storage_access,malware_scan_status) VALUES
             ('controlled','arsip','gs://private/controlled.pdf','private','clean'),
-            ('exempt-letter','surat_keluar','blob:https://qa.private.blob.vercel-storage.com/letter.pdf','private','clean'),
+            ('blob-letter','surat_keluar','blob:https://qa.private.blob.vercel-storage.com/letter.pdf','private','clean'),
             ('public','arsip','https://public.example/qa.pdf','public','clean'),
             ('not-clean','arsip','gs://private/qa.pdf','private','scan_error');
-            INSERT INTO file_fixity_jobs(attachment_id,last_result) VALUES ('controlled','error'),('exempt-letter','error'),('public','stale'),('not-clean','error');`);
+            INSERT INTO file_fixity_jobs(attachment_id,last_result) VALUES ('controlled','error'),('blob-letter','error'),('public','stale'),('not-clean','error');`);
         const result = await collectOperationsStatus();
-        expect(check(result, 'fixity').counts).toEqual({ overdue: 1, errors: 1, unscheduled: 0, mismatched: 0 });
+        expect(check(result, 'fixity').counts).toEqual({ overdue: 2, errors: 2, unscheduled: 0, mismatched: 0 });
         expect(check(result, 'scan_queue').counts?.errors).toBe(1);
     });
-    it('keeps infected and terminal scan errors visible while excluding private letter scan exemptions', async () => {
+    it('keeps infected, terminal and legacy unscanned letter attachments visible', async () => {
         await database.exec(`INSERT INTO file_attachments(id,malware_scan_status) VALUES ('failure','scan_error'),('infected','infected');
-            INSERT INTO file_attachments(id,entity_type,file_url,malware_scan_status) VALUES ('exempt','surat_masuk','https://qa.private.blob.vercel-storage.com/qa.pdf','not_scanned');`);
+            INSERT INTO file_attachments(id,entity_type,file_url,malware_scan_status) VALUES ('blob-letter','surat_masuk','https://qa.private.blob.vercel-storage.com/qa.pdf','not_scanned'),
+            ('legacy-letter','surat_keluar','https://qa.private.blob.vercel-storage.com/old.pdf','not_required');`);
         const result = await collectOperationsStatus();
-        expect(check(result, 'scan_queue').counts).toEqual({ waiting: 0, overdue: 0, errors: 2 });
+        expect(check(result, 'scan_queue').counts).toEqual({ waiting: 2, overdue: 2, errors: 2 });
     });
     it('keeps a rejected database query unknown without exposing its error', async () => {
         io.query.mockRejectedValueOnce(new Error('private database connection string'));
