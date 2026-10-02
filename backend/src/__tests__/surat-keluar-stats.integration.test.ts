@@ -27,7 +27,9 @@ beforeAll(async () => {
     holder.db = drizzle(database);
     const { SuratKeluarService } = await import('../services/surat-keluar.service');
     service = new SuratKeluarService();
-}, 20_000);
+// PGlite WASM initialization can exceed 20s on a busy development host;
+// this budget covers fixture startup, not a query/response-time assertion.
+}, 60_000);
 afterAll(async () => { await database?.close(); });
 
 describe('outgoing statistics SQL contract', () => {

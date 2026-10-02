@@ -1,40 +1,45 @@
-import Formulir1 from '@/components/formulir/Formulir1';
-import Formulir2 from '@/components/formulir/Formulir2';
-import Formulir3 from '@/components/formulir/Formulir3';
-import Formulir4 from '@/components/formulir/Formulir4';
-import Formulir5 from '@/components/formulir/Formulir5';
-import Formulir6 from '@/components/formulir/Formulir6';
-import Formulir7 from '@/components/formulir/Formulir7';
-import Formulir8 from '@/components/formulir/Formulir8';
-import Formulir9 from '@/components/formulir/Formulir9';
-import Formulir10 from '@/components/formulir/Formulir10';
-import Formulir11 from '@/components/formulir/Formulir11';
-import Formulir12 from '@/components/formulir/Formulir12';
-import Formulir13 from '@/components/formulir/Formulir13';
-import Formulir14 from '@/components/formulir/Formulir14';
-import Formulir15 from '@/components/formulir/Formulir15';
-import Formulir16 from '@/components/formulir/Formulir16';
-import Formulir17 from '@/components/formulir/Formulir17';
-import Formulir18 from '@/components/formulir/Formulir18';
-import Formulir19 from '@/components/formulir/Formulir19';
-import Formulir20 from '@/components/formulir/Formulir20';
-import Formulir21 from '@/components/formulir/Formulir21';
-import Formulir22 from '@/components/formulir/Formulir22';
-import Formulir23 from '@/components/formulir/Formulir23';
-import Formulir24 from '@/components/formulir/Formulir24';
-import Formulir25 from '@/components/formulir/Formulir25';
-import Formulir26 from '@/components/formulir/Formulir26';
-import Formulir27 from '@/components/formulir/Formulir27';
-import Formulir28 from '@/components/formulir/Formulir28';
-import Formulir29 from '@/components/formulir/Formulir29';
-import Formulir30 from '@/components/formulir/Formulir30';
-import Formulir31 from '@/components/formulir/Formulir31';
-import Formulir32 from '@/components/formulir/Formulir32';
-import Formulir33 from '@/components/formulir/Formulir33';
+import { lazy } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { getFormulirMetadata } from './formulir-metadata';
 
-const FormulirViewer = () => {
+// The print route's Suspense boundary waits for just the selected template.
+// Keep the other 32 documents out of its initial module graph.
+const Formulir1 = lazy(() => import('@/components/formulir/Formulir1'));
+const Formulir2 = lazy(() => import('@/components/formulir/Formulir2'));
+const Formulir3 = lazy(() => import('@/components/formulir/Formulir3'));
+const Formulir4 = lazy(() => import('@/components/formulir/Formulir4'));
+const Formulir5 = lazy(() => import('@/components/formulir/Formulir5'));
+const Formulir6 = lazy(() => import('@/components/formulir/Formulir6'));
+const Formulir7 = lazy(() => import('@/components/formulir/Formulir7'));
+const Formulir8 = lazy(() => import('@/components/formulir/Formulir8'));
+const Formulir9 = lazy(() => import('@/components/formulir/Formulir9'));
+const Formulir10 = lazy(() => import('@/components/formulir/Formulir10'));
+const Formulir11 = lazy(() => import('@/components/formulir/Formulir11'));
+const Formulir12 = lazy(() => import('@/components/formulir/Formulir12'));
+const Formulir13 = lazy(() => import('@/components/formulir/Formulir13'));
+const Formulir14 = lazy(() => import('@/components/formulir/Formulir14'));
+const Formulir15 = lazy(() => import('@/components/formulir/Formulir15'));
+const Formulir16 = lazy(() => import('@/components/formulir/Formulir16'));
+const Formulir17 = lazy(() => import('@/components/formulir/Formulir17'));
+const Formulir18 = lazy(() => import('@/components/formulir/Formulir18'));
+const Formulir19 = lazy(() => import('@/components/formulir/Formulir19'));
+const Formulir20 = lazy(() => import('@/components/formulir/Formulir20'));
+const Formulir21 = lazy(() => import('@/components/formulir/Formulir21'));
+const Formulir22 = lazy(() => import('@/components/formulir/Formulir22'));
+const Formulir23 = lazy(() => import('@/components/formulir/Formulir23'));
+const Formulir24 = lazy(() => import('@/components/formulir/Formulir24'));
+const Formulir25 = lazy(() => import('@/components/formulir/Formulir25'));
+const Formulir26 = lazy(() => import('@/components/formulir/Formulir26'));
+const Formulir27 = lazy(() => import('@/components/formulir/Formulir27'));
+const Formulir28 = lazy(() => import('@/components/formulir/Formulir28'));
+const Formulir29 = lazy(() => import('@/components/formulir/Formulir29'));
+const Formulir30 = lazy(() => import('@/components/formulir/Formulir30'));
+const Formulir31 = lazy(() => import('@/components/formulir/Formulir31'));
+const Formulir32 = lazy(() => import('@/components/formulir/Formulir32'));
+const Formulir33 = lazy(() => import('@/components/formulir/Formulir33'));
+
+const FormulirTemplate = () => {
     const { id } = useParams();
     const formId = parseInt(id);
     const metadata = getFormulirMetadata(formId);
@@ -150,5 +155,14 @@ const FormulirViewer = () => {
         </div>
     );
 };
+
+const FormulirViewer = () => (
+    <ErrorBoundary
+        fallbackMessage="Template tidak dapat dimuat. Muat ulang halaman untuk mencoba kembali."
+        onReset={() => window.location.reload()}
+    >
+        <FormulirTemplate />
+    </ErrorBoundary>
+);
 
 export default FormulirViewer;

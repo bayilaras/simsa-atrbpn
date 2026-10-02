@@ -589,7 +589,6 @@ export class SuratKeluarService {
             .from(suratKeluar)
             .where(whereClause);
 
-        console.log('[getStats keluar] unitKerjaId:', unitKerjaId, 'result:', JSON.stringify(stats[0]));
         return stats[0];
     }
 

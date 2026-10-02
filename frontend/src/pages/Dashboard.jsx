@@ -112,6 +112,7 @@ export default function Dashboard() {
     const [displayScope, setDisplayScope] = useState(null);
     const requestGeneration = useRef(0);
     const loadedScope = useRef(null);
+    const inFlightLoad = useRef(null);
     const [stats, setStats] = useState(null);
     const [expiring, setExpiring] = useState([]);
     const [recentActivity, setRecentActivity] = useState([]);
@@ -150,6 +151,12 @@ export default function Dashboard() {
     // response for the current user/unit may replace its displayed snapshot.
     const loadDashboardData = useCallback(async (silent = false) => {
         if (scopeKey === null) return;
+        // Focus and visibility events often arrive together. Reuse only the
+        // current generation's request for this user and unit, never old data.
+        const pending = inFlightLoad.current;
+        if (pending?.scopeKey === scopeKey && pending.generation === requestGeneration.current) {
+            return pending.promise;
+        }
         const generation = ++requestGeneration.current;
         const sameScope = loadedScope.current === scopeKey;
         setLoading(!silent || !sameScope);
@@ -158,7 +165,7 @@ export default function Dashboard() {
         setWidgetError(null);
         const unitKerjaId = (requestedUnit === 'all' || requestedUnit === 'none') ? null : requestedUnit;
         try {
-            const [core, widgets] = await Promise.allSettled([
+            const promise = Promise.allSettled([
                 Promise.all([
                     dashboardService.getStats(unitKerjaId),
                     dashboardService.getExpiringArchives(unitKerjaId, 90),
@@ -167,6 +174,8 @@ export default function Dashboard() {
                 ]),
                 dashboardService.getWidgetData(unitKerjaId),
             ]);
+            inFlightLoad.current = { scopeKey, generation, promise };
+            const [core, widgets] = await promise;
             if (generation !== requestGeneration.current) return;
             if (core.status === 'rejected') throw core.reason;
             const [statsResult, expiringResult, comparisonResult, recentResult] = core.value;
@@ -195,6 +204,9 @@ export default function Dashboard() {
                 setWidgetData(null);
             }
         } finally {
+            if (inFlightLoad.current?.generation === generation) {
+                inFlightLoad.current = null;
+            }
             if (generation === requestGeneration.current) {
                 setLoading(false);
                 setRefreshing(false);
