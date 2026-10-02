@@ -30,8 +30,9 @@ secara eksak (`scripts/neon-backup-core.mjs:43-58`), jadi helper diambil dari
 checkout yang **journal-nya sama dengan rantai database**, bukan dari checkout
 yang kodenya sedang berjalan:
 - **Backup pra-0048** (database di rantai 0047): helper dari **commit merge P4**
-  (journal berakhir di `0047_unit_kerja_direktorat`), juga bila kode P5 sudah
-  dideploy. Helper checkout P5 akan menolak rantai 0047.
+  (journal berakhir di `0047_unit_kerja_direktorat`), saat kode P4 masih
+  berjalan (kode P5 baru dideploy setelah 0049, §3). Helper checkout P5 akan
+  menolak rantai 0047.
 - **Backup setelah 0048/0049**: helper dari checkout P5 (commit merge P5).
 
 Workflow terjadwal `backup-neon.yml` berjalan dari branch bawaan. Sejak P5 masuk
@@ -46,20 +47,28 @@ backup manual dengan helper yang cocok.
 database produksi (rantai 0047, kode P4 berjalan) dan **ketiganya bersih**.
 Bila tidak bersih, P5 **tidak di-merge ke `main` dan tidak dideploy** (§4).
 
+**Urutan [Task 14]: deploy kode P5 HANYA SETELAH 0048 dan 0049 diterapkan
+(§5).** Seed Lacak P5 dirancang untuk index trigram 0049. Di atas skema 0047
+(tanpa index itu) kueri nomor tetap benar tetapi kembali ke seq scan atas
+kedua tabel (p95 ±0,44–1,06 s, angka §10.1). Kode P4 (C47) aman di atas skema 0048/0049: 0048 hanya menambah
+batasan yang sudah dipenuhi kode P4 (pra-cek §4 bersih), dan 0049 hanya
+menambah index. Jadi urutannya: backup §2 (kode P4 masih berjalan) → §5.1
+pg_trgm → §5.2 migrasi 0048/0049 → deploy kode P5.
+
 **Deploy kode P5 dengan `RANGKAIAN_DISPOSISI_LAMA_READ` dan
 `RANGKAIAN_TUTUP_MASSAL_DATA_LAMA` tidak diset (mati)**,
-sebelum langkah migrasi/backfill di bawah (jangan mendeploy sebelum backup
-§2 — backup harus diambil dengan kode produksi yang masih berjalan, lalu
-kode P5 didorong). Konfirmasi di Vercel env project backend bahwa flag
+setelah §5 dan sebelum langkah backfill di bawah (jangan mendeploy sebelum
+backup §2 — backup harus diambil dengan kode produksi yang masih berjalan).
+Konfirmasi di Vercel env project backend bahwa flag
 **tidak** bernilai persis `true` sebelum `--apply` (§6). Kode produksi sudah
 menghormati flag ini sejak P2 (`visibility-spec.ts`), jadi flag yang sudah
 menyala sebelum sign-off memberi akses baru fail-open segera setelah baris
 peserta ditulis backfill. `RANGKAIAN_TUTUP_MASSAL_DATA_LAMA` baru dinyalakan
 di §8.2 (CTRL-5).
 
-Koreksi Berkas aman sebelum 0048: `ajukan` sendiri memeriksa, di bawah kunci
-rangkaian, bahwa belum ada koreksi `pending`/`approved` (409). Index unik 0048
-hanya pengaman tambahan. Tetap terapkan 0048 (§5) segera setelah deploy.
+Koreksi Berkas tidak bergantung pada urutan ini: `ajukan` sendiri memeriksa,
+di bawah kunci rangkaian, bahwa belum ada koreksi `pending`/`approved` (409).
+Index unik 0048 hanya pengaman tambahan.
 
 ## 4. Pre-0048: kueri NULL dan keputusan `dilewati` (gerbang rilis baris f)
 
@@ -163,11 +172,13 @@ digulung balik. Karena itu:
    Lalu jalankan backfill langkah 1 run 1, deploy, run 2, dan capai kriteria
    keluar (`RUNBOOK_INTEGRASI_SURAT_P3.md` §2.2–§3).
 2. Ambil backup pra-0048 dengan helper commit merge P4 (§2).
-3. Setelah §4 bersih, jalankan **langkah privileged pg_trgm** (§5.1), lalu
-   terapkan **0048 dan 0049 dari checkout P5** (perintah di bawah). Keduanya
-   berjalan dalam satu transaksi adapter; bila pg_trgm belum terpasang, 0049
-   RAISE `0049: extension pg_trgm belum dipasang` dan **0048 ikut digulung
-   balik** (database tetap 0047, tanpa kerusakan data).
+3. Setelah §4 bersih, dengan **kode P4 masih berjalan**, jalankan **langkah
+   privileged pg_trgm** (§5.1), lalu terapkan **0048 dan 0049 dari checkout
+   P5** (perintah di bawah). Keduanya berjalan dalam satu transaksi adapter;
+   bila pg_trgm belum terpasang, 0049 RAISE `0049: extension pg_trgm belum
+   dipasang` dan **0048 ikut digulung balik** (database tetap 0047, tanpa
+   kerusakan data).
+4. Baru setelah 0049 diterapkan, deploy kode P5 (§3).
 
 ### 5.1 Langkah privileged pg_trgm (sekali, SEBELUM 0049)
 
@@ -193,8 +204,16 @@ unset NEON_ADMIN_DATABASE_URL
 memasangnya tanpa superuser, juga setelah skema `public` dialihkan ke
 `simsa_migrator` (diverifikasi pada PostgreSQL 18). Database Neon baru yang
 di-bootstrap dengan `scripts/neon-database.mjs bootstrap --apply` dari checkout
-P5, dan database Cloud SQL/CI yang menjalankan `grants/0001` versi P5, sudah
-memasang `pg_trgm` sendiri; langkah ini tetap aman diulang.
+P5 sudah memasang `pg_trgm` sebagai administrator; langkah ini tetap aman
+diulang.
+
+**Cloud SQL / CI:** `grants/0001` sengaja **tidak** memasang `pg_trgm`, karena
+drill restore Cloud SQL menjalankan ulang 0001 setelah `pg_restore` lalu
+membandingkan bukti extension secara persis dengan arsip (`pre_migration`,
+`pre_upgrade_0038`). Fase `bootstrap` GCP (`npm run db:roles:bootstrap`)
+menjalankan 0001 lalu 0003 sebagai grant-admin yang sama sebelum fase
+`migrate`. CI PG16/17/18, profil backup-upgrade, drill backup lokal, dan
+harness Postgres menjalankan 0003 sebagai langkah eksplisit sebelum migrasi.
 
 ### 5.2 Migrasi
 
@@ -206,9 +225,18 @@ Sebagai bagian dari deploy (adapter Neon, dari checkout P5), setelah §5.1:
 ```
 
 `0049` membuat enam index GIN `gin_trgm_ops` di dalam transaksi migrasi
-(`CREATE INDEX`, bukan `CONCURRENTLY`): selama pembangunan index, tulis ke
-`surat_masuk`/`surat_keluar` tertahan. Pada volume produksi saat ini ini hanya
-detik; jalankan di jendela deploy yang sama dengan 0048.
+(`CREATE INDEX`, bukan `CONCURRENTLY`). Kunci SHARE pada `surat_masuk` dan
+`surat_keluar` ditahan sampai **seluruh** transaksi adapter commit (0048,
+0049, lalu konvergensi `grants/0002`), bukan hanya selama index dibangun;
+selama itu tulis ke kedua tabel tertahan. Periksa volume sebelum jendela:
+
+```sql
+SELECT (SELECT count(*) FROM surat_masuk) AS surat_masuk, (SELECT count(*) FROM surat_keluar) AS surat_keluar;
+```
+
+Pada 2×50 ribu baris sintetis keenam index terbangun dalam ±3,1 s (PG18
+lokal); skalakan dengan jumlah baris di atas. Jalankan di jendela yang sama
+dengan 0048, saat kode P4 masih berjalan (§3).
 
 Bukti index dipakai (sebagai `simsa_api`, setelah migrasi):
 
@@ -401,8 +429,23 @@ baru yang menjadi target rollback yang valid.
 ### 10.1 Rollback index trigram 0049
 
 Index `*_trgm_idx` hanya mempercepat Lacak. Bila pembangunannya atau
-pemeliharaannya bermasalah (mis. beban tulis), menjatuhkannya **aman**: Lacak
-tetap benar, kembali ke seq scan (p95 kembali ±0,5 s pada 2×50 ribu baris).
+pemeliharaannya bermasalah (mis. beban tulis), menjatuhkannya **aman** untuk
+kebenaran: Lacak tetap benar, tetapi kembali ke seq scan atas kedua tabel.
+Angka terukur tanpa index 0049 (2×50 ribu baris, PG18 lokal tanpa JIT,
+`lacak-explain.postgres.test.ts` `LACAK_PERF=1`, tiga run, min–maks p95):
+
+| Kueri | admin_unit | pengawas | super_admin |
+|---|---|---|---|
+| nomor `B-12345/PTPP` (qNorm ≥ 5, satu arm substring) | 440–524 ms | 458–515 ms | 462–554 ms |
+| nomor `B-123` (qNorm < 5, kesamaan OR prefix + token) | 838–877 ms | 808–865 ms | 861–1060 ms |
+
+Kueri nomor panjang kembali ke baseline sebelum Task 14 (p95 ±470–590 ms):
+WHERE hanya mengevaluasi `regexp_replace` sekali per baris (median per 50 ribu
+baris: satu arm 155–166 ms, LATERAL pra-Task 14 187–224 ms, tiga arm commit
+431fd64 428–498 ms). Kueri nomor pendek lebih mahal (dua arm nomor ditambah
+token ILIKE), tetap di bawah `statement_timeout` 2 s tetapi mendekati 1 s untuk
+super_admin. Jangan biarkan rollback ini berlangsung lama; buat ulang index
+(di bawah; enam index ±3 s pada 2×50 ribu baris).
 Jalankan sebagai pemilik tabel (`simsa_migration`, yang SET ROLE ke
 `simsa_migrator`):
 
@@ -420,7 +463,7 @@ unset NEON_MIGRATION_DATABASE_URL
 ```
 
 Extension `pg_trgm` **dibiarkan** terpasang (jangan `DROP EXTENSION`: milik
-administrator grant dan diperiksa `grants/0001`). Baris `0049_lacak_trgm` di
+administrator grant dan diverifikasi `grants/0003`). Baris `0049_lacak_trgm` di
 `drizzle.__drizzle_migrations` tetap ada; untuk memulihkan kinerja, buat ulang
 keenam index dengan pernyataan persis dari
 `backend/src/db/migrations/0049_lacak_trgm.sql` (sebagai pemilik tabel).

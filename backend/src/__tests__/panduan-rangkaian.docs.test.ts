@@ -88,6 +88,16 @@ describe('dokumentasi Integrasi Surat P5', () => {
             // Urutan bertahap: langkah privileged ditulis sebelum perintah migrasi yang membawa 0049.
             expect(dokumen.indexOf('0003_optional_pg_trgm.sql')).toBeLessThan(dokumen.lastIndexOf('neon-database.mjs migrate --apply'));
         }
+        // Review I-2: kode P5 (C48) dideploy HANYA setelah 0049 diterapkan; kode C47 berjalan
+        // selama migrasi 0048/0049.
+        expect(rilis.indexOf('13. **Langkah privileged pg_trgm, lalu migrasi 0048/0049 dari checkout C48, dengan kode C47 masih berjalan**'))
+            .toBeGreaterThan(0);
+        expect(rilis.indexOf('neon-database.mjs migrate --apply', rilis.indexOf('13. **Langkah privileged pg_trgm')))
+            .toBeLessThan(rilis.indexOf('14. **Deploy kode C48: frontend dan backend dalam satu deploy — HANYA setelah 0049 diterapkan'));
+        expect(rilis).not.toContain('Kode P5 sengaja dideploy di atas skema 0047');
+        expect(runbook).toContain('deploy kode P5 HANYA SETELAH 0048 dan 0049 diterapkan');
+        expect(runbook).not.toContain('p95 kembali ±0,5 s');
+        expect(rilis).not.toContain('Aman: Lacak tetap benar, hanya kembali ke seq scan. Extension');
         expect(rilis).not.toContain('Tugas opsional 14 (pg_trgm) dan 15 (re-key limiter) dilewati');
         expect(rilis).toContain('Tugas opsional 14 (pg_trgm) **dikerjakan**');
         expect(rilis).toContain('journal berisi 50 entri (idx 0–49)');
