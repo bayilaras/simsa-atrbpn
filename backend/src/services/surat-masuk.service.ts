@@ -3,6 +3,7 @@ import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
 import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, inArray } from 'drizzle-orm';
 import { ConflictError, DatabaseError } from '../utils/errors';
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
+import { createLogger } from '../utils/logger';
 import {
     scopedRecordByIdWhere,
     type RecordUnitScope,
@@ -50,6 +51,8 @@ export interface SuratMasukFilters {
     /** null means all classes (super_admin); [] fails closed. */
     securityClassifications?: string[] | null;
 }
+
+const log = createLogger('SuratMasukService');
 
 function securityClassificationCondition(classes: string[] | null | undefined) {
     if (classes === undefined || classes === null) return undefined;
@@ -537,11 +540,6 @@ export class SuratMasukService {
         securityClassifications?: string[] | null,
     ) {
         try {
-            // Mirror dashboard service pattern exactly:
-            // - When unitKerjaId is null → skip WHERE clause (query all records)
-            // - Use individual count queries in parallel (proven working in dashboard)
-            // Dashboard shows 1721 surat masuk correctly using this approach
-
             const classificationCondition = securityClassificationCondition(securityClassifications);
             const baseConditions = [
                 or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,
@@ -550,38 +548,25 @@ export class SuratMasukService {
                 ...(classificationCondition ? [classificationCondition] : []),
             ];
 
-            // Run all counts in parallel (same approach as dashboard service)
-            const [
-                [totalResult],
-                [belumDibalasResult],
-                [sudahDibalasResult],
-                [diarsipkanResult],
-            ] = await Promise.all([
-                db.select({ count: sql<number>`count(*)::int` })
-                    .from(suratMasuk)
-                    .where(and(...baseConditions)),
-                db.select({ count: sql<number>`count(*)::int` })
-                    .from(suratMasuk)
-                    .where(and(...baseConditions, eq(suratMasuk.status, 'belum_dibalas'))),
-                db.select({ count: sql<number>`count(*)::int` })
-                    .from(suratMasuk)
-                    .where(and(...baseConditions, eq(suratMasuk.status, 'sudah_dibalas'))),
-                db.select({ count: sql<number>`count(*)::int` })
-                    .from(suratMasuk)
-                    .where(and(...baseConditions, eq(suratMasuk.isArchived, true))),
-            ]);
+            // One statement shares the visibility predicate and database
+            // snapshot across every counter, using one connection/round trip.
+            const [counts] = await db.select({
+                total: sql<number>`count(*)::int`,
+                belumDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'belum_dibalas')::int`,
+                sudahDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'sudah_dibalas')::int`,
+                diarsipkan: sql<number>`count(*) filter (where ${suratMasuk.isArchived} = true)::int`,
+            }).from(suratMasuk).where(and(...baseConditions));
 
             const result = {
-                total: totalResult?.count || 0,
-                belumDibalas: belumDibalasResult?.count || 0,
-                sudahDibalas: sudahDibalasResult?.count || 0,
-                diarsipkan: diarsipkanResult?.count || 0,
+                total: counts?.total ?? 0,
+                belumDibalas: counts?.belumDibalas ?? 0,
+                sudahDibalas: counts?.sudahDibalas ?? 0,
+                diarsipkan: counts?.diarsipkan ?? 0,
             };
 
-            console.log('[getStats] unitKerjaId:', unitKerjaId, 'result:', JSON.stringify(result));
             return result;
         } catch (error) {
-            console.error('[SuratMasukService.getStats] Query failed:', error);
+            log.error({ err: error }, 'Failed to fetch incoming letter statistics');
             throw error;
         }
     }

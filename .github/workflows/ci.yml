@@ -935,8 +935,7 @@ jobs:
         run: npm audit --audit-level=high
         working-directory: spark
 
-      # Docusaurus currently has a no-fix high advisory in its trusted local-image
-      # build pipeline. Block critical regressions until upstream ships a patch.
+      # Documentation build dependencies use the same severity gate as the apps.
       - name: Audit documentation
-        run: npm audit --audit-level=critical
+        run: npm audit --audit-level=high
         working-directory: docs-site

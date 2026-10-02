@@ -22,12 +22,6 @@ const updateSW = registerSW({
       updateSW(true)
     }
   },
-  onOfflineReady() {
-    console.log(`${appConfig.shortName} siap digunakan offline`)
-  },
-  onRegistered(registration) {
-    console.log('Service Worker registered:', registration)
-  },
   onRegisterError(error) {
     console.error('Service Worker registration error:', error)
   }
