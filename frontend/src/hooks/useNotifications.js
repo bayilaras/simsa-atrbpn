@@ -115,11 +115,43 @@ export function useNotifications({ unitKerjaId = '', limit = 20, refreshInterval
     useEffect(() => {
         if (refreshInterval <= 0 || notificationsEnabled !== true || !unitKerjaId) return
 
-        const interval = setInterval(() => {
-            fetchNotifications()
-        }, refreshInterval)
+        let interval = null
+        let inFlight = false
+        let disposed = false
+        const available = () => document.visibilityState !== 'hidden' && navigator.onLine !== false
+        const stopInterval = () => {
+            if (interval !== null) clearInterval(interval)
+            interval = null
+        }
+        const refreshAutomatically = async () => {
+            if (disposed || !available() || inFlight) return
+            // Only coalesce automatic requests; manual refreshes and mutation
+            // resyncs must still reach the server while an older request settles.
+            inFlight = true
+            try {
+                await fetchNotifications()
+            } finally {
+                inFlight = false
+            }
+        }
+        const handleAvailabilityChange = () => {
+            stopInterval()
+            if (disposed || !available()) return
+            void refreshAutomatically()
+            interval = setInterval(refreshAutomatically, refreshInterval)
+        }
 
-        return () => clearInterval(interval)
+        if (available()) interval = setInterval(refreshAutomatically, refreshInterval)
+        document.addEventListener('visibilitychange', handleAvailabilityChange)
+        window.addEventListener('online', handleAvailabilityChange)
+        window.addEventListener('offline', handleAvailabilityChange)
+        return () => {
+            disposed = true
+            stopInterval()
+            document.removeEventListener('visibilitychange', handleAvailabilityChange)
+            window.removeEventListener('online', handleAvailabilityChange)
+            window.removeEventListener('offline', handleAvailabilityChange)
+        }
     }, [refreshInterval, fetchNotifications, notificationsEnabled, unitKerjaId])
 
     const refresh = useCallback(() => {

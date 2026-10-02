@@ -7,8 +7,6 @@ const log = createLogger('MappingRoutes');
 
 const router = Router();
 
-log.info('✅ Mapping routes file loaded');
-
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
