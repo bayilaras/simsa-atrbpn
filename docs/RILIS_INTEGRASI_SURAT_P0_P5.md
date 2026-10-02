@@ -34,15 +34,15 @@ Aturan merge:
    - "Backend Tests (PostgreSQL 16)", "(PostgreSQL 17)", "(PostgreSQL 18)", termasuk langkah `npm run test:postgres-locks` (semua `backend/integration/*.postgres.test.ts`) dan profil backup-upgrade `.github/scripts/test-backup-upgrade-profile.mjs`;
    - mulai P4: langkah **"Run Lacak EXPLAIN and p95 gate (LACAK_PERF)"** (`LACAK_PERF=1`) pada PG16/17/18. EXPLAIN index dan non-vakum D7 adalah gerbang keras; p50/p95 dicatat di PR;
    - `npm run test:migration-manifest` di root;
-   - mulai P5: journal berisi 49 entri (idx 0–48). Bila `main` mendapat migrasi baru sebelum P5 di-merge, turunkan ulang `idx`/`when` 0048 dan ulangi `test:migration-manifest` (P5-C-11).
+   - mulai P5: journal berisi 50 entri (idx 0–49), termasuk `0049_lacak_trgm` dari Task 14. Bila `main` mendapat migrasi baru sebelum P5 di-merge, turunkan ulang `idx`/`when` 0048 dan 0049 dan ulangi `test:migration-manifest` (P5-C-11).
 
    Suite PostgreSQL P3–P5 **belum pernah dijalankan di luar CI**. Run CI inilah bukti pertamanya. Catat URL run CI per fase di tabel gerbang (§4).
 4. **Merge ke `main` bukan rilis produksi.** Pastikan merge tidak memicu deploy produksi otomatis: promosi Vercel dilakukan manual dan terverifikasi (`docs/DEPLOY_VERCEL_NEON.md`).
 
-   **[GABUNGAN] Backup terjadwal.** Workflow terjadwal `backup-neon.yml` berjalan dari branch bawaan, dan manifest backup mengikat rantai migrasi secara eksak (`scripts/neon-backup-core.mjs`). Selama rantai journal di `main` berbeda dengan rantai database produksi, backup terjadwal harian akan gagal. Ini terjadi sejak P1 masuk `main` sampai 0046/0047 diterapkan, dan sejak P5 masuk `main` sampai 0048 diterapkan. Karena P5 baru di-merge ketika 0048 dapat langsung diterapkan (langkah 10–14), jarak kedua cukup pendek. Rapatkan jarak antara merge dan rilis, atau ambil backup manual dengan helper checkout yang cocok.
+   **[GABUNGAN] Backup terjadwal.** Workflow terjadwal `backup-neon.yml` berjalan dari branch bawaan, dan manifest backup mengikat rantai migrasi secara eksak (`scripts/neon-backup-core.mjs`). Selama rantai journal di `main` berbeda dengan rantai database produksi, backup terjadwal harian akan gagal. Ini terjadi sejak P1 masuk `main` sampai 0046/0047 diterapkan, dan sejak P5 masuk `main` sampai 0048/0049 diterapkan. Karena P5 baru di-merge ketika 0048 dapat langsung diterapkan (langkah 10–14), jarak kedua cukup pendek. Rapatkan jarak antara merge dan rilis, atau ambil backup manual dengan helper checkout yang cocok.
 5. **Dua checkout rilis** dipakai di §3. Keduanya diambil dari `main` setelah merge:
    - **C47** — commit merge P4 di `main` (journal berakhir di `0047_unit_kerja_direktorat`);
-   - **C48** — commit merge P5 di `main` (journal berakhir di `0048_rangkaian_pengerasan`). C48 baru ada setelah langkah 11.
+   - **C48** — commit merge P5 di `main` (journal berakhir di `0049_lacak_trgm`, setelah `0048_rangkaian_pengerasan`). C48 baru ada setelah langkah 11.
 
 ## 2. Prasyarat sebelum hari rilis
 
@@ -84,7 +84,7 @@ Setiap langkah dicatat (waktu UTC dan WIB, operator, hasil) di hasil rilis. **He
    if ($LASTEXITCODE -ne 0) { throw 'Verifikasi runtime gagal; jangan deploy aplikasi' }
    ```
 
-   **Alasan.** Adapter menjalankan **semua** migrasi tertunda dalam **satu transaksi** (`backend/scripts/migrate-database.mjs`) lalu langsung mengonvergensikan `grants/0002`. Tidak ada opsi target. Dari checkout C48, 0046, 0047, dan 0048 akan berjalan bersama. Setelah 0046, setiap baris `surat_distributions` lama masih ber-`rangkaian_id` NULL, sehingga precheck 0048 RAISE dan seluruh transaksi digulung balik. Rilis pun macet, walaupun tidak ada kerusakan data.
+   **Alasan.** Adapter menjalankan **semua** migrasi tertunda dalam **satu transaksi** (`backend/scripts/migrate-database.mjs`) lalu langsung mengonvergensikan `grants/0002`. Tidak ada opsi target. Dari checkout C48, 0046, 0047, dan 0048 akan berjalan bersama. Setelah 0046, setiap baris `surat_distributions` lama masih ber-`rangkaian_id` NULL, sehingga precheck 0048 RAISE dan seluruh transaksi digulung balik. Rilis pun macet, walaupun tidak ada kerusakan data. Dari C48, 0048 dan 0049 juga berjalan dalam satu transaksi; 0049 mensyaratkan `pg_trgm` dari langkah privileged (langkah 14), dan tanpa itu 0049 RAISE dan 0048 ikut digulung balik.
 
    Lalu, sebagai `simsa_api`, jalankan kueri hak `rangkaian_surat` dan `unit_kerja` dari RUNBOOK_P1 langkah 4 (`verify-runtime` tidak memeriksanya). Tugaskan `admin_unit` `dir_*`.
 4. **Backfill langkah 1, run pertama (pra-deploy).** Jalankan `npm --prefix backend run db:backfill:rangkaian-disposisi` sebagai `simsa_api` (RUNBOOK_P3 §4: kueri identitas dulu, `DATABASE_URL` hanya dari shell). Run ini boleh berakhir dengan `sisaTanpaRangkaian > 0`. Bila berhenti dengan `40P01`/`40001`, jalankan ulang (skrip idempoten). Ulangi kueri C-10 tepat sebelum deploy.
@@ -135,7 +135,24 @@ Setiap langkah dicatat (waktu UTC dan WIB, operator, hasil) di hasil rilis. **He
 11. **Merge P5** ke `main` (rebase, CI hijau, §1) → checkout **C48**.
 12. **[GABUNGAN] Backup #2 (pra-0048)** dengan helper dari **checkout C47**. Database masih di rantai 0047, dan helper C48 akan menolak rantai itu.
 13. **Deploy kode C48: frontend dan backend dalam satu deploy.** `RANGKAIAN_DISPOSISI_LAMA_READ`, `RANGKAIAN_TUTUP_MASSAL_DATA_LAMA`, dan `RANGKAIAN_AJUKAN_AKSES` tetap tidak diset; `RANGKAIAN_DATA_LAMA_SEBELUM` tetap nilai langkah 9. Kode P5 sengaja dideploy di atas skema 0047 (runbook P5 §3), dan `/ready` tidak mensyaratkan artefak 0048. Periksa `/ready` = 200. Koreksi Berkas aman sebelum 0048 karena layanan memeriksa koreksi terbuka sendiri (409), tetapi lanjutkan ke langkah 14 tanpa jeda.
-14. **Migrasi 0048 dari checkout C48.** Ulangi ketiga kueri langkah 10 tepat sebelum migrasi. Lalu jalankan `migrate --apply` dan `verify-runtime` (perintah sama seperti langkah 3), kemudian kueri hak RUNBOOK_P1 langkah 4 sebagai `simsa_api`. Periksa `/ready` = 200. Sejak titik ini **lantai rollback adalah kode P3+** (§5). Setelah itu ambil **Backup #3** dengan helper checkout C48.
+14. **Langkah privileged pg_trgm, lalu migrasi 0048/0049 dari checkout C48** (bertahap, runbook P5 §5.1–§5.2):
+    1. **Sebelum migrasi**, administrator grant Neon (pemilik database, `NEON_ADMIN_DATABASE_URL`; **bukan** `simsa_migration`) menjalankan `backend/src/db/grants/0003_optional_pg_trgm.sql` satu kali. Skrip menolak migrator dan memverifikasi versi bawaan, skema `public`, dan pemilik. `pg_trgm` didukung Neon dan bertanda *trusted*, sehingga pemilik database cukup; idempoten.
+
+       ```bash
+       read -rs NEON_ADMIN_DATABASE_URL && export NEON_ADMIN_DATABASE_URL
+       psql "$NEON_ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/src/db/grants/0003_optional_pg_trgm.sql
+       unset NEON_ADMIN_DATABASE_URL
+       ```
+    2. Ulangi ketiga kueri langkah 10 tepat sebelum migrasi.
+    3. Jalankan migrasi (0048 dan `0049_lacak_trgm` dalam satu transaksi) lalu verifikasi:
+
+       ```powershell
+       # dari checkout C48 (journal berakhir di 0049)
+       & $cloudNode "--env-file=$cloudEnv" scripts/neon-database.mjs migrate --apply
+       if ($LASTEXITCODE -ne 0) { throw 'Migrasi/grant gagal' }
+       & $cloudNode "--env-file=$cloudEnv" scripts/neon-database.mjs verify-runtime
+       ```
+    4. Kueri hak RUNBOOK_P1 langkah 4 sebagai `simsa_api`. Periksa `/ready` = 200. Sejak titik ini **lantai rollback adalah kode P3+** (§5). Setelah itu ambil **Backup #3** dengan helper checkout C48.
 
 ### Tahap D — Data lama (hanya bila gerbang (e) = "ada data lama")
 
@@ -199,7 +216,7 @@ Status: **belum** / **disahkan** (nama, tanggal) / **ditolak** / **tidak berlaku
 | P4-1 | Tandai Inisiatif diotorisasi kebijakan list + unit pemilik, bukan `check()` | P4-G-7(a) | Keamanan | belum |
 | P4-2 | O1: rangkaian backfill langkah 1 (`surat_masuk`, `selesai`) muncul di `siap_diberkaskan` dan badge | P4-G-7 | Spec | belum |
 | P4-3 | G-F3 pada `tindak_lanjut_tertahan` ("Buka surat") | P4-G-7 | Keamanan | belum |
-| P4-4 | p95 Lacak dan masukan pg_trgm (penerimaan bila p95 ≥ 150 ms) | P4-G-7, spec §6 | Spec | belum |
+| P4-4 | p95 Lacak (target 150 ms). Gerbang (a) Task 14 terpenuhi: tanpa trigram p95 nomor ±470–590 ms (2×50 ribu baris, PG18 lokal tanpa JIT). Dengan index trigram 0049 (P5 Task 14) p95 lokal (dua run, PG18 tanpa JIT): nomor `B-12345/PTPP` 20–31 ms, perihal `koordinasi pertanahan` (±12,5 ribu baris cocok) 85–140 ms untuk admin_unit/pengawas/super_admin (`lacak-explain.postgres.test.ts`, `LACAK_PERF=1`). CI menegaskan rencana memakai `*_trgm_idx`; angka CI (dengan JIT) dicatat di PR | P4-G-7, spec §6 | Spec | belum |
 | P4-5 | Lacak tanpa audit `view_via_rangkaian`/`markGrantUsed` (semantik list); termasuk urutan placeholder D7 menurut tanggal | P4-D-18 | Keamanan | belum |
 | P4-6 | `POST /:id/tautan` lewat `anggotaId` menutup `sm_belum_ditindaklanjuti` untuk SM tak terbaca | P4-D-18 | Spec | belum |
 | P4-7 | Baris grant memperlihatkan `entityId`/kelas tersamar (P3 M-1) | P4-D-18 | Keamanan | belum |
@@ -214,7 +231,7 @@ Status: **belum** / **disahkan** (nama, tanggal) / **ditolak** / **tidak berlaku
 | P5-a | Unit pengolah dari label lama: "isi" (`--isi-pengolah`, sebelum Tutup massal, akses tidak dikendalikan flag) atau "tidak" (spec:358 diwaiver) | P5-G-6, P5-C-2 | Spec + Keamanan | belum |
 | P5-b | Peserta tidak ditambahkan ke rangkaian `diberkaskan` | P5-T5-3 | Spec | belum |
 | P5-c | Menyalakan `RANGKAIAN_DISPOSISI_LAMA_READ` berdasarkan `pemetaan-label.csv`, dengan sign-off terpisah, lalu redeploy | spec §13 Q1 | Keamanan | belum (setelah apply) |
-| P5-d | Tugas opsional 14 (pg_trgm) dan 15 (re-key limiter) dilewati | P5-G-6 | Spec | belum |
+| P5-d | Tugas opsional 14 (pg_trgm) **dikerjakan**: migrasi `0049_lacak_trgm` + langkah privileged `grants/0003_optional_pg_trgm.sql` sebelum migrasi (langkah 14); gerbang (a) terukur (P4-4), gerbang (b) = sign-off pemilik DB atas siapa yang menjalankan 0003 di Neon. Tugas 15 (re-key limiter) tetap dilewati | P5-G-6, spec §13 Q3 | Spec + Operator | belum |
 | P5-e | Data lama ada di produksi? (dari pre-flight P0 `data_lama_ringkasan`) | spec §13 Q2 | Data | belum |
 | P5-f | `dilewati` → **tahan 0048 = tahan seluruh P5** (CTRL-2 diamandemen): P5 tidak di-merge/dideploy, produksi tetap C47 di 0047 (backup terjadwal tetap hijau), `--apply` langkah 2 tertahan. Catat pemilik keputusan dan syarat pelepasan | P5-C-3, CTRL-2, B-I1 | Spec + Data | belum |
 | P5-g | Gabung rangkaian `data_lama` ke rangkaian hidup menahan target `aktif` (fakta P1 `surat_masuk_belum_ditangani`) | P5-D-8 | Spec | belum |
@@ -239,8 +256,9 @@ Prinsip umum:
 | Langkah 5–9 (kode C47 live, database 0047) | Redeploy rilis produksi terakhir (FE+BE bersama); `/ready` 200 | rilis produksi terakhir (runbook P3 §6) | Data P3 tetap ada. Saat roll-forward, jalankan lagi backfill sebelum dan sesudah deploy (P3 §6.3). Bila `RANGKAIAN_AJUKAN_AKSES` pernah menyala, cabut grant disposisi (P3 §6.4). Env `RANGKAIAN_DATA_LAMA_SEBELUM` boleh dibiarkan |
 | Langkah 10 (pre-0048 tidak bersih) | Tahan seluruh P5 (gerbang f): P5 tidak di-merge/dideploy; produksi tetap C47 di 0047 | kode C47 | Lihat langkah 10 untuk batasan selama penahanan |
 | Langkah 13 (deploy C48 di atas 0047) gagal | Redeploy C47 (FE+BE bersama); `/ready` 200 | kode C47 | Skema tidak berubah. Koreksi Berkas yang sempat diajukan tetap ada dan harus lolos pra-cek langkah 10 sebelum 0048 |
-| Langkah 14 (migrasi 0048) gagal | Transaksi digulung balik; database tetap 0047. Rekonsiliasi lalu ulangi | kode C48 (atau C47) | P5 **sudah** ada di `main` pada titik ini (di-merge langkah 11). Bila jeda perbaikan melewati jadwal backup terjadwal, ambil **backup manual** dengan helper checkout C47. Backup terjadwal (`backup-neon.yml`) akan terus gagal sampai 0048 berhasil diterapkan atau P5 dibalik dari `main` |
+| Langkah 14 (migrasi 0048/0049) gagal | Transaksi digulung balik; database tetap 0047. Rekonsiliasi lalu ulangi. Galat `0049: extension pg_trgm belum dipasang` → jalankan langkah 14.1 (`grants/0003`) lalu ulangi | kode C48 (atau C47) | P5 **sudah** ada di `main` pada titik ini (di-merge langkah 11). Bila jeda perbaikan melewati jadwal backup terjadwal, ambil **backup manual** dengan helper checkout C47. Backup terjadwal (`backup-neon.yml`) akan terus gagal sampai 0048 berhasil diterapkan atau P5 dibalik dari `main` |
 | Setelah 0048 diterapkan | Redeploy **kode P3+** terakhir yang stabil (FE+BE bersama) | **kode P3+** (runbook P5 §10) | Rilis pra-P3 menulis distribusi tanpa `rangkaian_id` → `23502`. Lantai "rilis produksi terakhir" di runbook P3 §6 **tidak berlaku**. Pembatalan skema hanya lewat migrasi maju `ALTER COLUMN rangkaian_id DROP NOT NULL` atau restore Backup #2. Backup #2 adalah bundel rantai 0047: memulihkannya wajib memakai helper dari **checkout C47**, dan kode produksi harus ikut kembali ke **C47** (helper C48 menolak rantai 0047) |
+| Index trigram 0049 bermasalah setelah diterapkan | `DROP INDEX IF EXISTS surat_masuk_nomor_norm_trgm_idx` dan lima `*_trgm_idx` lain sebagai pemilik tabel (`simsa_migration`), runbook P5 §10.1. Aman: Lacak tetap benar, hanya kembali ke seq scan. Extension `pg_trgm` dibiarkan | — | Baris journal 0049 tetap; buat ulang index dari `0049_lacak_trgm.sql` untuk memulihkan kinerja |
 | Langkah 17 (`--apply` langkah 2) | Tidak dapat dibatalkan lewat aplikasi: runtime tidak punya DELETE pada `rangkaian_*`. Peserta `disposisi_lama` tetap **tanpa efek akses** selama flag mati. Apply yang terputus: dry-run → sign-off → apply ulang (idempoten) | — | Pembatalan penuh hanya dengan restore Backup #3 (kehilangan data sejak backup) |
 | Langkah 18 (`--isi-pengolah`) | Akses pengolah **tidak** dicabut oleh flag. Koreksi hanya lewat Koreksi Berkas setelah diberkaskan, ke unit dalam jangkauan | — | Karena itu gerbang (a) disahkan sebelum langkah ini |
 | Langkah 19 (Tutup massal) | Final: `diberkaskan` terminal. Unit pengolah dan klasifikasi hanya dapat dikoreksi lewat Koreksi Berkas. Hentikan pemakaian lebih lanjut dengan mengosongkan `RANGKAIAN_TUTUP_MASSAL_DATA_LAMA` lalu redeploy | — | — |
@@ -259,4 +277,5 @@ Prinsip umum:
   - dua pra-cek koreksi 0048 (§4);
   - CTRL-2 diamandemen: tahan 0048 = tahan seluruh P5, beserta akibatnya pada backup dan `--apply` (§3–§4);
   - migrasi bertahap dan helper backup pra-0048 (§2, §5);
-  - gerbang CTRL-5 Tutup massal (§8.2).
+  - gerbang CTRL-5 Tutup massal (§8.2);
+  - Task 14: langkah privileged `pg_trgm` sebelum 0049 dan rollback index trigram (§5.1, §10.1).

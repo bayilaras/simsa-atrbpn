@@ -74,4 +74,22 @@ describe('dokumentasi Integrasi Surat P5', () => {
         ]) expect(rilis, text).toContain(text);
         expect(read('docs/RUNBOOK_INTEGRASI_SURAT_P3.md')).toContain('Jalankan langkah ini dari commit merge P4');
     });
+
+    it('runbook P5 dan dokumen rilis memuat langkah privileged pg_trgm sebelum 0049 (Task 14)', () => {
+        const runbook = read('docs/RUNBOOK_INTEGRASI_SURAT_P5.md');
+        const rilis = read('docs/RILIS_INTEGRASI_SURAT_P0_P5.md');
+        for (const dokumen of [runbook, rilis]) {
+            for (const text of [
+                'backend/src/db/grants/0003_optional_pg_trgm.sql',
+                '0049_lacak_trgm',
+                'NEON_ADMIN_DATABASE_URL',
+                'DROP INDEX IF EXISTS surat_masuk_nomor_norm_trgm_idx',
+            ]) expect(dokumen, text).toContain(text);
+            // Urutan bertahap: langkah privileged ditulis sebelum perintah migrasi yang membawa 0049.
+            expect(dokumen.indexOf('0003_optional_pg_trgm.sql')).toBeLessThan(dokumen.lastIndexOf('neon-database.mjs migrate --apply'));
+        }
+        expect(rilis).not.toContain('Tugas opsional 14 (pg_trgm) dan 15 (re-key limiter) dilewati');
+        expect(rilis).toContain('Tugas opsional 14 (pg_trgm) **dikerjakan**');
+        expect(rilis).toContain('journal berisi 50 entri (idx 0–49)');
+    });
 });

@@ -1,6 +1,7 @@
 # Runbook Deploy Integrasi Surat — P5 (Pengerasan 0048 + Backfill Data Lama)
 
-Berlaku untuk rilis yang memuat migrasi `0048_rangkaian_pengerasan` dan skrip backfill
+Berlaku untuk rilis yang memuat migrasi `0048_rangkaian_pengerasan`,
+`0049_lacak_trgm` (index trigram Lacak Surat, Task 14), dan skrip backfill
 `backend/scripts/backfill-rangkaian-lama.mjs`. Produksi memakai Vercel + Neon; jalur
 Cloud SQL/psql lain tidak dipakai untuk backfill data lama (§5).
 
@@ -31,7 +32,7 @@ yang kodenya sedang berjalan:
 - **Backup pra-0048** (database di rantai 0047): helper dari **commit merge P4**
   (journal berakhir di `0047_unit_kerja_direktorat`), juga bila kode P5 sudah
   dideploy. Helper checkout P5 akan menolak rantai 0047.
-- **Backup setelah 0048**: helper dari checkout P5 (commit merge P5).
+- **Backup setelah 0048/0049**: helper dari checkout P5 (commit merge P5).
 
 Workflow terjadwal `backup-neon.yml` berjalan dari branch bawaan. Sejak P5 masuk
 `main` sampai 0048 diterapkan, rantai `main` ≠ rantai database, sehingga backup
@@ -150,7 +151,7 @@ SELECT id, surat_masuk_id, rangkaian_id, updated_at
  ORDER BY updated_at;
 ```
 
-## 5. Migrasi 0048
+## 5. Migrasi 0048 dan 0049
 
 **Migrasi bertahap (rilis gabungan P0–P5).** Adapter Neon menjalankan **semua**
 migrasi tertunda dalam satu transaksi (`backend/scripts/migrate-database.mjs`)
@@ -162,13 +163,61 @@ digulung balik. Karena itu:
    Lalu jalankan backfill langkah 1 run 1, deploy, run 2, dan capai kriteria
    keluar (`RUNBOOK_INTEGRASI_SURAT_P3.md` §2.2–§3).
 2. Ambil backup pra-0048 dengan helper commit merge P4 (§2).
-3. Setelah §4 bersih, terapkan **0048 dari checkout P5** (perintah di bawah).
+3. Setelah §4 bersih, jalankan **langkah privileged pg_trgm** (§5.1), lalu
+   terapkan **0048 dan 0049 dari checkout P5** (perintah di bawah). Keduanya
+   berjalan dalam satu transaksi adapter; bila pg_trgm belum terpasang, 0049
+   RAISE `0049: extension pg_trgm belum dipasang` dan **0048 ikut digulung
+   balik** (database tetap 0047, tanpa kerusakan data).
 
-Sebagai bagian dari deploy (adapter Neon, dari checkout P5):
+### 5.1 Langkah privileged pg_trgm (sekali, SEBELUM 0049)
+
+Migrasi `0049_lacak_trgm` tidak pernah memasang extension: migrator sengaja
+tidak berhak. Administrator grant (pemilik database Neon, identitas
+`NEON_ADMIN_DATABASE_URL` yang dipakai `bootstrap`; **bukan**
+`simsa_migration`/`simsa_migrator`) menjalankan
+`backend/src/db/grants/0003_optional_pg_trgm.sql` satu kali. Skrip menolak
+dijalankan oleh migrator, lalu memverifikasi bahwa `pg_trgm` memakai versi
+bawaan engine, berada di skema `public`, dan dimiliki administrator tersebut.
+Idempoten; aman dijalankan kapan saja sebelum migrasi (database 0047 tidak
+terpengaruh oleh extension ini).
+
+```bash
+read -rs NEON_ADMIN_DATABASE_URL && export NEON_ADMIN_DATABASE_URL
+psql "$NEON_ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/src/db/grants/0003_optional_pg_trgm.sql
+psql "$NEON_ADMIN_DATABASE_URL" -c "SELECT extname, extversion, pg_get_userbyid(extowner) FROM pg_extension WHERE extname = 'pg_trgm';"
+unset NEON_ADMIN_DATABASE_URL
+```
+
+**Neon:** `pg_trgm` termasuk extension yang didukung Neon dan bertanda
+*trusted*, sehingga pemilik database (anggota `neon_superuser`) dapat
+memasangnya tanpa superuser, juga setelah skema `public` dialihkan ke
+`simsa_migrator` (diverifikasi pada PostgreSQL 18). Database Neon baru yang
+di-bootstrap dengan `scripts/neon-database.mjs bootstrap --apply` dari checkout
+P5, dan database Cloud SQL/CI yang menjalankan `grants/0001` versi P5, sudah
+memasang `pg_trgm` sendiri; langkah ini tetap aman diulang.
+
+### 5.2 Migrasi
+
+Sebagai bagian dari deploy (adapter Neon, dari checkout P5), setelah §5.1:
 
 ```powershell
 & $cloudNode "--env-file=$cloudEnv" scripts/neon-database.mjs migrate --apply
 & $cloudNode "--env-file=$cloudEnv" scripts/neon-database.mjs verify-runtime
+```
+
+`0049` membuat enam index GIN `gin_trgm_ops` di dalam transaksi migrasi
+(`CREATE INDEX`, bukan `CONCURRENTLY`): selama pembangunan index, tulis ke
+`surat_masuk`/`surat_keluar` tertahan. Pada volume produksi saat ini ini hanya
+detik; jalankan di jendela deploy yang sama dengan 0048.
+
+Bukti index dipakai (sebagai `simsa_api`, setelah migrasi):
+
+```sql
+-- Pada tabel kecil planner sah memilih seq scan; matikan hanya untuk bukti ini (sesi saja).
+SET enable_seqscan = off;
+EXPLAIN SELECT id FROM surat_masuk
+ WHERE lower(regexp_replace(coalesce(nomor_surat,''),'[^0-9A-Za-z]+','','g')) LIKE '%b123%';
+-- harus memuat Bitmap Index Scan on surat_masuk_nomor_norm_trgm_idx
 ```
 
 `verify-runtime` tidak memeriksa privilege tabel `rangkaian_*`; jalankan juga
@@ -338,7 +387,8 @@ tidak berlaku setelah 0048 diterapkan; setelah 0048 hanya kode P3 atau lebih
 baru yang menjadi target rollback yang valid.
 
 1. Redeploy kode P3+ terakhir yang stabil (frontend dan backend dari revisi
-   yang sama). Periksa `/ready` = 200.
+   yang sama). Periksa `/ready` = 200. Index trigram 0049 tidak mengganggu
+   kode lama (hanya index tambahan).
 2. Data tetap kompatibel-baca: baris `rangkaian_*`, `unit_pengolah_id` hasil
    backfill, dan `audit_log` tetap ada.
 3. Bila skema harus dibatalkan, jalankan migrasi maju
@@ -347,3 +397,30 @@ baru yang menjadi target rollback yang valid.
    rantai 0047: pemulihannya wajib memakai helper dari **checkout C47**, dan
    kode produksi harus ikut kembali ke **C47** (helper C48 menolak rantai
    0047).
+
+### 10.1 Rollback index trigram 0049
+
+Index `*_trgm_idx` hanya mempercepat Lacak. Bila pembangunannya atau
+pemeliharaannya bermasalah (mis. beban tulis), menjatuhkannya **aman**: Lacak
+tetap benar, kembali ke seq scan (p95 kembali ±0,5 s pada 2×50 ribu baris).
+Jalankan sebagai pemilik tabel (`simsa_migration`, yang SET ROLE ke
+`simsa_migrator`):
+
+```bash
+read -rs NEON_MIGRATION_DATABASE_URL && export NEON_MIGRATION_DATABASE_URL
+psql "$NEON_MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+DROP INDEX IF EXISTS surat_masuk_nomor_norm_trgm_idx;
+DROP INDEX IF EXISTS surat_keluar_nomor_norm_trgm_idx;
+DROP INDEX IF EXISTS surat_masuk_perihal_trgm_idx;
+DROP INDEX IF EXISTS surat_keluar_perihal_trgm_idx;
+DROP INDEX IF EXISTS surat_masuk_dari_trgm_idx;
+DROP INDEX IF EXISTS surat_keluar_kepada_trgm_idx;
+SQL
+unset NEON_MIGRATION_DATABASE_URL
+```
+
+Extension `pg_trgm` **dibiarkan** terpasang (jangan `DROP EXTENSION`: milik
+administrator grant dan diperiksa `grants/0001`). Baris `0049_lacak_trgm` di
+`drizzle.__drizzle_migrations` tetap ada; untuk memulihkan kinerja, buat ulang
+keenam index dengan pernyataan persis dari
+`backend/src/db/migrations/0049_lacak_trgm.sql` (sebagai pemilik tabel).
