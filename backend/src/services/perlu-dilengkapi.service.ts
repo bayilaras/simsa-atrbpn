@@ -136,10 +136,15 @@ function cakupanSurat(k: KonteksPd, t: TargetVisibilitas): SQL {
 function dataLamaSurat(k: KonteksPd, t: TargetVisibilitas): SQL {
     const fk = sql.raw(t.type === 'surat_masuk' ? 'surat_masuk_id' : 'surat_keluar_id');
     const suratId = sql.raw(`${t.alias}.id`);
-    return sql`(EXISTS (SELECT 1 FROM rangkaian_anggota dla JOIN rangkaian_surat dlr ON dlr.id = dla.rangkaian_id
-                         WHERE dla.${fk} = ${suratId} AND dlr.asal = 'data_lama')
-             OR (NOT EXISTS (SELECT 1 FROM rangkaian_anggota dlb WHERE dlb.${fk} = ${suratId})
-                 AND ${sql.raw(`${t.alias}.created_at`)} < ${k.batas}::timestamptz))`;
+    // Subkueri TIDAK berkorelasi (IN/NOT IN atas kolom FK non-NULL) agar planner
+    // memakai "hashed SubPlan": satu hash per kueri, bukan satu probe index per
+    // baris surat. Pada 50 ribu baris, bentuk EXISTS berkorelasi memakan
+    // ~145-200 ms per cabang dan membuat ringkasan melewati statement_timeout 2 s
+    // di runner CI. Semantik identik: NULL disaring di dalam subkueri.
+    return sql`(${suratId} IN (SELECT dla.${fk} FROM rangkaian_anggota dla JOIN rangkaian_surat dlr ON dlr.id = dla.rangkaian_id
+                                 WHERE dla.${fk} IS NOT NULL AND dlr.asal = 'data_lama')
+             OR (${sql.raw(`${t.alias}.created_at`)} < ${k.batas}::timestamptz
+                 AND ${suratId} NOT IN (SELECT dlb.${fk} FROM rangkaian_anggota dlb WHERE dlb.${fk} IS NOT NULL)))`;
 }
 
 function kolomSuratMasuk(k: KonteksPd): Partial<Record<NamaKolom, SQL>> {
@@ -238,7 +243,7 @@ function cabangSkTanpaNdPenjelas(k: KonteksPd): SQL {
     ${lateralTerlihat(k, t)}
     WHERE ${cakupanSurat(k, t)}
       AND ${saringDataLama(k, dataLama)}
-      AND sk.naskah_dinas ~* 'keputusan'
+      AND sk.naskah_dinas ILIKE '%keputusan%'
       AND sk.approval_status = 'approved'
       AND coalesce(rs.status, 'aktif') <> 'diberkaskan'
       AND NOT EXISTS (
@@ -317,7 +322,7 @@ function cabangSkTanpaAsal(k: KonteksPd): SQL {
     WHERE ${cakupanSurat(k, t)}
       AND ${saringDataLama(k, dataLama)}
       AND sk.asal_naskah IS NULL
-      AND NOT EXISTS (SELECT 1 FROM rangkaian_anggota ax WHERE ax.surat_keluar_id = sk.id)`;
+      AND sk.id NOT IN (SELECT ax.surat_keluar_id FROM rangkaian_anggota ax WHERE ax.surat_keluar_id IS NOT NULL)`;
 }
 
 const CABANG: Record<KategoriPerluDilengkapi, (k: KonteksPd) => SQL> = {
