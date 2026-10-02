@@ -16,6 +16,8 @@ Produksi memakai Vercel (`simsa-frontend` + `simsa-backend`) dan Neon. Semua con
 
 **Status per 2026-10-02: keenam branch sudah di-push ke `origin`.** Heads di bawah adalah heads di `origin` saat PR per fase dibuat (base bertumpuk: P0→`main`, P1→P0, …, P5→P4). CI sudah hijau penuh pada PG16/17/18 (termasuk `LACAK_PERF`, audit keamanan, lint, frontend) lewat PR uji #16 (P0–P3 @ `cbb6d0c`) dan #17 (P0–P5 @ `51071a9`); kedua PR uji itu ditutup setelah PR per fase ada. Setelah setiap rebase, catat head baru di kolom "Head setelah rebase".
 
+**Status per 2026-10-03: P0–P4 sudah di-merge ke `main`.** Setiap branch diperbarui dengan *merge* `main` (bukan rebase, tanpa force push), base PR diganti ke `main`, dan CI penuh diulang pada head itu sebelum merge. Merge commit di `main`: P0 #18 `51679d3`, P1 #19 `57c5c90`, P2 #20 `8c267bd`, P3 #21 `05b3ede`, P4 #22 `7c18964`. **C47 = `7c18964`.** P5 (#23) sudah diperbarui dengan `main` dan menunggu langkah 10 (§3).
+
 | Urutan | Branch | Head di `origin` | Commit di atas branch sebelumnya | Ditumpuk di atas | Isi singkat | Head setelah rebase |
 |---|---|---|---|---|---|---|
 | 1 | `feat/integrasi-surat-p0` | `164334c` | 15 (di atas `origin/main` `5f57b39`) | `origin/main` | Pre-flight read-only, perbaikan bug P0, paritas klasifikasi TS/SQL | |
@@ -38,6 +40,14 @@ Aturan merge:
 
    Suite PostgreSQL P3–P5 sudah dijalankan di CI (PR uji #16/#17, PG16/17/18) dan lokal pada PG18. Hasil itu berlaku untuk head sebelum rebase; **ulangi CI pada setiap head hasil rebase** dan catat URL run CI per fase di tabel gerbang (§4).
 4. **Merge ke `main` bukan rilis produksi.** Pastikan merge tidak memicu deploy produksi otomatis: promosi Vercel dilakukan manual dan terverifikasi (`docs/DEPLOY_VERCEL_NEON.md`).
+
+   **[TEMUAN 2026-10-02] Frontend.** `git.deploymentEnabled.main: false` di `frontend/vercel.mjs` **tidak dipatuhi Vercel**: merge P0 dan P1 membuat deployment production `simsa-frontend` dari `main`, dan alias produksi kini menunjuk ke frontend `main` setelah P1 (`dpl_FX5TYmMpALcibypXPJbiqiXKmiYs`). Backend (`backend/vercel.json`) tidak terdampak. Sebagai penahan, proyek Vercel `simsa-frontend` diberi **Ignored Build Step**:
+
+   ```bash
+   if [ "$VERCEL_ENV" = "production" ] && [ -n "$VERCEL_GIT_COMMIT_REF" ] && [ "$SIMSA_VERIFY_CANDIDATE_SOURCE" != "1" ]; then exit 0; else exit 1; fi
+   ```
+
+   Deployment production dari merge P2, P3, dan P4 terbukti `CANCELED`. Konsekuensi untuk rilis: deploy production frontend dari checkout git (`vercel --prod --skip-domain`) **wajib** membawa `SIMSA_VERIFY_CANDIDATE_SOURCE=1` sebagai build env. Belum dibuktikan bahwa nilai `--build-env` sudah tersedia saat Ignored Build Step berjalan; pada rilis pertama, pastikan build kandidat tidak berstatus `CANCELED`. Bila terlewati, kosongkan Ignored Build Step sesaat untuk deploy kandidat, lalu pasang lagi. Tombol "Redeploy" production di dashboard juga ikut terlewati.
 
    **[GABUNGAN] Backup terjadwal.** Workflow terjadwal `backup-neon.yml` berjalan dari branch bawaan, dan manifest backup mengikat rantai migrasi secara eksak (`scripts/neon-backup-core.mjs`). Selama rantai journal di `main` berbeda dengan rantai database produksi, backup terjadwal harian akan gagal. Ini terjadi sejak P1 masuk `main` sampai 0046/0047 diterapkan, dan sejak P5 masuk `main` sampai 0048/0049 diterapkan. Karena P5 baru di-merge ketika 0048 dapat langsung diterapkan (langkah 10–14), jarak kedua cukup pendek. Rapatkan jarak antara merge dan rilis, atau ambil backup manual dengan helper checkout yang cocok.
 5. **Dua checkout rilis** dipakai di §3. Keduanya diambil dari `main` setelah merge:
