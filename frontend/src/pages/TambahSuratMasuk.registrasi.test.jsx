@@ -231,6 +231,8 @@ describe('edit mode: alasan koreksi dan gerbang aksiDiizinkan', () => {
         ], { initialEntries: ['/edit/sm-1'] })
         render(<RouterProvider router={router} />)
         await waitFor(() => expect(router.state.location.pathname).toBe('/surat/masuk/sm-1'))
-        expect(screen.getByText('Detail')).toBeInTheDocument()
+        // Lokasi router dapat berubah sebelum elemen rute baru selesai dirender;
+        // tunggu render-nya agar tidak flaky pada mesin build yang lambat.
+        expect(await screen.findByText('Detail')).toBeInTheDocument()
     })
 })
