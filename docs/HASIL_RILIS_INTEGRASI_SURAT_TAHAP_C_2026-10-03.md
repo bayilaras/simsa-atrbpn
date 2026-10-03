@@ -41,6 +41,10 @@ Rollback kode ke C47 aman: skema 0048–0050 hanya menambah batasan yang dipenuh
 
 Gerbang (e) = **tidak ada data lama** (0 surat masuk tanpa pembuat). Langkah 15–20 dilewati; gerbang (a), (b), (c), (g), (h), dan CTRL-5 = "tidak berlaku". `RANGKAIAN_TUTUP_MASSAL_DATA_LAMA` dan `RANGKAIAN_DISPOSISI_LAMA_READ` tetap tidak diset.
 
+## Catatan data
+
+`ringkasan` setelah promosi melaporkan `disposisi_terbuka: 1`. Satu-satunya disposisi terbuka adalah bawaan surat uji "UJI RILIS C47" (dibuat 03:48:44.501Z, sumber `dir_ktpp`, tujuan `ditjen`, status `sent`, sudah ber-rangkaian; `ditjen` memiliki 2 `admin_unit` aktif). Tidak ada disposisi ke direktorat tanpa admin. Disarankan admin Ditjen menolaknya dengan alasan "surat uji rilis" agar daftar kerja tidak memuat data uji.
+
 ## Tahap E — sisa
 
 - Pastikan backup terjadwal berikutnya (`backup-neon.yml`, 00:00 UTC, dari `main` = C48) berhasil. Secret `NEON_BACKUP_DATABASE_URL` wajib berformat endpoint direct + `sslmode=verify-full&channel_binding=require`.
