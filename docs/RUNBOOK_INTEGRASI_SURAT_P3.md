@@ -127,6 +127,13 @@ Contoh perintah adapter Neon memakai variabel yang sama dengan
    RUNBOOK_P1 langkah 4 sebagai `simsa_api` (`verify-runtime` tidak
    memeriksanya).
 
+   **Jalankan langkah ini dari commit merge P4** (journal berakhir di 0047),
+   bukan dari checkout yang sudah memuat P5/0048. Adapter menjalankan semua
+   migrasi tertunda dalam satu transaksi. Precheck 0048 akan RAISE selama
+   distribusi lama belum ber-`rangkaian_id`, dan seluruh transaksi digulung
+   balik. 0048 diterapkan terpisah sesudah kriteria keluar §3
+   (`RUNBOOK_INTEGRASI_SURAT_P5.md` §5).
+
    Jalur Cloud SQL/psql (bukan produksi): `npm --prefix backend run db:migrate`,
    lalu **segera**
    `EXPECTED_MIGRATIONS_JSON="$(python3 .github/scripts/build-migration-manifest.py)" npm --prefix backend run db:grants:converge`
@@ -184,11 +191,18 @@ anggota rangkaian yang bukan `aktif`/`selesai`:
 - `status: 'digabung'` — sementara: gabung memindahkan anggota ke rangkaian
   tujuan. Jalankan ulang backfill; entri itu akan terisi ke rangkaian tujuan.
 - `status: 'diberkaskan'` — baris lama tidak dapat diisi (trigger 0046
-  mengunci berkas). Baris tetap ber-`rangkaian_id` NULL sampai Koreksi Berkas
-  (P5) tersedia. Kode P3 memperlakukannya konsisten: dihitung sebagai
-  penghalang rangkaian keanggotaannya dan ditolak 409 bila diubah. Catat
-  daftar entri; **pemutus**: pemilik spesifikasi bersama TU/pengawas unit
-  pencatat — dianggap selesai bila dicatat untuk P5.
+  mengunci berkas), dan **Koreksi Berkas (P5) tidak dapat memperbaikinya**:
+  Koreksi Berkas hanya mengoreksi unit pengolah/klasifikasi pada rangkaian
+  yang sudah `rangkaian_id`-nya terisi, bukan mengisi baris NULL
+  (`docs/RUNBOOK_INTEGRASI_SURAT_P5.md` §4, "Koreksi Berkas tidak dapat
+  memperbaikinya"). Baris ini adalah persis pemicu gerbang pre-0048 (query
+  pertama langkah 10 RILIS gabungan): selama ada baris NULL, **CTRL-2
+  diamandemen menahan seluruh P5** — bukan hanya migrasi 0048, tapi juga
+  merge dan deploy P5 (gerbang f). Kode P3 memperlakukan baris ini konsisten
+  sampai penahanan berakhir: dihitung sebagai penghalang rangkaian
+  keanggotaannya dan ditolak 409 bila diubah. Catat daftar entri;
+  **pemutus**: pemilik spesifikasi bersama TU/pengawas unit pencatat —
+  rilis P5 dilepas hanya setelah semua baris NULL terselesaikan.
 
 Catatan: rangkaian `selesai` yang menerima baris terbuka lewat backfill
 tetap `selesai` sampai hitung ulang berikutnya (mis. aksi apa pun pada
@@ -204,8 +218,8 @@ tampilan sementara. [C-M3]
    `simsa_api` (read-only; hanya `EXPLAIN (ANALYZE)` pada kueri seed Lacak
    dengan kata kunci contoh) — catat waktu eksekusi; > 2 detik = batas
    `statement_timeout` Lacak, eskalasi ke P4.
-3. Pastikan `admin_unit` sudah ditugaskan untuk `dir_bppt`, `dir_ptep`,
-   `dir_ktpp`, `dir_plp` sebelum flag apa pun dinyalakan (grant disposisi
+3. Pastikan `admin_unit` sudah ditugaskan untuk `dir_bppt`, `dir_ptep`, dan
+   `dir_ktpp` sebelum flag apa pun dinyalakan (grant disposisi
    hanya diajukan ke admin aktif unit target).
 4. Catatan rilis TU: 409 "Terjadi konflik penyimpanan bersamaan; silakan coba
    lagi." dapat muncul sesekali saat dua pengguna mengubah surat yang sama
@@ -294,6 +308,12 @@ terakhir yang pernah dideploy** (sebelum rilis ini), dijalankan di atas skema
 0046/0047 yang tetap terpasang — sama dengan RUNBOOK_P1 §Rollback. P2 tidak
 pernah dirilis sehingga "redeploy P2" bukan pilihan. Bila skema harus
 dibatalkan, pulihkan dari backup §0.2 (RUNBOOK_P1 langkah 1).
+
+> **Catatan P5.** Lantai rollback di atas tidak berlaku setelah 0048
+> diterapkan; lantai rollback setelah 0048 adalah kode P3+, karena setiap rilis
+> lebih lama (termasuk rilis yang dijadikan lantai di sini) menulis
+> `surat_distributions` tanpa `rangkaian_id`, yang ditolak `23502` oleh 0048.
+> Lihat `docs/RUNBOOK_INTEGRASI_SURAT_P5.md` §10.
 
 1. **Redeploy** frontend dan backend rilis produksi terakhir bersamaan
    (keduanya dari revisi yang sama). Periksa `/ready` = 200.

@@ -29,6 +29,15 @@ interface NodeRow {
     tahun: number; naskah: string | null; relasi: LacakNode['relasi']; urut: number; jumlah: number;
 }
 
+/**
+ * Nomor ternormalisasi untuk SKOR dihitung sekali per baris lewat LATERAL `lk_n`
+ * hanya bila kueri bermode nomor; kueri perihal tidak pernah memakai skor nomor
+ * (skorNomorSql → 0), jadi regexp_replace per baris di sana murni pemborosan.
+ */
+function pakaiNormLateral(plan: LacakQueryPlan, mode: LacakParams['mode']): boolean {
+    return mode === 'lacak' && plan.jenis === 'nomor' && plan.qNorm.length > 0;
+}
+
 function semuaToken(column: SQL, tokens: string[]): SQL {
     return sql.join(tokens.map((token) => sql`${column} ILIKE ${`%${escapeLike(token)}%`} ${LIKE_ESCAPE}`), sql` AND `);
 }
@@ -44,16 +53,33 @@ export function skorSql(branch: Branch, plan: LacakQueryPlan, mode: LacakParams[
         const samaNormIndex = sql`${nomorNormSql(nomor)} = ${plan.qNorm}`;
         return { skor: sql`CASE WHEN ${mentah} THEN 100 WHEN ${samaNormIndex} THEN 90 ELSE 0 END`, cocok: samaNormIndex };
     }
-    // Mode lacak memindai tabel (predikat ILIKE '%…%' tidak ber-index), jadi
-    // nomor ternormalisasi dihitung SEKALI per baris lewat LATERAL `lk_n`
-    // (lihat cabangSql) alih-alih regexp_replace di setiap cabang OR/CASE.
-    const norm = sql.raw('lk_n.n');
-    const samaNorm = sql`${norm} = ${plan.qNorm}`;
+    // Mode lacak (P5 Task 14): setiap cabang OR di WHERE harus cocok dengan index
+    // trigram 0049 agar Postgres memakai BitmapOr, bukan seq scan. Karena itu
+    // predikat nomor memakai ekspresi `nomorNormSql(alias.nomor_surat)` yang
+    // identik dengan ekspresi index `*_nomor_norm_trgm_idx` (BUKAN kolom LATERAL,
+    // yang tidak pernah dapat memakai index). Cabang `lower(nomor) = qLower`
+    // tidak ada di WHERE: kesamaan mentah menyiratkan kesamaan norm untuk huruf
+    // ASCII. Pengecualiannya karakter kompatibilitas yang di-lowercase menjadi
+    // ASCII (mis. tanda Kelvin U+212A, lihat nomor-surat.ts normalizeNomor):
+    // `lower('K…')` bisa sama dengan qLower padahal norm-nya berbeda. Mode `cek`
+    // memakai asumsi yang sama; kasus ini diterima sebagai tidak realistis.
+    // Skor memakai `lk_n.n` (dihitung sekali per baris yang lolos WHERE) bila
+    // kueri bermode nomor; lihat pakaiNormLateral.
+    const normIndex = nomorNormSql(nomor);
     const cocok: SQL[] = [];
     if (plan.jenis === 'nomor' && plan.qNorm) {
-        const prefix = sql`${norm} LIKE ${`${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`;
-        cocok.push(mentah, samaNorm, prefix);
-        if (plan.substringNomor) cocok.push(sql`${norm} LIKE ${`%${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`);
+        if (plan.substringNomor) {
+            // Kesamaan dan prefix adalah himpunan bagian substring, jadi cukup SATU
+            // arm: tanpa index 0049 (jendela langkah 13→14, rilis tertahan, rollback
+            // §10.1) regexp_replace dievaluasi sekali per baris, bukan tiga kali;
+            // dengan 0049 index gin_trgm melayaninya.
+            cocok.push(sql`${normIndex} LIKE ${`%${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`);
+        } else {
+            // qNorm < 5: tanpa substring. Kesamaan adalah himpunan bagian prefix,
+            // jadi cukup SATU arm prefix (regexp_replace sekali per baris tanpa
+            // index); dengan index dilayani btree text_pattern_ops `*_nomor_norm_idx` (0046).
+            cocok.push(sql`${normIndex} LIKE ${`${escapeLike(plan.qNorm)}%`} ${LIKE_ESCAPE}`);
+        }
     }
     const perihal = sql.raw(`${branch.alias}.perihal`);
     const pihak = sql.raw(branch.pihak);
@@ -64,7 +90,9 @@ export function skorSql(branch: Branch, plan: LacakQueryPlan, mode: LacakParams[
     // P4: satu sumber skor (§6 + prefix mentah berbatas 80, lacak-skor.ts). Predikat `cocok` P3 tidak
     // diubah, sehingga visibleSql tetap berada di WHERE seed yang sama (tanpa oracle).
     return {
-        skor: skorLacakSql({ nomor, nomorNorm: norm, perihal, pihak }, bentukKueriLacak(plan.q)),
+        skor: skorLacakSql({
+            nomor, nomorNorm: pakaiNormLateral(plan, mode) ? sql.raw('lk_n.n') : undefined, perihal, pihak,
+        }, bentukKueriLacak(plan.q)),
         cocok: sql`(${sql.join(cocok, sql` OR `)})`,
     };
 }
@@ -76,6 +104,12 @@ function cabangSql(branch: Branch, plan: LacakQueryPlan, params: LacakParams, ct
     const tahun = params.tahun ? sql`AND ${a}.tahun = ${params.tahun}` : sql``;
     // Predikat visibilitas P2 diterapkan DI SEED sebelum LIMIT (§4.9, tanpa oracle).
     const visible = visibleSql(ctx, { type: branch.jenis, alias: branch.alias }, 'list');
+    // OFFSET 0 mencegah planner meleburkan subkueri sehingga regexp_replace untuk
+    // skor dievaluasi sekali per baris yang lolos WHERE (WHERE sendiri memakai
+    // ekspresi index trigram, lihat skorSql).
+    const lateral = pakaiNormLateral(plan, params.mode)
+        ? sql`CROSS JOIN LATERAL (SELECT ${nomorNormSql(sql.raw(`${branch.alias}.nomor_surat`))} AS n OFFSET 0) lk_n`
+        : sql``;
     // Alias `lk_a` (bukan `ra`): P2 mencadangkan `ra`/`g`/`j` untuk subkueri
     // internalnya (visibility-spec.ts:195-211); alias pemanggil tidak boleh
     // bertumpang tindih dengan nama itu (T4-1).
@@ -89,9 +123,7 @@ function cabangSql(branch: Branch, plan: LacakQueryPlan, params: LacakParams, ct
               WHERE lk_a.${sql.raw(branch.anggotaCol)} = ${a}.id) AS rangkaian_id,
             (${s.skor}) AS skor
         FROM ${sql.raw(branch.table)} ${a}
-        -- OFFSET 0 mencegah planner meleburkan subkueri sehingga regexp_replace
-        -- benar-benar dievaluasi sekali per baris (≈2,4× lebih cepat pada 50 ribu baris).
-        CROSS JOIN LATERAL (SELECT ${nomorNormSql(sql.raw(`${branch.alias}.nomor_surat`))} AS n OFFSET 0) lk_n
+        ${lateral}
         WHERE ${a}.is_deleted IS NOT TRUE ${tahun} AND ${s.cocok} AND (${visible})`;
 }
 

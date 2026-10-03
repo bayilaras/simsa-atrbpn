@@ -26,6 +26,66 @@
 - Perintah test backend dijalankan dari root repo: `npm --prefix backend exec -- vitest run <path>`; frontend: `npm --prefix frontend exec -- vitest run <path>`; typecheck backend: `npm --prefix backend exec -- tsc --noEmit`.
 - Pesan commit diakhiri baris kosong lalu `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
+#### Amandemen pra-eksekusi global (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Commands (BLOCKING) [P5-G-1].** Every "Run:" line and GC#26 changes as follows:
+
+   | Plan form | Replace with |
+   |---|---|
+   | `npm --prefix backend exec -- vitest run <path>` | `cd backend && npx vitest run <path>` |
+   | `npm --prefix frontend exec -- vitest run <path>` | `cd frontend && npx vitest run <path>` |
+   | `npm --prefix backend exec -- tsc --noEmit` | `cd backend && npx tsc --noEmit -p tsconfig.json` |
+
+   - Keep `npm run test:migration-manifest` at the repo root.
+   - Keep the Postgres form `cd backend && TEST_POSTGRES_URL=… npx vitest run --config vitest.postgres.config.ts <file>`.
+   - New GC#26 text: "Perintah test mengikuti P3 GC#37: backend `cd backend && npx vitest run <file>`; frontend `cd frontend && npx vitest run <file>`; typecheck `cd backend && npx tsc --noEmit -p tsconfig.json`. Jangan memakai `npm --prefix … exec` (cwd tetap root sehingga konfigurasi vitest dan path relatif `process.cwd()` salah)."
+2. **Workspace (REQUIRED) [P5-G-2].** P5 runs in its own worktree on `feat/integrasi-surat-p5`. Until P4 merges, stack that branch on the final P4 tip; the P4 tip must contain P3 backend and frontend. Every command runs from that worktree root.
+3. **No re-implementation (REQUIRED) [P5-G-3].** Each task's Step 1 grep also checks the P3/P4 symbols listed under that task. If a symbol is missing, stop. Never copy a P3/P4 predicate into P5.
+   - **(delta P3) Workspace base.** P5 stacks on the P4 tip. That tip must itself sit on the post-final-fix tip of the single branch `feat/integrasi-surat-p3`: both P3 tracks were merged at d890ff2 (see P4-D-1).
+   - **(delta P3) Confirmed symbol locations (real P3 @ b4d86fa):**
+
+     | Symbol | Location |
+     |---|---|
+     | `anggotaMemblokirSql`, `disposisiTerbukaSql` | `rangkaian.service.ts:182, 201`; re-exported at `deps.ts:42` |
+     | `dalamCakupanPengawasSql` | `deps.ts:53` |
+     | `tingkatAksesRangkaian` | `deps.ts:58` |
+     | `denganRetryDeadlock` | `utils/deadlock-retry.ts:15`; re-exported at `deps.ts:60` |
+     | `isPengawas` | `deps.ts:87` |
+     | `pengawasUntukUnit` | `deps.ts:96` |
+     | `loadJangkauan` | `deps.ts:107`, flag-aware |
+     | `lockSuratKeluarRows` / `kunciSurat` | `deps.ts:112, 126` |
+     | `lockRangkaian` | `deps.ts:155` |
+     | `berkasService.unitDalamJangkauanBerkas` | `rangkaian/berkas.service.ts:69-83`, **not** re-exported by deps |
+
+     The fix wave (in flux) adds `tingkatRangkaianPenuh` and `BATAS_NODE_DETAIL` to deps, and rewrites `disposisiTerbukaSql` into a split-count form with the same semantics and signature (C-M1).
+   - **(delta P3) `restore()` guard (P3 concurrency carry-forward 1).** `surat-keluar.service.ts:503` and `surat-masuk.service.ts:481` `restore()` have no rangkaian guard, lock or recompute, and are unreachable today. No P5 task may route or call `restore()`. If a later task needs it, it first goes through `guardSuratMasukMutation`/the SK lock plus a recompute, with 409 on `diberkaskan`.
+4. **Lock order and retry (REQUIRED) [P5-G-4] RECHECK-AFTER-P3.** Add a new GC:
+   > "Urutan kunci P3 (G-LOCK) berlaku untuk setiap transaksi tulis P5: baris `surat_keluar` (FOR UPDATE ORDER BY id) → `surat_masuk` → `rangkaian_surat` (satu pernyataan ORDER BY id) → `surat_distributions`; id dibaca tanpa kunci dulu, lalu dikunci, lalu diperiksa ulang. Setiap transaksi milik layanan P5 dibungkus `denganRetryDeadlock` (`backend/src/utils/deadlock-retry.ts`, re-export `services/rangkaian/deps.ts`); skrip backfill mengulang satu batch maksimal 3× untuk 40P01/40001."
+5. **Data-lama cutoff (REQUIRED) [P5-G-5] RECHECK-AFTER-P4.** Add a new GC:
+   > "Batas data lama satu definisi dengan P4 D7: env `RANGKAIAN_DATA_LAMA_SEBELUM` (ISO-8601 berzona, regex sama dengan `ISO_BERZONA` P4) atau `min(created_at)` rangkaian `asal <> 'data_lama'`; bila keduanya tidak ada, skrip backfill berhenti dengan galat."
+6. **Release gate (REQUIRED) [P5-G-6].** The PR description gets a "Gerbang rilis P5" table. Each row is recorded as signed or refused before production:
+   - (a) The label-derived `unit_pengolah_id` is deferred (spec:356 vs spec:358).
+   - (b) No peserta is added to a `diberkaskan` rangkaian (RB:106 item 9).
+   - (c) `RANGKAIAN_DISPOSISI_LAMA_READ` is enabled, based on the CSV (§13 Q1).
+   - (d) Tasks 14 and 15 are skipped.
+   - (e) The §13 Q2 answer: does legacy data exist in production?
+   - **(delta P3) Added rows:**
+     - (f) The `dilewati` remediation: hold 0048, or the 0048 prelude (critic C-3).
+     - (g) Spec owner. `data_lama` SM anggota count as `surat_masuk_belum_ditangani` in the P1 facts. A pengawas gabung of a backfilled `data_lama` rangkaian into a live one therefore keeps the target `aktif` until a manual Tandai Selesai. This is P3 concurrency carry-forward 2 (#102) and spec review T12. Decide: accept and document, or exclude `sumber='data_lama'` anggota from that fact in a P1-owned change.
+     - (h) Legacy SMs with an unknown `sifat_surat` class stay masked for peserta even after the flag (P3 spec-review Minor 1). The owner accepts this, or maps the classes first. Task 4 item 5 reports the count.
+     - (i) Prerequisites: the P3 C-12 gate and the P4 gate are signed; CI "Backend Tests (PostgreSQL 16/17/18)" is green on the P5 head, including the 0048 PGlite and Postgres suites; frontend and backend ship in one deploy.
+7. **GC#20 (REQUIRED) [P5-G-7].** Replace "Setelah menambah migrasi, perbarui `EXPECTED_MIGRATIONS_JSON` untuk `db:grants:converge` dan jalankan `npm run test:migration-manifest` dari root." with:
+   > "Setelah menambah migrasi, jalankan `npm run test:migration-manifest` dari root. Tidak ada berkas repo `EXPECTED_MIGRATIONS_JSON`; nilainya dihitung saat deploy oleh `.github/scripts/build-migration-manifest.py` dari journal."
+8. **Production DB path and role (REQUIRED) [P5-G-8].** Replace the GC "Urutan rilis P5" with:
+   > "deploy kode (flag mati) → `scripts/neon-database.mjs migrate --apply` lalu `verify-runtime` (0048; pola `docs/RUNBOOK_INTEGRASI_SURAT_P1.md` langkah 3) → dry-run backfill sebagai `simsa_api` (`NEON_RUNTIME_DATABASE_URL` lewat prompt tersembunyi) → sign-off CSV + SHA → `--apply --approved-sha256=<hash>` sebagai `simsa_api` → (terpisah, setelah sign-off) nyalakan flag. Jangan memakai `simsa_maintenance`/`simsa_operator`."
+
+
+**Kontroler:** [CTRL-2] bila backfill P3 produksi melaporkan baris dilewati, TAHAN migrasi 0048; prelude yang mematikan trigger 0046 tidak dipakai. [CTRL-3] Tugas 1-8, 11, 12 dikerjakan di branch feat/integrasi-surat-p5 dari ujung P3 2a61bb7 paralel dengan P4; di-merge ke ujung P4 sebelum Tugas 9, 10, 13 dan review akhir P5. Tugas 14 dan 15 (opsional) DILEWATI (gerbang rilis d). Jangan mengubah file frontend P4 (Lacak/Berkas Rangkaian) di tugas 1-8, 11, 12.
+
+
 ## Review Focus
 
 1. **Flag data lama bocor lewat jalur lain.** Satu jalur baca (misalnya kueri daftar rangkaian atau `requestViaRangkaian`) membaca `rangkaian_peserta` tanpa melewati flag. Test: `rangkaian-disposisi-lama-flag.test.ts` (Task 2) memuat matriks `checkRead` flag mati/nyala/peserta berakhir **dan** guard sumber yang gagal bila berkas `src/` non-test menyebut `rangkaian_peserta` tanpa memanggil `isDisposisiLamaReadEnabled`.
@@ -361,6 +421,171 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 1 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Helper name (REQUIRED) [P5-T1-4].** In `backend/src/__tests__/helpers/rangkaian-p5-pglite.ts`, rename `createRangkaianTestDatabase` to `createRangkaianP5Database`, keeping the signature `(options: { stopBefore?: string } = {}) => Promise<PGlite>`. Update Produces and every import in Tasks 1, 2, 4, 5, 6, 7 and 11.
+2. **Lift the P2 cap (BLOCKING, carry-forward FR:37) [P5-T1-3] RECHECK-AFTER-P4.**
+   - **Files:** add Modify `backend/src/__tests__/helpers/rangkaian-pglite.ts`.
+   - **Step 2b (new):** replace the body of `bootRangkaianDatabase` with a journal-driven loop that accepts an optional `stopBefore`:
+     ```ts
+     import { PGlite } from '@electric-sql/pglite';
+     import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+     import { enterTestMigratorRole } from './database-role-fixture';
+     import { applyMigrationTag, journalEntries } from './rangkaian-p5-pglite.js';
+
+     /** Rantai migrasi penuh sesuai urutan journal (termasuk 0048+), atau berhenti sebelum `stopBefore`. */
+     export async function bootRangkaianDatabase(options: { stopBefore?: string } = {}): Promise<PGlite> {
+         const database = new PGlite({ extensions: { pgcrypto } });
+         await database.waitReady;
+         await enterTestMigratorRole(database);
+         for (const entry of journalEntries) {
+             if (entry.tag === options.stopBefore) break;
+             await applyMigrationTag(database, entry.tag);
+         }
+         return database;
+     }
+     ```
+   - Remove the now-unused `readdirSync`/`fileURLToPath` imports only if nothing else in that file uses them.
+   - Do not change any fixture or snapshot.
+   - **Step 6 run list (additions):**
+     - P2 suites: `src/__tests__/rangkaian-read.integration.test.ts`, `src/__tests__/record-access-read.integration.test.ts`, `src/__tests__/visibility-parity.property.integration.test.ts`, `src/__tests__/rangkaian-akses.routes.integration.test.ts`, `src/__tests__/record-access-check.snapshot.integration.test.ts`.
+     - P4 suites: `src/__tests__/lacak-ranking.integration.test.ts`, `src/__tests__/lacak-probing.integration.test.ts`, `src/__tests__/rangkaian-daftar.integration.test.ts`, `src/__tests__/perlu-dilengkapi.integration.test.ts`, `src/__tests__/asal-naskah.integration.test.ts`.
+     - Never pass `-u`. Expected: every suite PASS on the full chain.
+     - RECHECK-AFTER-P4: first confirm those file names exist, and that no P4 fixture inserts a NULL `rangkaian_id`.
+     - **(delta P3) P3 PGlite suites also boot through `bootRangkaianDatabase`,** so add them to the run list:
+       - `src/__tests__/grant-eligibility.integration.test.ts`
+       - `src/__tests__/guard-surat-masuk.integration.test.ts`
+       - `src/__tests__/rangkaian-link.integration.test.ts`
+       - `src/__tests__/tindak-lanjut.integration.test.ts`
+
+       Every `surat_distributions` insert in them supplies `rangkaian_id` (grant-eligibility :102, rangkaian-link :170, tindak-lanjut :94), so they should pass on the full chain unchanged.
+     - `helpers/surat-inbox-pglite.ts` (used by `distribution-inbox-classification.test.ts` and `notification-deleted-classification.test.ts`) builds its own hand-written DDL with a nullable `rangkaian_id` (:25-32) and does not use the journal. 0048 does not affect it; leave it alone.
+     - The P2 helper cap is unchanged in P3: `rangkaian-pglite.ts:12` still filters `<= 47`, so FR:37 still applies. P3 added no migration: the journal ends at 0047 (`backend/src/db/migrations/meta/_journal.json`), so idx 48 is still free.
+   - Add the helper to Step 7 `git add`.
+3. **0046-scoped tests (BLOCKING) [P5-T1-1].** In `migration-chain.integration.test.ts`, in both `it('0046 mengunci rangkaian yang diberkaskan…')` and `it('0046 menegakkan siklus hidup rangkaian_koreksi_berkas…')`, replace
+   ```ts
+           for (const entry of journal.entries) {
+               await applyMigration(database, entry);
+           }
+   ```
+   with
+   ```ts
+           // Semantik 0046 (termasuk jalur legacy rangkaian_id NULL dan lebih dari satu koreksi terbuka) diuji sebelum pengerasan 0048.
+           const sebelum0048 = journal.entries.findIndex((entry) => entry.tag === '0048_rangkaian_pengerasan');
+           for (const entry of sebelum0048 < 0 ? journal.entries : journal.entries.slice(0, sebelum0048)) {
+               await applyMigration(database, entry);
+           }
+   ```
+   Replace the Step 6 Expected line with: "PASS: test lama 0046 tetap lulus karena berhenti sebelum 0048; test 0048 baru lulus."
+4. **Constraint test (BLOCKING) [P5-T1-2].** In `it('0048 mengeraskan rangkaian_id dan membatasi satu Koreksi Berkas terbuka', …)`, replace the last `await expect(database.exec(\`INSERT … 'denied')\`)).rejects.toThrow(/rangkaian_koreksi_berkas_(putusan|berubah)_check/);` with:
+   ```ts
+           // Trigger BEFORE INSERT (0046) menolak status non-pending lebih dulu; CHECK berjalan sebelum indeks unik.
+           await expect(database.exec(`
+               INSERT INTO rangkaian_koreksi_berkas (rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+                 klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by)
+               VALUES ('${rangkaianId}', 'dir_bppt', 'dir_bppt', ${klasA}, ${klasA}, 'Tidak mengubah apa pun', '${P5_IDS.superA}')`))
+               .rejects.toThrow(/rangkaian_koreksi_berkas_berubah_check/);
+           const putusan = await database.query<{ def: string }>(`
+               SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'rangkaian_koreksi_berkas_putusan_check'`);
+           expect(putusan.rows).toHaveLength(1);
+           expect(putusan.rows[0].def).toMatch(/diputuskan_by IS NULL/);
+   ```
+5. **0048 message and header (REQUIRED / ADVISORY) [P5-T1-5, P5-T1-6] RECHECK-AFTER-P3.** Replace the header comment and the first `RAISE EXCEPTION` with:
+   ```sql
+   -- 0048 (P5): pengerasan rangkaian. Hanya dijalankan setelah backfill langkah 1 P3
+   -- (`npm run db:backfill:rangkaian-disposisi`) melaporkan sisaTanpaRangkaian: 0 dan daftar
+   -- `dilewati` (P3 C-6) kosong atau sudah diputuskan. Catatan: migrasi yang MENAMBAH kolom
+   -- rangkaian_surat wajib CREATE OR REPLACE FUNCTION rangkaian_guard_status() (RB P1 butir 4).
+   ```
+   ```sql
+       RAISE EXCEPTION '0048: surat_distributions.rangkaian_id masih NULL; jalankan npm run db:backfill:rangkaian-disposisi dan selesaikan daftar dilewati (rangkaian diberkaskan) dulu';
+   ```
+   Update the test regex `/0048: surat_distributions\.rangkaian_id masih NULL/` only if the prefix changes. It does not change.
+6. **Step 6b (REQUIRED) [P5-T1-7] RECHECK-AFTER-P3.** After changing the harness, run `rg -n "surat_distributions" backend/integration` and read each insert:
+   - Legacy scenarios that must keep a NULL `rangkaian_id` get `stopBefore: '0048_rangkaian_pengerasan'`. This covers the backfill test, including the P3 C-6 `dilewati` case, and any other test the grep shows inserting NULL on purpose.
+   - Every other fixture that inserts NULL is fixed to fill `rangkaian_id`.
+   - **(delta P3) Confirmed discovery result on real P3 @ b4d86fa.** The only NULL-inserting callers are the three backfill databases in `backfill-rangkaian-disposisi.postgres.test.ts`: `'backfill'` (:21, inserts :25-31), `'ditolak'` (:94, :98-99) and `'berkas'` (:140, :157, :165). They all use `h.insertDistribusi` without `rangkaianId`.
+   - All other P3 Postgres inserts pass `rangkaianId`: `ajukan-akses` :52, `berkas` :71 and :169, and `status-turunan` :119, :122 and :137.
+   - The harness signature is still `createRangkaianTestDatabase(label)` (`rangkaian-db.ts:28`), and `insertDistribusi` defaults to `rangkaianId ?? null` (:116-120). Critic C-4 applies exactly as written.
+   - The only application writer is `distribution.service.ts:220-230` (Drizzle), and it always sets `rangkaianId: ensured.rangkaianId`. No raw `INSERT INTO surat_distributions` exists outside tests and scripts, so the `.notNull()` schema change breaks no production insert in tsc.
+7. **Performance (ADVISORY) [P5-T1-8].** See Tasks 6 and 7.
+
+
+**C-3 (critic) — Tasks 1, 13: `dilewati` rows cannot be remediated at runtime — REQUIRED [P5-C-3]**
+
+
+- **No application role can fix these rows.** `surat_distributions_closed_guard` is `BEFORE INSERT OR UPDATE OR DELETE` (0046:406-408), and it resolves candidate rangkaian through the SM's anggota rows (0046:278-296). No role can therefore fill, change or delete the `rangkaian_id` of a distribution whose SM is an anggota of a `diberkaskan` rangkaian.
+- **The release blocks indefinitely.** Real P3 step 1 skips such rows (`dilewati`, the C-6 branch in `backfill-rangkaian-disposisi.mjs`), so the 0048 precheck (P5 Task 1 Step 5) would block the release indefinitely.
+- **The owner decision in P5-T1-5 is not executable.** P5-T1-5 asks for "an owner decision" but names no option that can be carried out.
+- **Content:** by construction these rows are `processed`/`rejected`. P3 berkaskan refuses open disposisi, including NULL rows, through the C-6 `disposisiTerbukaSql` (P3:5980-5987), so filling `rangkaian_id` only records existing membership.
+- **(delta P3) Confirmed on real code, and the P3 reviews corrected.**
+  - `rangkaian_guard_closed()` (`0046_rangkaian_surat.sql:257-312`) has **no** GUC bypass. It collects candidate rangkaian through the SM's anggota rows (:276-290), and only `rangkaian_guard_status()` honours `simsa.berkas_koreksi` (:343). So the P3 final reviews' "stay NULL until Koreksi Berkas or a GUC path exists" (concurrency carry-forward 3) and "Koreksi Berkas is the only exit" (spec review) are both wrong: Koreksi Berkas changes `rangkaian_surat`, never `surat_distributions`. This amendment's options (i)/(ii) remain the only executable ones.
+  - The real script skips two statuses, not one: `if (rs.status !== 'aktif' && rs.status !== 'selesai')` (`backfill-rangkaian-disposisi.mjs:72-73`), so a `dilewati` entry can also be `digabung`. That only happens when a concurrent gabung moved the anggota between the unlocked membership read (:59-61) and the lock. It is transient, and a plain re-run attaches the row to the gabung target.
+  - The pre-0048 listing query above already shows the current membership status. Filter it with `AND r.status = 'diberkaskan'` for the decision on gate row (f), and re-run the step-1 script for the rest.
+- Binding:
+  - The runbook pre-0048 step lists the rows:
+    ```sql
+    SELECT d.id, d.surat_masuk_id, d.status, a.rangkaian_id, r.status AS status_rangkaian
+      FROM surat_distributions d
+      JOIN rangkaian_anggota a ON a.surat_masuk_id = d.surat_masuk_id
+      JOIN rangkaian_surat r ON r.id = a.rangkaian_id
+     WHERE d.rangkaian_id IS NULL;
+    ```
+  - The owner chooses, recorded as a new release-gate row (f):
+    - **(i)** hold 0048: P5 ships without the hardening, and the Koreksi uniqueness index is absent until it lands;
+    - **(ii)** a reviewed prelude at the top of 0048, executed by the migration owner (`simsa_migrator`) in the migration transaction:
+      ```sql
+      ALTER TABLE surat_distributions DISABLE TRIGGER surat_distributions_closed_guard;
+      UPDATE surat_distributions d SET rangkaian_id = a.rangkaian_id, updated_at = now()
+        FROM rangkaian_anggota a
+       WHERE d.rangkaian_id IS NULL AND a.surat_masuk_id = d.surat_masuk_id;
+      ALTER TABLE surat_distributions ENABLE TRIGGER surat_distributions_closed_guard;
+      ```
+      Add one `audit_log` insert per filled row. Put this before the NULL precheck.
+  - Test for option (ii): a PGlite case seeds a NULL `processed` row on a `diberkaskan` member SM with `stopBefore: '0048_rangkaian_pengerasan'`, then applies 0048. The row is filled, the trigger is enabled afterwards (`pg_trigger.tgenabled = 'O'`), and one audit row exists.
+
+
+**C-4 (critic) — Task 1 (Step 6b): the real P3 harness defaults `rangkaian_id` to NULL — REQUIRED, RECHECK-AFTER-P3 [P5-C-4]**
+
+
+- **(delta P3)** Re-confirmed at b4d86fa with the same lines (`rangkaian-db.ts:28, 116-120`). The backfill suite's three databases are at `backfill-rangkaian-disposisi.postgres.test.ts:21, 94, 140`. No other P3 Postgres suite inserts NULL (see Task 1 item 6).
+- **Default NULL.** `backend/integration/helpers/rangkaian-db.ts:116-119` (P3 @ 15b5852): `insertDistribusi` writes `input.rangkaianId ?? null`.
+- **Three databases rely on it.** The real backfill suite calls the helper without `rangkaianId` in three separate databases: 'backfill' `:21-31`, 'ditolak' `:94-99` and 'berkas' `:140-165`.
+- **No options parameter yet.** The real signature is `createRangkaianTestDatabase(label)`. P5-T1-4 describes a P3 `(label, options)` shape that does not exist yet; P5 Step 6b adds the parameter.
+- **The discovery grep misses helper calls.** P5-T1-7's grep `rg -n "surat_distributions" backend/integration` does not match `h.insertDistribusi(` call sites, so a later P3 suite that only uses the helper is missed.
+- Binding:
+  - Discovery is `rg -n "insertDistribusi\(|surat_distributions|suratDistributions" backend/integration backend/src/__tests__`.
+  - Every database that inserts NULL on purpose is created with `{ stopBefore: '0048_rangkaian_pengerasan' }`. That covers all three in the backfill suite.
+  - The harness records `stopBefore`. `insertDistribusi` without `rangkaianId` throws `Error('rangkaianId wajib setelah 0048; buat database dengan stopBefore untuk skenario lama')` unless the database was created with `stopBefore`, so the failure is loud instead of a 23502 mid-test.
+- Step 6 run list also adds the P1 suite `src/__tests__/rangkaian.service.integration.test.ts`. It applies the full journal (`:349`), and every `disposisi()` call passes a rangkaian id (`:446-734`), so it should pass unchanged.
+
+
+**C-10 (critic) — Task 1: readiness does not detect 0048 — ADVISORY [P5-C-10]**
+
+
+- scan-p5 N3 received no ruling.
+- `readiness.service.ts` checks column presence (`:118-130`) and trigger names (`:223`), but not these:
+  - `surat_distributions.rangkaian_id` NOT NULL;
+  - `rangkaian_koreksi_berkas_terbuka_uidx`;
+  - the two new CHECKs.
+- Optional: add them, with a `readiness.service.test.ts` case, so that a held 0048 (C-3 (i)) shows in readiness and not only in the runbook.
+
+
+**C-11 (critic) — Task 1: the migration number is a rebase-time fact — ADVISORY [P5-C-11]**
+
+
+- Today `origin/main` ends at 0045 and the integration branches at 0047 (`git ls-tree`). P5 hard-codes idx 48 and `when` 1789397419667 (P5:21).
+- After every rebase onto `origin/main`:
+  - re-derive idx and `when` from the journal tail;
+  - run `npm run test:migration-manifest`.
+- `migrate-database.mjs:28-36` rejects a non-contiguous idx or a non-increasing `when`.
+
+
+
 ### Task 2: Flag `RANGKAIAN_DISPOSISI_LAMA_READ` pada fragmen jangkauan tunggal
 
 **Files:**
@@ -569,6 +794,48 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 2 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Source guard (BLOCKING) [P5-T2-1] RECHECK-AFTER-P3/P4.** In `it('setiap kode non-test yang membaca rangkaian_peserta melewati flag', …)`, replace the content filter `/rangkaian_peserta|rangkaianPeserta/` with `/\b(?:FROM|JOIN)\s+rangkaian_peserta\b|\brangkaianPeserta\b/i`, and rename the test to `'setiap kode non-test yang MEMBACA baris rangkaian_peserta (FROM/JOIN/simbol Drizzle) melewati flag'`. `PENGECUALIAN` stays closed.
+   - Replace the Step 5 note with: "Guard hanya menangkap jalur baca data. `services/readiness.service.ts` (katalog/privilege) tidak cocok dengan pola baca. Bila berkas P3/P4 muncul sebagai pelanggar, alihkan bacaannya lewat `jangkauanUnitsSql(id, { disposisiLama: isDisposisiLamaReadEnabled() })` atau `KonteksBaca.disposisiLamaRead`; jangan menambah pengecualian."
+   - The guard was verified against real P2: every file that FROM/JOINs `rangkaian_peserta` carries a flag token, and `readiness.service.ts` no longer matches.
+   - **(delta P3) Re-verified on real P3 @ b4d86fa.** No P3 file under `services/rangkaian/*` mentions `rangkaian_peserta`. The only non-test readers are:
+     - `visibility-spec.ts:125` and `rangkaian-read.service.ts:261`, both flag-gated;
+     - the P1 gabung move `rangkaian.service.ts:637-641`, which is `FROM rangkaian_peserta t` inside an UPDATE. It is already in the plan's closed `PENGECUALIAN` list (P5:479).
+     - `readiness.service.ts:129, 190, 343` do not match the narrowed pattern, nor critic C-9's broader one: the table name is single-quoted there.
+2. **Pengolah leak case (REQUIRED) [P5-T2-2].** Add as the last test:
+   ```ts
+       it('unit pengolah memberi akses tanpa flag — alasan P5 menunda pengolah dari label (spec:356)', async () => {
+           vi.stubEnv('RANGKAIAN_DISPOSISI_LAMA_READ', 'false');
+           await database.exec(`UPDATE rangkaian_peserta SET berakhir_at = NULL, berakhir_by = NULL, alasan_berakhir = NULL WHERE rangkaian_id = '${RS}'`);
+           expect((await access.recordAccessService.checkRead(bpptUser, 'surat_masuk', SM, holder.db)).allowed).toBe(false);
+           await database.exec(`UPDATE rangkaian_surat SET unit_pengolah_id = 'dir_bppt' WHERE id = '${RS}'`);
+           try {
+               expect((await access.recordAccessService.checkRead(bpptUser, 'surat_masuk', SM, holder.db)).allowed).toBe(true);
+           } finally {
+               await database.exec(`UPDATE rangkaian_surat SET unit_pengolah_id = NULL WHERE id = '${RS}'`);
+           }
+       });
+   ```
+   If the `rangkaian_peserta` CHECK requires the three `berakhir_*` columns to be NULL together, reactivate the row with a fresh insert instead. Step 5 Expected: PASS (13 tests).
+
+
+**C-9 (critic) — Task 2: guard pattern gaps — ADVISORY [P5-C-9]**
+
+
+- The narrowed pattern misses three forms:
+  - `FROM public.rangkaian_peserta`;
+  - quoted `"rangkaian_peserta"`;
+  - comma joins.
+- Use `/\b(?:FROM|JOIN)\s+(?:"?public"?\.)?"?rangkaian_peserta\b|,\s*"?rangkaian_peserta\b|\brangkaianPeserta\b/i`.
+- Add three string cases as a self-test of the pattern.
+
+
+
 ### Task 3: Skrip backfill langkah 2 — pemetaan label (D6) dan normalisasi
 
 **Files:**
@@ -770,6 +1037,87 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 3 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **D6 regex (BLOCKING) [P5-T3-1].** Replace `.rejects.toThrow(/bagian umum.*bagian_umum.*D6/)` with `.rejects.toThrow(/D6\).*"bagian umum" → bagian_umum/)`.
+2. **CTE split and legacy scope (BLOCKING, security) [P5-T3-2] RECHECK-AFTER-P3/P4.** Replace the `BASE_CTE` block with:
+   ```js
+   // Seed kode menang atas baris tabel dengan label yang sama; baris tabel lain ikut dipakai dan ikut di-hash.
+   export const PETA_CTE = `
+   seed(label_norm, unit_kerja_id, catatan) AS (VALUES ${seedValues}),
+   peta AS (
+     SELECT d.label_norm::varchar AS label_norm, d.unit_kerja_id::varchar AS unit_kerja_id, d.catatan
+       FROM disposisi_label_unit d
+      WHERE NOT EXISTS (SELECT 1 FROM seed s WHERE s.label_norm = d.label_norm)
+     UNION ALL
+     SELECT s.label_norm, s.unit_kerja_id, s.catatan FROM seed s
+   )`;
+
+   /** Parameter $${SEED_PARAM_COUNT + 1} = batas data lama (timestamptz). Hanya label bebas DATA LAMA (spec §3 langkah 2). */
+   export const BASE_CTE = `${PETA_CTE},
+   label AS (
+     SELECT sm.id AS surat_masuk_id, sm.unit_kerja_id AS pemilik, l.label AS label_asal,
+            lower(regexp_replace(trim(coalesce(l.label, '')), '\\s+', ' ', 'g')) AS label_norm
+       FROM surat_masuk sm
+      CROSS JOIN LATERAL unnest(sm.disposisi) AS l(label)
+      WHERE sm.is_deleted IS NOT TRUE
+        AND sm.created_at < $${SEED_PARAM_COUNT + 1}::timestamptz
+   ),
+   kandidat AS (
+     SELECT lb.surat_masuk_id, lb.pemilik, p.unit_kerja_id, lb.label_asal,
+            EXISTS (SELECT 1 FROM surat_distributions sd
+                     WHERE sd.surat_masuk_id = lb.surat_masuk_id AND sd.target_unit_id = p.unit_kerja_id) AS sudah_didisposisikan
+       FROM label lb
+       JOIN peta p ON p.label_norm = lb.label_norm
+      WHERE p.unit_kerja_id IS NOT NULL AND p.unit_kerja_id <> lb.pemilik
+   ),
+   rute AS (
+     SELECT surat_masuk_id, pemilik, unit_kerja_id, min(label_asal) AS label_asal
+       FROM kandidat
+      WHERE NOT sudah_didisposisikan
+      GROUP BY surat_masuk_id, pemilik, unit_kerja_id
+   )`;
+   ```
+   - `assertPemetaanSah(client)` uses `WITH ${PETA_CTE}` and `seedParams()` only, so its signature and the Task 3 test calls are unchanged.
+   - Every query that embeds `BASE_CTE` (`PEMETAAN_SQL`, the totals query, `BATCH_SQL`, and the balasan plan query if it uses `label`/`rute`) is called with `[...seedParams(), batas, …]`.
+   - In `BATCH_SQL`, the cursor placeholder becomes `$${SEED_PARAM_COUNT + 2}::uuid`.
+   - **(delta P3) Confirmed.** P3 `distribute` appends the target unit **name** as a compatibility label: `SET disposisi = array_append(coalesce(disposisi, '{}'), ${target.name})` guarded by `NOT (… @> ARRAY[name])` (`distribution.service.ts:266-269`). The line may shift under fix-wave C-I1. Each such label co-exists with a real distribution row, so `sudah_didisposisikan` excludes it whatever the status (including `rejected`), and the cutoff excludes P3-era letters. Both halves of this amendment are needed: a pre-cutoff SM disposed during the P3 era is caught only by the `sudah_didisposisikan` clause.
+3. **Cutoff resolver (REQUIRED) [P5-G-5] RECHECK-AFTER-P4.** Add this to `backfill-rangkaian-lama.mjs` and export it:
+   ```js
+   const ISO_BERZONA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+   /** Satu definisi dengan P4 D7 (resolveBatasDataLama); tanpa env dan tanpa rangkaian non-data-lama → berhenti (fail closed). */
+   export async function resolveBatasDataLama(client, env = process.env) {
+     const mentah = env.RANGKAIAN_DATA_LAMA_SEBELUM?.trim();
+     if (mentah) {
+       if (!ISO_BERZONA.test(mentah) || Number.isNaN(Date.parse(mentah))) {
+         throw new Error('RANGKAIAN_DATA_LAMA_SEBELUM harus ISO-8601 dengan zona waktu, mis. 2026-10-05T00:00:00+07:00');
+       }
+       return new Date(mentah).toISOString();
+     }
+     const { rows: [row] } = await client.query(`SELECT min(created_at) AS batas FROM rangkaian_surat WHERE asal <> 'data_lama'`);
+     if (!row?.batas) throw new Error('Batas data lama tidak dapat ditentukan: isi RANGKAIAN_DATA_LAMA_SEBELUM dengan waktu kode P3 aktif');
+     return new Date(row.batas).toISOString();
+   }
+   ```
+   Add two unit tests: an invalid env value throws, and no env plus no rangkaian throws.
+4. **Whitespace parity (ADVISORY) [P5-T3-3].** Optionally replace `trim(coalesce(l.label, ''))` in `label` with `regexp_replace(coalesce(l.label, ''), <PG_TRIM_PATTERN>, '', 'g')`, using the pattern string exported by `visibility-spec.ts`. If you do, add a `' BPPT '` case to the JS/SQL parity test.
+
+
+**C-6 (critic) — Tasks 3, 4: the DB fallback of the cutoff diverges from P4's value exactly in the deploy window — REQUIRED [P5-C-6]**
+
+
+- Real P3 step 1 inserts rangkaian without `created_at` (`backfill-rangkaian-disposisi.mjs:95-97`), so the value is `now()` of the **first** run. The P3 runbook schedules that run before the P3 deploy (§2).
+- The `min(created_at)` fallback is therefore earlier than the P3 go-live that the P4 runbook writes into `RANGKAIAN_DATA_LAMA_SEBELUM`.
+- Legacy letters created in between (the P2 writer is still live, P3 runbook §2) fall **outside** the P5 label scope under the fallback, but **inside** it under P4's value.
+- Binding: C-1 (`--apply` requires the shell env). The DB fallback stays for dry-run only, printed as `sumberBatas: 'db'`. Keep the two resolver unit tests of Task 3 item 3, and add "`--apply` without the shell env throws" (C-1).
+
+
 
 ### Task 4: Skrip backfill — dry-run, CSV, dan SHA-256 rencana (tanpa tulis)
 
@@ -996,6 +1344,99 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 4 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Plan signature and totals (REQUIRED) [P5-T4-1].**
+   - The signature becomes `buildPlan(client, { batas })`. The result adds `batasDataLama` and `calonPengolah: Row[]` (see Task 5 item 1).
+   - `total` adds `sudah_didisposisikan` and `peserta_dilewati_diberkaskan` (see Task 5 item 3). `sudah_didisposisikan` is `SELECT count(DISTINCT (surat_masuk_id, unit_kerja_id))::int FROM kandidat WHERE sudah_didisposisikan`, which counts distinct (surat, unit) pairs, not label occurrences.
+   - The SHA-256 payload includes `batasDataLama`, `pemetaan`, `balasan`, `calonPengolah` and `total`.
+   - `writePlanFiles` also writes `calon-pengolah.csv` with the header `surat_masuk_id,nomor_surat,calon_unit_pengolah`, and puts `batasDataLama` into `ringkasan.json`.
+2. **Test updates (REQUIRED) [P5-T4-1].**
+   - Add `const BATAS_UJI = '2100-01-01T00:00:00.000Z';` near the fixture constants. Every `buildPlan(database)` becomes `buildPlan(database, { batas: BATAS_UJI })`, and every `applyPlan(database, { approvedSha256 })` becomes `applyPlan(database, { approvedSha256, batas: BATAS_UJI })`.
+   - The first dry-run test expects:
+     ```ts
+             expect(first.total).toEqual({
+                 surat_target: 3, rangkaian_baru: 3, peserta_baru: 4,
+                 balasan_akan_ditautkan: 1, balasan_lintas_unit: 2,
+                 sudah_didisposisikan: 1, peserta_dilewati_diberkaskan: 0,
+             });
+             expect(first.batasDataLama).toBe(BATAS_UJI);
+     ```
+   - `PEMETAAN_SQL` stays a label → unit report, so the pemetaan test (`bppt` `jumlah_surat: 2, jumlah_surat_dirutekan: 2`) is unchanged. The effect of the new exclusion appears only in `total.sudah_didisposisikan`, in `rute`, and in the apply results.
+   - `TOTAL_SQL` computes `peserta_dilewati_diberkaskan` as the rute rows whose target rangkaian has `status = 'diberkaskan'` and no `disposisi_lama` peserta for that unit. `peserta_baru` excludes those rows.
+   - Fixture note (replaces the plan's note): `peserta_baru` = SM1→dir_bppt, SM2→dir_ptep, SM2→dir_ktpp, SM3→sesditjen = 4. SM8→dir_bppt is `sudah_didisposisikan` because SM8 already has an explicit distribution to dir_bppt. `rangkaian_baru` = SM1, SM2, SM3.
+   - Add:
+     ```ts
+         it('hanya surat sebelum batas data lama yang dirutekan; batas ikut menentukan SHA', async () => {
+             const awal = await buildPlan(database, { batas: '2000-01-01T00:00:00.000Z' });
+             expect(awal.total).toMatchObject({ surat_target: 0, rangkaian_baru: 0, peserta_baru: 0 });
+             expect(awal.sha256).not.toBe((await buildPlan(database, { batas: BATAS_UJI })).sha256);
+         });
+     ```
+3. **Report location (REQUIRED) [P5-T4-3].**
+   - In `parseArgs`, the default `outDir` becomes `null`. `main()` resolves `options.outDir ?? mkdtempSync(join(os.tmpdir(), 'laporan-rangkaian-lama-'))` and prints `Laporan: <dir>`.
+   - Append `backend/laporan-rangkaian-lama/` to the root `.gitignore`.
+   - The `parseArgs` test stays as written.
+   - Runbook examples use `--out=<direktori di luar repo>`.
+4. **Resume note (ADVISORY) [P5-T4-2].** The runbook states that an apply which stops midway needs a new dry-run and a new sign-off. Already-applied surat then show as `sudah_anggota`, which changes the SHA.
+5. **(delta P3) Unknown sifat classes in the dry-run (ADVISORY; P3 spec-review carry-forward "Handle unknown `sifat_surat` classes", Minor 1).**
+   - A routed legacy SM whose normalized class (`normalizeSecurityClassification`, P2 `visibility-spec.ts:40-59`) is neither Biasa nor a known controlled class stays **masked** for peserta after the flag, and cannot be requested through Ajukan Akses (`requiresExplicitAccessGrant` is false; `rangkaian-read.service.ts:440`).
+   - Add `sifat_tak_dikenal` to `total`: the count of distinct routed SMs whose normalized `sifat_surat` is not in the known set. Add a column `sifat_tidak_dikenal` (boolean) to `pemetaan-label.csv`.
+   - It is part of the SHA payload, so that the signer sees how many routed letters will stay masked.
+   - Release-gate row (h) records the decision.
+
+
+**C-2 (critic) — Tasks 4, 5, 7, 13: the deferred pengolah has no executable path — REQUIRED (spec:358; contradicts the "Cost if wrong" of P5-T5-1 and runbook step 8 of P5-T13-1) [P5-C-2]**
+
+
+- **Ubah Unit Pengolah cannot apply it.** P3 `berkasService.ubahUnitPengolah` accepts only a unit in `unitDalamJangkauanBerkas` (P3:6591-6597). That set is the non-rejected distribution targets plus the anggota units (P3:6485-6492; spec §9).
+  - `disposisi_lama` peserta are not in it.
+  - A backfilled `data_lama` rangkaian has no distribution to its label units.
+- **Koreksi Berkas cannot apply it either.** After P5-T6-1 it uses the same predicate and answers 422.
+- So "through P3 Ubah Unit Pengolah or a Koreksi" (P5-T5-1) and runbook step 8 (P5-T13-1) cannot apply `calonUnitPengolah`.
+- **(delta P3) Confirmed on real code.** `ubahUnitPengolah` refuses any unit outside `unitDalamJangkauanBerkas` with 422 "Disposisikan dulu ke unit ini" (`berkas.service.ts:217-224`). That set is the non-rejected distribution targets plus the live anggota units (:69-83), with no peserta branch. Ubah is also limited to `aktif`/`selesai` (:221).
+- **Tutup massal then locks the choice in.** It files every `data_lama` rangkaian with `coalesce(rs.unit_pengolah_id, rs.unit_pencatat_id)` (P5:1844, 1878), and `diberkaskan` is terminal (`0046_rangkaian_surat.sql:331-346`). Spec:358 is thereby abandoned permanently and silently.
+- Binding:
+  1. **Two outcomes for release-gate row (a)** (P5-G-6):
+     - "isi": apply the label-derived pengolah per spec:358, after the security owner signs `calon-pengolah.csv`;
+     - "tidak": spec:358 is waived, and the berkas go to the pencatat.
+  2. **A pengolah mode in the backfill script**, SHA-bound: either as an `--isi-pengolah` option of `--apply` (the chosen mode is part of the SHA payload), or as a separate later run `--isi-pengolah --approved-sha256=<sha>`. For each `calonPengolah` row (already in the Task 4 payload) whose rangkaian still has `asal='data_lama' AND status='selesai' AND unit_pengolah_id IS NULL`:
+     - lock by id (`ORDER BY id FOR UPDATE`) and set `unit_pengolah_id`;
+     - write one audit row: `action: 'update'`, `changes: { before: { unitPengolahId: null }, after: { unitPengolahId }, sumber: 'backfill-rangkaian-lama', aksesBaru: [unit] }`;
+     - refuse on an SHA mismatch.
+
+     Tests: S1 gets `dir_bppt`; a second run changes nothing; a `diberkaskan` row or one with a non-NULL pengolah is skipped.
+  3. **Runbook order:** `--apply` → decision on gate (a) → pengolah mode if the decision is "isi" → only then Tutup massal of data lama.
+     - The Task 10 UI copy and PANDUAN (P5:3165) state that Tutup massal files a berkas with no pengolah to the pencatat.
+  4. **Access is not flag-controlled.** The runbook states that pengolah access is not controlled by the flag: after the pengolah mode runs, unsetting `RANGKAIAN_DISPOSISI_LAMA_READ` no longer revokes it (`visibility-spec.ts:130-131`).
+
+
+**C-6 (critic) — Tasks 3, 4: the DB fallback of the cutoff diverges from P4's value exactly in the deploy window — REQUIRED [P5-C-6]**
+
+
+- Real P3 step 1 inserts rangkaian without `created_at` (`backfill-rangkaian-disposisi.mjs:95-97`), so the value is `now()` of the **first** run. The P3 runbook schedules that run before the P3 deploy (§2).
+- The `min(created_at)` fallback is therefore earlier than the P3 go-live that the P4 runbook writes into `RANGKAIAN_DATA_LAMA_SEBELUM`.
+- Legacy letters created in between (the P2 writer is still live, P3 runbook §2) fall **outside** the P5 label scope under the fallback, but **inside** it under P4's value.
+- Binding: C-1 (`--apply` requires the shell env). The DB fallback stays for dry-run only, printed as `sumberBatas: 'db'`. Keep the two resolver unit tests of Task 3 item 3, and add "`--apply` without the shell env throws" (C-1).
+
+
+**C-12 (critic) — Tasks 4, 5: fixture totals verified by hand; test ordering — ADVISORY [P5-C-12]**
+
+
+- **Totals.** The amended totals (P5-T4-1 and P5-T5-4) were not executed in scratch. Recomputed by hand from the fixture (P5:793-817):
+  - routes: SM1→dir_bppt, SM2→dir_ptep, SM2→dir_ktpp and SM3→sesditjen;
+  - SM8→dir_bppt is `sudah_didisposisikan` (distribution at P5:810-811);
+  - balasan: K1 is `akan_ditautkan`, K2 and K4 are `lintas_unit_ditinjau_tu`, K3 is `dilewati_belum_disetujui`.
+
+  That gives `{ surat_target: 3, rangkaian_baru: 3, peserta_baru: 4, balasan_akan_ditautkan: 1, balasan_lintas_unit: 2, sudah_didisposisikan: 1, peserta_dilewati_diberkaskan: 0 }`, which matches the amendment. The `bppt` pemetaan row (`jumlah_surat: 2`, `jumlah_surat_dirutekan: 2`) is unchanged.
+- **Test ordering.** The Task 5 item 4 test ("tidak menambah peserta ke rangkaian yang sudah diberkaskan") needs rs1 from an earlier apply test. It also mutates the shared `beforeAll` database: it changes SM1's labels and sets rs1 to `diberkaskan`. Keep it the last test in the file, or call `applyPlan` inside it first when rs1 is absent.
+
+
 
 ### Task 5: Skrip backfill — `--apply` bergerbang, idempoten, diaudit
 
@@ -1304,6 +1745,181 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 5 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **No label-derived pengolah (BLOCKING, security) [P5-T5-1].** In `applySurat`, rename `pengolah` to `calonPengolah`, pass `null` as `unit_pengolah_id` in the `INSERT INTO rangkaian_surat`, and write the audit as:
+   ```js
+       await audit(client, 'create', 'rangkaian_surat', rangkaian.id, {
+         kode: rangkaian.kode, asal: 'data_lama', status: 'selesai', suratMasukId: suratId,
+         unitPengolahId: null, calonUnitPengolah: calonPengolah, // spec:356: pengolah memberi jangkauan tanpa flag; ditunda sampai sign-off (gerbang rilis P5)
+       });
+   ```
+   `buildPlan` produces `calonPengolah` rows: one per new rangkaian whose routes contain exactly one `direktorat` unit.
+2. **Lock order and retry (REQUIRED) [P5-T5-2] RECHECK-AFTER-P3.**
+   - In `applySurat`, move the balasan read before the SM lock:
+     ```js
+       const { rows: calonBalasan } = await client.query(
+         `SELECT sk.id FROM surat_keluar sk
+           WHERE sk.balasan_untuk = $1::uuid AND sk.is_deleted IS NOT TRUE AND sk.approval_status = 'approved'
+           ORDER BY sk.id`, [suratId]);
+       if (calonBalasan.length > 0) {
+         // G-LOCK: surat_keluar (ORDER BY id) → surat_masuk → rangkaian_surat.
+         await client.query('SELECT id FROM surat_keluar WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+           [calonBalasan.map(row => row.id)]);
+       }
+     ```
+     Then keep the SM `FOR UPDATE` and the rangkaian lock. Change `FOR UPDATE OF rs` to lock by id: `SELECT ... FROM rangkaian_surat WHERE id = $1 FOR UPDATE` after reading `ra.rangkaian_id` unlocked.
+   - Keep the existing balasan query after the locks, with its `NOT EXISTS (… rangkaian_anggota …)` re-check.
+   - Wrap `inTransaction` so that one batch is retried up to 3 times when `error.code` is `'40P01'` or `'40001'`:
+     ```js
+     async function inTransaction(client, work, percobaan = 3) {
+       for (let ke = 1; ; ke += 1) {
+         await client.query('BEGIN');
+         try {
+           await client.query("SELECT pg_advisory_xact_lock(hashtextextended('simsa:backfill-rangkaian-lama', 0))");
+           const result = await work();
+           await client.query('COMMIT');
+           return result;
+         } catch (error) {
+           await client.query('ROLLBACK').catch(() => {});
+           if (ke < percobaan && (error?.code === '40P01' || error?.code === '40001')) continue;
+           throw error;
+         }
+       }
+     }
+     ```
+     `summary` counters must be applied only after a successful commit. Accumulate per-batch counts in a local object and merge them after `inTransaction` returns.
+   - **(delta P3) Confirmed deadlock partner.** P3 `tautan`/`tautanKeSurat`/`gabung` lock `kunciSurat(sp, { suratKeluarIds, suratMasukIds })` (SK ORDER BY id, then SM) and then `lockRangkaian` (`rangkaian-link.service.ts:80-82`; `deps.ts:126-129, 155-170`). This is the SK → SM → R order the amended `applySurat` follows. P3's step-1 script takes SM then R, with no SK (`backfill-rangkaian-disposisi.mjs:44-71`). The concurrency review verified it deadlock-free against P3 writers, which all take SM first.
+3. **No peserta on `diberkaskan` (REQUIRED) [P5-T5-3].**
+   - In the peserta loop, add `if (induk.status === 'diberkaskan') { summary.pesertaDilewatiDiberkaskan += 1; continue; }` before the INSERT.
+   - Initialize the counter in `summary`.
+   - `buildPlan` counts these routes as `peserta_dilewati_diberkaskan` and excludes them from `peserta_baru`.
+4. **Test updates (REQUIRED) [P5-T5-4].**
+   - Summary expectation: `{ suratDiproses: 3, rangkaianBaru: 3, pesertaBaru: 4, balasanDitautkan: 1, balasanDilewatiDiberkaskan: 0, pesertaDilewatiDiberkaskan: 0 }`.
+   - In the S1 rangkaian row: `unit_pengolah_id: null`.
+   - Peserta list: `['01:dir_bppt', '02:dir_ktpp', '02:dir_ptep', '03:sesditjen']`.
+   - Audit: `.toBeGreaterThanOrEqual(3 + 4 + 1)`.
+   - Idempotent run: `{ suratDiproses: 3, rangkaianBaru: 0, pesertaBaru: 0, balasanDitautkan: 0, balasanDilewatiDiberkaskan: 0, pesertaDilewatiDiberkaskan: 0 }`.
+   - Add a check that the S1 create audit has `changes.calonUnitPengolah === 'dir_bppt'`.
+   - Add at the end of `describe('apply')`:
+     ```ts
+         it('tidak menambah peserta ke rangkaian yang sudah diberkaskan (fail closed, RB P1 butir 9)', async () => {
+             const { rows: [rs1] } = await database.query<{ id: string }>(`
+                 SELECT ra.rangkaian_id AS id FROM rangkaian_anggota ra WHERE ra.surat_masuk_id = '${S(1)}' AND ra.peran = 'induk'`);
+             await database.exec(`
+                 UPDATE surat_masuk SET disposisi = array_append(disposisi, 'PLP') WHERE id = '${S(1)}';
+                 UPDATE rangkaian_surat SET status = 'diberkaskan', unit_pengolah_id = 'ditjen', klasifikasi_item_id = (SELECT min(id) FROM klasifikasi_arsip),
+                        diberkaskan_at = now(), diberkaskan_by = '${P5_IDS.superA}' WHERE id = '${rs1.id}';`);
+             const plan = await buildPlan(database, { batas: BATAS_UJI });
+             expect(plan.total).toMatchObject({ peserta_baru: 0, peserta_dilewati_diberkaskan: 1 });
+             const summary = await applyPlan(database, { approvedSha256: plan.sha256, batas: BATAS_UJI });
+             expect(summary).toMatchObject({ pesertaBaru: 0, pesertaDilewatiDiberkaskan: 1 });
+             expect((await database.query(`SELECT count(*)::int AS n FROM rangkaian_peserta WHERE rangkaian_id = '${rs1.id}' AND unit_kerja_id = 'dir_plp'`)).rows[0]).toEqual({ n: 0 });
+         });
+     ```
+     If the 0046 CHECK for `diberkaskan` needs other columns, set them the same way `seedBerkasDiberkaskan` does.
+5. **Role and connection (REQUIRED) [P5-T5-5].** Add this header comment above `main()`:
+   ```js
+   // Dijalankan sebagai role runtime `simsa_api`: DATABASE_URL diisi dari NEON_RUNTIME_DATABASE_URL lewat prompt
+   // tersembunyi (docs/RUNBOOK_INTEGRASI_SURAT_P1.md). Jangan memakai simsa_maintenance/simsa_operator: tanpa grant
+   // rangkaian_*, dan menambah grant mengubah hash grants/0002 serta pin Neon (RB P1 butir 5, P3 T2-3).
+   ```
+   `main()` resolves `const batas = await resolveBatasDataLama(client)`, passes it to `buildPlan`/`applyPlan`, and prints it.
+6. **Smaller consistency items (ADVISORY) [P5-T5-6].**
+   - The judul uses `COALESCE(NULLIF(regexp_replace(perihal, <PG_TRIM_PATTERN>, '', 'g'), ''), nomor_surat, '(tanpa perihal)')`.
+   - The Ambiguitas section notes that a balasan linked into an existing `aktif` step-1 rangkaian waits for the next recompute.
+   - Optionally rename the npm scripts to `db:backfill:rangkaian-lama` / `db:backfill:rangkaian-lama:apply`, placed next to `db:backfill:rangkaian-disposisi`. If you do, update the docs test (P5:3113) and the runbook.
+7. **(delta P3) `data_lama` anggota and auto-selesai (ADVISORY test and gate row; P3 concurrency carry-forward 2 (#102), spec review T12).**
+   - P1's fact `surat_masuk_belum_ditangani` counts every live SM anggota without an approved reply, including `sumber='data_lama'`.
+   - A pengawas gabung of a backfilled `data_lama` rangkaian (status `selesai`) into a live rangkaian moves those SMs into the target, and the target can then never auto-close.
+   - Add one PGlite case to the Task 5 suite: after `applyPlan`, call `rangkaianService.gabung` with a live target and the S1 rangkaian, then `recomputeStatus`.
+     - Expected by reading P1: the target stays `aktif`, and the `surat_masuk_belum_ditangani` fact is ≥ 1.
+     - If P1 refuses gabung of a `data_lama` source, assert that refusal instead. Either way, the observed behaviour is what gate row (g) signs.
+   - Record the result in release-gate row (g). P5 does **not** change the P1 fact without the owner's decision.
+
+
+**C-1 (critic) — Tasks 5, 13: the backfill entry point must not fall back to `backend/.env` — REQUIRED (security/ops) [P5-C-1]**
+
+
+- P5:1253-1255: `main()` runs `dotenv.config()` before checking `DATABASE_URL`. Two consequences:
+  - An operator who forgets the shell export silently targets whatever `backend/.env` holds: a dev DB, or production through a non-runtime role.
+  - The P5-G-5 resolver then reads a `RANGKAIAN_DATA_LAMA_SEBELUM` from that file.
+  - P5-T5-5 only adds a comment, so neither is prevented.
+- Real P3 fixed exactly this for step 1:
+  - `backfill-rangkaian-disposisi.mjs:136-145` [F3] captures `DATABASE_URL` before `dotenv.config` and throws without it;
+  - `:33-36` logs `current_user`/`current_database()` before the first batch.
+- Binding shape of `main()`, merged with Task 4 item 3 and Task 5 item 5:
+  ```js
+  async function main() {
+    // [F3] pola P3: nilai shell ditangkap SEBELUM dotenv; skrip ini tidak memakai fallback backend/.env.
+    const urlShell = process.env.DATABASE_URL?.trim();
+    const batasShell = process.env.RANGKAIAN_DATA_LAMA_SEBELUM?.trim();
+    dotenv.config({ quiet: true });
+    if (!urlShell) throw new Error('DATABASE_URL harus diset eksplisit di shell (NEON_RUNTIME_DATABASE_URL, role simsa_api); skrip ini tidak memakai backend/.env');
+    const options = parseArgs(process.argv.slice(2));
+    const client = new Client({ connectionString: urlShell, connectionTimeoutMillis: 10_000 });
+    await client.connect();
+    try {
+      const { rows: [identitas] } = await client.query('SELECT current_user AS db_user, current_database() AS db_name');
+      const batas = await resolveBatasDataLama(client, { RANGKAIAN_DATA_LAMA_SEBELUM: batasShell });
+      console.log(JSON.stringify({ dbUser: identitas.db_user, dbName: identitas.db_name, batasDataLama: batas, sumberBatas: batasShell ? 'env' : 'db' }));
+      if (options.apply && !batasShell) {
+        throw new Error('--apply mewajibkan RANGKAIAN_DATA_LAMA_SEBELUM di shell, sama persis dengan nilai Vercel (runbook Deploy P4)');
+      }
+      // lanjut: buildPlan(client, { batas }), writePlanFiles, applyPlan(client, { approvedSha256, batas }) seperti amandemen Task 4/5.
+    } finally {
+      await client.end();
+    }
+  }
+  ```
+- Drop the `dotenv` import entirely if no other variable needs it.
+- **(delta P3) Confirmed on b4d86fa.** The [F3] capture before `dotenv.config` is at `backfill-rangkaian-disposisi.mjs:136-145`, and the identity log at :34-36. The P3 script only logs, and does not refuse a wrong role (ledger `progress.md:48`). The binding shape above, which prints the first JSON line and has the runbook stop when `dbUser` ≠ `simsa_api`, stays. Optionally fail closed in code: `if (identitas.db_user !== 'simsa_api' && process.env.ALLOW_NON_RUNTIME_ROLE !== '1') throw …`.
+- Runbook: stop if the first JSON line shows a `dbUser` other than `simsa_api` or the wrong `dbName`. This is the same rule as the P3 runbook §4.
+- Test: `--apply` without the shell env throws, run through an exported helper that wraps the check.
+
+
+**C-2 (critic) — Tasks 4, 5, 7, 13: the deferred pengolah has no executable path — REQUIRED (spec:358; contradicts the "Cost if wrong" of P5-T5-1 and runbook step 8 of P5-T13-1) [P5-C-2]**
+
+
+- **Ubah Unit Pengolah cannot apply it.** P3 `berkasService.ubahUnitPengolah` accepts only a unit in `unitDalamJangkauanBerkas` (P3:6591-6597). That set is the non-rejected distribution targets plus the anggota units (P3:6485-6492; spec §9).
+  - `disposisi_lama` peserta are not in it.
+  - A backfilled `data_lama` rangkaian has no distribution to its label units.
+- **Koreksi Berkas cannot apply it either.** After P5-T6-1 it uses the same predicate and answers 422.
+- So "through P3 Ubah Unit Pengolah or a Koreksi" (P5-T5-1) and runbook step 8 (P5-T13-1) cannot apply `calonUnitPengolah`.
+- **(delta P3) Confirmed on real code.** `ubahUnitPengolah` refuses any unit outside `unitDalamJangkauanBerkas` with 422 "Disposisikan dulu ke unit ini" (`berkas.service.ts:217-224`). That set is the non-rejected distribution targets plus the live anggota units (:69-83), with no peserta branch. Ubah is also limited to `aktif`/`selesai` (:221).
+- **Tutup massal then locks the choice in.** It files every `data_lama` rangkaian with `coalesce(rs.unit_pengolah_id, rs.unit_pencatat_id)` (P5:1844, 1878), and `diberkaskan` is terminal (`0046_rangkaian_surat.sql:331-346`). Spec:358 is thereby abandoned permanently and silently.
+- Binding:
+  1. **Two outcomes for release-gate row (a)** (P5-G-6):
+     - "isi": apply the label-derived pengolah per spec:358, after the security owner signs `calon-pengolah.csv`;
+     - "tidak": spec:358 is waived, and the berkas go to the pencatat.
+  2. **A pengolah mode in the backfill script**, SHA-bound: either as an `--isi-pengolah` option of `--apply` (the chosen mode is part of the SHA payload), or as a separate later run `--isi-pengolah --approved-sha256=<sha>`. For each `calonPengolah` row (already in the Task 4 payload) whose rangkaian still has `asal='data_lama' AND status='selesai' AND unit_pengolah_id IS NULL`:
+     - lock by id (`ORDER BY id FOR UPDATE`) and set `unit_pengolah_id`;
+     - write one audit row: `action: 'update'`, `changes: { before: { unitPengolahId: null }, after: { unitPengolahId }, sumber: 'backfill-rangkaian-lama', aksesBaru: [unit] }`;
+     - refuse on an SHA mismatch.
+
+     Tests: S1 gets `dir_bppt`; a second run changes nothing; a `diberkaskan` row or one with a non-NULL pengolah is skipped.
+  3. **Runbook order:** `--apply` → decision on gate (a) → pengolah mode if the decision is "isi" → only then Tutup massal of data lama.
+     - The Task 10 UI copy and PANDUAN (P5:3165) state that Tutup massal files a berkas with no pengolah to the pencatat.
+  4. **Access is not flag-controlled.** The runbook states that pengolah access is not controlled by the flag: after the pengolah mode runs, unsetting `RANGKAIAN_DISPOSISI_LAMA_READ` no longer revokes it (`visibility-spec.ts:130-131`).
+
+
+**C-12 (critic) — Tasks 4, 5: fixture totals verified by hand; test ordering — ADVISORY [P5-C-12]**
+
+
+- **Totals.** The amended totals (P5-T4-1 and P5-T5-4) were not executed in scratch. Recomputed by hand from the fixture (P5:793-817):
+  - routes: SM1→dir_bppt, SM2→dir_ptep, SM2→dir_ktpp and SM3→sesditjen;
+  - SM8→dir_bppt is `sudah_didisposisikan` (distribution at P5:810-811);
+  - balasan: K1 is `akan_ditautkan`, K2 and K4 are `lintas_unit_ditinjau_tu`, K3 is `dilewati_belum_disetujui`.
+
+  That gives `{ surat_target: 3, rangkaian_baru: 3, peserta_baru: 4, balasan_akan_ditautkan: 1, balasan_lintas_unit: 2, sudah_didisposisikan: 1, peserta_dilewati_diberkaskan: 0 }`, which matches the amendment. The `bppt` pemetaan row (`jumlah_surat: 2`, `jumlah_surat_dirutekan: 2`) is unchanged.
+- **Test ordering.** The Task 5 item 4 test ("tidak menambah peserta ke rangkaian yang sudah diberkaskan") needs rs1 from an earlier apply test. It also mutates the shared `beforeAll` database: it changes SM1's labels and sets rs1 to `diberkaskan`. Keep it the last test in the file, or call `applyPlan` inside it first when rs1 is absent.
+
+
 
 ### Task 6: Service Koreksi Berkas (maker-checker via GUC `simsa.berkas_koreksi`)
 
@@ -1672,6 +2288,75 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 6 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **P3 unit predicate (REQUIRED) [P5-T6-1] RECHECK-AFTER-P3.**
+   - Delete `export async function unitDalamJangkauanBerkas` from `rangkaian-koreksi.service.ts` and drop it from Produces.
+   - Import `berkasService` from `./rangkaian/berkas.service.js`, or through `./rangkaian/deps.js` if P3 re-exports it there.
+   - `assertUnitDalamJangkauan` uses `await berkasService.unitDalamJangkauanBerkas(tx, rangkaianId)`.
+   - `daftar.kandidatUnit` becomes:
+     ```ts
+             const unitIds = berkas.status === 'diberkaskan' ? await berkasService.unitDalamJangkauanBerkas(db, rangkaianId) : [];
+             const kandidatUnit = unitIds.length
+                 ? await rows<{ id: string; name: string }>(db, sql`SELECT id, name FROM unit_kerja WHERE id = ANY(${unitIds}::varchar[]) ORDER BY name`)
+                 : [];
+     ```
+   - Add a test: a unit whose only link to the berkas is an anggota surat that was soft-deleted is refused by `ajukan` with 422.
+   - **(delta P3) Confirmed.**
+     - `berkasService.unitDalamJangkauanBerkas(executor: Executor, rangkaianId: string): Promise<string[]>` is at `rangkaian/berkas.service.ts:69-83`. It filters soft-deleted SMs on the distribution branch (:75) and soft-deleted members on the anggota branch (:81). `deps.ts` does **not** re-export it, so import it from `./rangkaian/berkas.service.js`.
+     - For the id → name map, reuse the P3 pattern in `opsiBerkas` (:110-112: `SELECT id, name FROM unit_kerja WHERE id = ANY(${textArraySql(ids)}) ORDER BY name`), with `textArraySql` from `./rangkaian/sql-rows.js`.
+     - P3 also has `berkasService.aksesBaru(executor, rangkaianId, units)` (:86-89, flag-aware through `loadJangkauan`). Use it for the "gains access" side of critic C-7 instead of a new diff helper.
+2. **Lock order and retry (REQUIRED) [P5-T6-2] RECHECK-AFTER-P3.**
+   - `putuskan` follows the order:
+     1. `SELECT rangkaian_id FROM rangkaian_koreksi_berkas WHERE id = ${koreksiId}` (no lock).
+     2. `lockBerkas(tx, rangkaianId)`.
+     3. `SELECT * FROM rangkaian_koreksi_berkas WHERE id = ${koreksiId} FOR UPDATE`.
+     4. Re-check `status`, `rangkaian_id` and the self-approval rule.
+
+     The `tolak` branch also locks R first, for one uniform order.
+   - Wrap both service bodies: `return denganRetryDeadlock(() => db.transaction(async (tx) => { … }))`. In `ajukan`, keep `try { … } catch (error) { if (hasPostgresErrorCode(error, '23505', 'rangkaian_koreksi_berkas_terbuka_uidx')) throw new ConflictError(…); throw error; }` around the wrapper, not inside it.
+   - Add a unit test with the same mock pattern as P3 C-4: the first `db.transaction` rejects with `{ cause: { code: '40P01' } }` and the second resolves.
+3. **Access delta (REQUIRED) [P5-T6-3].**
+   - In `putuskan` (setuju), compute `const sebelum = await berkasService.unitDalamJangkauanBerkas(tx, rangkaianId)` together with the current pengolah, before the UPDATE.
+   - After the UPDATE, set `unitKehilanganAkses` = `[koreksi.unit_pengolah_lama]` when that unit is no longer pengolah and is not in `sebelum` (the non-pengolah jangkauan). Otherwise set it to `[]`.
+   - Add `unitKehilanganAkses` to the audit `changes` and to the `daftar` DTO of each koreksi.
+   - Task 9 shows it in the confirmation step.
+   - Test: correcting pengolah from `dir_bppt` to `dir_ptep` on the fixture (where `dir_bppt` is also a disposisi target) gives `unitKehilanganAkses: []`.
+   - **(delta P3) Confirmed.**
+     - `denganRetryDeadlock<T>(run, percobaan = 3)` (`utils/deadlock-retry.ts:15-23`) retries on 40P01 and 40001 through `hasPostgresErrorCode`, which walks `.cause`. It turns exhaustion into `ConflictError(PESAN_KONFLIK_BERSAMAAN)` (409). `run` must open its own `db.transaction` (doc :11-13).
+     - The `{ cause: { code: '40P01' } }` mock pattern matches.
+     - P3's own Berkas paths lock anggota SMs before R (`kunci`, `berkas.service.ts:52-62`). A Koreksi on a `diberkaskan` berkas holds only R and K. Membership is frozen by 0046, and no P3 path holds R and then waits on K, so R → K is cycle-free without the SM pre-lock.
+4. **Suite speed (ADVISORY) [P5-T1-8].** Build the PGlite database in `beforeAll` and reset only the `rangkaian_koreksi_berkas` rows and the berkas row per test.
+5. **(delta P3) Authorization before state (ADVISORY; P3 access carry-forward 8: "T14 `kunci` 409-before-auth race; Koreksi Berkas path").**
+   - In `putuskan`, after the locks, check in this order:
+     1. existence of the koreksi, else 404;
+     2. the self-approval rule (maker ≠ checker), else 403;
+     3. `status === 'diajukan'` and `rangkaian_id` unchanged, else 409.
+
+     The route-level `roleMiddleware(['super_admin'])` runs before the service.
+   - The P3 race (a 409 on a membership change reported before `assertPeran`) cannot occur on the Koreksi path: a `diberkaskan` berkas has frozen membership (0046 `rangkaian_guard_closed`). Record this in the Self-Review.
+
+
+**C-7 (critic) — Task 6: audit the real access delta — REQUIRED (spec:740) [P5-C-7]**
+
+
+- P5-T6-3 derives `unitKehilanganAkses` from `unitDalamJangkauanBerkas`. That set omits the pengolah branch and the active peserta, which count when the flag is on.
+- Real jangkauan is `jangkauanUnitsSql` (`visibility-spec.ts:122-137`): pencatat, pengolah, anggota units, non-rejected targets, plus active peserta when the flag is on.
+- An old pengolah that is also a peserta keeps its access, yet the amendment reports it as lost.
+- Binding:
+  - In `putuskan` (setuju), in the same transaction, capture `const sebelum = await loadJangkauan(tx, rangkaianId)` (real P3 `deps.ts`, flag-aware) before the UPDATE and `sesudah` after it.
+  - Set `unitKehilanganAkses = sebelum − sesudah` and `unitMendapatAkses = sesudah − sebelum`. The latter is expected to be `[]` because P5-T6-1 restricts the new pengolah; assert it.
+  - Both go into the audit `changes` and the confirmation step.
+- Tests:
+  - Keep the fixture test: `dir_bppt` is a target, so the result is `[]`.
+  - Add one where the old pengolah is not otherwise in jangkauan, giving `[old]`.
+
+
+
 ### Task 7: Service Tutup massal data lama
 
 **Files:**
@@ -1911,6 +2596,116 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 7 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Consumes (REQUIRED) [P5-G-3] RECHECK-AFTER-P3.** The Step 1 grep becomes:
+   `rg -n "export (async )?function isPengawas|dalamCakupanPengawasSql|anggotaMemblokirSql|disposisiTerbukaSql|denganRetryDeadlock" backend/src/services/rangkaian/deps.ts`
+   Expected: all five are present (P3 T1, C-7, T12-1, C-4).
+   - **(delta P3) Confirmed** on real P3 @ b4d86fa at `deps.ts:87` (`export async function isPengawas`), :53, :42 and :60. The P5 lock-by-id pattern should reuse `lockRangkaian(tx, ids)` (`deps.ts:155-170`: one statement, `ORDER BY id FOR UPDATE`) instead of hand-writing it. The 422 message for an unknown klasifikasi in P3 is `AppError('Klasifikasi berkas tidak ditemukan', 422)` (`berkas.service.ts:195-196`); critic C-8 applies.
+2. **Scope for pengawas (BLOCKING, security) [P5-T7-2].**
+   - Import `dalamCakupanPengawasSql` from `./rangkaian/deps.js`.
+   - Add a helper:
+     ```ts
+     const lingkupPengawas = (actor: DataLamaActor): SQL =>
+         actor.role === 'super_admin' ? sql`true` : dalamCakupanPengawasSql(sql.raw('rs.unit_pencatat_id'));
+     ```
+   - In `ringkasan`, alias the table (`FROM rangkaian_surat rs`) and add `AND ${lingkupPengawas(actor)}`.
+   - In the candidate query, add `AND ${lingkupPengawas(actor)}`.
+3. **Fallback klasifikasi (BLOCKING, irreversible data) [P5-T7-1].**
+   - Replace `coalesce(${filter.klasifikasiItemId ?? null}::int, rs.klasifikasi_item_id, sm.klasifikasi_item_id)` with `coalesce(rs.klasifikasi_item_id, sm.klasifikasi_item_id, ${filter.klasifikasiItemId ?? null}::int)`.
+   - Before the transaction, add:
+     ```ts
+             if (filter.klasifikasiItemId !== undefined) {
+                 const [ada] = await rows<{ id: number }>(db, sql`SELECT id FROM klasifikasi_arsip WHERE id = ${filter.klasifikasiItemId}`);
+                 if (!ada) throw new ValidationError('Klasifikasi pengganti tidak ditemukan.');
+             }
+     ```
+     Import `ValidationError` from `../utils/errors.js`. If klasifikasi items live in another table in the real schema, use the FK target table of `rangkaian_surat.klasifikasi_item_id`.
+4. **Blockers from P3 (REQUIRED) [P5-T7-3] RECHECK-AFTER-P3.** Replace the two `AND NOT EXISTS (…)` blocks with `AND (${anggotaMemblokirSql(sql.raw('rs.id'))} + ${disposisiTerbukaSql(sql.raw('rs.id'))}) = 0`, imported from `./rangkaian/deps.js`.
+   - **(delta P3) Confirmed, in flux.** At b4d86fa the builders use the inner aliases `a`, `k`, `r`, `d`, `sm` and `ma` (`rangkaian.service.ts:184-207`). The Tutup massal candidate query itself joins `sm` for the induk klasifikasi, so the argument must be exactly `sql.raw('rs.id')`: never `sm.*` and never an alias that the builders reuse.
+   - Fix-wave C-M1 rewrites `disposisiTerbukaSql` as a sum of two counts (same semantics, same signature). Re-run the Task 7 suite on the post-fix tip.
+5. **Lock by id, guarded update, retry (REQUIRED) [P5-T7-4] RECHECK-AFTER-P3.** Restructure `tutupMassal`:
+   1. Select `id` of up to 501 candidates with the full predicate and no lock, `ORDER BY rs.tahun, rs.kode`.
+   2. Lock with `SELECT id FROM rangkaian_surat WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`.
+   3. Re-run the candidate SELECT (the same predicate plus `AND rs.id = ANY(${ids}::uuid[])`), `ORDER BY rs.tahun, rs.kode`, to get `kandidat` under the lock.
+   4. For each UPDATE, take the result and audit only when one row changed (`rowCount === 1`, or `RETURNING id` has one row). Count `diterapkan` from the audited rows.
+   5. Wrap the whole body: `return denganRetryDeadlock(() => db.transaction(async (tx) => { … }))`.
+
+   The advisory lock stays.
+6. **Test updates (BLOCKING / REQUIRED).**
+   - In `'klasifikasi pengganti dan filter tahun diterapkan pada kandidat yang tepat'`, replace the last expectation with:
+     ```ts
+             // Fallback saja: rs1 memakai klasifikasi induk (klasA), rs2 tanpa klasifikasi memakai pengganti (klasB).
+             expect((await status()).filter((row) => row.kode.startsWith('RS-2022')).map((row) => row.klasifikasi_item_id)).toEqual([klasA, klasB]);
+     ```
+   - Add:
+     ```ts
+         it('pengawas hanya menutup rangkaian yang pencatatnya dalam cakupannya', async () => {
+             await database.exec(`
+                 INSERT INTO unit_kerja (id, name, parent_id, unit_type, can_receive_distribution)
+                 VALUES ('bagian_umum', 'Bagian Umum', 'sesditjen', 'bagian', false) ON CONFLICT (id) DO NOTHING;
+                 INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal, klasifikasi_item_id)
+                 VALUES ('${id(9)}', 'bagian_umum', 9, 2022, 'L-9', 'Lama bagian', ${klasA});
+                 INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun, selesai_at)
+                 VALUES ('${id(59)}', 'RS-2022-70009', 'data_lama', 'selesai', 'bagian_umum', 'Lama bagian', 2022, now());
+                 INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber)
+                 VALUES ('${id(59)}', '${id(9)}', 'bagian_umum', 'induk', 'data_lama');`);
+             expect((await service.ringkasan(tu)).perTahun).toEqual([{ tahun: 2022, jumlah: 2 }, { tahun: 2023, jumlah: 1 }]);
+             expect((await service.tutupMassal(tu, { dryRun: true })).contoh).not.toContain('RS-2022-70009');
+             expect((await service.ringkasan(superA)).perTahun).toEqual([{ tahun: 2022, jumlah: 3 }, { tahun: 2023, jumlah: 1 }]);
+             expect((await service.tutupMassal(superA, { dryRun: true })).contoh).toContain('RS-2022-70009');
+         });
+
+         it('klasifikasi pengganti yang tidak ada ditolak 400', async () => {
+             await expect(service.tutupMassal(superA, { dryRun: true, klasifikasiItemId: 99_999_999 }))
+                 .rejects.toMatchObject({ statusCode: 400 });
+         });
+     ```
+   - Step 5 Expected: PASS (6 tests).
+   - Also run `cd backend && npx tsc --noEmit -p tsconfig.json`.
+7. **Suite speed (ADVISORY) [P5-T1-8].** Optionally build the PGlite database once in `beforeAll` and reset the fixture rows per test.
+
+
+**C-2 (critic) — Tasks 4, 5, 7, 13: the deferred pengolah has no executable path — REQUIRED (spec:358; contradicts the "Cost if wrong" of P5-T5-1 and runbook step 8 of P5-T13-1) [P5-C-2]**
+
+
+- **Ubah Unit Pengolah cannot apply it.** P3 `berkasService.ubahUnitPengolah` accepts only a unit in `unitDalamJangkauanBerkas` (P3:6591-6597). That set is the non-rejected distribution targets plus the anggota units (P3:6485-6492; spec §9).
+  - `disposisi_lama` peserta are not in it.
+  - A backfilled `data_lama` rangkaian has no distribution to its label units.
+- **Koreksi Berkas cannot apply it either.** After P5-T6-1 it uses the same predicate and answers 422.
+- So "through P3 Ubah Unit Pengolah or a Koreksi" (P5-T5-1) and runbook step 8 (P5-T13-1) cannot apply `calonUnitPengolah`.
+- **(delta P3) Confirmed on real code.** `ubahUnitPengolah` refuses any unit outside `unitDalamJangkauanBerkas` with 422 "Disposisikan dulu ke unit ini" (`berkas.service.ts:217-224`). That set is the non-rejected distribution targets plus the live anggota units (:69-83), with no peserta branch. Ubah is also limited to `aktif`/`selesai` (:221).
+- **Tutup massal then locks the choice in.** It files every `data_lama` rangkaian with `coalesce(rs.unit_pengolah_id, rs.unit_pencatat_id)` (P5:1844, 1878), and `diberkaskan` is terminal (`0046_rangkaian_surat.sql:331-346`). Spec:358 is thereby abandoned permanently and silently.
+- Binding:
+  1. **Two outcomes for release-gate row (a)** (P5-G-6):
+     - "isi": apply the label-derived pengolah per spec:358, after the security owner signs `calon-pengolah.csv`;
+     - "tidak": spec:358 is waived, and the berkas go to the pencatat.
+  2. **A pengolah mode in the backfill script**, SHA-bound: either as an `--isi-pengolah` option of `--apply` (the chosen mode is part of the SHA payload), or as a separate later run `--isi-pengolah --approved-sha256=<sha>`. For each `calonPengolah` row (already in the Task 4 payload) whose rangkaian still has `asal='data_lama' AND status='selesai' AND unit_pengolah_id IS NULL`:
+     - lock by id (`ORDER BY id FOR UPDATE`) and set `unit_pengolah_id`;
+     - write one audit row: `action: 'update'`, `changes: { before: { unitPengolahId: null }, after: { unitPengolahId }, sumber: 'backfill-rangkaian-lama', aksesBaru: [unit] }`;
+     - refuse on an SHA mismatch.
+
+     Tests: S1 gets `dir_bppt`; a second run changes nothing; a `diberkaskan` row or one with a non-NULL pengolah is skipped.
+  3. **Runbook order:** `--apply` → decision on gate (a) → pengolah mode if the decision is "isi" → only then Tutup massal of data lama.
+     - The Task 10 UI copy and PANDUAN (P5:3165) state that Tutup massal files a berkas with no pengolah to the pencatat.
+  4. **Access is not flag-controlled.** The runbook states that pengolah access is not controlled by the flag: after the pengolah mode runs, unsetting `RANGKAIAN_DISPOSISI_LAMA_READ` no longer revokes it (`visibility-spec.ts:130-131`).
+
+
+**C-8 (critic) — Task 7: align with P3 and the real `deps.ts` — ADVISORY [P5-C-8]**
+
+
+- **Status code.** For an unknown replacement klasifikasi, P3 `berkaskan` answers 422 `AppError('Klasifikasi berkas tidak ditemukan', 422)` (P3:6569-6570), while P5-T7-1 answers 400. Use the same 422 and message, and change the Task 7 test to `statusCode: 422`.
+- **`dalamCakupanPengawasSql` import.** Real `deps.ts` (P3 @ ef08b69) does not yet re-export `dalamCakupanPengawasSql`, `anggotaMemblokirSql` or `disposisiTerbukaSql` (they land with P3 C-7/T12-1, P3:5541, 7630).
+  - If `dalamCakupanPengawasSql` is still missing at Task 7 Step 1, import it from `./access/visibility-spec.js` (P2 export `:265`, as P4-T16 does) instead of stopping.
+  - The P5-G-3 stop rule stays for the P3 blocker builders.
+  - **(delta P3) Corrected.** Real merged P3 @ b4d86fa re-exports `dalamCakupanPengawasSql` (`deps.ts:53`) and both builders (`deps.ts:42`). Import all three from `./rangkaian/deps.js`; the fallback bullet above is moot. The 422 status and message are confirmed at `berkas.service.ts:195-196`.
+
+
 
 ### Task 8: Route berkas (Koreksi Berkas + Tutup massal), skema, mount, allowlist demo
 
@@ -2178,6 +2973,27 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 8 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Mount anchor and order (REQUIRED) [P5-T8-1] RECHECK-AFTER-P4.**
+   - In Files, replace "sesudah baris `rangkaianDaftarRoutes`" with "tepat sebelum `app.use('/api/rangkaian', rangkaianRoutes)`".
+   - Replace the "Urutan final yang diharapkan" block with:
+     ```ts
+     app.use('/api/rangkaian', rangkaianDaftarRoutes);           // P4 Task 6
+     app.use('/api/rangkaian', rangkaianPerluDilengkapiRoutes);  // P4 Task 18 (D7)
+     app.use('/api/rangkaian', rangkaianBerkasRoutes);           // P5 Task 8
+     app.use('/api/rangkaian', rangkaianRoutes);                 // P2/P3
+     ```
+   - The P5 source-order test also asserts `rangkaianPerluDilengkapiRoutes` < `rangkaianBerkasRoutes`.
+2. **Write middleware (ADVISORY) [P5-T8-2].** On `POST /:id/koreksi-berkas` and `POST /koreksi-berkas/:koreksiId/putuskan`, insert `canWriteMiddleware()` directly after `authMiddleware`. Expected responses are unchanged, because super_admin passes.
+3. **Commands (BLOCKING) [P5-G-1].** Use the `cd backend && npx vitest run …` form. The existing `mutation-audit-policy.test.ts` resolves `src/` from `process.cwd()`.
+
+
 
 ### Task 9: UI Koreksi Berkas (maker-checker) di panel Alur Surat
 
@@ -2496,6 +3312,74 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 9 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Names instead of ids (REQUIRED) [P5-T9-1].**
+   - Task 6 `daftar` returns:
+     ```ts
+     rangkaian: { id, kode, status, unitPengolah: { id, nama } | null, klasifikasi: { id, kode, jenis } | null }
+     koreksi[i]: { …, unitPengolahLama: { id, nama }, unitPengolahBaru: { id, nama },
+                   klasifikasiLama: { id, kode, jenis }, klasifikasiBaru: { id, kode, jenis }, unitKehilanganAkses: string[] }
+     ```
+     Build these with one `unit_kerja` lookup and one klasifikasi lookup per call.
+   - `KoreksiBerkasSection` renders `{u.nama}` and `` `${k.kode} – ${k.jenis}` ``, never raw ids.
+   - Adjust the section and service tests to the new DTO.
+2. **Panel wiring (REQUIRED) [P5-T9-2] RECHECK-AFTER-P3/P4.**
+   - Render `<KoreksiBerkasSection rangkaianId={d.rangkaian.id} status={d.rangkaian.status} onChanged={muatUlang} />` directly after `<AlurSuratActions detail={d} onChanged={muatUlang} />`. Use the real detail variable and reload function names in the P3/P4 panel.
+   - `KoreksiBerkasSection` accepts `onChanged` and calls `onChanged?.()` after a successful `ajukan` or `putuskan`, after its own reload.
+   - **(delta P3) Confirmed on real P3 @ b4d86fa:**
+     - `const d = state.data` (`AlurSuratPanel.jsx:127`);
+     - `muatUlang` (:65-68, which bumps `muatKe` and calls the parent's `onChanged`);
+     - the slot `<AlurSuratActions detail={d} onChanged={muatUlang} />` (:170);
+     - `d.rangkaian.id` and `d.rangkaian.status` exist (`RangkaianDetail.rangkaian`, `rangkaian-read.service.ts:105-120`).
+
+     The panel also has a parent-driven `muatUlangKe` prop (:56, :96); the section does not need it.
+3. **Test locations (REQUIRED) [P5-T9-3].**
+   - Create the component test as `frontend/src/components/surat/__tests__/KoreksiBerkasSection.test.jsx`, with imports adjusted to `'../KoreksiBerkasSection'`.
+   - Merge the P5 service cases into the existing `frontend/src/services/rangkaian.service.test.js` instead of creating `rangkaian.service.p5.test.js`. Its `./api` mock already has `get`, `post` and `put` after P3 T18-3.
+4. **Flaky reload assertion (REQUIRED) [P5-T9-4].** Replace the synchronous `expect(mocks.getKoreksiBerkas).toHaveBeenCalledTimes(2)` after a click with `await waitFor(() => expect(mocks.getKoreksiBerkas).toHaveBeenCalledTimes(2))`.
+5. **Mocks and staging (REQUIRED) [P5-T9-5] RECHECK-AFTER-P4.**
+   - Run `rg -l "AlurSuratPanel" frontend/src --glob "*.test.jsx"`. In every listed file that renders the real panel (not a `vi.mock` of it), add `vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))`.
+   - Replace Step 5's `git add … frontend/src/components/surat/*.test.jsx` with an explicit list of every file edited: at least `frontend/src/components/surat/__tests__/AlurSuratPanel.test.jsx`, `frontend/src/components/surat/__tests__/AlurSuratPanel.rangkaian-id.test.jsx` (P4) and `frontend/src/pages/SuratMasukDetail.alur.test.jsx`, plus the new files.
+   - Step 4 runs `cd frontend && npx vitest run src/services/rangkaian.service.test.js src/components/surat src/pages && npx eslint src/components/surat/KoreksiBerkasSection.jsx src/components/surat/AlurSuratPanel.jsx src/services/rangkaian.service.js`.
+   - **(delta P3) Corrected file list.** Real P3 @ b4d86fa renders the **real** panel, which needs the mock, in:
+     - `src/components/surat/__tests__/AlurSuratPanel.test.jsx` (no `AuthContext` mock, so a real `useAuth` throws there);
+     - `src/pages/SuratKeluarDetail.no-loop.test.jsx`;
+     - `src/pages/SuratKeluarDetail.rules.test.jsx`;
+     - `src/pages/SuratMasukDetail.alur-refresh.test.jsx`;
+     - `src/pages/SuratMasukDetail.no-loop.test.jsx`;
+     - `src/pages/surat-archive-dialog.test.jsx`;
+     - plus P4's `__tests__/AlurSuratPanel.rangkaian-id.test.jsx` and any P4 `LacakSurat` test that does not mock the panel.
+
+     `src/pages/SuratMasukDetail.alur.test.jsx` (:13) and `SuratMasukDetail.aksi.test.jsx` (:17) **mock** `AlurSuratPanel`, so they need no change. The earlier amendment listed `SuratMasukDetail.alur.test.jsx` by mistake. Stage exactly the edited files.
+6. **(delta P3) Server-authoritative section visibility (ADVISORY).**
+   - P3 made `aksiDiizinkan` authoritative in the UI; the P3 frontend release gate reads "UI treats `aksiDiizinkan` as authoritative". None of the P3 panel components calls `useAuth` (no match in `components/surat/*`).
+   - Prefer returning `dapatMengajukan`/`dapatMemutuskan` flags from the Task 6 `daftar` DTO (computed server-side: super_admin, maker ≠ checker) over a `useAuth()` role check in `KoreksiBerkasSection`. That also removes the `useAuth` provider dependency behind item 5.
+   - If the role check stays, item 5 is mandatory.
+7. **(delta P3) Names in the P3 gabung and ubah-pengolah previews (ADVISORY; P3 frontend carry-forward 2, M2/M3).**
+   - `AlurSuratActions.jsx:75, 108` maps gabung preview ids through the target's `peserta`, so new units show as raw ids.
+   - `:225-230` shows a speculative access preview, while `PUT /unit-pengolah` already returns `aksesBaru` (`berkas.service.ts:231`).
+   - Task 9 already introduces the "names, never ids" DTO pattern (item 1). If Task 9 touches `AlurSuratActions.jsx` anyway, apply the same pattern here: `pratinjauGabung` returns `{id, nama}`, and the ubah-pengolah dialog shows the server's `aksesBaru`. Otherwise record it in the P5 PR as a P3 follow-up.
+
+
+**C-13 (critic) — Task 9: section reload vs panel remount — ADVISORY, RECHECK-AFTER-P3 [P5-C-13]**
+
+
+- In the real panel, `muatUlang` bumps `muatKe` and calls the parent `onChanged` (`AlurSuratPanel.jsx:60-64`).
+- While reloading, the panel renders only the loading card (`:86`), which unmounts `KoreksiBerkasSection`.
+- So when `onChanged` is provided:
+  - the section's own reload is redundant;
+  - a success message kept in section state is lost.
+- Show success with a toast, and skip the section's own reload when `onChanged` exists.
+- The panel variable `d` (`:115`) and `muatUlang` exist; P3 T25 `AlurSuratActions` has not landed yet.
+- **(delta P3) Line numbers on merged P3 @ b4d86fa:** `muatUlang` :65-68, `setState({ loading: true, … })` inside `muat()` :81, the loading card that unmounts children :98-107, `const d` :127. `AlurSuratActions` **has** landed, with the slot at :170. Its own actions follow the same "toast plus `onChanged`" pattern (`AlurSuratActions.jsx:32`), which confirms this recommendation.
+
+
+
 ### Task 10: UI "Tutup massal data lama" di tab Berkas Rangkaian
 
 **Files:**
@@ -2695,6 +3579,18 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 10 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **P4 anchors (REQUIRED) [P5-T10-1] RECHECK-AFTER-P4.** Before Step 1, run `rg -n "filter.asal|resource.reload|overflow-x-auto rounded-md border" frontend/src/components/lacak/BerkasRangkaianTab.jsx`. Expected: all three are present. P4 amendment P4-T12-1 changes only the kode cell. Insert the slot before the `<div className="overflow-x-auto rounded-md border">` anchor text.
+2. **Stale P4 assertion (ADVISORY) [P5-T10-2].** In P4's `BerkasRangkaianTab.test.jsx`, the case "filter asal data lama … tanpa aksi mutasi (Tutup massal milik P5)" becomes a slot-presence assertion: the P5 slot mock renders once `asal = data_lama`. Delete the `queryByRole('button', { name: 'Tutup massal data lama' })` null assertion.
+3. **Commands (BLOCKING) [P5-G-1].** Use the `cd frontend && npx vitest run …` form.
+
+
+
 ### Task 11: Notifikasi batas waktu disposisi dan pengecualian data lama
 
 **Files:**
@@ -2875,6 +3771,58 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 11 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Merge into P3 (BLOCKING, security) [P5-T11-1] RECHECK-AFTER-P3.** Replace the Step 3 instruction "ganti isi `rows.map(...)`" with the following changes to P3's version of `getDistributionNotifications`, which has 6 parameters including `user?: RecordUser`, selects `suratMasukId`, and masks via `checkMany`:
+   - Add `batasWaktu: suratDistributions.batasWaktu,` to the existing `select` object. Keep `suratMasukId`.
+   - In the existing `rows.map`:
+     - After `const urgency = …`, add `const deadline = deadlineUrgency(row.batasWaktu);` and `const type = deadline ? deadline.type : urgency.type;`.
+     - Use `type` in `statefulId('distribusi', row.id, state, type)` and in the `type` field.
+     - Set `title: deadline ? deadlineTitle(deadline.sisaHari) : <P3 title expression unchanged>`.
+     - Set `daysLeft: deadline ? deadline.sisaHari : urgency.ageDays`.
+   - **Do not touch the `message` expression.** It keeps P3's masked branch (`'Dikecualikan'` when the row is not allowed).
+   - Add to `notification-batas-waktu.test.ts`. The mock must target the module that real P3 `notification.service.ts` imports `checkMany` from; if it imports via `./rangkaian/deps.js`, mock that module instead.
+     ```ts
+     const aksesMock = vi.hoisted(() => ({ allowed: true }));
+     vi.mock('../services/record-access.service', async (importOriginal) => {
+         const asli = await importOriginal<typeof import('../services/record-access.service')>();
+         return {
+             ...asli,
+             recordAccessService: {
+                 ...asli.recordAccessService,
+                 checkMany: async (_user: unknown, refs: Array<{ type: 'surat_masuk'; id: string }>) =>
+                     new Map(refs.map((ref) => [asli.readRefKey(ref), { allowed: aksesMock.allowed, masked: !aksesMock.allowed } as never])),
+             },
+         };
+     });
+     ```
+     ```ts
+         it('baris tersamar tetap "Dikecualikan" meski judulnya memakai urgensi batas waktu', async () => {
+             aksesMock.allowed = false;
+             queue.push([{ id: UUID, suratMasukId: '550e8400-e29b-41d4-a716-446655440099', status: 'received', instruction: 'Instruksi rahasia',
+                 nomorSurat: 'R-1', perihal: 'Perihal rahasia', sentAt: new Date(), updatedAt: new Date(), batasWaktu: hari(0) }]);
+             const [notification] = await notificationService.getDistributionNotifications(
+                 'dir_bppt', 'user-1', null, new Set(), 'admin_unit', { id: 'user-1', role: 'admin_unit', unitKerjaId: 'dir_bppt' });
+             expect(notification).toMatchObject({ type: 'urgent', title: 'Batas waktu disposisi hari ini', message: 'Dikecualikan' });
+             expect(JSON.stringify(notification)).not.toContain('R-1');
+             aksesMock.allowed = true;
+         });
+     ```
+   - The existing P5 cases that call the 5-argument form stay as they are; they exercise P3's no-`user` path.
+   - Step 4 also runs `src/__tests__/notification.service.test.ts`, which contains P3's masking case.
+   - **(delta P3) Confirmed code, corrected test mock.**
+     - Real P3 @ b4d86fa has `getDistributionNotifications(unitKerjaId, userId, securityClassifications?, knownReadIds?, userRole = 'user', user?: RecordUser)` (`notification.service.ts:319-326`). The select includes `suratMasukId` (:331). `checkMany` runs only when `user` is present (:350-352). The masking is `message: bolehDibaca(row.suratMasukId) ? … : LABEL_DIKECUALIKAN` (:366-368). `recordAccessService`, `readRefKey` and `LABEL_DIKECUALIKAN` come from `./rangkaian/deps.js` (:25).
+     - Replace the `vi.mock('../services/record-access.service', …importOriginal…)` block with P3's own pattern (`notification.service.test.ts:144-168`): `const { recordAccessService } = await import('../services/record-access.service'); const spy = vi.spyOn(recordAccessService, 'checkMany').mockResolvedValue(new Map([[\`surat_masuk:${SM_ID}\`, { allowed: false }]]) as any);`, with `spy.mockRestore()` in `finally`. `deps.ts` re-exports the same singleton, so the spy reaches the service. The Map key is `readRefKey` = `${type}:${id.toLowerCase()}`.
+     - **In flux:** P3 access M-5 recommends making the no-`user` path mask-all instead of fail-open (:353-354). If the fix wave or P4 applies it, the P5 cases that use the 5-argument form must pass a `user` and stub `checkMany` as `allowed: true`, or they will see `'Dikecualikan'`. Recheck on the P5 base.
+2. **Negative `daysLeft` rendering (ADVISORY) [P5-T11-2].** In `frontend/src/components/app-header.jsx` (the `notif.category === 'surat-masuk' ? … : …` expression), render `` notif.daysLeft < 0 ? `lewat ${-notif.daysLeft} hari` : `${notif.daysLeft} hari lagi` `` for the non-surat-masuk branch.
+3. **Two data-lama definitions (ADVISORY) [P5-T11-3] RECHECK-AFTER-P4.** Add one sentence to Self-Review item 8: the notification exclusion (induk of a closed `data_lama` rangkaian) intentionally differs from the D7 cutoff. SMs outside any rangkaian keep notifying, as they do today.
+
+
 
 ### Task 12: Ekspor "Balasan Untuk" sebagai nomor + kolom "Asal Naskah"
 
@@ -3057,6 +4005,17 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 12 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Document "Balasan Untuk" (ADVISORY) [P5-T12-1] RECHECK-AFTER-P3.** No code change. In Task 13's PANDUAN 11.8 text, add: "Sejak integrasi rangkaian, kolom ini hanya terisi untuk balasan dari unit yang sama; rantai lintas unit terlihat di panel Alur Surat."
+   - **(delta P3) Confirmed.** The P3 create path writes `balasan_untuk` only for a same-unit `balasan` to a surat masuk (`rangkaian/tindak-lanjut.service.ts:316-319`). The legacy PUT (`surat-keluar.routes.ts:336-357`) is also restricted to the same unit. `batalRelasi` clears it when the matching relasi is cancelled (`rangkaian-link.service.ts:326-332`), so the sentence is accurate. Add a clause: "dan dikosongkan bila relasi balasannya dibatalkan".
+
+
+
 ### Task 13: PANDUAN, dokumen manajemen surat, dan runbook backfill
 
 **Files:**
@@ -3238,6 +4197,179 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+
+#### Amandemen pra-eksekusi Task 13 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Dedicated runbook (REQUIRED) [P5-T13-1].**
+   - Files: create `docs/RUNBOOK_INTEGRASI_SURAT_P5.md`. `docs/OPERASIONAL_BACKEND.md` gets only a pointer paragraph.
+   - The runbook has these sections:
+     1. Prasyarat: pre-flight P0 §13 Q2 answered in writing. If there is no legacy data, stop after step 3.
+     2. Backup.
+     3. Pre-0048 checks, run as `simsa_api` via the hidden prompt:
+        - `SELECT count(*) FROM surat_distributions WHERE rangkaian_id IS NULL` = 0.
+        - The P3 `dilewati` list is empty or decided.
+     4. `scripts/neon-database.mjs migrate --apply`, then `verify-runtime` (0048).
+     5. Dry-run with `--out=<dir di luar repo>` as `simsa_api` over `NEON_RUNTIME_DATABASE_URL`. Record `batasDataLama`. Send the 4 files, including `calon-pengolah.csv`.
+     6. Written sign-off of the SHA.
+     7. `--apply --approved-sha256=<sha>`. If it stops midway, do a new dry-run and a new sign-off.
+     8. Enable the flag separately, after a separate sign-off. Pengolah candidates are applied after that sign-off through Ubah Unit Pengolah or Koreksi Berkas.
+     9. Rollback: redeploy the previous code. The data stays read-compatible.
+   - The Task 13 docs test reads this runbook.
+2. **Docs test (REQUIRED) [P5-T13-3].** Assert that the runbook contains `simsa_api`, `NEON_RUNTIME_DATABASE_URL`, `neon-database.mjs migrate --apply`, `RANGKAIAN_DATA_LAMA_SEBELUM`, and the npm script names actually used.
+3. **D7 user docs (ADVISORY) [P5-T13-2].** Add a PANDUAN subsection "Perlu Dilengkapi" covering the tab, the six categories, the badge and Tandai Inisiatif, with one docs-test assertion.
+4. **Existing appendix text.** Replace the plan's `OPERASIONAL_BACKEND.md` steps 2–4 with the pointer. The Cloud-SQL-style `npm --prefix backend run db:migrate` / `db:grants:converge` lines do not apply to production Neon.
+5. **(delta P3) Carry-forwards from the P3 final reviews (REQUIRED to document; one ADVISORY code option).**
+   - **Step-1 existing path is unaudited** (P3 spec review "Audit enrichment on the backfill's existing-rangkaian path"; concurrency #16).
+     - P3 `backfill-rangkaian-disposisi.mjs:109-111` fills `rangkaian_id` on the existing-rangkaian path without an `audit_log` row. Only new rangkaian are audited (:103-106).
+     - The P5 runbook pre-flight states this: run a `rangkaian_id`-change query on `surat_distributions.updated_at` if an audit trail is needed.
+     - ADVISORY: patch P3's script to write one `audit_log` row per batch per existing rangkaian (`action 'update'`, `changes: { langkah: 'backfill-1', distribusiDiisi }`). Idempotent re-runs write nothing, because `rowCount` is 0.
+   - **Step-1 re-run guidance** (P3 concurrency M3, in the fix wave). Re-run exit ≠ 0 with 40P01/40001 as-is, since the script is idempotent. The P5 runbook points to the P3 runbook section after the fix wave, and does not restate it.
+   - **`--apply` wording** (P3 ledger Task 2, `progress.md:43`). P3 `db:backfill:rangkaian-disposisi` has no `--apply`/dry-run mode; every run writes. The P5 runbook and the 0048 message name it without flags (Task 1 item 5 already does). P5's own script keeps its `--apply` flag.
+   - **Anchor for the P3 runbook edit (critic C-5 item 9), in flux.** At b4d86fa, §6 reads "Redeploy P2. … kolom `rangkaian_id` … diabaikan oleh P2" (`RUNBOOK_INTEGRASI_SURAT_P3.md:129-133`). The fix wave (S-I2) rewrites it: the floor becomes the last deployed production release with schema 0047 kept, and the wrong "P2 ignores" claim is removed. Append the P5 sentence "tidak berlaku setelah 0048 diterapkan; lantai rollback setelah 0048 adalah kode P3+" to the **post-fix** §6, anchored by its heading `## 6. Rollback`, not by the old text. Production has never run P1/P2, so the pre-integration release that the fix wave names also writes NULL `rangkaian_id` and is invalid after 0048.
+
+
+**C-1 (critic) — Tasks 5, 13: the backfill entry point must not fall back to `backend/.env` — REQUIRED (security/ops) [P5-C-1]**
+
+
+- P5:1253-1255: `main()` runs `dotenv.config()` before checking `DATABASE_URL`. Two consequences:
+  - An operator who forgets the shell export silently targets whatever `backend/.env` holds: a dev DB, or production through a non-runtime role.
+  - The P5-G-5 resolver then reads a `RANGKAIAN_DATA_LAMA_SEBELUM` from that file.
+  - P5-T5-5 only adds a comment, so neither is prevented.
+- Real P3 fixed exactly this for step 1:
+  - `backfill-rangkaian-disposisi.mjs:136-145` [F3] captures `DATABASE_URL` before `dotenv.config` and throws without it;
+  - `:33-36` logs `current_user`/`current_database()` before the first batch.
+- Binding shape of `main()`, merged with Task 4 item 3 and Task 5 item 5:
+  ```js
+  async function main() {
+    // [F3] pola P3: nilai shell ditangkap SEBELUM dotenv; skrip ini tidak memakai fallback backend/.env.
+    const urlShell = process.env.DATABASE_URL?.trim();
+    const batasShell = process.env.RANGKAIAN_DATA_LAMA_SEBELUM?.trim();
+    dotenv.config({ quiet: true });
+    if (!urlShell) throw new Error('DATABASE_URL harus diset eksplisit di shell (NEON_RUNTIME_DATABASE_URL, role simsa_api); skrip ini tidak memakai backend/.env');
+    const options = parseArgs(process.argv.slice(2));
+    const client = new Client({ connectionString: urlShell, connectionTimeoutMillis: 10_000 });
+    await client.connect();
+    try {
+      const { rows: [identitas] } = await client.query('SELECT current_user AS db_user, current_database() AS db_name');
+      const batas = await resolveBatasDataLama(client, { RANGKAIAN_DATA_LAMA_SEBELUM: batasShell });
+      console.log(JSON.stringify({ dbUser: identitas.db_user, dbName: identitas.db_name, batasDataLama: batas, sumberBatas: batasShell ? 'env' : 'db' }));
+      if (options.apply && !batasShell) {
+        throw new Error('--apply mewajibkan RANGKAIAN_DATA_LAMA_SEBELUM di shell, sama persis dengan nilai Vercel (runbook Deploy P4)');
+      }
+      // lanjut: buildPlan(client, { batas }), writePlanFiles, applyPlan(client, { approvedSha256, batas }) seperti amandemen Task 4/5.
+    } finally {
+      await client.end();
+    }
+  }
+  ```
+- Drop the `dotenv` import entirely if no other variable needs it.
+- **(delta P3) Confirmed on b4d86fa.** The [F3] capture before `dotenv.config` is at `backfill-rangkaian-disposisi.mjs:136-145`, and the identity log at :34-36. The P3 script only logs, and does not refuse a wrong role (ledger `progress.md:48`). The binding shape above, which prints the first JSON line and has the runbook stop when `dbUser` ≠ `simsa_api`, stays. Optionally fail closed in code: `if (identitas.db_user !== 'simsa_api' && process.env.ALLOW_NON_RUNTIME_ROLE !== '1') throw …`.
+- Runbook: stop if the first JSON line shows a `dbUser` other than `simsa_api` or the wrong `dbName`. This is the same rule as the P3 runbook §4.
+- Test: `--apply` without the shell env throws, run through an exported helper that wraps the check.
+
+
+**C-2 (critic) — Tasks 4, 5, 7, 13: the deferred pengolah has no executable path — REQUIRED (spec:358; contradicts the "Cost if wrong" of P5-T5-1 and runbook step 8 of P5-T13-1) [P5-C-2]**
+
+
+- **Ubah Unit Pengolah cannot apply it.** P3 `berkasService.ubahUnitPengolah` accepts only a unit in `unitDalamJangkauanBerkas` (P3:6591-6597). That set is the non-rejected distribution targets plus the anggota units (P3:6485-6492; spec §9).
+  - `disposisi_lama` peserta are not in it.
+  - A backfilled `data_lama` rangkaian has no distribution to its label units.
+- **Koreksi Berkas cannot apply it either.** After P5-T6-1 it uses the same predicate and answers 422.
+- So "through P3 Ubah Unit Pengolah or a Koreksi" (P5-T5-1) and runbook step 8 (P5-T13-1) cannot apply `calonUnitPengolah`.
+- **(delta P3) Confirmed on real code.** `ubahUnitPengolah` refuses any unit outside `unitDalamJangkauanBerkas` with 422 "Disposisikan dulu ke unit ini" (`berkas.service.ts:217-224`). That set is the non-rejected distribution targets plus the live anggota units (:69-83), with no peserta branch. Ubah is also limited to `aktif`/`selesai` (:221).
+- **Tutup massal then locks the choice in.** It files every `data_lama` rangkaian with `coalesce(rs.unit_pengolah_id, rs.unit_pencatat_id)` (P5:1844, 1878), and `diberkaskan` is terminal (`0046_rangkaian_surat.sql:331-346`). Spec:358 is thereby abandoned permanently and silently.
+- Binding:
+  1. **Two outcomes for release-gate row (a)** (P5-G-6):
+     - "isi": apply the label-derived pengolah per spec:358, after the security owner signs `calon-pengolah.csv`;
+     - "tidak": spec:358 is waived, and the berkas go to the pencatat.
+  2. **A pengolah mode in the backfill script**, SHA-bound: either as an `--isi-pengolah` option of `--apply` (the chosen mode is part of the SHA payload), or as a separate later run `--isi-pengolah --approved-sha256=<sha>`. For each `calonPengolah` row (already in the Task 4 payload) whose rangkaian still has `asal='data_lama' AND status='selesai' AND unit_pengolah_id IS NULL`:
+     - lock by id (`ORDER BY id FOR UPDATE`) and set `unit_pengolah_id`;
+     - write one audit row: `action: 'update'`, `changes: { before: { unitPengolahId: null }, after: { unitPengolahId }, sumber: 'backfill-rangkaian-lama', aksesBaru: [unit] }`;
+     - refuse on an SHA mismatch.
+
+     Tests: S1 gets `dir_bppt`; a second run changes nothing; a `diberkaskan` row or one with a non-NULL pengolah is skipped.
+  3. **Runbook order:** `--apply` → decision on gate (a) → pengolah mode if the decision is "isi" → only then Tutup massal of data lama.
+     - The Task 10 UI copy and PANDUAN (P5:3165) state that Tutup massal files a berkas with no pengolah to the pencatat.
+  4. **Access is not flag-controlled.** The runbook states that pengolah access is not controlled by the flag: after the pengolah mode runs, unsetting `RANGKAIAN_DISPOSISI_LAMA_READ` no longer revokes it (`visibility-spec.ts:130-131`).
+
+
+**C-3 (critic) — Tasks 1, 13: `dilewati` rows cannot be remediated at runtime — REQUIRED [P5-C-3]**
+
+
+- **No application role can fix these rows.** `surat_distributions_closed_guard` is `BEFORE INSERT OR UPDATE OR DELETE` (0046:406-408), and it resolves candidate rangkaian through the SM's anggota rows (0046:278-296). No role can therefore fill, change or delete the `rangkaian_id` of a distribution whose SM is an anggota of a `diberkaskan` rangkaian.
+- **The release blocks indefinitely.** Real P3 step 1 skips such rows (`dilewati`, the C-6 branch in `backfill-rangkaian-disposisi.mjs`), so the 0048 precheck (P5 Task 1 Step 5) would block the release indefinitely.
+- **The owner decision in P5-T1-5 is not executable.** P5-T1-5 asks for "an owner decision" but names no option that can be carried out.
+- **Content:** by construction these rows are `processed`/`rejected`. P3 berkaskan refuses open disposisi, including NULL rows, through the C-6 `disposisiTerbukaSql` (P3:5980-5987), so filling `rangkaian_id` only records existing membership.
+- **(delta P3) Confirmed on real code, and the P3 reviews corrected.**
+  - `rangkaian_guard_closed()` (`0046_rangkaian_surat.sql:257-312`) has **no** GUC bypass. It collects candidate rangkaian through the SM's anggota rows (:276-290), and only `rangkaian_guard_status()` honours `simsa.berkas_koreksi` (:343). So the P3 final reviews' "stay NULL until Koreksi Berkas or a GUC path exists" (concurrency carry-forward 3) and "Koreksi Berkas is the only exit" (spec review) are both wrong: Koreksi Berkas changes `rangkaian_surat`, never `surat_distributions`. This amendment's options (i)/(ii) remain the only executable ones.
+  - The real script skips two statuses, not one: `if (rs.status !== 'aktif' && rs.status !== 'selesai')` (`backfill-rangkaian-disposisi.mjs:72-73`), so a `dilewati` entry can also be `digabung`. That only happens when a concurrent gabung moved the anggota between the unlocked membership read (:59-61) and the lock. It is transient, and a plain re-run attaches the row to the gabung target.
+  - The pre-0048 listing query above already shows the current membership status. Filter it with `AND r.status = 'diberkaskan'` for the decision on gate row (f), and re-run the step-1 script for the rest.
+- Binding:
+  - The runbook pre-0048 step lists the rows:
+    ```sql
+    SELECT d.id, d.surat_masuk_id, d.status, a.rangkaian_id, r.status AS status_rangkaian
+      FROM surat_distributions d
+      JOIN rangkaian_anggota a ON a.surat_masuk_id = d.surat_masuk_id
+      JOIN rangkaian_surat r ON r.id = a.rangkaian_id
+     WHERE d.rangkaian_id IS NULL;
+    ```
+  - The owner chooses, recorded as a new release-gate row (f):
+    - **(i)** hold 0048: P5 ships without the hardening, and the Koreksi uniqueness index is absent until it lands;
+    - **(ii)** a reviewed prelude at the top of 0048, executed by the migration owner (`simsa_migrator`) in the migration transaction:
+      ```sql
+      ALTER TABLE surat_distributions DISABLE TRIGGER surat_distributions_closed_guard;
+      UPDATE surat_distributions d SET rangkaian_id = a.rangkaian_id, updated_at = now()
+        FROM rangkaian_anggota a
+       WHERE d.rangkaian_id IS NULL AND a.surat_masuk_id = d.surat_masuk_id;
+      ALTER TABLE surat_distributions ENABLE TRIGGER surat_distributions_closed_guard;
+      ```
+      Add one `audit_log` insert per filled row. Put this before the NULL precheck.
+  - Test for option (ii): a PGlite case seeds a NULL `processed` row on a `diberkaskan` member SM with `stopBefore: '0048_rangkaian_pengerasan'`, then applies 0048. The row is filled, the trigger is enabled afterwards (`pg_trigger.tgenabled = 'O'`), and one audit row exists.
+
+
+**C-5 (critic) — Task 13: runbook completeness — REQUIRED (production readiness) [P5-C-5]**
+
+
+Add to `docs/RUNBOOK_INTEGRASI_SURAT_P5.md` (P5-T13-1), in this order:
+1. **Backup.**
+   - Follow `docs/BACKUP_NEON.md`, using the helper of the checkout currently in production (pre-0048).
+   - Backups after 0048 need the P5 checkout, because the bundle manifest binds the migration chain (`scripts/neon-backup-core.mjs:43-58`).
+2. **Deploy P5 code with `RANGKAIAN_DISPOSISI_LAMA_READ` unset.** This is the P5-G-8 order; the amended section list omits the code deploy.
+   - Confirm the flag is not `true` in the Vercel backend env **before `--apply`**.
+   - Production code has honoured it since P2 (`visibility-spec.ts:277-279`), so a pre-set flag makes every new peserta row grant access as soon as it is written, before the flag sign-off.
+3. **Pre-0048 query and the `dilewati` decision** (C-3).
+4. **Migrate.**
+   - Run `scripts/neon-database.mjs migrate --apply` and then `verify-runtime`.
+   - Then run the `simsa_api` privilege queries of `RUNBOOK_INTEGRASI_SURAT_P1.md` step 4. `verify-runtime` does not check the `rangkaian_*` tables.
+5. **Dry-run and apply.**
+   - Use the P3 runbook §4 shell block: `export DATABASE_URL="$NEON_RUNTIME_DATABASE_URL"`. The P1 block fills `NEON_QUERY_DATABASE_URL`, which the Node script does not read.
+   - Also `export RANGKAIAN_DATA_LAMA_SEBELUM='<nilai tercatat di runbook Deploy P4>'` (P4 critic C-6).
+   - Check the first JSON line (C-1).
+   - Confirm `SHOW TimeZone` is `UTC` for `simsa_api` (P4-T22-3). `surat_masuk.created_at` is `timestamp` (`db/schema/surat-masuk.ts:36`) and is compared with `$::timestamptz`.
+6. **SHA stability.**
+   - The SHA covers state evaluated at apply time: `sudah_anggota`, the totals, and now `sudah_didisposisikan` (P5:959, 1219-1221).
+   - Any of these between dry-run and apply forces a new dry-run and sign-off: an edit of legacy labels, a new disposisi, or a tautan.
+   - Run dry-run → sign-off → apply within one short window.
+7. **Gate (a).** Decide gate (a) and run the pengolah mode (C-2) before any Tutup massal of data lama.
+8. **Flag enable and rollback.**
+   - Enabling the flag means setting the env var **and redeploying**; Vercel applies env only to new deployments.
+   - Flag rollback means unset and redeploy. That revokes all cross-unit access derived from the backfill only while the pengolah is still NULL (C-2 item 4).
+9. **Rollback floor after 0048 is P3 code.**
+   - P2's `POST /api/distributions` writes a NULL `rangkaian_id` (P3 runbook §2), which 0048 rejects with 23502.
+   - Update the P3 runbook §6 ("Redeploy P2") with "tidak berlaku setelah 0048 diterapkan".
+   - **(delta P3) In flux.** The fix wave (S-I2) rewrites P3 §6: the floor becomes "last deployed production release with schema 0047 kept", and the "P2 ignores `rangkaian_id`" claim is removed. Anchor on the heading `## 6. Rollback` of the post-fix file and add the 0048 sentence there (Task 13 item 5). The conclusion does not change: after 0048 only P3+ code is a valid rollback target, because every earlier release inserts distributions without `rangkaian_id`.
+   - A schema rollback is a forward migration `ALTER COLUMN rangkaian_id DROP NOT NULL`, never a manual edit.
+
+The docs test (P5-T13-3) also asserts:
+- `RANGKAIAN_DISPOSISI_LAMA_READ`;
+- `export DATABASE_URL="$NEON_RUNTIME_DATABASE_URL"`;
+- the rollback-floor sentence.
+
+
+
 ### Task 14 (OPSIONAL, BERGERBANG): pg_trgm untuk Lacak
 
 > **Gerbang — kerjakan HANYA bila kedua syarat terpenuhi dan tercatat di PR:** (a) pengukuran P4 (EXPLAIN pada 50 ribu baris sintetis) menunjukkan p95 `/api/rangkaian/lacak` > 150 ms; (b) pemilik database menyetujui siapa yang menjalankan langkah privileged satu kali di Neon (spec §13 pertanyaan 3). Bila salah satu tidak terpenuhi, lewati task ini seluruhnya. Setelah `0049` dijurnal, **setiap** lingkungan (demo, lokal, preview, prod) wajib memasang `pg_trgm` sebelum `db:migrate`.
@@ -3383,6 +4515,16 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 14 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Skip (SKIP) [P5-T14-1].** Do not execute. Record in the PR: "Task 14 (pg_trgm) dilewati: gerbang (a) menunggu angka p95 P4 yang tercatat, gerbang (b) belum ada sign-off pemilik DB." If the task is revived later, index `USING gin (perihal gin_trgm_ops)` instead of `lower(perihal)`, and add every full-chain PGlite suite to its Files list.
+
+
 
 ### Task 15 (OPSIONAL, BERGERBANG): re-key `generalLimiter` per pengguna terautentikasi
 
@@ -3550,6 +4692,16 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+
+
+#### Amandemen pra-eksekusi Task 15 (kontroler)
+
+> Mengikat. Disusun kontroler dari pemindaian pra-eksekusi + delta terhadap kode P3 yang nyata. Bila bertentangan dengan teks rencana di atas, amandemen ini yang berlaku; spec tetap otoritas tertinggi. Ruling lengkap: `.superpowers/sdd/2026-09-26-integrasi-surat-p5-data-lama-pelengkap/preflight-rulings.md`.
+
+
+1. **Skip (SKIP) [P5-T15-1].** Do not execute. Record in the PR: "Task 15 (re-key generalLimiter) dilewati: belum ada sign-off keamanan dan estimasi beban."
+
+
 
 ## Verifikasi akhir fase
 

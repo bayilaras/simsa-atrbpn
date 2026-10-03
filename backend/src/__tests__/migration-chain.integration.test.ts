@@ -3,11 +3,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import { getTableColumns, getTableName, is } from 'drizzle-orm';
 import { PgTable } from 'drizzle-orm/pg-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as schema from '../db/schema/index.js';
 import { enterTestMigratorRole } from './helpers/database-role-fixture.js';
+import { P5_IDS, seedBerkasDiberkaskan, seedRangkaianBase } from './helpers/rangkaian-p5-pglite.js';
 
 type JournalEntry = {
     idx: number;
@@ -33,12 +35,14 @@ function migrationStatements(tag: string): string[] {
 }
 
 async function createDatabase(): Promise<PGlite> {
-    const database = new PGlite({ extensions: { pgcrypto } });
+    const database = new PGlite({ extensions: { pgcrypto, pg_trgm } });
     openDatabases.push(database);
     await database.waitReady;
     // Cloud SQL operations preinstall approved extensions with the grant
     // administrator; extension members remain outside ownership handoff.
     await database.exec('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    // 0049 (index trigram Lacak) mensyaratkan pg_trgm dari langkah privileged.
+    await database.exec('CREATE EXTENSION IF NOT EXISTS pg_trgm');
     // 0032 deliberately refuses to create roles: Production bootstraps these
     // with a separately approved CREATEROLE identity before the application
     // migrator runs. PGlite is an isolated database, so reproduce only the
@@ -100,6 +104,44 @@ afterEach(async () => {
 });
 
 describe('PostgreSQL migration chain', () => {
+    it('0049 gagal keras bila pg_trgm belum dipasang', async () => {
+        const database = new PGlite({ extensions: { pgcrypto } });
+        openDatabases.push(database);
+        await database.waitReady;
+        await database.exec('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+        await enterTestMigratorRole(database);
+        for (const entry of journal.entries) {
+            if (entry.tag === '0049_lacak_trgm') {
+                await expect(applyMigration(database, entry)).rejects.toThrow(/0049: extension pg_trgm belum dipasang/);
+                return;
+            }
+            await applyMigration(database, entry);
+        }
+        throw new Error('0049_lacak_trgm tidak dijurnal');
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0049 membuat enam index trigram Lacak bila pg_trgm terpasang', async () => {
+        const database = await createDatabase();
+        for (const entry of journal.entries) await applyMigration(database, entry);
+        const { rows } = await database.query<{ indexname: string; indexdef: string }>(`
+            SELECT indexname, indexdef FROM pg_indexes
+             WHERE schemaname = 'public' AND indexname LIKE '%\\_trgm\\_idx' ORDER BY indexname`);
+        expect(rows.map((row) => row.indexname)).toEqual([
+            'surat_keluar_kepada_trgm_idx',
+            'surat_keluar_nomor_norm_trgm_idx',
+            'surat_keluar_perihal_trgm_idx',
+            'surat_masuk_dari_trgm_idx',
+            'surat_masuk_nomor_norm_trgm_idx',
+            'surat_masuk_perihal_trgm_idx',
+        ]);
+        for (const row of rows) expect(row.indexdef).toMatch(/USING gin .*gin_trgm_ops/);
+        // Review m7: pemiliknya harus administrator bootstrap (pemilik pgcrypto, di PGlite
+        // superuser `postgres`), bukan sekadar "bukan migrator".
+        const ekstensi = await database.query<{ extname: string; owner: string }>(
+            "SELECT extname, pg_get_userbyid(extowner) AS owner FROM pg_extension WHERE extname IN ('pgcrypto','pg_trgm') ORDER BY extname");
+        expect(ekstensi.rows).toEqual([{ extname: 'pg_trgm', owner: 'postgres' }, { extname: 'pgcrypto', owner: 'postgres' }]);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
     it('has a contiguous, chronological journal with a SQL file for every entry', () => {
         expect(journal.entries.length).toBeGreaterThan(0);
 
@@ -1018,7 +1060,9 @@ describe('PostgreSQL migration chain', () => {
 
     it('0046 mengunci rangkaian yang diberkaskan, mencegah siklus gabung, dan hanya menerima koreksi berkas yang disetujui', async () => {
         const database = await createDatabase();
-        for (const entry of journal.entries) {
+        // Semantik 0046 (termasuk jalur legacy rangkaian_id NULL dan lebih dari satu koreksi terbuka) diuji sebelum pengerasan 0048.
+        const sebelum0048 = journal.entries.findIndex((entry) => entry.tag === '0048_rangkaian_pengerasan');
+        for (const entry of sebelum0048 < 0 ? journal.entries : journal.entries.slice(0, sebelum0048)) {
             await applyMigration(database, entry);
         }
 
@@ -1278,7 +1322,9 @@ describe('PostgreSQL migration chain', () => {
 
     it('0046 menegakkan siklus hidup rangkaian_koreksi_berkas: pending -> approved/denied -> applied, dan terminal', async () => {
         const database = await createDatabase();
-        for (const entry of journal.entries) {
+        // Semantik 0046 (termasuk jalur legacy rangkaian_id NULL dan lebih dari satu koreksi terbuka) diuji sebelum pengerasan 0048.
+        const sebelum0048 = journal.entries.findIndex((entry) => entry.tag === '0048_rangkaian_pengerasan');
+        for (const entry of sebelum0048 < 0 ? journal.entries : journal.entries.slice(0, sebelum0048)) {
             await applyMigration(database, entry);
         }
 
@@ -1434,6 +1480,37 @@ describe('PostgreSQL migration chain', () => {
         ]);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 
+    it('0050 menghapus dir_plp yang keliru dibuat 0047, fail-closed bila sudah dirujuk', async () => {
+        const database = await createDatabase();
+        const index0047 = journal.entries.findIndex(({ tag }) => tag === '0047_unit_kerja_direktorat');
+        const index0050 = journal.entries.findIndex(({ tag }) => tag === '0050_hapus_dir_plp');
+        expect(index0050).toBeGreaterThan(index0047);
+        for (const entry of journal.entries.slice(0, index0047)) {
+            await applyMigration(database, entry);
+        }
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES ('ditjen', 'Ditjen'), ('sesditjen', 'Sekretariat Ditjen');
+        `);
+        for (const entry of journal.entries.slice(index0047, index0050)) {
+            await applyMigration(database, entry);
+        }
+        expect((await database.query(`SELECT id FROM unit_kerja WHERE id = 'dir_plp'`)).rows).toHaveLength(1);
+
+        await database.exec(`INSERT INTO disposisi_label_unit (label_norm, unit_kerja_id) VALUES ('plp', 'dir_plp')`);
+        await expect(applyMigration(database, journal.entries[index0050]))
+            .rejects.toThrow(/0050: unit dir_plp masih dirujuk 1 baris/);
+
+        await database.exec(`DELETE FROM disposisi_label_unit WHERE label_norm = 'plp'`);
+        await applyMigration(database, journal.entries[index0050]);
+        // Idempoten: di produksi baris sudah dihapus manual, jadi 0050 menjadi no-op.
+        await applyMigration(database, journal.entries[index0050]);
+
+        const units = await database.query<{ id: string }>(`
+            SELECT id FROM unit_kerja WHERE id LIKE 'dir\\_%' ORDER BY id COLLATE "C"
+        `);
+        expect(units.rows.map(row => row.id)).toEqual(['dir_bppt', 'dir_ktpp', 'dir_ptep']);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
     it('memodelkan setiap kolom integrasi rangkaian di skema Drizzle', async () => {
         const database = await createDatabase();
         for (const entry of journal.entries) {
@@ -1470,5 +1547,53 @@ describe('PostgreSQL migration chain', () => {
             .filter((name) => !modeled.has(name))
             .sort();
         expect(unmodeled).toEqual([]);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0048 menolak pengerasan selama masih ada disposisi tanpa rangkaian_id', async () => {
+        const database = await createDatabase();
+        const hardening = journal.entries.find((entry) => entry.tag === '0048_rangkaian_pengerasan');
+        expect(hardening).toBeDefined();
+        for (const entry of journal.entries) {
+            if (entry.tag === hardening!.tag) break;
+            await applyMigration(database, entry);
+        }
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES ('unit-p5-asal', 'Asal P5'), ('unit-p5-tujuan', 'Tujuan P5');
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun)
+            VALUES ('00000000-0000-4000-8000-000000000481', 'unit-p5-asal', 1, 2026);
+            INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status)
+            VALUES ('00000000-0000-4000-8000-000000000481', 'unit-p5-asal', 'unit-p5-tujuan', 'sent');
+        `);
+        await expect(applyMigration(database, hardening!))
+            .rejects.toThrow(/0048: surat_distributions\.rangkaian_id masih NULL/);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
+    it('0048 mengeraskan rangkaian_id dan membatasi satu Koreksi Berkas terbuka', async () => {
+        const database = await createDatabase();
+        for (const entry of journal.entries) await applyMigration(database, entry);
+
+        const column = await database.query<{ is_nullable: string }>(`
+            SELECT is_nullable FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'surat_distributions' AND column_name = 'rangkaian_id'`);
+        expect(column.rows).toEqual([{ is_nullable: 'NO' }]);
+
+        const { klasA, klasB } = await seedRangkaianBase(database);
+        const { rangkaianId } = await seedBerkasDiberkaskan(database, klasA);
+        const insertKoreksi = (unit: string) => database.exec(`
+            INSERT INTO rangkaian_koreksi_berkas (rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+              klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by)
+            VALUES ('${rangkaianId}', 'dir_bppt', '${unit}', ${klasA}, ${klasB}, 'Salah pilih saat pemberkasan', '${P5_IDS.superA}')`);
+        await insertKoreksi('dir_ptep');
+        await expect(insertKoreksi('dir_bppt')).rejects.toThrow(/rangkaian_koreksi_berkas_terbuka_uidx/);
+        // Trigger BEFORE INSERT (0046) menolak status non-pending lebih dulu; CHECK berjalan sebelum indeks unik.
+        await expect(database.exec(`
+            INSERT INTO rangkaian_koreksi_berkas (rangkaian_id, unit_pengolah_lama, unit_pengolah_baru,
+              klasifikasi_lama, klasifikasi_baru, alasan, diajukan_by)
+            VALUES ('${rangkaianId}', 'dir_bppt', 'dir_bppt', ${klasA}, ${klasA}, 'Tidak mengubah apa pun', '${P5_IDS.superA}')`))
+            .rejects.toThrow(/rangkaian_koreksi_berkas_berubah_check/);
+        const putusan = await database.query<{ def: string }>(`
+            SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'rangkaian_koreksi_berkas_putusan_check'`);
+        expect(putusan.rows).toHaveLength(1);
+        expect(putusan.rows[0].def).toMatch(/diputuskan_by IS NULL/);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 });

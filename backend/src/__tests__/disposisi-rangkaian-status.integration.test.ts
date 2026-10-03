@@ -15,6 +15,8 @@ const holder = vi.hoisted(() => ({ db: null as any }));
 vi.mock('../config/database', () => ({ get db() { return holder.db; } }));
 
 let database: PGlite;
+let databasePenuh: PGlite;
+let databaseLama: PGlite | undefined;
 let distributionService: typeof import('../services/distribution.service').distributionService;
 let berkasService: typeof import('../services/rangkaian/berkas.service').berkasService;
 let rangkaianService: typeof import('../services/rangkaian.service').rangkaianService;
@@ -51,16 +53,34 @@ async function rangkaianDuaSm(): Promise<string> {
     });
 }
 
+function pakaiDatabase(target: PGlite) {
+    database = target;
+    holder.db = drizzle(target, { schema });
+}
+
+/**
+ * C-M1/C-M2 menguji baris disposisi lama ber-rangkaian_id NULL, yang hanya
+ * dapat ada sebelum pengerasan 0048 (P5); suite lain tetap di rantai penuh.
+ */
+function pakaiDatabaseSebelum0048() {
+    beforeAll(async () => {
+        databaseLama ??= await bootRangkaianDatabase({ stopBefore: '0048_rangkaian_pengerasan' });
+        pakaiDatabase(databaseLama);
+    }, 60_000);
+    afterAll(() => pakaiDatabase(databasePenuh));
+}
+
 beforeAll(async () => {
-    database = await bootRangkaianDatabase();
-    holder.db = drizzle(database, { schema });
+    databasePenuh = await bootRangkaianDatabase();
+    pakaiDatabase(databasePenuh);
     distributionService = (await import('../services/distribution.service')).distributionService;
     berkasService = (await import('../services/rangkaian/berkas.service')).berkasService;
     rangkaianService = (await import('../services/rangkaian.service')).rangkaianService;
 }, 60_000);
 
 afterAll(async () => {
-    await database?.close();
+    await databaseLama?.close();
+    await databasePenuh?.close();
 });
 
 beforeEach(async () => {
@@ -122,6 +142,8 @@ describe('C-I1: distribute membuka kembali rangkaian selesai manual', () => {
 });
 
 describe('C-M1: disposisiTerbukaSql bentuk jumlah setara bentuk OR lama', () => {
+    pakaiDatabaseSebelum0048();
+
     /** Bentuk C-6 sebelum C-M1 (acuan paritas). */
     const bentukLama = (id: string) => sql`(SELECT count(*)::int FROM surat_distributions d
         JOIN surat_masuk sm ON sm.id = d.surat_masuk_id AND sm.is_deleted IS NOT TRUE
@@ -142,7 +164,7 @@ describe('C-M1: disposisiTerbukaSql bentuk jumlah setara bentuk OR lama', () => 
                 ('${SM_A}','sesditjen','dir_ptep','received',NULL),
                 ('${SM_B}','sesditjen','dir_bppt','sent',NULL),
                 ('${SM_B}','sesditjen','dir_ptep','processed',NULL),
-                ('${SM_B}','sesditjen','dir_plp','rejected',NULL),
+                ('${SM_B}','sesditjen','dir_uji','rejected',NULL),
                 ('${SM_C}','sesditjen','dir_bppt','sent',NULL);
             UPDATE surat_masuk SET is_deleted = true WHERE id = '${SM_C}';
         `);
@@ -162,6 +184,8 @@ describe('C-M1: disposisiTerbukaSql bentuk jumlah setara bentuk OR lama', () => 
 });
 
 describe('C-M2: baris disposisi lama ber-rangkaian_id NULL', () => {
+    pakaiDatabaseSebelum0048();
+
     async function barisLama(statusRangkaian: 'aktif' | 'diberkaskan'): Promise<string> {
         const rs = await rangkaianDuaSm();
         await database.query(`INSERT INTO surat_distributions (id, surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id)

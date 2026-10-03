@@ -67,7 +67,7 @@ describe('kecocokan unit rekaman (sumber tunggal isAllowedForRecordUnit)', () =>
 
 describe('pengawas dan jangkauan', () => {
     it.each([
-        ['ditjen', true], ['sesditjen', true], ['dir_bppt', true], ['dir_plp', true],
+        ['ditjen', true], ['sesditjen', true], ['dir_bppt', true], ['dir_uji', true],
         ['direktorat-bppt', false], ['bagian_umum', false], ['', false], [null, false],
     ])('cakupan rekaman pengawas %s → %s', (unit, expected) => {
         expect(dalamCakupanPengawas(unit as any)).toBe(expected);

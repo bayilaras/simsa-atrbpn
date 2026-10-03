@@ -121,6 +121,8 @@ Halaman detail menampilkan semua informasi surat, termasuk lampiran yang bisa di
 | **Arsipkan** | Pindahkan ke arsip | Staff, Admin |
 | **Hapus** | Hapus surat | Admin saja |
 
+- **Alur Surat**: menampilkan rangkaian, disposisi, dan tindak lanjut surat ini (lihat [Rangkaian Surat](rangkaian-surat.md)).
+
 ---
 
 ## Mengedit Surat Masuk

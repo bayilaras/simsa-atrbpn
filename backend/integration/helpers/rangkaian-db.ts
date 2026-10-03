@@ -3,7 +3,9 @@
 // PG >= 16 — hal-hal yang PGlite (single-process, tanpa MVCC lintas koneksi
 // nyata) tidak dapat mensimulasikan. [T2-4]
 import { randomUUID } from 'node:crypto';
-import { Client, Pool } from 'pg';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { Client, Pool, type PoolClient } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { loadMigrations, migrateDatabase } from '../../scripts/migrate-database.mjs';
 
@@ -25,7 +27,17 @@ export function assertIsolatedTestTarget(raw = process.env.TEST_POSTGRES_URL): U
     return url;
 }
 
-export async function createRangkaianTestDatabase(label: string) {
+/**
+ * Langkah privileged pg_trgm yang SAMA dengan produksi (grants/0003_optional_pg_trgm.sql),
+ * dijalankan oleh administrator harness (bukan migrator) sebelum migrasi 0049. Hanya
+ * meta-command psql (`\set ...`) yang dibuang; isi transaksinya dieksekusi apa adanya.
+ */
+export async function applyPgTrgmPrivilegedStep(connection: Client | PoolClient): Promise<void> {
+    const raw = readFileSync(fileURLToPath(new URL('../../src/db/grants/0003_optional_pg_trgm.sql', import.meta.url)), 'utf8');
+    await connection.query(raw.split('\n').filter((line) => !line.startsWith('\\')).join('\n'));
+}
+
+export async function createRangkaianTestDatabase(label: string, options: { stopBefore?: string } = {}) {
     if (!/^[a-z]{3,20}$/.test(label)) throw new Error('label harus 3-20 huruf kecil');
     const url = assertIsolatedTestTarget();
     const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
@@ -46,11 +58,16 @@ export async function createRangkaianTestDatabase(label: string) {
                 END IF;
             END LOOP;
         END $$;
-        CREATE EXTENSION pgcrypto;
+        CREATE EXTENSION pgcrypto;`);
+        await applyPgTrgmPrivilegedStep(connection);
+        await connection.query(`
         ALTER SCHEMA public OWNER TO simsa_migrator;
         CREATE SCHEMA drizzle AUTHORIZATION simsa_migrator;
         SET ROLE simsa_migrator;`);
-        await migrateDatabase(connection, loadMigrations());
+        const semua = loadMigrations();
+        const batas = options.stopBefore ? semua.findIndex((migration: { tag: string }) => migration.tag === options.stopBefore) : -1;
+        if (options.stopBefore && batas < 0) throw new Error(`Migrasi ${options.stopBefore} tidak ada di journal`);
+        await migrateDatabase(connection, batas >= 0 ? semua.slice(0, batas) : semua);
         await connection.query('RESET ROLE');
     } finally {
         connection.release();
@@ -74,7 +91,7 @@ export async function createRangkaianTestDatabase(label: string) {
             ('dir_bppt', 'Dit. BPPT', 'ditjen', 'direktorat', true),
             ('dir_ptep', 'Dit. PTEP', 'ditjen', 'direktorat', true),
             ('dir_ktpp', 'Dit. KTPP', 'ditjen', 'direktorat', true),
-            ('dir_plp', 'Dit. PLP', 'ditjen', 'direktorat', true),
+            ('dir_uji', 'Dit. Uji', 'ditjen', 'direktorat', true),
             ('bagian_umum', 'Bagian Umum', 'sesditjen', 'bagian', true)
             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit_type = EXCLUDED.unit_type,
                 can_receive_distribution = EXCLUDED.can_receive_distribution`);
@@ -114,6 +131,11 @@ export async function createRangkaianTestDatabase(label: string) {
     }
 
     async function insertDistribusi(input: { suratMasukId: string; sourceUnitId: string; targetUnitId: string; status?: string; rangkaianId?: string | null; batasWaktu?: string | null }) {
+        // Sejak 0048 rangkaian_id NOT NULL: gagal keras di sini, bukan 23502 di tengah test.
+        // Hanya skenario data lama (database dibuat dengan stopBefore) boleh menyisipkan NULL. [P5-C-4]
+        if (input.rangkaianId == null && !options.stopBefore) {
+            throw new Error('rangkaianId wajib setelah 0048; buat database dengan stopBefore untuk skenario lama');
+        }
         const [row] = await query<{ id: string }>(`INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id, batas_waktu)
             VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [input.suratMasukId, input.sourceUnitId, input.targetUnitId,
             input.status ?? 'sent', input.rangkaianId ?? null, input.batasWaktu ?? null]);

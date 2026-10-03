@@ -23,6 +23,7 @@
 * [📨 Surat Masuk](manajemen-surat/surat-masuk.md)
 * [📤 Surat Keluar](manajemen-surat/surat-keluar.md)
 * [🔄 Distribusi Surat](manajemen-surat/distribusi.md)
+* [🧵 Rangkaian Surat](manajemen-surat/rangkaian-surat.md)
 
 ## Siklus Hidup Arsip
 

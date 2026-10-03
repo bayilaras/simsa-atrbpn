@@ -140,7 +140,7 @@ describe.skipIf(!adaPostgres)('Tutup Disposisi oleh pengawas', () => {
     // yang identik pada kedua jalur harus mencegah deadlock 40P01.
     it('tutupOlehPengawas ∥ distribute pada SM yang sama tidak deadlock', async () => {
         const sm = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-43/2026' });
-        const distSm = (await distributionService.distribute({ suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_plp', sentBy: tu.id }, audit(tu))).id;
+        const distSm = (await distributionService.distribute({ suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_uji', sentBy: tu.id }, audit(tu))).id;
         const hasil = await Promise.allSettled([
             distributionService.tutupOlehPengawas(distSm, tu, 'Target tidak dapat memproses paralel', audit(tu)),
             distributionService.distribute({ suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_ptep', sentBy: tu.id }, audit(tu)),

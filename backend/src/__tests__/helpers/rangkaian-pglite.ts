@@ -1,18 +1,18 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import { enterTestMigratorRole } from './database-role-fixture';
+import { applyMigrationTag, assertStopBeforeDikenal, journalEntries } from './rangkaian-p5-pglite.js';
 
-export async function bootRangkaianDatabase(): Promise<PGlite> {
-    const database = new PGlite({ extensions: { pgcrypto } });
+/** Rantai migrasi penuh sesuai urutan journal (termasuk 0048+), atau berhenti sebelum `stopBefore`. */
+export async function bootRangkaianDatabase(options: { stopBefore?: string } = {}): Promise<PGlite> {
+    assertStopBeforeDikenal(options.stopBefore);
+    const database = new PGlite({ extensions: { pgcrypto, pg_trgm } });
     await database.waitReady;
-    await enterTestMigratorRole(database);
-    const dir = fileURLToPath(new URL('../../db/migrations/', import.meta.url));
-    for (const file of readdirSync(dir).filter(name => /^\d{4}.*\.sql$/.test(name) && Number(name.slice(0, 4)) <= 47).sort()) {
-        for (const statement of readFileSync(`${dir}/${file}`, 'utf8').split('--> statement-breakpoint').filter(value => value.trim())) {
-            await database.exec(statement);
-        }
+    await enterTestMigratorRole(database, { pgTrgm: true });
+    for (const entry of journalEntries) {
+        if (entry.tag === options.stopBefore) break;
+        await applyMigrationTag(database, entry.tag);
     }
     return database;
 }
@@ -36,7 +36,7 @@ export const PENGGUNA = {
     ptep: { id: USER_ID.ptep, role: 'admin_unit', unitKerjaId: 'dir_ptep' },
     staffSes: { id: USER_ID.staffSes, role: 'staff', unitKerjaId: 'sesditjen' },
     adminSesNull: { id: USER_ID.adminSesNull, role: 'admin_sesditjen', unitKerjaId: null },
-    plp: { id: USER_ID.plp, role: 'admin_unit', unitKerjaId: 'dir_plp' },
+    plp: { id: USER_ID.plp, role: 'admin_unit', unitKerjaId: 'dir_uji' },
     auditorSes: { id: USER_ID.auditorSes, role: 'auditor', unitKerjaId: 'sesditjen' },
 } as const;
 
@@ -127,7 +127,7 @@ export async function seedRangkaianFixture(database: PGlite): Promise<void> {
         INSERT INTO unit_kerja (id, name, is_unit_pengawas) VALUES
             ('ditjen','Direktorat Jenderal',true), ('sesditjen','Sekretariat Ditjen',true),
             ('dir_bppt','Dit. BPPT',false), ('dir_ptep','Dit. PTEP',false),
-            ('dir_plp','Dit. PLP',false), ('bagian_umum','Bagian Umum',false);
+            ('dir_uji','Dit. Uji',false), ('bagian_umum','Bagian Umum',false);
         INSERT INTO users (id, email, role, unit_kerja_id) VALUES
             ('${USER_ID.superAdmin}','super@example.test','super_admin',NULL),
             ('${USER_ID.tu}','tu@example.test','admin_unit','sesditjen'),
@@ -139,7 +139,7 @@ export async function seedRangkaianFixture(database: PGlite): Promise<void> {
             -- PENGGUNA.adminSesNull tetap unitKerjaId: null -- itulah yang
             -- benar-benar dipakai check()/findActiveGrant, bukan baris ini.
             ('${USER_ID.adminSesNull}','sesditjen@example.test','admin_sesditjen','sesditjen'),
-            ('${USER_ID.plp}','plp@example.test','admin_unit','dir_plp'),
+            ('${USER_ID.plp}','plp@example.test','admin_unit','dir_uji'),
             ('${USER_ID.auditorSes}','auditor@example.test','auditor','sesditjen'),
             ('${USER_ID.approver}','approver@example.test','super_admin',NULL);
         INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, nomor_surat, perihal, dari, tanggal_surat) VALUES

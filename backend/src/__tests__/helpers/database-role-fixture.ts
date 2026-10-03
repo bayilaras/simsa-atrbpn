@@ -1,7 +1,13 @@
 import type { PGlite } from '@electric-sql/pglite';
 
-/** Reproduce the protected grant-admin bootstrap boundary for PGlite tests. */
-export async function enterTestMigratorRole(database: PGlite): Promise<void> {
+/**
+ * Reproduce the protected grant-admin bootstrap boundary for PGlite tests.
+ * `pgTrgm: true` juga memasang pg_trgm sebagai administrator (seperti grants
+ * 0001/0003) — wajib untuk rantai yang menjalankan 0049_lacak_trgm; PGlite
+ * harus dibuat dengan `extensions: { pgcrypto, pg_trgm }`.
+ */
+export async function enterTestMigratorRole(database: PGlite, options: { pgTrgm?: boolean } = {}): Promise<void> {
+    if (options.pgTrgm) await database.exec('CREATE EXTENSION IF NOT EXISTS pg_trgm');
     await database.exec(`
         CREATE EXTENSION IF NOT EXISTS pgcrypto;
         CREATE ROLE simsa_api_runtime NOLOGIN

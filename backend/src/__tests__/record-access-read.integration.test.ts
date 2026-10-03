@@ -87,14 +87,14 @@ describe('checkRead: matriks unit × role × kelas × grant × jangkauan', () =>
 
     it('penolakan disposisi mencabut jangkauan seketika', async () => {
         await database.exec(`INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id)
-            VALUES ('${SURAT.smBiasa}','sesditjen','dir_plp','sent','${RANGKAIAN.rs1}')`);
+            VALUES ('${SURAT.smBiasa}','sesditjen','dir_uji','sent','${RANGKAIAN.rs1}')`);
         expect((await mod.recordAccessService.checkRead(PENGGUNA.plp, 'surat_masuk', SURAT.smBiasa)).via).toBe('peserta');
-        await database.exec(`UPDATE surat_distributions SET status = 'rejected', rejection_reason = 'Bukan kewenangan PLP' WHERE target_unit_id = 'dir_plp'`);
+        await database.exec(`UPDATE surat_distributions SET status = 'rejected', rejection_reason = 'Bukan kewenangan PLP' WHERE target_unit_id = 'dir_uji'`);
         expect(await mod.recordAccessService.checkRead(PENGGUNA.plp, 'surat_masuk', SURAT.smBiasa)).toMatchObject({ allowed: false, via: null });
     });
 
     it('peserta data lama hanya berlaku saat flag menyala', async () => {
-        await database.exec(`INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal) VALUES ('${RANGKAIAN.rs1}','dir_plp','disposisi_lama','PLP')`);
+        await database.exec(`INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal) VALUES ('${RANGKAIAN.rs1}','dir_uji','disposisi_lama','PLP')`);
         expect((await mod.recordAccessService.checkRead(PENGGUNA.plp, 'surat_masuk', SURAT.smBiasa)).allowed).toBe(false);
         process.env.RANGKAIAN_DISPOSISI_LAMA_READ = 'true';
         expect((await mod.recordAccessService.checkRead(PENGGUNA.plp, 'surat_masuk', SURAT.smBiasa)).via).toBe('peserta');

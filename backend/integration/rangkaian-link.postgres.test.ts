@@ -89,7 +89,7 @@ describe.skipIf(!adaPostgres)('tautan, gabung, dan batal relasi', () => {
 
     it('tautan yang menggabungkan rangkaian berdisposisi aktif ke unit luar jangkauan: non-pengawas 409 (T15-9)', async () => {
         const smB = await h.insertSuratMasuk({ unitKerjaId: 'dir_bppt', nomorSurat: 'SM-T9/2026' });
-        const [d] = await distributionService.distributeMany({ suratMasukId: smB, sourceUnitId: 'dir_bppt', sentBy: bppt.id, targets: [{ unitKerjaId: 'dir_plp' }] } as any, audit(bppt));
+        const [d] = await distributionService.distributeMany({ suratMasukId: smB, sourceUnitId: 'dir_bppt', sentBy: bppt.id, targets: [{ unitKerjaId: 'dir_uji' }] } as any, audit(bppt));
         const skK = await h.insertSuratKeluar({ unitKerjaId: 'dir_bppt', nomorSurat: 'KEP-T9/2026', approvalStatus: 'approved', asalNaskah: 'inisiatif' });
         const target = await pastikan(bppt, 'surat_keluar', skK);
         await expect(rangkaianLinkService.tautan(bppt, target.rangkaianId, { jenis: 'surat_masuk', suratId: smB, keAnggotaId: target.anggotaId, jenisRelasi: 'merujuk' }, audit(bppt)))

@@ -148,8 +148,8 @@ describe('tindakLanjutService.attachSuratKeluar', () => {
     });
 
     it('unit tanpa jangkauan baca atas induk mendapat 404', async () => {
-        const sk = await skBaru('dir_plp');
-        await expect(attach(PENGGUNA.plp, sk, 'dir_plp', { jenis: 'surat_masuk', suratId: SURAT.smBiasa, jenisRelasi: 'tindak_lanjut' }))
+        const sk = await skBaru('dir_uji');
+        await expect(attach(PENGGUNA.plp, sk, 'dir_uji', { jenis: 'surat_masuk', suratId: SURAT.smBiasa, jenisRelasi: 'tindak_lanjut' }))
             .rejects.toMatchObject({ statusCode: 404 });
     });
 
@@ -393,8 +393,8 @@ describe('tindakLanjutService.referensiSuratMasuk', () => {
     });
 
     it('rujukan yang tidak dapat dibaca pencatat → 404 tanpa efek', async () => {
-        const sm = await smBaru('dir_plp');
-        await expect(referensi(PENGGUNA.plp, sm, 'dir_plp', SURAT.skBpptBiasa)).rejects.toMatchObject({ statusCode: 404 });
+        const sm = await smBaru('dir_uji');
+        await expect(referensi(PENGGUNA.plp, sm, 'dir_uji', SURAT.skBpptBiasa)).rejects.toMatchObject({ statusCode: 404 });
         expect((await database.query('SELECT id FROM rangkaian_anggota WHERE surat_masuk_id = $1', [sm])).rows).toEqual([]);
     });
 });

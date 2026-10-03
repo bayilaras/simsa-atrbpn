@@ -117,4 +117,22 @@ if (result.status !== 0) {
   throw new Error(`database role bootstrap failed with exit code ${result.status}`);
 }
 
-console.log('Database role bootstrap and ownership convergence completed.');
+// Langkah privileged terpisah untuk pg_trgm (migrasi 0049, index trigram
+// Lacak). Sengaja TIDAK di 0001: drill restore Cloud SQL menjalankan ulang
+// 0001 setelah pg_restore dan membandingkan bukti secara persis, sehingga
+// 0001 tidak boleh menambah extension yang tidak ada di arsip. Identitas yang
+// sama (administrator grant) menjalankannya di sini, sebelum db:migrate fase
+// GCP; 0003 menolak migrator dan idempoten pada fase bootstrap-final.
+const trgmFile = resolve(here, '../src/db/grants/0003_optional_pg_trgm.sql');
+const trgm = spawnSync('psql', ['--no-psqlrc', '--set', 'ON_ERROR_STOP=on', '--file', trgmFile], {
+  cwd: resolve(here, '..'),
+  env: process.env,
+  stdio: 'inherit',
+  shell: false,
+});
+if (trgm.error) throw trgm.error;
+if (trgm.status !== 0) {
+  throw new Error(`privileged pg_trgm step failed with exit code ${trgm.status}`);
+}
+
+console.log('Database role bootstrap, ownership convergence, and pg_trgm step completed.');

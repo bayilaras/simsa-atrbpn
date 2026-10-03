@@ -8,6 +8,7 @@ import { provisionNeonBackupRole, assertNeonBackupRole, NEON_RESTORE_OWNERS_SQL 
 const requireBackend = createRequire(new URL('../backend/package.json', import.meta.url));
 const { PGlite } = requireBackend('@electric-sql/pglite');
 const { pgcrypto } = requireBackend('@electric-sql/pglite/contrib/pgcrypto');
+const { pg_trgm } = requireBackend('@electric-sql/pglite/contrib/pg_trgm');
 test('restoration moves linked sequences only after their tables and leaves other schemas alone', async () => {
   const db = new PGlite();
   try {
@@ -25,7 +26,7 @@ test('restoration moves linked sequences only after their tables and leaves othe
   } finally {await db.close();}
 });
 test('optional backup login is read-only, does not gain global roles, and survives migration convergence', async () => {
-  const db = new PGlite({ extensions: { pgcrypto } });
+  const db = new PGlite({ extensions: { pgcrypto, pg_trgm } });
   const client = { query: async (sql, values) => {
     const r = values ? await db.query(sql, values) : (await db.exec(sql)).at(-1);
     return { ...r, rowCount: r.affectedRows ?? r.rows.length };

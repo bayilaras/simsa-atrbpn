@@ -136,9 +136,9 @@ describe('rangkaianReadService.getDetail', () => {
             INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun)
                 VALUES ('${RANGKAIAN.rsBesar}','RS-2026-000005','inisiatif','aktif','sesditjen','Rangkaian besar',2026);
             INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, perihal)
-                SELECT 'dir_plp', g, 2026, 'biasa', 'Massal ' || g FROM generate_series(1, 301) g;
+                SELECT 'dir_uji', g, 2026, 'biasa', 'Massal ' || g FROM generate_series(1, 301) g;
             INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id, peran, sumber)
-                SELECT '${RANGKAIAN.rsBesar}', id, 'dir_plp', 'anggota', 'aplikasi' FROM surat_keluar WHERE unit_kerja_id = 'dir_plp';`);
+                SELECT '${RANGKAIAN.rsBesar}', id, 'dir_uji', 'anggota', 'aplikasi' FROM surat_keluar WHERE unit_kerja_id = 'dir_uji';`);
         const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rsBesar))!;
         expect(detail.anggota).toHaveLength(300);
         expect(detail.truncated).toBe(true);
@@ -154,13 +154,13 @@ describe('rangkaianReadService.getDetail', () => {
             INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun)
                 VALUES ('${RANGKAIAN.rsBesar}','RS-2026-000005','inisiatif','aktif','sesditjen','Rangkaian besar',2026);
             INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, perihal)
-                SELECT 'dir_plp', g, 2026, 'biasa', 'Massal ' || g FROM generate_series(1, 301) g;
+                SELECT 'dir_uji', g, 2026, 'biasa', 'Massal ' || g FROM generate_series(1, 301) g;
             INSERT INTO rangkaian_anggota (rangkaian_id, surat_keluar_id, unit_kerja_id, peran, sumber, ditambahkan_at)
-                SELECT '${RANGKAIAN.rsBesar}', id, 'dir_plp', 'anggota', 'aplikasi', '2000-01-01T00:00:00Z' FROM surat_keluar WHERE unit_kerja_id = 'dir_plp';
+                SELECT '${RANGKAIAN.rsBesar}', id, 'dir_uji', 'anggota', 'aplikasi', '2000-01-01T00:00:00Z' FROM surat_keluar WHERE unit_kerja_id = 'dir_uji';
             INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, perihal)
-                VALUES ('${suratIndukRsBesar}', 'dir_plp', 999, 2026, 'biasa', 'Induk rangkaian besar');
+                VALUES ('${suratIndukRsBesar}', 'dir_uji', 999, 2026, 'biasa', 'Induk rangkaian besar');
             INSERT INTO rangkaian_anggota (id, rangkaian_id, surat_keluar_id, unit_kerja_id, peran, sumber, ditambahkan_at)
-                VALUES ('${anggotaIndukRsBesar}', '${RANGKAIAN.rsBesar}', '${suratIndukRsBesar}', 'dir_plp', 'induk', 'aplikasi', '2001-01-01T00:00:00Z');`);
+                VALUES ('${anggotaIndukRsBesar}', '${RANGKAIAN.rsBesar}', '${suratIndukRsBesar}', 'dir_uji', 'induk', 'aplikasi', '2001-01-01T00:00:00Z');`);
         const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rsBesar))!;
         expect(detail.anggota).toHaveLength(300);
         expect(detail.truncated).toBe(true);
@@ -177,10 +177,10 @@ describe('rangkaianReadService.getDetail', () => {
 
     it.each([false, true])('daftar peserta sama dengan jangkauanSql (flag data lama %s)', async flag => {
         process.env.RANGKAIAN_DISPOSISI_LAMA_READ = String(flag);
-        await database.exec(`INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal) VALUES ('${RANGKAIAN.rs1}','dir_plp','disposisi_lama','PLP')`);
+        await database.exec(`INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal) VALUES ('${RANGKAIAN.rs1}','dir_uji','disposisi_lama','PLP')`);
         const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rs1))!;
         const units = new Set(detail.peserta.map(row => row.unitKerjaId));
-        for (const unit of ['ditjen', 'sesditjen', 'dir_bppt', 'dir_ptep', 'dir_plp', 'bagian_umum']) {
+        for (const unit of ['ditjen', 'sesditjen', 'dir_bppt', 'dir_ptep', 'dir_uji', 'bagian_umum']) {
             const [row] = spec.barisDari<{ ok: boolean }>(await holder.db.execute(sql`SELECT ${spec.jangkauanSql(sql`${RANGKAIAN.rs1}::uuid`, unit, flag)} AS "ok"`));
             expect(units.has(unit), unit).toBe(row.ok);
         }
@@ -260,7 +260,7 @@ describe('rangkaianReadService.getDetail', () => {
             INSERT INTO surat_distributions (id, surat_masuk_id, source_unit_id, target_unit_id, status, rejection_reason, rangkaian_id)
                 VALUES ('${DISPOSISI.rs2Ditolak}','${SURAT.smTerbatas}','sesditjen','dir_bppt','rejected','${RAHASIA.alasanTolakRs2}','${RANGKAIAN.rs2}');
             INSERT INTO surat_distributions (id, surat_masuk_id, source_unit_id, target_unit_id, status, catatan_penyelesaian, penyelesaian_surat_keluar_id, rangkaian_id)
-                VALUES ('${DISPOSISI.rs2Selesai}','${SURAT.smTerbatas}','sesditjen','dir_plp','processed','${RAHASIA.catatanSelesaiRs2}','${SURAT_FIX1.skPtepRahasiaRs2}','${RANGKAIAN.rs2}');
+                VALUES ('${DISPOSISI.rs2Selesai}','${SURAT.smTerbatas}','sesditjen','dir_uji','processed','${RAHASIA.catatanSelesaiRs2}','${SURAT_FIX1.skPtepRahasiaRs2}','${RANGKAIAN.rs2}');
         `);
         const detail = (await svc.rangkaianReadService.getDetail(PENGGUNA.tu, RANGKAIAN.rs2))!;
         const ditolak = detail.disposisi.find(row => row.id === DISPOSISI.rs2Ditolak);

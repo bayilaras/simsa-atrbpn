@@ -84,7 +84,7 @@ beforeEach(async () => {
     // Fixture menyisipkan RS-2026-000001/2 langsung; hindari bentrok kode dari ensureForSurat.
     await database.query("SELECT setval('rangkaian_surat_kode_seq', greatest(nextval('rangkaian_surat_kode_seq'), 1000))");
     await suratKeluar(SK_TU, 'sesditjen', 11);
-    await suratKeluar(SK_PLP, 'dir_plp', 12);
+    await suratKeluar(SK_PLP, 'dir_uji', 12);
     await suratKeluar(SK_BPPT_BARU, 'dir_bppt', 13, 'approved');
 });
 
@@ -178,7 +178,7 @@ describe('tautan (PGlite)', () => {
             VALUES ($1, 'dir_bppt', 1, 2026, 'biasa', 'SM-B/2026', 'Surat masuk BPPT', 'Kanwil', '2026-09-09')`, [SM_BPPT]);
         const asal = await pastikan('surat_masuk', SM_BPPT);
         await database.query(`INSERT INTO surat_distributions (surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id)
-            VALUES ($1, 'dir_bppt', 'dir_plp', 'sent', $2)`, [SM_BPPT, asal.rangkaianId]);
+            VALUES ($1, 'dir_bppt', 'dir_uji', 'sent', $2)`, [SM_BPPT, asal.rangkaianId]);
         const target = await pastikan('surat_keluar', SURAT.skBpptTunggal);
         const input = { jenis: 'surat_masuk' as const, suratId: SM_BPPT, keAnggotaId: target.anggotaId, jenisRelasi: 'merujuk' as const };
         await expect(link.tautan(PENGGUNA.bppt, target.rangkaianId, input, audit(PENGGUNA.bppt)))

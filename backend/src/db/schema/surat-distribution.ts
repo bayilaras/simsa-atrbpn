@@ -23,8 +23,8 @@ export const suratDistributions = pgTable('surat_distributions', {
     processedAt: timestamp('processed_at'),
     sentBy: uuid('sent_by').references(() => users.id),
     receivedBy: uuid('received_by').references(() => users.id),
-    // Integrasi rangkaian (0046). rangkaian_id menjadi wajib setelah backfill P3/P5.
-    rangkaianId: uuid('rangkaian_id').references(() => rangkaianSurat.id),
+    // Integrasi rangkaian (0046); wajib sejak pengerasan 0048 (P5).
+    rangkaianId: uuid('rangkaian_id').notNull().references(() => rangkaianSurat.id),
     batasWaktu: date('batas_waktu'),
     penanggungJawab: boolean('penanggung_jawab').notNull().default(false),
     processedBy: uuid('processed_by').references(() => users.id),

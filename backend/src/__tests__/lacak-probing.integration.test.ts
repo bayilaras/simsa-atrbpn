@@ -18,7 +18,7 @@ const superAdmin: PenggunaUji = { id: uid(906), email: 'super@example.test', nam
 const staffBppt: PenggunaUji = { id: uid(907), email: 'staff.bppt@example.test', name: 'Staf BPPT', role: 'staff', unitKerjaId: 'dir_bppt' };
 const auditorBppt: PenggunaUji = { id: uid(908), email: 'auditor.bppt@example.test', name: 'Auditor BPPT', role: 'auditor', unitKerjaId: 'dir_bppt' };
 const adminDitjen: PenggunaUji = { id: uid(909), email: 'ditjen@example.test', name: 'Admin Ditjen', role: 'admin_unit', unitKerjaId: 'ditjen' };
-const adminPlp: PenggunaUji = { id: uid(910), email: 'plp@example.test', name: 'Admin PLP', role: 'admin_unit', unitKerjaId: 'dir_plp' };
+const adminPlp: PenggunaUji = { id: uid(910), email: 'plp@example.test', name: 'Admin PLP', role: 'admin_unit', unitKerjaId: 'dir_uji' };
 const PROBE_PERIHAL = 'PROBE-RAHASIA-7781 anggaran';
 const PROBE_NOMOR = 'R-77/PROBE/2026';
 const PROBE_DARI = 'Inspektorat PROBE-DARI';
@@ -38,7 +38,7 @@ beforeEach(async () => {
         { id: 'ditjen', name: 'Ditjen PTPP', pengawas: true },
         { id: 'sesditjen', name: 'Sesditjen', pengawas: true },
         { id: 'dir_bppt', name: 'Dit. BPPT' },
-        { id: 'dir_plp', name: 'Dit. PLP' },
+        { id: 'dir_uji', name: 'Dit. Uji' },
         { id: 'bagian_umum', name: 'Bagian Umum' },
     ]);
     for (const pengguna of [bppt, superAdmin, staffBppt, auditorBppt, adminDitjen, adminPlp]) await insertUser(database, pengguna);
@@ -156,11 +156,11 @@ describe('Lacak mengikuti tier rangkaian untuk pembaca tidak penuh (A-I3)', () =
     });
 
     it('tanpa node terbaca: kelompok mirip-tunggal dengan kunci surat:, rangkaian null, tanpa kode/id rangkaian', async () => {
-        // SM Terbatas milik dir_plp (terlihat di daftar admin unitnya, tidak terbaca tanpa
-        // grant) tercatat sebagai anggota dengan unit lama sesditjen, sehingga dir_plp
+        // SM Terbatas milik dir_uji (terlihat di daftar admin unitnya, tidak terbaca tanpa
+        // grant) tercatat sebagai anggota dengan unit lama sesditjen, sehingga dir_uji
         // tidak berada dalam jangkauan rangkaian dan tidak punya tier rangkaian.
         const smTerbatas = await insertSuratMasuk(database, {
-            n: 5, unit: 'dir_plp', nomor: 'T-9/PLP/2026', tanggal: '2026-09-03', perihal: 'Kajian terbatas PLP 5521', sifat: 'Terbatas',
+            n: 5, unit: 'dir_uji', nomor: 'T-9/PLP/2026', tanggal: '2026-09-03', perihal: 'Kajian terbatas PLP 5521', sifat: 'Terbatas',
         });
         const skTanggapan = await insertSuratKeluar(database, {
             n: 6, unit: 'dir_bppt', nomor: 'ND-7/BPPT/2026', tanggal: '2026-09-07', perihal: 'Tanggapan kajian',

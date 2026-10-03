@@ -128,3 +128,12 @@ pengelola berdasarkan pengukuran lingkungan tujuan.
 
 Acuan: [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html)
 dan [PostgreSQL 18 Backup and Restore](https://www.postgresql.org/docs/18/backup.html).
+
+## Integrasi Surat P5: pengerasan skema dan backfill data lama
+
+Untuk migrasi `0048_rangkaian_pengerasan` (pengerasan `rangkaian_id NOT NULL`)
+dan backfill data lama produksi (`backend/scripts/backfill-rangkaian-lama.mjs`),
+ikuti runbook operator khusus: [`docs/RUNBOOK_INTEGRASI_SURAT_P5.md`](RUNBOOK_INTEGRASI_SURAT_P5.md).
+Runbook itu mencakup backup, pre-flight `dilewati`, migrasi, dry-run,
+sign-off, `--apply`, dan penyalaan `RANGKAIAN_DISPOSISI_LAMA_READ` sebagai
+langkah terpisah.

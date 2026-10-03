@@ -4,7 +4,9 @@ import { MemoryRouter } from 'react-router-dom'
 
 const mocks = vi.hoisted(() => ({
     getBySurat: vi.fn(), tandaiSelesai: vi.fn(), tutupDisposisi: vi.fn(), ajukanAkses: vi.fn(), batalRelasi: vi.fn(),
+    koreksiSection: vi.fn(() => null),
 }))
+vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: (props) => mocks.koreksiSection(props) }))
 vi.mock('@/services/rangkaian.service', () => {
     const svc = {
         getBySurat: mocks.getBySurat, tandaiSelesai: mocks.tandaiSelesai, tutupDisposisi: mocks.tutupDisposisi,
@@ -228,7 +230,7 @@ describe('aksi panel (Task 25)', () => {
             { ...detail.disposisi[0], dapatDitutup: true },
             { ...detail.disposisi[0], id: 'd2', targetUnit: { id: 'dir_bppt', nama: 'Dit. BPPT' }, status: 'processed', penanggungJawab: false, dapatDitutup: false },
             // F-I3: baris terbuka yang SM-nya di luar cakupan pengawas — server menyatakan tidak dapat ditutup.
-            { ...detail.disposisi[0], id: 'd3', targetUnit: { id: 'dir_plp', nama: 'Dit. PLP' }, status: 'sent', penanggungJawab: false, dapatDitutup: false },
+            { ...detail.disposisi[0], id: 'd3', targetUnit: { id: 'dir_uji', nama: 'Dit. Uji' }, status: 'sent', penanggungJawab: false, dapatDitutup: false },
             // Tanpa bendera dari server: fail-closed, tidak ada tombol.
             { ...detail.disposisi[0], id: 'd4', targetUnit: { id: 'dir_ktpp', nama: 'Dit. KTPP' }, status: 'received', penanggungJawab: false },
         ]
@@ -239,7 +241,7 @@ describe('aksi panel (Task 25)', () => {
         expect(tabel.getByRole('columnheader', { name: 'Aksi' })).toBeInTheDocument()
         // Hanya baris yang dinyatakan server dapatDitutup yang menawarkan tombol.
         expect(tabel.getAllByRole('button', { name: 'Tutup Disposisi' })).toHaveLength(1)
-        expect(within(tabel.getByText('Dit. PLP').closest('tr')).queryByRole('button', { name: 'Tutup Disposisi' })).toBeNull()
+        expect(within(tabel.getByText('Dit. Uji').closest('tr')).queryByRole('button', { name: 'Tutup Disposisi' })).toBeNull()
         fireEvent.click(tabel.getByRole('button', { name: 'Tutup Disposisi' }))
         const dialog = within(await screen.findByRole('dialog'))
         fireEvent.change(dialog.getByLabelText('Alasan'), { target: { value: 'Unit tujuan tidak dapat memproses' } })
@@ -294,5 +296,17 @@ describe('aksi panel (Task 25)', () => {
         renderPanel({ aksesMelalui: 'pengawas' })
         await screen.findByText('Alur Surat')
         expect(screen.queryByRole('button', { name: /Batalkan Relasi/ })).toBeNull()
+    })
+
+    it('memasang Koreksi Berkas dengan id/status rangkaian dan muatUlang panel (P5-T9-2)', async () => {
+        const onChanged = vi.fn()
+        mocks.getBySurat.mockResolvedValue({ ...detail, rangkaian: { ...detail.rangkaian, status: 'diberkaskan' } })
+        renderPanel({ onChanged })
+        await screen.findByText('Alur Surat')
+        const props = mocks.koreksiSection.mock.lastCall[0]
+        expect(props).toMatchObject({ rangkaianId: 'r1', status: 'diberkaskan' })
+        props.onChanged()
+        await waitFor(() => expect(mocks.getBySurat).toHaveBeenCalledTimes(2))
+        expect(onChanged).toHaveBeenCalledTimes(1)
     })
 })

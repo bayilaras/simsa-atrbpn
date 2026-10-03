@@ -57,6 +57,8 @@ describe('mutation audit architecture policy', () => {
             'services/asal-naskah.service.ts',
             'services/rangkaian/berkas.service.ts',
             'services/rangkaian/rangkaian-link.service.ts',
+            'services/rangkaian-koreksi.service.ts',
+            'services/rangkaian-data-lama.service.ts',
         ];
 
         for (const file of transactionalServices) {

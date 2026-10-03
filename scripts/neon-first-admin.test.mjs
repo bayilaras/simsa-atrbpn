@@ -9,6 +9,7 @@ import { createFirstNeonAdministrator, validateFirstAdministrator } from './neon
 const requireBackend = createRequire(new URL('../backend/package.json', import.meta.url));
 const { PGlite } = requireBackend('@electric-sql/pglite');
 const { pgcrypto } = requireBackend('@electric-sql/pglite/contrib/pgcrypto');
+const { pg_trgm } = requireBackend('@electric-sql/pglite/contrib/pg_trgm');
 
 test('first administrator requires explicit identity and attestation before any database access', async () => {
     const valid = { email: 'Admin@example.invalid', name: 'Test Administrator', password: randomBytes(24).toString('hex'), emailOwnershipVerified: true };
@@ -19,7 +20,7 @@ test('first administrator requires explicit identity and attestation before any 
 });
 
 test('first administrator is atomic, uses native password hashing, records audit, and cannot reset an existing identity', async () => {
-    const db = new PGlite({ extensions: { pgcrypto } });
+    const db = new PGlite({ extensions: { pgcrypto, pg_trgm } });
     const client = { query: async (sql, values) => {
         const result = values ? await db.query(sql, values) : (await db.exec(sql)).at(-1);
         return { ...result, rowCount: result.affectedRows ?? result.rows.length };

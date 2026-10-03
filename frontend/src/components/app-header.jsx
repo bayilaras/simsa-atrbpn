@@ -425,7 +425,9 @@ export function AppHeader() {
                                                     <Clock className="h-3 w-3" />
                                                     {notif.category === 'surat-masuk'
                                                         ? `${notif.daysLeft} hari sejak diterima`
-                                                        : `${notif.daysLeft} hari lagi`
+                                                        : notif.daysLeft < 0
+                                                            ? `lewat ${-notif.daysLeft} hari`
+                                                            : `${notif.daysLeft} hari lagi`
                                                     }
                                                 </div>
                                                 {/* Category badge */}

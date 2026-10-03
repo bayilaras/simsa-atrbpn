@@ -325,6 +325,11 @@ async function runLocalDrill(options) {
     await psql(source, `CREATE DATABASE "${report.database}" TEMPLATE template0 ENCODING 'UTF8' LOCALE 'C';`,
       { mutation: true, label: 'create-synthetic-database' });
     await bootstrap(source);
+    // Langkah privileged pg_trgm (0049) hanya pada sumber, sebelum migrasi, seperti
+    // operator produksi. Restore mereproduksi extension dari arsip; 0001 di
+    // bootstrap restore sengaja tidak memasangnya.
+    await psql(source, await readFile(join(repository, 'backend/src/db/grants/0003_optional_pg_trgm.sql'), 'utf8'),
+      { mutation: true, database: report.database, label: 'privileged-pg-trgm-step' });
 
     // The generated workspace invokes the exact reviewed maintenance entry
     // points. Its cwd has no .env/.npmrc and never enters the user's backend cwd.

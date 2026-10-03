@@ -224,7 +224,7 @@ describe('berkaskan dan unit pengolah', () => {
     const input = { unitPengolahId: 'dir_bppt', klasifikasiItemId: 7, konfirmasi: true as const };
 
     it('unit di luar jangkauan berkas → 422; klasifikasi tidak ada → 422; penghalang → 409', async () => {
-        await expect(berkasService.berkaskan(pengolah, RS, { ...input, unitPengolahId: 'dir_plp' }, audit))
+        await expect(berkasService.berkaskan(pengolah, RS, { ...input, unitPengolahId: 'dir_uji' }, audit))
             .rejects.toMatchObject({ statusCode: 422, message: 'Disposisikan dulu ke unit ini' });
         mocks.state.klasifikasi = [];
         await expect(berkasService.berkaskan(pengolah, RS, input, audit)).rejects.toMatchObject({ statusCode: 422 });
@@ -251,7 +251,7 @@ describe('berkaskan dan unit pengolah', () => {
     });
 
     it('ubah unit pengolah oleh pencatat hanya ke unit dalam jangkauan', async () => {
-        await expect(berkasService.ubahUnitPengolah(pencatat, RS, 'dir_plp', audit)).rejects.toMatchObject({ statusCode: 422 });
+        await expect(berkasService.ubahUnitPengolah(pencatat, RS, 'dir_uji', audit)).rejects.toMatchObject({ statusCode: 422 });
         await expect(berkasService.ubahUnitPengolah(pencatat, RS, 'dir_ptep', audit))
             .resolves.toEqual({ id: RS, unitPengolahId: 'dir_ptep', aksesBaru: [] });
         mocks.lockR.mockResolvedValue([rangkaian({ status: 'diberkaskan' })]);

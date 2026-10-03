@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     keluar: { getAll: vi.fn(), getById: vi.fn(), getStats: vi.fn(), archive: vi.fn() },
     user: { id: 'actor-a', role: 'admin_unit', unitKerjaId: 'unit-a' },
 }))
+vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: mocks.masuk }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: mocks.keluar }))
 vi.mock('@/services/approval.service', () => ({ default: { getPending: vi.fn().mockResolvedValue([]), getHistory: vi.fn().mockResolvedValue([]) } }))

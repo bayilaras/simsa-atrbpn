@@ -337,6 +337,27 @@
       "when": 1789397418667,
       "tag": "0047_unit_kerja_direktorat",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1789397419667,
+      "tag": "0048_rangkaian_pengerasan",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1789397420667,
+      "tag": "0049_lacak_trgm",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789397421667,
+      "tag": "0050_hapus_dir_plp",
+      "breakpoints": true
     }
   ]
 }

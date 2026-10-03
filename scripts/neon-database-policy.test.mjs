@@ -9,9 +9,10 @@ import { assertEmptyNeonDatabase, bootstrapNeonDatabase, migrateNeonDatabase, ve
 const requireBackend = createRequire(resolve(import.meta.dirname, '../backend/package.json'));
 const { PGlite } = requireBackend('@electric-sql/pglite');
 const { pgcrypto } = requireBackend('@electric-sql/pglite/contrib/pgcrypto');
+const { pg_trgm } = requireBackend('@electric-sql/pglite/contrib/pg_trgm');
 const target = { database: 'postgres', admin: 'neon_test_admin' };
 async function setup() {
-  const db = new PGlite({ extensions: { pgcrypto } });
+  const db = new PGlite({ extensions: { pgcrypto, pg_trgm } });
   await db.exec('CREATE ROLE neon_test_admin LOGIN NOSUPERUSER CREATEROLE CREATEDB; ALTER DATABASE postgres OWNER TO neon_test_admin; SET SESSION AUTHORIZATION neon_test_admin');
   const client = { query: async (sql, values) => {
     const result = values ? await db.query(sql, values) : (await db.exec(sql)).at(-1);
@@ -37,6 +38,9 @@ test('non-superuser Neon-style bootstrap runs all migrations, preserves runtime 
   try {
     await bootstrapNeonDatabase(client, { ...target, passwords });
     assert.equal((await db.query("SELECT count(*)::int AS count FROM pg_roles WHERE rolname='injected_role'")).rows[0].count, 0);
+    // 0049 (index trigram Lacak) mensyaratkan pg_trgm milik administrator grant, bukan migrator.
+    assert.deepEqual((await db.query("SELECT extname, pg_get_userbyid(extowner) AS owner FROM pg_extension WHERE extname IN ('pgcrypto','pg_trgm') ORDER BY extname")).rows,
+      [{ extname: 'pg_trgm', owner: 'neon_test_admin' }, { extname: 'pgcrypto', owner: 'neon_test_admin' }]);
     const roleDefaults = (await db.query(`SELECT s.setconfig FROM pg_db_role_setting s
       JOIN pg_roles r ON r.oid=s.setrole WHERE r.rolname='simsa_migration'`)).rows[0].setconfig;
     assert.ok(roleDefaults.includes('search_path=public, pg_catalog'));

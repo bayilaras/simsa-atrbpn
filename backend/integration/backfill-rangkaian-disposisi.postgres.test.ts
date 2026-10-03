@@ -22,7 +22,7 @@ const surat: Record<string, string> = {};
 
 beforeAll(async () => {
     if (!adaPostgres) return;
-    h = await createRangkaianTestDatabase('backfill');
+    h = await createRangkaianTestDatabase('backfill', { stopBefore: '0048_rangkaian_pengerasan' });
     dbState.db = h.db;
     await h.seedUnits();
     surat.aktif = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-1/2025', perihal: 'Permohonan data lama' });
@@ -30,7 +30,7 @@ beforeAll(async () => {
     await h.insertDistribusi({ suratMasukId: surat.aktif, sourceUnitId: 'sesditjen', targetUnitId: 'dir_ptep', status: 'rejected' });
     surat.selesai = await h.insertSuratMasuk({ unitKerjaId: 'ditjen', nomorSurat: 'SM-2/2025', perihal: null });
     await h.insertDistribusi({ suratMasukId: surat.selesai, sourceUnitId: 'ditjen', targetUnitId: 'dir_ktpp', status: 'processed' });
-    await h.insertDistribusi({ suratMasukId: surat.selesai, sourceUnitId: 'ditjen', targetUnitId: 'dir_plp', status: 'processed' });
+    await h.insertDistribusi({ suratMasukId: surat.selesai, sourceUnitId: 'ditjen', targetUnitId: 'dir_uji', status: 'processed' });
     surat.rahasia = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-3/2025', perihal: 'Tukar guling rahasia', sifatSurat: 'Rahasia' });
     await h.insertDistribusi({ suratMasukId: surat.rahasia, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', status: 'received' });
     surat.tanpaDisposisi = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-4/2025' });
@@ -95,7 +95,7 @@ describe.skipIf(!adaPostgres)('backfill: rangkaian asal semua distribusi rejecte
     let suratDitolak: string;
 
     beforeAll(async () => {
-        hDitolak = await createRangkaianTestDatabase('ditolak');
+        hDitolak = await createRangkaianTestDatabase('ditolak', { stopBefore: '0048_rangkaian_pengerasan' });
         dbState.db = hDitolak.db;
         await hDitolak.seedUnits();
         suratDitolak = await hDitolak.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-5/2025', perihal: 'Ditolak seluruh unit' });
@@ -141,7 +141,7 @@ describe.skipIf(!adaPostgres)('backfill: melewati anggota rangkaian yang sudah d
     let rangkaianDiberkaskanId: string;
 
     beforeAll(async () => {
-        hBerkas = await createRangkaianTestDatabase('berkas');
+        hBerkas = await createRangkaianTestDatabase('berkas', { stopBefore: '0048_rangkaian_pengerasan' });
         dbState.db = hBerkas.db;
         await hBerkas.seedUnits();
         const klasifikasiId = await hBerkas.ensureKlasifikasi();
@@ -203,7 +203,7 @@ describe.skipIf(!adaPostgres)('backfill: surat yang sudah anggota rangkaian akti
     let rangkaianAda: string;
 
     beforeAll(async () => {
-        hAda = await createRangkaianTestDatabase('sudahada');
+        hAda = await createRangkaianTestDatabase('sudahada', { stopBefore: '0048_rangkaian_pengerasan' });
         dbState.db = hAda.db;
         await hAda.seedUnits();
         const tu = await hAda.seedUser('admin_unit', 'sesditjen');

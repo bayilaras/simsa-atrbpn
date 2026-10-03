@@ -282,7 +282,7 @@ describe('GET /api/rangkaian/:id — dapatDitutup per disposisi (F-I3)', () => {
             INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber)
                 VALUES ('${RANGKAIAN.rs1}', '${SURAT.smBagian}', 'bagian_umum', 'anggota', 'tautan');
             INSERT INTO surat_distributions (id, surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id)
-                VALUES ('${DIST_BAGIAN}', '${SURAT.smBagian}', 'bagian_umum', 'dir_plp', 'sent', '${RANGKAIAN.rs1}');
+                VALUES ('${DIST_BAGIAN}', '${SURAT.smBagian}', 'bagian_umum', 'dir_uji', 'sent', '${RANGKAIAN.rs1}');
         `);
     });
 

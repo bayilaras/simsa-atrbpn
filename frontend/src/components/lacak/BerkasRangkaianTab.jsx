@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { ResourcePagination } from '@/components/ResourcePagination'
 import { usePaginatedResource } from '@/hooks/use-paginated-resource'
 import rangkaianService from '@/services/rangkaian.service'
+import TutupMassalDataLama from '@/components/surat/TutupMassalDataLama'
 import { LABEL_STATUS_RANGKAIAN } from '@/lib/lacak-labels'
 import { lacakHref } from '@/lib/lacak-link'
 
@@ -58,6 +59,8 @@ export function BerkasRangkaianTab() {
                     </select>
                 </div>
             </div>
+
+            {filter.asal === 'data_lama' && <TutupMassalDataLama onSelesai={resource.reload} />}
 
             <div className="overflow-x-auto rounded-md border">
                 <table className="w-full min-w-[720px] text-sm">
