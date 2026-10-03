@@ -89,6 +89,29 @@ Authentication memakai session-only persistence; cache Firestore hanya memory.
 Setelah akses dicabut, data yang sudah dilihat/diekspor orang tidak bisa ditarik
 kembali. Akses server berikutnya tetap diperiksa Rules.
 
+## Pemulihan gangguan saat dipakai
+
+- Bila pemuatan katalog gagal karena jaringan, gunakan tombol coba lagi.
+  Daftar arsip dan penulisan baru diaktifkan setelah seluruh referensi berhasil
+  dimuat. Penolakan hak akses tetap memblokir data; coba ulang bukan bypass.
+- Bila simpan **arsip baru** belum terkonfirmasi, isi yang sudah dikirim dikunci.
+  Coba ulang dari editor yang sama agar memakai identitas transaksi yang sama.
+  Aplikasi memeriksa rekaman beserta riwayat awal sebelum menulis lagi; hasil
+  edit/penutupan yang lebih baru tidak ditimpa.
+- Menutup editor, mengganti akun/unit atau memuat ulang halaman menghilangkan
+  identitas percobaan tersebut, **bukan membatalkan simpan di server**. Periksa
+  nomor arsip dan riwayat sebelum membuat draf pengganti. Nomor arsip tidak
+  dipaksa unik, sehingga membuat draf baru bukan cara aman mengulang simpan.
+- Saat keluar, data segera disembunyikan. Login lain diblokir sampai logout
+  selesai. Jika gagal, gunakan tombol **Coba keluar lagi**; jangan menganggap
+  sesi Firebase sudah berakhir hanya karena daftar arsip tidak terlihat.
+
+Perlindungan simpan ulang ini berlaku pada editor/sesi yang sama, bukan jaminan
+tanpa duplikasi setelah browser ditutup atau antarperangkat. Isi draf dan token
+percobaan tidak disimpan ke localStorage untuk pemulihan lintas sesi.
+Hasil regresi, uji browser offline/online, dan batas pembuktiannya dicatat di
+[RECOVERY-VERIFICATION.md](RECOVERY-VERIFICATION.md).
+
 ## Jalur rilis Spark (belum dieksekusi)
 
 1. Review PR baru dan semua required checks pada **merge commit baru**. Hasil

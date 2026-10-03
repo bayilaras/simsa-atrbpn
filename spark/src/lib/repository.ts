@@ -14,6 +14,7 @@ import {
   where,
   type DocumentData,
   type DocumentReference,
+  type DocumentSnapshot,
   type Firestore,
   type QueryConstraint,
   type QueryDocumentSnapshot,
@@ -37,6 +38,7 @@ import {
   type Classification,
   type HistoryEntry,
   type RecordCursor,
+  type RecordCreateAttempt,
   type RecordInput,
   type RecordPage,
   type RecordRow,
@@ -51,6 +53,11 @@ interface CursorState {
   referenceNumber?: string;
   snapshot: QueryDocumentSnapshot<DocumentData>;
 }
+interface CreateAttemptState {
+  unitId: string;
+  input: Readonly<RecordInput>;
+  record: DocumentReference<DocumentData>;
+}
 export interface RecordListOptions {
   cursor?: RecordCursor | null;
   referenceNumber?: string;
@@ -60,11 +67,95 @@ export interface RecordListOptions {
 export class SparkRepository {
   private readonly actorUid: string;
   private readonly cursors = new WeakMap<RecordCursor, CursorState>();
+  private readonly createAttempts = new WeakMap<
+    RecordCreateAttempt,
+    CreateAttemptState
+  >();
   constructor(
     private readonly db: Firestore,
     actorUid: string,
   ) {
     this.actorUid = validateActorUid(actorUid);
+  }
+
+  /** Retain this token for retries. A new token or page reload is a new draft. */
+  createRecordAttempt(unitId: string, value: RecordInput): RecordCreateAttempt {
+    const id = validatePathId(unitId, "unitId"),
+      input = Object.freeze(validateRecordInput(value)),
+      attempt = Object.freeze({}) as RecordCreateAttempt;
+    this.createAttempts.set(attempt, {
+      unitId: id,
+      input,
+      record: doc(collection(this.db, "sparkUnits", id, "records")),
+    });
+    return attempt;
+  }
+
+  private sameInput(left: RecordInput, right: Readonly<RecordInput>): boolean {
+    return (Object.keys(right) as (keyof RecordInput)[]).every(
+      (key) => left[key] === right[key],
+    );
+  }
+
+  private confirmedCreate(
+    state: CreateAttemptState,
+    record: DocumentSnapshot<DocumentData>,
+    history: DocumentSnapshot<DocumentData>,
+  ): boolean {
+    if (!record.exists() || !history.exists()) return false;
+    const current = parseRecordRow(record.id, record.data(), state.unitId),
+      initial = parseHistory(
+        "v1", history.data(), state.record.id, state.unitId,
+      ).snapshot;
+    if (
+      record.id !== state.record.id ||
+      history.id !== "v1" ||
+      initial.version !== 1 ||
+      initial.status === "archived" ||
+      !this.sameInput(initial as RecordInput, state.input) ||
+      initial.createdBy !== this.actorUid ||
+      initial.updatedBy !== this.actorUid ||
+      !initial.createdAt.isEqual(initial.updatedAt) ||
+      current.createdBy !== initial.createdBy ||
+      !current.createdAt.isEqual(initial.createdAt)
+    )
+      return false;
+    // A later edit/closure is not overwritten. Its immutable origin still proves
+    // this exact draft committed; a v1 current record must match every v1 field.
+    return (
+      current.version > 1 ||
+      (current.status !== "archived" &&
+        this.sameInput(current as RecordInput, state.input) &&
+        current.updatedBy === this.actorUid &&
+        current.updatedAt.isEqual(initial.updatedAt))
+    );
+  }
+
+  private async reconcileCreateFailure(
+    error: unknown,
+    state: CreateAttemptState,
+  ): Promise<void> {
+    // Do not reinterpret validation errors, or accept a locally cached write as
+    // proof. Both documents must remain readable from the server under Rules.
+    if (
+      error instanceof DomainValidationError ||
+      error instanceof RecordConflictError ||
+      error === null ||
+      typeof error !== "object" ||
+      !("code" in error)
+    )
+      throw error;
+    try {
+      const [record, history] = await Promise.all([
+        getDocFromServer(state.record),
+        getDocFromServer(doc(state.record, "history", "v1")),
+      ]);
+      if (this.confirmedCreate(state, record, history)) return;
+    } catch {
+      // Preserve the original denial/failure when permitted reads cannot prove
+      // the complete atomic record/history pair. No retry or replacement ID.
+    }
+    throw error;
   }
 
   watchProfile(
@@ -250,9 +341,29 @@ export class SparkRepository {
     unitId: string,
     value: RecordInput,
     existing?: RecordRow,
+    createAttempt?: RecordCreateAttempt,
   ): Promise<string> {
     const id = validatePathId(unitId, "unitId"),
       input = validateRecordInput(value);
+    if (existing && createAttempt !== undefined)
+      throw new DomainValidationError(
+        "createAttempt", "Draf baru tidak dapat dipakai untuk menyunting rekaman.",
+      );
+    let attempt: CreateAttemptState | undefined;
+    if (!existing) {
+      const token = createAttempt === undefined
+        ? this.createRecordAttempt(id, input)
+        : createAttempt;
+      attempt = this.createAttempts.get(token);
+      if (
+        !attempt || attempt.unitId !== id ||
+        !this.sameInput(input, attempt.input)
+      )
+        throw new DomainValidationError(
+          "createAttempt",
+          "Percobaan ulang harus memakai draf, pengguna, unit, dan isi awal yang sama. Periksa penyimpanan awal sebelum mengganti isi draf.",
+        );
+    }
     if (existing && existing.unitId !== id)
       throw new DomainValidationError("unitId", "Unit rekaman tidak sesuai.");
     if (
@@ -268,7 +379,7 @@ export class SparkRepository {
           "records",
           validatePathId(existing.id, "recordId"),
         )
-      : doc(collection(this.db, "sparkUnits", id, "records"));
+      : attempt!.record;
     await runTransaction(this.db, async (transaction) => {
       let current: RecordRow | undefined;
       if (existing) {
@@ -278,6 +389,15 @@ export class SparkRepository {
         if (current.version !== existing.version)
           throw new RecordConflictError();
         if (current.status === "archived") throw new ArchivedRecordError();
+      } else {
+        const [created, history] = await Promise.all([
+          transaction.get(record),
+          transaction.get(doc(record, "history", "v1")),
+        ]);
+        if (created.exists() || history.exists()) {
+          if (this.confirmedCreate(attempt!, created, history)) return;
+          throw new RecordConflictError();
+        }
       }
       await this.requireActiveCatalogues(transaction, id, input);
       const version = current ? current.version + 1 : 1;
@@ -297,7 +417,9 @@ export class SparkRepository {
         at: serverTimestamp(),
       });
     }).catch((error) =>
-      this.rethrowWriteFailure(error, record, id, existing?.version),
+      attempt
+        ? this.reconcileCreateFailure(error, attempt)
+        : this.rethrowWriteFailure(error, record, id, existing?.version),
     );
     return record.id;
   }

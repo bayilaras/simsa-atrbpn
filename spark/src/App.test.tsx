@@ -9,7 +9,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Auth, User } from "firebase/auth";
 import { Timestamp, type Firestore } from "firebase/firestore";
-import type { RecordPage, RecordRow, SparkProfile } from "./lib/domain";
+import { DomainValidationError, type RecordCreateAttempt, type RecordPage, type RecordRow, type SparkProfile } from "./lib/domain";
 import App from "./App";
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   listLocations: vi.fn(),
   listRecords: vi.fn(),
   saveRecord: vi.fn(),
+  createRecordAttempt: vi.fn(),
   archiveRecord: vi.fn(),
   listHistory: vi.fn(),
 }));
@@ -57,6 +58,7 @@ vi.mock("./lib/repository", () => ({
     listLocations = mocks.listLocations;
     listRecords = mocks.listRecords;
     saveRecord = mocks.saveRecord;
+    createRecordAttempt = mocks.createRecordAttempt;
     archiveRecord = mocks.archiveRecord;
     listHistory = mocks.listHistory;
   },
@@ -97,6 +99,18 @@ function record(overrides: Partial<RecordRow> = {}): RecordRow {
 }
 function page(records: RecordRow[] = [record()]): RecordPage {
   return { records, cursor: null, hasMore: false };
+}
+function fillNewRecord(dialog: HTMLElement) {
+  for (const [label, value] of [
+    ["Judul arsip", "Metadata baru"],
+    ["Nomor referensi", "ARS/002"],
+    ["Tanggal arsip", "2026-09-06"],
+    ["Klasifikasi", "class-a"],
+    ["Lokasi fisik", "loc-a"],
+  ])
+    fireEvent.change(within(dialog).getByLabelText(label!), {
+      target: { value },
+    });
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -180,6 +194,7 @@ beforeEach(() => {
   ]);
   mocks.listRecords.mockResolvedValue(page());
   mocks.saveRecord.mockResolvedValue("record-created");
+  mocks.createRecordAttempt.mockImplementation(() => Object.freeze({}) as RecordCreateAttempt);
   mocks.archiveRecord.mockResolvedValue(undefined);
   mocks.listHistory.mockResolvedValue([
     { id: "v1", snapshot: record(), actorUid: "user-a", at: timestamp },
@@ -392,6 +407,7 @@ describe("metadata workspace", () => {
           status: "draft",
         },
         undefined,
+        expect.any(Object),
       ),
     );
     expect(
@@ -422,6 +438,7 @@ describe("metadata workspace", () => {
         expect.objectContaining({ id: "record-a", version: 1 }),
       ),
     );
+    expect(mocks.createRecordAttempt).not.toHaveBeenCalled();
     expect(
       screen.queryByText("Metadata tersimpan dan dikonfirmasi server."),
     ).not.toBeInTheDocument();
@@ -432,6 +449,100 @@ describe("metadata workspace", () => {
     expect(
       await screen.findByText("Metadata tersimpan dan dikonfirmasi server."),
     ).toBeInTheDocument();
+  });
+
+  it("keeps one create attempt across retries and clears it only when the editor finishes", async () => {
+    signedIn();
+    mocks.saveRecord.mockRejectedValueOnce({ code: "unavailable" });
+    render(<App services={services} />);
+    await screen.findByText("Berkas sintetis A");
+    fireEvent.click(screen.getByRole("button", { name: "Tambah arsip" }));
+    let dialog = screen.getByRole("dialog");
+    fillNewRecord(dialog);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan metadata" }));
+    await within(dialog).findByText(/Koneksi ke database belum tersedia/);
+    expect(mocks.createRecordAttempt).toHaveBeenCalledTimes(1);
+    const firstToken = mocks.createRecordAttempt.mock.results[0]!.value;
+    expect(mocks.saveRecord.mock.calls[0]?.[3]).toBe(firstToken);
+    expect(within(dialog).getByText(/Menutup dialog atau memuat ulang halaman mengakhiri/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Judul arsip")).toBeDisabled();
+    expect(within(dialog).getByLabelText("Status")).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan metadata" }));
+    await screen.findByText("Metadata tersimpan dan dikonfirmasi server.");
+    expect(mocks.saveRecord.mock.calls[1]?.[3]).toBe(firstToken);
+    expect(mocks.saveRecord.mock.calls[1]?.[1]).toEqual(mocks.saveRecord.mock.calls[0]?.[1]);
+    expect(mocks.createRecordAttempt).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Tambah arsip" }));
+    dialog = screen.getByRole("dialog");
+    fillNewRecord(dialog);
+    mocks.saveRecord.mockRejectedValueOnce({ code: "unavailable" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan metadata" }));
+    await within(dialog).findByText(/Koneksi ke database belum tersedia/);
+    const secondToken = mocks.saveRecord.mock.calls[2]?.[3];
+    expect(secondToken).not.toBe(firstToken);
+    expect(mocks.createRecordAttempt).toHaveBeenCalledTimes(2);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Batal" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tambah arsip" }));
+    dialog = screen.getByRole("dialog");
+    fillNewRecord(dialog);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan metadata" }));
+    await screen.findByText("Metadata tersimpan dan dikonfirmasi server.");
+    expect(mocks.createRecordAttempt).toHaveBeenCalledTimes(3);
+    expect(mocks.saveRecord.mock.calls[3]?.[3]).not.toBe(secondToken);
+  });
+
+  it("explains an invalid create attempt without silently replacing it", async () => {
+    signedIn();
+    mocks.saveRecord.mockRejectedValueOnce({ code: "unavailable" });
+    render(<App services={services} />);
+    await screen.findByText("Berkas sintetis A");
+    fireEvent.click(screen.getByRole("button", { name: "Tambah arsip" }));
+    const dialog = screen.getByRole("dialog");
+    fillNewRecord(dialog);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan metadata" }));
+    await within(dialog).findByText(/Koneksi ke database belum tersedia/);
+    expect(within(dialog).getByLabelText("Judul arsip")).toBeDisabled();
+    mocks.saveRecord.mockRejectedValueOnce(new DomainValidationError(
+      "createAttempt", "Percobaan ulang harus memakai draf, pengguna, unit, dan isi awal yang sama.",
+    ));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan metadata" }));
+    await within(dialog).findByText(/Percobaan ulang harus memakai draf/);
+    expect(mocks.createRecordAttempt).toHaveBeenCalledTimes(1);
+    expect(mocks.saveRecord.mock.calls[1]?.[3]).toBe(mocks.saveRecord.mock.calls[0]?.[3]);
+  });
+
+  it("does not allocate a create attempt for invalid input", async () => {
+    signedIn();
+    render(<App services={services} />);
+    await screen.findByText("Berkas sintetis A");
+    fireEvent.click(screen.getByRole("button", { name: "Tambah arsip" }));
+    fireEvent.submit(screen.getByRole("dialog").querySelector("form")!);
+    expect(mocks.createRecordAttempt).not.toHaveBeenCalled();
+    expect(mocks.saveRecord).not.toHaveBeenCalled();
+  });
+
+  it("never reuses a create attempt after the unit context changes", async () => {
+    signedIn();
+    mocks.saveRecord.mockRejectedValueOnce({ code: "unavailable" });
+    render(<App services={services} />);
+    await screen.findByText("Berkas sintetis A");
+    fireEvent.click(screen.getByRole("button", { name: "Tambah arsip" }));
+    let dialog = screen.getByRole("dialog");
+    fillNewRecord(dialog);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan metadata" }));
+    await within(dialog).findByText(/Koneksi ke database belum tersedia/);
+    const previousToken = mocks.saveRecord.mock.calls[0]?.[3];
+    await emitProfile({ ...operator, unitId: "unit-b" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await screen.findByText("Unit Sintetis B");
+    fireEvent.click(screen.getByRole("button", { name: "Tambah arsip" }));
+    dialog = screen.getByRole("dialog");
+    fillNewRecord(dialog);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan metadata" }));
+    await screen.findByText("Metadata tersimpan dan dikonfirmasi server.");
+    expect(mocks.createRecordAttempt).toHaveBeenCalledTimes(2);
+    expect(mocks.saveRecord.mock.calls[1]?.[0]).toBe("unit-b");
+    expect(mocks.saveRecord.mock.calls[1]?.[3]).not.toBe(previousToken);
   });
 
   it("archives with a reason, preserves metadata and hides edits for archived rows", async () => {
@@ -536,6 +647,103 @@ describe("metadata workspace", () => {
 });
 
 describe("stale data and access revocation", () => {
+  it("allows reload after a failed create invalidates an unfinished initial list", async () => {
+    signedIn();
+    const old = deferred<RecordPage>();
+    mocks.listRecords.mockImplementationOnce(() => old.promise);
+    mocks.saveRecord.mockRejectedValueOnce({ code: "unavailable" });
+    render(<App services={services} />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Tambah arsip" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Tambah arsip" }));
+    const dialog = screen.getByRole("dialog");
+    for (const [label, value] of [
+      ["Judul arsip", "Metadata baru"],
+      ["Nomor referensi", "ARS/002"],
+      ["Tanggal arsip", "2026-09-06"],
+      ["Klasifikasi", "class-a"],
+      ["Lokasi fisik", "loc-a"],
+    ])
+      fireEvent.change(within(dialog).getByLabelText(label!), {
+        target: { value },
+      });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Simpan metadata" }));
+    await within(dialog).findByText(/Koneksi ke database belum tersedia/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Batal" }));
+    expect(screen.getByRole("button", { name: "Muat ulang" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Muat ulang" }));
+    await screen.findByText("Berkas sintetis A");
+    await act(async () => old.resolve(page([record({ title: "DAFTAR LAMA" })])));
+    expect(screen.queryByText("DAFTAR LAMA")).not.toBeInTheDocument();
+  });
+
+  it("blocks competing login and stale auth callbacks during and after logout", async () => {
+    signedIn();
+    const pending = deferred<void>();
+    mocks.signOut.mockImplementation(() => pending.promise);
+    render(<App services={services} />);
+    await screen.findByText("Berkas sintetis A");
+    fireEvent.click(screen.getByRole("button", { name: "Keluar" }));
+    expect(screen.queryByText("Berkas sintetis A")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Masuk dengan Google" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Masuk dengan Google" }));
+    expect(mocks.signInWithPopup).not.toHaveBeenCalled();
+    await emitAuth(user);
+    expect(screen.queryByText("Berkas sintetis A")).not.toBeInTheDocument();
+    await act(async () => pending.resolve());
+    await emitAuth(user);
+    expect(screen.queryByText("Berkas sintetis A")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Masuk dengan Google" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Masuk dengan Google" }));
+    await emitAuth(user);
+    expect(await screen.findByText("Berkas sintetis A")).toBeInTheDocument();
+  });
+
+  it("keeps a failed logout closed and provides an explicit safe retry", async () => {
+    signedIn();
+    mocks.signOut.mockRejectedValueOnce(new Error("synthetic persistence failure"));
+    render(<App services={services} />);
+    await screen.findByText("Berkas sintetis A");
+    fireEvent.click(screen.getByRole("button", { name: "Keluar" }));
+    const retry = await screen.findByRole("button", { name: "Coba keluar lagi" });
+    await emitAuth(user);
+    expect(screen.queryByText("Berkas sintetis A")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Masuk dengan Google" })).toBeDisabled();
+    mocks.signOut.mockResolvedValueOnce(undefined);
+    fireEvent.click(retry);
+    await waitFor(() => expect(mocks.signOut).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByLabelText("Email")).toBeEnabled());
+    expect(screen.queryByRole("button", { name: "Coba keluar lagi" })).not.toBeInTheDocument();
+  });
+
+  it("retries a transient catalogue failure without treating it as access revocation", async () => {
+    signedIn();
+    mocks.listClassifications.mockRejectedValueOnce({ code: "unavailable" });
+    render(<App services={services} />);
+    const retry = await screen.findByRole("button", { name: "Coba muat referensi lagi" });
+    expect(screen.queryByRole("heading", { name: "Akses belum tersedia" })).not.toBeInTheDocument();
+    expect(mocks.listRecords).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Tambah arsip" })).toBeDisabled();
+    expect(screen.queryByText("Berkas sintetis A")).not.toBeInTheDocument();
+    fireEvent.click(retry);
+    expect(await screen.findByText("Berkas sintetis A")).toBeInTheDocument();
+    expect(mocks.getUnit).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Tambah arsip" })).toBeEnabled();
+  });
+
+  it("does not offer a catalogue retry after permission denial", async () => {
+    signedIn();
+    mocks.listLocations.mockRejectedValueOnce({ code: "permission-denied" });
+    render(<App services={services} />);
+    await screen.findByRole("heading", { name: "Akses belum tersedia" });
+    expect(screen.queryByRole("button", { name: "Coba muat referensi lagi" })).not.toBeInTheDocument();
+    expect(mocks.listRecords).not.toHaveBeenCalled();
+    expect(screen.queryByText("Berkas sintetis A")).not.toBeInTheDocument();
+  });
+
   it("clears the previous unit immediately and never displays its late response", async () => {
     signedIn();
     const old = deferred<RecordPage>();
