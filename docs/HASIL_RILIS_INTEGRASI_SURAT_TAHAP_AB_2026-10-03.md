@@ -51,7 +51,7 @@ Rollback kode aman kapan pun: skema 0047 bersifat aditif dan kode lama berjalan 
 
 ## Belum selesai
 
-- Penugasan `admin_unit` untuk `dir_bppt`, `dir_ptep`, `dir_ktpp` (0047 membuat unit itu dapat dipilih sebagai target disposisi). Sampai ada penugasan, TU tidak mengirim disposisi ke direktorat.
+- Penugasan `admin_unit` untuk `dir_bppt`, `dir_ptep`, `dir_ktpp`. **Ditunda atas keputusan pengguna (3 Oktober 2026).** Sebagai pengaman, ketiga unit diubah ke `can_receive_distribution = false` lewat `PUT /api/settings/unit-kerja/:id` oleh super_admin (tercatat di log audit), sehingga tidak dapat dipilih sebagai tujuan disposisi; terverifikasi: daftar tujuan disposisi dari Sesditjen hanya berisi `ditjen`. Setelah `admin_unit` ditugaskan, nyalakan kembali `canReceiveDistribution: true` untuk unit tersebut. Sampai ada penugasan, TU tidak mengirim disposisi ke direktorat.
 - Gerbang §2/§4 dokumen rilis: sign-off baris gerbang, uji asap P4 (dapat dijalankan di produksi dengan data sintetis), catatan rilis TU, blok Pengesahan laporan pre-flight.
 - Salinan offsite bundle + kunci Backup #1 (uji pemulihan sudah lulus, catatan 7).
 - Perbaikan `scripts/neon-backup.mjs restore-verify` agar membuat login `simsa_worker` seperti `operations-recovery-database.mjs`.
