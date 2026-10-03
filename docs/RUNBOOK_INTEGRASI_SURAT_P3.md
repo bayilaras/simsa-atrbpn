@@ -218,8 +218,8 @@ tampilan sementara. [C-M3]
    `simsa_api` (read-only; hanya `EXPLAIN (ANALYZE)` pada kueri seed Lacak
    dengan kata kunci contoh) — catat waktu eksekusi; > 2 detik = batas
    `statement_timeout` Lacak, eskalasi ke P4.
-3. Pastikan `admin_unit` sudah ditugaskan untuk `dir_bppt`, `dir_ptep`,
-   `dir_ktpp`, `dir_plp` sebelum flag apa pun dinyalakan (grant disposisi
+3. Pastikan `admin_unit` sudah ditugaskan untuk `dir_bppt`, `dir_ptep`, dan
+   `dir_ktpp` sebelum flag apa pun dinyalakan (grant disposisi
    hanya diajukan ke admin aktif unit target).
 4. Catatan rilis TU: 409 "Terjadi konflik penyimpanan bersamaan; silakan coba
    lagi." dapat muncul sesekali saat dua pengguna mengubah surat yang sama

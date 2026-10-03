@@ -100,7 +100,7 @@ describe('requestViaRangkaian', () => {
         // PLP hanya terjangkau lewat disposisi ini (PTEP tetap terjangkau karena menulis anggota rs2).
         const disposisiPlp = '52000000-0000-4000-8000-0000000000aa';
         await database.exec(`INSERT INTO surat_distributions (id, surat_masuk_id, source_unit_id, target_unit_id, status, rangkaian_id)
-            VALUES ('${disposisiPlp}', '${SURAT.smTerbatas}', 'sesditjen', 'dir_plp', 'sent', '${RANGKAIAN.rs2}')`);
+            VALUES ('${disposisiPlp}', '${SURAT.smTerbatas}', 'sesditjen', 'dir_uji', 'sent', '${RANGKAIAN.rs2}')`);
         const grant = await grants.recordAccessGrantService.requestViaRangkaian(PENGGUNA.plp, ANGGOTA.rs2Sm, purpose, audit(USER_ID.plp));
         await database.exec(`UPDATE surat_distributions SET status = 'rejected', rejection_reason = 'Bukan tugas unit ini' WHERE id = '${disposisiPlp}'`);
         await expect(grants.recordAccessGrantService.approve(grant.id, USER_ID.approver, 'Disetujui untuk tindak lanjut', besok(), audit(USER_ID.approver)))

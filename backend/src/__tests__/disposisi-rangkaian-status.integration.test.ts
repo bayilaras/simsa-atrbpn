@@ -164,7 +164,7 @@ describe('C-M1: disposisiTerbukaSql bentuk jumlah setara bentuk OR lama', () => 
                 ('${SM_A}','sesditjen','dir_ptep','received',NULL),
                 ('${SM_B}','sesditjen','dir_bppt','sent',NULL),
                 ('${SM_B}','sesditjen','dir_ptep','processed',NULL),
-                ('${SM_B}','sesditjen','dir_plp','rejected',NULL),
+                ('${SM_B}','sesditjen','dir_uji','rejected',NULL),
                 ('${SM_C}','sesditjen','dir_bppt','sent',NULL);
             UPDATE surat_masuk SET is_deleted = true WHERE id = '${SM_C}';
         `);

@@ -109,9 +109,9 @@ describe.skipIf(!adaPostgres)('kotak disposisi dan penyelesaian di PostgreSQL', 
     it('surat masuk terhapus tidak tampil di kotak disposisi (T10-6)', async () => {
         const sm = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-34/2026', perihal: 'Akan dihapus' });
         const [row] = await distributionService.distributeMany({ suratMasukId: sm, sourceUnitId: 'sesditjen', sentBy: tu.id,
-            targets: [{ unitKerjaId: 'dir_plp' }] }, audit(tu));
+            targets: [{ unitKerjaId: 'dir_uji' }] }, audit(tu));
         await h.query('UPDATE surat_masuk SET is_deleted = true WHERE id = $1', [sm]);
-        const { data, pagination } = await distributionService.findInbox('dir_plp', {}, bppt);
+        const { data, pagination } = await distributionService.findInbox('dir_uji', {}, bppt);
         expect(data.map((r: any) => r.id)).not.toContain(row.id);
         expect(pagination.total).toBe(0);
     });
@@ -231,9 +231,9 @@ describe.skipIf(!adaPostgres)('kotak disposisi dan penyelesaian di PostgreSQL', 
 
         it('Terima ditolak 403 untuk surat yang belum dapat dibaca, tetapi Tolak diizinkan', async () => {
             const { sm, dist } = await disposisiTerkendali({
-                nomorSurat: 'T-38/2026', perihal: 'Tata ruang', sifatSurat: 'Terbatas', targetUnitId: 'dir_plp', instruction: 'Isi terbatas',
+                nomorSurat: 'T-38/2026', perihal: 'Tata ruang', sifatSurat: 'Terbatas', targetUnitId: 'dir_uji', instruction: 'Isi terbatas',
             });
-            const plp = await h.seedUser('admin_unit', 'dir_plp');
+            const plp = await h.seedUser('admin_unit', 'dir_uji');
             auth.state.user = plp;
             await request(app).put(`/api/distributions/${dist}/receive`).expect(403);
             const tolak = await request(app).put(`/api/distributions/${dist}/reject`).send({ reason: 'Bukan kewenangan unit kami' }).expect(200);

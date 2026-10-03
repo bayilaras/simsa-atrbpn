@@ -70,14 +70,6 @@ const unitKerjaData = [
         unitType: 'direktorat',
         canReceiveDistribution: true,
     },
-    {
-        id: 'dir_plp',
-        name: 'Direktorat PLP',
-        description: 'Direktorat Pengendalian dan Penggunaan Tanah',
-        parentId: 'ditjen',
-        unitType: 'direktorat',
-        canReceiveDistribution: true,
-    },
 ];
 
 async function seedUnitKerja() {
@@ -112,8 +104,7 @@ async function seedUnitKerja() {
         console.log('  │   └── bagian_umum (no distribution)');
         console.log('  ├── dir_bppt (Direktorat BPPT)');
         console.log('  ├── dir_ptep (Direktorat PTEP)');
-        console.log('  ├── dir_ktpp (Direktorat KTPP)');
-        console.log('  └── dir_plp (Direktorat PLP)');
+        console.log('  └── dir_ktpp (Direktorat KTPP)');
 
     } catch (error) {
         console.error('❌ Error seeding unit_kerja:', error);

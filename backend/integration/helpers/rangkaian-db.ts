@@ -91,7 +91,7 @@ export async function createRangkaianTestDatabase(label: string, options: { stop
             ('dir_bppt', 'Dit. BPPT', 'ditjen', 'direktorat', true),
             ('dir_ptep', 'Dit. PTEP', 'ditjen', 'direktorat', true),
             ('dir_ktpp', 'Dit. KTPP', 'ditjen', 'direktorat', true),
-            ('dir_plp', 'Dit. PLP', 'ditjen', 'direktorat', true),
+            ('dir_uji', 'Dit. Uji', 'ditjen', 'direktorat', true),
             ('bagian_umum', 'Bagian Umum', 'sesditjen', 'bagian', true)
             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit_type = EXCLUDED.unit_type,
                 can_receive_distribution = EXCLUDED.can_receive_distribution`);

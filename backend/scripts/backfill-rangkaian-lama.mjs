@@ -27,8 +27,6 @@ export const LABEL_SEED = Object.freeze([
   { label: 'dit. ptep', unit: 'dir_ptep', catatan: null },
   { label: 'ktpp', unit: 'dir_ktpp', catatan: null },
   { label: 'dit. ktpp', unit: 'dir_ktpp', catatan: null },
-  { label: 'plp', unit: 'dir_plp', catatan: null },
-  { label: 'dit. plp', unit: 'dir_plp', catatan: null },
   { label: 'sesditjen', unit: 'sesditjen', catatan: null },
   { label: 'sekditjen', unit: 'sesditjen', catatan: null },
   { label: 'dirjen', unit: 'ditjen', catatan: null },

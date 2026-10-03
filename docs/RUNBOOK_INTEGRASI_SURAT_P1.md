@@ -55,7 +55,7 @@ Alternatif yang sama-sama aman: tempelkan kueri langsung ke konsol SQL Neon (Neo
    SELECT has_table_privilege(current_user, 'public.rangkaian_surat', 'DELETE') AS boleh_hapus,      -- false
           has_table_privilege(current_user, 'public.rangkaian_surat', 'INSERT') AS boleh_tambah;     -- true
    SELECT id, is_unit_pengawas FROM unit_kerja WHERE id IN ('ditjen','sesditjen');                 -- keduanya true
-   SELECT count(*) FROM unit_kerja WHERE id IN ('dir_bppt','dir_ptep','dir_ktpp','dir_plp');       -- 4
+   SELECT count(*) FROM unit_kerja WHERE id IN ('dir_bppt','dir_ptep','dir_ktpp','dir_plp');       -- 4 sesudah 0047; 3 sesudah 0050 (dir_plp dihapus)
    ```
 
    Bila operator tidak punya akses langsung ke `NEON_RUNTIME_DATABASE_URL`, jalankan ketiga kueri ini lewat konsol SQL Neon dengan role `simsa_api` dipilih secara eksplisit di sesi tersebut.
@@ -74,6 +74,7 @@ Alternatif yang sama-sama aman: tempelkan kueri langsung ke konsol SQL Neon (Neo
 
 - Seed `seed:deployment` yang dijalankan sesudah migrasi pada instalasi baru tetap menghasilkan `ditjen`/`sesditjen` sebagai pengawas melalui trigger `unit_kerja_default_pengawas`.
 - Nama resmi unit `dir_*` dikoreksi lewat `PUT /api/settings/unit-kerja/:id` (super_admin). `parent_id`/`unit_type` hanya diatur 0047 (dan hanya bila masih NULL; 0047 tidak menimpa nilai yang sudah diisi manual).
+- **Koreksi 3 Oktober 2026:** Ditjen PTPP tidak memiliki Direktorat PLP. `dir_plp` yang dibuat 0047 dihapus manual di produksi (3 Oktober 2026, tanpa rujukan) dan dihapus oleh migrasi `0050_hapus_dir_plp` di instalasi lain (fail-closed bila sudah dirujuk). Direktorat tujuan disposisi yang berlaku: `dir_bppt`, `dir_ptep`, `dir_ktpp`.
 - **Catatan operator (Minor 4, review final):** 0047 langsung membuat `dir_bppt`/`dir_ptep`/`dir_ktpp`/`dir_plp` dapat dipilih sebagai target disposisi (`can_receive_distribution = true`) SEJAK migrasi diterapkan pada langkah 3 — sebelum admin unit (`admin_unit`) mana pun ditugaskan ke direktorat-direktorat itu. Selesaikan penugasan `admin_unit` untuk keempat unit ini secepatnya sesudah deploy (idealnya sebelum pengguna mulai mengirim disposisi baru); sampai penugasan itu ada, disposisi tetap bisa dikirim ke unit yang belum berpenghuni (tidak ada user yang menerimanya) dan operator harus sadar akan kondisi ini.
 - Jangan jalankan helper backup/migrator versi lama terhadap database yang sudah dimigrasikan ke 0046/0047.
 - **Rangkaian yang sudah `diberkaskan` bersifat imut**, kecuali satu pasangan kolom: `unit_pengolah_id`/`klasifikasi_item_id`, dan hanya lewat baris Koreksi Berkas (`rangkaian_koreksi_berkas`) berstatus `approved` yang diacu lewat GUC `simsa.berkas_koreksi` (isi GUC = `id` baris koreksi tersebut; trigger `rangkaian_surat_status_guard` mencocokkan `unit_pengolah_lama`/`klasifikasi_lama`/`unit_pengolah_baru`/`klasifikasi_baru` baris itu terhadap nilai OLD/NEW rangkaian sebelum mengizinkan UPDATE). Kolom lain (judul, kode, tahun, `selesai_*`, `created_*`, dst.) tidak dapat berubah sama sekali setelah `diberkaskan`, dan status `diberkaskan`/`digabung` tidak dapat dibuka kembali.

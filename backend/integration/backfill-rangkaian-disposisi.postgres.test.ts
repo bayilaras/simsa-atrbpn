@@ -30,7 +30,7 @@ beforeAll(async () => {
     await h.insertDistribusi({ suratMasukId: surat.aktif, sourceUnitId: 'sesditjen', targetUnitId: 'dir_ptep', status: 'rejected' });
     surat.selesai = await h.insertSuratMasuk({ unitKerjaId: 'ditjen', nomorSurat: 'SM-2/2025', perihal: null });
     await h.insertDistribusi({ suratMasukId: surat.selesai, sourceUnitId: 'ditjen', targetUnitId: 'dir_ktpp', status: 'processed' });
-    await h.insertDistribusi({ suratMasukId: surat.selesai, sourceUnitId: 'ditjen', targetUnitId: 'dir_plp', status: 'processed' });
+    await h.insertDistribusi({ suratMasukId: surat.selesai, sourceUnitId: 'ditjen', targetUnitId: 'dir_uji', status: 'processed' });
     surat.rahasia = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-3/2025', perihal: 'Tukar guling rahasia', sifatSurat: 'Rahasia' });
     await h.insertDistribusi({ suratMasukId: surat.rahasia, sourceUnitId: 'sesditjen', targetUnitId: 'dir_bppt', status: 'received' });
     surat.tanpaDisposisi = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'SM-4/2025' });

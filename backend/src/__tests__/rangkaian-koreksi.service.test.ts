@@ -92,7 +92,7 @@ describe('Koreksi Berkas', () => {
     });
 
     it('unit di luar jangkauan ditolak 422 dan koreksi tanpa perubahan ditolak 400', async () => {
-        await expect(service.ajukan(superA, P5_IDS.berkas, { unitPengolahBaru: 'dir_plp', klasifikasiBaru: klasA, alasan: ALASAN }))
+        await expect(service.ajukan(superA, P5_IDS.berkas, { unitPengolahBaru: 'dir_uji', klasifikasiBaru: klasA, alasan: ALASAN }))
             .rejects.toMatchObject({ statusCode: 422, message: 'Disposisikan dulu ke unit ini.' });
         await expect(service.ajukan(superA, P5_IDS.berkas, { unitPengolahBaru: 'dir_bppt', klasifikasiBaru: klasA, alasan: ALASAN }))
             .rejects.toMatchObject({ statusCode: 400 });
@@ -101,15 +101,15 @@ describe('Koreksi Berkas', () => {
     it('P5-T6-1: unit yang hanya terhubung lewat anggota surat terhapus lunak ditolak 422', async () => {
         await database.exec(`
             INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, nomor_surat, perihal, sifat_surat, is_deleted)
-            VALUES ('${SM_HAPUS}', 'dir_plp', 9002, 2026, 'SM-P5/2/2026', 'Anggota terhapus', 'Biasa', true);
+            VALUES ('${SM_HAPUS}', 'dir_uji', 9002, 2026, 'SM-P5/2/2026', 'Anggota terhapus', 'Biasa', true);
             ALTER TABLE rangkaian_anggota DISABLE TRIGGER USER;
             INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran)
-            VALUES ('${P5_IDS.berkas}', '${SM_HAPUS}', 'dir_plp', 'anggota');
+            VALUES ('${P5_IDS.berkas}', '${SM_HAPUS}', 'dir_uji', 'anggota');
             ALTER TABLE rangkaian_anggota ENABLE TRIGGER USER;`);
-        await expect(service.ajukan(superA, P5_IDS.berkas, { unitPengolahBaru: 'dir_plp', klasifikasiBaru: klasA, alasan: ALASAN }))
+        await expect(service.ajukan(superA, P5_IDS.berkas, { unitPengolahBaru: 'dir_uji', klasifikasiBaru: klasA, alasan: ALASAN }))
             .rejects.toMatchObject({ statusCode: 422 });
         const daftar = await service.daftar(superA, P5_IDS.berkas);
-        expect(daftar.kandidatUnit.map((unit) => unit.id)).not.toContain('dir_plp');
+        expect(daftar.kandidatUnit.map((unit) => unit.id)).not.toContain('dir_uji');
     });
 
     it('hanya satu koreksi terbuka per rangkaian', async () => {

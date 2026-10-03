@@ -74,13 +74,13 @@ describe('Lacak mengikuti tier baca rangkaian P2 (A-I3)', () => {
 
     it('rangkaian tanpa node terbaca tidak menjadi kartu (setara GET /:id → 404)', async () => {
         // Kebijakan daftar admin_unit memuat surat Terbatas unit sendiri tanpa
-        // grant (tersamar di mode baca, T4-3). SM Terbatas dir_plp ini anggota
+        // grant (tersamar di mode baca, T4-3). SM Terbatas dir_uji ini anggota
         // RS_BAGIAN dengan unit anggota lama (surat dipindah unit setelah
-        // bergabung), sehingga dir_plp tidak berada dalam jangkauan rangkaian:
+        // bergabung), sehingga dir_uji tidak berada dalam jangkauan rangkaian:
         // plp tidak punya tier rangkaian dan tidak dapat membaca node mana pun.
         await database.exec(`
             INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, nomor_surat, perihal, dari, tanggal_surat)
-                VALUES ('${SM_PLP_TERBATAS}','dir_plp',1,2026,'terbatas','PLP-9/T/2026','Perihal PLP terbatas lacak','Kanwil E','2026-09-09');
+                VALUES ('${SM_PLP_TERBATAS}','dir_uji',1,2026,'terbatas','PLP-9/T/2026','Perihal PLP terbatas lacak','Kanwil E','2026-09-09');
             INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber, ditambahkan_at)
                 VALUES ('${RS_BAGIAN}','${SM_PLP_TERBATAS}','bagian_umum','anggota','aplikasi','2026-09-09T01:00:00Z');
         `);
@@ -90,7 +90,7 @@ describe('Lacak mengikuti tier baca rangkaian P2 (A-I3)', () => {
         const [kartu] = hasil.kelompok;
         expect(kartu).toMatchObject({ kunci: `surat:${SM_PLP_TERBATAS}`, rangkaian: null, jumlahAnggota: 1, pratinjauTerpotong: false });
         expect(kartu.cocok[0]).toMatchObject({ jenis: 'surat_masuk', id: SM_PLP_TERBATAS });
-        expect(kartu.pratinjau).toEqual([{ anggotaId: null, jenis: 'surat_masuk', unitNama: 'Dit. PLP', label: 'Dikecualikan', masked: true, dapatAjukanAkses: false }]);
+        expect(kartu.pratinjau).toEqual([{ anggotaId: null, jenis: 'surat_masuk', unitNama: 'Dit. Uji', label: 'Dikecualikan', masked: true, dapatAjukanAkses: false }]);
         const teks = JSON.stringify(kartu);
         for (const bocor of [RS_BAGIAN, 'RS-2026-000077', AGT_BAGIAN_SM, AGT_BAGIAN_SK, 'Bagian Umum', 'Dit. BPPT']) expect(teks).not.toContain(bocor);
     });

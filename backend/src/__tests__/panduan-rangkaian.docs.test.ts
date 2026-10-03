@@ -100,6 +100,6 @@ describe('dokumentasi Integrasi Surat P5', () => {
         expect(rilis).not.toContain('Aman: Lacak tetap benar, hanya kembali ke seq scan. Extension');
         expect(rilis).not.toContain('Tugas opsional 14 (pg_trgm) dan 15 (re-key limiter) dilewati');
         expect(rilis).toContain('Tugas opsional 14 (pg_trgm) **dikerjakan**');
-        expect(rilis).toContain('journal berisi 50 entri (idx 0–49)');
+        expect(rilis).toContain('journal berisi 51 entri (idx 0–50)');
     });
 });

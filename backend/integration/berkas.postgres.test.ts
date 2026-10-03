@@ -45,7 +45,7 @@ describe.skipIf(!adaPostgres)('berkaskan dan status manual', () => {
         tu = await h.seedUser('admin_unit', 'sesditjen');
         bppt = await h.seedUser('admin_unit', 'dir_bppt');
         ptep = await h.seedUser('admin_unit', 'dir_ptep');
-        plp = await h.seedUser('admin_unit', 'dir_plp');
+        plp = await h.seedUser('admin_unit', 'dir_uji');
         stafSes = await h.seedUser('staff', 'sesditjen');
         klasifikasi = await h.ensureKlasifikasi();
     }, 120_000);
@@ -56,7 +56,7 @@ describe.skipIf(!adaPostgres)('berkaskan dan status manual', () => {
         const input = { unitPengolahId: 'dir_bppt', klasifikasiItemId: klasifikasi, konfirmasi: true as const };
         await expect(berkasService.berkaskan(bppt, r.id, input, audit(bppt))).rejects.toMatchObject({ statusCode: 409 });
         await selesaikanDisposisi(r.id);
-        await expect(berkasService.berkaskan(bppt, r.id, { ...input, unitPengolahId: 'dir_plp' }, audit(bppt)))
+        await expect(berkasService.berkaskan(bppt, r.id, { ...input, unitPengolahId: 'dir_uji' }, audit(bppt)))
             .rejects.toMatchObject({ statusCode: 422, message: 'Disposisikan dulu ke unit ini' });
         await expect(berkasService.berkaskan(plp, r.id, input, audit(plp))).rejects.toMatchObject({ statusCode: 404 });
         const hasil = await berkasService.berkaskan(bppt, r.id, input, audit(bppt));
@@ -93,7 +93,7 @@ describe.skipIf(!adaPostgres)('berkaskan dan status manual', () => {
     it('ubah unit pengolah hanya ke unit dalam jangkauan; oleh pencatat/pengawas', async () => {
         const r = await rangkaianBaru('B-3/2026');
         await expect(berkasService.ubahUnitPengolah(bppt, r.id, 'dir_ptep', audit(bppt))).rejects.toMatchObject({ statusCode: 403 });
-        await expect(berkasService.ubahUnitPengolah(tu, r.id, 'dir_plp', audit(tu))).rejects.toMatchObject({ statusCode: 422 });
+        await expect(berkasService.ubahUnitPengolah(tu, r.id, 'dir_uji', audit(tu))).rejects.toMatchObject({ statusCode: 422 });
         expect(await berkasService.ubahUnitPengolah(tu, r.id, 'dir_ptep', audit(tu))).toEqual({ id: r.id, unitPengolahId: 'dir_ptep', aksesBaru: [] });
         const opsi = await berkasService.opsiBerkas(tu, r.id);
         expect(opsi.unitDalamJangkauan.map((u) => u.id).sort()).toEqual(['dir_bppt', 'dir_ptep', 'sesditjen']);

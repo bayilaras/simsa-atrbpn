@@ -42,9 +42,11 @@ Rollback kode aman kapan pun: skema 0047 bersifat aditif dan kode lama berjalan 
 5. **Backup terjadwal**: database kini di 0047, sama dengan `main`, sehingga backup harian dapat berjalan lagi bila format secret benar.
 6. **Surat uji**: satu surat masuk sintetis berlampiran PDF ("UJI RILIS C47") dibuat untuk membangunkan pemindai; rangkaiannya menjadi rangkaian pertama (03:48:44.501Z) dan menentukan `batasDataLama`. Tidak ada surat lain dibuat antara go-live (03:30:27Z) dan batas itu.
 
+7. **Koreksi Direktorat PLP (3 Oktober 2026, siang).** Pengguna menegaskan Ditjen PTPP tidak memiliki Direktorat PLP. Baris `dir_plp` yang dibuat 0047 dihapus manual di produksi lewat Neon SQL Editor, dalam satu transaksi yang menghitung ulang rujukan pada semua kolom foreign key ke `unit_kerja` (hasil: 0) dan memastikan tepat satu baris terhapus. Sesudahnya `unit_kerja` berisi lima unit (`dir_bppt`, `dir_ktpp`, `dir_ptep`, `ditjen`, `sesditjen`); `/ready` tetap 200. Di kode, migrasi `0050_hapus_dir_plp` (branch P5; fail-closed bila dirujuk, no-op di produksi) menghapusnya pada instalasi lain, dan seed, pre-flight, pemetaan label backfill data lama, panduan, serta test disesuaikan.
+
 ## Belum selesai
 
-- Penugasan `admin_unit` untuk `dir_bppt`, `dir_ptep`, `dir_ktpp`, `dir_plp` (0047 membuat unit itu dapat dipilih sebagai target disposisi). Sampai ada penugasan, TU tidak mengirim disposisi ke direktorat.
+- Penugasan `admin_unit` untuk `dir_bppt`, `dir_ptep`, `dir_ktpp` (0047 membuat unit itu dapat dipilih sebagai target disposisi). Sampai ada penugasan, TU tidak mengirim disposisi ke direktorat.
 - Gerbang §2/§4 dokumen rilis: sign-off baris gerbang, uji asap P4 (dapat dijalankan di produksi dengan data sintetis), catatan rilis TU, blok Pengesahan laporan pre-flight.
 - Uji pemulihan (`restore-verify`) bundle Backup #1 dan salinan offsite bundle + kunci.
 - Tahap C (P5: pra-cek 0048, merge PR #23, `grants/0003` pg_trgm, migrasi 0048/0049, deploy C48).

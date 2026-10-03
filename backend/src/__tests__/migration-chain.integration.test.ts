@@ -1480,6 +1480,37 @@ describe('PostgreSQL migration chain', () => {
         ]);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 
+    it('0050 menghapus dir_plp yang keliru dibuat 0047, fail-closed bila sudah dirujuk', async () => {
+        const database = await createDatabase();
+        const index0047 = journal.entries.findIndex(({ tag }) => tag === '0047_unit_kerja_direktorat');
+        const index0050 = journal.entries.findIndex(({ tag }) => tag === '0050_hapus_dir_plp');
+        expect(index0050).toBeGreaterThan(index0047);
+        for (const entry of journal.entries.slice(0, index0047)) {
+            await applyMigration(database, entry);
+        }
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES ('ditjen', 'Ditjen'), ('sesditjen', 'Sekretariat Ditjen');
+        `);
+        for (const entry of journal.entries.slice(index0047, index0050)) {
+            await applyMigration(database, entry);
+        }
+        expect((await database.query(`SELECT id FROM unit_kerja WHERE id = 'dir_plp'`)).rows).toHaveLength(1);
+
+        await database.exec(`INSERT INTO disposisi_label_unit (label_norm, unit_kerja_id) VALUES ('plp', 'dir_plp')`);
+        await expect(applyMigration(database, journal.entries[index0050]))
+            .rejects.toThrow(/0050: unit dir_plp masih dirujuk 1 baris/);
+
+        await database.exec(`DELETE FROM disposisi_label_unit WHERE label_norm = 'plp'`);
+        await applyMigration(database, journal.entries[index0050]);
+        // Idempoten: di produksi baris sudah dihapus manual, jadi 0050 menjadi no-op.
+        await applyMigration(database, journal.entries[index0050]);
+
+        const units = await database.query<{ id: string }>(`
+            SELECT id FROM unit_kerja WHERE id LIKE 'dir\\_%' ORDER BY id COLLATE "C"
+        `);
+        expect(units.rows.map(row => row.id)).toEqual(['dir_bppt', 'dir_ktpp', 'dir_ptep']);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
     it('memodelkan setiap kolom integrasi rangkaian di skema Drizzle', async () => {
         const database = await createDatabase();
         for (const entry of journal.entries) {

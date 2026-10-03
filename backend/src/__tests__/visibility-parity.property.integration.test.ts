@@ -27,7 +27,7 @@ const SIFAT = ['', ' ', 'Sangat Segera', 'sangat-segera', ' SANGAT  SEGERA ', 'R
 const KELAS_SK = [null, 'biasa', 'terbatas', 'rahasia', 'sangat_rahasia'];
 const UNIT_REKAMAN = ['ditjen', 'sesditjen', 'dir_bppt', 'dir_ptep', 'bagian_umum'];
 const ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user', null];
-const UNIT_PENGGUNA = ['ditjen', 'sesditjen', 'dir_bppt', 'dir_ptep', 'dir_plp', 'bagian_umum', null, '', '  '];
+const UNIT_PENGGUNA = ['ditjen', 'sesditjen', 'dir_bppt', 'dir_ptep', 'dir_uji', 'bagian_umum', null, '', '  '];
 const ID_PENGGUNA = [...Object.values(USER_ID).filter(id => id !== USER_ID.approver), null];
 
 const literal = (value: string | null) => value === null ? 'NULL' : `'${value.replace(/'/g, "''")}'`;

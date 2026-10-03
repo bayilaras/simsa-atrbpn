@@ -36,7 +36,7 @@ Aturan merge:
    - "Backend Tests (PostgreSQL 16)", "(PostgreSQL 17)", "(PostgreSQL 18)", termasuk langkah `npm run test:postgres-locks` (semua `backend/integration/*.postgres.test.ts`) dan profil backup-upgrade `.github/scripts/test-backup-upgrade-profile.mjs`;
    - mulai P4: langkah **"Run Lacak EXPLAIN and p95 gate (LACAK_PERF)"** (`LACAK_PERF=1`) pada PG16/17/18. EXPLAIN index dan non-vakum D7 adalah gerbang keras; p50/p95 dicatat di PR;
    - `npm run test:migration-manifest` di root;
-   - mulai P5: journal berisi 50 entri (idx 0–49), termasuk `0049_lacak_trgm` dari Task 14. Bila `main` mendapat migrasi baru sebelum P5 di-merge, turunkan ulang `idx`/`when` 0048 dan 0049 dan ulangi `test:migration-manifest` (P5-C-11).
+   - mulai P5: journal berisi 51 entri (idx 0–50), termasuk `0049_lacak_trgm` dari Task 14 dan `0050_hapus_dir_plp` (koreksi 3 Oktober 2026; no-op di produksi karena `dir_plp` sudah dihapus manual). Bila `main` mendapat migrasi baru sebelum P5 di-merge, turunkan ulang `idx`/`when` 0048–0050 dan ulangi `test:migration-manifest` (P5-C-11).
 
    Suite PostgreSQL P3–P5 sudah dijalankan di CI (PR uji #16/#17, PG16/17/18) dan lokal pada PG18. Hasil itu berlaku untuk head sebelum rebase; **ulangi CI pada setiap head hasil rebase** dan catat URL run CI per fase di tabel gerbang (§4).
 4. **Merge ke `main` bukan rilis produksi.** Pastikan merge tidak memicu deploy produksi otomatis: promosi Vercel dilakukan manual dan terverifikasi (`docs/DEPLOY_VERCEL_NEON.md`).
@@ -52,7 +52,7 @@ Aturan merge:
    **[GABUNGAN] Backup terjadwal.** Workflow terjadwal `backup-neon.yml` berjalan dari branch bawaan, dan manifest backup mengikat rantai migrasi secara eksak (`scripts/neon-backup-core.mjs`). Selama rantai journal di `main` berbeda dengan rantai database produksi, backup terjadwal harian akan gagal. Ini terjadi sejak P1 masuk `main` sampai 0046/0047 diterapkan, dan sejak P5 masuk `main` sampai 0048/0049 diterapkan. Karena P5 baru di-merge ketika 0048 dapat langsung diterapkan (langkah 10–14), jarak kedua cukup pendek. Rapatkan jarak antara merge dan rilis, atau ambil backup manual dengan helper checkout yang cocok.
 5. **Dua checkout rilis** dipakai di §3. Keduanya diambil dari `main` setelah merge:
    - **C47** — commit merge P4 di `main` (journal berakhir di `0047_unit_kerja_direktorat`);
-   - **C48** — commit merge P5 di `main` (journal berakhir di `0049_lacak_trgm`, setelah `0048_rangkaian_pengerasan`). C48 baru ada setelah langkah 11.
+   - **C48** — commit merge P5 di `main` (journal berakhir di `0050_hapus_dir_plp`, setelah `0048_rangkaian_pengerasan` dan `0049_lacak_trgm`). C48 baru ada setelah langkah 11.
 
 ## 2. Prasyarat sebelum hari rilis
 
@@ -70,7 +70,7 @@ Aturan merge:
   - `RANGKAIAN_DISPOSISI_LAMA_READ` **tidak diset**;
   - `RANGKAIAN_TUTUP_MASSAL_DATA_LAMA` **tidak diset** (CTRL-5; baru dinyalakan di langkah 19);
   - `RANGKAIAN_DATA_LAMA_SEBELUM` **kosong**, karena P3 dan P4 aktif dalam deploy yang sama (runbook P3 §8 langkah 1, "Deploy gabungan").
-- [ ] `admin_unit` untuk `dir_bppt`, `dir_ptep`, `dir_ktpp`, dan `dir_plp` siap ditugaskan segera setelah 0047 (RUNBOOK_P1 Catatan Minor 4; runbook P3 §3.1.3).
+- [ ] `admin_unit` untuk `dir_bppt`, `dir_ptep`, dan `dir_ktpp` siap ditugaskan (`dir_plp` keliru dibuat 0047; dihapus manual di produksi 3 Oktober 2026 dan oleh `0050_hapus_dir_plp`) segera setelah 0047 (RUNBOOK_P1 Catatan Minor 4; runbook P3 §3.1.3).
 - [ ] Catatan rilis TU disiapkan: 409 disposisi surat terkendali selama flag Ajukan Akses mati, 409 konflik penyimpanan bersamaan, dan menu baris Surat Masuk tanpa "Saya Balas".
 
 ## 3. Urutan produksi
@@ -153,7 +153,7 @@ Setiap langkah dicatat (waktu UTC dan WIB, operator, hasil) di hasil rilis. **He
        unset NEON_ADMIN_DATABASE_URL
        ```
     2. Ulangi ketiga kueri langkah 10 tepat sebelum migrasi.
-    3. Jalankan migrasi (0048 dan `0049_lacak_trgm` dalam satu transaksi) lalu verifikasi:
+    3. Jalankan migrasi (0048, `0049_lacak_trgm`, dan `0050_hapus_dir_plp` dalam satu transaksi; 0050 no-op di produksi) lalu verifikasi:
 
        ```powershell
        # dari checkout C48 (journal berakhir di 0049)

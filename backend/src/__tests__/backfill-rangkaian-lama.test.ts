@@ -150,15 +150,15 @@ describe('pemetaan label disposisi lama', () => {
 
     it('baris tabel pemetaan perlu_verifikasi=true yang merutekan ditolak (fail closed, dilaporkan)', async () => {
         await database.exec(`INSERT INTO disposisi_label_unit (label_norm, unit_kerja_id, perlu_verifikasi) VALUES
-            ('dit. plp baru', 'dir_plp', true), ('kabag baru', NULL, true);`);
+            ('dit. uji baru', 'dir_uji', true), ('kabag baru', NULL, true);`);
         try {
-            await expect(assertPemetaanSah(database)).rejects.toThrow(/perlu_verifikasi.*"dit\. plp baru" → dir_plp/);
+            await expect(assertPemetaanSah(database)).rejects.toThrow(/perlu_verifikasi.*"dit. uji baru" → dir_uji/);
             // Baris label-saja (unit NULL) tidak merutekan, jadi tidak ikut ditolak.
             const galat = await assertPemetaanSah(database).catch((error: Error) => error);
             expect(String((galat as Error).message)).not.toContain('kabag baru');
             await expect(buildPlan(database, { batas: BATAS_UJI })).rejects.toThrow(/perlu_verifikasi/);
         } finally {
-            await database.exec(`DELETE FROM disposisi_label_unit WHERE label_norm IN ('dit. plp baru', 'kabag baru')`);
+            await database.exec(`DELETE FROM disposisi_label_unit WHERE label_norm IN ('dit. uji baru', 'kabag baru')`);
         }
         await expect(assertPemetaanSah(database)).resolves.toBeUndefined();
     });
@@ -667,14 +667,16 @@ describe('apply', () => {
         const { rows: [rs1] } = await database.query<{ id: string }>(`
             SELECT ra.rangkaian_id AS id FROM rangkaian_anggota ra WHERE ra.surat_masuk_id = '${S(1)}' AND ra.peran = 'induk'`);
         await database.exec(`
-            UPDATE surat_masuk SET disposisi = array_append(disposisi, 'PLP') WHERE id = '${S(1)}';
+            INSERT INTO disposisi_label_unit (label_norm, unit_kerja_id, perlu_verifikasi) VALUES ('uji', 'dir_uji', false)
+                ON CONFLICT (label_norm) DO NOTHING;
+            UPDATE surat_masuk SET disposisi = array_append(disposisi, 'Uji') WHERE id = '${S(1)}';
             UPDATE rangkaian_surat SET status = 'diberkaskan', unit_pengolah_id = 'ditjen', klasifikasi_item_id = (SELECT min(id) FROM klasifikasi_arsip),
                    diberkaskan_at = now(), diberkaskan_by = '${P5_IDS.superA}' WHERE id = '${rs1.id}';`);
         const plan = await buildPlan(database, { batas: BATAS_UJI });
         expect(plan.total).toMatchObject({ peserta_baru: 0, peserta_dilewati_diberkaskan: 1 });
         const summary = await applyPlan(database, { approvedSha256: plan.sha256, batas: BATAS_UJI });
         expect(summary).toMatchObject({ pesertaBaru: 0, pesertaDilewatiDiberkaskan: 1 });
-        expect((await database.query(`SELECT count(*)::int AS n FROM rangkaian_peserta WHERE rangkaian_id = '${rs1.id}' AND unit_kerja_id = 'dir_plp'`)).rows[0]).toEqual({ n: 0 });
+        expect((await database.query(`SELECT count(*)::int AS n FROM rangkaian_peserta WHERE rangkaian_id = '${rs1.id}' AND unit_kerja_id = 'dir_uji'`)).rows[0]).toEqual({ n: 0 });
         // Mode isi-pengolah tidak pernah menyentuh rangkaian yang diberkaskan.
         expect((await buildPlan(database, { batas: BATAS_UJI, isiPengolah: true })).calonPengolah).toEqual([]);
     });

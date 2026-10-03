@@ -149,7 +149,8 @@ describe('pre-flight P0 integrasi surat di PGlite', () => {
     it('melaporkan status migrasi, unit kerja, dan pengguna', () => {
         expect(byId('status_migrasi').rows).toEqual([{ jumlah_migrasi: 46, migrasi_terakhir_when: '1789397416667' }]);
         const direktorat = Object.fromEntries(byId('unit_kerja_direktorat').rows.map((row: any) => [row.unit_id, row.ada]));
-        expect(direktorat).toMatchObject({ ditjen: true, sesditjen: true, dir_bppt: true, dir_ptep: false, dir_ktpp: false, dir_plp: false });
+        expect(direktorat).toMatchObject({ ditjen: true, sesditjen: true, dir_bppt: true, dir_ptep: false, dir_ktpp: false });
+        expect(direktorat).not.toHaveProperty('dir_plp');
         expect(byId('unit_kerja_id_direktorat_dash').rows).toEqual([{ id: 'direktorat-ptep', name: 'Direktorat PTEP' }]);
         expect(byId('pengguna_per_role_unit').rows).toEqual([
             { role: 'admin_sesditjen', unit_kerja_id: '(NULL)', jumlah: 1 },

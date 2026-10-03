@@ -37,8 +37,7 @@ INSERT INTO unit_kerja (id, name, description, parent_id, unit_type, can_receive
 VALUES 
     ('dir_bppt', 'Direktorat BPPT', 'Direktorat Bina Pengembangan dan Pemanfaatan Tanah', 'ditjen', 'direktorat', true, NOW(), NOW()),
     ('dir_ptep', 'Direktorat PTEP', 'Direktorat Pengadaan Tanah untuk Kepentingan Pembangunan', 'ditjen', 'direktorat', true, NOW(), NOW()),
-    ('dir_ktpp', 'Direktorat KTPP', 'Direktorat Konsolidasi Tanah dan Pengembangan Pertanahan', 'ditjen', 'direktorat', true, NOW(), NOW()),
-    ('dir_plp', 'Direktorat PLP', 'Direktorat Pengendalian dan Penggunaan Tanah', 'ditjen', 'direktorat', true, NOW(), NOW())
+    ('dir_ktpp', 'Direktorat KTPP', 'Direktorat Konsolidasi Tanah dan Pengembangan Pertanahan', 'ditjen', 'direktorat', true, NOW(), NOW())
 ON CONFLICT (id) DO UPDATE SET
     parent_id = 'ditjen',
     unit_type = 'direktorat',

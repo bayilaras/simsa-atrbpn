@@ -67,7 +67,7 @@ export async function seedRangkaianBase(database: PGlite): Promise<{ klasA: numb
           ('dir_bppt', 'Dit. BPPT', 'ditjen', 'direktorat', true),
           ('dir_ptep', 'Dit. PTEP', 'ditjen', 'direktorat', true),
           ('dir_ktpp', 'Dit. KTPP', 'ditjen', 'direktorat', true),
-          ('dir_plp', 'Dit. PLP', 'ditjen', 'direktorat', true)
+          ('dir_uji', 'Dit. Uji', 'ditjen', 'direktorat', true)
         ON CONFLICT (id) DO NOTHING;
         UPDATE unit_kerja SET is_unit_pengawas = true WHERE id IN ('ditjen', 'sesditjen');
         INSERT INTO users (id, email, role, unit_kerja_id) VALUES

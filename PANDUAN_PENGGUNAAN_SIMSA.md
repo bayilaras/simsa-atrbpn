@@ -951,7 +951,6 @@ Jika Anda login sebagai **Super Admin**, panel notifikasi menampilkan **dropdown
 | Dir. BPPT |
 | Dir. PTEP |
 | Dir. KTPP |
-| Dir. PLP |
 
 > [!TIP]
 > Gunakan filter unit kerja untuk memantau notifikasi dari unit kerja tertentu tanpa perlu berpindah halaman.

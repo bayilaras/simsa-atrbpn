@@ -57,7 +57,7 @@ ORDER BY id`,
     judul: 'Keberadaan unit ditjen, sesditjen, dan dir_*',
     keputusan: 'Unit dengan ada=false akan dibuat oleh 0047 (P1). parent_id/unit_type yang sudah terisi tidak ditimpa.',
     sql: `SELECT expected.id AS unit_id, (u.id IS NOT NULL) AS ada, u.parent_id, u.unit_type, u.can_receive_distribution
-FROM (VALUES ('ditjen'), ('sesditjen'), ('dir_bppt'), ('dir_ptep'), ('dir_ktpp'), ('dir_plp')) AS expected(id)
+FROM (VALUES ('ditjen'), ('sesditjen'), ('dir_bppt'), ('dir_ptep'), ('dir_ktpp')) AS expected(id)
 LEFT JOIN unit_kerja u ON u.id = expected.id
 ORDER BY expected.id`,
   },

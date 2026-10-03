@@ -358,6 +358,9 @@ async function siapkanDatabase(stopBefore?: string): Promise<{ database: PGlite;
     }
     await baru.exec(`
         INSERT INTO unit_kerja (id, name) VALUES ('ditjen', 'Ditjen'), ('sesditjen', 'Sesditjen');
+        -- Direktorat uji keempat (fixture); 0047 hanya menyisakan BPPT/PTEP/KTPP setelah 0050.
+        INSERT INTO unit_kerja (id, name, parent_id, unit_type, can_receive_distribution)
+            VALUES ('dir_uji', 'Dit. Uji', 'ditjen', 'direktorat', true) ON CONFLICT (id) DO NOTHING;
         INSERT INTO users (id, email, role) VALUES ('${actorId}', 'tu-sesditjen@example.test', 'super_admin');
     `);
     const klasifikasi = (await baru.query<{ id: number }>(`
@@ -453,15 +456,15 @@ describe('rangkaianService jangkauan & recompute', () => {
         const { rangkaianId } = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, sm, actor, { unitPengolahId: 'dir_bppt' }));
         await disposisi(sm, 'dir_ptep', 'sent', rangkaianId);
         await disposisi(sm, 'dir_ktpp', 'rejected', rangkaianId);
-        await anggotaKeluar(rangkaianId, await suratKeluar('dir_plp'));
+        await anggotaKeluar(rangkaianId, await suratKeluar('dir_uji'));
         await database.query(
             `INSERT INTO rangkaian_peserta (rangkaian_id, unit_kerja_id, peran, label_asal) VALUES ($1, 'ditjen', 'disposisi_lama', 'Dirjen')`,
             [rangkaianId],
         );
         await expect(rangkaianService.jangkauanUnitIds(holder.db, rangkaianId))
-            .resolves.toEqual(['dir_bppt', 'dir_plp', 'dir_ptep', 'sesditjen']);
+            .resolves.toEqual(['dir_bppt', 'dir_ptep', 'dir_uji', 'sesditjen']);
         await expect(rangkaianService.jangkauanUnitIds(holder.db, rangkaianId, { disposisiLama: true }))
-            .resolves.toEqual(['dir_bppt', 'dir_plp', 'dir_ptep', 'ditjen', 'sesditjen']);
+            .resolves.toEqual(['dir_bppt', 'dir_ptep', 'dir_uji', 'ditjen', 'sesditjen']);
     });
 
     it('surat masuk tetap aktif selama disposisi terbuka lalu selesai otomatis setelah diproses', async () => {
@@ -605,7 +608,7 @@ describe('rangkaianService.gabung', () => {
 
         const smB = await suratMasuk('sesditjen');
         const b = await inTx((tx) => rangkaianService.ensureForSuratMasuk(tx, smB, actor));
-        const nd = await suratKeluar('dir_plp', 'approved');
+        const nd = await suratKeluar('dir_uji', 'approved');
         const relasiB = await relasi(b.rangkaianId, await anggotaKeluar(b.rangkaianId, nd), b.anggotaId, 'balasan');
         const distB = await disposisi(smB, 'dir_ptep', 'sent', b.rangkaianId);
         const { rows: [pesertaB] } = await database.query<{ id: string }>(
@@ -623,7 +626,7 @@ describe('rangkaianService.gabung', () => {
             sumberId: b.rangkaianId,
             anggotaDipindah: 2,
             distribusiDipindah: 1,
-            unitAksesBaru: ['dir_plp', 'dir_ptep'],
+            unitAksesBaru: ['dir_ptep', 'dir_uji'],
             targetStatus: 'aktif',
             distribusiIds: [distB],
             pesertaDipindahIds: [pesertaB.id],

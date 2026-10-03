@@ -230,7 +230,7 @@ describe('aksi panel (Task 25)', () => {
             { ...detail.disposisi[0], dapatDitutup: true },
             { ...detail.disposisi[0], id: 'd2', targetUnit: { id: 'dir_bppt', nama: 'Dit. BPPT' }, status: 'processed', penanggungJawab: false, dapatDitutup: false },
             // F-I3: baris terbuka yang SM-nya di luar cakupan pengawas — server menyatakan tidak dapat ditutup.
-            { ...detail.disposisi[0], id: 'd3', targetUnit: { id: 'dir_plp', nama: 'Dit. PLP' }, status: 'sent', penanggungJawab: false, dapatDitutup: false },
+            { ...detail.disposisi[0], id: 'd3', targetUnit: { id: 'dir_uji', nama: 'Dit. Uji' }, status: 'sent', penanggungJawab: false, dapatDitutup: false },
             // Tanpa bendera dari server: fail-closed, tidak ada tombol.
             { ...detail.disposisi[0], id: 'd4', targetUnit: { id: 'dir_ktpp', nama: 'Dit. KTPP' }, status: 'received', penanggungJawab: false },
         ]
@@ -241,7 +241,7 @@ describe('aksi panel (Task 25)', () => {
         expect(tabel.getByRole('columnheader', { name: 'Aksi' })).toBeInTheDocument()
         // Hanya baris yang dinyatakan server dapatDitutup yang menawarkan tombol.
         expect(tabel.getAllByRole('button', { name: 'Tutup Disposisi' })).toHaveLength(1)
-        expect(within(tabel.getByText('Dit. PLP').closest('tr')).queryByRole('button', { name: 'Tutup Disposisi' })).toBeNull()
+        expect(within(tabel.getByText('Dit. Uji').closest('tr')).queryByRole('button', { name: 'Tutup Disposisi' })).toBeNull()
         fireEvent.click(tabel.getByRole('button', { name: 'Tutup Disposisi' }))
         const dialog = within(await screen.findByRole('dialog'))
         fireEvent.change(dialog.getByLabelText('Alasan'), { target: { value: 'Unit tujuan tidak dapat memproses' } })
