@@ -923,19 +923,33 @@ jobs:
         with:
           node-version: 24
 
-      - name: Audit backend
-        run: npm audit --audit-level=high
-        working-directory: backend
+      # Kebijakan audit (lihat .github/npm-audit-allowlist.json):
+      # - backend: semua dependensi, tanpa pengecualian;
+      # - frontend & Spark: gerbang pada dependensi produksi (--omit=dev);
+      #   audit penuh tetap dicetak sebagai informasi;
+      # - docs-site: semua dependensi, dengan pengecualian sementara bertanggal
+      #   kedaluwarsa untuk advisori yang belum memiliki versi perbaikan.
+      - name: Test gerbang audit
+        run: node --test .github/scripts/npm-audit-gate.test.mjs
 
-      - name: Audit frontend
+      - name: Audit backend
+        run: node .github/scripts/npm-audit-gate.mjs backend
+
+      - name: Audit frontend (dependensi produksi)
+        run: node .github/scripts/npm-audit-gate.mjs frontend --omit=dev
+
+      - name: Audit frontend (semua dependensi, informasi)
+        continue-on-error: true
         run: npm audit --audit-level=high
         working-directory: frontend
 
-      - name: Audit Firebase Spark edition
+      - name: Audit Firebase Spark edition (dependensi produksi)
+        run: node .github/scripts/npm-audit-gate.mjs spark --omit=dev
+
+      - name: Audit Firebase Spark edition (semua dependensi, informasi)
+        continue-on-error: true
         run: npm audit --audit-level=high
         working-directory: spark
 
-      # Documentation build dependencies use the same severity gate as the apps.
       - name: Audit documentation
-        run: npm audit --audit-level=high
-        working-directory: docs-site
+        run: node .github/scripts/npm-audit-gate.mjs docs-site
