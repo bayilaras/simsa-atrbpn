@@ -47,8 +47,7 @@ describe('private file preview', () => {
         const { unmount } = render(<FilePreviewSection surat={surat} entityType={entityType} />);
         expect(fetchMock).not.toHaveBeenCalled();
         expect(screen.queryByTitle('PDF Preview')).not.toBeInTheDocument();
-        expect(screen.getByText('Muat pratinjau atau unduh dokumen.')).toBeInTheDocument();
-        expect(screen.queryByText(/pemeriksaan|malware|baseline hash/i)).not.toBeInTheDocument();
+        expect(screen.getByText('Muat pratinjau atau unduh dokumen yang telah lolos pemeriksaan.')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Muat dokumen' }));
         expect(await screen.findByTitle('PDF Preview')).toHaveAttribute('src', 'blob:http://localhost:3000/private-preview#toolbar=1&navpanes=0');
@@ -149,44 +148,26 @@ describe('private file preview', () => {
     });
 
     it.each([
-        ['surat_masuk', 'Muat dokumen'], ['surat_masuk', 'Download'],
-        ['surat_keluar', 'Muat dokumen'], ['surat_keluar', 'Download'],
-    ])('keeps a rejected %s %s private without offering obsolete inspection actions', async (entityType, action) => {
-        const fetchMock = vi.fn().mockResolvedValue({
-            ok: false, status: 423, headers: new Headers(),
-            json: async () => ({ error: 'File quarantined', scanState: 'pending',
-                message: 'Bitstream harus diregistrasi, dipindai malware, dan memiliki baseline hash.' }),
-        });
-        vi.stubGlobal('fetch', fetchMock);
-        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
-        render(<AuthContext.Provider value={{ canWrite: () => true }}><FilePreviewSection surat={surat} entityType={entityType} /></AuthContext.Provider>);
-        fireEvent.click(screen.getByRole('button', { name: action }));
-        expect(await screen.findByRole('alert')).toHaveTextContent('Dokumen belum dapat diakses. Coba muat ulang dokumen.');
-        expect(screen.queryByText(/malware|baseline hash|pemeriksaan/i)).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Periksa status' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Lanjutkan pemeriksaan' })).not.toBeInTheDocument();
-        expect(screen.queryByTitle('PDF Preview')).not.toBeInTheDocument();
-        expect(screen.queryByRole('link')).not.toBeInTheDocument();
-        expect(createObjectURL).not.toHaveBeenCalled();
-        expect(click).not.toHaveBeenCalled();
-        expect(fetchMock).toHaveBeenCalledOnce();
-        expect(screen.getByRole('button', { name: action })).toBeEnabled();
-    });
-
-    it.each(['surat_masuk', 'surat_keluar'])('preserves GCS %s quarantine recovery until its private object is released', async (entityType) => {
-        storageState.provider = 'gcs';
+        ['vercel-blob', 'surat_masuk', 'Muat dokumen'], ['vercel-blob', 'surat_masuk', 'Download'],
+        ['vercel-blob', 'surat_keluar', 'Muat dokumen'], ['vercel-blob', 'surat_keluar', 'Download'],
+        ['gcs', 'surat_masuk', 'Muat dokumen'], ['gcs', 'surat_keluar', 'Muat dokumen'],
+    ])('offers %s %s quarantine recovery after %s until the private object is released', async (provider, entityType, action) => {
+        storageState.provider = provider;
         const fetchMock = vi.fn().mockResolvedValue({
             ok: false, status: 423, headers: new Headers(),
             json: async () => ({ error: 'File quarantined', message: 'Dokumen menunggu pemeriksaan.', scanState: 'pending' }),
         });
         vi.stubGlobal('fetch', fetchMock);
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
         render(<AuthContext.Provider value={{ canWrite: () => true }}><FilePreviewSection surat={surat} entityType={entityType} /></AuthContext.Provider>);
-        fireEvent.click(screen.getByRole('button', { name: 'Muat dokumen' }));
+        fireEvent.click(screen.getByRole('button', { name: action }));
         expect(await screen.findByRole('button', { name: 'Periksa status' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Lanjutkan pemeriksaan' })).toBeEnabled();
         expect(screen.getByText(/tersimpan dan menunggu pemeriksaan/)).toBeInTheDocument();
         expect(screen.queryByTitle('PDF Preview')).not.toBeInTheDocument();
+        expect(screen.queryByRole('link')).not.toBeInTheDocument();
         expect(createObjectURL).not.toHaveBeenCalled();
+        expect(click).not.toHaveBeenCalled();
         expect(fetchMock).toHaveBeenCalledOnce();
     });
 
