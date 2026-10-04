@@ -4,7 +4,7 @@ Alur baru ada di `scripts/operations-recovery.mjs`. Alur ini membaca sumber Neon
 
 ## Bukti yang diwajibkan
 
-Database menggunakan snapshot konsisten, autentikasi bundle, hash helper, dan jurnal migrasi persis sesuai checkout. Verifikasi pemulihan membandingkan semua hitungan tabel, hash isi, schema, constraints, indexes, triggers, routines, sequences, extensions, grants, locale, serta jurnal. Role API terbatas juga diuji. Role `simsa_worker` dipulihkan dengan batas izin existing dan password baru dalam RAM; helper lama belum membuat login ini meskipun bundle produksi merujuk kepadanya.
+Database menggunakan snapshot konsisten, autentikasi bundle, hash helper, dan jurnal migrasi persis sesuai checkout. Verifikasi pemulihan membandingkan semua hitungan tabel, hash isi, schema, constraints, indexes, triggers, routines, sequences, extensions, grants, locale, serta jurnal. Role API terbatas juga diuji. Role `simsa_worker` dipulihkan dengan batas izin existing dan password baru dalam RAM. Daftar login target restore (`RESTORE_LOGIN_ROLES` di `scripts/neon-database-policy.mjs`) dipakai bersama oleh pemulihan operasional dan `neon-backup.mjs restore-verify`, sehingga keduanya tidak dapat berbeda lagi.
 
 Dokumen mencakup seluruh `file_attachments` dan sumber privat `regulatory_rule_sets`. Lease unggahan bukan salinan dokumen tambahan; database tetap menyimpan seluruh metadata lease. Hash dan ukuran existing wajib cocok. Dokumen dengan hash null ditolak secara default. Operator dapat memilih `OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES=true` untuk mencatat hash byte pertama dalam manifest cadangan: ini **tidak mengubah database dan tidak membuktikan integritas historis yang sebelumnya tidak dicatat**. Hash malformed atau berbeda tetap ditolak.
 

@@ -8,7 +8,7 @@ import { getCACertificates } from 'node:tls';
 import { readFile, writeFile, mkdir, mkdtemp } from 'node:fs/promises';
 import { parseNeonBackupOperation, sealNeonBundle, openNeonBundle, loadNeonEvidenceSql, migrationManifest, NEON_BACKUP_FORMAT } from './neon-backup-core.mjs';
 import { assertNeonBackupRole, provisionNeonBackupRole, NEON_RESTORE_OWNERS_SQL } from './neon-backup-role.mjs';
-import { POLICY_ROLES, LOGIN_ROLES, loadNeonGrantPolicy, assertNeonRoleBoundaries, verifyNeonRuntime } from './neon-database-policy.mjs';
+import { POLICY_ROLES, loadNeonGrantPolicy, assertNeonRoleBoundaries, verifyNeonRuntime, restoreTargetRoles } from './neon-database-policy.mjs';
 import { makeBackupWorkspace, boundedFile, physical, createDisposableBackupTarget } from './neon-backup-runtime.mjs';
 import { MAX_ARCHIVE_BYTES, MAX_EVIDENCE_BYTES, normalizeEvidence, requireCondition as check, sha256 } from './local-backup-drill-core.mjs';
 import { monitorSnapshotConnection, parsePrivateJson } from './local-current-backup-core.mjs';
@@ -99,11 +99,9 @@ export async function restoreNeonBundle(operation,workspace) {
     // Authentication and full compatibility checks precede any target process.
     target=await createDisposableBackupTarget(workspace);
     const db=plain.body.source.database;
-    const passwords=Object.fromEntries([...LOGIN_ROLES,'simsa_backup'].map(name=>[name,randomBytes(32).toString('hex')]));
+    const {passwords,sql:roles}=restoreTargetRoles();
     await target.guard();
-    await target.query(POLICY_ROLES.map(role=>`CREATE ROLE ${ident(role)} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT;`).join('\n')
-      + [...LOGIN_ROLES,'simsa_backup'].map(role=>`CREATE ROLE ${ident(role)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '${passwords[role]}';`).join('\n')
-      + "GRANT simsa_api_runtime TO simsa_api WITH ADMIN FALSE, INHERIT TRUE, SET FALSE; GRANT simsa_maintenance TO simsa_operator WITH ADMIN FALSE, INHERIT TRUE, SET FALSE; GRANT simsa_migrator TO simsa_migration WITH ADMIN FALSE, INHERIT TRUE, SET TRUE; GRANT simsa_backup_reader TO simsa_backup WITH ADMIN FALSE, INHERIT TRUE, SET FALSE;");
+    await target.query(roles);
     await target.guard();
     await workspace.command('pg_restore',['--no-password','--exit-on-error','--create','--no-owner','--no-privileges','--dbname','postgres'],
       {env:target.env(),input:plain.archive,timeoutMs:300000,maximum:4*1024*1024});

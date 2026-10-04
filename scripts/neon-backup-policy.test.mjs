@@ -61,3 +61,29 @@ test('optional backup login is read-only, does not gain global roles, and surviv
     await assert.rejects(assertNeonBackupRole(client, { database: target.database, requireIdentity: true }), /membership/);
   } finally { await db.close(); }
 });
+
+test('restore targets recreate every login a production dump references, including the worker', async () => {
+  const { restoreTargetRoles, RESTORE_LOGIN_ROLES } = await import('./neon-database-policy.mjs');
+  const first = restoreTargetRoles(), second = restoreTargetRoles();
+  assert.deepEqual(RESTORE_LOGIN_ROLES, ['simsa_api', 'simsa_migration', 'simsa_operator', 'simsa_backup', 'simsa_worker']);
+  assert.deepEqual(Object.keys(first.passwords), RESTORE_LOGIN_ROLES);
+  assert.ok(Object.values(first.passwords).every(value => /^[a-f0-9]{64}$/.test(value)));
+  assert.equal(new Set([...Object.values(first.passwords), ...Object.values(second.passwords)]).size, 10);
+  const db = new PGlite();
+  try {
+    await db.exec(first.sql);
+    // pg_dump --create emits per-database role settings for every login.
+    for (const role of RESTORE_LOGIN_ROLES) await db.exec(`ALTER ROLE ${role} IN DATABASE postgres SET search_path TO pg_catalog, public`);
+    const { rows } = await db.query(`SELECT m.rolname AS member, r.rolname AS policy, a.admin_option, a.inherit_option, a.set_option, m.rolcanlogin
+      FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid JOIN pg_roles m ON m.oid=a.member
+      WHERE m.rolname LIKE 'simsa\_%' ORDER BY 1`);
+    assert.deepEqual(rows.map(({ member, policy, admin_option, inherit_option, set_option, rolcanlogin }) => [member, policy, admin_option, inherit_option, set_option, rolcanlogin]), [
+      ['simsa_api', 'simsa_api_runtime', false, true, false, true],
+      ['simsa_backup', 'simsa_backup_reader', false, true, false, true],
+      ['simsa_migration', 'simsa_migrator', false, true, true, true],
+      ['simsa_operator', 'simsa_maintenance', false, true, false, true],
+      ['simsa_worker', 'simsa_worker_runtime', false, true, false, true],
+    ]);
+  } finally { await db.close(); }
+  assert.throws(() => restoreTargetRoles({ simsa_api: "x'; DROP ROLE simsa_api; --" }), /password/);
+});

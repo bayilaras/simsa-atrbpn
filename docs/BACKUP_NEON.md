@@ -84,6 +84,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Pemulihan belum terbukti; jangan gunakan hasil
 
 Perintah memeriksa ACL, autentikasi manifest, hash, tag GCM **seluruh** payload, dan kecocokan helper/migrasi sebelum menjalankan cluster target. Ia tidak membaca URL/credential sumber maupun menghubungi Neon.
 
+Target restore membuat ulang semua login yang dirujuk dump produksi (`simsa_api`, `simsa_migration`, `simsa_operator`, `simsa_backup`, `simsa_worker`) dengan password acak dalam RAM dan hanya keanggotaan policy yang telah ditinjau. Sebelum 4 Oktober 2026 perintah ini tidak membuat `simsa_worker`, sehingga `pg_restore` berhenti dengan `role "simsa_worker" does not exist` pada bundle produksi. Karena hash helper terikat di manifest, bundle lama tetap harus diverifikasi dengan checkout yang cocok; untuk bundle dari checkout sebelum perbaikan ini, jalankan `restoreDatabaseProof` dari `scripts/operations-recovery-database.mjs` pada checkout yang sama (cara uji pulih 3 Oktober 2026), bukan melonggarkan pemeriksaan helper.
+
 Target selalu direktori baru, PostgreSQL loopback pada port acak 40000–59999 selain 55432. Identitas direktori, port, database administrasi, user, versi, serta system identifier diperiksa sebelum mutasi/penghentian. Tidak menerima argumen untuk menimpa database yang sudah berjalan.
 
 Dump dipulihkan lengkap; kepemilikan dan grant aplikasi ditetapkan kembali pada target. Verifikasi membandingkan fingerprint struktur, locale, migrasi, grant ternormalisasi, jumlah baris dan data, kemudian memeriksa role API tetap terbatas. Hasil baru disebut lulus setelah cluster target berhenti dan port tertutup. Direktori target dan log tetap privat untuk pemeriksaan. Tidak ada penghapusan data sumber atau target otomatis.

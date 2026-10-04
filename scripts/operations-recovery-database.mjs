@@ -1,11 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { join,dirname } from 'node:path';
 import { createRequire } from 'node:module';
-import { randomBytes } from 'node:crypto';
 import { boundedFile } from './neon-backup-runtime.mjs';
 import { openNeonBundle,migrationManifest,loadNeonEvidenceSql } from './neon-backup-core.mjs';
 import { neonBackupHelperHashes } from './neon-backup.mjs';
-import { POLICY_ROLES,LOGIN_ROLES,loadNeonGrantPolicy,verifyNeonRuntime } from './neon-database-policy.mjs';
+import { POLICY_ROLES,loadNeonGrantPolicy,verifyNeonRuntime,restoreTargetRoles } from './neon-database-policy.mjs';
 import { NEON_RESTORE_OWNERS_SQL } from './neon-backup-role.mjs';
 import { normalizeEvidence,sha256 } from './local-backup-drill-core.mjs';
 import { createRecoveryTarget } from './operations-recovery-target.mjs';
@@ -26,10 +25,8 @@ export async function restoreDatabaseProof(plain,workspace,{targetFactory=create
  let target;
  try{
   target=await targetFactory(workspace);const database=plain.body.source.database;
-  const logins=[...LOGIN_ROLES,'simsa_backup','simsa_worker'];const passwords=Object.fromEntries(logins.map(name=>[name,randomBytes(32).toString('hex')]));
-  await target.guard();await target.query(POLICY_ROLES.map(role=>`CREATE ROLE ${ident(role)} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT;`).join('\n')
-   +logins.map(role=>`CREATE ROLE ${ident(role)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '${passwords[role]}';`).join('\n')
-   +'GRANT simsa_api_runtime TO simsa_api WITH ADMIN FALSE, INHERIT TRUE, SET FALSE; GRANT simsa_maintenance TO simsa_operator WITH ADMIN FALSE, INHERIT TRUE, SET FALSE; GRANT simsa_migrator TO simsa_migration WITH ADMIN FALSE, INHERIT TRUE, SET TRUE; GRANT simsa_backup_reader TO simsa_backup WITH ADMIN FALSE, INHERIT TRUE, SET FALSE; GRANT simsa_worker_runtime TO simsa_worker WITH ADMIN FALSE, INHERIT TRUE, SET FALSE;');
+  const {passwords,sql:roles}=restoreTargetRoles();
+  await target.guard();await target.query(roles);
   await target.guard();await (target.command??workspace.command)('pg_restore',['--no-password','--exit-on-error','--create','--no-owner','--no-privileges','--dbname','postgres'],{env:target.env(),input:plain.archive,timeoutMs:300000,maximum:4*1024*1024});proof.restoreExecuted=true;
   await target.guard();await target.query(NEON_RESTORE_OWNERS_SQL,database);
   await target.query(`REVOKE ALL ON DATABASE ${ident(database)} FROM PUBLIC; GRANT CONNECT ON DATABASE ${ident(database)} TO ${POLICY_ROLES.map(ident).join(',')};`,database);
