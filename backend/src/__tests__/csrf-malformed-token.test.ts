@@ -51,3 +51,15 @@ describe('malformed CSRF credentials', () => {
         }));
     });
 });
+
+describe('bearer-authenticated monitor endpoint', () => {
+    it('exempts only the exact scanner wake path from cookie CSRF', () => {
+        vi.stubEnv('AUTH_PROVIDER', 'better-auth');
+        for (const [path, allowed] of [['/operations/scanner-wake', true], ['/operations/scanner-wake/', false], ['/operations/status', false], ['/operations/scanner-wake-x', false]] as const) {
+            const response = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+            const next = vi.fn();
+            csrfProtection({ method: 'POST', path, cookies: {}, headers: {} } as any, response as any, next);
+            expect(next.mock.calls.length).toBe(allowed ? 1 : 0);
+        }
+    });
+});
