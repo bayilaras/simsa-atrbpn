@@ -78,6 +78,12 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
         return next();
     }
 
+    // The monitor's scanner wake is authenticated only by its bearer token,
+    // never by an ambient browser cookie, so cookie CSRF does not apply.
+    if (req.path === '/operations/scanner-wake') {
+        return next();
+    }
+
     const cloudConfig = buildCloudPlatformConfig();
     if (cloudConfig.authProvider === 'firebase') {
         // Explicit bearer credentials are not ambient browser authority and

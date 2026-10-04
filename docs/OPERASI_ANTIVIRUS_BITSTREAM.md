@@ -7,6 +7,8 @@ Adaptor native memakai executable resmi, definisi bertanda tangan yang diperbaru
 setelah 24 jam, deadline serta batas memori; Preview aplikasi tidak menjalankannya.
 Aktivasi Production memerlukan hasil uji cloud lengkap, bukan hanya unit test.
 
+Bukti verifikasi pemindai on-demand berlaku 24 jam sejak definisi terakhir diperbarui. Workflow **SIMSA Operations Monitor** (tiap jam) lebih dulu memanggil `POST /api/operations/scanner-wake` dengan `OPERATIONS_MONITOR_TOKEN`; backend hanya membangunkan pemindai bila verifikasi hilang atau tersisa kurang dari 6 jam, lalu monitor memeriksa ulang hingga ±2 menit. Dengan begitu hari tanpa unggahan tidak membuat `/ready` 503 atau unggahan tertahan. Endpoint ini hanya mempercepat; ia tidak mengubah status antrean atau karantina.
+
 Bagian TCP berikut memakai protokol resmi ClamAV `clamd` `INSTREAM`. Berkas tetap berada
 dalam karantina sampai `clamd` mengembalikan respons persis `stream: OK` dan
 SHA-256 serta ukuran hasil baca ulang cocok dengan baseline ingest. Respons

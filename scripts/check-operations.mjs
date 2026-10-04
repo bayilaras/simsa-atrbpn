@@ -29,7 +29,33 @@ export async function runOperationsProbe(source = process.env, fetcher = fetch) 
     return healthy;
 }
 
+/** Asks the backend to refresh on-demand antivirus verification before it lapses. */
+export async function requestScannerWake(source = process.env, fetcher = fetch) {
+    try {
+        const response = await fetcher('https://simsa-frontend.vercel.app/api/operations/scanner-wake', {
+            method: 'POST', headers: { Authorization: `Bearer ${source.OPERATIONS_MONITOR_TOKEN || ''}`, Accept: 'application/json' },
+            redirect: 'error', signal: AbortSignal.timeout(30000),
+        });
+        const body = await response.text();
+        const status = body.length <= 1024 ? JSON.parse(body)?.status : undefined;
+        return ['fresh', 'scheduled', 'not_required', 'unavailable'].includes(status) ? status : 'failed';
+    } catch { return 'failed'; }
+}
+
+export async function runMonitor(source = process.env, fetcher = fetch, sleep = ms => new Promise(done => setTimeout(done, ms))) {
+    if ((source.OPERATIONS_MONITOR_TOKEN || '').length < 32) throw new Error('OPERATIONS_MONITOR_TOKEN belum dikonfigurasi.');
+    const wake = await requestScannerWake(source, fetcher);
+    console.log(`Pemindai: ${wake}.`);
+    // A scheduled wake needs about a minute to refresh definitions; probe
+    // again only then, at most six times, before reporting the result.
+    for (let attempt = 1; ; attempt++) {
+        const healthy = await runOperationsProbe(source, fetcher);
+        if (healthy || wake !== 'scheduled' || attempt >= 6) return healthy;
+        await sleep(20000);
+    }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-    try { process.exitCode = await runOperationsProbe() ? 0 : 1; }
+    try { process.exitCode = await runMonitor() ? 0 : 1; }
     catch { console.error('Pemeriksaan monitoring gagal. Periksa koneksi dan konfigurasi token CI.'); process.exitCode = 1; }
 }
