@@ -47,7 +47,7 @@ Gerbang (e) = **tidak ada data lama** (0 surat masuk tanpa pembuat). Langkah 15�
 
 ## Tahap E — sisa
 
-- Pastikan backup terjadwal berikutnya (`backup-neon.yml`, 00:00 UTC, dari `main` = C48) berhasil. Secret `NEON_BACKUP_DATABASE_URL` wajib berformat endpoint direct + `sslmode=verify-full&channel_binding=require`.
+- Pastikan backup terjadwal berikutnya berhasil. *Koreksi 4 Okt 2026:* backup harian dijalankan `operations-recovery.yml` (00:15 UTC, environment `production-recovery`), bukan `backup-neon.yml`; workflow itu tidak lagi punya jadwal dan berstatus Disabled. Secret `NEON_BACKUP_DATABASE_URL` wajib berformat endpoint direct + `sslmode=verify-full&channel_binding=require`. Lihat `HASIL_RILIS_C49_2026-10-04.md`.
 - Salin bundle + kunci Backup #2 dan #3 ke penyimpanan aman di luar laptop (bundle dan kunci terpisah), cocokkan SHA-256, baru hapus salinan lokal.
 - Penugasan `admin_unit` direktorat tetap ditunda; ketiga direktorat masih `can_receive_distribution = false` (lihat dokumen tahap A–B).
 - Sign-off gerbang §4, catatan rilis TU, dan uji asap P4/P5 dengan data sintetis.
