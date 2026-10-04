@@ -47,6 +47,7 @@ export default function Settings() {
         name: '',
         description: '',
         isUnitPengawas: false,
+        canReceiveDistribution: true,
     });
 
     // Surat Templates state
@@ -140,6 +141,7 @@ export default function Settings() {
             name: unit.name || '',
             description: unit.description || '',
             isUnitPengawas: unit.isUnitPengawas === true,
+            canReceiveDistribution: unit.canReceiveDistribution !== false,
         });
     };
 
@@ -147,12 +149,11 @@ export default function Settings() {
         if (!isSuperAdmin || !selectedUnitKerja) return;
         setSaving(true);
         try {
-            // Penanda pengawas hanya dikirim bila berubah, agar penggantian nama
-            // tidak mengotori jejak audit pengawas (D5).
-            const { isUnitPengawas, ...lain } = unitKerjaForm;
-            const payload = isUnitPengawas !== (selectedUnitKerja.isUnitPengawas === true)
-                ? { ...lain, isUnitPengawas }
-                : lain;
+            // Penanda pengawas dan distribusi hanya dikirim bila berubah, agar
+            // penggantian nama tidak mengotori jejak audit keduanya (D5).
+            const { isUnitPengawas, canReceiveDistribution, ...payload } = unitKerjaForm;
+            if (isUnitPengawas !== (selectedUnitKerja.isUnitPengawas === true)) payload.isUnitPengawas = isUnitPengawas;
+            if (canReceiveDistribution !== (selectedUnitKerja.canReceiveDistribution !== false)) payload.canReceiveDistribution = canReceiveDistribution;
             await settingsService.updateUnitKerja(selectedUnitKerja.id, payload);
             setSelectedUnitKerja((current) => (current ? { ...current, ...payload } : current));
             toast({
@@ -441,6 +442,9 @@ export default function Settings() {
                                                     {unit.isUnitPengawas && (
                                                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 h-auto">Pengawas</Badge>
                                                     )}
+                                                    {unit.canReceiveDistribution === false && (
+                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto">Tanpa distribusi</Badge>
+                                                    )}
                                                     {unit.unitType && (
                                                         <Badge
                                                             variant="outline"
@@ -514,6 +518,20 @@ export default function Settings() {
                                                     checked={unitKerjaForm.isUnitPengawas}
                                                     onCheckedChange={(checked) => setUnitKerjaForm(current => ({ ...current, isUnitPengawas: checked }))}
                                                     aria-label="Unit Pengawas (pencatat terpusat)"
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                                                <div>
+                                                    <p className="font-medium text-foreground">Dapat menerima distribusi</p>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        Unit muncul sebagai tujuan disposisi dan distribusi. Matikan bila unit belum memiliki
+                                                        admin unit aktif. Perubahan dicatat di audit log.
+                                                    </p>
+                                                </div>
+                                                <Switch
+                                                    checked={unitKerjaForm.canReceiveDistribution}
+                                                    onCheckedChange={(checked) => setUnitKerjaForm(current => ({ ...current, canReceiveDistribution: checked }))}
+                                                    aria-label="Dapat menerima distribusi"
                                                 />
                                             </div>
 
