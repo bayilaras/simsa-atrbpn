@@ -12,6 +12,7 @@ const date = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2
 const count = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0;
 const validCount = (value: unknown) => (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value)))
     && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
+const FIXITY_ENROLLMENT_GRACE_HOURS = 26;
 const QUEUE_KEYS = ['scanWaiting', 'scanOverdue', 'scanErrors', 'fixityOverdue', 'fixityErrors', 'fixityUnscheduled', 'mismatched'];
 
 export function evaluateRecoveryCheck(id: 'backup' | 'restore', evidence: unknown, now: number): Check {
@@ -54,7 +55,7 @@ export function buildOperationsStatus(input: { now: number; readiness: unknown; 
     checks.push({ id: 'scan_queue', label: 'Antrean pemindaian', status: unavailable ? 'unknown' : scanCounts.errors || scanCounts.overdue ? 'attention' : 'healthy',
         message: unavailable ? 'Antrean belum dapat diperiksa.' : 'Berkas menunggu lebih dari 30 menit atau gagal dipindai perlu ditindaklanjuti.', ...(!unavailable ? { counts: scanCounts } : {}) });
     checks.push({ id: 'fixity', label: 'Integritas dokumen berkala', status: unavailable ? 'unknown' : fixityCounts.mismatched ? 'failed' : Object.values(fixityCounts).some(Boolean) ? 'attention' : 'healthy',
-        message: unavailable ? 'Jadwal integritas belum dapat diperiksa.' : 'Periksa berkas rusak, pemeriksaan gagal, jadwal terlambat lebih dari satu jam, atau berkas yang belum terjadwal.', ...(!unavailable ? { counts: fixityCounts } : {}) });
+        message: unavailable ? 'Jadwal integritas belum dapat diperiksa.' : 'Periksa berkas rusak, pemeriksaan gagal, jadwal terlambat lebih dari satu jam, atau berkas bersih yang belum terjadwal lebih dari 26 jam.', ...(!unavailable ? { counts: fixityCounts } : {}) });
     checks.push(evaluateRecoveryCheck('backup', recovery.backup, input.now), evaluateRecoveryCheck('restore', recovery.restore, input.now));
     return { timestamp: new Date(input.now).toISOString(), status: checks.some(c => c.status === 'failed') ? 'failed' : checks.some(c => ['attention', 'unknown'].includes(c.status)) ? 'attention' : 'healthy',
         checks, ciUrl: 'https://github.com/bayilaras/simsa-atrbpn/actions', refreshAfterSeconds: 60 };
@@ -90,6 +91,10 @@ export async function collectOperationsStatus() {
     const pendingScan = `(malware_scan_status IN ('not_scanned', 'not_required')
         OR (malware_scan_status='clean' AND (integrity_status <> 'verified' OR sha256 IS NULL OR sha256 !~* '^[a-f0-9]{64}$'))
         OR malware_scan_status ~ '^(scanning|retry):[1-9][0-9]?:[0-9]{1,12}$')`;
+    // Only the daily fixity worker may enroll files (the API role has no
+    // INSERT on file_fixity_jobs). A scan that releases a file records its
+    // verified hash in last_fixity_check_at, so count a file as unscheduled
+    // only after the next daily run has had time to enroll it.
     const fixityEligible = `f.storage_access='private' AND f.malware_scan_status='clean'
         AND f.sha256 IS NOT NULL AND f.integrity_status <> 'mismatch'`;
     const [ready, queue, recovery] = await Promise.allSettled([
@@ -103,7 +108,8 @@ export async function collectOperationsStatus() {
             (SELECT count(*) FROM file_fixity_jobs j JOIN file_attachments f ON f.id=j.attachment_id
                 WHERE ${fixityEligible} AND j.last_result IN ('error', 'stale')) AS "fixityErrors",
             (SELECT count(*) FROM file_attachments f LEFT JOIN file_fixity_jobs j ON j.attachment_id=f.id
-                WHERE j.attachment_id IS NULL AND ${fixityEligible}) AS "fixityUnscheduled",
+                WHERE j.attachment_id IS NULL AND ${fixityEligible}
+                  AND coalesce(f.last_fixity_check_at, f.created_at) < now() - interval '${FIXITY_ENROLLMENT_GRACE_HOURS} hours') AS "fixityUnscheduled",
             (SELECT count(*) FROM file_attachments WHERE integrity_status='mismatch') AS "mismatched"`, query_timeout: 5000 } as QueryConfig & { query_timeout: number }),
         readRecoveryEvidence(),
     ]);

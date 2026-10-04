@@ -56,7 +56,7 @@ WHERE j.attachment_id IS NULL AND f.storage_access='private'
   AND f.integrity_status <> 'mismatch';
 ```
 
-Pantau antrean terlambat dan berkas yang belum terjadwal, selain exit worker. Penemuan berkas baru juga dibatasi per batch. Berkas tanpa hash, belum bersih, publik, atau sudah mismatch memerlukan penanganan terpisah dan tidak dianggap berhasil diperiksa.
+Pantau antrean terlambat dan berkas yang belum terjadwal, selain exit worker. Hanya worker fixity harian yang mendaftarkan berkas baru (peran API tidak punya hak `INSERT` pada `file_fixity_jobs`), sehingga Monitoring Operasional baru menghitung berkas bersih sebagai "belum terjadwal" bila `coalesce(last_fixity_check_at, created_at)` lebih tua dari 26 jam. Berkas yang baru dinyatakan bersih tidak memerahkan monitor sebelum jadwal harian berikutnya sempat berjalan; kueri `missing_schedule` di atas tetap menampilkan semuanya. Penemuan berkas baru juga dibatasi per batch. Berkas tanpa hash, belum bersih, publik, atau sudah mismatch memerlukan penanganan terpisah dan tidak dianggap berhasil diperiksa.
 
 ## Backup dan uji penerimaan
 
