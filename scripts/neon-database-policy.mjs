@@ -1,14 +1,18 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { loadMigrations, validateAppliedMigrations, migrateDatabase } from '../backend/scripts/migrate-database.mjs';
 import { assertNeonBackupRole, NEON_BACKUP_GRANTS } from './neon-backup-role.mjs';
-import { assertNeonWorkerRole } from './neon-worker-role.mjs';
+import { assertNeonWorkerRole, WORKER_LOGIN } from './neon-worker-role.mjs';
 
 export const POLICY_ROLES = Object.freeze(['simsa_api_runtime', 'simsa_event_runtime', 'simsa_worker_runtime',
   'simsa_final_cleanup', 'simsa_maintenance', 'simsa_migrator', 'simsa_backup_reader']);
 export const LOGIN_ROLES = Object.freeze(['simsa_api', 'simsa_migration', 'simsa_operator']);
 const ROLE_BINDINGS = Object.freeze({ simsa_api: 'simsa_api_runtime', simsa_migration: 'simsa_migrator', simsa_operator: 'simsa_maintenance' });
+// Every login a production dump references (per-database settings, ACLs).
+// Restore targets recreate each one with only its reviewed policy membership.
+export const RESTORE_LOGIN_ROLES = Object.freeze([...LOGIN_ROLES, 'simsa_backup', WORKER_LOGIN]);
+const RESTORE_BINDINGS = Object.freeze({ ...ROLE_BINDINGS, simsa_backup: 'simsa_backup_reader', [WORKER_LOGIN]: 'simsa_worker_runtime' });
 const identifier = value => {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._@-]{0,62}$/.test(value)) throw new Error('Invalid pinned database identifier');
   return '"' + value + '"';
@@ -17,6 +21,17 @@ const identifier = value => {
 // escaping also stays correct if the administrator changed SQL string defaults.
 const literal = value => "E'" + value.replaceAll('\\', '\\\\').replaceAll("'", "''") + "'";
 const requireCondition = (condition, message) => { if (!condition) throw new Error(message); };
+
+/** Roles for a disposable restore target; passwords are fresh and stay in RAM. */
+export function restoreTargetRoles(passwords = Object.fromEntries(RESTORE_LOGIN_ROLES.map(role => [role, randomBytes(32).toString('hex')]))) {
+  requireCondition(RESTORE_LOGIN_ROLES.every(role => /^[a-f0-9]{64}$/.test(passwords[role] ?? '')), 'Restore target password is invalid');
+  const sql = [
+    ...POLICY_ROLES.map(role => `CREATE ROLE ${identifier(role)} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT;`),
+    ...RESTORE_LOGIN_ROLES.map(role => `CREATE ROLE ${identifier(role)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '${passwords[role]}';`),
+    ...RESTORE_LOGIN_ROLES.map(role => `GRANT ${identifier(RESTORE_BINDINGS[role])} TO ${identifier(role)} WITH ADMIN FALSE, INHERIT TRUE, SET ${role === 'simsa_migration' ? 'TRUE' : 'FALSE'};`),
+  ].join('\n');
+  return { passwords, sql };
+}
 
 export async function assertEmptyNeonDatabase(client, { database, admin }) {
   const row = (await client.query(`SELECT current_database() AS database, current_user AS actor, session_user AS session_actor,
