@@ -80,7 +80,7 @@ describe('operational collector uses the workers actual SQL membership', () => {
         await database.exec(`CREATE TABLE file_attachments (
             id text PRIMARY KEY, entity_type text NOT NULL DEFAULT 'arsip', file_url text DEFAULT 'gs://private/qa.pdf',
             drive_file_id text, storage_access text DEFAULT 'private', malware_scan_status text DEFAULT 'clean',
-            integrity_status text DEFAULT 'verified', sha256 text DEFAULT repeat('a',64), created_at timestamptz DEFAULT now()-interval '2 hours');
+            integrity_status text DEFAULT 'verified', sha256 text DEFAULT repeat('a',64), created_at timestamptz DEFAULT now()-interval '2 hours', last_fixity_check_at timestamptz);
             CREATE TABLE file_fixity_jobs (attachment_id text PRIMARY KEY REFERENCES file_attachments(id), next_check_at timestamptz DEFAULT now()-interval '2 hours', last_result text);`);
     }, 30_000);
     beforeEach(async () => {
@@ -116,6 +116,20 @@ describe('operational collector uses the workers actual SQL membership', () => {
         const result = await collectOperationsStatus();
         expect(check(result, 'fixity').counts).toEqual({ overdue: 2, errors: 2, unscheduled: 0, mismatched: 0 });
         expect(check(result, 'scan_queue').counts?.errors).toBe(1);
+    });
+    it('gives newly released files until the next daily fixity run before reporting them unscheduled', async () => {
+        await database.exec(`INSERT INTO file_attachments(id,created_at,last_fixity_check_at) VALUES
+            ('released-today', now()-interval '30 days', now()-interval '1 hour'),
+            ('uploaded-today', now()-interval '2 hours', NULL),
+            ('released-long-ago', now()-interval '30 days', now()-interval '27 hours'),
+            ('legacy-never-checked', now()-interval '30 days', NULL);
+            INSERT INTO file_attachments(id,created_at,last_fixity_check_at,malware_scan_status) VALUES
+            ('old-unclean', now()-interval '30 days', NULL, 'not_scanned');`);
+        const result = await collectOperationsStatus();
+        expect(check(result, 'fixity').counts).toEqual({ overdue: 0, errors: 0, unscheduled: 2, mismatched: 0 });
+        expect(check(result, 'fixity').status).toBe('attention');
+        await database.exec(`DELETE FROM file_attachments WHERE id IN ('released-long-ago','legacy-never-checked','old-unclean')`);
+        expect(check(await collectOperationsStatus(), 'fixity').status).toBe('healthy');
     });
     it('keeps infected, terminal and legacy unscanned letter attachments visible', async () => {
         await database.exec(`INSERT INTO file_attachments(id,malware_scan_status) VALUES ('failure','scan_error'),('infected','infected');
