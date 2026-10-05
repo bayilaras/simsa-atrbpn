@@ -22,6 +22,11 @@ test('Vercel routes explicitly use the gated Node function and Fluid Compute', (
         { source: '/api/internal-malware-scan', destination: '/api/internal-malware-scan.js' },
         { source: '/(.*)', destination: '/api/index.js' },
     ]);
+    // Two daily crons (Hobby-compatible) renew the 24-hour antivirus lease within its 13-hour refresh margin.
+    assert.deepEqual(config.crons, [
+        { path: '/api/operations/scanner-wake', schedule: '7 3 * * *' },
+        { path: '/api/operations/scanner-wake', schedule: '7 15 * * *' },
+    ]);
     assert.equal(config.functions['api/internal-malware-scan.js'].maxDuration, 300);
     assert.equal(config.functions['api/internal-malware-scan.js'].includeFiles, '{dist-vercel/workers,native-clamav-assets}/**');
     assert.deepEqual(readdirSync(new URL('../backend/api/', import.meta.url)).filter(name => !name.startsWith('.')), ['index.js', 'internal-malware-scan.js'],

@@ -34,8 +34,8 @@ describe('POST /api/operations/scanner-wake', () => {
         expect(io.wake).not.toHaveBeenCalled();
     });
 
-    it('does not wake a scanner whose verification remains valid for more than six hours', async () => {
-        io.readiness.mockResolvedValue(worker({ state: 'ready', definitionsExpiresAt: new Date(now + 7 * 3600_000).toISOString() }));
+    it('does not wake a scanner whose verification remains valid for more than thirteen hours', async () => {
+        io.readiness.mockResolvedValue(worker({ state: 'ready', definitionsExpiresAt: new Date(now + 14 * 3600_000).toISOString() }));
         const response = await wake().expect(200);
         expect(response.body).toEqual({ status: 'fresh' });
         expect(response.headers['cache-control']).toBe('no-store');
@@ -43,7 +43,7 @@ describe('POST /api/operations/scanner-wake', () => {
     });
 
     it.each([
-        ['expiring within six hours', { state: 'ready', definitionsExpiresAt: new Date(now + 5 * 3600_000).toISOString() }],
+        ['expiring within thirteen hours', { state: 'ready', definitionsExpiresAt: new Date(now + 12 * 3600_000).toISOString() }],
         ['expired or missing', { state: 'not_ready', reason: 'on_demand_verification_missing_or_expired' }],
         ['malformed expiry', { state: 'ready', definitionsExpiresAt: 'tomorrow' }],
     ])('schedules a wake when verification is %s', async (_label, malwareWorker) => {
@@ -68,6 +68,32 @@ describe('POST /api/operations/scanner-wake', () => {
         io.readiness.mockRejectedValue(new Error('private database detail'));
         const response = await wake().expect(202);
         expect(JSON.stringify(response.body)).not.toContain('private');
+        expect(io.wake).toHaveBeenCalledOnce();
+    });
+});
+
+describe('GET /api/operations/scanner-wake (Vercel Cron)', () => {
+    beforeEach(() => {
+        vi.stubEnv('CRON_SECRET', 'c'.repeat(48));
+        vi.stubEnv('OPERATIONS_MONITOR_TOKEN', token);
+        io.wake.mockReset().mockReturnValue(true);
+        io.readiness.mockReset().mockResolvedValue(worker({ state: 'not_ready' }));
+    });
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('accepts only the cron secret, never the monitor token or a missing secret', async () => {
+        await request(app).get('/api/operations/scanner-wake').expect(401);
+        await request(app).get('/api/operations/scanner-wake').set('Authorization', `Bearer ${token}`).expect(401);
+        vi.stubEnv('CRON_SECRET', '');
+        await request(app).get('/api/operations/scanner-wake').set('Authorization', 'Bearer ').expect(401);
+        expect(io.readiness).not.toHaveBeenCalled();
+        expect(io.wake).not.toHaveBeenCalled();
+    });
+
+    it('wakes an expired scanner with the cron secret without caching the response', async () => {
+        const response = await request(app).get('/api/operations/scanner-wake').set('Authorization', `Bearer ${'c'.repeat(48)}`).expect(202);
+        expect(response.body).toEqual({ status: 'scheduled' });
+        expect(response.headers['cache-control']).toBe('no-store');
         expect(io.wake).toHaveBeenCalledOnce();
     });
 });

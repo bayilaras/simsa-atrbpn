@@ -60,6 +60,26 @@ describe('native signed definitions and freshness', () => {
         expect(Date.parse(a.evidence.definitionsVerifiedAt)).toBeGreaterThan(Date.parse(fixture.verifiedAt));
         await manager.release(a); await manager.release(b); await manager.dispose();
     });
+    it('refreshes signed definitions early once fewer than 13 hours of validity remain', async () => {
+        const fixture = await assets(12 * 3_600_000); let updates = 0;
+        const run = vi.fn(async (command: string) => (command.endsWith('freshclam') ? (updates++, { ...verification, stdout: 'All databases are up-to-date.' }) : verification));
+        const manager = new NativeClamAvDefinitions(fixture.directory, run);
+        const snapshot = await manager.acquire(Date.now() + 10000);
+        expect(updates).toBe(1);
+        expect(Date.parse(snapshot.evidence.definitionsExpiresAt) - Date.now()).toBeGreaterThan(23 * 3_600_000);
+        await manager.release(snapshot); await manager.dispose();
+    });
+    it('keeps still-valid definitions when an early refresh fails and retries only after an hour', async () => {
+        const fixture = await assets(12 * 3_600_000); let updates = 0;
+        const run = vi.fn(async (command: string) => (command.endsWith('freshclam') ? (updates++, { ...verification, code: 1 }) : verification));
+        const manager = new NativeClamAvDefinitions(fixture.directory, run);
+        const first = await manager.acquire(Date.now() + 10000);
+        expect(first.evidence.definitionsVerifiedAt).toBe(fixture.verifiedAt);
+        expect(manager.getEvidence()?.definitionsVerifiedAt).toBe(fixture.verifiedAt);
+        const second = await manager.acquire(Date.now() + 10000);
+        expect(second).toEqual(first); expect(updates).toBe(1);
+        await manager.release(first); await manager.release(second); await manager.dispose();
+    });
     it('never falls back to stale definitions after Freshclam failure', async () => {
         const fixture = await assets(86_400_001);
         const manager = new NativeClamAvDefinitions(fixture.directory, vi.fn(async command => command.endsWith('freshclam') ? { ...verification, code: 1 } : verification));
