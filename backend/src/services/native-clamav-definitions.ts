@@ -3,10 +3,11 @@ import { createReadStream } from 'node:fs';
 import { chmod, cp, lstat, mkdir, mkdtemp, open, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir, userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { isCurrentMalwareEngineEvidence, type MalwareEngineEvidence } from './malware-scanner.service.js';
+import { isCurrentMalwareEngineEvidence, MALWARE_DEFINITION_REFRESH_BEFORE_MS, type MalwareEngineEvidence } from './malware-scanner.service.js';
 
 export const NATIVE_CLAMAV_VERSION = '1.5.4';
 export const NATIVE_DEFINITION_TTL_MS = 86_400_000;
+const EARLY_REFRESH_RETRY_MS = 3_600_000;
 const DATABASES = ['main', 'daily', 'bytecode'] as const;
 export interface NativeCommandResult { code: number | null; stdout: string; stderr: string; peakCombinedRssBytes: number }
 export interface NativeCommandOptions { assetsDirectory: string; workDirectory: string; deadlineAtMs: number; maxCombinedRssBytes: number; signal?: AbortSignal }
@@ -72,6 +73,7 @@ function assertVerification(result: NativeCommandResult, version: number): void 
 export class NativeClamAvDefinitions implements NativeDefinitionStore {
     private snapshot: NativeDefinitionSnapshot | null = null;
     private inFlight: Promise<NativeDefinitionSnapshot> | null = null;
+    private earlyRefreshRetryAt = 0;
     private readonly workspaces = new Set<string>();
     private readonly references = new Map<string, number>();
     constructor(private readonly assetsDirectory: string, private readonly run: NativeCommandRunner,
@@ -84,7 +86,10 @@ export class NativeClamAvDefinitions implements NativeDefinitionStore {
     }
     async acquire(deadlineAtMs: number, signal?: AbortSignal): Promise<NativeDefinitionSnapshot> {
         checkDeadline(deadlineAtMs, signal);
-        if (!this.snapshot || !isCurrentMalwareEngineEvidence(this.snapshot.evidence)) {
+        const current = this.snapshot && isCurrentMalwareEngineEvidence(this.snapshot.evidence) ? this.snapshot : null;
+        const expiring = current !== null && Date.parse(current.evidence.definitionsExpiresAt) - Date.now() < MALWARE_DEFINITION_REFRESH_BEFORE_MS
+            && Date.now() >= this.earlyRefreshRetryAt;
+        if (!current || expiring) {
             this.inFlight ??= this.prepare(deadlineAtMs, signal).finally(() => { this.inFlight = null; });
         }
         // An aborted waiter still waits for the owned updater to close. The global
@@ -122,29 +127,45 @@ export class NativeClamAvDefinitions implements NativeDefinitionStore {
             const actual = await readArtifact(baseline, name, deadlineAtMs, signal);
             if (!expected || Object.keys(actual).some(key => actual[key as keyof DatabaseArtifact] !== expected[key])) throw new Error('Packaged antivirus definition hash mismatch');
         }
-        let directory = baseline;
-        let updatedAt = verifiedAt;
-        let owned: string | null = null;
         const previous = this.snapshot;
+        // Start from the freshest still-valid signed set: a warm snapshot that
+        // already passed Freshclam, otherwise the packaged baseline.
+        const prior = previous && isCurrentMalwareEngineEvidence(previous.evidence) ? previous : null;
+        let directory = prior?.directory ?? baseline;
+        let updatedAt = prior ? Date.parse(prior.evidence.definitionsVerifiedAt) : verifiedAt;
+        let owned: string | null = null;
         try {
-            if (Date.now() >= verifiedAt + NATIVE_DEFINITION_TTL_MS) {
-                owned = await nativeWorkspace('definitions'); this.workspaces.add(owned);
-                directory = join(owned, 'database'); await mkdir(directory, { mode: 0o700 });
-                const seed = this.snapshot?.directory ?? baseline;
-                for (const name of DATABASES) {
-                    const artifact = await readArtifact(seed, name, deadlineAtMs, signal);
-                    await cp(join(seed, `${name}.cvd`), join(directory, `${name}.cvd`));
-                    await cp(join(seed, artifact.signatureFile), join(directory, artifact.signatureFile));
+            const expired = Date.now() >= updatedAt + NATIVE_DEFINITION_TTL_MS;
+            const early = !expired && Date.now() >= updatedAt + NATIVE_DEFINITION_TTL_MS - MALWARE_DEFINITION_REFRESH_BEFORE_MS
+                && Date.now() >= this.earlyRefreshRetryAt;
+            if (expired || early) {
+                const seed = directory;
+                try {
+                    owned = await nativeWorkspace('definitions'); this.workspaces.add(owned);
+                    const target = join(owned, 'database'); await mkdir(target, { mode: 0o700 });
+                    for (const name of DATABASES) {
+                        const artifact = await readArtifact(seed, name, deadlineAtMs, signal);
+                        await cp(join(seed, `${name}.cvd`), join(target, `${name}.cvd`));
+                        await cp(join(seed, artifact.signatureFile), join(target, artifact.signatureFile));
+                    }
+                    const owner = userInfo().username;
+                    if (!/^[a-z0-9_.-]+$/i.test(owner)) throw new Error('Unsupported antivirus database owner');
+                    const config = join(owned, 'freshclam.conf');
+                    await writeFile(config, [`DatabaseDirectory ${target}`, `DatabaseOwner ${owner}`, 'DatabaseMirror database.clamav.net', 'DNSDatabaseInfo current.cvd.clamav.net', 'ConnectTimeout 15', 'ReceiveTimeout 90', 'MaxAttempts 1', 'TestDatabases yes', 'Bytecode yes', 'ScriptedUpdates no', 'FIPSCryptoHashLimits yes', `CVDCertsDirectory ${join(this.assetsDirectory, 'etc/certs')}`, ''].join('\n'), { mode: 0o600, flag: 'wx' });
+                    const update = await this.run(join(this.assetsDirectory, 'bin/freshclam'), ['--config-file', config, '--stdout'], {
+                        assetsDirectory: this.assetsDirectory, workDirectory: owned, deadlineAtMs, maxCombinedRssBytes: this.maxCombinedRssBytes, signal,
+                    });
+                    if (update.code !== 0 || /ERROR|Can't download|failed to update/i.test(`${update.stdout}\n${update.stderr}`)) throw new Error('Official antivirus definition update failed');
+                    directory = target;
+                    updatedAt = Date.now();
+                } catch (error) {
+                    // Expired definitions are never reused. An early refresh may
+                    // fail; the still-valid signed set stays in use and the
+                    // official mirror is not retried for an hour.
+                    if (expired || signal?.aborted) throw error;
+                    if (owned) { await removeNativeWorkspace(owned); this.workspaces.delete(owned); owned = null; }
+                    this.earlyRefreshRetryAt = Date.now() + EARLY_REFRESH_RETRY_MS;
                 }
-                const owner = userInfo().username;
-                if (!/^[a-z0-9_.-]+$/i.test(owner)) throw new Error('Unsupported antivirus database owner');
-                const config = join(owned, 'freshclam.conf');
-                await writeFile(config, [`DatabaseDirectory ${directory}`, `DatabaseOwner ${owner}`, 'DatabaseMirror database.clamav.net', 'DNSDatabaseInfo current.cvd.clamav.net', 'ConnectTimeout 15', 'ReceiveTimeout 90', 'MaxAttempts 1', 'TestDatabases yes', 'Bytecode yes', 'ScriptedUpdates no', 'FIPSCryptoHashLimits yes', `CVDCertsDirectory ${join(this.assetsDirectory, 'etc/certs')}`, ''].join('\n'), { mode: 0o600, flag: 'wx' });
-                const update = await this.run(join(this.assetsDirectory, 'bin/freshclam'), ['--config-file', config, '--stdout'], {
-                    assetsDirectory: this.assetsDirectory, workDirectory: owned, deadlineAtMs, maxCombinedRssBytes: this.maxCombinedRssBytes, signal,
-                });
-                if (update.code !== 0 || /ERROR|Can't download|failed to update/i.test(`${update.stdout}\n${update.stderr}`)) throw new Error('Official antivirus definition update failed');
-                updatedAt = Date.now();
             }
             const artifacts = await this.authenticate(directory, deadlineAtMs, signal);
             const databases = artifacts.map(({ name, version, sha256, signatureSha256 }) => ({ name, version, sha256, signatureSha256 }));

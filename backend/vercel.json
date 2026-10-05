@@ -18,6 +18,16 @@
             "includeFiles": "{dist-vercel/workers,native-clamav-assets}/**"
         }
     },
+    "crons": [
+        {
+            "path": "/api/operations/scanner-wake",
+            "schedule": "7 3 * * *"
+        },
+        {
+            "path": "/api/operations/scanner-wake",
+            "schedule": "7 15 * * *"
+        }
+    ],
     "rewrites": [
         {
             "source": "/api/internal-malware-scan",
