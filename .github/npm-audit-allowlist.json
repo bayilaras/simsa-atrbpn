@@ -7,6 +7,20 @@
       "projects": ["docs-site"],
       "reason": "braces <=3.0.3 (DoS stack exhaustion pada pola bersarang dalam). Belum ada versi perbaikan per 2026-10-03 (terbaru 3.0.3). Di docs-site hanya dipakai alat build Docusaurus untuk situs statis; tidak berjalan di runtime aplikasi. Hapus entri ini begitu versi patch tersedia.",
       "expires": "2026-11-03"
+    },
+    {
+      "ghsa": "GHSA-5gmw-xhrv-c9v3",
+      "packages": ["tinypool"],
+      "projects": ["docs-site"],
+      "reason": "tinypool <=2.1.1 (prototype pollution gadget pada opsi worker; eksploitasi memerlukan polusi prototipe lain di proses yang sama). Di docs-site hanya dipakai @docusaurus/core 3.10.2 (terbaru per 2026-10-06) yang mengunci tinypool ^1.0.2; perbaikan baru ada di 2.1.2 (mayor). Hanya proses build situs statis, tidak berjalan di runtime aplikasi. Hapus entri ini begitu Docusaurus mendukung tinypool >=2.1.2.",
+      "expires": "2026-11-06"
+    },
+    {
+      "ghsa": "GHSA-85c8-ppgw-ccpr",
+      "packages": ["tinypool"],
+      "projects": ["docs-site"],
+      "reason": "tinypool <=2.1.1 (prototype pollution gadget pada opsi worker; eksploitasi memerlukan polusi prototipe lain di proses yang sama). Di docs-site hanya dipakai @docusaurus/core 3.10.2 (terbaru per 2026-10-06) yang mengunci tinypool ^1.0.2; perbaikan baru ada di 2.1.2 (mayor). Hanya proses build situs statis, tidak berjalan di runtime aplikasi. Hapus entri ini begitu Docusaurus mendukung tinypool >=2.1.2.",
+      "expires": "2026-11-06"
     }
   ]
 }
