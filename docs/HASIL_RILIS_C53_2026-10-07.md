@@ -66,6 +66,6 @@ Uji akun admin Dit. BPPT dan isolasi Lacak admin Dit. PTEP lulus 6 Okt 2026 (lap
 
 ## Sisa
 
-- Sign-off pejabat (`SIGN_OFF_RILIS_INTEGRASI_SURAT.md`) dan distribusi `CATATAN_RILIS_TU_INTEGRASI_SURAT.md`.
+- Persetujuan atasan langsung (`SIGN_OFF_RILIS_INTEGRASI_SURAT.md`) dan distribusi `CATATAN_RILIS_TU_INTEGRASI_SURAT.md`.
 - Laporan insiden store publik lama; arsip 24 dokumen ke penyimpanan kantor.
 - Pengecualian audit docs-site: `braces` kedaluwarsa 2026-11-03, `tinypool` 2026-11-06.
