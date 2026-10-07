@@ -27,5 +27,5 @@ Catat hasilnya di bawah sebelum sign-off.
 
 | Uji | Pelaksana | Tanggal | Hasil |
 |---|---|---|---|
-| Admin Dit. BPPT melihat riwayat disposisi | | | |
-| Isolasi Lacak admin Dit. PTEP | | | |
+| Admin Dit. BPPT melihat riwayat disposisi | Admin unit Dit. BPPT (akun Google sendiri) | 6 Okt 2026 | Lulus (laporan operator): `002/SM/2026` tampil Selesai di Kotak Masuk; `RS-2026-000002` dapat dibuka di Lacak |
+| Isolasi Lacak admin Dit. PTEP | Admin unit Dit. PTEP (akun Google sendiri) | 6 Okt 2026 | Lulus (laporan operator): surat `UJI ASAP` tidak dapat dibuka dari Lacak dan tidak ada di Kotak Masuk PTEP |

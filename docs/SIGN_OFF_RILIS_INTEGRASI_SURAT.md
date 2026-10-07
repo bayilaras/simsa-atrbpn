@@ -9,7 +9,7 @@ Pendamping §4 `RILIS_INTEGRASI_SURAT_P0_P5.md`. Kolom **Bukti** hanya merujuk c
 | P3-1b | `is_unit_pengawas` hanya `ditjen` dan `sesditjen` (diperiksa 4 Okt setelah koreksi direktorat 08:35–08:36; `HASIL_RILIS_C50_C51_2026-10-04.md` temuan 3) | disahkan Keamanan |
 | P3-8 | `admin_unit` `dir_bppt`/`dir_ptep`/`dir_ktpp` dibuat 4 Okt; `RANGKAIAN_AJUKAN_AKSES` tidak diset; backfill dan `/ready` di `HASIL_RILIS_INTEGRASI_SURAT_TAHAP_AB_2026-10-03.md` | disahkan Operator |
 | P3-7, P4-11 | C48 frontend dan backend dari satu `git archive` (`20b2787`), dipromosikan 10:59:29 dan 10:59:45 (`HASIL_RILIS_INTEGRASI_SURAT_TAHAP_C_2026-10-03.md`) | disahkan Operator |
-| P4-14 | Uji asap produksi data sintetis `HASIL_UJI_ASAP_INTEGRASI_SURAT_2026-10-04.md` (butir 1–7 lulus; dua uji akun direktorat menunggu) | disahkan Operator setelah dua uji akun direktorat |
+| P4-14 | Uji asap produksi data sintetis `HASIL_UJI_ASAP_INTEGRASI_SURAT_2026-10-04.md` (butir 1–7 lulus; uji akun Dit. BPPT dan isolasi Dit. PTEP lulus 6 Okt 2026, laporan operator) | disahkan Operator |
 | P4-15 | `batasDataLama` `2026-10-03T03:48:44.501Z` (dokumen Tahap A–B dan Tahap C) | disahkan Operator |
 | P5-d | `grants/0003` dijalankan `neondb_owner`; migrasi 0049; C48 setelah 0049 (Tahap C langkah 13–14). Sign-off pemilik DB atas pelaksana 0003 tetap diperlukan | disahkan Spec + pemilik DB |
 | P5-e | Gerbang (e) = tidak ada data lama (`surat_masuk.created_by IS NULL` = 0) | disahkan Data |
