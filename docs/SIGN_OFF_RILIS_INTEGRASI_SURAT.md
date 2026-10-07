@@ -27,7 +27,7 @@ Integrasi surat SIMSA disetujui untuk dipakai TU dan unit kerja mulai tanggal di
 
 | Peran | Nama | Tanggal | Tanda tangan / rujukan persetujuan |
 |---|---|---|---|
-| Atasan langsung | | | |
-| Operator SIMSA | | | |
+| Atasan langsung | Marwan Surachman Putra, Kasubbag TU | 7 Okt 2026 | Balasan WhatsApp |
+| Operator SIMSA | Efan | 7 Okt 2026 | Pencatat persetujuan |
 
 Persetujuan boleh berupa tanda tangan di lembar ini, nota dinas, atau pesan tertulis; cukup catat rujukannya di kolom terakhir.
