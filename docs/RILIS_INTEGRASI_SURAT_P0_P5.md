@@ -201,6 +201,8 @@ Bila gerbang (e) = tidak ada data lama, rilis selesai setelah langkah 14. Lewati
 
 ## 4. Gerbang rilis gabungan
 
+Sejak 7 Okt 2026 tabel ini menjadi daftar periksa operator. Pengesahan rilis cukup berupa persetujuan atasan langsung di `SIGN_OFF_RILIS_INTEGRASI_SURAT.md`.
+
 Status: **belum** / **disahkan** (nama, tanggal) / **ditolak** / **tidak berlaku**. Satu baris **ditolak** menahan rilis sampai diperbaiki. Pemilik: **Keamanan** = pemilik keamanan; **Spec** = pemilik spesifikasi; **Data** = pemilik data/TU; **Operator** = pelaksana runbook; **CI** = bukti otomatis.
 
 | ID | Item | Sumber | Pemilik | Status |
