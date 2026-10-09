@@ -55,6 +55,7 @@ jobs:
           scripts/check-operations.test.mjs
           scripts/operations-recovery.test.mjs
           scripts/operations-recovery-documents.test.mjs
+          scripts/operations-recovery-extract.test.mjs
           scripts/operations-recovery-target.test.mjs
           scripts/check-file-integrity.test.mjs
 

@@ -27,6 +27,7 @@
     "test:migration-manifest": "node --test scripts/migration-manifest.test.mjs",
     "backup:local-current": "node scripts/local-current-backup.mjs backup",
     "restore:local-current": "node scripts/local-current-backup.mjs restore-verify",
+    "recovery:extract": "node scripts/operations-recovery-extract.mjs",
     "test:local-current-backup": "node --test scripts/local-current-backup.test.mjs",
     "test:local-current-backup:windows": "node --test scripts/local-current-backup.test.mjs scripts/local-current-backup-status.test.mjs",
     "backup:drill:local": "node scripts/local-backup-drill.mjs",
