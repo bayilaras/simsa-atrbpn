@@ -35,6 +35,12 @@ Jalankan `node scripts/operations-recovery.mjs run`. Keluaran standar hanya lapo
 
 Kunci arsip database dan dokumen dibungkus menggunakan scrypt (N=32768, r=8, p=1) dan AES-GCM dengan salt baru. Artefak delivery hanya berisi ciphertext, manifest, parameter KDF, dan laporan. **Jangan mengunggah workspace privat atau direktori kunci mentah.** Database terenkripsi dan kunci terbungkus disimpan sebelum fase berikutnya supaya kegagalan pengambilan dokumen/pemulihan tidak menghilangkan cadangan database yang sudah valid.
 
+## Masa simpan artefak
+
+Artefak `simsa-recovery-<run_id>-<attempt>` disimpan GitHub selama **14 hari** (sebelumnya 90 hari). Repositori bersifat publik, sehingga artefak terenkripsi dapat diunduh pengguna GitHub mana pun selama masa simpan; masa simpan pendek membatasi paparan itu dan menjaga penyimpanan artefak tetap kecil bila repositori kelak dijadikan privat (kuota penyimpanan paket gratis 500 MB, satu artefak ±79 MB). Artefak yang sudah ada tetap mengikuti tanggal kedaluwarsa lamanya.
+
+Konsekuensinya, salinan jangka panjang **wajib** disimpan di luar GitHub: unduh artefak terbaru setidaknya sebulan sekali ke penyimpanan milik kantor beserta kode commit-nya, dan simpan passphrase pemulihan di media terpisah.
+
 ## Memulihkan artefak delivery yang sudah diunduh
 
 Gunakan checkout yang hash helper dan jurnal migrasinya cocok dengan manifest autentik, runtime Linux PostgreSQL 18 yang kompatibel, dan direktori artefak privat milik operator (0700, tanpa symlink). Isi `OPERATIONS_RECOVERY_BUNDLE` dengan direktori delivery, serta `BACKUP_ENCRYPTION_PASSPHRASE`, `OPERATIONS_RECOVERY_PG_BIN`, dan `OPERATIONS_RECOVERY_PRIVATE_ROOT`. Jalankan `node scripts/operations-recovery.mjs restore-delivery`.
