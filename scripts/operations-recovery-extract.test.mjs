@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { sealNeonBundle } from './neon-bundle-seal.mjs';
 import { seal, sha256, documentReferences, documentBudgetUsage, backupDocuments } from './operations-recovery-documents.mjs';
-import { extractDelivery, documentFileName, safeSegment, assertOutsideRepository } from './operations-recovery-extract.mjs';
+import { extractDelivery, documentFileName, safeSegment, assertOutsideRepository, describeExtractError } from './operations-recovery-extract.mjs';
 
 const passphrase = 'synthetic recovery passphrase longer than 32 chars';
 const token = 'vercel_blob_rw_teststore123_secret';
@@ -89,4 +89,22 @@ test('document budget warns at 80 percent of count or size', () => {
   assert.equal(documentBudgetUsage(Array.from({ length: 800 }, () => ref(1))).warning, true);
   assert.equal(documentBudgetUsage([ref(170 * 1024 * 1024)]).warning, true);
   assert.equal(documentReferences([attachment], [])[0].fileName, attachment.file_name);
+});
+
+test('missing output drive/parent or bundle folder is reported before any decryption', async () => {
+  const { root, directory } = await syntheticDelivery();
+  await assert.rejects(extractDelivery({ directory, output: join(root, 'tidak-ada', 'hasil'), passphrase }), /OUTPUT_PARENT_MISSING/);
+  await assert.rejects(extractDelivery({ directory: join(root, 'bukan-backup'), output: join(root, 'hasil'), passphrase }), /BUNDLE_NOT_FOUND/);
+  await assert.rejects(lstat(join(root, 'hasil')));
+});
+
+test('operator messages are specific, Indonesian and never echo raw details', async () => {
+  const { root, directory } = await syntheticDelivery();
+  const wrong = await extractDelivery({ directory, output: join(root, 'hasil'), passphrase: 'a different passphrase that is long enough' }).catch(error => error);
+  assert.equal(describeExtractError(wrong), 'passphrase salah, atau file backup rusak/berubah');
+  assert.match(describeExtractError(Object.assign(new Error('x'), { safeCode: 'OUTPUT_PARENT_MISSING' })), /drive atau folder induk tujuan tidak ditemukan/);
+  assert.match(describeExtractError(Object.assign(new Error('ENOENT: open C:\secret\path'), { code: 'ENOENT' })), /file backup yang hilang/);
+  assert.match(describeExtractError(Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })), /penuh/);
+  const unknown = describeExtractError(new Error('raw detail with C:\Users\private'));
+  assert.equal(unknown.includes('private'), false); assert.match(unknown, /^EXTRACT_FAILED/);
 });

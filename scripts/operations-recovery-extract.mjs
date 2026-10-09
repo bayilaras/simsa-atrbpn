@@ -42,6 +42,10 @@ export async function extractDelivery({ directory, passphrase, output, repositor
   assertOutsideRepository(output, repositoryRoot);
   let existing = null; try { existing = await lstat(output); } catch { /* must not exist */ }
   check(existing === null, 'OUTPUT_ALREADY_EXISTS');
+  let parent = null; try { parent = await lstat(dirname(resolve(output))); } catch { /* reported below */ }
+  check(parent?.isDirectory(), 'OUTPUT_PARENT_MISSING');
+  let bundle = null; try { bundle = await lstat(directory); } catch { /* reported below */ }
+  check(bundle?.isDirectory(), 'BUNDLE_NOT_FOUND');
 
   let databaseKey, documentKey, plain;
   const written = [];
@@ -119,6 +123,36 @@ export async function extractDelivery({ directory, passphrase, output, repositor
   }
 }
 
+// Operator-facing messages (Indonesian). Never include secrets or raw paths of keys.
+const MESSAGES = {
+  USAGE: 'pakai --bundle <folder> --output <folder>',
+  OUTPUT_MUST_BE_ABSOLUTE: 'folder tujuan harus berupa path lengkap, misalnya D:\\UJI-PEMULIHAN-SIMSA',
+  OUTPUT_INSIDE_REPOSITORY: 'folder tujuan berada di dalam repo; pilih folder di luar repo',
+  OUTPUT_ALREADY_EXISTS: 'folder tujuan sudah ada; pilih nama folder baru',
+  OUTPUT_PARENT_MISSING: 'drive atau folder induk tujuan tidak ditemukan; periksa huruf drive (misalnya D:) dan pastikan foldernya ada',
+  BUNDLE_MUST_BE_ABSOLUTE: 'folder backup harus berupa path lengkap',
+  BUNDLE_NOT_FOUND: 'folder backup tidak ditemukan; ekstrak dulu ZIP simsa-recovery-* lalu tunjuk foldernya',
+  INVALID_KEY_ENVELOPE: 'passphrase kosong atau kurang dari 32 karakter, atau file kunci backup rusak',
+  KEY_ENVELOPE_CONFIGURATION_MISMATCH: 'file kunci backup tidak dikenali; pastikan folder berasal dari artefak simsa-recovery-*',
+  WRONG_PASSPHRASE_OR_DAMAGED: 'passphrase salah, atau file backup rusak/berubah',
+  DELIVERY_DATABASE_IDENTITY_MISMATCH: 'database dan kunci backup tidak berasal dari backup yang sama',
+  DOCUMENT_DATABASE_BINDING_MISMATCH: 'daftar dokumen tidak cocok dengan database backup ini',
+  DOCUMENT_OBJECT_BINDING_MISMATCH: 'catatan dokumen di backup tidak konsisten',
+  RESTORED_DOCUMENT_HASH_MISMATCH: 'ada dokumen yang isinya tidak cocok dengan hash; backup rusak',
+  DOCUMENT_REFERENCE_NOT_RESTORED: 'ada dokumen yang tercatat tetapi tidak ada di backup',
+  FILE_MISSING: 'ada file backup yang hilang; ekstrak ulang ZIP-nya ke folder baru',
+  NO_PERMISSION: 'tidak punya izin menulis atau membaca; coba folder lain',
+  DISK_FULL: 'ruang penyimpanan tujuan penuh',
+};
+export function describeExtractError(error) {
+  if (error?.safeCode && MESSAGES[error.safeCode]) return MESSAGES[error.safeCode];
+  if (/unable to authenticate data|Manifest authentication failed|Encrypted payload is malformed|Encrypted artifact hash mismatch/i.test(error?.message || '')) return MESSAGES.WRONG_PASSPHRASE_OR_DAMAGED;
+  if (error?.code === 'ENOENT' || /physical file\/directory/.test(error?.message || '')) return MESSAGES.FILE_MISSING;
+  if (error?.code === 'EACCES' || error?.code === 'EPERM') return MESSAGES.NO_PERMISSION;
+  if (error?.code === 'ENOSPC') return MESSAGES.DISK_FULL;
+  return `${error?.safeCode || error?.code || 'EXTRACT_FAILED'} (lihat docs/OPERATIONS_RECOVERY.md)`;
+}
+
 function parseArguments(args) {
   check(args.length === 4, 'USAGE');
   const options = {};
@@ -143,8 +177,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       console.log(`Hasil di ${summary.output}${sep}`);
     } catch (error) {
       // Codes are fixed strings; never echo passphrases, paths of secrets or raw crypto errors.
-      const code = error?.safeCode || (/^[\w .,/()-]{1,160}$/.test(error?.message || '') ? error.message : 'EXTRACT_FAILED');
-      console.error(`Gagal: ${code === 'USAGE' ? 'pakai --bundle <folder> --output <folder>' : code}`);
+      // Fixed messages only; never echo passphrases, key material or raw crypto errors.
+      console.error(`Gagal: ${describeExtractError(error)}`);
       process.exitCode = 1;
     }
   }
