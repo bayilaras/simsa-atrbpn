@@ -46,6 +46,7 @@ vi.mock('../middlewares/validate.middleware.js', () => ({
 
 vi.mock('../middlewares/rate-limiter.middleware.js', () => ({
     sensitiveLimiter: (_req: any, _res: any, next: any) => next(),
+    exportLimiter: (_req: any, _res: any, next: any) => next(),
 }));
 
 vi.mock('../services/report.service.js', () => ({ reportService: state.report }));
