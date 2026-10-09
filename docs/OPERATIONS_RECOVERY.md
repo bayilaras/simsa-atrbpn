@@ -41,6 +41,33 @@ Artefak `simsa-recovery-<run_id>-<attempt>` disimpan GitHub selama **14 hari** (
 
 Konsekuensinya, salinan jangka panjang **wajib** disimpan di luar GitHub: unduh artefak terbaru setidaknya sebulan sekali ke penyimpanan milik kantor beserta kode commit-nya, dan simpan passphrase pemulihan di media terpisah.
 
+## Membuka backup menjadi file yang bisa dibaca
+
+`scripts/operations-recovery-extract.mjs` membuka artefak `simsa-recovery-*` yang sudah diunduh menjadi:
+
+| Hasil | Isi |
+|---|---|
+| `database/simsa.dump` | Arsip `pg_dump` format custom, siap `pg_restore` ke PostgreSQL 18 kosong |
+| `dokumen/<entity_type>/<entity_id>/<nama file>` | Semua PDF asli; ukuran dan SHA-256 dicocokkan dengan manifest terautentikasi |
+| `DAFTAR-DOKUMEN.csv` | Pemetaan PDF ke surat/arsip (`entity_type`, `entity_id`, nama file, hash, lokasi) |
+| `BACA-SAYA.txt`, `MANIFEST.sha256` | Ringkasan snapshot dan hash setiap file |
+
+Alat ini hanya memakai modul bawaan Node (tanpa `npm install`, tanpa PostgreSQL) sehingga bisa dijalankan di laptop Windows operator. Seluruh database dan manifest dokumen diautentikasi sebelum file pertama ditulis. Berbeda dengan `restore-delivery`, alat ini **tidak** mensyaratkan hash helper sama dengan checkout saat ini, sehingga artefak dari versi kode lama juga bisa dibuka; keaslian tetap dijamin HMAC manifest dan AES-GCM. Nama file asli tersedia untuk artefak yang dibuat setelah perubahan ini; artefak lama memakai nama objek penyimpanan.
+
+Hasilnya **plaintext** (data dinas dan data pribadi). Folder tujuan wajib baru dan berada di luar repositori; simpan hanya di media terenkripsi milik kantor.
+
+Langkah di PowerShell (passphrase diketik sendiri oleh pemegangnya, tidak tampil di layar):
+
+```powershell
+Expand-Archive "$HOME\Downloads\simsa-recovery-<run_id>-1.zip" "$HOME\Downloads\simsa-recovery-<run_id>-1"
+$s = Read-Host "Passphrase backup" -AsSecureString
+$env:BACKUP_ENCRYPTION_PASSPHRASE = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
+node scripts/operations-recovery-extract.mjs --bundle "$HOME\Downloads\simsa-recovery-<run_id>-1" --output "E:\PEMULIHAN-SIMSA-<tanggal>"
+Remove-Item Env:BACKUP_ENCRYPTION_PASSPHRASE
+```
+
+Setiap run terjadwal juga mencatat `documentBudget` (jumlah dan ukuran dokumen terhadap batas 1.000 file / 200 MiB). Mulai 80% dari salah satu batas, GitHub Actions menampilkan peringatan "SIMSA backup mendekati batas" agar batas dinaikkan sebelum backup gagal.
+
 ## Memulihkan artefak delivery yang sudah diunduh
 
 Gunakan checkout yang hash helper dan jurnal migrasinya cocok dengan manifest autentik, runtime Linux PostgreSQL 18 yang kompatibel, dan direktori artefak privat milik operator (0700, tanpa symlink). Isi `OPERATIONS_RECOVERY_BUNDLE` dengan direktori delivery, serta `BACKUP_ENCRYPTION_PASSPHRASE`, `OPERATIONS_RECOVERY_PG_BIN`, dan `OPERATIONS_RECOVERY_PRIVATE_ROOT`. Jalankan `node scripts/operations-recovery.mjs restore-delivery`.

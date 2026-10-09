@@ -17,7 +17,7 @@ import { loadMigrations, validateAppliedMigrations } from '../backend/scripts/mi
 const requireBackend = createRequire(new URL('../backend/package.json',import.meta.url));
 const { Client } = requireBackend('pg');
 const root=resolve(import.meta.dirname,'..');
-const helperFiles=['scripts/neon-backup.mjs','scripts/neon-backup-core.mjs','scripts/neon-backup-runtime.mjs','scripts/neon-backup-role.mjs',
+const helperFiles=['scripts/neon-backup.mjs','scripts/neon-backup-core.mjs','scripts/neon-bundle-seal.mjs','scripts/neon-backup-runtime.mjs','scripts/neon-backup-role.mjs',
   'scripts/neon-database-policy.mjs','scripts/neon-worker-role.mjs','scripts/local-backup-drill-core.mjs',
   'scripts/local-current-backup-core.mjs','scripts/migration-manifest.mjs','backend/scripts/migrate-database.mjs',
   '.github/scripts/collect-backup-evidence.sql','backend/src/db/grants/0002_converge_application_grants.sql'];

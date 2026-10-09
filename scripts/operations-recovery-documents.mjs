@@ -7,6 +7,15 @@ export const sha256 = value => createHash('sha256').update(value).digest('hex');
 const check = (value, code) => { if (!value) throw Object.assign(new Error(code), { safeCode: code }); };
 const MAX_OBJECT = 50 * 1024 * 1024;
 const MAX_TOTAL = 200 * 1024 * 1024;
+const MAX_COUNT = 1000;
+// Early warning before a scheduled backup hits the hard document budget.
+export const DOCUMENT_BUDGET = Object.freeze({ maxCount: MAX_COUNT, maxObjectBytes: MAX_OBJECT, maxTotalBytes: MAX_TOTAL, warningRatio: 0.8 });
+export function documentBudgetUsage(references) {
+  const count = references.length, bytes = references.reduce((sum, ref) => sum + ref.sizeBytes, 0);
+  const countRatio = count / MAX_COUNT, bytesRatio = bytes / MAX_TOTAL;
+  return { count, bytes, maxCount: MAX_COUNT, maxTotalBytes: MAX_TOTAL, countRatio, bytesRatio,
+    warning: countRatio >= DOCUMENT_BUDGET.warningRatio || bytesRatio >= DOCUMENT_BUDGET.warningRatio };
+}
 export function seal(bytes, key, context) {
   check(Buffer.isBuffer(key) && key.length === 32, 'INVALID_KEY');
   const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, iv);
@@ -51,10 +60,11 @@ export function parseCopyTable(sql, table) {
 }
 export function documentReferences(attachments, ruleSets, {captureMissingHashes=false}={}) {
   const refs = attachments.map(row => ({id:row.id, kind:'attachment', entityType:row.entity_type, entityId:row.entity_id,
-    url:row.file_url, sha256:row.sha256?.toLowerCase(), sizeBytes:Number(row.size_bytes), storageAccess:row.storage_access}));
+    url:row.file_url, sha256:row.sha256?.toLowerCase(), sizeBytes:Number(row.size_bytes), storageAccess:row.storage_access,
+    fileName:row.file_name ?? null}));
   for (const row of ruleSets) if (row.source_document_blob_url) refs.push({id:row.id,kind:'regulatory_source',url:row.source_document_blob_url,
     sha256:row.source_document_sha256?.toLowerCase(),sizeBytes:Number(row.source_document_size_bytes),storageAccess:'private'});
-  check(refs.length > 0 && refs.length <= 1000, 'DOCUMENT_COUNT_OUTSIDE_BUDGET');
+  check(refs.length > 0 && refs.length <= MAX_COUNT, 'DOCUMENT_COUNT_OUTSIDE_BUDGET');
   for (const ref of refs) check(/^[a-f0-9-]{36}$/i.test(ref.id) && (/^[a-f0-9]{64}$/.test(ref.sha256 || '') || captureMissingHashes && ref.sha256 == null)
     && Number.isSafeInteger(ref.sizeBytes) && ref.sizeBytes > 0 && ref.sizeBytes <= MAX_OBJECT && ref.storageAccess === 'private', 'DOCUMENT_METADATA_INCOMPLETE');
   check(refs.reduce((sum, ref) => sum + ref.sizeBytes, 0) <= MAX_TOTAL, 'DOCUMENT_BYTES_OUTSIDE_BUDGET');

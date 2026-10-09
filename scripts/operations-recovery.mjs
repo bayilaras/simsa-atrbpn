@@ -10,7 +10,7 @@ import { runNeonBackup } from './neon-backup.mjs';
 import { makeBackupWorkspace } from './neon-backup-runtime.mjs';
 import { authenticatedDatabaseBundle,restoreDatabaseProof } from './operations-recovery-database.mjs';
 import { restoreDeliveryProof } from './operations-recovery-delivery.mjs';
-import { seal,unseal,sha256,parseCopyTable,documentReferences,backupDocuments,restoreDocuments,privateBlobConfiguration } from './operations-recovery-documents.mjs';
+import { seal,unseal,sha256,parseCopyTable,documentReferences,documentBudgetUsage,backupDocuments,restoreDocuments,privateBlobConfiguration } from './operations-recovery-documents.mjs';
 const check=(value,code)=>{if(!value)throw Object.assign(new Error(code),{safeCode:code});};
 const required=(env,key)=>{check(typeof env[key]==='string'&&env[key].length>0,'RECOVERY_CONFIGURATION_MISSING');return env[key];};
 export function recoveryAttestation(report){
@@ -69,6 +69,8 @@ export async function runRecovery(environment){
   }finally{wrappingKey.fill(0);keys.fill(0);}
   stage='document_inventory';const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
   let references;try{references=documentReferences(parseCopyTable(sql.toString(),'file_attachments'),parseCopyTable(sql.toString(),'regulatory_rule_sets'),{captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true'});}finally{sql.fill(0);}
+  report.documentBudget=documentBudgetUsage(references);
+  if(report.documentBudget.warning&&environment.GITHUB_ACTIONS==='true')console.log(`::warning title=SIMSA backup mendekati batas::${report.documentBudget.count}/${report.documentBudget.maxCount} dokumen, ${Math.round(report.documentBudget.bytesRatio*100)}% dari batas ukuran. Naikkan batas sebelum backup gagal.`);
   stage='document_backup';const documentDirectory=join(output,'documents');
   report.documentBackup=await backupDocuments({references,token,directory:documentDirectory,key:documentKey,sourceSnapshotAt:report.sourceSnapshotAt,archiveSha256:report.archiveSha256,captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true'});
   report.backup.documentsVerified=true;report.documentBackup.completedAt=new Date().toISOString();report.backup.completedAt=report.sourceSnapshotAt;
