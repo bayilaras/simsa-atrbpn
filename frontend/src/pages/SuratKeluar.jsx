@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ExportButton } from '@/components/ExportButton';
+import { canExportReports } from '@/lib/provisioning-access';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -365,17 +366,19 @@ export default function SuratKeluar() {
 
                     {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="surat-keluar" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
 
-                    <ExportButton
-                        type="surat-keluar"
-                        filters={{
-                            unitKerjaId: resolvedUnitKerjaId,
-                            search: debouncedSearchTerm || undefined,
-                            tahun: tahun !== 'all' ? tahun : undefined,
-                            naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
-                            tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
-                            tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
-                        }}
-                    />
+                    {canExportReports(user?.role) && (
+                        <ExportButton
+                            type="surat-keluar"
+                            filters={{
+                                unitKerjaId: resolvedUnitKerjaId,
+                                search: debouncedSearchTerm || undefined,
+                                tahun: tahun !== 'all' ? tahun : undefined,
+                                naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
+                                tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
+                                tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                            }}
+                        />
+                    )}
 
                     {isAdmin && (
                         <div className="flex" role="group" aria-label="Buat surat keluar">

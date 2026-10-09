@@ -13,6 +13,7 @@ vi.mock('../middlewares/role.middleware', () => ({ permissionMiddleware: () => (
 vi.mock('../middlewares/rate-limiter.middleware', () => ({ exportLimiter: (_req: any, _res: any, next: any) => next() }));
 vi.mock('../services/record-access.service.js', () => ({ allowedSecurityClassifications: () => ['biasa'] }));
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ error: vi.fn() }) }));
+vi.mock('../services/audit-log.service', () => ({ auditLogService: { logActionOrThrow: vi.fn().mockResolvedValue(undefined) } }));
 const { exportRoutes } = await import('../routes/export.routes');
 const app = express().use('/api/export', exportRoutes);
 

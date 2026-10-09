@@ -27,6 +27,7 @@ const ACTION_CONFIG = {
     'deny_access': { label: 'Menolak Akses', icon: Shield, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
     'revoke_access': { label: 'Mencabut Akses', icon: Shield, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
     'view_via_rangkaian': { label: 'Lihat via Rangkaian', icon: Eye, color: 'bg-cyan-100 dark:bg-cyan-500/15 text-cyan-800 dark:text-cyan-300', borderColor: 'border-cyan-200', iconColor: 'text-cyan-600' },
+    'export': { label: 'Ekspor Data', icon: FileText, color: 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-800 dark:text-indigo-300', borderColor: 'border-indigo-200', iconColor: 'text-indigo-600' },
     'merge': { label: 'Menggabungkan', icon: GitMerge, color: 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-800 dark:text-indigo-300', borderColor: 'border-indigo-200', iconColor: 'text-indigo-600' },
     'link': { label: 'Menautkan', icon: Link, color: 'bg-sky-100 dark:bg-sky-500/15 text-sky-800 dark:text-sky-300', borderColor: 'border-sky-200', iconColor: 'text-sky-600' },
     'cancel': { label: 'Membatalkan', icon: X, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
@@ -257,6 +258,7 @@ export default function AuditLog() {
                                     <SelectItem value="deny_access">Menolak Akses</SelectItem>
                                     <SelectItem value="revoke_access">Mencabut Akses</SelectItem>
                                     <SelectItem value="view_via_rangkaian">Lihat via Rangkaian</SelectItem>
+                                    <SelectItem value="export">Ekspor Data</SelectItem>
                                     <SelectItem value="merge">Menggabungkan</SelectItem>
                                     <SelectItem value="link">Menautkan</SelectItem>
                                     <SelectItem value="cancel">Membatalkan</SelectItem>

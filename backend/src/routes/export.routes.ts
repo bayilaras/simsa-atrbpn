@@ -7,6 +7,7 @@ import { permissionMiddleware } from '../middlewares/role.middleware';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { createLogger } from '../utils/logger';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
+import { auditExport } from '../services/export-audit';
 
 const log = createLogger('ExportRoutes');
 
@@ -47,6 +48,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
         };
 
         const buffer = await exportService.generateExcelSuratMasuk(filters);
+        await auditExport(req, { source: 'export', type: 'surat-masuk', format: 'excel', filters });
 
         const filename = `surat-masuk-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -89,6 +91,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
         };
 
         const buffer = await exportService.generatePdfSuratMasuk(filters);
+        await auditExport(req, { source: 'export', type: 'surat-masuk', format: 'pdf', filters });
 
         const filename = `surat-masuk-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.pdf`;
         res.setHeader('Content-Type', 'application/pdf');
@@ -132,6 +135,7 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
         };
 
         const buffer = await exportService.generateExcelSuratKeluar(filters);
+        await auditExport(req, { source: 'export', type: 'surat-keluar', format: 'excel', filters });
 
         const filename = `surat-keluar-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -173,6 +177,7 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
         };
 
         const buffer = await exportService.generatePdfSuratKeluar(filters);
+        await auditExport(req, { source: 'export', type: 'surat-keluar', format: 'pdf', filters });
 
         const filename = `surat-keluar-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.pdf`;
         res.setHeader('Content-Type', 'application/pdf');
@@ -220,6 +225,7 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
 
         const fType = (formulirType as string) || 'formulir4';
         const buffer = await exportService.generateExcelArsip(filters, fType);
+        await auditExport(req, { source: 'export', type: 'arsip', format: 'excel', filters, formulirType: fType });
 
         const label = fType === 'formulir6' ? 'arsip-inaktif' : 'arsip-aktif';
         const filename = `${label}-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.xlsx`;
@@ -259,6 +265,7 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
 
         const fType = (formulirType as string) || 'formulir4';
         const buffer = await exportService.generatePdfArsip(filters, fType);
+        await auditExport(req, { source: 'export', type: 'arsip', format: 'pdf', filters, formulirType: fType });
 
         const label = fType === 'formulir6' ? 'arsip-inaktif' : 'arsip-aktif';
         const filename = `${label}-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.pdf`;

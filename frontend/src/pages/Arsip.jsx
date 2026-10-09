@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ExportButton } from '@/components/ExportButton'
+import { canExportReports } from '@/lib/provisioning-access'
 import ImportCsvDialog from '@/components/ImportCsvDialog'
 import { ArchiveLifecycleWidget } from '@/components/ArchiveLifecycleWidget'
 import {
@@ -209,15 +210,17 @@ export default function Arsip() {
 
                     {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="arsip" unitKerjaId={resolvedUnitKerjaId} onImportComplete={() => setRefreshVersion(version => version + 1)} />}
 
-                    <ExportButton
-                        type="arsip"
-                        filters={{
-                            jenisArsip: activeTab === 'masuk' ? 'masuk' : activeTab === 'keluar' ? 'keluar' : undefined,
-                            unitKerjaId: resolvedUnitKerjaId,
-                            search: searchTerm || undefined,
-                            tahun: tahunFilter !== 'all' ? tahunFilter : undefined,
-                        }}
-                    />
+                    {canExportReports(user?.role) && (
+                        <ExportButton
+                            type="arsip"
+                            filters={{
+                                jenisArsip: activeTab === 'masuk' ? 'masuk' : activeTab === 'keluar' ? 'keluar' : undefined,
+                                unitKerjaId: resolvedUnitKerjaId,
+                                search: searchTerm || undefined,
+                                tahun: tahunFilter !== 'all' ? tahunFilter : undefined,
+                            }}
+                        />
+                    )}
 
                     {isAdmin && capabilities.fileUploads && capabilities.bulkOcr !== false && (
                         <Button asChild variant="default" size="sm" className="h-9 shadow-sm hover:shadow-md transition-shadow">

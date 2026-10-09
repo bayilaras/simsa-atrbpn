@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ExportButton } from '@/components/ExportButton';
+import { canExportReports } from '@/lib/provisioning-access';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -354,20 +355,22 @@ export default function SuratMasuk() {
 
                     {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="surat-masuk" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
 
-                    <ExportButton
-                        type="surat-masuk"
-                        filters={{
-                            unitKerjaId: resolvedUnitKerjaId,
-                            search: debouncedSearchTerm || undefined,
-                            tahun: tahun !== 'all' ? tahun : undefined,
-                            jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
-                            status: status !== 'all' ? status : undefined,
-                            sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
-                            disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
-                            tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
-                            tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
-                        }}
-                    />
+                    {canExportReports(user?.role) && (
+                        <ExportButton
+                            type="surat-masuk"
+                            filters={{
+                                unitKerjaId: resolvedUnitKerjaId,
+                                search: debouncedSearchTerm || undefined,
+                                tahun: tahun !== 'all' ? tahun : undefined,
+                                jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
+                                status: status !== 'all' ? status : undefined,
+                                sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
+                                disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
+                                tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
+                                tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                            }}
+                        />
+                    )}
 
                     {isAdmin && (
                         <Button asChild size="sm" className="h-9">
