@@ -118,3 +118,9 @@ it('Tautkan ke Rangkaian membuka dialog tautan untuk surat keluar', async () => 
     expect(within(dialog).getByRole('heading', { name: 'Tautkan ke Rangkaian' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Tautkan' })).toBeDisabled()
 })
+
+it.each([['sangat_segera', 'Sangat Segera'], ['Kilat', 'Kilat'], [null, 'Belum tercatat']])('shows the outgoing sifat %j as %j', async (sifatSurat, shown) => {
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '005/2026', perihal: 'Undangan rapat', unitKerjaId: 'unit-a', sifatSurat })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect((await screen.findByText('Sifat Surat')).parentElement).toHaveTextContent(shown)
+})

@@ -40,3 +40,16 @@ it('menampilkan split button inisiatif dan badge asal naskah', async () => {
     await screen.findByRole('heading', { name: 'Form inisiatif' })
     expect(router.state.location.search).toBe('?naskah=Keputusan')
 })
+
+it('menandai sifat selain biasa dan penerima yang belum tercatat pada daftar', async () => {
+    mocks.getAll.mockResolvedValue({ success: true, pagination: { total: 3, totalPages: 1 }, data: [
+        { id: 'c', nomorSurat: '003/2026', perihal: 'Surat segera', kepada: 'Z', unitKerjaId: 'dir_bppt', approvalStatus: 'draft', sifatSurat: 'sangat_segera' },
+        { id: 'd', nomorSurat: '004/2026', perihal: 'Surat biasa', kepada: '', unitKerjaId: 'dir_bppt', approvalStatus: 'draft', sifatSurat: 'biasa' },
+        { id: 'e', nomorSurat: '005/2026', perihal: 'Surat lama', kepada: 'W', unitKerjaId: 'dir_bppt', approvalStatus: 'draft', sifatSurat: null },
+    ] })
+    router = createMemoryRouter([{ path: '/surat/keluar', element: <SuratKeluar /> }], { initialEntries: ['/surat/keluar'] })
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Surat segera')
+    expect(screen.getAllByText(/./, { selector: '[data-badge="sifat-surat"]' }).map(badge => badge.textContent)).toEqual(['Sangat Segera'])
+    expect(screen.getByTitle('Penerima belum tercatat')).toHaveTextContent('Kepada: -')
+})

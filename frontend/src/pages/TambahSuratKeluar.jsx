@@ -16,6 +16,7 @@ import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { buildOutgoingNumberingPayload } from '@/lib/surat-numbering';
 import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { toTindakLanjutPayload } from '@/lib/tindak-lanjut';
+import { sifatSuratKeluarOptions } from '@/lib/sifat-surat-keluar';
 import {
     Card,
     CardContent,
@@ -53,6 +54,7 @@ import {
     CheckCircle2,
     Clock,
     Reply,
+    Zap,
 } from 'lucide-react';
 
 // Naskah Dinas options
@@ -162,6 +164,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
     // Form state
     const [formData, setFormData] = useState({
         naskahDinas: naskahDariQuery,
+        sifatSurat: 'biasa',
         nomorSurat: '',
         tanggalSurat: '',
         perihal: '',
@@ -226,6 +229,8 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
             // Map fetched data to form fields
             setFormData({
                 naskahDinas: data.naskahDinas || '',
+                // Rekod lama tanpa sifat tetap tidak tercatat; tidak diisi tebakan.
+                sifatSurat: data.sifatSurat || '',
                 nomorSurat: data.nomorSurat || '',
                 tanggalSurat: data.tanggalSurat ? data.tanggalSurat.split('T')[0] : '',
                 perihal: data.perihal || '',
@@ -368,7 +373,10 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
         setFieldErrors({});
 
         try {
-            const dataToSubmit = buildSuratFormPayload(formData, resolvedUnitKerjaId, filesEnabled);
+            const dataToSubmit = {
+                ...buildSuratFormPayload(formData, resolvedUnitKerjaId, filesEnabled),
+                sifatSurat: formData.sifatSurat || undefined,
+            };
 
             if (isEditMode) {
                 // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
@@ -657,6 +665,23 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                 placeholder="Tuliskan perihal/hal surat..."
                                 rows={3}
                                 className="resize-none focus-visible:ring-emerald-500"
+                            />
+                        </div>
+
+                        <div className="space-y-2 md:max-w-xs">
+                            <Label htmlFor="sifat-surat-keluar" className="text-sm font-medium flex items-center gap-2">
+                                <Zap className="h-4 w-4 text-muted-foreground" />
+                                Sifat Surat
+                            </Label>
+                            <SearchableSelect
+                                id="sifat-surat-keluar"
+                                ariaLabel="Sifat surat keluar"
+                                disabled={saveLocked}
+                                options={sifatSuratKeluarOptions(formData.sifatSurat)}
+                                value={formData.sifatSurat}
+                                onValueChange={(v) => handleChange('sifatSurat', v)}
+                                placeholder="Belum tercatat"
+                                searchPlaceholder="Cari sifat surat..."
                             />
                         </div>
                     </CardContent>

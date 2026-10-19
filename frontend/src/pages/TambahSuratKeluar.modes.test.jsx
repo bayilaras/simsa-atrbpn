@@ -107,6 +107,21 @@ describe('mode TambahSuratKeluar', () => {
         expect(payload).not.toHaveProperty('balasanUntuk')
     })
 
+    it.each([[null, 'biasa'], ['sangat_segera', 'sangat_segera']])('surat baru mengirim sifat (pilihan %s -> %s)', async (pilihan, terkirim) => {
+        router = createMemoryRouter([
+            { path: '/surat/keluar/tambah', element: <TambahSuratKeluar /> },
+            { path: '/surat/keluar', element: <h1>Daftar</h1> },
+        ], { initialEntries: ['/surat/keluar/tambah'] })
+        const view = render(<RouterProvider router={router} />)
+        fireEvent.change(document.getElementById('naskah-dinas'), { target: { value: 'Surat Dinas' } })
+        fireEvent.change(document.getElementById('perihal-surat-keluar'), { target: { value: 'Surat rutin' } })
+        expect(screen.getByRole('combobox', { name: 'Sifat surat keluar' })).toHaveValue('biasa')
+        if (pilihan) fireEvent.change(screen.getByRole('combobox', { name: 'Sifat surat keluar' }), { target: { value: pilihan } })
+        isiDanKirim(view.container)
+        await waitFor(() => expect(fixtures.create).toHaveBeenCalled())
+        expect(fixtures.create.mock.calls[0][0]).toMatchObject({ sifatSurat: terkirim })
+    })
+
     it('edit surat tanpa aksi edit pada aksiDiizinkan dialihkan ke halaman detail', async () => {
         fixtures.getById.mockResolvedValue({
             id: 'sk-1', unitKerjaId: 'dir_bppt', approvalStatus: 'draft', naskahDinas: 'Nota Dinas',

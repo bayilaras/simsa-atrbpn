@@ -30,6 +30,7 @@ import { useToast } from '@/hooks/use-toast'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { SuratRetentionSummary } from '@/components/SuratRetentionSummary'
 import suratKeluarService from '@/services/surat-keluar.service'
+import { sifatSuratKeluarLabel } from '@/lib/sifat-surat-keluar'
 import approvalService from '@/services/approval.service'
 import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
 import { format, formatDistanceToNow } from 'date-fns'
@@ -469,10 +470,16 @@ export default function SuratKeluarDetail() {
                             </div>
 
                             {/* Type & Classification */}
-                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Jenis Surat</label>
                                     <p className="text-sm font-medium">{surat.naskahDinas || '-'}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sifat Surat</label>
+                                    <p className={`text-sm font-medium ${surat.sifatSurat ? '' : 'text-muted-foreground'}`}>
+                                        {sifatSuratKeluarLabel(surat.sifatSurat) || 'Belum tercatat'}
+                                    </p>
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Fasilitatif</label>
