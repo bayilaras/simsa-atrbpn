@@ -3,11 +3,11 @@ import { buildGoogleSheetsImportPayload } from '@/lib/google-sheets-import';
 
 describe('Google Sheets import unit contract', () => {
     it('requires and preserves the concrete destination unit', () => {
-        expect(() => buildGoogleSheetsImportPayload('sheet-url', 'Data', ''))
+        expect(() => buildGoogleSheetsImportPayload('sheet-url', '0', ''))
             .toThrow(/Pilih unit kerja/);
-        expect(buildGoogleSheetsImportPayload('sheet-url', 'Data', 'unit-a')).toEqual({
+        expect(buildGoogleSheetsImportPayload('sheet-url', '234636572', 'unit-a')).toEqual({
             spreadsheetUrl: 'sheet-url',
-            sheetName: 'Data',
+            gid: '234636572',
             unitKerjaId: 'unit-a',
         });
     });

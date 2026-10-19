@@ -1,6 +1,6 @@
 import { Router, type Response } from 'express';
 import { z } from 'zod';
-import { googleDriveImportService } from '../services/google-drive-import.service';
+import { googleDriveImportService, type SheetSelector } from '../services/google-drive-import.service';
 import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 import { importLimiter, importDiscoveryLimiter, importPreviewLimiter } from '../middlewares/rate-limiter.middleware.js';
@@ -8,21 +8,23 @@ import { validateBody, validateQuery } from '../middlewares/validate.middleware.
 import { canAccessUnit, type Role } from '../config/permissions.js';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { ValidationError } from '../utils/errors.js';
-import { GOOGLE_SHEETS_LIMITS, type GoogleSheetsRequestOptions } from '../services/google-sheets-source.js';
+import { GOOGLE_SHEETS_LIMITS, extractSheetGid, type GoogleSheetsRequestOptions } from '../services/google-sheets-source.js';
 
 const router = Router();
 router.use(authMiddleware);
 
 const spreadsheetUrl = z.string().trim().min(1).max(2048);
 const sheetName = z.string().trim().min(1).max(100).regex(/^[^\u0000-\u001f]+$/).default('Sheet1');
+// The tab's gid is authoritative; sheetName remains for older clients.
+const gid = z.string().regex(/^\d{1,20}$/).optional();
 const sheetQuery = z.object({ url: spreadsheetUrl }).strict();
 const previewInput = z.object({
-    spreadsheetUrl, sheetName,
+    spreadsheetUrl, sheetName, gid,
     maxRows: z.number().int().min(1).max(GOOGLE_SHEETS_LIMITS.previewRows).default(10),
     type: z.enum(['surat-masuk', 'surat-keluar']).default('surat-masuk'),
 }).strict();
 const importInput = z.object({
-    spreadsheetUrl, sheetName,
+    spreadsheetUrl, sheetName, gid,
     unitKerjaId: z.string().trim().max(50).optional(),
 }).strict();
 
@@ -42,6 +44,10 @@ function spreadsheetId(url: string): string {
     const id = googleDriveImportService.extractSpreadsheetId(url);
     if (!id) throw new ValidationError('Gunakan URL HTTPS Google Spreadsheet pada docs.google.com.');
     return id;
+}
+
+function selectedSheet(body: { sheetName: string; gid?: string }): SheetSelector {
+    return body.gid ? { gid: body.gid } : body.sheetName;
 }
 
 /** The response close event detects disconnects after the request body is read. */
@@ -69,7 +75,7 @@ router.get('/google-drive/sheets', importDiscoveryLimiter, validateQuery(sheetQu
     try {
         const id = spreadsheetId(res.locals.validatedQuery.url);
         const sheets = await withGoogleSheetsRequest(req, res, options => googleDriveImportService.listSheets(id, options));
-        if (!res.destroyed) res.json({ spreadsheetId: id, sheets });
+        if (!res.destroyed) res.json({ spreadsheetId: id, sheets, linkedGid: extractSheetGid(res.locals.validatedQuery.url) });
     } catch (error) { next(error); }
 });
 
@@ -82,9 +88,9 @@ router.get('/google-drive/sheets', importDiscoveryLimiter, validateQuery(sheetQu
  */
 router.post('/google-drive/preview', importPreviewLimiter, validateBody(previewInput), async (req: AuthRequest, res, next) => {
     try {
-        const { spreadsheetUrl, sheetName, maxRows, type } = req.body;
+        const { spreadsheetUrl, maxRows, type } = req.body;
         const preview = await withGoogleSheetsRequest(req, res, options =>
-            googleDriveImportService.previewData(spreadsheetId(spreadsheetUrl), sheetName, maxRows, options, type));
+            googleDriveImportService.previewData(spreadsheetId(spreadsheetUrl), selectedSheet(req.body), maxRows, options, type));
         if (!res.destroyed) res.json(preview);
     } catch (error) { next(error); }
 });
@@ -105,12 +111,12 @@ for (const kind of ['masuk', 'keluar'] as const) {
         try {
             const unitKerjaId = resolveImportUnit(req, res);
             if (!unitKerjaId) return;
-            const { spreadsheetUrl, sheetName } = req.body;
-            const id = spreadsheetId(spreadsheetUrl);
+            const sheet = selectedSheet(req.body);
+            const id = spreadsheetId(req.body.spreadsheetUrl);
             const audit = { userId: req.user!.id, userEmail: req.user?.email, ipAddress: req.ip };
             const result = await withGoogleSheetsRequest(req, res, options => kind === 'masuk'
-                ? googleDriveImportService.importSuratMasuk(id, sheetName, unitKerjaId, audit, options)
-                : googleDriveImportService.importSuratKeluar(id, sheetName, unitKerjaId, audit, options));
+                ? googleDriveImportService.importSuratMasuk(id, sheet, unitKerjaId, audit, options)
+                : googleDriveImportService.importSuratKeluar(id, sheet, unitKerjaId, audit, options));
             if (!res.destroyed) res.json({ ...result, ...(res.locals.requestId ? { requestId: res.locals.requestId } : {}) });
         } catch (error) { next(error); }
     });
