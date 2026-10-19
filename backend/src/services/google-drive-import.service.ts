@@ -9,7 +9,7 @@ import { publicErrorResponse } from '../utils/public-error.js';
 import { currentRequestId } from '../utils/request-context.js';
 import { GOOGLE_SHEETS_LIMITS, GoogleSheetsAccessError, GoogleSheetsSource, assertSheetName, assertSpreadsheetId, parseBoundedSheetCsv, parseSheetTabs, type GoogleSheetsRequestOptions, type SheetTab } from './google-sheets-source.js';
 
-import { resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
+import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
 import { DuplicateSuratImportError } from './surat-import-identity.js';
 
 const log = createLogger('GoogleDriveImportService');
@@ -305,6 +305,7 @@ export class GoogleDriveImportService {
                 const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
                 const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
                 const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
+                const link = this.getField(row, colMap, 'linkDokumen');
 
                 const newSurat: NewSuratKeluar & { numberingMode: 'manual' } = {
                     unitKerjaId,
@@ -316,7 +317,7 @@ export class GoogleDriveImportService {
                     tanggalSurat: parsedDate,
                     perihal: this.getField(row, colMap, 'perihal') || '',
                     kepada,
-                    linkDokumen: this.getField(row, colMap, 'linkDokumen') || null,
+                    linkDokumen: isWebAddress(link) ? link : null,
                     klasifikasiFasilitatif: klasifikasiJenis === 'fasilitatif' ? klasifikasiArsip : null,
                     klasifikasiFasilitatifKode: klasifikasiJenis === 'fasilitatif' ? klasifikasiKode : null,
                     klasifikasiSubstantif: klasifikasiJenis === 'substantif' ? klasifikasiArsip : null,

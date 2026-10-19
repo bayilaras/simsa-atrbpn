@@ -22,12 +22,16 @@ const columns: Record<GoogleSheetsImportType, Record<string, Column>> = {
     'surat-keluar': {
         ...common,
         naskahDinas: { label: 'Jenis naskah', aliases: ['jenis surat', 'naskah dinas', 'jenis naskah', 'jenis'] },
-        linkDokumen: { label: 'Tautan dokumen', aliases: ['link dokumen', 'link', 'url'] },
+        linkDokumen: { label: 'Tautan dokumen', aliases: ['link dokumen', 'link', 'url', 'get link'] },
         klasifikasiArsip: { label: 'Klasifikasi arsip', aliases: ['klasifikasi arsip', 'klasifikasi'] },
         klasifikasiKode: { label: 'Kode klasifikasi', aliases: ['klasifikasi kode', 'kode klasifikasi', 'kode'] },
         klasifikasiJenis: { label: 'Jenis klasifikasi', aliases: ['klasifikasi jenis', 'jenis klasifikasi'] },
     },
 };
+
+export function isWebAddress(value: string | undefined): boolean {
+    return /^https?:\/\/\S+$/i.test(value?.trim() || '');
+}
 
 // Punctuation separates words: "No. Surat" is "no surat", never "nomor urut".
 export function normalizeSheetHeader(value: string): string {
@@ -47,7 +51,12 @@ export function resolveSheetMapping(rows: string[][], importType: GoogleSheetsIm
     const mapping: SheetColumnMapping[] = [];
     const columnMap: Record<string, number> = {};
     for (const [field, definition] of Object.entries(definitions)) {
-        const matches = normalized.flatMap((header, index) => definition.aliases.includes(header) ? [index] : []);
+        let matches = normalized.flatMap((header, index) => definition.aliases.includes(header) ? [index] : []);
+        // Registers often pair a "file" label column with the URL column under one heading.
+        if (field === 'linkDokumen' && matches.length > 1) {
+            const withUrls = matches.filter(index => rows.slice(headerRowIndex + 1).some(row => isWebAddress(row[index])));
+            if (withUrls.length === 1) matches = withUrls;
+        }
         if (matches.length > 1) throw new ValidationError(
             `Pemetaan ${definition.label} ambigu pada kolom ${matches.map(index => index + 1).join(', ')}. Sisakan satu kolom yang sesuai.`,
         );
@@ -57,7 +66,8 @@ export function resolveSheetMapping(rows: string[][], importType: GoogleSheetsIm
             mapping.push({ field, label: definition.label, columnIndex, header: headers[columnIndex] });
         }
     }
-    const required = ['nomorSurat', 'tanggalSurat', 'perihal', importType === 'surat-masuk' ? 'dari' : 'kepada'];
+    // Outgoing registers often omit the recipient; incoming letters always need a sender.
+    const required = ['nomorSurat', 'tanggalSurat', 'perihal', ...(importType === 'surat-masuk' ? ['dari'] : [])];
     const missing = required.filter(field => columnMap[field] === undefined);
     if (missing.length) throw new ValidationError(
         `Kolom wajib belum ditemukan: ${missing.map(field => definitions[field].label).join(', ')}. Perbaiki header sebelum impor.`,

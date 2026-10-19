@@ -57,8 +57,43 @@ describe('exact Google Sheets column mapping before writes', () => {
         expect(() => resolveSheetMapping([['ID', 'No', 'Jenis', 'Sifat', 'Nomor Urut Surat', 'Tanggal', 'Perihal', 'Dari']], 'surat-masuk')).toThrow('Nomor surat');
     });
 
-    it('does not use a column from another import type as the required counterpart', () => {
-        expect(() => resolveSheetMapping([['Nomor Surat', 'Tanggal', 'Perihal', 'Dari']], 'surat-keluar')).toThrow('Kepada');
+    it('does not use a column from another import type as the counterpart', () => {
+        expect(resolveSheetMapping([['Nomor Surat', 'Tanggal', 'Perihal', 'Dari']], 'surat-keluar').columnMap).not.toHaveProperty('kepada');
+        expect(() => resolveSheetMapping([['Nomor Surat', 'Tanggal', 'Perihal', 'Kepada']], 'surat-masuk')).toThrow('Pengirim');
+    });
+
+    it('imports an outgoing register without a Kepada column, taking the document link from the column holding URLs', async () => {
+        const service = new GoogleDriveImportService();
+        vi.spyOn(service, 'fetchSheetAsCSV').mockResolvedValue([
+            'SURAT KELUAR 2026 No,Nomor Surat,Tanggal Surat,Tanggal TTE,Hal,Sifat Surat,Posisi,Get link,Get link',
+            '1,87/SK-600/I/2026,05/01/2026,05/01/2026 15:12,Tim peneliti,Segera,Halaman Ke 3,,https://drive.google.com/file/d/synthetic-a/view',
+            '2,88/SK-600/I/2026,06/01/2026,06/01/2026 09:00,Undangan rapat,Biasa,Halaman Ke 1,file,https://drive.google.com/file/d/synthetic-b/view',
+        ].join('\n'));
+        const preview = await service.previewData('sheet', { gid: '234636572' }, 10, {}, 'surat-keluar');
+        expect(preview.mapping).toContainEqual({ field: 'linkDokumen', label: 'Tautan dokumen', columnIndex: 8, header: 'Get link' });
+        expect(preview.mapping.map(item => item.field)).not.toContain('kepada');
+        expect(await service.importSuratKeluar('sheet', { gid: '234636572' }, 'unit-a', audit)).toMatchObject({ importedRows: 2, errors: [] });
+        expect(mocks.outgoing).toHaveBeenNthCalledWith(1, expect.objectContaining({
+            noUrut: 1, nomorSurat: '87/SK-600/I/2026', tanggalSurat: '2026-01-05', perihal: 'Tim peneliti', kepada: '',
+            linkDokumen: 'https://drive.google.com/file/d/synthetic-a/view',
+        }), audit, {});
+    });
+
+    it.each([
+        ['both link columns hold URLs', 'https://a.example/1,https://a.example/2'],
+        ['no link column holds a URL', 'file,file'],
+    ])('rejects duplicated link columns when %s', async (_case, links) => {
+        const service = new GoogleDriveImportService();
+        vi.spyOn(service, 'fetchSheetAsCSV').mockResolvedValue(['Nomor Surat,Tanggal Surat,Hal,Get link,Get link', `1/A,05/01/2026,Hal,${links}`].join('\n'));
+        await expect(service.previewData('sheet', 'Data', 10, {}, 'surat-keluar')).rejects.toThrow('Tautan dokumen');
+        expect(mocks.outgoing).not.toHaveBeenCalled();
+    });
+
+    it('stores only web addresses as the document link', async () => {
+        const service = new GoogleDriveImportService();
+        vi.spyOn(service, 'fetchSheetAsCSV').mockResolvedValue(['Nomor Surat,Tanggal Surat,Hal,Link', '1/A,05/01/2026,Hal,file'].join('\n'));
+        await service.importSuratKeluar('sheet', 'Data', 'unit-a', audit);
+        expect(mocks.outgoing).toHaveBeenCalledWith(expect.objectContaining({ linkDokumen: null }), audit, {});
     });
 
     it('counts canonical duplicate rejection separately from failed writes', async () => {
