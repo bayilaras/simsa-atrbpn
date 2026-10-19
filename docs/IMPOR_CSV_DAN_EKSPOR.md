@@ -29,6 +29,9 @@ nomor/tahun/unit, atau tanggal/uraian/pihak untuk sumber tanpa nomor.
 Kode klasifikasi arsip lama tetap menjadi catatan sumber yang belum diverifikasi;
 impor tidak menetapkan JRA atau mengesahkan aturan retensi.
 
+Untuk CSV surat keluar, kolom opsional `Sifat Surat` (Biasa, Penting, Segera,
+Sangat Segera) disimpan sebagai sifat surat; teks lain disimpan apa adanya.
+
 ## Kontrak API
 
 Ketiga endpoint `POST /api/migration/surat-masuk`, `/surat-keluar`, dan `/arsip`
@@ -44,6 +47,35 @@ Status baris adalah `valid`, `imported`, `duplicate`, atau `invalid`.
 Hasil parsial tetap dikembalikan dalam respons 200 dengan `success=false` dan
 jumlah rekod yang benar-benar tersimpan. Diagnostic tersedia pada respons;
 sumber CSV dan seluruh diagnostic tidak disimpan sebagai batch permanen.
+
+## Impor Google Sheets
+
+Tombol **Impor dari Google Sheets** membaca spreadsheet yang dibagikan dengan
+akses "Siapa saja yang memiliki link".
+
+1. Tempel tautan spreadsheet. Bila tautan disalin saat tab tertentu terbuka
+   (berisi `gid=`), tab itu langsung terpilih.
+2. Pilih lembar. Lembar dikenali dari `gid`, bukan nama. Bila daftar lembar
+   tidak terbaca, hanya lembar dari tautan yang ditawarkan; buka tab yang
+   dimaksud di Google Sheets lalu salin tautannya.
+3. Periksa pemetaan kolom pada pratinjau sebelum mengimpor.
+
+Kolom dikenali dari judulnya pada lima baris pertama, tidak pernah dari posisi.
+
+| Data | Judul kolom yang dikenali | Wajib |
+|---|---|---|
+| Nomor surat | Nomor Surat, No Surat, Nomor | Ya |
+| Tanggal surat | Tanggal Surat, Tgl Surat, Tanggal, Tgl | Ya |
+| Perihal | Perihal, Hal, Subject | Ya |
+| Pengirim (surat masuk) | Dari, Asal, Pengirim, From | Ya, surat masuk |
+| Kepada | Kepada, Tujuan, Penerima, To | Tidak |
+| Sifat surat | Sifat Surat, Sifat | Tidak |
+| Tautan dokumen (surat keluar) | Link Dokumen, Link, URL, Get link | Tidak |
+
+Bila dua kolom tautan berjudul sama (misalnya label "file" dan URL), dipakai
+satu-satunya kolom yang berisi alamat web; hanya nilai `http(s)://` yang
+disimpan. Baris tanpa nomor surat (kosong atau "-") tetap memerlukan Kepada
+(surat keluar) atau Pengirim (surat masuk) agar dapat dikenali saat impor ulang.
 
 ## Batas ekspor
 
