@@ -75,8 +75,17 @@ describe('exact Google Sheets column mapping before writes', () => {
         expect(await service.importSuratKeluar('sheet', { gid: '234636572' }, 'unit-a', audit)).toMatchObject({ importedRows: 2, errors: [] });
         expect(mocks.outgoing).toHaveBeenNthCalledWith(1, expect.objectContaining({
             noUrut: 1, nomorSurat: '87/SK-600/I/2026', tanggalSurat: '2026-01-05', perihal: 'Tim peneliti', kepada: '',
-            linkDokumen: 'https://drive.google.com/file/d/synthetic-a/view',
+            linkDokumen: 'https://drive.google.com/file/d/synthetic-a/view', sifatSurat: 'segera',
         }), audit, {});
+        expect(mocks.outgoing).toHaveBeenNthCalledWith(2, expect.objectContaining({ sifatSurat: 'biasa' }), audit, {});
+        expect(preview.mapping).toContainEqual({ field: 'sifatSurat', label: 'Sifat surat', columnIndex: 5, header: 'Sifat Surat' });
+    });
+
+    it('leaves the sifat of an outgoing letter unrecorded when the register has no such column', async () => {
+        const service = new GoogleDriveImportService();
+        vi.spyOn(service, 'fetchSheetAsCSV').mockResolvedValue([headers, data].map(row => row.join(',')).join('\n'));
+        await service.importSuratKeluar('sheet', 'Data', 'unit-a', audit);
+        expect(mocks.outgoing).toHaveBeenCalledWith(expect.objectContaining({ sifatSurat: null }), audit, {});
     });
 
     it.each([

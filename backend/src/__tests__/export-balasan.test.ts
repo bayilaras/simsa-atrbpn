@@ -68,4 +68,23 @@ describe('Balasan Untuk pada ekspor', () => {
         expect(sheet.getRow(6).getCell(11).value).toBe('Inisiatif');
         expect(JSON.stringify(sheet.getSheetValues())).not.toContain(SM(1));
     });
+
+    it('workbook menambahkan Sifat Surat di ujung tanpa menggeser kolom lama', async () => {
+        holder.keluar.mockResolvedValue({
+            data: [
+                { id: 'sk-1', noUrut: 1, unitKerjaId: 'ditjen', nomorSurat: 'KEL-1', sifatSurat: 'sangat_segera' },
+                { id: 'sk-2', noUrut: 2, unitKerjaId: 'ditjen', nomorSurat: 'KEL-2', sifatSurat: null },
+                { id: 'sk-3', noUrut: 3, unitKerjaId: 'ditjen', nomorSurat: 'KEL-3', sifatSurat: 'Kilat' },
+            ],
+            pagination: { total: 3 },
+        });
+        const buffer = await exportService.generateExcelSuratKeluar({ unitKerjaId: 'ditjen', securityClassifications: ['biasa'] });
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buffer as any);
+        const sheet = workbook.worksheets[0];
+        expect(sheet.getRow(4).getCell(14).value).toBe('Klasifikasi Jenis');
+        expect(sheet.getRow(4).getCell(15).value).toBe('Sifat Surat');
+        expect([5, 6, 7].map(row => sheet.getRow(row).getCell(15).value)).toEqual(['Sangat Segera', '', 'Kilat']);
+        expect(sheet.getCell('O1').isMerged).toBe(true);
+    });
 });

@@ -11,6 +11,7 @@ import { GOOGLE_SHEETS_LIMITS, GoogleSheetsAccessError, GoogleSheetsSource, asse
 
 import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
 import { DuplicateSuratImportError } from './surat-import-identity.js';
+import { normalizeSifatSurat } from './sifat-surat.js';
 
 const log = createLogger('GoogleDriveImportService');
 
@@ -312,6 +313,7 @@ export class GoogleDriveImportService {
                     noUrut: noUrut,
                     tahun: effectiveTahun,
                     naskahDinas: this.getField(row, colMap, 'naskahDinas') || 'Surat Dinas',
+                    sifatSurat: normalizeSifatSurat(this.getField(row, colMap, 'sifatSurat')),
                     numberingMode: 'manual',
                     nomorSurat: nomorSurat || '-',
                     tanggalSurat: parsedDate,

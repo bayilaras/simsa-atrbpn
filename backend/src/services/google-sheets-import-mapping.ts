@@ -22,6 +22,7 @@ const columns: Record<GoogleSheetsImportType, Record<string, Column>> = {
     'surat-keluar': {
         ...common,
         naskahDinas: { label: 'Jenis naskah', aliases: ['jenis surat', 'naskah dinas', 'jenis naskah', 'jenis'] },
+        sifatSurat: { label: 'Sifat surat', aliases: ['sifat surat', 'sifat', 'urgency'] },
         linkDokumen: { label: 'Tautan dokumen', aliases: ['link dokumen', 'link', 'url', 'get link'] },
         klasifikasiArsip: { label: 'Klasifikasi arsip', aliases: ['klasifikasi arsip', 'klasifikasi'] },
         klasifikasiKode: { label: 'Kode klasifikasi', aliases: ['klasifikasi kode', 'kode klasifikasi', 'kode'] },

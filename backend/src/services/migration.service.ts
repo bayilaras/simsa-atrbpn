@@ -13,6 +13,7 @@ import { publicErrorResponse } from '../utils/public-error.js';
 import { currentRequestId } from '../utils/request-context.js';
 import { createLogger } from '../utils/logger.js';
 import { DuplicateSuratImportError } from './surat-import-identity.js';
+import { normalizeSifatSurat } from './sifat-surat.js';
 
 const log = createLogger('MigrationService');
 
@@ -180,6 +181,7 @@ export const migrationService = {
                     : and(eq(suratKeluarTable.unitKerjaId, unitKerjaId), eq(suratKeluarTable.tanggalSurat, date), eq(suratKeluarTable.perihal, perihal), eq(suratKeluarTable.kepada, kepada))).limit(1),
                 create: () => suratKeluarService.createImported({
                     unitKerjaId, tahun: year, naskahDinas: row['Naskah Dinas'] || row['Jenis Surat'] || 'Surat Dinas',
+                    sifatSurat: normalizeSifatSurat(row['Sifat Surat']),
                     numberingMode: numbered ? 'manual' : 'auto', nomorSurat: numbered ? nomorSurat : undefined,
                     tanggalSurat: date, perihal, kepada, createdBy: auditContext.userId,
                 }, auditContext),

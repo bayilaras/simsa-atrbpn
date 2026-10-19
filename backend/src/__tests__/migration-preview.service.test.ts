@@ -76,6 +76,12 @@ describe('CSV date fidelity and mutation-free preview', () => {
         }), actor);
     });
 
+    it('records the outgoing sifat from the CSV as a form key', async () => {
+        const source = 'Nomor Surat,Tanggal Surat,Perihal,Kepada,Sifat Surat\nSK-9,2026-09-11,Arsip sumber,Unit B,Sangat Segera';
+        await migrationService.importSuratKeluar(source, 'unit-a', actor);
+        expect(mocks.keluar).toHaveBeenCalledWith(expect.objectContaining({ sifatSurat: 'sangat_segera' }), actor);
+    });
+
     it('preserves partial-import and failed-critical-audit counts with row diagnostics', async () => {
         mocks.masuk.mockRejectedValueOnce(new Error('audit unavailable')).mockResolvedValueOnce({ id: 'good' });
         const result = await migrationService.importSuratMasuk([

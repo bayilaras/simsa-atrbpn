@@ -13,6 +13,8 @@ export const suratKeluar = pgTable('surat_keluar', {
     noUrut: integer('no_urut').notNull(),
     tahun: integer('tahun').notNull(),
     naskahDinas: varchar('naskah_dinas', { length: 100 }), // Surat Dinas, Nota Dinas, Surat Tugas, etc
+    // 0051: urgensi (Biasa, Penting, Segera, Sangat Segera); keamanan ada di klasifikasiKeamanan.
+    sifatSurat: varchar('sifat_surat', { length: 50 }),
     nomorSurat: varchar('nomor_surat', { length: 255 }),
     tanggalSurat: date('tanggal_surat'),
     perihal: text('perihal'),
