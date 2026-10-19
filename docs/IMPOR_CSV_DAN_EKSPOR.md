@@ -74,8 +74,9 @@ Kolom dikenali dari judulnya pada lima baris pertama, tidak pernah dari posisi.
 
 Bila dua kolom tautan berjudul sama (misalnya label "file" dan URL), dipakai
 satu-satunya kolom yang berisi alamat web; hanya nilai `http(s)://` yang
-disimpan. Baris tanpa nomor surat (kosong atau "-") tetap memerlukan Kepada
-(surat keluar) atau Pengirim (surat masuk) agar dapat dikenali saat impor ulang.
+disimpan. Baris tanpa nomor surat (kosong atau "-") memerlukan Pengirim (surat
+masuk), atau Kepada maupun tautan dokumen (surat keluar), agar dapat dikenali
+saat impor ulang; baris tanpa keduanya ditolak per baris.
 
 ## Batas ekspor
 

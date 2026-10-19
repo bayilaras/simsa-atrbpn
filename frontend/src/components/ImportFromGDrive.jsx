@@ -369,7 +369,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                 <div className="space-y-2">
                                     <p className="text-sm font-medium">Tujuan: {typeLabel}</p>
                                     <p className="text-xs text-muted-foreground">Judul ditemukan pada baris data ke-{previewData.headerRow} (baris kosong tidak dihitung).</p>
-                                    <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan agar data dapat dikenali saat impor ulang.</p>
+                                    <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan (untuk surat keluar, tautan dokumen juga cukup) agar data dapat dikenali saat impor ulang.</p>
                                     <div className="overflow-x-auto rounded-lg border">
                                         <table className="w-full text-sm">
                                             <caption className="p-2 text-left font-medium">Pemetaan kolom ke data SIMSA</caption>

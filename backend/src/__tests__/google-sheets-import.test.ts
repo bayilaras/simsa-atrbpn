@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { resolveSheetMapping } from '../services/google-sheets-import-mapping.js';
 import { DuplicateSuratImportError, suratImportIdentity } from '../services/surat-import-identity.js';
 
@@ -117,5 +118,32 @@ describe('exact Google Sheets column mapping before writes', () => {
     it.each([null, '', '2026-99-99', '2026-02-31'])('rejects an unstable/invalid import identity date %s', date => {
         expect(() => suratImportIdentity('masuk', { unitKerjaId: 'unit-a', tahun: 2026,
             nomorSurat: 'SM-1', tanggalSurat: date })).toThrow('Tanggal surat');
+    });
+});
+
+describe('import identity of an unnumbered outgoing letter', () => {
+    const base = { unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '-', tanggalSurat: '2026-01-13', perihal: 'Formulir pendaftaran pengguna' };
+    const link = 'https://drive.google.com/file/d/synthetic-a/view';
+    const query = (sql: ReturnType<typeof suratImportIdentity>) => new PgDialect().sqlToQuery(sql);
+
+    it('is anchored on the document link when the recipient is not recorded', () => {
+        const identity = query(suratImportIdentity('keluar', { ...base, kepada: '', linkDokumen: link }));
+        expect(identity.sql).toContain('"link_dokumen"');
+        expect(identity.sql).not.toContain('"kepada"');
+        expect(identity.params).toEqual(expect.arrayContaining(['unit-a', '2026-01-13', base.perihal, link]));
+    });
+
+    it('keeps using the recipient when it is recorded', () => {
+        const identity = query(suratImportIdentity('keluar', { ...base, kepada: 'Biro Keuangan', linkDokumen: link }));
+        expect(identity.sql).toContain('"kepada"');
+        expect(identity.sql).not.toContain('"link_dokumen"');
+    });
+
+    it.each([
+        ['keluar', { kepada: '', linkDokumen: null }],
+        ['keluar', { kepada: '', linkDokumen: 'file' }],
+        ['masuk', { dari: '', linkDokumen: link }],
+    ] as const)('still rejects an unnumbered %s letter without a stable counterpart: %j', (type, extra) => {
+        expect(() => suratImportIdentity(type, { ...base, ...extra })).toThrow('Nomor surat kosong');
     });
 });
