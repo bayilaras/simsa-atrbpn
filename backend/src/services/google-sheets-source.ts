@@ -17,7 +17,7 @@ export const GOOGLE_SHEETS_LIMITS = Object.freeze({
 
 export interface GoogleSheetsRequestOptions { signal?: AbortSignal }
 
-/** Only this typed source rejection may be skipped during sheet discovery. */
+/** The typed rejection for a private, missing or unpublished spreadsheet. */
 export class GoogleSheetsAccessError extends ValidationError {
     constructor() {
         super('Spreadsheet atau sheet tidak tersedia untuk akses publik. Periksa tautan dan izin berbagi.');
@@ -40,7 +40,8 @@ export interface SheetTab { gid: string; name: string }
 
 // A tab snapshot is a JSON string literal in the editor bootstrap:
 // "[index,0,\"gid\",[{\"1\":[[0,0,\"name\"],...]}],rows,columns]".
-const TAB_SNAPSHOT = /"\[\d{1,4},\d{1,4},\\"\d{1,20}\\",\[\{\\"1\\":\[\[0,0,\\"/g;
+// An escaped quote never opens a snapshot; this also keeps each literal scan bounded by the next match.
+const TAB_SNAPSHOT = /(?<!\\)"\[\d{1,4},\d{1,4},\\"\d{1,20}\\",\[\{\\"1\\":\[\[0,0,\\"/g;
 
 function jsonStringLiteralAt(text: string, start: number): string | null {
     for (let i = start + 1; i < text.length && i - start <= 64 * 1024; i++) {

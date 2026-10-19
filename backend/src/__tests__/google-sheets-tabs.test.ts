@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { extractSheetGid, parseSheetTabs } from '../services/google-sheets-source.js';
+import { GOOGLE_SHEETS_LIMITS, extractSheetGid, parseSheetTabs } from '../services/google-sheets-source.js';
 
 vi.mock('../services/surat-masuk.service.js', () => ({ suratMasukService: { createImported: vi.fn() } }));
 vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: { createImported: vi.fn() } }));
@@ -31,6 +31,16 @@ describe('Google Sheets tabs are identified by gid', () => {
         const html = editorHtml(tab(0, '7', 'Data A'), tab(1, '7', 'Data A copy'), tab(2, 'x1', 'Bad gid'),
             JSON.stringify([21350203, '[3,0,"9",[{"1":[[0,0,"Unclosed"]]}],10,2']));
         expect(parseSheetTabs(html)).toEqual([{ gid: '7', name: 'Data A' }]);
+    });
+
+    it('does not start a tab at an escaped quote inside another string', () => {
+        const html = '<script>var s = "a\\"[1,0,\\"5\\",[{\\"1\\":[[0,0,\\"Fake\\"]]}],1,1]";</script>' + editorHtml(tab(0, '7', 'Data A'));
+        expect(parseSheetTabs(html)).toEqual([{ gid: '7', name: 'Data A' }]);
+    });
+
+    it('returns no tabs for an editor page above the size limit, so the linked tab can still be used', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new Uint8Array(GOOGLE_SHEETS_LIMITS.htmlBytes + 1))));
+        expect(await new GoogleDriveImportService().listSheets('synthetic-sheet')).toEqual([]);
     });
 
     it('takes the gid of the tab the user linked, from the fragment or the query', () => {

@@ -123,6 +123,10 @@ export class GoogleDriveImportService {
         const source = new GoogleSheetsSource(options);
         try {
             return parseSheetTabs(await source.text(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`, GOOGLE_SHEETS_LIMITS.htmlBytes));
+        } catch (error) {
+            // A very large editor page only hides the tab list; the linked gid still works.
+            if (error instanceof PayloadTooLargeError) return [];
+            throw error;
         } finally { source.close(); }
     }
 

@@ -125,8 +125,9 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
             // tab named by the pasted link is offered: a typed name could
             // silently resolve to the first tab.
             const detected = Array.isArray(data.sheets) ? data.sheets : [];
-            const options = detected.length > 0 ? detected
-                : data.linkedGid ? [{ gid: data.linkedGid, name: `Lembar dari tautan (gid ${data.linkedGid})` }] : [];
+            const linkedMissing = data.linkedGid && !detected.some(sheet => sheet.gid === data.linkedGid);
+            const options = linkedMissing
+                ? [...detected, { gid: data.linkedGid, name: `Lembar dari tautan (gid ${data.linkedGid})` }] : detected;
             setSheets(options);
             setSelectedGid((options.find(sheet => sheet.gid === data.linkedGid) || options[0])?.gid || '');
             setStep('sheets');

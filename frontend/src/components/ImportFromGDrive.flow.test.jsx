@@ -174,3 +174,12 @@ it('asks for the link of the tab when neither the tab list nor the link names a 
     expect(screen.queryByRole('radio')).toBeNull();
     expect(screen.getByRole('button', { name: 'Pratinjau data' })).toBeDisabled();
 });
+
+it('offers and selects the linked tab when the detected list does not contain it', async () => {
+    api.get.mockResolvedValueOnce({ sheets: [{ gid: '0', name: 'Data A' }], linkedGid: '99' });
+    render(<ImportFromGDrive {...props} />);
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Ambil daftar lembar' }));
+    expect(await screen.findByRole('radio', { name: 'Lembar dari tautan (gid 99)' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Data A' })).not.toBeChecked();
+});
