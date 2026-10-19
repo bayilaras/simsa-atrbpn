@@ -27,7 +27,7 @@ const showPreview = async () => {
 };
 beforeEach(() => {
     vi.resetAllMocks();
-    api.get.mockResolvedValue({ sheets: [{ name: 'Data A' }, { name: 'Data B' }] });
+    api.get.mockResolvedValue({ sheets: [{ gid: '0', name: 'Data A' }, { gid: '22', name: 'Data B' }], linkedGid: null });
     api.post.mockImplementation(async (endpoint, body) => endpoint.endsWith('/preview')
         ? preview(body.type) : { importedRows: 1, totalRows: 1 });
 });
@@ -40,7 +40,7 @@ it.each(['surat-masuk', 'surat-keluar'])('shows server mapping for %s and sends 
     await discover();
     await showPreview();
     expect(api.post).toHaveBeenCalledWith('/api/import/google-drive/preview', {
-        spreadsheetUrl: url, sheetName: 'Data A', maxRows: 10, type,
+        spreadsheetUrl: url, gid: '0', maxRows: 10, type,
     });
     const mapping = screen.getByRole('table', { name: 'Pemetaan kolom ke data SIMSA' });
     expect(within(mapping).getByText('Kolom 2: No. Surat')).toBeInTheDocument();
@@ -52,7 +52,7 @@ it.each(['surat-masuk', 'surat-keluar'])('shows server mapping for %s and sends 
     act(() => { fireEvent.click(button); fireEvent.click(button); });
     expect(api.post).toHaveBeenCalledTimes(2);
     expect(api.post).toHaveBeenLastCalledWith(`/api/import/google-drive/${type}`, {
-        spreadsheetUrl: url, sheetName: 'Data A', unitKerjaId: 'unit-a',
+        spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a',
     });
     await act(async () => { finish({ importedRows: 1, totalRows: 1 }); });
     expect(screen.getByText('Impor berhasil!')).toBeInTheDocument();
@@ -66,7 +66,7 @@ it('discards a late source lookup and requires a fresh preview after changing sh
     open();
     fireEvent.click(screen.getByRole('button', { name: 'Ambil daftar lembar' }));
     fireEvent.change(screen.getByLabelText('URL Google Spreadsheet'), { target: { value: `${url}?new` } });
-    await act(async () => { finish({ sheets: [{ name: 'Stale sheet' }] }); });
+    await act(async () => { finish({ sheets: [{ gid: '9', name: 'Stale sheet' }], linkedGid: null }); });
     expect(screen.queryByRole('radio', { name: 'Stale sheet' })).toBeNull();
     await discover();
     await showPreview();
@@ -75,7 +75,7 @@ it('discards a late source lookup and requires a fresh preview after changing sh
     expect(screen.queryByRole('button', { name: 'Impor 1 baris' })).toBeNull();
     await showPreview();
     expect(api.post).toHaveBeenLastCalledWith('/api/import/google-drive/preview', expect.objectContaining({
-        spreadsheetUrl: `${url}?new`, sheetName: 'Data B',
+        spreadsheetUrl: `${url}?new`, gid: '22',
     }));
 });
 
@@ -141,4 +141,45 @@ it.each(['sheets', 'preview', 'import'])('waits for Retry-After on %s without au
     expect(client).toHaveBeenCalledTimes(calls);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: label })); });
     expect(client).toHaveBeenCalledTimes(calls + 1);
+});
+
+it('preselects the tab the pasted link points to and shows its name', async () => {
+    api.get.mockResolvedValueOnce({ sheets: [{ gid: '0', name: 'Data A' }, { gid: '22', name: 'Data B' }], linkedGid: '22' });
+    render(<ImportFromGDrive {...props} />);
+    open();
+    await discover();
+    expect(screen.getByRole('radio', { name: 'Data B' })).toBeChecked();
+    await showPreview();
+    expect(api.post).toHaveBeenLastCalledWith('/api/import/google-drive/preview', expect.objectContaining({ gid: '22' }));
+    expect(screen.getByText('Lembar: Data B')).toBeInTheDocument();
+});
+
+it('uses the linked tab when the tab list cannot be read, without asking for a name', async () => {
+    api.get.mockResolvedValueOnce({ sheets: [], linkedGid: '234636572' });
+    render(<ImportFromGDrive {...props} />);
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Ambil daftar lembar' }));
+    expect(await screen.findByRole('radio', { name: 'Lembar dari tautan (gid 234636572)' })).toBeChecked();
+    expect(screen.queryByLabelText('Nama lembar kerja')).toBeNull();
+    await showPreview();
+    expect(api.post).toHaveBeenLastCalledWith('/api/import/google-drive/preview', expect.objectContaining({ gid: '234636572' }));
+});
+
+it('asks for the link of the tab when neither the tab list nor the link names a tab', async () => {
+    api.get.mockResolvedValueOnce({ sheets: [], linkedGid: null });
+    render(<ImportFromGDrive {...props} />);
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Ambil daftar lembar' }));
+    expect(await screen.findByText(/salin tautan dari tab tersebut/)).toBeInTheDocument();
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Pratinjau data' })).toBeDisabled();
+});
+
+it('offers and selects the linked tab when the detected list does not contain it', async () => {
+    api.get.mockResolvedValueOnce({ sheets: [{ gid: '0', name: 'Data A' }], linkedGid: '99' });
+    render(<ImportFromGDrive {...props} />);
+    open();
+    fireEvent.click(screen.getByRole('button', { name: 'Ambil daftar lembar' }));
+    expect(await screen.findByRole('radio', { name: 'Lembar dari tautan (gid 99)' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Data A' })).not.toBeChecked();
 });

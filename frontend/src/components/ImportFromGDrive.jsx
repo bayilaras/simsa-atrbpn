@@ -26,7 +26,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const [step, setStep] = useState('input'); // input, sheets, preview, importing, result
     const [spreadsheetUrl, setSpreadsheetUrl] = useState('');
     const [sheets, setSheets] = useState([]);
-    const [selectedSheet, setSelectedSheet] = useState('');
+    const [selectedGid, setSelectedGid] = useState('');
     const [previewData, setPreviewData] = useState(null);
     const [importResult, setImportResult] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -51,6 +51,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     }, [isOpen, retryUntil]);
 
     const typeLabel = type === 'surat-masuk' ? 'Surat Masuk' : 'Surat Keluar';
+    const selectedName = sheets.find(sheet => sheet.gid === selectedGid)?.name || '';
     const duplicateOnly = importResult?.success === true && importResult.importedRows === 0
         && importResult.duplicateRows > 0 && !importResult.skippedRows && !importResult.errors?.length;
     const resultCompleted = importResult?.importedRows > 0 || duplicateOnly;
@@ -80,7 +81,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
         setStep('input');
         setSpreadsheetUrl('');
         setSheets([]);
-        setSelectedSheet('');
+        setSelectedGid('');
         setPreviewData(null);
         setImportResult(null);
         setIsLoading(false);
@@ -120,15 +121,16 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
             });
 
             if (request !== requestRef.current) return;
-            setSheets(data.sheets || []);
-
-            if (data.sheets && data.sheets.length > 0) {
-                setSelectedSheet(data.sheets[0].name);
-                setStep('sheets');
-            } else {
-                // No sheets found, let user type sheet name manually
-                setStep('sheets');
-            }
+            // Tabs are chosen by gid. When the tab list is unreadable, only the
+            // tab named by the pasted link is offered: a typed name could
+            // silently resolve to the first tab.
+            const detected = Array.isArray(data.sheets) ? data.sheets : [];
+            const linkedMissing = data.linkedGid && !detected.some(sheet => sheet.gid === data.linkedGid);
+            const options = linkedMissing
+                ? [...detected, { gid: data.linkedGid, name: `Lembar dari tautan (gid ${data.linkedGid})` }] : detected;
+            setSheets(options);
+            setSelectedGid((options.find(sheet => sheet.gid === data.linkedGid) || options[0])?.gid || '');
+            setStep('sheets');
         } catch (err) {
             if (request === requestRef.current) handleRequestError(err, 'sheets');
         } finally {
@@ -142,7 +144,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     // Step 2: Preview data from selected sheet (POST — api client sends CSRF token automatically)
     const handlePreview = async () => {
         if (busyRef.current || retryUntil.preview > Date.now()) return;
-        if (!selectedSheet) {
+        if (!selectedGid) {
             setError('Pilih sheet yang akan diimpor');
             return;
         }
@@ -156,7 +158,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
         try {
             const data = await api.post('/api/import/google-drive/preview', {
                 spreadsheetUrl,
-                sheetName: selectedSheet,
+                gid: selectedGid,
                 maxRows: 10,
                 type,
             });
@@ -190,7 +192,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
         try {
             const result = await api.post(
                 `/api/import/google-drive/${type}`,
-                buildGoogleSheetsImportPayload(spreadsheetUrl, selectedSheet, unitKerjaId),
+                buildGoogleSheetsImportPayload(spreadsheetUrl, selectedGid, unitKerjaId),
             );
 
             if (request !== requestRef.current) return;
@@ -271,7 +273,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                             invalidatePreview();
                                             setSpreadsheetUrl(e.target.value);
                                             setSheets([]);
-                                            setSelectedSheet('');
+                                            setSelectedGid('');
                                         }}
                                         placeholder="https://docs.google.com/spreadsheets/d/..."
                                         autoComplete="url"
@@ -309,10 +311,10 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                     </legend>
                                     {sheets.length > 0 ? (
                                         <div className="space-y-2 max-h-60 overflow-y-auto">
-                                            {sheets.map((sheet, idx) => (
+                                            {sheets.map((sheet) => (
                                                 <label
-                                                    key={idx}
-                                                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedSheet === sheet.name
+                                                    key={sheet.gid}
+                                                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedGid === sheet.gid
                                                         ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/15'
                                                         : 'border-border hover:bg-muted/50'
                                                         }`}
@@ -320,9 +322,9 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                                     <input
                                                         type="radio"
                                                         name="sheet"
-                                                        value={sheet.name}
-                                                        checked={selectedSheet === sheet.name}
-                                                        onChange={() => { invalidatePreview(); setSelectedSheet(sheet.name); }}
+                                                        value={sheet.gid}
+                                                        checked={selectedGid === sheet.gid}
+                                                        onChange={() => { invalidatePreview(); setSelectedGid(sheet.gid); }}
                                                         className="text-blue-600"
                                                     />
                                                     <span className="text-sm text-foreground">{sheet.name}</span>
@@ -330,20 +332,10 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                             ))}
                                         </div>
                                     ) : (
-                                        <div>
-                                            <label htmlFor="manual-sheet-name" className="sr-only">Nama lembar kerja</label>
-                                            <input
-                                                id="manual-sheet-name"
-                                                type="text"
-                                                value={selectedSheet}
-                                                onChange={(e) => { invalidatePreview(); setSelectedSheet(e.target.value); }}
-                                                placeholder="Nama lembar (mis. Surat Masuk 2024)"
-                                                className="min-h-11 w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-ring"
-                                            />
-                                            <p className="mt-2 text-xs text-muted-foreground">
-                                                Daftar lembar tidak terdeteksi. Ketik nama lembar secara manual.
-                                            </p>
-                                        </div>
+                                        <p className="text-sm text-muted-foreground">
+                                            Daftar lembar tidak terdeteksi. Buka tab yang ingin diimpor di Google Sheets,
+                                            salin tautan dari tab tersebut (berisi <code>gid=</code>), lalu tempel pada langkah sebelumnya.
+                                        </p>
                                     )}
                                 </fieldset>
 
@@ -358,7 +350,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                     <button
                                         type="button"
                                         onClick={handlePreview}
-                                        disabled={isLoading || retrySeconds > 0 || !selectedSheet}
+                                        disabled={isLoading || retrySeconds > 0 || !selectedGid}
                                         className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                                     >
                                         {isLoading ? (
@@ -378,7 +370,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                 <div className="space-y-2">
                                     <p className="text-sm font-medium">Tujuan: {typeLabel}</p>
                                     <p className="text-xs text-muted-foreground">Judul ditemukan pada baris data ke-{previewData.headerRow} (baris kosong tidak dihitung).</p>
-                                    <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan agar data dapat dikenali saat impor ulang.</p>
+                                    <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan (untuk surat keluar, tautan dokumen juga cukup) agar data dapat dikenali saat impor ulang.</p>
                                     <div className="overflow-x-auto rounded-lg border">
                                         <table className="w-full text-sm">
                                             <caption className="p-2 text-left font-medium">Pemetaan kolom ke data SIMSA</caption>
@@ -398,7 +390,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                         Menampilkan <strong>{previewData.rows.length}</strong> dari <strong>{previewData.totalRows}</strong> baris
                                     </p>
                                     <span className="text-xs bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">
-                                        Lembar: {selectedSheet}
+                                        Lembar: {selectedName}
                                     </span>
                                 </div>
 

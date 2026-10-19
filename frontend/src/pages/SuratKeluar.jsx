@@ -12,6 +12,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
+import { sifatSuratKeluarLabel } from '@/lib/sifat-surat-keluar';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -650,8 +651,13 @@ export default function SuratKeluar() {
                                                     <div className="flex flex-col gap-1 max-w-[400px]">
                                                         <span className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
                                                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                            <span className="max-w-[150px] truncate" title={row.kepada}>Kepada: {row.kepada}</span>
+                                                            <span className="max-w-[150px] truncate" title={row.kepada || 'Penerima belum tercatat'}>Kepada: {row.kepada || '-'}</span>
                                                             {row.naskahDinas && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.naskahDinas}</span>}
+                                                            {row.sifatSurat && row.sifatSurat !== 'biasa' && (
+                                                                <span data-badge="sifat-surat" className="px-1.5 py-0.5 rounded-full text-[10px] font-medium border bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200">
+                                                                    {sifatSuratKeluarLabel(row.sifatSurat)}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </TableCell>

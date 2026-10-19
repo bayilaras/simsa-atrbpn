@@ -173,6 +173,18 @@ it('associates the incoming disposition error with the real multiselect trigger'
     expect(screen.getByRole('alert')).toHaveFocus();
 });
 
+it.each([
+    ['segera', 'Segera', 'segera'],
+    ['Kilat', 'Kilat', 'Kilat'],
+    [null, 'Belum tercatat', undefined],
+])('keeps the stored outgoing sifat %j when saving other edits', async (stored, shown, sent) => {
+    const { form } = await renderForm(pages[1], { sifatSurat: stored });
+    expect(screen.getByRole('combobox', { name: 'Sifat surat keluar' })).toHaveTextContent(shown);
+    fireEvent.submit(form);
+    await screen.findByText(/telah disimpan ke sistem/);
+    expect(fixtures.keluar.update.mock.calls[0][1].sifatSurat).toBe(sent);
+});
+
 it('names the outgoing reference display for keyboard and screen reader users', async () => {
     await renderForm(pages[1]);
     expect(screen.getByText('Nomor Referensi')).toBeInTheDocument();

@@ -221,6 +221,8 @@ const suratKeluarBaseSchema = z.object({
     unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
     tahun: z.coerce.number().int().min(2000).max(2100).optional(),
     naskahDinas: z.string().max(100).optional(),
+    // Urgensi saja (biasa, penting, segera, sangat_segera); tanpa default agar PUT tidak menimpanya.
+    sifatSurat: z.string().max(50).optional(),
     // Keep this optional for older API clients. The service infers manual mode
     // when a number is supplied and automatic mode when it is omitted. New
     // clients send the mode explicitly so a displayed preview cannot be saved

@@ -2,6 +2,7 @@ import { and, eq, type SQL } from 'drizzle-orm';
 import { suratMasuk } from '../db/schema/surat-masuk.js';
 import { suratKeluar } from '../db/schema/surat-keluar.js';
 import { AppError, ConflictError, ValidationError } from '../utils/errors.js';
+import { isWebAddress } from './google-sheets-import-mapping.js';
 
 export interface SuratImportOptions { signal?: AbortSignal }
 export class DuplicateSuratImportError extends ConflictError {
@@ -15,7 +16,7 @@ export function assertImportConnected(options?: SuratImportOptions): void {
 export function suratImportIdentity(
     type: 'masuk' | 'keluar',
     data: { unitKerjaId: string; tahun: number; nomorSurat?: string | null; tanggalSurat?: string | null;
-        perihal?: string | null; dari?: string | null; kepada?: string | null },
+        perihal?: string | null; dari?: string | null; kepada?: string | null; linkDokumen?: string | null },
 ): SQL {
     const table = type === 'masuk' ? suratMasuk : suratKeluar;
     // A source date anchors the year across retries; never use the current year
@@ -32,9 +33,12 @@ export function suratImportIdentity(
     if (number && number !== '-') return and(eq(table.unitKerjaId, data.unitKerjaId),
         eq(table.tahun, data.tahun), eq(table.nomorSurat, number))!;
     const counterpart = type === 'masuk' ? data.dari : data.kepada;
-    if (!data.perihal?.trim() || !counterpart?.trim()) {
-        throw new ValidationError('Nomor surat kosong memerlukan tanggal, perihal, dan pengirim/tujuan untuk identitas impor yang stabil.');
+    // Registers without a recipient column still link each document; that link
+    // tells apart same-day letters with the same subject.
+    const link = type === 'keluar' && !counterpart?.trim() && isWebAddress(data.linkDokumen ?? '') ? data.linkDokumen! : null;
+    if (!data.perihal?.trim() || (!counterpart?.trim() && !link)) {
+        throw new ValidationError('Nomor surat kosong memerlukan tanggal, perihal, dan pengirim/tujuan (atau tautan dokumen surat keluar) untuk identitas impor yang stabil.');
     }
-    return and(eq(table.unitKerjaId, data.unitKerjaId), eq(table.tanggalSurat, data.tanggalSurat),
-        eq(table.perihal, data.perihal), type === 'masuk' ? eq(suratMasuk.dari, counterpart) : eq(suratKeluar.kepada, counterpart))!;
+    return and(eq(table.unitKerjaId, data.unitKerjaId), eq(table.tanggalSurat, data.tanggalSurat), eq(table.perihal, data.perihal),
+        type === 'masuk' ? eq(suratMasuk.dari, counterpart!) : link ? eq(suratKeluar.linkDokumen, link) : eq(suratKeluar.kepada, counterpart!))!;
 }

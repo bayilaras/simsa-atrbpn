@@ -5,6 +5,7 @@ import { suratMasukService, SuratMasukFilters } from './surat-masuk.service';
 import { suratKeluarService, SuratKeluarFilters } from './surat-keluar.service';
 import { arsipService, ArsipFilters } from './arsip.service';
 import { ASAL_NASKAH_LABEL, resolveBalasanLabels } from './export-balasan';
+import { sifatSuratLabel } from './sifat-surat.js';
 
 export interface ExportOptions {
     format: 'excel' | 'pdf';
@@ -147,13 +148,13 @@ export class ExportService {
         const worksheet = workbook.addWorksheet('Surat Keluar');
 
         // Title section
-        worksheet.mergeCells('A1:N1');
+        worksheet.mergeCells('A1:O1');
         const titleCell = worksheet.getCell('A1');
         titleCell.value = 'DAFTAR SURAT KELUAR';
         titleCell.font = TITLE_FONT;
         titleCell.alignment = CENTER_ALIGN;
 
-        worksheet.mergeCells('A2:N2');
+        worksheet.mergeCells('A2:O2');
         const subtitleCell = worksheet.getCell('A2');
         subtitleCell.value = `Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan — Tahun ${filters.tahun || 'Semua'}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
@@ -164,9 +165,9 @@ export class ExportService {
         const headers = [
             'ID', 'No Urut', 'Jenis Surat', 'Nomor Surat', 'Tanggal Surat',
             'Perihal', 'Tujuan', 'Link Dokumen', 'Tanggal Input', 'Balasan Untuk', 'Asal Naskah',
-            'Klasifikasi Arsip', 'Klasifikasi Kode', 'Klasifikasi Jenis'
+            'Klasifikasi Arsip', 'Klasifikasi Kode', 'Klasifikasi Jenis', 'Sifat Surat'
         ];
-        const colWidths = [20, 10, 18, 28, 15, 40, 25, 30, 18, 24, 16, 28, 15, 15];
+        const colWidths = [20, 10, 18, 28, 15, 40, 25, 30, 18, 24, 16, 28, 15, 15, 15];
 
         headers.forEach((header, i) => {
             const cell = worksheet.getCell(headerRow, i + 1);
@@ -205,6 +206,7 @@ export class ExportService {
                 item.klasifikasiFasilitatif || item.klasifikasiSubstantif || '',
                 item.klasifikasiFasilitatifKode || item.klasifikasiSubstantifKode || '',
                 klasifikasiJenis,
+                sifatSuratLabel(item.sifatSurat),
             ];
 
             rowData.forEach((val, i) => {

@@ -1,4 +1,4 @@
-export function buildGoogleSheetsImportPayload(spreadsheetUrl, sheetName, unitKerjaId) {
+export function buildGoogleSheetsImportPayload(spreadsheetUrl, gid, unitKerjaId) {
     if (!unitKerjaId) throw new Error('Pilih unit kerja terlebih dahulu');
-    return { spreadsheetUrl, sheetName, unitKerjaId };
+    return { spreadsheetUrl, gid, unitKerjaId };
 }

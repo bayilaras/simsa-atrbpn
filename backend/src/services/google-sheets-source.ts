@@ -17,7 +17,7 @@ export const GOOGLE_SHEETS_LIMITS = Object.freeze({
 
 export interface GoogleSheetsRequestOptions { signal?: AbortSignal }
 
-/** Only this typed source rejection may be skipped during sheet discovery. */
+/** The typed rejection for a private, missing or unpublished spreadsheet. */
 export class GoogleSheetsAccessError extends ValidationError {
     constructor() {
         super('Spreadsheet atau sheet tidak tersedia untuk akses publik. Periksa tautan dan izin berbagi.');
@@ -34,6 +34,49 @@ export function assertSheetName(name: string | undefined): void {
     if (name !== undefined && (typeof name !== 'string' || !name.trim() || name.length > 100 || /[\u0000-\u001f]/.test(name))) {
         throw new ValidationError('Nama sheet wajib berisi 1–100 karakter tanpa karakter kontrol.');
     }
+}
+
+export interface SheetTab { gid: string; name: string }
+
+// A tab snapshot is a JSON string literal in the editor bootstrap:
+// "[index,0,\"gid\",[{\"1\":[[0,0,\"name\"],...]}],rows,columns]".
+// An escaped quote never opens a snapshot; this also keeps each literal scan bounded by the next match.
+const TAB_SNAPSHOT = /(?<!\\)"\[\d{1,4},\d{1,4},\\"\d{1,20}\\",\[\{\\"1\\":\[\[0,0,\\"/g;
+
+function jsonStringLiteralAt(text: string, start: number): string | null {
+    for (let i = start + 1; i < text.length && i - start <= 64 * 1024; i++) {
+        if (text[i] === '\\') i++;
+        else if (text[i] === '"') return text.slice(start, i + 1);
+    }
+    return null;
+}
+
+/** Tab names and gids from the public editor page. Google answers unknown sheet names with the first tab, so tabs are never guessed. */
+export function parseSheetTabs(html: string): SheetTab[] {
+    const tabs: SheetTab[] = [];
+    for (const match of html.matchAll(TAB_SNAPSHOT)) {
+        const literal = jsonStringLiteralAt(html, match.index);
+        if (!literal) continue;
+        let snapshot: unknown;
+        try { snapshot = JSON.parse(JSON.parse(literal)); } catch { continue; }
+        const gid = Array.isArray(snapshot) ? snapshot[2] : undefined;
+        const name = Array.isArray(snapshot) ? snapshot[3]?.[0]?.['1']?.[0]?.[2] : undefined;
+        if (typeof gid !== 'string' || !/^\d{1,20}$/.test(gid) || typeof name !== 'string') continue;
+        const label = name.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 100);
+        if (!label || tabs.some(tab => tab.gid === gid)) continue;
+        tabs.push({ gid, name: label });
+        if (tabs.length >= GOOGLE_SHEETS_LIMITS.sheets) break;
+    }
+    return tabs;
+}
+
+/** The tab a copied link points at (`#gid=` as shown in the browser, else `?gid=`). */
+export function extractSheetGid(value: string): string | null {
+    try {
+        const url = new URL(value);
+        const gid = /(?:^#|&)gid=([^&]*)/.exec(url.hash)?.[1] ?? url.searchParams.get('gid');
+        return gid && /^\d{1,20}$/.test(gid) ? gid : null;
+    } catch { return null; }
 }
 
 function allowedSourceUrl(url: URL): boolean {

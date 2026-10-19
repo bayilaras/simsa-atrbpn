@@ -300,6 +300,7 @@ export class SuratKeluarService {
                             after: {
                                 nomorSurat: inserted.nomorSurat,
                                 perihal: inserted.perihal,
+                                sifatSurat: inserted.sifatSurat,
                                 unitKerjaId: inserted.unitKerjaId,
                                 klasifikasiItemId: inserted.klasifikasiItemId,
                                 jraItemId: inserted.jraItemId,
@@ -424,6 +425,7 @@ export class SuratKeluarService {
                             perihal: result.perihal,
                             kepada: result.kepada,
                             naskahDinas: result.naskahDinas,
+                            sifatSurat: result.sifatSurat,
                             unitKerjaId: result.unitKerjaId,
                             fileOriginalName: result.fileOriginalName,
                             hasFile: Boolean(result.filePath),

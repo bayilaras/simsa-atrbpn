@@ -7,10 +7,11 @@ import type { CriticalAuditContext } from './audit-log.service.js';
 import { AppError, PayloadTooLargeError, ValidationError } from '../utils/errors.js';
 import { publicErrorResponse } from '../utils/public-error.js';
 import { currentRequestId } from '../utils/request-context.js';
-import { GOOGLE_SHEETS_LIMITS, GoogleSheetsAccessError, GoogleSheetsSource, assertSheetName, assertSpreadsheetId, parseBoundedSheetCsv, type GoogleSheetsRequestOptions } from './google-sheets-source.js';
+import { GOOGLE_SHEETS_LIMITS, GoogleSheetsAccessError, GoogleSheetsSource, assertSheetName, assertSpreadsheetId, parseBoundedSheetCsv, parseSheetTabs, type GoogleSheetsRequestOptions, type SheetTab } from './google-sheets-source.js';
 
-import { resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
+import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
 import { DuplicateSuratImportError } from './surat-import-identity.js';
+import { normalizeSifatSurat } from './sifat-surat.js';
 
 const log = createLogger('GoogleDriveImportService');
 
@@ -29,10 +30,8 @@ interface ImportResult {
     errors: string[];
 }
 
-interface SheetInfo {
-    name: string;
-    gid: string;
-}
+/** A tab by gid, or by name for older clients. */
+export type SheetSelector = string | { gid: string };
 
 export class GoogleDriveImportService {
     /**
@@ -116,36 +115,25 @@ export class GoogleDriveImportService {
         finally { source.close(); }
     }
     /**
-     * List available sheets in a spreadsheet by parsing the HTML
+     * List the spreadsheet's tabs (name + gid) from its public editor page.
+     * An empty list means none were detected; the caller then relies on the gid in the link.
      */
-    async listSheets(spreadsheetId: string, options: GoogleSheetsRequestOptions = {}): Promise<SheetInfo[]> {
+    async listSheets(spreadsheetId: string, options: GoogleSheetsRequestOptions = {}): Promise<SheetTab[]> {
         assertSpreadsheetId(spreadsheetId);
         const source = new GoogleSheetsSource(options);
         try {
-            const html = await source.text(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`, GOOGLE_SHEETS_LIMITS.htmlBytes);
-            const sheets: SheetInfo[] = [];
-            for (const match of html.matchAll(/gid=(\d{1,20})[^"]*"[^>]*>([^<]+)</g)) {
-                if (!sheets.some(sheet => sheet.gid === match[1])) sheets.push({ gid: match[1], name: match[2].trim().slice(0, 100) });
-                if (sheets.length >= GOOGLE_SHEETS_LIMITS.sheets) break;
-            }
-            if (sheets.length === 0) {
-                const commonNames = ['Sheet1', 'Surat Masuk 2021', 'Surat Masuk 2022', 'Surat Masuk 2023',
-                    'Surat Masuk 2024', 'Surat Masuk 2025', 'Surat Masuk 2026',
-                    'Surat Keluar 2023', 'Surat Keluar 2024', 'Surat Keluar 2025', 'Surat Keluar 2026'];
-                for (const name of commonNames) {
-                    try {
-                        const probe = await source.text(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}&range=A1`, 64 * 1024);
-                        if (probe.trim() && !/^\s*</.test(probe)) sheets.push({ gid: '0', name });
-                    } catch (error) {
-                        // Only an inaccessible/missing sheet is skippable; limits,
-                        // cancellation, redirects and upstream faults end the operation.
-                        if (error instanceof GoogleSheetsAccessError) continue;
-                        throw error;
-                    }
-                }
-            }
-            return sheets;
+            return parseSheetTabs(await source.text(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`, GOOGLE_SHEETS_LIMITS.htmlBytes));
+        } catch (error) {
+            // A very large editor page only hides the tab list; the linked gid still works.
+            if (error instanceof PayloadTooLargeError) return [];
+            throw error;
         } finally { source.close(); }
+    }
+
+    private fetchSelectedSheet(spreadsheetId: string, sheet: SheetSelector, options: GoogleSheetsRequestOptions): Promise<string> {
+        return typeof sheet === 'string'
+            ? this.fetchSheetAsCSV(spreadsheetId, sheet, undefined, options)
+            : this.fetchSheetAsCSV(spreadsheetId, undefined, sheet.gid, options);
     }
     /**
      * Parse CSV text into array of arrays
@@ -167,13 +155,13 @@ export class GoogleDriveImportService {
     /**
      * Preview first N rows from a spreadsheet
      */
-    async previewData(spreadsheetId: string, sheetName: string, maxRows: number = 10,
+    async previewData(spreadsheetId: string, sheet: SheetSelector, maxRows: number = 10,
         options: GoogleSheetsRequestOptions = {}, importType: GoogleSheetsImportType = 'surat-masuk'): Promise<{
         headers: string[]; rows: string[][]; totalRows: number;
         importType: GoogleSheetsImportType; headerRow: number; mapping: SheetColumnMapping[];
     }> {
         if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > GOOGLE_SHEETS_LIMITS.previewRows) throw new ValidationError('maxRows harus bilangan bulat antara 1 dan 100.');
-        const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName, undefined, options);
+        const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
         const allRows = this.parseCSV(csvText);
         if (allRows.length === 0) return { headers: [], rows: [], totalRows: 0, importType, headerRow: 0, mapping: [] };
         const { headers, headerRowIndex, mapping } = resolveSheetMapping(allRows, importType);
@@ -191,12 +179,12 @@ export class GoogleDriveImportService {
      */
     async importSuratMasuk(
         spreadsheetId: string,
-        sheetName: string,
+        sheet: SheetSelector,
         unitKerjaId: string,
         auditContext: CriticalAuditContext,
         options: GoogleSheetsRequestOptions = {},
     ): Promise<ImportResult> {
-        const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName, undefined, options);
+        const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
         const allRows = this.parseCSV(csvText);
 
         if (allRows.length < 2) {
@@ -279,12 +267,12 @@ export class GoogleDriveImportService {
      */
     async importSuratKeluar(
         spreadsheetId: string,
-        sheetName: string,
+        sheet: SheetSelector,
         unitKerjaId: string,
         auditContext: CriticalAuditContext,
         options: GoogleSheetsRequestOptions = {},
     ): Promise<ImportResult> {
-        const csvText = await this.fetchSheetAsCSV(spreadsheetId, sheetName, undefined, options);
+        const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
         const allRows = this.parseCSV(csvText);
 
         if (allRows.length < 2) {
@@ -322,18 +310,20 @@ export class GoogleDriveImportService {
                 const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
                 const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
                 const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
+                const link = this.getField(row, colMap, 'linkDokumen');
 
                 const newSurat: NewSuratKeluar & { numberingMode: 'manual' } = {
                     unitKerjaId,
                     noUrut: noUrut,
                     tahun: effectiveTahun,
                     naskahDinas: this.getField(row, colMap, 'naskahDinas') || 'Surat Dinas',
+                    sifatSurat: normalizeSifatSurat(this.getField(row, colMap, 'sifatSurat')),
                     numberingMode: 'manual',
                     nomorSurat: nomorSurat || '-',
                     tanggalSurat: parsedDate,
                     perihal: this.getField(row, colMap, 'perihal') || '',
                     kepada,
-                    linkDokumen: this.getField(row, colMap, 'linkDokumen') || null,
+                    linkDokumen: isWebAddress(link) ? link : null,
                     klasifikasiFasilitatif: klasifikasiJenis === 'fasilitatif' ? klasifikasiArsip : null,
                     klasifikasiFasilitatifKode: klasifikasiJenis === 'fasilitatif' ? klasifikasiKode : null,
                     klasifikasiSubstantif: klasifikasiJenis === 'substantif' ? klasifikasiArsip : null,
