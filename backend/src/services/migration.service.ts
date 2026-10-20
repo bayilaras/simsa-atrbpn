@@ -1,8 +1,6 @@
 import { parse } from 'csv-parse/sync';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../config/database.js';
-import { suratMasuk as suratMasukTable } from '../db/schema/surat-masuk.js';
-import { suratKeluar as suratKeluarTable } from '../db/schema/surat-keluar.js';
 import { arsip as arsipTable } from '../db/schema/arsip.js';
 import { suratMasukService } from './surat-masuk.service.js';
 import { suratKeluarService } from './surat-keluar.service.js';
@@ -12,12 +10,17 @@ import { ValidationError } from '../utils/errors.js';
 import { publicErrorResponse } from '../utils/public-error.js';
 import { currentRequestId } from '../utils/request-context.js';
 import { createLogger } from '../utils/logger.js';
-import { DuplicateSuratImportError } from './surat-import-identity.js';
+import { DuplicateSuratImportError, type SuratImportIdentityKey } from './surat-import-identity.js';
+import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat } from './sifat-surat.js';
 
 const log = createLogger('MigrationService');
 
-interface ImportOptions { dryRun?: boolean }
+interface ImportOptions {
+    dryRun?: boolean;
+    /** Import records from resume.startRow and start none after resume.deadlineAt. */
+    resume?: ImportResume;
+}
 interface ImportRowResult {
     /** CSV record number, including the header as record 1. */
     row: number;
@@ -35,13 +38,24 @@ interface ImportResult {
     dryRun: boolean;
     valid: number;
     rows: ImportRowResult[];
+    /** Resumable imports only: rows and counts cover records startRow..nextRow-1 (or to the end). */
+    startRow?: number;
+    /** The record to continue from, or null when the file is finished. */
+    nextRow?: number | null;
+    /** Send back with nextRow; proves the records before it are unchanged. */
+    prefixHash?: string;
 }
 interface CsvRow { [key: string]: string | undefined }
-interface PreparedImport {
+type PreparedImport = {
     identity: string;
-    exists: () => PromiseLike<{ id: string }[]>;
     create: () => Promise<unknown>;
-}
+} & (
+    /** The canonical surat identity, looked up for the whole file in one query. */
+    | { key: SuratImportIdentityKey }
+    /** Records without a canonical import identity are looked up one by one. */
+    | { exists: () => PromiseLike<{ id: string }[]> }
+);
+type PreparedRecord = { diagnostic: ImportRowResult } & ({ item: PreparedImport } | { error: unknown });
 const IMPORT_ROW_LIMIT = 1_000;
 
 function csvHeaders(headers: string[]): string[] {
@@ -76,65 +90,91 @@ async function runImport(
     dateFields: string[],
     prepare: (row: CsvRow, date: string, year: number, position: number) => PreparedImport,
     options: ImportOptions,
+    existingSurat?: (keys: SuratImportIdentityKey[]) => Promise<boolean[]>,
 ): Promise<ImportResult> {
     const result: ImportResult = { success: true, imported: 0, skipped: 0, duplicates: 0, errors: [], dryRun: options.dryRun === true, valid: 0, rows: [] };
+    let records: CsvRow[];
     try {
-        const records = parse(csvContent, {
+        records = parse(csvContent, {
             columns: csvHeaders, bom: true, skip_empty_lines: true, trim: true,
             relax_column_count: true, max_record_size: 64 * 1024, to: IMPORT_ROW_LIMIT + 1,
         }) as CsvRow[];
         if (records.length > IMPORT_ROW_LIMIT) {
             throw new ValidationError('Maksimal 1.000 rekod per impor. Pecah CSV menjadi beberapa berkas dan pratinjau masing-masing.');
         }
-        const seen = new Set<string>();
-        for (const [index, row] of records.entries()) {
-            const sourceDate = dateFields.map(field => row[field]).find(value => value?.trim()) ?? '';
-            const diagnostic: ImportRowResult = { row: index + 2, status: 'invalid', sourceDate };
-            result.rows.push(diagnostic);
-            try {
-                const date = parseSourceDate(sourceDate);
-                diagnostic.normalizedDate = date;
-                const item = prepare(row, date, Number(date.slice(0, 4)), index + 1);
-                if (seen.has(item.identity) || (await item.exists()).length > 0) {
-                    diagnostic.status = 'duplicate';
-                    diagnostic.message = 'Rekod dengan identitas yang sama sudah ada pada unit/tahun ini atau di berkas CSV.';
-                    result.duplicates++;
-                    continue;
-                }
-                result.valid++;
-                if (!result.dryRun) {
-                    // Actual import always repeats validation and duplicate checks.
-                    // Preview is advisory and never grants mutation authority.
-                    try {
-                        await item.create();
-                    } catch (error) {
-                        if (!(error instanceof DuplicateSuratImportError)) throw error;
-                        // Another importer may commit after the advisory lookup.
-                        // The canonical transaction checks again under the unit lock.
-                        diagnostic.status = 'duplicate';
-                        diagnostic.message = 'Rekod dengan identitas yang sama sudah ada pada unit/tahun ini atau di berkas CSV.';
-                        result.duplicates++;
-                        result.valid--;
-                        seen.add(item.identity);
-                        continue;
-                    }
-                    result.imported++;
-                }
-                seen.add(item.identity);
-                diagnostic.status = result.dryRun ? 'valid' : 'imported';
-            } catch (error) {
-                const failure = publicErrorResponse(error, currentRequestId());
-                log.warn({ event: 'csv_import_row_rejected', row: diagnostic.row, publicCode: failure.code }, 'Import row rejected');
-                const message = failure.message;
-                diagnostic.message = message;
-                result.errors.push('Row ' + diagnostic.row + ': ' + message);
-                result.skipped++;
-            }
-        }
     } catch (error) {
         const failure = publicErrorResponse(error, currentRequestId());
         log.warn({ event: 'csv_import_parse_rejected', publicCode: failure.code }, 'CSV import rejected');
         result.errors.push('Parse error: ' + (error instanceof ValidationError ? failure.message : 'CSV tidak dapat dibaca. Periksa format dan panjang baris.'));
+        result.success = false;
+        return result;
+    }
+    const { resume } = options;
+    const start = resume?.startRow ?? 0;
+    if (resume) assertImportResumable(records, resume);
+    const prepared = records.slice(start).map((row, offset): PreparedRecord => {
+        const index = start + offset;
+        const sourceDate = dateFields.map(field => row[field]).find(value => value?.trim()) ?? '';
+        const diagnostic: ImportRowResult = { row: index + 2, status: 'invalid', sourceDate };
+        try {
+            const date = parseSourceDate(sourceDate);
+            diagnostic.normalizedDate = date;
+            return { diagnostic, item: prepare(row, date, Number(date.slice(0, 4)), index + 1) };
+        } catch (error) { return { diagnostic, error }; }
+    });
+    // One advisory lookup for every surat in the file; the canonical transaction repeats it under the unit lock.
+    const keyed = prepared.flatMap(entry => 'item' in entry && 'key' in entry.item ? [{ entry, key: entry.item.key }] : []);
+    const found = keyed.length && existingSurat ? await existingSurat(keyed.map(({ key }) => key)) : [];
+    const recorded = new Set(keyed.flatMap(({ entry }, index) => found[index] ? [entry] : []));
+    const seen = new Set<string>();
+    for (const [offset, entry] of prepared.entries()) {
+        // Every part handles at least one record, so a continuation always advances.
+        if (resume && offset > 0 && Date.now() >= resume.deadlineAt) { result.nextRow = start + offset; break; }
+        const { diagnostic } = entry;
+        result.rows.push(diagnostic);
+        try {
+            if ('error' in entry) throw entry.error;
+            const { item } = entry;
+            if (seen.has(item.identity) || recorded.has(entry) || ('exists' in item && (await item.exists()).length > 0)) {
+                diagnostic.status = 'duplicate';
+                diagnostic.message = 'Rekod dengan identitas yang sama sudah ada pada unit/tahun ini atau di berkas CSV.';
+                result.duplicates++;
+                continue;
+            }
+            result.valid++;
+            if (!result.dryRun) {
+                // Actual import always repeats validation and duplicate checks.
+                // Preview is advisory and never grants mutation authority.
+                try {
+                    await item.create();
+                } catch (error) {
+                    if (!(error instanceof DuplicateSuratImportError)) throw error;
+                    // Another importer may commit after the advisory lookup.
+                    // The canonical transaction checks again under the unit lock.
+                    diagnostic.status = 'duplicate';
+                    diagnostic.message = 'Rekod dengan identitas yang sama sudah ada pada unit/tahun ini atau di berkas CSV.';
+                    result.duplicates++;
+                    result.valid--;
+                    seen.add(item.identity);
+                    continue;
+                }
+                result.imported++;
+            }
+            seen.add(item.identity);
+            diagnostic.status = result.dryRun ? 'valid' : 'imported';
+        } catch (error) {
+            const failure = publicErrorResponse(error, currentRequestId());
+            log.warn({ event: 'csv_import_row_rejected', row: diagnostic.row, publicCode: failure.code }, 'Import row rejected');
+            const message = failure.message;
+            diagnostic.message = message;
+            result.errors.push('Row ' + diagnostic.row + ': ' + message);
+            result.skipped++;
+        }
+    }
+    if (resume) {
+        result.startRow = start;
+        result.nextRow ??= null;
+        if (result.nextRow !== null) result.prefixHash = importPrefixHash(records, result.nextRow);
     }
     result.success = result.errors.length === 0;
     return result;
@@ -150,20 +190,19 @@ export const migrationService = {
             const numbered = Boolean(nomorSurat && nomorSurat !== '-');
             if (!numbered && !dari) throw new ValidationError('Nomor surat kosong memerlukan tanggal, perihal, dan pengirim untuk identitas impor yang stabil.');
             const identity = numbered ? [unitKerjaId, year, nomorSurat] : [unitKerjaId, date, perihal, dari];
+            const record = {
+                unitKerjaId, noUrut: parseInt(row['No'] || '0') || position, tahun: year,
+                jenisSurat: row['Jenis Surat'] || 'Surat Dinas', sifatSurat: row['Sifat Surat'] || 'Biasa',
+                nomorSurat, tanggalSurat: date, perihal, dari, kepada: row['Kepada'] || '',
+                status: row['Status'] || 'belum_dibalas', disposisi: row['Disposisi'] ? [row['Disposisi']] : [],
+                createdBy: auditContext.userId,
+            };
             return {
                 identity: JSON.stringify(identity),
-                exists: () => db.select({ id: suratMasukTable.id }).from(suratMasukTable).where(numbered
-                    ? and(eq(suratMasukTable.unitKerjaId, unitKerjaId), eq(suratMasukTable.tahun, year), eq(suratMasukTable.nomorSurat, nomorSurat))
-                    : and(eq(suratMasukTable.unitKerjaId, unitKerjaId), eq(suratMasukTable.tanggalSurat, date), eq(suratMasukTable.perihal, perihal), eq(suratMasukTable.dari, dari))).limit(1),
-                create: () => suratMasukService.createImported({
-                    unitKerjaId, noUrut: parseInt(row['No'] || '0') || position, tahun: year,
-                    jenisSurat: row['Jenis Surat'] || 'Surat Dinas', sifatSurat: row['Sifat Surat'] || 'Biasa',
-                    nomorSurat, tanggalSurat: date, perihal, dari, kepada: row['Kepada'] || '',
-                    status: row['Status'] || 'belum_dibalas', disposisi: row['Disposisi'] ? [row['Disposisi']] : [],
-                    createdBy: auditContext.userId,
-                }, auditContext),
+                key: suratMasukService.importIdentityKey(record),
+                create: () => suratMasukService.createImported(record, auditContext),
             };
-        }, options);
+        }, options, keys => suratMasukService.existingImportIdentities(keys));
     },
 
     async importSuratKeluar(csvContent: string, unitKerjaId: string, auditContext: CriticalAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
@@ -174,19 +213,18 @@ export const migrationService = {
             if (!perihal) throw new ValidationError('Perihal wajib diisi.');
             const numbered = Boolean(nomorSurat && nomorSurat !== '-');
             if (!numbered && !kepada) throw new ValidationError('Nomor surat kosong memerlukan tanggal, perihal, dan tujuan untuk identitas impor yang stabil.');
+            const record = {
+                unitKerjaId, tahun: year, naskahDinas: row['Naskah Dinas'] || row['Jenis Surat'] || 'Surat Dinas',
+                sifatSurat: normalizeSifatSurat(row['Sifat Surat']),
+                numberingMode: numbered ? 'manual' as const : 'auto' as const, nomorSurat: numbered ? nomorSurat : undefined,
+                tanggalSurat: date, perihal, kepada, createdBy: auditContext.userId,
+            };
             return {
                 identity: JSON.stringify(numbered ? [unitKerjaId, year, nomorSurat] : [unitKerjaId, date, perihal, kepada]),
-                exists: () => db.select({ id: suratKeluarTable.id }).from(suratKeluarTable).where(numbered
-                    ? and(eq(suratKeluarTable.unitKerjaId, unitKerjaId), eq(suratKeluarTable.tahun, year), eq(suratKeluarTable.nomorSurat, nomorSurat))
-                    : and(eq(suratKeluarTable.unitKerjaId, unitKerjaId), eq(suratKeluarTable.tanggalSurat, date), eq(suratKeluarTable.perihal, perihal), eq(suratKeluarTable.kepada, kepada))).limit(1),
-                create: () => suratKeluarService.createImported({
-                    unitKerjaId, tahun: year, naskahDinas: row['Naskah Dinas'] || row['Jenis Surat'] || 'Surat Dinas',
-                    sifatSurat: normalizeSifatSurat(row['Sifat Surat']),
-                    numberingMode: numbered ? 'manual' : 'auto', nomorSurat: numbered ? nomorSurat : undefined,
-                    tanggalSurat: date, perihal, kepada, createdBy: auditContext.userId,
-                }, auditContext),
+                key: suratKeluarService.importIdentityKey(record),
+                create: () => suratKeluarService.createImported(record, auditContext),
             };
-        }, options);
+        }, options, keys => suratKeluarService.existingImportIdentities(keys));
     },
 
     async importArsip(csvContent: string, unitKerjaId: string, auditContext: CriticalAuditContext, options: ImportOptions = {}): Promise<ImportResult> {

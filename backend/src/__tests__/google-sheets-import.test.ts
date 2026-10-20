@@ -1,11 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { resolveSheetMapping } from '../services/google-sheets-import-mapping.js';
 import { DuplicateSuratImportError, suratImportIdentity } from '../services/surat-import-identity.js';
 
-const mocks = vi.hoisted(() => ({ incoming: vi.fn(), outgoing: vi.fn() }));
-vi.mock('../services/surat-masuk.service.js', () => ({ suratMasukService: { createImported: mocks.incoming } }));
-vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: { createImported: mocks.outgoing } }));
+// The bulk lookup is advisory; by default it finds nothing so every row reaches the canonical create.
+const mocks = vi.hoisted(() => ({ incoming: vi.fn(), outgoing: vi.fn(), existing: vi.fn(),
+    identityKey: (data: { nomorSurat?: string }) => ({ nomor: data.nomorSurat }) }));
+vi.mock('../services/surat-masuk.service.js', () => ({ suratMasukService: {
+    createImported: mocks.incoming, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing } }));
+vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: {
+    createImported: mocks.outgoing, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing } }));
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
 import { GoogleDriveImportService } from '../services/google-drive-import.service.js';
 
@@ -14,6 +18,7 @@ const headers = ['Nomor Urut', 'No. Surat', 'Tanggal Surat', 'Perihal', 'Dari', 
 const data = ['7', 'SM-2026-actual', '12/09/2026', 'Permohonan data', 'Kantah A', 'Ditjen'];
 beforeEach(() => {
     vi.clearAllMocks(); mocks.incoming.mockResolvedValue({ id: 'incoming' }); mocks.outgoing.mockResolvedValue({ id: 'outgoing' });
+    mocks.existing.mockImplementation(async (keys: unknown[]) => keys.map(() => false));
 });
 
 describe('exact Google Sheets column mapping before writes', () => {
@@ -115,9 +120,93 @@ describe('exact Google Sheets column mapping before writes', () => {
         });
     });
 
+    it.each([
+        ['surat-masuk', mocks.incoming],
+        ['surat-keluar', mocks.outgoing],
+    ] as const)('looks up the whole %s sheet once and skips rows already recorded without opening their transactions', async (type, create) => {
+        const service = new GoogleDriveImportService();
+        const second = ['8', 'SM-2026-next', '13/09/2026', 'Undangan rapat', 'Kantah B', 'Ditjen'];
+        vi.spyOn(service, 'fetchSheetAsCSV').mockResolvedValue([headers, data, second].map(row => row.join(',')).join('\n'));
+        mocks.existing.mockResolvedValueOnce([true, false]);
+        const result = await (type === 'surat-masuk' ? service.importSuratMasuk('sheet', 'Data', 'unit-a', audit)
+            : service.importSuratKeluar('sheet', 'Data', 'unit-a', audit));
+        expect(result).toMatchObject({ success: true, importedRows: 1, duplicateRows: 1, skippedRows: 0, errors: [] });
+        expect(mocks.existing).toHaveBeenCalledTimes(1);
+        expect(mocks.existing).toHaveBeenCalledWith([{ nomor: 'SM-2026-actual' }, { nomor: 'SM-2026-next' }]);
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(create).toHaveBeenCalledWith(expect.objectContaining({ nomorSurat: 'SM-2026-next' }), audit, {});
+    });
+
     it.each([null, '', '2026-99-99', '2026-02-31'])('rejects an unstable/invalid import identity date %s', date => {
         expect(() => suratImportIdentity('masuk', { unitKerjaId: 'unit-a', tahun: 2026,
             nomorSurat: 'SM-1', tanggalSurat: date })).toThrow('Tanggal surat');
+    });
+});
+
+describe('resumable import within a time budget', () => {
+    // Outgoing rows; the Dari column is not read by a surat keluar import.
+    const outgoingRows = (count: number) => Array.from({ length: count }, (_, i) =>
+        [String(i + 1), `SK-${i + 1}`, '12/09/2026', `Perihal ${i + 1}`, 'Kantah A', 'Ditjen']);
+    const csv = (rows: string[][]) => [headers, ...rows].map(row => row.join(',')).join('\n');
+    let clock = 0;
+    const importer = (rows: string[][]) => {
+        const service = new GoogleDriveImportService();
+        vi.spyOn(service, 'fetchSheetAsCSV').mockResolvedValue(csv(rows));
+        return service;
+    };
+    const run = (rows: string[][], resume?: { startRow: number; prefixHash?: string }) => importer(rows)
+        .importSuratKeluar('sheet', { gid: '0' }, 'unit-a', audit, {}, resume && { ...resume, deadlineAt: clock + 25_000 });
+    beforeEach(() => {
+        clock = 1_000_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => clock);
+        // Each canonical write takes ten seconds on this synthetic clock.
+        mocks.outgoing.mockImplementation(async () => { clock += 10_000; return { id: 'outgoing' }; });
+    });
+    afterEach(() => { vi.mocked(Date.now).mockRestore(); });
+    const written = () => mocks.outgoing.mock.calls.map(([record]) => record.nomorSurat);
+
+    it('stops once the budget is spent and says where to resume', async () => {
+        const result = await run(outgoingRows(5), { startRow: 0 });
+        expect(result).toMatchObject({ success: true, totalRows: 5, importedRows: 3, startRow: 0, nextRow: 3 });
+        expect(result.prefixHash).toMatch(/^[a-f0-9]{64}$/);
+        expect(written()).toEqual(['SK-1', 'SK-2', 'SK-3']);
+    });
+
+    it('continues from the returned position and finishes the sheet', async () => {
+        const first = await run(outgoingRows(5), { startRow: 0 });
+        vi.clearAllMocks();
+        const rest = await run(outgoingRows(5), { startRow: first.nextRow!, prefixHash: first.prefixHash });
+        expect(rest).toMatchObject({ success: true, totalRows: 5, importedRows: 2, duplicateRows: 0, startRow: 3, nextRow: null });
+        expect(written()).toEqual(['SK-4', 'SK-5']);
+        expect(mocks.existing).toHaveBeenCalledWith([{ nomor: 'SK-4' }, { nomor: 'SK-5' }]);
+    });
+
+    it('continues when rows were appended or an unread column changed', async () => {
+        const first = await run(outgoingRows(5), { startRow: 0 });
+        const grown = outgoingRows(6);
+        grown[0][4] = 'Pengirim diubah';
+        vi.clearAllMocks();
+        const rest = await run(grown, { startRow: first.nextRow!, prefixHash: first.prefixHash });
+        expect(rest).toMatchObject({ importedRows: 3, startRow: 3, totalRows: 6 });
+        expect(written()).toEqual(['SK-4', 'SK-5', 'SK-6']);
+    });
+
+    it.each([
+        ['an earlier row was edited', (rows: string[][]) => { rows[1][3] = 'Perihal diubah'; return rows; }],
+        ['a row was inserted above the position', (rows: string[][]) => [rows[0], ['9', 'SK-9', '12/09/2026', 'Sisipan', 'Kantah A', 'Ditjen'], ...rows.slice(1)]],
+        ['the sheet became shorter than the position', (rows: string[][]) => rows.slice(0, 2)],
+    ])('refuses to resume when %s', async (_case, change) => {
+        const first = await run(outgoingRows(5), { startRow: 0 });
+        vi.clearAllMocks();
+        await expect(run(change(outgoingRows(5)), { startRow: first.nextRow!, prefixHash: first.prefixHash }))
+            .rejects.toMatchObject({ statusCode: 409 });
+        expect(mocks.outgoing).not.toHaveBeenCalled();
+    });
+
+    it('keeps the single-request contract when the caller does not ask to resume', async () => {
+        const result = await run(outgoingRows(5));
+        expect(result).toMatchObject({ importedRows: 5, totalRows: 5 });
+        for (const field of ['startRow', 'nextRow', 'prefixHash']) expect(result).not.toHaveProperty(field);
     });
 });
 

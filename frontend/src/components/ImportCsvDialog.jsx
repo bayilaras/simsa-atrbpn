@@ -4,9 +4,29 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAppConfig } from '@/context/app-config-context'
 import api from '@/services/api'
+import { IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
+import { outcomeUnknown, runResumableImport } from '@/lib/resumable-import'
 
 const labels = { 'surat-masuk': 'Surat Masuk', 'surat-keluar': 'Surat Keluar', arsip: 'Arsip' }
 const statuses = { valid: 'Valid', imported: 'Diimpor', duplicate: 'Duplikat', invalid: 'Perlu koreksi' }
+
+/** Join the parts of a resumable CSV import into one result. */
+function addCsvPart(total, part) {
+    if (!total) return part
+    return { ...part, success: total.success && part.success,
+        valid: total.valid + part.valid, imported: total.imported + part.imported,
+        duplicates: total.duplicates + part.duplicates, skipped: total.skipped + part.skipped,
+        errors: [...total.errors, ...(part.errors || [])], rows: [...total.rows, ...(part.rows || [])] }
+}
+
+/** A later part failed; records of earlier parts are saved. Row numbers count the header as row 1, like the table. */
+function interruptedCsvNotice({ interruptedAt, error }, saved) {
+    const part = `Bagian mulai baris ${interruptedAt + 2}`
+    const result = outcomeUnknown(error)
+        ? `${part} belum terkonfirmasi; sebagian rekodnya mungkin sudah tersimpan.`
+        : `${part} gagal: ${error?.message || 'permintaan tidak berhasil.'}`
+    return `${result} ${saved} rekod dari bagian sebelumnya sudah tersimpan. Jalankan pratinjau lalu impor lagi; rekod yang sudah tersimpan akan dikenali sebagai duplikat.`
+}
 
 function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
     const inputId = useId()
@@ -14,6 +34,9 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
     const [result, setResult] = useState(null)
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState('')
+    // Records processed so far by a resumable import, of the previewed total.
+    const [progress, setProgress] = useState(null)
+    const [waiting, setWaiting] = useState(false)
     const requestVersion = useRef(0)
     useEffect(() => () => { requestVersion.current++; onBusyChange(false) }, [onBusyChange])
 
@@ -31,24 +54,48 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
             return
         }
         const version = ++requestVersion.current
+        const previewed = result?.rows?.length || 0
         setBusy(true)
         onBusyChange(true)
         setError('')
         setResult(null)
-        const body = new FormData()
-        body.append('file', file)
-        body.append('unitKerjaId', unitKerjaId)
-        body.append('dryRun', String(dryRun))
+        setProgress(null)
+        const body = (position = {}) => {
+            const form = new FormData()
+            form.append('file', file)
+            form.append('unitKerjaId', unitKerjaId)
+            form.append('dryRun', String(dryRun))
+            for (const [name, value] of Object.entries(position)) if (value !== undefined) form.append(name, String(value))
+            return form
+        }
+        const send = position => api.post(`/api/migration/${type}`, body(position), { timeoutMs: IMPORT_PART_TIMEOUT_MS })
         try {
-            const response = await api.post(`/api/migration/${type}`, body)
-            if (version !== requestVersion.current) return
-            setResult(response.data)
-            if (!dryRun && response.data?.imported > 0) onImportComplete?.()
+            if (dryRun) {
+                const response = await send()
+                if (version === requestVersion.current) setResult(response.data)
+                return
+            }
+            // A long file is imported in time-bounded parts; each part re-sends the same file.
+            let imported = null
+            const outcome = await runResumableImport({
+                sendPart: async position => (await send(position)).data,
+                onPart: part => {
+                    imported = addCsvPart(imported, part)
+                    setProgress({ processed: imported.rows.length, total: previewed })
+                },
+                onWait: until => setWaiting(until > 0),
+                isCurrent: () => version === requestVersion.current,
+            })
+            if (outcome.cancelled) return
+            setResult(imported)
+            if (outcome.interruptedAt !== undefined) setError(interruptedCsvNotice(outcome, imported.imported))
+            if (imported?.imported > 0) onImportComplete?.()
         } catch (failure) {
             if (version === requestVersion.current) setError(failure.message || 'Impor gagal. Periksa koneksi dan coba kembali.')
         } finally {
             if (version === requestVersion.current) {
                 setBusy(false)
+                setWaiting(false)
                 onBusyChange(false)
             }
         }
@@ -92,7 +139,10 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
             <Button variant="outline" onClick={() => run(true)} disabled={!file || busy}>Pratinjau</Button>
             <Button onClick={() => run(false)} disabled={!canImport || busy}>Impor data valid</Button>
         </div>
-        {busy && <p role="status" className="text-sm">Memproses CSV…</p>}
+        {busy && <p role="status" className="text-sm">
+            {progress?.total ? `Memproses CSV… ${progress.processed} dari ${progress.total} rekod diproses.` : 'Memproses CSV…'}
+            {waiting && ' Batas permintaan impor tercapai; dilanjutkan otomatis.'}
+        </p>}
     </div>
 }
 

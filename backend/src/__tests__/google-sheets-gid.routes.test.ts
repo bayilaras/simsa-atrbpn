@@ -40,8 +40,9 @@ describe('Google Sheets routes select tabs by gid', () => {
 
     it.each(['masuk', 'keluar'])('imports surat %s from the tab named by gid', async kind => {
         await request(app).post(`/google-drive/surat-${kind}`).send({ spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a' }).expect(200);
+        // Without startRow the request is a single, unbudgeted import (no resume position).
         expect(kind === 'masuk' ? mocks.incoming : mocks.outgoing).toHaveBeenCalledWith(
-            'synthetic-sheet', { gid: '0' }, 'unit-a', expect.any(Object), expect.any(Object));
+            'synthetic-sheet', { gid: '0' }, 'unit-a', expect.any(Object), expect.any(Object), undefined);
     });
 
     it('keeps accepting a sheet name from older clients', async () => {

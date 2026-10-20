@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ImportFromGDrive from './ImportFromGDrive';
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -52,11 +52,87 @@ it.each(['surat-masuk', 'surat-keluar'])('shows server mapping for %s and sends 
     act(() => { fireEvent.click(button); fireEvent.click(button); });
     expect(api.post).toHaveBeenCalledTimes(2);
     expect(api.post).toHaveBeenLastCalledWith(`/api/import/google-drive/${type}`, {
-        spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a',
-    });
+        spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a', startRow: 0,
+    }, { timeoutMs: 120_000 });
     await act(async () => { finish({ importedRows: 1, totalRows: 1 }); });
     expect(screen.getByText('Impor berhasil!')).toBeInTheDocument();
     expect(completed).toHaveBeenCalledTimes(1);
+});
+
+describe('a sheet imported in parts', () => {
+    const importEndpoint = '/api/import/google-drive/surat-keluar';
+    const source = { spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a' };
+    const part = (fields) => ({ success: true, totalRows: 5, importedRows: 0, duplicateRows: 0, skippedRows: 0, errors: [], ...fields });
+    const ready = async (completed = vi.fn()) => {
+        api.post.mockImplementation(async (endpoint, body) => ({ ...preview(body.type), totalRows: 5 }));
+        render(<ImportFromGDrive {...props} onImportComplete={completed} />);
+        open();
+        await discover();
+        await showPreview();
+        return completed;
+    };
+
+    it('continues until the server reports the end, showing truthful progress between parts', async () => {
+        const completed = await ready();
+        const parts = [];
+        api.post.mockImplementation(() => new Promise(resolve => parts.push(resolve)));
+        fireEvent.click(screen.getByRole('button', { name: 'Impor 5 baris' }));
+        expect(api.post).toHaveBeenLastCalledWith(importEndpoint, { ...source, startRow: 0 }, { timeoutMs: 120_000 });
+        await act(async () => { parts[0](part({ importedRows: 2, duplicateRows: 1, startRow: 0, nextRow: 3, prefixHash: 'h1' })); });
+        expect(screen.getByRole('progressbar', { name: 'Kemajuan impor' })).toHaveAttribute('aria-valuenow', '3');
+        expect(screen.getByText('3 dari 5 baris diproses')).toBeInTheDocument();
+        expect(screen.getByText('Tersimpan 2 · duplikat 1 · dilewati 0')).toBeInTheDocument();
+        expect(api.post).toHaveBeenLastCalledWith(importEndpoint, { ...source, startRow: 3, prefixHash: 'h1' }, { timeoutMs: 120_000 });
+        await act(async () => { parts[1](part({ importedRows: 2, startRow: 3, nextRow: null })); });
+        expect(screen.getByText('Impor berhasil!')).toBeInTheDocument();
+        expect(screen.getByText('4 dari 5 baris berhasil diimpor')).toBeInTheDocument();
+        expect(screen.getByText(/1 baris duplikat dilewati/)).toBeInTheDocument();
+        expect(completed).toHaveBeenCalledTimes(1);
+        expect(parts).toHaveLength(2);
+    });
+
+    it('waits out the import rate limit between parts and then continues by itself', async () => {
+        await ready();
+        api.post.mockResolvedValueOnce(part({ importedRows: 3, startRow: 0, nextRow: 3, prefixHash: 'h1' }))
+            .mockRejectedValueOnce(Object.assign(new Error('Terlalu banyak permintaan.'), { status: 429, data: { retryAfterSeconds: 2 } }))
+            .mockResolvedValueOnce(part({ importedRows: 2, startRow: 3, nextRow: null }));
+        vi.useFakeTimers();
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Impor 5 baris' })); });
+        expect(screen.getByText(/dilanjutkan otomatis dalam 2 detik/)).toBeInTheDocument();
+        expect(api.post).toHaveBeenCalledTimes(3);
+        await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+        expect(api.post).toHaveBeenCalledTimes(4);
+        expect(api.post).toHaveBeenLastCalledWith(importEndpoint, { ...source, startRow: 3, prefixHash: 'h1' }, { timeoutMs: 120_000 });
+        expect(screen.getByText('5 dari 5 baris berhasil diimpor')).toBeInTheDocument();
+    });
+
+    it('says what is already saved when a later part cannot be confirmed', async () => {
+        const completed = await ready();
+        api.post.mockResolvedValueOnce(part({ importedRows: 3, startRow: 0, nextRow: 3, prefixHash: 'h1' }))
+            .mockRejectedValueOnce(Object.assign(new Error('Waktu tunggu permintaan habis. Hasil penyimpanan belum dapat dipastikan.'),
+                { code: 'REQUEST_TIMEOUT', mutationOutcomeUnknown: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Impor 5 baris' }));
+        expect(await screen.findByText('Impor belum selesai')).toBeInTheDocument();
+        const notice = screen.getByText(/belum terkonfirmasi/);
+        expect(notice).toHaveTextContent('Bagian mulai baris data ke-4 belum terkonfirmasi');
+        expect(notice).toHaveTextContent('3 baris dari bagian sebelumnya sudah tersimpan');
+        expect(notice).toHaveTextContent('Jalankan impor lagi');
+        expect(completed).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops after the current part when asked and says where it stopped', async () => {
+        await ready();
+        let finish;
+        api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        fireEvent.click(screen.getByRole('button', { name: 'Impor 5 baris' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Hentikan setelah bagian ini' }));
+        expect(screen.getByRole('button', { name: 'Menghentikan setelah bagian ini…' })).toBeDisabled();
+        await act(async () => { finish(part({ importedRows: 2, duplicateRows: 1, startRow: 0, nextRow: 3, prefixHash: 'h1' })); });
+        expect(api.post).toHaveBeenCalledTimes(2);
+        expect(screen.getByText('Impor belum selesai')).toBeInTheDocument();
+        expect(screen.getByText(/dihentikan sebelum baris data ke-4/)).toBeInTheDocument();
+        expect(screen.getByText('2 dari 5 baris berhasil diimpor')).toBeInTheDocument();
+    });
 });
 
 it('discards a late source lookup and requires a fresh preview after changing sheets', async () => {

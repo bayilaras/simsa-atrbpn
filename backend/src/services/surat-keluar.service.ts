@@ -18,7 +18,10 @@ import fileAttachmentService, {
 } from './file-attachment.service.js';
 import { settingsService } from './settings.service.js';
 import { hasSuratRuleSelection, hydrateSuratRuleSelections, prepareSuratRuleSelection } from './surat-rule-selection.service';
-import { assertImportConnected, DuplicateSuratImportError, suratImportIdentity, type SuratImportOptions } from './surat-import-identity.js';
+import {
+    assertImportConnected, DuplicateSuratImportError, existingSuratImportIdentities, suratImportIdentityKey, suratImportIdentityWhere,
+    type SuratImportIdentityKey, type SuratImportOptions,
+} from './surat-import-identity.js';
 import {
     resolveSuratCalendar,
     type SuratNumberContext,
@@ -152,6 +155,17 @@ export class SuratKeluarService {
         return this.create(data, auditContext, undefined, undefined, options);
     }
 
+    /** The identity createImported checks under the unit lock; throws when the row cannot have one. */
+    importIdentityKey(data: CreateSuratKeluarInput): SuratImportIdentityKey {
+        const { tahun } = resolveSuratCalendar({ tahun: data.tahun, tanggalSurat: data.tanggalSurat, naskahDinas: data.naskahDinas });
+        return suratImportIdentityKey('keluar', { ...data, tahun });
+    }
+
+    /** Advisory bulk lookup; createImported stays the authority. */
+    async existingImportIdentities(keys: SuratImportIdentityKey[]): Promise<boolean[]> {
+        return existingSuratImportIdentities(db, 'keluar', keys);
+    }
+
     async create(
         data: CreateSuratKeluarInput,
         auditContext?: CriticalAuditContext,
@@ -185,7 +199,7 @@ export class SuratKeluarService {
             naskahDinas: recordData.naskahDinas,
         });
         const tahun = calendar.tahun;
-        const importIdentity = importOptions ? suratImportIdentity('keluar', { ...recordData, tahun }) : undefined;
+        const importIdentity = importOptions ? suratImportIdentityWhere('keluar', this.importIdentityKey(recordData)) : undefined;
         if (
             attachment
             && (

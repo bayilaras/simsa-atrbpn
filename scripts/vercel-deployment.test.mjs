@@ -18,6 +18,10 @@ test('Vercel routes explicitly use the gated Node function and Fluid Compute', (
     assert.equal(config.framework, null);
     assert.equal(config.fluid, true);
     assert.equal(config.buildCommand, 'node scripts/build-vercel.mjs');
+    // Neon runs in aws-ap-southeast-1. Every function (API, malware scan,
+    // crons) runs beside it: from the iad1 default each SQL round trip crossed
+    // the Pacific (~0.2 s), so a Sheets import spent ~1.4 s per row.
+    assert.deepEqual(config.regions, ['sin1']);
     assert.deepEqual(config.rewrites, [
         { source: '/api/internal-malware-scan', destination: '/api/internal-malware-scan.js' },
         { source: '/(.*)', destination: '/api/index.js' },

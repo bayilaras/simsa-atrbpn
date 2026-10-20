@@ -7,15 +7,29 @@ import { canAccessUnit, Role } from '../config/permissions';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja';
 import { ValidationError } from '../utils/errors.js';
 import { importLimiter } from '../middlewares/rate-limiter.middleware.js';
+import { IMPORT_TIME_BUDGET_MS } from '../services/import-resume.js';
 
 const router = Router();
+
+const PREFIX_HASH = /^[a-f0-9]{64}$/;
 
 function importOptions(req: AuthRequest) {
     const value = req.body?.dryRun;
     if (value !== undefined && value !== 'true' && value !== 'false') {
         throw new ValidationError('dryRun harus true atau false.');
     }
-    return { dryRun: value === 'true' };
+    const dryRun = value === 'true';
+    // A resumable client imports in time-bounded parts; a later part names its
+    // first record and the prefixHash the previous part returned. Older clients
+    // send neither and import the whole file in one request.
+    const { startRow, prefixHash } = req.body ?? {};
+    if (startRow === undefined && prefixHash === undefined) return { dryRun };
+    const position = typeof startRow === 'string' && /^\d{1,4}$/.test(startRow) ? Number(startRow) : NaN;
+    if (dryRun || !(position <= 1_000)
+        || (prefixHash === undefined ? position > 0 : !(typeof prefixHash === 'string' && PREFIX_HASH.test(prefixHash)))) {
+        throw new ValidationError('Posisi lanjutan impor tidak valid. Mulai ulang impor dari awal.');
+    }
+    return { dryRun, resume: { startRow: position, prefixHash, deadlineAt: Date.now() + IMPORT_TIME_BUDGET_MS } };
 }
 const CSV_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
 const CSV_MIME_TYPES = new Set([

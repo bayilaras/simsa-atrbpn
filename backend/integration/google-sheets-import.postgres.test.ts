@@ -25,6 +25,9 @@ vi.mock('../src/services/srikandi-producer.service.js', () => ({ srikandiBusines
     suratMasukCreated: async () => {}, suratKeluarCreated: async () => {},
 } }));
 import { GoogleDriveImportService } from '../src/services/google-drive-import.service.js';
+import { suratKeluarService } from '../src/services/surat-keluar.service.js';
+import { suratMasukService } from '../src/services/surat-masuk.service.js';
+import { DuplicateSuratImportError } from '../src/services/surat-import-identity.js';
 
 const url = new URL(process.env.TEST_POSTGRES_URL || 'http://invalid');
 if (!['127.0.0.1', 'localhost'].includes(url.hostname)
@@ -140,6 +143,74 @@ describe('atomic Sheets import on real PostgreSQL transactions', () => {
         expect(await importRow(service(csv.replace('2026-09-12', '2027-09-12')), 'masuk', firstUnit)).toMatchObject({ importedRows: 1 });
         expect(await importRow(service(csv), 'masuk', secondUnit)).toMatchObject({ importedRows: 1 });
         expect(Number((await pools[0].query('SELECT count(*) FROM surat_masuk WHERE unit_kerja_id=ANY($1::text[])', [[firstUnit, secondUnit]])).rows[0].count)).toBe(3);
+    });
+
+    it('answers the advisory bulk lookup exactly as the canonical transaction does, soft-deleted rows included', async () => {
+        const unit = `lookup-${suffix}`, other = `lookup-other-${suffix}`;
+        for (const id of [unit, other]) await pools[0].query('INSERT INTO unit_kerja(id,name) VALUES ($1,$2)', [id, 'Synthetic lookup unit']);
+        const link = 'https://drive.google.com/file/d/synthetic-lookup/view';
+        expect(await service(['Nomor Urut,No. Surat,Tanggal Surat,Perihal,Kepada,Get link',
+            '1,5/SK/IX/2025,02/09/2025,Undangan,Kantah sintetis,',
+            '2,6/SK/IX/2025,03/09/2025,Laporan,Kantah sintetis,',
+            '3,-,04/09/2025,Permohonan,Biro Umum,',
+            `4,-,05/09/2025,Formulir,,${link}`].join('\n')).importSuratKeluar('sheet', 'Data', unit, audit)).toMatchObject({ importedRows: 4 });
+        await pools[0].query("UPDATE surat_keluar SET is_deleted=true,deleted_at=now() WHERE unit_kerja_id=$1 AND nomor_surat='6/SK/IX/2025'", [unit]);
+        const outgoing = (row: { unitKerjaId?: string; nomorSurat: string; tanggalSurat: string; perihal?: string; kepada?: string; linkDokumen?: string }) => ({
+            unitKerjaId: unit, tahun: Number(row.tanggalSurat.slice(0, 4)), naskahDinas: 'Surat Dinas', numberingMode: 'manual' as const,
+            perihal: 'Probe', kepada: '', linkDokumen: null, createdBy: userId, ...row });
+        const probes = [
+            outgoing({ nomorSurat: ' 5/SK/IX/2025 ', tanggalSurat: '2025-09-30' }),
+            outgoing({ nomorSurat: '6/SK/IX/2025', tanggalSurat: '2025-09-03' }),
+            outgoing({ nomorSurat: '5/SK/IX/2025', tanggalSurat: '2026-09-02' }),
+            outgoing({ unitKerjaId: other, nomorSurat: '5/SK/IX/2025', tanggalSurat: '2025-09-02' }),
+            outgoing({ nomorSurat: '-', tanggalSurat: '2025-09-04', perihal: 'Permohonan', kepada: 'Biro Umum' }),
+            outgoing({ nomorSurat: '-', tanggalSurat: '2025-09-04', perihal: 'Permohonan', kepada: 'Biro Keuangan' }),
+            outgoing({ nomorSurat: '-', tanggalSurat: '2025-09-05', perihal: 'Formulir', linkDokumen: link }),
+            outgoing({ nomorSurat: '-', tanggalSurat: '2025-09-05', perihal: 'Formulir', linkDokumen: `${link}?usp=sharing` }),
+        ];
+        const found = await suratKeluarService.existingImportIdentities(probes.map(probe => suratKeluarService.importIdentityKey(probe)));
+        expect(found).toEqual([true, true, false, false, true, false, true, false]);
+        // The canonical transaction stays the authority and agrees row by row.
+        for (const [index, probe] of probes.entries()) {
+            const outcome = await suratKeluarService.createImported(probe, audit).then(() => false,
+                (error: unknown) => { if (error instanceof DuplicateSuratImportError) return true; throw error; });
+            expect([index, outcome]).toEqual([index, found[index]]);
+        }
+
+        const incoming = (row: { nomorSurat: string; perihal: string; dari: string }) => ({ unitKerjaId: unit, tahun: 2025, noUrut: 1,
+            tanggalSurat: '2025-09-02', status: 'belum_dibalas', createdBy: userId, ...row });
+        expect(await service(sheet('masuk', 'SM-lookup').replace('2026-09-12', '2025-09-02')
+            + '\n18,-,2025-09-02,Laporan,Kantah sintetis').importSuratMasuk('sheet', 'Data', unit, audit)).toMatchObject({ importedRows: 2 });
+        const incomingProbes = [incoming({ nomorSurat: 'SM-lookup', perihal: 'Lain', dari: 'Lain' }),
+            incoming({ nomorSurat: '-', perihal: 'Laporan', dari: 'Kantah sintetis' }),
+            incoming({ nomorSurat: '-', perihal: 'Laporan', dari: 'Kantah lain' })];
+        expect(await suratMasukService.existingImportIdentities(incomingProbes.map(probe => suratMasukService.importIdentityKey(probe))))
+            .toEqual([true, true, false]);
+    });
+
+    it('imports a sheet in resumable parts exactly once, in sheet order, with one audit row each', async () => {
+        const unit = `parts-${suffix}`;
+        await pools[0].query('INSERT INTO unit_kerja(id,name) VALUES ($1,$2)', [unit, 'Synthetic resumable import']);
+        const csv = ['Nomor Urut,No. Surat,Tanggal Surat,Perihal,Kepada',
+            ...Array.from({ length: 7 }, (_, i) => `${i + 1},${i + 1}/PARTS/2025,0${(i % 9) + 1}/10/2025,Perihal ${i + 1},Kantah sintetis`)].join('\n');
+        let resume: { startRow: number; prefixHash?: string } = { startRow: 0 };
+        const parts = [];
+        for (;;) {
+            // An already-spent budget: every part writes exactly one row.
+            const part = await service(csv).importSuratKeluar('sheet', 'Data', unit, audit, {}, { ...resume, deadlineAt: Date.now() - 1 });
+            parts.push(part);
+            if (part.nextRow === null) break;
+            resume = { startRow: part.nextRow!, prefixHash: part.prefixHash };
+        }
+        expect(parts.map(part => [part.startRow, part.importedRows, part.nextRow])).toEqual(
+            [[0, 1, 1], [1, 1, 2], [2, 1, 3], [3, 1, 4], [4, 1, 5], [5, 1, 6], [6, 1, null]]);
+        const records = (await pools[0].query('SELECT id, no_urut, nomor_surat FROM surat_keluar WHERE unit_kerja_id=$1 ORDER BY no_urut', [unit])).rows;
+        expect(records.map(row => [row.no_urut, row.nomor_surat])).toEqual(Array.from({ length: 7 }, (_, i) => [i + 1, `${i + 1}/PARTS/2025`]));
+        expect(Number((await pools[0].query("SELECT count(*) FROM audit_log WHERE action='create' AND entity_id=ANY($1::uuid[])",
+            [records.map(row => row.id)])).rows[0].count)).toBe(7);
+        // Re-running the finished sheet from the start finds every row in one lookup.
+        expect(await service(csv).importSuratKeluar('sheet', 'Data', unit, audit, {}, { startRow: 0, deadlineAt: Date.now() + 25_000 }))
+            .toMatchObject({ importedRows: 0, duplicateRows: 7, nextRow: null });
     });
 
     it('cancels a disconnected import after waiting for the unit lock without inserting a row', async () => {
