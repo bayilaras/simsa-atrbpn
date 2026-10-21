@@ -1,8 +1,74 @@
-# Impor CSV dan ekspor lengkap
+# Impor CSV/XLSX dan ekspor lengkap
 
-Pada daftar Surat Masuk, Surat Keluar, atau Arsip, petugas yang memiliki hak
-tulis dapat memilih satu unit tujuan lalu membuka **Impor CSV**. Fitur ini tidak
-ditampilkan pada demo metadata.
+## Impor CSV/XLSX surat masuk dan surat keluar
+
+Pada daftar Surat Masuk atau Surat Keluar, petugas yang memiliki hak tulis dapat
+memilih satu unit tujuan lalu membuka **Impor CSV/XLSX**. Berkas diperlakukan
+persis seperti impor Google Sheets: kolom dikenali dari judulnya (tabel pada
+[Impor Google Sheets](#impor-google-sheets)), sifat surat, identitas impor,
+pemeriksaan duplikat sekaligus, impor per bagian, dan audit memakai jalur yang
+sama (`importRows`). Fitur ini tidak ditampilkan pada demo metadata.
+
+1. Pilih berkas `.csv` atau `.xlsx` (maksimal 4 MiB, 1.000 baris data, 64 kolom,
+   16 KiB per sel). Batas 4 MiB berada di bawah batas badan permintaan Vercel.
+2. Tekan **Pratinjau**. Untuk XLSX dengan beberapa lembar, pilih lembar kerja
+   lalu tekan **Pratinjau** lagi; lembar tersembunyi ditandai. Lembar dipilih
+   dari namanya dan tidak pernah ditebak. XLSX berlembar tunggal langsung
+   dipratinjau.
+3. Periksa pemetaan kolom dan contoh baris, lalu tekan **Impor N baris**. Berkas
+   yang panjang diimpor per bagian; setiap bagian mengirim ulang berkas yang sama.
+   Berkas hanya dibaca di memori selama permintaan dan tidak disimpan.
+
+Cara berkas dibaca:
+
+- **CSV**: UTF-8 (dengan atau tanpa BOM); bila bukan UTF-8 yang sah, dibaca
+  sebagai Windows-1252 (simpanan "CSV (Comma delimited)" Excel). Pemisah `,`,
+  `;` (Excel dengan pengaturan regional Indonesia), atau tab dideteksi dari
+  sepuluh baris pertama di luar tanda kutip. Baris kosong diabaikan.
+- **XLSX**: sel tanggal Excel (serial berformat tanggal, termasuk hasil rumus)
+  menjadi `YYYY-MM-DD` tanpa jam; sel bertautan menjadi alamat tautannya bila
+  `http(s)://`, dan rumus `HYPERLINK("https://…", …)` menjadi alamat itu; rumus
+  lain dibaca dari hasil tersimpannya; teks kaya digabung; sel gabungan (merge)
+  hanya bernilai pada sel pertamanya, seperti ekspor CSV Google Sheets. Baris
+  yang hanya berformat diabaikan. Validasi data dan format bersyarat tidak dibaca.
+- Bila dua kolom berjudul tautan sama-sama memuat alamat web (misalnya label
+  "file" yang ditautkan ke berkas yang sama), dipakai kolom yang memuat setiap
+  alamat kolom lainnya pada baris yang sama; bila alamatnya berbeda, pemetaan
+  ditolak sebagai ambigu.
+
+Ditolak sebelum dibaca: ekstensi selain `.csv`/`.xlsx` atau jenis MIME yang tidak
+cocok; isi yang tidak sesuai ekstensi (byte awal); XLSX berkata sandi atau `.xls`
+lama (format OLE); buku kerja bermakro (`vbaProject.bin`, lembar makro, tipe isi
+`macroEnabled`) atau templat; paket ZIP dengan bagian terenkripsi, kompresi selain
+deflate, lebih dari 1.000 bagian, lebih dari 100 lembar, total isi terekstrak di
+atas 16 MiB, atau bagian yang mengembang melebihi ukuran yang dinyatakan; CSV
+berisi byte NUL (misalnya UTF-16).
+
+### Kontrak API (berkas)
+
+Semua endpoint di bawah `/api/import/berkas` memerlukan hak tulis dan menerima
+multipart dengan satu `file`:
+
+| Endpoint | Field lain | Batas laju |
+|---|---|---|
+| `POST /lembar` | — | daftar lembar, 3/menit |
+| `POST /preview` | `type` (`surat-masuk`/`surat-keluar`), `sheet`, `maxRows` (1–100, bawaan 10) | pratinjau, 3/menit |
+| `POST /surat-masuk`, `POST /surat-keluar` | `sheet`, `unitKerjaId`, `startRow`, `prefixHash` | impor, 3/menit |
+
+`/lembar` mengembalikan `{ format, sheets: [{ name, hidden }] }` (CSV: `sheets`
+kosong). `/preview` mengembalikan `format`, `sheets`, `sheet`, ditambah bentuk
+pratinjau Google Sheets (`headers`, `rows`, `totalRows`, `importType`,
+`headerRow`, `mapping`). Impor mengembalikan bentuk hasil Google Sheets
+(`totalRows`, `importedRows`, `duplicateRows`, `skippedRows`, `errors`, serta
+`startRow`/`nextRow`/`prefixHash` bila per bagian). `sheet` wajib untuk XLSX
+berlembar banyak dan dicocokkan persis.
+
+## Impor CSV arsip (dan endpoint CSV lama)
+
+Pada daftar Arsip, **Impor CSV** tetap memakai header persis di bawah ini.
+Endpoint `POST /api/migration/surat-masuk` dan `/surat-keluar` tetap tersedia
+dengan kontrak yang sama untuk klien lama; frontend baru memakai impor CSV/XLSX di
+atas untuk surat masuk dan surat keluar.
 
 1. Pilih CSV dengan header unik, maksimal 1.000 rekod dan 10 MiB. Parser membatasi
    ukuran satu rekod menjadi 64 KiB. Pecah sumber yang lebih besar menjadi batch.
@@ -76,20 +142,20 @@ Kolom dikenali dari judulnya pada lima baris pertama, tidak pernah dari posisi.
 | Tautan dokumen (surat keluar) | Link Dokumen, Link, URL, Get link | Tidak |
 
 Bila dua kolom tautan berjudul sama (misalnya label "file" dan URL), dipakai
-satu-satunya kolom yang berisi alamat web; hanya nilai `http(s)://` yang
-disimpan. Baris tanpa nomor surat (kosong atau "-") memerlukan Pengirim (surat
+satu-satunya kolom yang berisi alamat web, atau kolom yang memuat setiap alamat
+kolom lainnya pada baris yang sama; hanya nilai `http(s)://` yang disimpan. Baris tanpa nomor surat (kosong atau "-") memerlukan Pengirim (surat
 masuk), atau Kepada maupun tautan dokumen (surat keluar), agar dapat dikenali
 saat impor ulang; baris tanpa keduanya ditolak per baris.
 
 ## Impor panjang per bagian
 
-Lembar Google Sheets dan berkas CSV yang panjang diimpor per bagian dalam satu
+Lembar Google Sheets serta berkas CSV/XLSX yang panjang diimpor per bagian dalam satu
 kali klik. Server berhenti memulai baris baru setelah ±25 detik per permintaan
 dan memberi tahu baris lanjutan; dialog langsung mengirim bagian berikutnya
 sampai selesai, sambil menampilkan jumlah baris yang sudah diproses, tersimpan,
 duplikat, dan dilewati.
 
-- **Hentikan setelah bagian ini** (Google Sheets) menyelesaikan bagian yang
+- **Hentikan setelah bagian ini** (Google Sheets dan CSV/XLSX) menyelesaikan bagian yang
   sedang berjalan lalu berhenti. Hasil menyebut baris tempat impor berhenti.
 - Bila satu bagian lanjutan gagal atau habis waktu, dialog menampilkan
   **Impor belum selesai** beserta jumlah baris dari bagian sebelumnya yang
@@ -110,13 +176,14 @@ ulang identitas di bawah kunci penomoran unit, lalu menyimpan surat dan audit.
 
 Klien mengirim `startRow` (0–1.000, indeks baris data/rekod) untuk meminta impor
 per bagian: JSON pada `POST /api/import/google-drive/surat-{masuk,keluar}`, field
-multipart pada `POST /api/migration/*` (tidak untuk `dryRun=true`). Bagian kedua dan
+multipart pada `POST /api/import/berkas/surat-{masuk,keluar}` dan `POST /api/migration/*`
+(tidak untuk `dryRun=true`). Bagian kedua dan
 seterusnya juga mengirim `prefixHash` dari respons sebelumnya.
 
 Respons menambah `startRow`, `nextRow` (baris lanjutan, atau `null` bila selesai),
 dan `prefixHash` (bila `nextRow` tidak `null`). Jumlah dan baris diagnostic pada
 respons hanya mencakup bagian itu. `prefixHash` adalah SHA-256 atas baris sebelum
-`nextRow` (untuk Sheets: baris sebagaimana dibaca impor, sehingga kolom yang tidak dibaca seperti ID atau Status sumber boleh berubah). Bila baris sebelum
+`nextRow` (untuk Sheets dan berkas CSV/XLSX: baris sebagaimana dibaca impor, sehingga kolom yang tidak dibaca seperti ID atau Status sumber boleh berubah). Bila baris sebelum
 `startRow` berubah, disisipkan, atau dihapus, server menolak dengan 409 agar tidak
 ada baris yang terlewat; baris yang ditambahkan di bawah tetap ikut diimpor.
 
@@ -141,4 +208,8 @@ Parser dipatok pada `csv-parse` 7.0.2 setelah pemeriksaan advisori
 [GHSA-8cw4-87c7-c6xx](https://github.com/adaltas/node-csv/security/advisories/GHSA-8cw4-87c7-c6xx).
 Pengujian mencakup UTF-8 BOM, delimiter/newline di dalam kutipan, header
 berbahaya/duplikat, tahun kabisat, duplikasi, audit gagal, dan pratinjau tanpa
-mutasi. Jalur impor Google Sheets yang terpisah tidak diubah oleh fitur CSV ini.
+mutasi pada endpoint CSV lama. Impor CSV/XLSX surat memakai parser CSV terbatas
+milik impor Google Sheets (dengan pemisah `;`/tab) dan pembaca XLSX `exceljs`
+setelah pemeriksaan paket di atas; ujinya mencakup register sintetis (judul
+gabungan, serial tanggal, sel bertautan, dua kolom "Get link"), batas baris/kolom/
+sel, paket berbahaya, dan kesetaraan hasil XLSX, CSV `;`/`,`, dan Google Sheets.

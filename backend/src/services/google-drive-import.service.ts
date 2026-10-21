@@ -22,7 +22,7 @@ const log = createLogger('GoogleDriveImportService');
  * Uses the public CSV export URL (no API key required).
  */
 
-interface ImportResult {
+export interface ImportResult {
     success: boolean;
     totalRows: number;
     importedRows: number;
@@ -35,6 +35,14 @@ interface ImportResult {
     nextRow?: number | null;
     /** Send back with nextRow; proves the rows before it are unchanged. */
     prefixHash?: string;
+}
+
+export interface ImportPreview {
+    headers: string[]; rows: string[][]; totalRows: number;
+    importType: GoogleSheetsImportType;
+    /** 1-based among the non-empty rows; 0 when the source is empty. */
+    headerRow: number;
+    mapping: SheetColumnMapping[];
 }
 
 /** A tab by gid, or by name for older clients. */
@@ -180,17 +188,26 @@ export class GoogleDriveImportService {
         log.warn({ event: 'google_sheets_row_rejected', row, publicCode: failure.code }, 'Import row rejected');
         return `Row ${row}: ${failure.message} (${failure.code})`;
     }
+    private assertPreviewRows(maxRows: number): void {
+        if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > GOOGLE_SHEETS_LIMITS.previewRows) throw new ValidationError('maxRows harus bilangan bulat antara 1 dan 100.');
+    }
+
     /**
      * Preview first N rows from a spreadsheet
      */
     async previewData(spreadsheetId: string, sheet: SheetSelector, maxRows: number = 10,
-        options: GoogleSheetsRequestOptions = {}, importType: GoogleSheetsImportType = 'surat-masuk'): Promise<{
-        headers: string[]; rows: string[][]; totalRows: number;
-        importType: GoogleSheetsImportType; headerRow: number; mapping: SheetColumnMapping[];
-    }> {
-        if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > GOOGLE_SHEETS_LIMITS.previewRows) throw new ValidationError('maxRows harus bilangan bulat antara 1 dan 100.');
+        options: GoogleSheetsRequestOptions = {}, importType: GoogleSheetsImportType = 'surat-masuk'): Promise<ImportPreview> {
+        this.assertPreviewRows(maxRows);
         const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
-        const allRows = this.parseCSV(csvText);
+        return this.previewRows(this.parseCSV(csvText), maxRows, importType);
+    }
+
+    /**
+     * The column mapping and first N data rows of already-parsed rows from
+     * any source, exactly as importRows will map them.
+     */
+    previewRows(allRows: string[][], maxRows: number = 10, importType: GoogleSheetsImportType = 'surat-masuk'): ImportPreview {
+        this.assertPreviewRows(maxRows);
         if (allRows.length === 0) return { headers: [], rows: [], totalRows: 0, importType, headerRow: 0, mapping: [] };
         const { headers, headerRowIndex, mapping } = resolveSheetMapping(allRows, importType);
         const dataRows = allRows.slice(headerRowIndex + 1);

@@ -13,6 +13,7 @@ vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }
 vi.mock('@/components/ExportButton', () => ({ ExportButton: () => null }))
 vi.mock('@/components/ImportFromGDrive', () => ({ default: () => null }))
 vi.mock('@/components/ImportCsvDialog', () => ({ default: () => null }))
+vi.mock('@/components/ImportFileDialog', () => ({ default: () => null }))
 
 let router
 beforeEach(() => {

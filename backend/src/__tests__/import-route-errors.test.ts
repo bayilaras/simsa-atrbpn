@@ -28,7 +28,8 @@ vi.mock('../services/arsip-elektronik.service.js', () => ({ arsipElektronikServi
 } }));
 vi.mock('../services/preservation-activity.service.js', () => ({ preservationAttachmentOptions: vi.fn() }));
 
-import importRoutes, { withGoogleSheetsRequest } from '../routes/google-drive-import.routes';
+import importRoutes from '../routes/google-drive-import.routes';
+import { withImportRequest } from '../routes/import-request';
 import uploadRoutes from '../routes/upload.routes';
 import electronicRoutes from '../routes/arsip-elektronik.routes';
 
@@ -137,7 +138,7 @@ describe('HTTP error boundaries for import, attachments and electronic archives'
         const res = Object.assign(new EventEmitter(), { writableEnded: false, destroyed: false });
         let signal: AbortSignal | undefined;
         let finish: () => void = () => {};
-        const work = withGoogleSheetsRequest(req as any, res as any, async options => {
+        const work = withImportRequest(req as any, res as any, async options => {
             signal = options.signal; await new Promise<void>(resolve => { finish = resolve; });
         });
         res.emit('close');

@@ -22,6 +22,7 @@ vi.mock('@/components/DistributeDialog', () => ({ DistributeDialog: () => null }
 vi.mock('@/components/ExportButton', () => ({ ExportButton: () => null }))
 vi.mock('@/components/ImportFromGDrive', () => ({ default: () => null }))
 vi.mock('@/components/ImportCsvDialog', () => ({ default: () => null }))
+vi.mock('@/components/ImportFileDialog', () => ({ default: () => null }))
 
 beforeEach(() => {
   vi.clearAllMocks()

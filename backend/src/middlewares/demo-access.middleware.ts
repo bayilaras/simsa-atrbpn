@@ -295,6 +295,8 @@ function blockedCapability(path: string): DemoBlockedCapability {
     if (/^\/regulatory-rule-sets\/(?:[^/]+\/)?source-document(?:\/|$)/.test(path)) {
         return 'file_storage';
     }
+    // Uploaded CSV/XLSX files are an operational import like /migration, not an external source.
+    if (path.startsWith('/import/berkas/')) return 'operational_admin';
     if (path.startsWith('/import/')) return 'external_import';
     if (path.startsWith('/integrations/srikandi')) return 'external_delivery';
     if (path.startsWith('/migration/')) return 'operational_admin';

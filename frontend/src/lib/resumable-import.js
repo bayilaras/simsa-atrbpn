@@ -57,3 +57,17 @@ export async function runResumableImport({ sendPart, onPart, onWait = () => {}, 
 export function outcomeUnknown(error) {
     return Boolean(error?.mutationOutcomeUnknown || error?.code === 'REQUEST_TIMEOUT');
 }
+
+const CONTINUE_LATER = 'Jalankan impor lagi untuk melanjutkan; baris yang sudah tersimpan akan dikenali sebagai duplikat.';
+
+/** Why a resumable import of data rows ended early; empty when it finished. Row numbers count data rows from 1. */
+export function unfinishedImportNotice(outcome, totals) {
+    if (outcome.stoppedAt !== undefined) return `Impor dihentikan sebelum baris data ke-${outcome.stoppedAt + 1}. ${CONTINUE_LATER}`;
+    if (outcome.interruptedAt === undefined) return '';
+    // Rows of earlier parts are saved; the failed part's own outcome may be unknown.
+    const part = `Bagian mulai baris data ke-${outcome.interruptedAt + 1}`;
+    const result = outcomeUnknown(outcome.error)
+        ? `${part} belum terkonfirmasi; sebagian barisnya mungkin sudah tersimpan.`
+        : `${part} gagal: ${outcome.error?.message || 'permintaan tidak berhasil.'}`;
+    return `${result} ${totals.importedRows} baris dari bagian sebelumnya sudah tersimpan. ${CONTINUE_LATER}`;
+}

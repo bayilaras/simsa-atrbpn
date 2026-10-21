@@ -54,9 +54,14 @@ export function resolveSheetMapping(rows: string[][], importType: GoogleSheetsIm
     for (const [field, definition] of Object.entries(definitions)) {
         let matches = normalized.flatMap((header, index) => definition.aliases.includes(header) ? [index] : []);
         // Registers often pair a "file" label column with the URL column under one heading.
+        // In a downloaded workbook the label may itself link to the file, so the link column
+        // is the one holding every URL the other columns hold, row by row.
         if (field === 'linkDokumen' && matches.length > 1) {
-            const withUrls = matches.filter(index => rows.slice(headerRowIndex + 1).some(row => isWebAddress(row[index])));
-            if (withUrls.length === 1) matches = withUrls;
+            const dataRows = rows.slice(headerRowIndex + 1);
+            const withUrls = matches.filter(index => dataRows.some(row => isWebAddress(row[index])));
+            const covering = withUrls.filter(index => dataRows.every(row => withUrls.every(other =>
+                !isWebAddress(row[other]) || row[index]?.trim() === row[other].trim())));
+            if (covering.length) matches = [covering[0]];
         }
         if (matches.length > 1) throw new ValidationError(
             `Pemetaan ${definition.label} ambigu pada kolom ${matches.map(index => index + 1).join(', ')}. Sisakan satu kolom yang sesuai.`,

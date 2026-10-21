@@ -195,7 +195,10 @@ export class GoogleSheetsSource {
     }
 }
 
-export function parseBoundedSheetCsv(csv: string): string[][] {
+/** The field separators a CSV import accepts; Google Sheets always exports ",". */
+export type CsvDelimiter = ',' | ';' | '\t';
+
+export function parseBoundedSheetCsv(csv: string, delimiter: CsvDelimiter = ','): string[][] {
     if (Buffer.byteLength(csv, 'utf8') > GOOGLE_SHEETS_LIMITS.responseBytes) {
         throw new PayloadTooLargeError('CSV melebihi batas 5 MiB.');
     }
@@ -222,7 +225,7 @@ export function parseBoundedSheetCsv(csv: string): string[][] {
             if (char === '"' && text[i + 1] === '"') { field += '"'; i++; }
             else if (char === '"') state = 'closed';
             else field += char;
-        } else if (char === ',') { addField(); }
+        } else if (char === delimiter) { addField(); }
         else if (char === '\n' || char === '\r') {
             addField(); addRow();
             if (char === '\r' && text[i + 1] === '\n') i++;

@@ -68,7 +68,7 @@ const GUIDE_SECTIONS = [
         keywords: ['mulai', 'inventaris', 'fisik', 'csv', 'impor', 'akun', 'unit kerja', 'srikandi'],
         steps: [
             'Masuk dengan email dan kata sandi dari administrator. Gunakan akun pribadi dengan peran dan unit kerja yang benar; staf membaca data, sedangkan admin mencatat dan mengubahnya.',
-            'Admin membuka Surat Masuk atau Surat Keluar, mencari nomor yang sama lebih dahulu, lalu mencatat metadata. Untuk daftar yang sudah tersedia, pilih satu unit kerja dan gunakan Impor CSV → Pratinjau → Impor data valid.',
+            'Admin membuka Surat Masuk atau Surat Keluar, mencari nomor yang sama lebih dahulu, lalu mencatat metadata. Untuk daftar yang sudah tersedia (CSV atau Excel .xlsx), pilih satu unit kerja dan gunakan Impor CSV/XLSX → Pratinjau → Impor; judul kolom dikenali seperti impor Google Sheets.',
             'Untuk inventaris arsip yang sudah ada, admin membuka Arsip Aktif → Arsip Surat Masuk atau Arsip Surat Keluar lalu Impor CSV. Isi tanggal sumber yang benar; impor tidak otomatis memverifikasi klasifikasi atau JRA.',
             'Saat mengarsipkan surat yang selesai diproses, isi klasifikasi/JRA yang sesuai serta No. Filing Cabinet, No. Laci, dan No. Folder pada dialog Arsipkan. Pada CSV arsip, catatan lokasi dapat dimasukkan ke Keterangan; kolom lokasi terstruktur belum dipetakan oleh impor.',
             'Temukan kembali arsip melalui nomor atau uraian, filter unit/tahun, dan halaman detail. Cocokkan catatan lokasi dengan berkas fisik sebelum menyerahkannya kepada peminjam.',
@@ -105,7 +105,7 @@ const GUIDE_SECTIONS = [
             'Pilih Surat Masuk atau Surat Keluar dari sidebar sesuai naskah yang akan dikelola.',
             'Cari dahulu berdasarkan nomor, perihal, pengirim, atau penerima untuk mencegah pencatatan ganda.',
             'Isi metadata dari dokumen sumber secara lengkap dan periksa kembali tanggal serta nomor surat.',
-            'Untuk daftar CSV, pilih unit kerja konkret lalu Impor CSV, Pratinjau, dan Impor data valid. Perbaiki baris yang ditolak pada berkas sumber; periksa hasil karena sebagian baris dapat berhasil saat baris lain gagal.',
+            'Untuk daftar CSV atau XLSX, pilih unit kerja konkret lalu Impor CSV/XLSX dan Pratinjau (pilih lembar kerja bila ada beberapa). Periksa pemetaan kolom, lalu Impor; perbaiki judul atau baris yang ditolak pada berkas sumber dan periksa hasil karena sebagian baris dapat berhasil saat baris lain gagal.',
             'Simpan metadata dan pastikan detailnya dapat dibuka. Tambahkan lampiran hanya bila fasilitas penyimpanan file tersedia dan berkasnya memang terkait; arsip fisik tidak memerlukan unggahan pengganti.',
             'Gunakan Distribusi bila menu tersebut tersedia dan tindak lanjut memang diperlukan.',
         ],

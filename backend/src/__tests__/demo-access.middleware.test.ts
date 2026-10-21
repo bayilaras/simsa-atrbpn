@@ -130,6 +130,7 @@ describe('metadata-only demo API access', () => {
         ['GET', `/api/regulatory-rule-sets/${id}/source-document`, 'file_storage'],
         ['POST', `/api/regulatory-rule-sets/${id}/source-document/verify-blob`, 'file_storage'],
         ['GET', '/api/import/google-drive/sheets', 'external_import'],
+        ['POST', '/api/import/berkas/surat-keluar', 'operational_admin'],
         ['GET', '/api/integrations/srikandi/status', 'external_delivery'],
         ['POST', '/api/migration/arsip', 'operational_admin'],
         ['POST', `/api/retention-governance/appraisals/${id}/evidence`, 'file_storage'],
