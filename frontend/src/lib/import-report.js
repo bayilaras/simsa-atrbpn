@@ -15,6 +15,22 @@ export function importRowsNeedingReview(rows) {
     return rows.filter(row => REVIEW_STATUSES.has(row.status))
 }
 
+/**
+ * The headline of an import result. Rows a sinkron could not update keep the
+ * result from reading as "all data already exists".
+ */
+export function importResultSummary(result) {
+    const lockedRows = (result.rows || []).filter(row => row.status === 'locked').length
+    const duplicateOnly = result.success === true && !result.importedRows && !result.updatedRows && result.duplicateRows > 0
+        && !result.skippedRows && !result.errors?.length && !lockedRows
+    const title = result.notice ? 'Impor belum selesai' : result.importedRows > 0 ? 'Impor berhasil!'
+        : result.updatedRows > 0 ? 'Data diperbarui' : lockedRows > 0 ? 'Perubahan belum diterapkan'
+            : duplicateOnly ? 'Semua data sudah ada' : 'Impor gagal'
+    const tone = result.notice || lockedRows > 0 ? 'warning'
+        : result.importedRows > 0 || result.updatedRows > 0 || duplicateOnly ? 'success' : 'error'
+    return { title, tone, duplicateOnly, lockedRows }
+}
+
 // A spreadsheet program runs a cell starting with these as a formula. A lone
 // "-" (an unnumbered letter) is no formula and stays as written.
 function csvCell(value) {

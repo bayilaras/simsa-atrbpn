@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import ImportRowReport from '@/components/ImportRowReport'
 import ImportSyncOption from '@/components/ImportSyncOption'
+import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton'
+import { importResultSummary } from '@/lib/import-report'
 import { useAppConfig } from '@/context/app-config-context'
 import api from '@/services/api'
-import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS, IMPORT_UNIT_REQUIRED } from '@/lib/google-sheets-import'
+import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import'
 
 /**
@@ -149,9 +151,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
         }
     }
 
-    const duplicateOnly = result?.success === true && result.importedRows === 0
-        && result.duplicateRows > 0 && !result.skippedRows && !result.errors?.length
-    const completed = result?.importedRows > 0 || result?.updatedRows > 0 || duplicateOnly
+    const summary = result ? importResultSummary(result) : null
 
     return <div className="min-w-0 space-y-4">
         {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/15 dark:text-red-300">
@@ -252,21 +252,22 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
             </Button>
         </div>}
 
-        {step === 'result' && result && <div role="status" aria-live="polite" className="space-y-4">
-            <div className={`flex items-start gap-3 rounded-lg border p-4 ${result.notice ? 'border-amber-200 bg-amber-50 dark:bg-amber-500/15'
-                : completed ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-500/15' : 'border-red-200 bg-red-50 dark:bg-red-500/15'}`}>
-                {completed && !result.notice
+        {step === 'result' && result && <div className="space-y-4">
+            {/* Only the summary is announced; the row table below is not a live region. */}
+            <div role="status" aria-live="polite" className={`flex items-start gap-3 rounded-lg border p-4 ${summary.tone === 'warning' ? 'border-amber-200 bg-amber-50 dark:bg-amber-500/15'
+                : summary.tone === 'success' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-500/15' : 'border-red-200 bg-red-50 dark:bg-red-500/15'}`}>
+                {summary.tone === 'success'
                     ? <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                    : <AlertCircle aria-hidden="true" className={`mt-0.5 h-5 w-5 ${result.notice ? 'text-amber-600' : 'text-red-600'}`} />}
+                    : <AlertCircle aria-hidden="true" className={`mt-0.5 h-5 w-5 ${summary.tone === 'warning' ? 'text-amber-600' : 'text-red-600'}`} />}
                 <div>
-                    <p className="font-medium">{result.notice ? 'Impor belum selesai' : result.importedRows > 0 ? 'Impor berhasil!'
-                        : result.updatedRows > 0 ? 'Data diperbarui' : duplicateOnly ? 'Semua data sudah ada' : 'Impor gagal'}</p>
+                    <p className="font-medium">{summary.title}</p>
                     {result.notice && <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">{result.notice}</p>}
-                    <p className="mt-1 text-sm text-muted-foreground">{duplicateOnly && !result.updatedRows ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
+                    <p className="mt-1 text-sm text-muted-foreground">{summary.duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
                         : `${result.importedRows} dari ${result.totalRows} baris berhasil diimpor`}</p>
                     {result.updatedRows > 0 && <p className="mt-1 text-sm text-blue-600">{`${result.updatedRows} baris diperbarui dari sumber`}</p>}
+                    {summary.lockedRows > 0 && <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">{`${summary.lockedRows} baris tidak diperbarui; lihat rincian di bawah.`}</p>}
                     {result.skippedRows > 0 && <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">{result.skippedRows} baris dilewati (data tidak valid/kosong)</p>}
-                    {result.duplicateRows > 0 && <p className="mt-1 text-sm text-blue-600">{result.duplicateRows} baris duplikat dilewati (sudah ada di sistem)</p>}
+                    {result.duplicateRows - summary.lockedRows > 0 && <p className="mt-1 text-sm text-blue-600">{result.duplicateRows - summary.lockedRows} baris duplikat dilewati (sudah ada di sistem)</p>}
                 </div>
             </div>
             {result.rows?.length > 0 ? <ImportRowReport rows={result.rows} type={type} /> : result.errors?.length > 0 && <div className="max-h-40 overflow-y-auto rounded-lg border bg-muted/50 p-3">
@@ -280,18 +281,12 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
 
 export default function ImportFileDialog({ type, unitKerjaId, onImportComplete }) {
     const { mode } = useAppConfig()
-    const unitHintId = useId()
     const [open, setOpen] = useState(false)
     const [busy, setBusy] = useState(false)
     if (mode === 'metadata-demo' || !labels[type]) return null
-    // Without a concrete unit the button stays focusable and says what is missing.
-    if (!unitKerjaId || unitKerjaId === 'all') return <>
-        <Button variant="outline" size="sm" className="h-9 cursor-not-allowed opacity-50" aria-disabled="true"
-            aria-describedby={unitHintId} title={IMPORT_UNIT_REQUIRED}>
-            <FileSpreadsheet aria-hidden="true" className="mr-2 h-3.5 w-3.5" />Impor CSV/XLSX
-        </Button>
-        <span id={unitHintId} hidden>{IMPORT_UNIT_REQUIRED}</span>
-    </>
+    if (!unitKerjaId || unitKerjaId === 'all') return <ImportUnitRequiredButton className={`${buttonVariants({ variant: 'outline', size: 'sm' })} h-9`}>
+        <FileSpreadsheet aria-hidden="true" className="mr-2 h-3.5 w-3.5" />Impor CSV/XLSX
+    </ImportUnitRequiredButton>
     const keepOpen = event => { if (busy) event.preventDefault() }
     return <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value) }}>
         <Button variant="outline" size="sm" className="h-9" onClick={() => setOpen(true)}>

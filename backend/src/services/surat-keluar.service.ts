@@ -171,6 +171,8 @@ export class SuratKeluarService {
         return matchSuratImportIdentities(db, 'keluar', keys, {
             perihal: suratKeluar.perihal, tanggalSurat: suratKeluar.tanggalSurat, sifatSurat: suratKeluar.sifatSurat,
             linkDokumen: suratKeluar.linkDokumen, naskahDinas: suratKeluar.naskahDinas,
+            // Compared with the source, never written by an import.
+            kepada: suratKeluar.kepada,
         });
     }
 

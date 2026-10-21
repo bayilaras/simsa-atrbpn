@@ -11,10 +11,11 @@ CSV/XLSX), berurutan per commit.
 "Semua Unit Kerja", sehingga tombol tidak ada dan pengguna tidak menemukannya.
 
 **Keputusan.** Halaman merender kedua tombol untuk setiap admin. Tanpa unit konkret
-tombol tetap dapat difokus tetapi `aria-disabled="true"`, tidak membuka dialog, dan
-menjelaskan "Pilih unit kerja terlebih dahulu" (`aria-describedby` ke teks
-tersembunyi, juga `title` untuk tetikus). `disabled` biasa tidak dipakai karena
-tombol nonaktif keluar dari urutan Tab dan petunjuknya tidak terbaca pembaca layar.
+tombol (`ImportUnitRequiredButton`) tetap dapat difokus tetapi `aria-disabled="true"`,
+tidak membuka dialog, dan menjelaskan "Pilih unit kerja terlebih dahulu": teks itu
+adalah deskripsi aksesibel (`aria-describedby`) dan tampil sebagai tooltip saat
+tombol disorot, difokus dengan keyboard, atau diketuk. `disabled` biasa tidak
+dipakai karena tombol nonaktif keluar dari urutan Tab dan petunjuknya tidak terbaca.
 Jaminan bahwa setiap impor menuju satu unit konkret tetap sama: dialog hanya dibuka
 dengan unit konkret dan backend (`resolveImportUnit`) tetap memeriksa unit dan hak.
 
@@ -70,8 +71,11 @@ duplikat, jadi perubahan di sheet sesudah impor diabaikan. Contoh nyata: perihal
 | Rangkaian | Surat masuk dalam rangkaian: penjaga rangkaian meminta alasan untuk perubahan perihal; impor tidak memberi alasan otomatis, jadi baris dilaporkan "Tidak diperbarui" dan dikoreksi lewat alur biasa. Surat keluar: rangkaian dihitung ulang (`afterSuratKeluarChanged`) seperti PUT. |
 | Validasi | Patch divalidasi dengan skema PUT (`updateSuratKeluarSchema`/`updateSuratMasukSchema`), misalnya perihal ≤ 2.000 karakter. |
 | Unit lain | Identitas impor selalu menyertakan unit tujuan; surat unit lain dengan nomor sama tidak tersentuh. |
-| Nomor ganda di sheet | Hanya baris pertama sebuah identitas yang menyinkronkan; baris berikutnya dilaporkan duplikat, sehingga surat tidak bolak-balik berubah. |
-| Identitas cocok dengan > 1 surat | Tidak diubah ("Tidak diperbarui: identitas ini cocok dengan N surat"). |
+| Nomor ganda di sheet | Hanya baris pertama sebuah identitas yang menyinkronkan; baris berikutnya dilaporkan duplikat, sehingga surat tidak bolak-balik berubah. Bila baris bernomor dan baris tanpa nomor (identitas tautan/tujuan) cocok dengan surat yang sama dalam satu bagian, hanya yang pertama diterapkan. |
+| Nomor sama, surat lain | Identitas surat bernomor hanya unit+tahun+nomor; nomor surat masuk berasal dari pengirim, jadi dua pengirim dapat memakai nomor yang sama. Bila sumber menyebut pengirim (surat masuk) atau tujuan (surat keluar) yang berbeda dari yang tercatat (abaikan huruf besar/spasi), surat tidak diubah dan kedua nilai disebut. |
+| Identitas cocok dengan > 1 surat | Tidak diubah ("Tidak diperbarui: identitas ini cocok dengan lebih dari satu surat"), tanpa menyebut jumlah (dapat mencakup surat yang tidak boleh dibaca). |
+| Teks sumber vs formulir | Nilai sumber disimpan dan dibandingkan dalam bentuk yang sama dengan sanitizer permintaan rute PUT (`sanitizeSatuBaris`: buang tag, rapatkan spasi), sehingga beda format saja tidak dianggap perubahan dan penjaga rangkaian melihat nilai yang sama. |
+| Galat sementara | Kegagalan pemeriksaan akses atau update menjadi hasil baris itu ("Tidak diperbarui: …", galat internal tetap generik dan dicatat di log), bukan menggagalkan seluruh bagian. |
 | Menghapus data lewat sel kosong | Sel kosong atau kolom yang tidak dipetakan tidak pernah mengubah/menghapus nilai. |
 | Audit | Satu entri `update` per surat yang berubah, dari `update()` kanonik, dengan `changes.before` (nilai lama field yang berubah), `after`, `fields`, dan `sumber: 'impor_sinkron'`. |
 
@@ -103,9 +107,28 @@ duplikat, jadi perubahan di sheet sesudah impor diabaikan. Contoh nyata: perihal
   tanggal dan perihal adalah bagian identitas, sehingga baris yang diubah dianggap
   surat baru (perilaku impor yang sudah ada). Untuk baris bernomor, tanggal yang
   pindah tahun juga mengubah identitas.
-- `kepada`/`dari`, klasifikasi arsip, dan kolom lain tidak disinkronkan.
+- `kepada`/`dari` (hanya dibandingkan), klasifikasi arsip, dan kolom lain tidak
+  disinkronkan.
+- "Satu baris per surat" berlaku per bagian; bila dua baris yang cocok dengan surat
+  yang sama jatuh di bagian berbeda, keduanya dapat diterapkan berurutan (nilai
+  `before` audit diambil dari pencarian awal bagian).
 - Tidak ada uji coba tanpa menulis (dry run); laporan per baris menampilkan apa yang
   berubah. Dapat menjadi tindak lanjut bila diperlukan.
+- Laporan CSV memakai pemisah koma (standar; Google Sheets mendeteksinya). Excel
+  dengan pengaturan regional Indonesia (pemisah daftar `;`) dapat menampilkannya
+  dalam satu kolom; buka lewat Data → From Text/CSV. Pemisah `;` adalah alternatif
+  bila pengguna lebih sering membuka laporan di Excel.
+- Pembuatan surat lewat impor (bukan sinkron) masih menyimpan teks sumber apa adanya
+  tanpa sanitizer permintaan; perilaku lama ini tidak diubah di branch ini.
+
+## Review
+
+Review independen (subagen, baca saja) atas tiga commit fitur tidak menemukan temuan
+tinggi; temuan sedang/rendah yang ditindaklanjuti: nomor sama dengan pengirim/tujuan
+lain, teks tidak disanitasi, galat pemeriksaan menggagalkan bagian, judul hasil
+"Semua data sudah ada" saat perubahan ditolak, dua identitas untuk satu surat, tabel
+laporan di dalam live region, petunjuk unit hanya untuk pembaca layar/tetikus, dan
+jumlah surat pada pesan identitas ganda. Pemisah CSV dibiarkan koma (lihat batasan).
 
 ## Kompatibilitas dan rilis
 

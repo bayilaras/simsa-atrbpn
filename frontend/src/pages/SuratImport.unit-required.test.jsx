@@ -46,6 +46,11 @@ describe.each([['Surat Keluar', SuratKeluar], ['Surat Masuk', SuratMasuk]])('%s'
             fireEvent.click(button)
         }
         expect(screen.queryByRole('dialog')).toBeNull()
+        // Sighted keyboard and touch users see the hint as a tooltip on focus, not only on mouse hover.
+        const hints = screen.getAllByRole('tooltip')
+        expect(hints.map(hint => hint.textContent)).toEqual(['Pilih unit kerja terlebih dahulu', 'Pilih unit kerja terlebih dahulu'])
+        for (const hint of hints) expect(hint).not.toHaveAttribute('hidden')
+        for (const hint of hints) expect(hint.className).toMatch(/peer-focus:block/)
     })
 
     it('enables the import buttons for the concrete unit of a unit admin', async () => {

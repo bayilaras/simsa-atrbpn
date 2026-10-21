@@ -106,6 +106,25 @@ describe('CSV/XLSX import dialog', () => {
         expect(onImportComplete).toHaveBeenCalledOnce()
     })
 
+    it('does not call a sinkron whose changes were all refused a success', async () => {
+        await open()
+        await choose(csv())
+        mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: undefined }))
+        click('Pratinjau')
+        fireEvent.click(await screen.findByRole('checkbox', { name: /Sinkronkan surat yang sudah tercatat/ }))
+        mocks.post.mockResolvedValueOnce(part({ duplicateRows: 3, nextRow: null, startRow: 0, rows: [
+            { row: 1, status: 'duplicate', reason: 'Sudah tercatat; tidak ada perubahan.' },
+            { row: 2, status: 'locked', reason: 'Tidak diperbarui: surat sedang atau telah disetujui.' },
+            { row: 3, status: 'duplicate', reason: 'Sudah tercatat; tidak ada perubahan.' }] }))
+        click('Impor 3 baris')
+        expect(await screen.findByText('Perubahan belum diterapkan')).toBeInTheDocument()
+        expect(screen.getByText('1 baris tidak diperbarui; lihat rincian di bawah.')).toBeInTheDocument()
+        expect(screen.queryByText('Semua data sudah ada')).not.toBeInTheDocument()
+        // The long table stays out of the announced summary.
+        expect(screen.getByRole('table', { name: 'Rincian hasil impor per baris' }).closest('[aria-live]')).toBeNull()
+        expect(screen.getByRole('status')).toHaveTextContent('Perubahan belum diterapkan')
+    })
+
     it('previews a single-tab workbook without asking for a tab', async () => {
         await open()
         await choose(workbook())

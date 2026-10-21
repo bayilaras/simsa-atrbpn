@@ -129,6 +129,28 @@ describe('sinkron surat keluar', () => {
         expect(await updates((await keluarRow('40/UND-600.BP.01.01/VI/2026')).id)).toHaveLength(1);
     });
 
+    it('applies one row per letter even when an unnumbered row matches the same letter by its link', async () => {
+        const rows = [keluarHeader,
+            keluar(1, '40/UND-600.BP.01.01/VI/2026', '10/06/2026', 'Undangan rapat koordinasi', 'Segera'),
+            keluar(1, '-', '10/06/2026', 'Undangan rapat koordinasi', 'Penting')];
+        const result = await importer.importRows('surat-keluar', rows, 'dir_bppt', audit, {}, undefined, sinkron);
+        expect(result.rows?.map(row => [row.status, row.reason])).toEqual([
+            ['updated', undefined], ['duplicate', 'Surat yang sama sudah dicocokkan dengan baris data ke-1 pada sumber ini.']]);
+        const letter = await keluarRow('40/UND-600.BP.01.01/VI/2026');
+        expect(letter.sifat_surat).toBe('segera');
+        expect(await updates(letter.id)).toHaveLength(1);
+    });
+
+    it('stores and compares source text the way the edit form does', async () => {
+        const rows = [keluarHeader, keluar(2, '41/UND/VI/2026', '11/06/2026', '  Perihal   <b>tetap</b> ')];
+        const result = await importer.importRows('surat-keluar', rows, 'dir_bppt', audit, {}, undefined, sinkron);
+        expect(result.rows?.[0]).toMatchObject({ status: 'duplicate', reason: 'Sudah tercatat; tidak ada perubahan.' });
+        const changed = await importer.importRows('surat-keluar', [keluarHeader, keluar(2, '41/UND/VI/2026', '11/06/2026', 'Perihal <i>baru</i>')],
+            'dir_bppt', audit, {}, undefined, sinkron);
+        expect(changed.rows?.[0]).toMatchObject({ status: 'updated' });
+        expect((await keluarRow('41/UND/VI/2026')).perihal).toBe('Perihal baru');
+    });
+
     it('changes only columns the source maps: a register without Sifat or link leaves them', async () => {
         const narrow = [['No', 'Nomor Surat', 'Tanggal Surat', 'Hal', 'Jenis Naskah'],
             ['1', '40/UND-600.BP.01.01/VI/2026', '2026-06-11', 'Undangan rapat koordinasi', 'Undangan']];
@@ -157,6 +179,15 @@ describe('sinkron surat masuk', () => {
             { field: 'jenisSurat', label: 'Jenis surat', before: 'Surat Dinas', after: 'Nota Dinas' },
         ] });
         expect(await perihalOf('SM-1/2026')).toMatchObject({ perihal: 'Permohonan data pertanahan', sifat_surat: 'Biasa', jenis_surat: 'Nota Dinas' });
+    });
+
+    it('leaves a letter of another sender with the same number alone', async () => {
+        await importer.importRows('surat-masuk', [header, ['045/2026', '02/03/2026', 'Permohonan', 'Dinas B', 'Biasa', 'Surat Dinas']], 'dir_bppt', audit);
+        const result = await importer.importRows('surat-masuk', [header, ['045/2026', '05/03/2026', 'Undangan', 'Dinas A', 'Biasa', 'Surat Dinas']],
+            'dir_bppt', audit, {}, undefined, sinkron);
+        expect(result.rows?.[0]).toMatchObject({ status: 'locked',
+            reason: 'Tidak diperbarui: pengirim di sumber ("Dinas A") berbeda dengan yang tercatat ("Dinas B"); mungkin surat lain dengan nomor yang sama.' });
+        expect(await perihalOf('045/2026')).toMatchObject({ perihal: 'Permohonan' });
     });
 
     it('leaves a letter in a rangkaian to its own correction flow, which needs a reason', async () => {

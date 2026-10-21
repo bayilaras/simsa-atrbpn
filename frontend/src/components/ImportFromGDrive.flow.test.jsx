@@ -123,6 +123,8 @@ describe('a sheet imported in parts', () => {
         expect(screen.getByText('1 baris diperbarui dari sumber')).toBeInTheDocument();
         expect(api.post.mock.calls.slice(-2).map(call => call[1])).toEqual([
             { ...source, startRow: 0, sinkron: true }, { ...source, startRow: 3, prefixHash: 'h1', sinkron: true }]);
+        expect(screen.getByText('1 baris tidak diperbarui; lihat rincian di bawah.')).toBeInTheDocument();
+        expect(screen.getByRole('table', { name: 'Rincian hasil impor per baris' }).closest('[aria-live]')).toBeNull();
         fireEvent.change(screen.getByLabelText('Tampilkan'), { target: { value: 'updated' } });
         expect(screen.getByRole('table', { name: 'Rincian hasil impor per baris' }))
             .toHaveTextContent('Perihal: Undangan rapat koordinasi → Undangan rapat koordinasi teknis');

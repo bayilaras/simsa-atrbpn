@@ -13,7 +13,9 @@ import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type Sh
 import { DuplicateSuratImportError, type SuratImportIdentityKey, type SuratImportMatch } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat } from './sifat-surat.js';
-import { syncImportedLetter, type ImportFieldChange, type ImportSync, type ImportSyncTarget } from './import-sync.js';
+import {
+    syncImportedLetter, syncSourceText, type ImportCounterpart, type ImportFieldChange, type ImportSync, type ImportSyncTarget,
+} from './import-sync.js';
 import { updateSuratKeluarSchema, updateSuratMasukSchema } from '../validators/schemas.js';
 
 const log = createLogger('GoogleDriveImportService');
@@ -111,6 +113,8 @@ type PreparedRecord<T> = { record: T; key: SuratImportIdentityKey };
 /** null: an empty row; error: a row rejected before any write. */
 type PreparedRow<T> = PreparedRecord<T> | { error: unknown } | null;
 type RowSummary = Pick<ImportRowOutcome, 'no' | 'nomorSurat' | 'tanggal' | 'perihal'>;
+/** What a source row would set on its recorded letter, and the counterpart it names. */
+type ImportSyncSource = { values: Record<string, string>; counterpart: ImportCounterpart };
 
 const REPORTED_PERIHAL_LENGTH = 200;
 const ALREADY_RECORDED = 'Sudah tercatat di SIMSA pada unit ini (termasuk surat yang dihapus).';
@@ -334,9 +338,10 @@ export class GoogleDriveImportService {
             return { no: field(row, 'noUrut'), nomorSurat: field(row, 'nomorSurat'), tanggal: field(row, 'tanggalSurat'),
                 perihal: perihal.length > REPORTED_PERIHAL_LENGTH ? `${perihal.slice(0, REPORTED_PERIHAL_LENGTH - 1)}…` : perihal };
         };
-        // Sinkron: the values a row sets, read like the record built from it.
-        // An empty cell or an unmapped column sets nothing, so it never clears a value.
-        const sourceValues = (row: string[], names: string[]): Record<string, string> => {
+        // Sinkron: the values a row sets, read like the record built from it and
+        // stored the way the edit form stores text. An empty cell or an unmapped
+        // column sets nothing, so it never clears a value.
+        const syncSource = (row: string[], names: string[], counterpart: Omit<ImportCounterpart, 'value'>): ImportSyncSource => {
             const values: Record<string, string> = {
                 perihal: field(row, 'perihal'),
                 tanggalSurat: this.parseDate(field(row, 'tanggalSurat')) ?? '',
@@ -345,17 +350,21 @@ export class GoogleDriveImportService {
                 naskahDinas: field(row, 'naskahDinas'),
                 jenisSurat: field(row, 'jenisSurat'),
             };
-            return Object.fromEntries(names.filter(name => values[name]).map(name => [name, values[name]]));
+            return {
+                values: Object.fromEntries(names.map(name => [name, syncSourceText(values[name])]).filter(([, value]) => value)),
+                counterpart: { ...counterpart, value: field(row, counterpart.field) },
+            };
         };
         const write = { unitKerjaId, auditContext, options, resume, sync };
 
         return type === 'surat-masuk'
             ? this.importRecords(dataRows, incoming, write, {
                 summary, build: (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext),
-                syncValues: row => sourceValues(row, ['perihal', 'tanggalSurat', 'jenisSurat']) })
+                syncSource: row => syncSource(row, ['perihal', 'tanggalSurat', 'jenisSurat'], { field: 'dari', label: 'Pengirim' }) })
             : this.importRecords(dataRows, outgoing, write, {
                 summary, build: (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext),
-                syncValues: row => sourceValues(row, ['perihal', 'tanggalSurat', 'sifatSurat', 'linkDokumen', 'naskahDinas']) });
+                syncSource: row => syncSource(row, ['perihal', 'tanggalSurat', 'sifatSurat', 'linkDokumen', 'naskahDinas'],
+                    { field: 'kepada', label: 'Tujuan' }) });
     }
 
     private incomingRecord(row: string[], i: number, colMap: Record<string, number>, unitKerjaId: string,
@@ -456,10 +465,10 @@ export class GoogleDriveImportService {
             unitKerjaId: string; auditContext: CriticalAuditContext; options: GoogleSheetsRequestOptions;
             resume: ImportResume | undefined; sync: ImportSync | undefined;
         },
-        { summary, build, syncValues }: {
+        { summary, build, syncSource }: {
             summary: (row: string[]) => RowSummary;
             build: (row: string[], index: number) => T | null;
-            syncValues: (row: string[]) => Record<string, string>;
+            syncSource: (row: string[]) => ImportSyncSource;
         },
     ): Promise<ImportResult> {
         // Every row as this import reads it. The resume digest covers exactly
@@ -508,6 +517,9 @@ export class GoogleDriveImportService {
         let duplicateRows = 0;
         let updatedRows = 0;
         let nextRow: number | null = null;
+        // Sinkron: a numbered and an unnumbered row can match the same letter;
+        // only the first one in this part applies to it.
+        const syncedLetterRow = new Map<string, number>();
 
         for (let i = start; i < dataRows.length; i++) {
             if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan; baris yang sudah selesai tetap tercatat.', 499);
@@ -520,7 +532,14 @@ export class GoogleDriveImportService {
                 if (!sync || earlierRow(record, i) !== undefined) {
                     duplicateRows++; report(i, 'duplicate', duplicateReason(record, i)); continue;
                 }
-                const outcome = await syncImportedLetter(target.sync, matchOf.get(record)!, syncValues(dataRows[i]), sync, unitKerjaId, auditContext);
+                const letters = matchOf.get(record)!;
+                const sameLetter = letters.length === 1 ? syncedLetterRow.get(letters[0].id) : undefined;
+                if (sameLetter !== undefined) {
+                    duplicateRows++; report(i, 'duplicate', `Surat yang sama sudah dicocokkan dengan baris data ke-${sameLetter + 1} pada sumber ini.`); continue;
+                }
+                if (letters.length === 1) syncedLetterRow.set(letters[0].id, i);
+                const source = syncSource(dataRows[i]);
+                const outcome = await syncImportedLetter(target.sync, letters, source.values, sync, unitKerjaId, auditContext, source.counterpart);
                 if (outcome.status === 'updated') updatedRows++; else duplicateRows++;
                 report(i, outcome.status, 'reason' in outcome ? outcome.reason : undefined, 'changes' in outcome ? outcome.changes : undefined);
                 continue;

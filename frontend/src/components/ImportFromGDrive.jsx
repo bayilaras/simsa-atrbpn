@@ -1,11 +1,13 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/services/api';
-import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS, IMPORT_UNIT_REQUIRED } from '@/lib/google-sheets-import';
+import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import';
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import ImportRowReport from '@/components/ImportRowReport';
 import ImportSyncOption from '@/components/ImportSyncOption';
+import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton';
+import { importResultSummary } from '@/lib/import-report';
 import { useAppConfig } from '@/context/app-config-context';
 
 /**
@@ -29,7 +31,6 @@ import { useAppConfig } from '@/context/app-config-context';
  */
 const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const { capabilities } = useAppConfig();
-    const unitHintId = useId();
     const [isOpen, setIsOpen] = useState(false);
     const [step, setStep] = useState('input'); // input, sheets, preview, importing, result
     const [spreadsheetUrl, setSpreadsheetUrl] = useState('');
@@ -67,9 +68,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
 
     const typeLabel = type === 'surat-masuk' ? 'Surat Masuk' : 'Surat Keluar';
     const selectedName = sheets.find(sheet => sheet.gid === selectedGid)?.name || '';
-    const duplicateOnly = importResult?.success === true && importResult.importedRows === 0
-        && importResult.duplicateRows > 0 && !importResult.skippedRows && !importResult.errors?.length;
-    const resultCompleted = importResult?.importedRows > 0 || importResult?.updatedRows > 0 || duplicateOnly;
+    const summary = importResult ? importResultSummary(importResult) : null;
 
     const invalidatePreview = () => {
         requestRef.current += 1;
@@ -251,19 +250,21 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
 
     return (
         <>
-            {/* Without a concrete unit the button stays focusable and says what is missing. */}
-            <button
-                type="button"
-                onClick={handleOpen}
-                aria-disabled={unitKerjaId ? undefined : 'true'}
-                aria-describedby={unitKerjaId ? undefined : unitHintId}
-                title={unitKerjaId ? undefined : IMPORT_UNIT_REQUIRED}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
-            >
-                <Upload aria-hidden="true" className="w-4 h-4" />
-                Impor dari Google Sheets
-            </button>
-            {!unitKerjaId && <span id={unitHintId} hidden>{IMPORT_UNIT_REQUIRED}</span>}
+            {unitKerjaId ? (
+                <button
+                    type="button"
+                    onClick={handleOpen}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80"
+                >
+                    <Upload aria-hidden="true" className="w-4 h-4" />
+                    Impor dari Google Sheets
+                </button>
+            ) : (
+                <ImportUnitRequiredButton className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm">
+                    <Upload aria-hidden="true" className="w-4 h-4" />
+                    Impor dari Google Sheets
+                </ImportUnitRequiredButton>
+            )}
             <Dialog open={isOpen} onOpenChange={(open) => !open && step !== 'importing' && handleClose()}>
                 <DialogContent
                     showCloseButton={false}
@@ -516,41 +517,42 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
 
                         {/* Step: Result */}
                         {step === 'result' && importResult && (
-                            <div role="status" aria-live="polite" className="space-y-4">
-                                <div className={`flex items-start gap-3 p-4 rounded-lg ${importResult.notice
+                            <div className="space-y-4">
+                                {/* Only the summary is announced; the row table below is not a live region. */}
+                                <div role="status" aria-live="polite" className={`flex items-start gap-3 p-4 rounded-lg ${summary.tone === 'warning'
                                     ? 'bg-amber-50 dark:bg-amber-500/15 border border-amber-200'
-                                    : resultCompleted
+                                    : summary.tone === 'success'
                                         ? 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200'
                                         : 'bg-red-50 dark:bg-red-500/15 border border-red-200'
                                     }`}>
-                                    {resultCompleted && !importResult.notice ? (
+                                    {summary.tone === 'success' ? (
                                         <CheckCircle2 aria-hidden="true" className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                                     ) : (
-                                        <AlertCircle aria-hidden="true" className={`w-5 h-5 mt-0.5 ${importResult.notice ? 'text-amber-600' : 'text-red-600'}`} />
+                                        <AlertCircle aria-hidden="true" className={`w-5 h-5 mt-0.5 ${summary.tone === 'warning' ? 'text-amber-600' : 'text-red-600'}`} />
                                     )}
                                     <div>
-                                        <p className="font-medium text-foreground">
-                                            {importResult.notice ? 'Impor belum selesai' : importResult.importedRows > 0 ? 'Impor berhasil!'
-                                                : importResult.updatedRows > 0 ? 'Data diperbarui' : duplicateOnly ? 'Semua data sudah ada' : 'Impor gagal'}
-                                        </p>
+                                        <p className="font-medium text-foreground">{summary.title}</p>
                                         {importResult.notice && (
                                             <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{importResult.notice}</p>
                                         )}
                                         <p className="text-sm text-muted-foreground mt-1">
-                                            {duplicateOnly && !importResult.updatedRows ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
+                                            {summary.duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
                                                 : `${importResult.importedRows} dari ${importResult.totalRows} baris berhasil diimpor`}
                                         </p>
                                         {importResult.updatedRows > 0 && (
                                             <p className="text-sm text-blue-600 mt-1">{`${importResult.updatedRows} baris diperbarui dari sumber`}</p>
+                                        )}
+                                        {summary.lockedRows > 0 && (
+                                            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{`${summary.lockedRows} baris tidak diperbarui; lihat rincian di bawah.`}</p>
                                         )}
                                         {importResult.skippedRows > 0 && (
                                             <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
                                                 {importResult.skippedRows} baris dilewati (data tidak valid/kosong)
                                             </p>
                                         )}
-                                        {importResult.duplicateRows > 0 && (
+                                        {importResult.duplicateRows - summary.lockedRows > 0 && (
                                             <p className="text-sm text-blue-600 mt-1">
-                                                {importResult.duplicateRows} baris duplikat dilewati (sudah ada di sistem)
+                                                {importResult.duplicateRows - summary.lockedRows} baris duplikat dilewati (sudah ada di sistem)
                                             </p>
                                         )}
                                     </div>

@@ -232,6 +232,10 @@ sumber mengubahnya:
   izin kelola), surat masuk dalam rangkaian yang perubahannya memerlukan alasan, dan
   identitas yang cocok dengan lebih dari satu surat. Bila nomor yang sama muncul
   beberapa kali di sumber, hanya baris pertamanya yang dipakai.
+- Bila sumber menyebut pengirim (surat masuk) atau tujuan (surat keluar) yang berbeda
+  dari yang tercatat, surat tidak diubah: nomor yang sama mungkin milik surat lain.
+- Teks sumber disimpan seperti dari formulir (tag dibuang, spasi dirapatkan); beda
+  format saja tidak dianggap perubahan.
 - Setiap surat yang berubah mendapat satu entri log audit `update` dengan nilai lama
   dan baru serta `sumber: impor_sinkron`.
 - Untuk surat tanpa nomor, tanggal dan perihal adalah bagian identitas; mengubahnya

@@ -191,6 +191,8 @@ export class SuratMasukService {
     async importMatches(keys: SuratImportIdentityKey[]): Promise<SuratImportMatch[][]> {
         return matchSuratImportIdentities(db, 'masuk', keys, {
             perihal: suratMasuk.perihal, tanggalSurat: suratMasuk.tanggalSurat, jenisSurat: suratMasuk.jenisSurat,
+            // Compared with the source, never written by an import.
+            dari: suratMasuk.dari,
         });
     }
 

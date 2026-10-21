@@ -31,10 +31,29 @@ describe('sinkron of one recorded letter', () => {
         expect(update).toHaveBeenCalledWith('letter-1', { perihal: 'Baru' }, 'unit-a', audit, { sumber: 'impor_sinkron', before: { perihal: 'Lama' } });
     });
 
-    it('leaves an identity matching several letters alone', async () => {
+    it('leaves an identity matching several letters alone without saying how many', async () => {
         expect(await sync([letter(), letter({ id: 'letter-2' })], { perihal: 'Baru' }))
-            .toEqual({ status: 'locked', reason: SYNC_REASONS.ambiguous(2) });
+            .toEqual({ status: 'locked', reason: 'Tidak diperbarui: identitas ini cocok dengan lebih dari satu surat di SIMSA.' });
         expect(update).not.toHaveBeenCalled();
+    });
+
+    it('leaves a letter alone when the source names another sender or recipient: the same number may be another letter', async () => {
+        const recorded = letter({ values: { perihal: 'Permohonan', dari: 'Dinas B' } });
+        expect(await syncImportedLetter(target, [recorded], { perihal: 'Undangan' }, { actor }, 'unit-a', audit, { field: 'dari', label: 'Pengirim', value: 'Dinas A' }))
+            .toEqual({ status: 'locked', changes: [{ field: 'perihal', label: 'Perihal', before: 'Permohonan', after: 'Undangan' }],
+                reason: 'Tidak diperbarui: pengirim di sumber ("Dinas A") berbeda dengan yang tercatat ("Dinas B"); mungkin surat lain dengan nomor yang sama.' });
+        expect(update).not.toHaveBeenCalled();
+        // Spacing and case alone are no difference; an empty side cannot be compared.
+        expect(await syncImportedLetter(target, [recorded], { perihal: 'Undangan' }, { actor }, 'unit-a', audit, { field: 'dari', label: 'Pengirim', value: '  dinas   b ' }))
+            .toMatchObject({ status: 'updated' });
+        expect(await syncImportedLetter(target, [letter({ values: { perihal: 'Permohonan', dari: null } })], { perihal: 'Undangan' }, { actor }, 'unit-a', audit,
+            { field: 'dari', label: 'Pengirim', value: 'Dinas A' })).toMatchObject({ status: 'updated' });
+    });
+
+    it('keeps the part going when a check fails, reporting the row instead', async () => {
+        mocks.check.mockRejectedValueOnce(new Error('connection terminated'));
+        expect(await sync([letter({ classification: 'terbatas' })], { perihal: 'Baru' }))
+            .toEqual({ status: 'locked', reason: 'Tidak diperbarui: Terjadi kesalahan pada server.' });
     });
 
     it('applies the update schema of the PUT route', async () => {
