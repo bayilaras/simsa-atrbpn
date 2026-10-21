@@ -106,6 +106,29 @@ describe('a sheet imported in parts', () => {
         expect(screen.getByRole('button', { name: 'Unduh laporan (CSV)' })).toBeInTheDocument();
     });
 
+    it('updates recorded letters only when sinkron is chosen, in every part', async () => {
+        const completed = await ready();
+        const checkbox = screen.getByRole('checkbox', { name: /Sinkronkan surat yang sudah tercatat/ });
+        expect(checkbox).not.toBeChecked();
+        expect(checkbox).toHaveAccessibleDescription(/tautan dokumen/);
+        fireEvent.click(checkbox);
+        api.post.mockResolvedValueOnce(part({ duplicateRows: 2, startRow: 0, nextRow: 3, prefixHash: 'h1',
+            rows: [{ row: 1, status: 'duplicate' }, { row: 2, status: 'duplicate' }, { row: 3, status: 'duplicate' }] }))
+            .mockResolvedValueOnce(part({ updatedRows: 1, duplicateRows: 1, startRow: 3, nextRow: null, rows: [
+                { row: 4, no: '4', nomorSurat: '40/UND-600.BP.01.01/VI/2026', tanggal: '10/06/2026', perihal: 'Undangan rapat koordinasi teknis', status: 'updated',
+                    changes: [{ field: 'perihal', label: 'Perihal', before: 'Undangan rapat koordinasi', after: 'Undangan rapat koordinasi teknis' }] },
+                { row: 5, status: 'locked', reason: 'Tidak diperbarui: surat sedang atau telah disetujui.' }] }));
+        fireEvent.click(screen.getByRole('button', { name: 'Impor 5 baris' }));
+        expect(await screen.findByText('Data diperbarui')).toBeInTheDocument();
+        expect(screen.getByText('1 baris diperbarui dari sumber')).toBeInTheDocument();
+        expect(api.post.mock.calls.slice(-2).map(call => call[1])).toEqual([
+            { ...source, startRow: 0, sinkron: true }, { ...source, startRow: 3, prefixHash: 'h1', sinkron: true }]);
+        fireEvent.change(screen.getByLabelText('Tampilkan'), { target: { value: 'updated' } });
+        expect(screen.getByRole('table', { name: 'Rincian hasil impor per baris' }))
+            .toHaveTextContent('Perihal: Undangan rapat koordinasi → Undangan rapat koordinasi teknis');
+        expect(completed).toHaveBeenCalledTimes(1);
+    });
+
     it('keeps the error list for a server that reports no rows', async () => {
         await ready();
         api.post.mockResolvedValueOnce(part({ importedRows: 4, skippedRows: 1, errors: ['Row 5: Tanggal surat wajib diisi'], nextRow: null }));

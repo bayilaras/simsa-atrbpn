@@ -21,8 +21,8 @@ import fileAttachmentService, {
 import { settingsService } from './settings.service.js';
 import { hasSuratRuleSelection, hydrateSuratRuleSelections, prepareSuratRuleSelection } from './surat-rule-selection.service';
 import {
-    assertImportConnected, DuplicateSuratImportError, existingSuratImportIdentities, suratImportIdentityKey, suratImportIdentityWhere,
-    type SuratImportIdentityKey, type SuratImportOptions,
+    assertImportConnected, DuplicateSuratImportError, existingSuratImportIdentities, matchSuratImportIdentities, suratImportIdentityKey,
+    suratImportIdentityWhere, type SuratImportIdentityKey, type SuratImportMatch, type SuratImportOptions,
 } from './surat-import-identity.js';
 import {
     resolveSuratCalendar,
@@ -182,6 +182,16 @@ export class SuratMasukService {
     /** Advisory bulk lookup; createImported stays the authority. */
     async existingImportIdentities(keys: SuratImportIdentityKey[]): Promise<boolean[]> {
         return existingSuratImportIdentities(db, 'masuk', keys);
+    }
+
+    /**
+     * Sinkron import: the letters each identity matches, with the source fields it may change. update() stays the
+     * authority. The sifat of a surat masuk is its security classification and is never changed by an import.
+     */
+    async importMatches(keys: SuratImportIdentityKey[]): Promise<SuratImportMatch[][]> {
+        return matchSuratImportIdentities(db, 'masuk', keys, {
+            perihal: suratMasuk.perihal, tanggalSurat: suratMasuk.tanggalSurat, jenisSurat: suratMasuk.jenisSurat,
+        });
     }
 
     async create(
@@ -345,6 +355,8 @@ export class SuratMasukService {
         clientBlobClaim?: ClaimClientBlobUpload,
         auditContext?: CriticalAuditContext,
         attachment?: RegisterSuratAttachmentData,
+        /** Extra audit detail, such as the values before a sinkron import. */
+        auditDetails?: Record<string, unknown>,
     ) {
         const conditions = [
             scopedRecordByIdWhere(
@@ -413,6 +425,7 @@ export class SuratMasukService {
                     entityType: 'surat_masuk',
                     entityId: id,
                     changes: {
+                        ...auditDetails,
                         after: {
                             nomorSurat: result.nomorSurat,
                             tanggalSurat: result.tanggalSurat,

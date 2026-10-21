@@ -5,6 +5,7 @@ import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPOR
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import ImportRowReport from '@/components/ImportRowReport';
+import ImportSyncOption from '@/components/ImportSyncOption';
 import { useAppConfig } from '@/context/app-config-context';
 
 /**
@@ -47,6 +48,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const [continueAt, setContinueAt] = useState(0);
     const [stopping, setStopping] = useState(false);
     const stopRef = useRef(false);
+    const [sinkron, setSinkron] = useState(false);
     const action = step === 'input' ? 'sheets' : step === 'sheets' ? 'preview' : 'import';
     const retrySeconds = Math.max(0, Math.ceil((retryUntil[action] - now) / 1000));
     const continueSeconds = Math.max(0, Math.ceil((continueAt - now) / 1000));
@@ -67,7 +69,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const selectedName = sheets.find(sheet => sheet.gid === selectedGid)?.name || '';
     const duplicateOnly = importResult?.success === true && importResult.importedRows === 0
         && importResult.duplicateRows > 0 && !importResult.skippedRows && !importResult.errors?.length;
-    const resultCompleted = importResult?.importedRows > 0 || duplicateOnly;
+    const resultCompleted = importResult?.importedRows > 0 || importResult?.updatedRows > 0 || duplicateOnly;
 
     const invalidatePreview = () => {
         requestRef.current += 1;
@@ -100,6 +102,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
         setIsLoading(false);
         setError('');
         setNow(Date.now());
+        setSinkron(false);
     };
 
     const handleOpen = () => {
@@ -203,7 +206,8 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
         setStopping(false);
         setStep('importing');
         setError('');
-        const source = buildGoogleSheetsImportPayload(spreadsheetUrl, selectedGid, unitKerjaId);
+        // Sent only when chosen, so a backend without sinkron still accepts the request.
+        const source = { ...buildGoogleSheetsImportPayload(spreadsheetUrl, selectedGid, unitKerjaId), ...(sinkron ? { sinkron: true } : {}) };
         let totals = emptyImportTotals(previewData.totalRows);
         setProgress(totals);
 
@@ -222,7 +226,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
             setImportResult(result);
             setStep('result');
 
-            if (result.importedRows > 0 && onImportComplete) {
+            if ((result.importedRows > 0 || result.updatedRows > 0) && onImportComplete) {
                 onImportComplete();
             }
         } catch (err) {
@@ -455,6 +459,8 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                     </table>
                                 </div>
 
+                                <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} />
+
                                 <div className="flex flex-col-reverse gap-3 sm:flex-row">
                                     <button
                                         type="button"
@@ -491,7 +497,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                         </div>
                                         <p className="mt-2 text-sm text-foreground">{`${progress.processedRows} dari ${progress.totalRows} baris diproses`}</p>
                                         <p className="text-xs text-muted-foreground">
-                                            {`Tersimpan ${progress.importedRows} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}
+                                            {`Tersimpan ${progress.importedRows}${sinkron ? ` · diperbarui ${progress.updatedRows}` : ''} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}
                                         </p>
                                     </>}
                                     {continueSeconds > 0 && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
@@ -524,16 +530,19 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                     )}
                                     <div>
                                         <p className="font-medium text-foreground">
-                                            {importResult.notice ? 'Impor belum selesai'
-                                                : duplicateOnly ? 'Semua data sudah ada' : importResult.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}
+                                            {importResult.notice ? 'Impor belum selesai' : importResult.importedRows > 0 ? 'Impor berhasil!'
+                                                : importResult.updatedRows > 0 ? 'Data diperbarui' : duplicateOnly ? 'Semua data sudah ada' : 'Impor gagal'}
                                         </p>
                                         {importResult.notice && (
                                             <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{importResult.notice}</p>
                                         )}
                                         <p className="text-sm text-muted-foreground mt-1">
-                                            {duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
+                                            {duplicateOnly && !importResult.updatedRows ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
                                                 : `${importResult.importedRows} dari ${importResult.totalRows} baris berhasil diimpor`}
                                         </p>
+                                        {importResult.updatedRows > 0 && (
+                                            <p className="text-sm text-blue-600 mt-1">{`${importResult.updatedRows} baris diperbarui dari sumber`}</p>
+                                        )}
                                         {importResult.skippedRows > 0 && (
                                             <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
                                                 {importResult.skippedRows} baris dilewati (data tidak valid/kosong)

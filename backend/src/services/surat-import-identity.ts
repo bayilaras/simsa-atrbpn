@@ -1,4 +1,4 @@
-import { and, eq, sql, type SQL } from 'drizzle-orm';
+import { and, eq, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { suratMasuk } from '../db/schema/surat-masuk.js';
 import { suratKeluar } from '../db/schema/surat-keluar.js';
 import { AppError, ConflictError, ValidationError } from '../utils/errors.js';
@@ -70,28 +70,90 @@ export function suratImportIdentity(
  * canonical transaction, which repeats the lookup under the unit lock. A row
  * reported as present stays present, so an importer may skip it as a duplicate.
  */
-export async function existingSuratImportIdentities(
-    executor: { execute: (query: SQL) => PromiseLike<{ rows: Record<string, unknown>[] }> },
-    type: 'masuk' | 'keluar',
-    keys: SuratImportIdentityKey[],
-): Promise<boolean[]> {
+type IdentityExecutor = { execute: (query: SQL) => PromiseLike<{ rows: Record<string, unknown>[] }> };
+
+/**
+ * One SELECT per identity kind over a VALUES table of the keys (column i is
+ * the key's index). Each probe is compared on the same columns, with the same
+ * equality, as suratImportIdentityWhere; `select` turns the probe table and
+ * that condition into the statement.
+ */
+function identityProbes(type: 'masuk' | 'keluar', keys: SuratImportIdentityKey[], select: (probe: SQL, matches: SQL) => SQL): SQL[] {
     const table = type === 'masuk' ? suratMasuk : suratKeluar;
     const numbered = keys.flatMap((key, index) => key.by === 'nomor' ? [sql`(${index}::int, ${key.unitKerjaId}::text, ${key.tahun}::int, ${key.nomorSurat}::text)`] : []);
     const dated = (by: 'counterpart' | 'link') => keys.flatMap((key, index) => key.by === by
         ? [sql`(${index}::int, ${key.unitKerjaId}::text, ${key.tanggalSurat}::date, ${key.perihal}::text, ${key.by === 'link' ? key.linkDokumen : key.counterpart}::text)`] : []);
-    // Each probe is compared on the same columns, with the same equality, as suratImportIdentityWhere.
     const branches: SQL[] = [];
-    if (numbered.length) branches.push(sql`SELECT probe.i FROM (VALUES ${sql.join(numbered, sql`, `)}) AS probe(i, unit, tahun, nomor)
-        WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${table.unitKerjaId} = probe.unit AND ${table.tahun} = probe.tahun AND ${table.nomorSurat} = probe.nomor)`);
+    if (numbered.length) branches.push(select(sql`(VALUES ${sql.join(numbered, sql`, `)}) AS probe(i, unit, tahun, nomor)`,
+        sql`${table.unitKerjaId} = probe.unit AND ${table.tahun} = probe.tahun AND ${table.nomorSurat} = probe.nomor`));
     for (const [by, column] of [['counterpart', type === 'masuk' ? suratMasuk.dari : suratKeluar.kepada], ['link', suratKeluar.linkDokumen]] as const) {
         const values = dated(by);
-        if (values.length) branches.push(sql`SELECT probe.i FROM (VALUES ${sql.join(values, sql`, `)}) AS probe(i, unit, tanggal, perihal, pembeda)
-            WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${table.unitKerjaId} = probe.unit AND ${table.tanggalSurat} = probe.tanggal
-                AND ${table.perihal} = probe.perihal AND ${column} = probe.pembeda)`);
+        if (values.length) branches.push(select(sql`(VALUES ${sql.join(values, sql`, `)}) AS probe(i, unit, tanggal, perihal, pembeda)`,
+            sql`${table.unitKerjaId} = probe.unit AND ${table.tanggalSurat} = probe.tanggal
+                AND ${table.perihal} = probe.perihal AND ${column} = probe.pembeda`));
     }
+    return branches;
+}
+
+export async function existingSuratImportIdentities(
+    executor: IdentityExecutor,
+    type: 'masuk' | 'keluar',
+    keys: SuratImportIdentityKey[],
+): Promise<boolean[]> {
+    const table = type === 'masuk' ? suratMasuk : suratKeluar;
+    const branches = identityProbes(type, keys, (probe, matches) => sql`SELECT probe.i FROM ${probe}
+        WHERE EXISTS (SELECT 1 FROM ${table} WHERE ${matches})`);
     const found = new Array<boolean>(keys.length).fill(false);
     if (!branches.length) return found;
     const { rows } = await executor.execute(sql.join(branches, sql` UNION ALL `));
     for (const row of rows) found[Number(row.i)] = true;
+    return found;
+}
+
+/** A recorded letter an import identity matches, with the values a sinkron import may change. */
+export interface SuratImportMatch {
+    id: string;
+    isDeleted: boolean;
+    isArchived: boolean;
+    /** Surat keluar only; null for surat masuk. */
+    approvalStatus: string | null;
+    /** As the record access check reads it: klasifikasi keamanan (NULL = terbatas) or the sifat of surat masuk. */
+    classification: string | null;
+    values: Record<string, string | null>;
+}
+
+/**
+ * Every letter each identity matches (soft-deleted ones included), with the
+ * given columns as text, in one round trip. Like existingSuratImportIdentities
+ * it is advisory: the update that may follow re-checks the letter's state.
+ */
+export async function matchSuratImportIdentities(
+    executor: IdentityExecutor,
+    type: 'masuk' | 'keluar',
+    keys: SuratImportIdentityKey[],
+    columns: Record<string, AnyColumn>,
+): Promise<SuratImportMatch[][]> {
+    const table = type === 'masuk' ? suratMasuk : suratKeluar;
+    const approval = type === 'keluar' ? sql`${suratKeluar.approvalStatus}` : sql`NULL::text`;
+    const classification = type === 'keluar' ? sql`COALESCE(${suratKeluar.klasifikasiKeamanan}, 'terbatas')` : sql`${suratMasuk.sifatSurat}`;
+    const values = sql.join(Object.entries(columns).map(([name, column]) => sql`${column}::text AS ${sql.identifier(`v_${name}`)}`), sql`, `);
+    const branches = identityProbes(type, keys, (probe, matches) => sql`SELECT probe.i, ${table.id}::text AS id,
+        ${table.isDeleted} IS TRUE AS is_deleted, ${table.isArchived} IS TRUE AS is_archived, ${approval} AS approval_status,
+        ${classification} AS classification, ${values}
+        FROM ${probe} JOIN ${table} ON ${matches}`);
+    const found = keys.map((): SuratImportMatch[] => []);
+    if (!branches.length) return found;
+    const { rows } = await executor.execute(sql.join(branches, sql` UNION ALL `));
+    for (const row of rows) {
+        found[Number(row.i)].push({
+            id: String(row.id), isDeleted: row.is_deleted === true, isArchived: row.is_archived === true,
+            approvalStatus: row.approval_status === null || row.approval_status === undefined ? null : String(row.approval_status),
+            classification: row.classification === null || row.classification === undefined ? null : String(row.classification),
+            values: Object.fromEntries(Object.keys(columns).map(name => {
+                const value = row[`v_${name}`];
+                return [name, value === null || value === undefined ? null : String(value)];
+            })),
+        });
+    }
     return found;
 }

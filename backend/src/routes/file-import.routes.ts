@@ -10,7 +10,7 @@ import { fileImportService } from '../services/file-import.service.js';
 import { IMPORT_FILE_LIMITS, assertImportFileType, type ImportFileUpload } from '../services/import-file-reader.js';
 import { GOOGLE_SHEETS_LIMITS } from '../services/google-sheets-source.js';
 import { IMPORT_TIME_BUDGET_MS, type ImportResume } from '../services/import-resume.js';
-import { resolveImportUnit, withImportRequest } from './import-request.js';
+import { importSync, resolveImportUnit, withImportRequest } from './import-request.js';
 
 /**
  * CSV/XLSX import of surat masuk/keluar with the Google Sheets import's
@@ -61,6 +61,8 @@ const importInput = z.object({
     // A later part names its first data row and the prefixHash the previous part returned.
     startRow: z.string().regex(/^\d{1,4}$/).transform(Number).pipe(z.number().int().max(GOOGLE_SHEETS_LIMITS.dataRows)).optional(),
     prefixHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    // Update letters already recorded when the file changed them (see import-sync).
+    sinkron: z.enum(['true', 'false']).transform(value => value === 'true').optional(),
 }).strict().refine(body => body.startRow === undefined
     ? body.prefixHash === undefined
     : body.startRow === 0 || body.prefixHash !== undefined, {
@@ -112,8 +114,8 @@ for (const kind of ['masuk', 'keluar'] as const) {
             // Each part re-sends the same file; without startRow the whole file is one request.
             const resume: ImportResume | undefined = req.body.startRow === undefined ? undefined
                 : { startRow: req.body.startRow, prefixHash: req.body.prefixHash, deadlineAt: Date.now() + IMPORT_TIME_BUDGET_MS };
-            const result = await withImportRequest(req, res, options =>
-                fileImportService.importSurat(`surat-${kind}`, uploaded(req), req.body.sheet, unitKerjaId, audit, options, resume));
+            const result = await withImportRequest(req, res, options => fileImportService.importSurat(`surat-${kind}`, uploaded(req),
+                req.body.sheet, unitKerjaId, audit, options, resume, importSync(req, req.body.sinkron)));
             if (!res.destroyed) res.json({ ...result, ...(res.locals.requestId ? { requestId: res.locals.requestId } : {}) });
         } catch (error) { next(error); }
     });

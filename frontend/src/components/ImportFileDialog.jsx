@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import ImportRowReport from '@/components/ImportRowReport'
+import ImportSyncOption from '@/components/ImportSyncOption'
 import { useAppConfig } from '@/context/app-config-context'
 import api from '@/services/api'
 import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS, IMPORT_UNIT_REQUIRED } from '@/lib/google-sheets-import'
@@ -43,6 +44,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
     const [now, setNow] = useState(() => Date.now())
     const [stopping, setStopping] = useState(false)
     const stopRef = useRef(false)
+    const [sinkron, setSinkron] = useState(false)
     const version = useRef(0)
     useEffect(() => () => { version.current++; onBusyChange(false) }, [onBusyChange])
     useEffect(() => {
@@ -116,7 +118,8 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
         setBusy(true)
         setError('')
         setStep('importing')
-        const source = { sheet: xlsx ? sheet : undefined, unitKerjaId }
+        // Sent only when chosen, so a backend without sinkron still accepts the request.
+        const source = { sheet: xlsx ? sheet : undefined, unitKerjaId, sinkron: sinkron ? 'true' : undefined }
         let totals = emptyImportTotals(preview.totalRows)
         setProgress(totals)
         try {
@@ -132,7 +135,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
             const notice = unfinishedImportNotice(outcome, totals)
             setResult(notice ? { ...totals, notice } : totals)
             setStep('result')
-            if (totals.importedRows > 0) onImportComplete?.()
+            if (totals.importedRows > 0 || totals.updatedRows > 0) onImportComplete?.()
         } catch (failure) {
             if (isCurrent()) {
                 setError(failure?.message || 'Impor gagal. Periksa koneksi dan coba kembali.')
@@ -148,7 +151,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
 
     const duplicateOnly = result?.success === true && result.importedRows === 0
         && result.duplicateRows > 0 && !result.skippedRows && !result.errors?.length
-    const completed = result?.importedRows > 0 || duplicateOnly
+    const completed = result?.importedRows > 0 || result?.updatedRows > 0 || duplicateOnly
 
     return <div className="min-w-0 space-y-4">
         {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/15 dark:text-red-300">
@@ -218,6 +221,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     </tr>)}</tbody>
                 </table>
             </div>
+            <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} disabled={busy} />
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => { version.current++; setPreview(null); setError(''); setStep('file') }} disabled={busy}>Kembali</Button>
                 <Button onClick={handleImport} disabled={busy || preview.totalRows < 1}>
@@ -235,7 +239,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                         style={{ width: `${progress.totalRows ? Math.round(progress.processedRows / progress.totalRows * 100) : 0}%` }} />
                 </div>
                 <p className="mt-2 text-sm">{`${progress.processedRows} dari ${progress.totalRows} baris diproses`}</p>
-                <p className="text-xs text-muted-foreground">{`Tersimpan ${progress.importedRows} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}</p>
+                <p className="text-xs text-muted-foreground">{`Tersimpan ${progress.importedRows}${sinkron ? ` · diperbarui ${progress.updatedRows}` : ''} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}</p>
                 {continueSeconds > 0 && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
                     Batas permintaan impor tercapai; dilanjutkan otomatis dalam {continueSeconds} detik.
                 </p>}
@@ -255,11 +259,12 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     ? <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                     : <AlertCircle aria-hidden="true" className={`mt-0.5 h-5 w-5 ${result.notice ? 'text-amber-600' : 'text-red-600'}`} />}
                 <div>
-                    <p className="font-medium">{result.notice ? 'Impor belum selesai'
-                        : duplicateOnly ? 'Semua data sudah ada' : result.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}</p>
+                    <p className="font-medium">{result.notice ? 'Impor belum selesai' : result.importedRows > 0 ? 'Impor berhasil!'
+                        : result.updatedRows > 0 ? 'Data diperbarui' : duplicateOnly ? 'Semua data sudah ada' : 'Impor gagal'}</p>
                     {result.notice && <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">{result.notice}</p>}
-                    <p className="mt-1 text-sm text-muted-foreground">{duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
+                    <p className="mt-1 text-sm text-muted-foreground">{duplicateOnly && !result.updatedRows ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
                         : `${result.importedRows} dari ${result.totalRows} baris berhasil diimpor`}</p>
+                    {result.updatedRows > 0 && <p className="mt-1 text-sm text-blue-600">{`${result.updatedRows} baris diperbarui dari sumber`}</p>}
                     {result.skippedRows > 0 && <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">{result.skippedRows} baris dilewati (data tidak valid/kosong)</p>}
                     {result.duplicateRows > 0 && <p className="mt-1 text-sm text-blue-600">{result.duplicateRows} baris duplikat dilewati (sudah ada di sistem)</p>}
                 </div>

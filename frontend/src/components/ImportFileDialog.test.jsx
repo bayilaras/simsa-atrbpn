@@ -90,6 +90,22 @@ describe('CSV/XLSX import dialog', () => {
         expect(screen.getByRole('button', { name: 'Unduh laporan (CSV)' })).toBeInTheDocument()
     })
 
+    it('sends sinkron only when chosen, and never offers the sifat of incoming letters', async () => {
+        const onImportComplete = await open('surat-masuk')
+        await choose(csv())
+        mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: undefined, importType: 'surat-masuk' }))
+        click('Pratinjau')
+        const checkbox = await screen.findByRole('checkbox', { name: /Sinkronkan surat yang sudah tercatat/ })
+        expect(checkbox).toHaveAccessibleDescription(/perihal, tanggal, dan jenis surat/)
+        expect(checkbox).toHaveAccessibleDescription(/Sifat surat masuk tidak diubah/)
+        fireEvent.click(checkbox)
+        mocks.post.mockResolvedValueOnce(part({ updatedRows: 1, duplicateRows: 2, nextRow: null, startRow: 0 }))
+        click('Impor 3 baris')
+        expect(await screen.findByText('1 baris diperbarui dari sumber')).toBeInTheDocument()
+        expect(fields(mocks.post.mock.calls[1])).toEqual({ unitKerjaId: 'unit-a', startRow: '0', sinkron: 'true' })
+        expect(onImportComplete).toHaveBeenCalledOnce()
+    })
+
     it('previews a single-tab workbook without asking for a tab', async () => {
         await open()
         await choose(workbook())
