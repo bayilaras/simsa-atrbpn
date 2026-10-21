@@ -15,8 +15,13 @@ test('release is manual, gated by a repository variable, single-flight and read-
   assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch']);
   assert.deepEqual(workflow.permissions, { contents: 'read' });
   assert.equal(workflow.concurrency['cancel-in-progress'], false);
-  assert.match(jobs.source.if, /default_branch/); assert.match(jobs.source.if, /vars\.RELEASE_VERCEL_ENABLED == 'true'/);
+  // A disabled or misdirected dispatch fails visibly in the first step instead of skipping every job.
+  const [enabled] = steps('source');
+  assert.equal(jobs.source.if, undefined);
+  assert.match(enabled.env.ENABLED, /vars\.RELEASE_VERCEL_ENABLED/); assert.match(enabled.run, /"\$GITHUB_REF" = "\$DEFAULT_REF"/);
   assert.equal(jobs.source.environment, undefined);
+  for (const job of Object.values(jobs)) assert.doesNotMatch(job.if ?? '', /always\(\)/);
+  assert.match(runs('source'), /GITHUB_RUN_ID\}-\$\{GITHUB_RUN_ATTEMPT\}/);
   assert.deepEqual(Object.values(jobs.source.permissions).filter(value => value !== 'read'), []);
   assert.match(workflow.env.VERCEL_CLI_PACKAGE, /^vercel@\d+\.\d+\.\d+$/);
 });

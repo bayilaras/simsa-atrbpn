@@ -40,9 +40,12 @@ test('credentials leave the environment before any child process starts and neve
   const environment = { SIMSA_OPS_CREDENTIAL: 'a', SIMSA_OPS_NEW_PASSWORD: 'b', PATH: 'p' };
   assert.deepEqual(takeCredentials(environment), { credential: 'a', newPassword: 'b' });
   assert.deepEqual(environment, { PATH: 'p' });
-  const child = childEnvironment({ PATH: 'p', DATABASE_URL: 'x', NEON_BACKUP_DATABASE_URL: 'x', NEON_ADMIN_DATABASE_URL: 'x', PGPASSWORD: 'x',
-    MALWARE_WORKER_DATABASE_URL: 'x', SIMSA_OPS_CREDENTIAL: 'x', NEON_EXPECTED_ADMIN: 'keep' }, { host, database: 'neondb' }, { NEON_RUNTIME_DATABASE_URL: 'new' });
-  assert.deepEqual(child, { PATH: 'p', NEON_EXPECTED_ADMIN: 'keep', NEON_EXPECTED_HOST: host, NEON_EXPECTED_DATABASE: 'neondb', NEON_RUNTIME_DATABASE_URL: 'new' });
+  const child = childEnvironment({ Path: 'p', SystemRoot: 'C:\\Windows', TEMP: 't', DATABASE_URL: 'x', DATABASE_URL_UNPOOLED: 'x',
+    NEON_BACKUP_DATABASE_URL: 'x', NEON_ADMIN_DATABASE_URL: 'x', PGPASSWORD: 'x', MALWARE_WORKER_DATABASE_URL: 'x', SIMSA_OPS_CREDENTIAL: 'x',
+    VERCEL_TOKEN: 'x', GH_TOKEN: 'x', NEON_API_KEY: 'x', NODE_OPTIONS: '--require x', NEON_EXPECTED_HOST: 'ep-stale.neon.tech' },
+  { host, database: 'neondb' }, { NEON_RUNTIME_DATABASE_URL: 'new' });
+  assert.deepEqual(child, { Path: 'p', SystemRoot: 'C:\\Windows', TEMP: 't', NEON_EXPECTED_HOST: host, NEON_EXPECTED_DATABASE: 'neondb',
+    NEON_RUNTIME_DATABASE_URL: 'new' });
 });
 
 function recorder() {

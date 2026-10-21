@@ -19,11 +19,12 @@ export function scramSha256Verifier(password, { salt = randomBytes(16), iteratio
 
 /**
  * Printable ASCII only: PostgreSQL applies SASLprep to non-ASCII passwords,
- * which a locally computed verifier would not reproduce.
+ * which a locally computed verifier would not reproduce. The verifier itself
+ * appears in statement logs, so a guessable password must be refused.
  */
 export function assertRotationPassword(password) {
-  if (typeof password !== 'string' || !/^[\x21-\x7e]{32,128}$/.test(password)) {
-    throw new OpsError('Password baru harus 32-128 karakter ASCII tercetak tanpa spasi.');
+  if (typeof password !== 'string' || !/^[\x21-\x7e]{32,128}$/.test(password) || new Set(password).size < 12) {
+    throw new OpsError('Password baru harus 32-128 karakter ASCII tercetak tanpa spasi, acak (minimal 12 karakter berbeda).');
   }
 }
 

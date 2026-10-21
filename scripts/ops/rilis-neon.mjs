@@ -71,10 +71,15 @@ export function takeCredentials(environment = process.env) {
   return credentials;
 }
 
-/** The inherited environment minus every other database credential, plus the pinned target. */
+// Process essentials only (like verify-candidate-source.mjs): helpers may load
+// pg from an older checkout, so no token, NODE_OPTIONS or other URL is inherited.
+const INHERITED = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE',
+  'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES', 'PROGRAMW6432', 'USERNAME', 'USERDOMAIN', 'PROCESSOR_ARCHITECTURE',
+  'NUMBER_OF_PROCESSORS', 'OS', 'LANG', 'LC_ALL', 'TZ', 'NODE_EXTRA_CA_CERTS']);
+
+/** Process essentials, the pinned target and exactly the given connection variable. */
 export function childEnvironment(base, plan, variables) {
-  const environment = Object.fromEntries(Object.entries(base).filter(([key]) =>
-    !/^(SIMSA_OPS_|NEON_.*DATABASE_URL$|DATABASE_URL$|MALWARE_WORKER_DATABASE_URL$|PG(PASSWORD|PASSFILE|USER|HOST|HOSTADDR|DATABASE|SERVICE|SERVICEFILE)$)/i.test(key)));
+  const environment = Object.fromEntries(Object.entries(base).filter(([key]) => INHERITED.has(key.toUpperCase())));
   return { ...environment, NEON_EXPECTED_HOST: plan.host, NEON_EXPECTED_DATABASE: plan.database, ...variables };
 }
 

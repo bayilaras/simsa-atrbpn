@@ -47,7 +47,6 @@ env:
 jobs:
   source:
     name: Validate request and freeze release source
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.RELEASE_VERCEL_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -63,6 +62,16 @@ jobs:
       manifest_sha256: ${{ steps.freeze.outputs.manifest_sha256 }}
       artifact: ${{ steps.freeze.outputs.artifact }}
     steps:
+      # Fail visibly instead of skipping, so a disabled or misdirected run never looks green.
+      - name: Require an enabled release from the default branch
+        env:
+          ENABLED: ${{ vars.RELEASE_VERCEL_ENABLED }}
+          DEFAULT_REF: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          [ "$GITHUB_REF" = "$DEFAULT_REF" ] || { echo '::error::Dispatch this workflow from the default branch only.'; exit 1; }
+          [ "$ENABLED" = true ] || { echo '::error::Release workflow is disabled (repository variable RELEASE_VERCEL_ENABLED is not true). See docs/RUNBOOK_KREDENSIAL_DATABASE.md.'; exit 1; }
+
       - name: Bind the workflow ref to the requested commit
         id: request
         env:
@@ -128,7 +137,7 @@ jobs:
           fi
           {
             echo "manifest_sha256=$(jq -r '.manifestSha256' "$summary")"
-            echo "artifact=simsa-release-source-${RELEASE_SHA}-${GITHUB_RUN_ID}"
+            echo "artifact=simsa-release-source-${RELEASE_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           } >> "$GITHUB_OUTPUT"
           jq -r '"### Release source\n\n| | |\n|---|---|\n| Commit | `\(.commit)` |\n| Label | \(.label) |\n| Files | \(.files) |\n| Manifest | `\(.manifestSha256)` |\n| Migrations | \(.migrations.count) (last `\(.migrations.last)`) |"' "$summary" >> "$GITHUB_STEP_SUMMARY"
 
@@ -245,7 +254,7 @@ jobs:
     name: Deploy frontend candidate (no domain)
     needs: [source, backend-candidate]
     if: >-
-      always() && needs.source.result == 'success' && needs.source.outputs.frontend == 'true'
+      needs.source.result == 'success' && !cancelled() && needs.source.outputs.frontend == 'true'
       && contains(fromJSON('["success","skipped"]'), needs.backend-candidate.result)
     runs-on: ubuntu-24.04
     environment: production-candidate
@@ -348,7 +357,7 @@ jobs:
     name: Promote after approval (backend, then frontend)
     needs: [source, backend-candidate, frontend-candidate]
     if: >-
-      always() && needs.source.result == 'success'
+      needs.source.result == 'success' && !cancelled()
       && contains(fromJSON('["success","skipped"]'), needs.backend-candidate.result)
       && contains(fromJSON('["success","skipped"]'), needs.frontend-candidate.result)
       && (needs.backend-candidate.result == 'success' || needs.frontend-candidate.result == 'success')
@@ -389,6 +398,7 @@ jobs:
           [ -n "$VERCEL_ORG_ID" ] || { echo '::error::Variable VERCEL_ORG_ID is missing.'; exit 1; }
 
       - name: Record the deployments being replaced (rollback targets)
+        id: previous
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
@@ -400,21 +410,27 @@ jobs:
           done
           backend_now="$(jq -r .id "$evidence/previous-backend.json")"
           frontend_now="$(jq -r .id "$evidence/previous-frontend.json")"
-          # Production must still be what the reviewer saw when approving.
-          if [ "$BACKEND_RELEASED" = true ] && [ "$backend_now" != "$BACKEND_REPLACES" ]; then
-            echo "::error::Backend production changed since the candidate was built ($backend_now). Dispatch a new release."; exit 1
-          fi
-          if [ "$FRONTEND_RELEASED" = true ] && [ "$frontend_now" != "$FRONTEND_REPLACES" ]; then
-            echo "::error::Frontend production changed since the candidate was built ($frontend_now). Dispatch a new release."; exit 1
-          fi
+          # Production must still be what the reviewer saw when approving. A re-run
+          # after a partial promotion finds the candidate already serving.
+          state() { if [ "$1" != true ]; then echo skip; elif [ "$2" = "$3" ]; then echo promote; elif [ "$2" = "$4" ]; then echo done; else echo changed; fi; }
+          backend_state="$(state "$BACKEND_RELEASED" "$backend_now" "$BACKEND_REPLACES" "$BACKEND_CANDIDATE")"
+          frontend_state="$(state "$FRONTEND_RELEASED" "$frontend_now" "$FRONTEND_REPLACES" "$FRONTEND_CANDIDATE")"
+          for value in "backend:$backend_state:$backend_now" "frontend:$frontend_state:$frontend_now"; do
+            if [ "$(cut -d: -f2 <<< "$value")" = changed ]; then
+              echo "::error::$(cut -d: -f1 <<< "$value") production changed since the candidate was built ($(cut -d: -f3 <<< "$value")). Dispatch a new release."
+              exit 1
+            fi
+          done
+          echo "backend=$backend_state" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend_state" >> "$GITHUB_OUTPUT"
           {
             echo '### Rollback targets'
             echo
             echo 'If this release must be undone, promote the previous deployments (frontend first, then backend) and repeat the smoke checks:'
             echo
             echo '```'
-            echo "vercel promote $frontend_now --yes   # simsa-frontend"
-            echo "vercel promote $backend_now --yes   # simsa-backend"
+            echo "vercel promote ${FRONTEND_REPLACES:-$frontend_now} --yes   # simsa-frontend"
+            echo "vercel promote ${BACKEND_REPLACES:-$backend_now} --yes   # simsa-backend"
             echo '```'
           } | tee "$evidence/rollback.md" >> "$GITHUB_STEP_SUMMARY"
 
@@ -424,9 +440,10 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_BACKEND_PROJECT_ID }}
+          STATE: ${{ steps.previous.outputs.backend }}
         run: |
           set -Eeuo pipefail
-          vercel promote "$BACKEND_CANDIDATE" --yes --timeout 5m
+          if [ "$STATE" = promote ]; then vercel promote "$BACKEND_CANDIDATE" --yes --timeout 5m; else echo 'Backend candidate already serving (re-run); not promoted again.'; fi
           node scripts/ops/vercel-release.mjs serving --component backend --deployment "$BACKEND_CANDIDATE" | tee "$RUNNER_TEMP/release-evidence/promoted-backend.json"
 
       - name: Wake the scanner and probe operations through the frontend proxy
@@ -445,9 +462,10 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_FRONTEND_PROJECT_ID }}
+          STATE: ${{ steps.previous.outputs.frontend }}
         run: |
           set -Eeuo pipefail
-          vercel promote "$FRONTEND_CANDIDATE" --yes --timeout 5m
+          if [ "$STATE" = promote ]; then vercel promote "$FRONTEND_CANDIDATE" --yes --timeout 5m; else echo 'Frontend candidate already serving (re-run); not promoted again.'; fi
           node scripts/ops/vercel-release.mjs serving --component frontend --deployment "$FRONTEND_CANDIDATE" | tee "$RUNNER_TEMP/release-evidence/promoted-frontend.json"
 
       - name: Smoke production frontend

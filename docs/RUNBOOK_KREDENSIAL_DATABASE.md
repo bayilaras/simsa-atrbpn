@@ -32,7 +32,7 @@ Repository tidak dapat menyiapkan hal-hal berikut sendiri. Lakukan sekali, denga
 
 ## Peran database
 
-Semua login `simsa_*` dibuat dengan SQL oleh pemilik database: `bootstrap` di `scripts/neon-database.mjs`, serta `provision` di `scripts/neon-backup.mjs` dan `scripts/neon-worker.mjs`. **Neon Console tidak dapat me-reset role yang dibuat lewat SQL.** Rotasinya selalu memakai `ALTER ROLE` oleh pemilik database yang membuatnya. Sejak PostgreSQL 16, pemilik itu memegang ADMIN OPTION atas role buatannya. Helper hanya mengirim verifier SCRAM-SHA-256, sehingga password tidak pernah sampai ke server atau log statement.
+Semua login `simsa_*` dibuat dengan SQL oleh pemilik database: `bootstrap` di `scripts/neon-database.mjs`, serta `provision` di `scripts/neon-backup.mjs` dan `scripts/neon-worker.mjs`. **Neon Console tidak dapat me-reset role yang dibuat lewat SQL.** Rotasinya selalu memakai `ALTER ROLE` oleh pemilik database yang membuatnya. Sejak PostgreSQL 16, pemilik itu memegang ADMIN OPTION atas role buatannya. Helper hanya mengirim verifier SCRAM-SHA-256, sehingga password tidak pernah sampai ke server. Verifier itu sendiri dapat tercatat di log statement dan `pg_stat_statements`. Karena itu, password baru harus acak dan panjang, agar tidak dapat ditebak offline dari verifier.
 
 | Role login | Peran kebijakan (NOLOGIN) | Dipakai oleh | Lokasi kredensial | Rotasi |
 |---|---|---|---|---|
@@ -130,7 +130,7 @@ Urutannya selalu backend dulu, lalu frontend. Bila `/ready` mengembalikan 503 ha
 
 ## Rotasi per role
 
-Siapkan password baru di password manager: 40–64 karakter alfanumerik. Helper menerima 32–128 karakter ASCII tercetak tanpa spasi, karena PostgreSQL menerapkan SASLprep pada karakter non-ASCII. `rotate-role` meminta kredensial pemilik lalu password baru dua kali. Helper menjalankan `ALTER ROLE`, membuktikan login dengan password baru, lalu mencetak langkah lanjutan. Simpan password lama di riwayat password manager sampai verifikasi selesai. Rollback rotasi cukup dilakukan dengan `rotate-role` ke password lama.
+Siapkan password baru di password manager: 40–64 karakter alfanumerik. Helper menerima 32–128 karakter ASCII tercetak tanpa spasi, karena PostgreSQL menerapkan SASLprep pada karakter non-ASCII. Password juga harus memuat minimal 12 karakter berbeda; yang terlalu seragam ditolak. `rotate-role` meminta kredensial pemilik lalu password baru dua kali. Helper menjalankan `ALTER ROLE`, membuktikan login dengan password baru, lalu mencetak langkah lanjutan. Simpan password lama di riwayat password manager sampai verifikasi selesai. Rollback rotasi cukup dilakukan dengan `rotate-role` ke password lama.
 
 PostgreSQL hanya mengenal satu password per role, dan kebijakan role yang sudah ditinjau tidak mengizinkan login kedua di peran yang sama. Karena itu, rotasi role runtime dilakukan dengan menyiapkan deployment berkredensial baru lebih dulu, lalu memindahkan alias dalam hitungan detik.
 
@@ -189,7 +189,9 @@ Role ini tidak dipakai layanan. Rotasi dengan `rotate-role` hanya bila diperluka
 ## Rollback
 
 - **Kode.** Promosikan kembali deployment sebelumnya: frontend dulu, lalu backend. Perintahnya tercetak di ringkasan run dan artefak `rollback.md`, misalnya `vercel promote <dpl-lama> --yes --scope bayilaras-projects`. Cara lain: Vercel → Deployments → deployment lama → Promote. Setelah itu jalankan `release-smoke.mjs` untuk kedua origin dan Operations Monitor. Pasangan versi harus kompatibel: frontend baru di atas backend lama sering tidak didukung (mis. C53 di atas C55), jadi rollback berpasangan atau backend saja.
-- **Promosi setengah jalan.** Bila backend sudah dipromosikan tetapi smoke gagal, frontend tidak dipromosikan dan job berhenti. Pilihannya: perbaiki, lalu promosikan frontend secara manual setelah smoke backend lulus; atau rollback backend ke ID di `rollback.md`.
+- **Promosi setengah jalan.** Bila backend sudah dipromosikan tetapi smoke gagal, frontend tidak dipromosikan dan job berhenti. Ada dua pilihan:
+  - perbaiki penyebabnya (mis. jalankan Operations Monitor), lalu *Re-run failed jobs*. Job `promote` mengenali kandidat yang sudah melayani alias, tidak mempromosikannya lagi, dan melanjutkan pemeriksaan serta frontend;
+  - rollback backend ke ID di `rollback.md`.
 - **Database.** Tidak ada migrasi turun. Migrasi harus aditif agar kode lama tetap berjalan di atas schema baru (contoh: 0051 hanya menambah kolom nullable). Bila migrasi harus dibatalkan, pulihkan dari branch Neon `pra-00xx`. Data sejak branch dibuat akan hilang, jadi keputusan ini ada pada Kasubbag TU.
 - **Kredensial.** Jalankan `rotate-role` ke password lama dari riwayat password manager. Untuk `simsa_api`/`simsa_worker`, kembalikan juga env Vercel ke URL lama. Deployment lama memakai env lama, sehingga langsung pulih.
 
@@ -201,5 +203,5 @@ Per 21 Oktober 2026:
 2. **`simsa_api` tidak tersedia di workstation**, sehingga `verify-runtime` dilewati pada C55 dan C56. Penggantinya: `/ready`, smoke, dan probe Operations Monitor (`database` sehat). Perbaikan: simpan password baru di password manager pada rotasi `simsa_api` berikutnya.
 3. **Kredensial pernah ditolak tiga kali pada rilis 0051**, karena connection string utuh tertempel sebagai password. Kini helper menerima keduanya dan menolak role, host, atau database yang tidak cocok sebelum menghubungi server.
 4. **Helper rilis sebelumnya berada di luar repository** dengan path mesin tertentu. Kini helper ada di `scripts/ops/` dengan tes di `npm run test:ops`. Tes PostgreSQL nyata berjalan di CI melalui `OPERATIONS_RECOVERY_TEST_PG_BIN`.
-5. **`release-vercel.yml` belum pernah dijalankan.** Perilaku Vercel CLI di runner GitHub (project ditautkan lewat env dengan Root Directory) baru dibuktikan oleh uji coba kering README langkah 6. Workflow sengaja tidak menerima kredensial database dan tidak menjalankan migrasi.
+5. **`release-vercel.yml` belum pernah dijalankan.** Selama `RELEASE_VERCEL_ENABLED` belum `true`, setiap run gagal pada langkah pertama dengan pesan yang jelas. Perilaku Vercel CLI di runner GitHub (project ditautkan lewat env dengan Root Directory) baru dibuktikan oleh uji coba kering README langkah 6. Workflow sengaja tidak menerima kredensial database dan tidak menjalankan migrasi.
 6. **Gate produksi mensyaratkan SHA = `main` HEAD.** Bila `main` sudah bergerak (mis. merge dokumen), rilislah HEAD terbaru, atau gunakan jalur manual untuk commit lama.

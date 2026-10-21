@@ -72,7 +72,7 @@ test('rotation sends only an allowlisted ALTER ROLE with a verifier, after login
     await assert.rejects(rotateLoginRole(rejected, { role, password }), message);
     assert.ok(rejected.sql.every(([sql]) => !sql.startsWith('ALTER')));
   }
-  for (const weak of ['short', 'x'.repeat(129), 'with space'.repeat(4), 'nonascii-é'.repeat(4), undefined]) {
+  for (const weak of ['short', 'x'.repeat(129), 'with space'.repeat(4), 'nonascii-é'.repeat(4), 'ab'.repeat(20), 'abcdefghijk'.repeat(3), undefined]) {
     assert.throws(() => assertRotationPassword(weak), OpsError);
   }
 });
