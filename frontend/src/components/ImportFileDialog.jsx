@@ -162,7 +162,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
             </p>
             <p className="break-words rounded-md bg-muted p-3 text-sm">
                 Judul kolom pada lima baris pertama dikenali seperti impor Google Sheets, misalnya Hal → Perihal, Sifat Surat → Sifat surat,
-                dan Get link → Tautan dokumen. Tanggal Excel dibaca sebagai tanggal dan sel bertautan dibaca sebagai alamat tautannya.
+                dan Get link → Tautan dokumen. Tanggal Excel dibaca sebagai tanggal; sel bertautan dibaca sebagai teksnya, kecuali pada kolom tautan dokumen yang memakai alamat tautannya.
             </p>
             <div className="space-y-2">
                 <label htmlFor={inputId} className="text-sm font-medium">Berkas CSV atau XLSX</label>

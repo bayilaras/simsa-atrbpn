@@ -137,10 +137,12 @@ describe('bounded CSV parser', () => {
     it.each(['No,Perihal\n1,"unfinished', 'No\ninvalid"quote', 'No\n"closed"x', 'No\n\u0000'])('rejects malformed CSV', value => {
         expect(() => parseBoundedSheetCsv(value)).toThrow();
     });
-    it('bounds records, including empty records, and columns', () => {
+    it('bounds filled records and columns; empty padding counts only toward the byte limit', () => {
         expect(() => parseBoundedSheetCsv('x\n'.repeat(GOOGLE_SHEETS_LIMITS.rows + 1))).toThrow(/baris/);
-        expect(() => parseBoundedSheetCsv('\n'.repeat(GOOGLE_SHEETS_LIMITS.rows + 1))).toThrow(/baris/);
+        expect(parseBoundedSheetCsv(`a,b\n${',\n'.repeat(5_000)}`)).toEqual([['a', 'b']]);
         expect(() => parseBoundedSheetCsv(Array(65).fill('x').join(','))).toThrow(/kolom/);
+        expect(parseBoundedSheetCsv(['a', ...Array(100).fill('')].join(','))).toEqual([['a', ...Array(63).fill('')]]);
+        expect(() => parseBoundedSheetCsv([...Array(70).fill(''), 'x'].join(','))).toThrow(/kolom/);
     });
     it('bounds UTF-8 field bytes and total CSV bytes', () => {
         expect(() => parseBoundedSheetCsv('x'.repeat(GOOGLE_SHEETS_LIMITS.fieldBytes + 1))).toThrow(/Field/);

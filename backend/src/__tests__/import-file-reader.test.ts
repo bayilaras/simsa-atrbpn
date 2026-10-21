@@ -25,11 +25,13 @@ describe('XLSX import files', () => {
             REGISTER_HEADERS,
             // Dates (with or without a time) become YYYY-MM-DD; empty cells inside a row stay empty.
             ['1', '87/SK-600/I/2026', '2026-01-05', '2026-01-05', 'Tim peneliti', 'Segera', 'Halaman Ke 3', '', driveLink('a')],
-            // A bare Excel serial with a date format, and a hyperlink cell read as its URL.
-            ['2', '88/SK-600/I/2026', '2026-01-06', '', 'Undangan rapat', 'Biasa', 'Halaman Ke 1', 'file', driveLink('b')],
+            // A bare Excel serial with a date format, and a hyperlink cell read as its text.
+            ['2', '88/SK-600/I/2026', '2026-01-06', '', 'Undangan rapat', 'Biasa', 'Halaman Ke 1', 'file', 'Lihat berkas'],
             // A formula is read as its cached result. Formatted empty rows are not rows.
             ['3', '-', '2026-01-07', '', 'Nota dinas tanpa nomor', 'Penting', '', 'file', driveLink('c')],
         ]);
+        // The link target is kept beside the text, by row and column.
+        expect(content.links).toEqual([undefined, undefined, undefined, { 8: driveLink('b') }, undefined]);
     });
 
     it('needs a tab choice when the workbook has several, and never guesses an unknown one', async () => {
@@ -41,7 +43,7 @@ describe('XLSX import files', () => {
         expect(await readImportFile(single)).toMatchObject({ sheet: 'Data', rows: [['a']] });
     });
 
-    it('reads the target of a HYPERLINK formula and text of rich text, booleans and errors', async () => {
+    it('reads the text of links, rich text, booleans and errors, and the web address of links', async () => {
         const file = upload(await singleSheetWorkbook(sheet => {
             sheet.addRow([
                 { formula: `HYPERLINK("${driveLink('h')}","buka")`, result: 'buka' },
@@ -50,9 +52,22 @@ describe('XLSX import files', () => {
                 { error: '#N/A' },
                 { formula: 'HYPERLINK("#Rekap!A1","lokal")', result: 'lokal' },
                 { text: 'surel', hyperlink: 'mailto:tu@example.test' },
+                // A computed target is never cut short at its first literal.
+                { formula: 'HYPERLINK("https://drive.google.com/open?id="&A1,"Buka")', result: 'Buka' },
+                { formula: 'HYPERLINK("https://x.example/a""b", "kutip")', result: 'kutip' },
             ]);
         }));
-        expect((await readImportFile(file)).rows).toEqual([[driveLink('h'), 'Surat penting', 'TRUE', '#N/A', 'lokal', 'surel']]);
+        const content = await readImportFile(file);
+        expect(content.rows).toEqual([['buka', 'Surat penting', 'TRUE', '#N/A', 'lokal', 'surel', 'Buka', 'kutip']]);
+        expect(content.links).toEqual([{ 0: driveLink('h'), 7: 'https://x.example/a"b' }]);
+    });
+
+    it('reads the target of a HYPERLINK formula shared down a column', async () => {
+        const file = upload(await singleSheetWorkbook(sheet => {
+            sheet.getCell('A1').value = { formula: `HYPERLINK("${driveLink('s')}","buka")`, result: 'buka', shareType: 'shared', ref: 'A1:A2' } as never;
+            sheet.getCell('A2').value = { sharedFormula: 'A1', result: 'buka' } as never;
+        }));
+        expect((await readImportFile(file)).links).toEqual([{ 0: driveLink('s') }, { 0: driveLink('s') }]);
     });
 
     it('accepts 1,005 filled rows and rejects one more', async () => {
@@ -114,6 +129,20 @@ describe('XLSX packages are checked before exceljs reads them', () => {
         await expect(readImportFile(upload(bzip))).rejects.toThrow(ValidationError);
     });
 
+    it.each([
+        ['./[Content_Types].xml'], ['/xl/workbook2.xml'], ['xl//styles2.xml'], ['xl/../xl/workbook.xml'], ['xl/workböök.xml'],
+    ])('rejects the part name %j, which JSZip would rename', async name => {
+        const archive = zipArchive([...await parts()].map(([part, data]) => ({ name: part, data })).concat({ name, data: '<x/>' }));
+        await expect(readImportFile(upload(archive))).rejects.toThrow('bukan XLSX');
+    });
+
+    it('rejects a Unicode Path extra field, which JSZip would read as the name', async () => {
+        const unicodePath = Buffer.concat([Buffer.from([0x75, 0x70, 9, 0, 1]), Buffer.alloc(4), Buffer.from('a.xml')]);
+        const archive = zipArchive([...await parts()].map(([name, data]) => ({ name, data }))
+            .concat({ name: 'docProps/custom.xml', data: '<x/>', extra: unicodePath }));
+        await expect(readImportFile(upload(archive))).rejects.toThrow('bukan XLSX');
+    });
+
     it('rejects a central directory that does not end at the end record', async () => {
         const archive = zipArchive([...await parts()].map(([name, data]) => ({ name, data })));
         const end = archive.length - 22;
@@ -153,7 +182,7 @@ describe('XLSX packages are checked before exceljs reads them', () => {
 describe('CSV import files', () => {
     it('reads a comma-separated UTF-8 file with a byte order mark', async () => {
         const content = await readImportFile(csv('﻿Nomor Surat,Hal\n"1/A","Rapat, koordinasi"\n'));
-        expect(content).toEqual({ format: 'csv', sheets: [], sheet: null, rows: [['Nomor Surat', 'Hal'], ['1/A', 'Rapat, koordinasi']] });
+        expect(content).toEqual({ format: 'csv', sheets: [], sheet: null, rows: [['Nomor Surat', 'Hal'], ['1/A', 'Rapat, koordinasi']], links: [] });
     });
 
     it('reads the semicolon list separator Excel uses in Indonesian regional settings', async () => {
@@ -181,6 +210,15 @@ describe('CSV import files', () => {
     it('rejects binary content and a workbook saved with a .csv name', async () => {
         await expect(readImportFile(csv(Buffer.from('N\u0000o\u0000', 'latin1')))).rejects.toThrow('CSV UTF-8');
         await expect(readImportFile(csv(await registerWorkbook()))).rejects.toThrow('.xlsx');
+    });
+
+    it('ignores the empty cells and records Excel pads a CSV with up to the formatted range', async () => {
+        const padding = ','.repeat(79);
+        const text = ['Nomor Surat,Hal' + padding.slice(1), '1/A,Rapat' + padding.slice(1), ...Array(1_500).fill(padding)].join('\r\n');
+        expect((await readImportFile(csv(text))).rows).toEqual([
+            ['Nomor Surat', 'Hal', ...Array(62).fill('')],
+            ['1/A', 'Rapat', ...Array(62).fill('')],
+        ]);
     });
 
     it('applies the row limit of the Google Sheets import', async () => {

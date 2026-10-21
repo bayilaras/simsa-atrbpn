@@ -24,11 +24,16 @@ Cara berkas dibaca:
 - **CSV**: UTF-8 (dengan atau tanpa BOM); bila bukan UTF-8 yang sah, dibaca
   sebagai Windows-1252 (simpanan "CSV (Comma delimited)" Excel). Pemisah `,`,
   `;` (Excel dengan pengaturan regional Indonesia), atau tab dideteksi dari
-  sepuluh baris pertama di luar tanda kutip. Baris kosong diabaikan.
+  sepuluh baris pertama di luar tanda kutip. Baris kosong diabaikan, dan sel
+  serta baris kosong yang ditambahkan Excel hingga batas format tidak dihitung
+  dalam batas baris dan kolom (berlaku juga untuk impor Google Sheets).
 - **XLSX**: sel tanggal Excel (serial berformat tanggal, termasuk hasil rumus)
-  menjadi `YYYY-MM-DD` tanpa jam; sel bertautan menjadi alamat tautannya bila
-  `http(s)://`, dan rumus `HYPERLINK("https://…", …)` menjadi alamat itu; rumus
-  lain dibaca dari hasil tersimpannya; teks kaya digabung; sel gabungan (merge)
+  menjadi `YYYY-MM-DD` tanpa jam; sel bertautan dibaca sebagai teksnya, seperti
+  ekspor CSV Google Sheets, kecuali di bawah judul kolom tautan (Link Dokumen,
+  Link, URL, Get link) pada surat keluar: di sana dipakai alamat tautannya bila
+  `http(s)://`, termasuk rumus `HYPERLINK("https://…", …)` dengan alamat tertulis
+  utuh (alamat hasil gabungan `"…"&D5` tidak dipakai); rumus dibaca dari hasil
+  tersimpannya; teks kaya digabung; sel gabungan (merge)
   hanya bernilai pada sel pertamanya, seperti ekspor CSV Google Sheets. Baris
   yang hanya berformat diabaikan. Validasi data dan format bersyarat tidak dibaca.
 - Bila dua kolom berjudul tautan sama-sama memuat alamat web (misalnya label
@@ -40,7 +45,9 @@ Ditolak sebelum dibaca: ekstensi selain `.csv`/`.xlsx` atau jenis MIME yang tida
 cocok; isi yang tidak sesuai ekstensi (byte awal); XLSX berkata sandi atau `.xls`
 lama (format OLE); buku kerja bermakro (`vbaProject.bin`, lembar makro, tipe isi
 `macroEnabled`) atau templat; paket ZIP dengan bagian terenkripsi, kompresi selain
-deflate, lebih dari 1.000 bagian, lebih dari 100 lembar, total isi terekstrak di
+deflate, nama bagian yang tidak baku (`./`, `..`, `//`, `/` di awal, non-ASCII,
+atau field Unicode Path), direktori pusat yang tidak berakhir tepat di rekaman
+akhirnya, lebih dari 1.000 bagian, lebih dari 100 lembar, total isi terekstrak di
 atas 16 MiB, atau bagian yang mengembang melebihi ukuran yang dinyatakan; CSV
 berisi byte NUL (misalnya UTF-16).
 

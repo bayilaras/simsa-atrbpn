@@ -24,7 +24,14 @@ export const IMPORT_FILE_LIMITS = Object.freeze({
 export type ImportFileFormat = 'csv' | 'xlsx';
 export interface ImportFileSheet { name: string; hidden: boolean }
 export interface ImportFileUpload { originalname: string; mimetype: string; buffer: Buffer }
-export interface ImportFileContent { format: ImportFileFormat; sheets: ImportFileSheet[]; sheet: string | null; rows: string[][] }
+export interface ImportFileContent {
+    format: ImportFileFormat;
+    sheets: ImportFileSheet[];
+    sheet: string | null;
+    rows: string[][];
+    /** Per row, the web address of each linked cell by column index (XLSX only). */
+    links: Array<Record<number, string> | undefined>;
+}
 
 // Browsers report the type from the operating system; Windows with Excel calls a .csv "application/vnd.ms-excel".
 const MIME_TYPES: Record<ImportFileFormat, ReadonlySet<string>> = {
@@ -88,6 +95,27 @@ function readCsvRows(buffer: Buffer): string[][] {
 
 interface ZipEntry { name: string; method: number; compressedSize: number; size: number; localOffset: number }
 
+/**
+ * JSZip renames parts it reads: it resolves "." and ".." segments and empty
+ * segments, and takes an Info-ZIP Unicode Path extra field over the stored
+ * name. Accepting only names it keeps as they are means the parts checked
+ * here are the parts exceljs reads, under the same names.
+ */
+function canonicalPartName(name: string): boolean {
+    if (!/^[\x20-\x7e]+$/.test(name)) return false;
+    const segments = name.split('/');
+    // A directory entry ends with "/".
+    return segments.every((segment, index) => segment !== '.' && segment !== '..'
+        && (segment !== '' || (index > 0 && index === segments.length - 1)));
+}
+
+function hasUnicodePathField(buffer: Buffer, start: number, end: number): boolean {
+    for (let position = start; position + 4 <= end; position += 4 + buffer.readUInt16LE(position + 2)) {
+        if (buffer.readUInt16LE(position) === 0x7075) return true;
+    }
+    return false;
+}
+
 function zipEntries(buffer: Buffer): ZipEntry[] {
     const invalid = () => new ValidationError('Isi berkas bukan XLSX yang valid. Simpan ulang sebagai Excel Workbook (.xlsx).');
     // The last end-of-central-directory record, as JSZip finds it.
@@ -112,12 +140,15 @@ function zipEntries(buffer: Buffer): ZipEntry[] {
         const flags = buffer.readUInt16LE(position + 8);
         const method = buffer.readUInt16LE(position + 10);
         const nameLength = buffer.readUInt16LE(position + 28);
-        const next = position + 46 + nameLength + buffer.readUInt16LE(position + 30) + buffer.readUInt16LE(position + 32);
+        const extraStart = position + 46 + nameLength;
+        const extraEnd = extraStart + buffer.readUInt16LE(position + 30);
+        const next = extraEnd + buffer.readUInt16LE(position + 32);
         if (next > end) throw invalid();
         if (flags & 0x41) throw new ValidationError('Bagian XLSX terenkripsi tidak didukung. Hapus kata sandi lalu simpan ulang sebagai Excel Workbook (.xlsx).');
-        if (method !== 0 && method !== 8) throw invalid();
+        const name = buffer.toString('latin1', position + 46, extraStart);
+        if ((method !== 0 && method !== 8) || !canonicalPartName(name) || hasUnicodePathField(buffer, extraStart, extraEnd)) throw invalid();
         entries.push({
-            name: buffer.toString('utf8', position + 46, position + 46 + nameLength),
+            name,
             method, compressedSize: buffer.readUInt32LE(position + 20), size: buffer.readUInt32LE(position + 24),
             localOffset: buffer.readUInt32LE(position + 42),
         });
@@ -156,19 +187,18 @@ export function unpackXlsx(buffer: Buffer): Map<string, Buffer> {
     const names = new Set<string>();
     let unpacked = 0;
     let worksheets = 0;
-    for (const entry of entries) {
-        const name = entry.name.replace(/^\//, '');
+    for (const { name, size } of entries) {
         if (names.has(name)) throw new ValidationError('Isi berkas XLSX rusak. Simpan ulang sebagai Excel Workbook (.xlsx).');
         names.add(name);
         if (/(?:^|\/)vbaProject(?:Signature)?\.bin$/i.test(name) || /^xl\/(?:macrosheets|dialogsheets|activeX)\//i.test(name)) {
             throw new ValidationError('Buku kerja bermakro tidak didukung. Simpan sebagai Excel Workbook (.xlsx) tanpa makro.');
         }
         if (/^xl\/worksheets\/sheet\d+\.xml$/.test(name)) worksheets++;
-        unpacked += entry.size;
+        unpacked += size;
     }
     if (unpacked > IMPORT_FILE_LIMITS.unpackedBytes) throw new PayloadTooLargeError('Isi berkas XLSX terlalu besar setelah diekstrak. Hapus lembar atau gambar yang tidak diperlukan.');
     if (worksheets > IMPORT_FILE_LIMITS.sheets) throw new PayloadTooLargeError(`Buku kerja berisi lebih dari ${IMPORT_FILE_LIMITS.sheets} lembar kerja.`);
-    const parts = new Map(entries.map(entry => [entry.name.replace(/^\//, ''), inflateEntry(buffer, entry)]));
+    const parts = new Map(entries.map(entry => [entry.name, inflateEntry(buffer, entry)]));
     const types = parts.get('[Content_Types].xml')?.toString('utf8') ?? '';
     if (/macroEnabled/i.test(types)) throw new ValidationError('Buku kerja bermakro tidak didukung. Simpan sebagai Excel Workbook (.xlsx) tanpa makro.');
     if (!types.includes(WORKBOOK_TYPE) || !parts.has('xl/workbook.xml')) {
@@ -209,45 +239,63 @@ const pad = (value: number) => String(value).padStart(2, '0');
 // exceljs reads Excel serials as UTC instants; the calendar date is the UTC date.
 const isoDate = (date: Date) => `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
 
+/** The URL of HYPERLINK("https://…", …); a computed target ("…"&D5) has none. */
 function hyperlinkFormulaTarget(formula: string | undefined): string | null {
-    const target = /^\s*=?\s*HYPERLINK\(\s*"([^"]*)"/i.exec(formula || '')?.[1];
-    return target && isWebAddress(target) ? target : null;
+    const literal = /^\s*=?\s*HYPERLINK\(\s*"((?:[^"]|"")*)"\s*[,)]/i.exec(formula || '')?.[1];
+    const target = literal?.replace(/""/g, '"');
+    return target && isWebAddress(target) ? target.trim() : null;
 }
 
-/** A cell as its displayed text, except dates (YYYY-MM-DD) and links (their web address). */
+/** A cell as its displayed text, except dates, which become YYYY-MM-DD. */
 function valueText(value: ExcelJS.CellValue): string {
     if (value === null || value === undefined) return '';
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : isoDate(value);
     if (typeof value === 'string') return value;
     if (typeof value === 'number') return String(value);
     if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
-    if ('hyperlink' in value) return isWebAddress(value.hyperlink) ? value.hyperlink.trim() : valueText(value.text as ExcelJS.CellValue);
+    if ('hyperlink' in value) return valueText(value.text as ExcelJS.CellValue);
     if ('richText' in value) return value.richText.map(part => part.text).join('');
-    if ('formula' in value || 'sharedFormula' in value) {
-        return hyperlinkFormulaTarget('formula' in value ? value.formula : undefined) ?? valueText(value.result as ExcelJS.CellValue);
-    }
+    if ('formula' in value || 'sharedFormula' in value) return valueText(value.result as ExcelJS.CellValue);
     if ('error' in value) return value.error;
     return '';
 }
 
-function sheetRows(sheet: ExcelJS.Worksheet): string[][] {
+/** The web address a cell links to, if any. */
+function cellLink(cell: ExcelJS.Cell): string | null {
+    if (cell.type === ExcelJS.ValueType.Hyperlink) {
+        const { hyperlink } = cell.value as ExcelJS.CellHyperlinkValue;
+        return isWebAddress(hyperlink) ? hyperlink.trim() : null;
+    }
+    // cell.formula also resolves a formula shared down a column.
+    return cell.type === ExcelJS.ValueType.Formula ? hyperlinkFormulaTarget(cell.formula) : null;
+}
+
+function sheetRows(sheet: ExcelJS.Worksheet): Pick<ImportFileContent, 'rows' | 'links'> {
     const rows: string[][] = [];
+    const links: ImportFileContent['links'] = [];
     sheet.eachRow(row => {
         const values: string[] = [];
+        let rowLinks: Record<number, string> | undefined;
         row.eachCell((cell, column) => {
             // A merged range keeps its value in the first cell only, as a Google Sheets CSV export does.
             if (cell.type === ExcelJS.ValueType.Merge) return;
-            const text = valueText(cell.value).trim();
+            const link = cellLink(cell);
+            // Like a Google Sheets CSV export, a linked cell reads as its text; an empty text shows the address.
+            const text = valueText(cell.value).trim() || link || '';
             if (!text) return;
             if (column > IMPORT_FILE_LIMITS.columns) throw new PayloadTooLargeError(`Lembar kerja melebihi batas ${IMPORT_FILE_LIMITS.columns} kolom.`);
-            if (Buffer.byteLength(text, 'utf8') > IMPORT_FILE_LIMITS.fieldBytes) throw new PayloadTooLargeError(`Isi sel melebihi batas ${KB(IMPORT_FILE_LIMITS.fieldBytes)}.`);
+            if (Buffer.byteLength(text, 'utf8') > IMPORT_FILE_LIMITS.fieldBytes || Buffer.byteLength(link || '', 'utf8') > IMPORT_FILE_LIMITS.fieldBytes) {
+                throw new PayloadTooLargeError(`Isi sel melebihi batas ${KB(IMPORT_FILE_LIMITS.fieldBytes)}.`);
+            }
             values[column - 1] = text;
+            if (link) (rowLinks ??= {})[column - 1] = link;
         });
         if (!values.length) return;
         if (rows.length >= IMPORT_FILE_LIMITS.rows) throw new PayloadTooLargeError('Lembar kerja melebihi batas 1.005 baris berisi termasuk judul. Pecah data sebelum impor.');
         rows.push(Array.from(values, value => value ?? ''));
+        links.push(rowLinks);
     });
-    return rows;
+    return { rows, links };
 }
 
 /** The tabs of an XLSX file; a CSV file has none. */
@@ -261,8 +309,8 @@ export async function listImportFileSheets(file: ImportFileUpload): Promise<{ fo
 export async function readImportFile(file: ImportFileUpload, sheet?: string): Promise<ImportFileContent> {
     const format = assertImportFileType(file.originalname, file.mimetype);
     assertImportFileContent(format, file.buffer);
-    if (format === 'csv') return { format, sheets: [], sheet: null, rows: readCsvRows(file.buffer) };
+    if (format === 'csv') return { format, sheets: [], sheet: null, rows: readCsvRows(file.buffer), links: [] };
     const workbook = await loadWorkbook(file.buffer);
     const worksheet = selectWorksheet(workbook, sheet);
-    return { format, sheets: sheetList(workbook), sheet: worksheet.name, rows: sheetRows(worksheet) };
+    return { format, sheets: sheetList(workbook), sheet: worksheet.name, ...sheetRows(worksheet) };
 }

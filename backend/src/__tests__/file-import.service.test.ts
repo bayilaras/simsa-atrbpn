@@ -120,6 +120,33 @@ describe('file import shares the Google Sheets mapping and import path', () => {
     });
 });
 
+describe('linked cells in a workbook', () => {
+    const scan = 'https://drive.google.com/file/d/synthetic-scan/view';
+    const linked = (text: string, hyperlink = scan) => ({ text, hyperlink });
+
+    it('keep their text, except in a column titled as the document link', async () => {
+        const file = upload(await singleSheetWorkbook(sheet => {
+            sheet.addRow(['Nomor Surat', 'Tanggal Surat', 'Hal', 'Kepada', 'Get link']);
+            sheet.addRow([linked('1/A'), '05/01/2026', linked('Rapat koordinasi'), linked('Sekretariat'), linked('Lihat', driveLink('x'))]);
+        }));
+        await fileImportService.importSurat('surat-keluar', file, undefined, 'unit-a', audit);
+        expect(mocks.outgoing).toHaveBeenCalledWith(expect.objectContaining({
+            nomorSurat: '1/A', perihal: 'Rapat koordinasi', kepada: 'Sekretariat', linkDokumen: driveLink('x'),
+        }), audit, {});
+        const preview = await fileImportService.preview(file, undefined, 10, 'surat-keluar');
+        expect(preview.rows).toEqual([['1/A', '05/01/2026', 'Rapat koordinasi', 'Sekretariat', driveLink('x')]]);
+    });
+
+    it('keep their text in an incoming-letter register, which has no link column', async () => {
+        const file = upload(await singleSheetWorkbook(sheet => {
+            sheet.addRow(['Nomor Surat', 'Tanggal Surat', 'Perihal', 'Dari', 'Link']);
+            sheet.addRow([linked('SM-1'), '05/01/2026', linked('Permohonan'), 'Kantah A', linked('Lihat')]);
+        }));
+        await fileImportService.importSurat('surat-masuk', file, undefined, 'unit-a', audit);
+        expect(mocks.incoming).toHaveBeenCalledWith(expect.objectContaining({ nomorSurat: 'SM-1', perihal: 'Permohonan' }), audit, {});
+    });
+});
+
 describe('duplicated link columns in a workbook', () => {
     const workbook = (label: (row: number) => unknown) => singleSheetWorkbook(sheet => {
         sheet.addRow(['Nomor Surat', 'Tanggal Surat', 'Hal', 'Get link', 'Get link']);

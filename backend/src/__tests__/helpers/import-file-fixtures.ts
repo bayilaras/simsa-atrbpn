@@ -52,6 +52,8 @@ export interface ZipPart {
     /** The uncompressed size the archive claims, when it should lie. */
     declaredSize?: number;
     flags?: number;
+    /** Central-directory extra fields. */
+    extra?: Buffer;
 }
 
 /** A minimal ZIP writer, so tests can build packages a spreadsheet program would never write. */
@@ -68,13 +70,14 @@ export function zipArchive(parts: ZipPart[]): Buffer {
         local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(part.flags ?? 0, 6);
         local.writeUInt16LE(method, 8); local.writeUInt32LE(crc32(data), 14); local.writeUInt32LE(body.length, 18);
         local.writeUInt32LE(part.declaredSize ?? data.length, 22); local.writeUInt16LE(name.length, 26);
+        const extra = part.extra ?? Buffer.alloc(0);
         const central = Buffer.alloc(46);
         central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6);
         central.writeUInt16LE(part.flags ?? 0, 8); central.writeUInt16LE(method, 10); central.writeUInt32LE(crc32(data), 16);
         central.writeUInt32LE(body.length, 20); central.writeUInt32LE(part.declaredSize ?? data.length, 24);
-        central.writeUInt16LE(name.length, 28); central.writeUInt32LE(offset, 42);
+        central.writeUInt16LE(name.length, 28); central.writeUInt16LE(extra.length, 30); central.writeUInt32LE(offset, 42);
         records.push(local, name, body);
-        directory.push(central, name);
+        directory.push(central, name, extra);
         offset += local.length + name.length + body.length;
     }
     const centralDirectory = Buffer.concat(directory);
