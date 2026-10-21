@@ -83,7 +83,7 @@ describe('sinkron of one recorded letter', () => {
     });
 
     it('checks access only for a changed letter of an ordinary classification', async () => {
-        expect(await sync([letter()], { perihal: 'Lama' })).toEqual({ status: 'duplicate', reason: SYNC_REASONS.unchanged });
+        expect(await sync([letter()], { perihal: 'Lama' })).toEqual({ status: 'duplicate', duplicate: 'recorded', reason: SYNC_REASONS.unchanged });
         expect(mocks.check).not.toHaveBeenCalled();
     });
 });

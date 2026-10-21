@@ -550,11 +550,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                                 {importResult.skippedRows} baris dilewati (data tidak valid/kosong)
                                             </p>
                                         )}
-                                        {importResult.duplicateRows - summary.lockedRows > 0 && (
-                                            <p className="text-sm text-blue-600 mt-1">
-                                                {importResult.duplicateRows - summary.lockedRows} baris duplikat dilewati (sudah ada di sistem)
-                                            </p>
-                                        )}
+                                        {summary.duplicateLines.map(line => <p key={line} className="text-sm text-blue-600 mt-1">{line}</p>)}
                                     </div>
                                 </div>
 

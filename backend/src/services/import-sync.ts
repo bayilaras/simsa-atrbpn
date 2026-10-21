@@ -30,9 +30,12 @@ export interface ImportSync {
 
 export interface ImportFieldChange { field: string; label: string; before: string | null; after: string }
 
+/** Why a row was not written: it repeats an earlier source row, or its letter is recorded (or deleted) in SIMSA. */
+export type ImportDuplicateKind = 'source' | 'recorded' | 'deleted';
+
 export type ImportSyncOutcome =
     | { status: 'updated'; changes: ImportFieldChange[] }
-    | { status: 'duplicate'; reason: string }
+    | { status: 'duplicate'; duplicate: Exclude<ImportDuplicateKind, 'source'>; reason: string }
     | { status: 'locked'; reason: string; changes?: ImportFieldChange[] };
 
 /** What a sinkron import needs from a surat service. */
@@ -51,7 +54,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 export const SYNC_REASONS = {
     unchanged: 'Sudah tercatat; tidak ada perubahan.',
-    deleted: 'Surat ini sudah dihapus di SIMSA; impor tidak memulihkan atau mengubahnya.',
+    deleted: 'Surat dengan identitas ini sudah dihapus di SIMSA; impor tidak membuat ulang, memulihkan, atau mengubahnya.',
     archived: 'Tidak diperbarui: surat sudah diarsipkan.',
     approval: 'Tidak diperbarui: surat sedang atau telah disetujui.',
     noAccess: 'Tidak diperbarui: Anda tidak berwenang mengubah surat ini.',
@@ -100,7 +103,7 @@ export async function syncImportedLetter(
 ): Promise<ImportSyncOutcome> {
     if (matches.length > 1) return { status: 'locked', reason: SYNC_REASONS.ambiguous };
     const [match] = matches;
-    if (match.isDeleted) return { status: 'duplicate', reason: SYNC_REASONS.deleted };
+    if (match.isDeleted) return { status: 'duplicate', duplicate: 'deleted', reason: SYNC_REASONS.deleted };
     let changes: ImportFieldChange[] | undefined;
     try {
         const check = () => recordAccessService.check(sync.actor, target.entityType, match.id);
@@ -111,7 +114,7 @@ export async function syncImportedLetter(
         if (access && !access.allowed) return { status: 'locked', reason: SYNC_REASONS.noAccess };
 
         changes = importFieldChanges(source, match.values);
-        if (!changes.length) return { status: 'duplicate', reason: SYNC_REASONS.unchanged };
+        if (!changes.length) return { status: 'duplicate', duplicate: 'recorded', reason: SYNC_REASONS.unchanged };
         access ??= await check();
         if (!access.allowed) return { status: 'locked', reason: SYNC_REASONS.noAccess };
         // The identity of a numbered letter is its number and year only; another

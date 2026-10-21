@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DuplicateSuratImportError } from '../services/surat-import-identity.js';
+import { recordedMatches } from './helpers/import-matches.js';
 
 // The real identity rules: an undated row has no import identity and is rejected before any write.
-const mocks = vi.hoisted(() => ({ incoming: vi.fn(), outgoing: vi.fn(), existing: vi.fn() }));
+const mocks = vi.hoisted(() => ({ incoming: vi.fn(), outgoing: vi.fn(), matches: vi.fn() }));
 vi.mock('../services/surat-masuk.service.js', async () => {
     const { suratImportIdentityKey } = await import('../services/surat-import-identity.js');
-    return { suratMasukService: { createImported: mocks.incoming, existingImportIdentities: mocks.existing,
+    return { suratMasukService: { createImported: mocks.incoming, importMatches: mocks.matches,
         importIdentityKey: (data: Parameters<typeof suratImportIdentityKey>[1]) => suratImportIdentityKey('masuk', data) } };
 });
 vi.mock('../services/surat-keluar.service.js', async () => {
     const { suratImportIdentityKey } = await import('../services/surat-import-identity.js');
-    return { suratKeluarService: { createImported: mocks.outgoing, existingImportIdentities: mocks.existing,
+    return { suratKeluarService: { createImported: mocks.outgoing, importMatches: mocks.matches,
         importIdentityKey: (data: Parameters<typeof suratImportIdentityKey>[1]) => suratImportIdentityKey('keluar', data) } };
 });
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
@@ -27,7 +28,7 @@ beforeEach(() => {
     service = new GoogleDriveImportService();
     mocks.outgoing.mockResolvedValue({ id: 'outgoing' });
     mocks.incoming.mockResolvedValue({ id: 'incoming' });
-    mocks.existing.mockImplementation(async (keys: unknown[]) => keys.map(() => false));
+    mocks.matches.mockImplementation(async (keys: unknown[]) => keys.map(() => []));
 });
 
 describe('per-row import report', () => {
@@ -39,7 +40,7 @@ describe('per-row import report', () => {
             letter(4, '4/UND/I/2026', '', 'Tanpa tanggal'),
             ['5', '', '', '', '', ''],
         ];
-        mocks.existing.mockImplementation(async (keys: Array<{ nomorSurat: string }>) => keys.map(key => key.nomorSurat === '2/UND/I/2026'));
+        mocks.matches.mockImplementation(async (keys: Array<{ nomorSurat: string }>) => recordedMatches(keys.map(key => key.nomorSurat === '2/UND/I/2026')));
         mocks.outgoing.mockResolvedValueOnce({ id: 'created' }).mockRejectedValueOnce(new DuplicateSuratImportError());
 
         const result = await service.importRows('surat-keluar', rows, 'unit-a', audit);
@@ -48,15 +49,30 @@ describe('per-row import report', () => {
         expect(result.rows).toEqual([
             { row: 1, no: '1', nomorSurat: '1/UND/I/2026', tanggal: '05/01/2026', perihal: 'Undangan rapat', status: 'imported' },
             { row: 2, no: '2', nomorSurat: '2/UND/I/2026', tanggal: '06/01/2026', perihal: 'Sudah ada di SIMSA', status: 'duplicate',
-                reason: 'Sudah tercatat di SIMSA pada unit ini (termasuk surat yang dihapus).' },
+                duplicate: 'recorded', reason: 'Sudah tercatat di SIMSA pada unit ini.' },
             { row: 3, no: '3', nomorSurat: '1/UND/I/2026', tanggal: '07/01/2026', perihal: 'Nomor yang sama diketik ulang', status: 'duplicate',
-                reason: 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.' },
+                duplicate: 'source', reason: 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.' },
             { row: 4, no: '4', nomorSurat: '4/UND/I/2026', tanggal: '', perihal: 'Tanpa tanggal', status: 'invalid',
                 reason: 'Tanggal surat yang valid wajib diisi untuk identitas impor yang stabil.' },
             { row: 5, no: '5', nomorSurat: '', tanggal: '', perihal: '', status: 'empty', reason: 'Nomor surat dan perihal kosong.' },
         ]);
         // Only the two new identities reach the canonical create; the undated row never does.
         expect(mocks.outgoing.mock.calls.map(([record]) => record.perihal)).toEqual(['Undangan rapat', 'Nomor yang sama diketik ulang']);
+    });
+
+    it('tells a letter deleted in SIMSA apart from one still recorded, and never recreates it', async () => {
+        mocks.matches.mockImplementation(async (keys: unknown[]) => recordedMatches(keys.map(() => true), { isDeleted: true }));
+        const result = await service.importRows('surat-keluar', [header, letter(1, '1/UND/2026', '05/01/2026', 'Dihapus')], 'unit-a', audit);
+        expect(result.rows?.[0]).toMatchObject({ status: 'duplicate', duplicate: 'deleted',
+            reason: 'Surat dengan identitas ini sudah dihapus di SIMSA; impor tidak membuat ulang, memulihkan, atau mengubahnya.' });
+        expect(mocks.outgoing).not.toHaveBeenCalled();
+    });
+
+    it('reports the No column of a register whose title ran into its first header', async () => {
+        const result = await service.importRows('surat-keluar',
+            [['SURAT KELUAR 2026 No', 'Nomor Surat', 'Tanggal Surat', 'Hal', 'Sifat Surat', 'Get link'], letter(7, '7/UND/2026', '05/01/2026', 'Undangan')],
+            'unit-a', audit);
+        expect(result.rows?.[0]).toMatchObject({ row: 1, no: '7', status: 'imported' });
     });
 
     it('names the identity an unnumbered row shares with an earlier row', async () => {
@@ -102,12 +118,12 @@ describe('per-row import report', () => {
             const first = await service.importRows('surat-keluar', rows, 'unit-a', audit, {}, { startRow: 0, deadlineAt: clock + 15_000 });
             expect(first.rows?.map(row => [row.row, row.status])).toEqual([[1, 'imported'], [2, 'imported']]);
             // The first row is recorded by now.
-            mocks.existing.mockImplementation(async (keys: Array<{ nomorSurat: string }>) => keys.map(key => key.nomorSurat === '1/UND/2026'));
+            mocks.matches.mockImplementation(async (keys: Array<{ nomorSurat: string }>) => recordedMatches(keys.map(key => key.nomorSurat === '1/UND/2026')));
             const rest = await service.importRows('surat-keluar', rows, 'unit-a', audit, {},
                 { startRow: first.nextRow!, prefixHash: first.prefixHash, deadlineAt: clock + 60_000 });
             expect(rest.rows).toEqual([
                 expect.objectContaining({ row: 3, status: 'imported' }),
-                expect.objectContaining({ row: 4, status: 'duplicate', reason: 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.' }),
+                expect.objectContaining({ row: 4, status: 'duplicate', duplicate: 'source', reason: 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.' }),
             ]);
         } finally { vi.mocked(Date.now).mockRestore(); }
     });

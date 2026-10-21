@@ -75,9 +75,9 @@ describe('CSV/XLSX import dialog', () => {
         mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: undefined }))
         click('Pratinjau')
         await screen.findByRole('table', { name: 'Pemetaan kolom ke data SIMSA' })
-        const row = (n, status, reason) => ({ row: n, no: String(n), nomorSurat: `${n}/SK/2026`, tanggal: '2026-01-05', perihal: `Hal ${n}`, status, reason })
+        const row = (n, status, reason, duplicate) => ({ row: n, no: String(n), nomorSurat: `${n}/SK/2026`, tanggal: '2026-01-05', perihal: `Hal ${n}`, status, reason, duplicate })
         mocks.post.mockResolvedValueOnce(part({ importedRows: 1, duplicateRows: 1, startRow: 0, nextRow: 2, prefixHash: 'a'.repeat(64),
-            rows: [row(1, 'imported'), row(2, 'duplicate', 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.')] }))
+            rows: [row(1, 'imported'), row(2, 'duplicate', 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.', 'source')] }))
             .mockResolvedValueOnce(part({ skippedRows: 1, startRow: 2, nextRow: null, errors: ['Row 3: x'],
                 rows: [row(3, 'invalid', 'Tanggal surat yang valid wajib diisi untuk identitas impor yang stabil.')] }))
         click('Impor 3 baris')
@@ -85,6 +85,8 @@ describe('CSV/XLSX import dialog', () => {
         expect(screen.getByLabelText('Tampilkan')).toHaveDisplayValue('Perlu dicek (2)')
         expect(report).toHaveTextContent('sama dengan baris data ke-1')
         expect(report).toHaveTextContent('Tanggal surat yang valid wajib diisi')
+        expect(screen.getByText('1 baris ganda di sumber (dilewati)')).toBeInTheDocument()
+        expect(screen.queryByText(/duplikat dilewati/)).not.toBeInTheDocument()
         // The row report replaces the 20-line error list.
         expect(screen.queryByText('Row 3: x')).not.toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Unduh laporan (CSV)' })).toBeInTheDocument()
@@ -113,9 +115,9 @@ describe('CSV/XLSX import dialog', () => {
         click('Pratinjau')
         fireEvent.click(await screen.findByRole('checkbox', { name: /Sinkronkan surat yang sudah tercatat/ }))
         mocks.post.mockResolvedValueOnce(part({ duplicateRows: 3, nextRow: null, startRow: 0, rows: [
-            { row: 1, status: 'duplicate', reason: 'Sudah tercatat; tidak ada perubahan.' },
+            { row: 1, status: 'duplicate', duplicate: 'recorded', reason: 'Sudah tercatat; tidak ada perubahan.' },
             { row: 2, status: 'locked', reason: 'Tidak diperbarui: surat sedang atau telah disetujui.' },
-            { row: 3, status: 'duplicate', reason: 'Sudah tercatat; tidak ada perubahan.' }] }))
+            { row: 3, status: 'duplicate', duplicate: 'recorded', reason: 'Sudah tercatat; tidak ada perubahan.' }] }))
         click('Impor 3 baris')
         expect(await screen.findByText('Perubahan belum diterapkan')).toBeInTheDocument()
         expect(screen.getByText('1 baris tidak diperbarui; lihat rincian di bawah.')).toBeInTheDocument()

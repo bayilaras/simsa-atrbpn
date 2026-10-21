@@ -93,14 +93,16 @@ describe('a sheet imported in parts', () => {
 
     it('shows the outcome of every row of every part', async () => {
         await ready();
-        const row = (n, status, reason) => ({ row: n, no: String(n), nomorSurat: `${n}/UND/2026`, tanggal: '05/01/2026', perihal: `Hal ${n}`, status, reason });
+        const row = (n, status, reason, duplicate) => ({ row: n, no: String(n), nomorSurat: `${n}/UND/2026`, tanggal: '05/01/2026', perihal: `Hal ${n}`, status, reason, duplicate });
         api.post.mockResolvedValueOnce(part({ importedRows: 3, startRow: 0, nextRow: 3, prefixHash: 'h1',
             rows: [row(1, 'imported'), row(2, 'imported'), row(3, 'imported')] }))
             .mockResolvedValueOnce(part({ duplicateRows: 1, skippedRows: 1, startRow: 3, nextRow: null, errors: ['Row 5: Tanggal'],
-                rows: [row(4, 'duplicate', 'Sudah tercatat di SIMSA pada unit ini (termasuk surat yang dihapus).'), row(5, 'invalid', 'Tanggal surat yang valid wajib diisi.')] }));
+                rows: [row(4, 'duplicate', 'Sudah tercatat di SIMSA pada unit ini.', 'recorded'), row(5, 'invalid', 'Tanggal surat yang valid wajib diisi.')] }));
         fireEvent.click(screen.getByRole('button', { name: 'Impor 5 baris' }));
         const report = await screen.findByRole('table', { name: 'Rincian hasil impor per baris' });
-        expect(within(report).getAllByRole('row')).toHaveLength(3);
+        // A letter already recorded needs no action; only the rejected row is to be checked.
+        expect(within(report).getAllByRole('row')).toHaveLength(2);
+        expect(screen.getByText('1 baris sudah tercatat di SIMSA')).toBeInTheDocument();
         fireEvent.change(screen.getByLabelText('Tampilkan'), { target: { value: 'all' } });
         expect(within(report).getAllByRole('row')).toHaveLength(6);
         expect(screen.getByRole('button', { name: 'Unduh laporan (CSV)' })).toBeInTheDocument();
@@ -113,7 +115,7 @@ describe('a sheet imported in parts', () => {
         expect(checkbox).toHaveAccessibleDescription(/tautan dokumen/);
         fireEvent.click(checkbox);
         api.post.mockResolvedValueOnce(part({ duplicateRows: 2, startRow: 0, nextRow: 3, prefixHash: 'h1',
-            rows: [{ row: 1, status: 'duplicate' }, { row: 2, status: 'duplicate' }, { row: 3, status: 'duplicate' }] }))
+            rows: [1, 2, 3].map(n => ({ row: n, status: 'duplicate', duplicate: 'recorded' })) }))
             .mockResolvedValueOnce(part({ updatedRows: 1, duplicateRows: 1, startRow: 3, nextRow: null, rows: [
                 { row: 4, no: '4', nomorSurat: '40/UND-600.BP.01.01/VI/2026', tanggal: '10/06/2026', perihal: 'Undangan rapat koordinasi teknis', status: 'updated',
                     changes: [{ field: 'perihal', label: 'Perihal', before: 'Undangan rapat koordinasi', after: 'Undangan rapat koordinasi teknis' }] },

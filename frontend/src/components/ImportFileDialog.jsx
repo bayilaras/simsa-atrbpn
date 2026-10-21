@@ -267,7 +267,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     {result.updatedRows > 0 && <p className="mt-1 text-sm text-blue-600">{`${result.updatedRows} baris diperbarui dari sumber`}</p>}
                     {summary.lockedRows > 0 && <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">{`${summary.lockedRows} baris tidak diperbarui; lihat rincian di bawah.`}</p>}
                     {result.skippedRows > 0 && <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">{result.skippedRows} baris dilewati (data tidak valid/kosong)</p>}
-                    {result.duplicateRows - summary.lockedRows > 0 && <p className="mt-1 text-sm text-blue-600">{result.duplicateRows - summary.lockedRows} baris duplikat dilewati (sudah ada di sistem)</p>}
+                    {summary.duplicateLines.map(line => <p key={line} className="mt-1 text-sm text-blue-600">{line}</p>)}
                 </div>
             </div>
             {result.rows?.length > 0 ? <ImportRowReport rows={result.rows} type={type} /> : result.errors?.length > 0 && <div className="max-h-40 overflow-y-auto rounded-lg border bg-muted/50 p-3">

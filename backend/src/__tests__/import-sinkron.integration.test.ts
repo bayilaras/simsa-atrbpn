@@ -99,10 +99,11 @@ describe('sinkron surat keluar', () => {
             [2, 'duplicate', 'Sudah tercatat; tidak ada perubahan.'],
             [3, 'locked', 'Tidak diperbarui: surat sedang atau telah disetujui.'],
             [4, 'locked', 'Tidak diperbarui: surat sudah diarsipkan.'],
-            [5, 'duplicate', 'Surat ini sudah dihapus di SIMSA; impor tidak memulihkan atau mengubahnya.'],
+            [5, 'duplicate', 'Surat dengan identitas ini sudah dihapus di SIMSA; impor tidak membuat ulang, memulihkan, atau mengubahnya.'],
             [6, 'locked', 'Tidak diperbarui: Anda tidak berwenang mengubah surat ini.'],
             [7, 'duplicate', 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.'],
         ]);
+        expect(result.rows?.map(row => row.duplicate)).toEqual([undefined, 'recorded', undefined, undefined, 'deleted', undefined, 'source']);
         expect(result.rows?.[0].changes).toEqual([
             { field: 'perihal', label: 'Perihal', before: 'Undangan rapat koordinasi', after: 'Undangan rapat koordinasi teknis' },
             { field: 'sifatSurat', label: 'Sifat surat', before: 'biasa', after: 'segera' },
@@ -136,6 +137,7 @@ describe('sinkron surat keluar', () => {
         const result = await importer.importRows('surat-keluar', rows, 'dir_bppt', audit, {}, undefined, sinkron);
         expect(result.rows?.map(row => [row.status, row.reason])).toEqual([
             ['updated', undefined], ['duplicate', 'Surat yang sama sudah dicocokkan dengan baris data ke-1 pada sumber ini.']]);
+        expect(result.rows?.[1].duplicate).toBe('source');
         const letter = await keluarRow('40/UND-600.BP.01.01/VI/2026');
         expect(letter.sifat_surat).toBe('segera');
         expect(await updates(letter.id)).toHaveLength(1);

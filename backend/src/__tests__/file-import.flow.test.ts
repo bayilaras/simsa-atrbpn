@@ -11,7 +11,7 @@ vi.mock('../middlewares/role.middleware.js', () => ({ canWriteMiddleware: () => 
 vi.mock('../middlewares/rate-limiter.middleware.js', () => ({ importDiscoveryLimiter: (_req: any, _res: any, next: any) => next(), importPreviewLimiter: (_req: any, _res: any, next: any) => next(), importLimiter: (_req: any, _res: any, next: any) => next() }));
 vi.mock('../services/surat-masuk.service.js', () => ({ suratMasukService: {} }));
 vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: {
-    createImported: mocks.outgoing, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing } }));
+    createImported: mocks.outgoing, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing, importMatches: async (keys: any) => (await import("./helpers/import-matches.js")).recordedMatches(await mocks.existing(keys)) } }));
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
 import router from '../routes/file-import.routes.js';
 import { XLSX_MIME, driveLink, registerWorkbook } from './helpers/import-file-fixtures.js';
