@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import ImportRowReport from '@/components/ImportRowReport'
 import { useAppConfig } from '@/context/app-config-context'
 import api from '@/services/api'
 import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS, IMPORT_UNIT_REQUIRED } from '@/lib/google-sheets-import'
@@ -263,7 +264,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     {result.duplicateRows > 0 && <p className="mt-1 text-sm text-blue-600">{result.duplicateRows} baris duplikat dilewati (sudah ada di sistem)</p>}
                 </div>
             </div>
-            {result.errors?.length > 0 && <div className="max-h-40 overflow-y-auto rounded-lg border bg-muted/50 p-3">
+            {result.rows?.length > 0 ? <ImportRowReport rows={result.rows} type={type} /> : result.errors?.length > 0 && <div className="max-h-40 overflow-y-auto rounded-lg border bg-muted/50 p-3">
                 <p className="mb-2 text-xs font-medium text-muted-foreground">Rincian kesalahan (nomor baris menghitung baris data):</p>
                 {result.errors.map((message, index) => <p key={index} className="text-xs leading-relaxed text-red-600">{message}</p>)}
             </div>}

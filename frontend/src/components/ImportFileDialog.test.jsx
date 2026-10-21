@@ -69,6 +69,27 @@ describe('CSV/XLSX import dialog', () => {
         expect(onImportComplete).toHaveBeenCalledOnce()
     })
 
+    it('shows the outcome of every row across parts', async () => {
+        await open()
+        await choose(csv())
+        mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: undefined }))
+        click('Pratinjau')
+        await screen.findByRole('table', { name: 'Pemetaan kolom ke data SIMSA' })
+        const row = (n, status, reason) => ({ row: n, no: String(n), nomorSurat: `${n}/SK/2026`, tanggal: '2026-01-05', perihal: `Hal ${n}`, status, reason })
+        mocks.post.mockResolvedValueOnce(part({ importedRows: 1, duplicateRows: 1, startRow: 0, nextRow: 2, prefixHash: 'a'.repeat(64),
+            rows: [row(1, 'imported'), row(2, 'duplicate', 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.')] }))
+            .mockResolvedValueOnce(part({ skippedRows: 1, startRow: 2, nextRow: null, errors: ['Row 3: x'],
+                rows: [row(3, 'invalid', 'Tanggal surat yang valid wajib diisi untuk identitas impor yang stabil.')] }))
+        click('Impor 3 baris')
+        const report = await screen.findByRole('table', { name: 'Rincian hasil impor per baris' })
+        expect(screen.getByLabelText('Tampilkan')).toHaveDisplayValue('Perlu dicek (2)')
+        expect(report).toHaveTextContent('sama dengan baris data ke-1')
+        expect(report).toHaveTextContent('Tanggal surat yang valid wajib diisi')
+        // The row report replaces the 20-line error list.
+        expect(screen.queryByText('Row 3: x')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Unduh laporan (CSV)' })).toBeInTheDocument()
+    })
+
     it('previews a single-tab workbook without asking for a tab', async () => {
         await open()
         await choose(workbook())

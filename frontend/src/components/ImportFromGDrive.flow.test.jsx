@@ -91,6 +91,29 @@ describe('a sheet imported in parts', () => {
         expect(parts).toHaveLength(2);
     });
 
+    it('shows the outcome of every row of every part', async () => {
+        await ready();
+        const row = (n, status, reason) => ({ row: n, no: String(n), nomorSurat: `${n}/UND/2026`, tanggal: '05/01/2026', perihal: `Hal ${n}`, status, reason });
+        api.post.mockResolvedValueOnce(part({ importedRows: 3, startRow: 0, nextRow: 3, prefixHash: 'h1',
+            rows: [row(1, 'imported'), row(2, 'imported'), row(3, 'imported')] }))
+            .mockResolvedValueOnce(part({ duplicateRows: 1, skippedRows: 1, startRow: 3, nextRow: null, errors: ['Row 5: Tanggal'],
+                rows: [row(4, 'duplicate', 'Sudah tercatat di SIMSA pada unit ini (termasuk surat yang dihapus).'), row(5, 'invalid', 'Tanggal surat yang valid wajib diisi.')] }));
+        fireEvent.click(screen.getByRole('button', { name: 'Impor 5 baris' }));
+        const report = await screen.findByRole('table', { name: 'Rincian hasil impor per baris' });
+        expect(within(report).getAllByRole('row')).toHaveLength(3);
+        fireEvent.change(screen.getByLabelText('Tampilkan'), { target: { value: 'all' } });
+        expect(within(report).getAllByRole('row')).toHaveLength(6);
+        expect(screen.getByRole('button', { name: 'Unduh laporan (CSV)' })).toBeInTheDocument();
+    });
+
+    it('keeps the error list for a server that reports no rows', async () => {
+        await ready();
+        api.post.mockResolvedValueOnce(part({ importedRows: 4, skippedRows: 1, errors: ['Row 5: Tanggal surat wajib diisi'], nextRow: null }));
+        fireEvent.click(screen.getByRole('button', { name: 'Impor 5 baris' }));
+        expect(await screen.findByText('Row 5: Tanggal surat wajib diisi')).toBeInTheDocument();
+        expect(screen.queryByRole('table', { name: 'Rincian hasil impor per baris' })).not.toBeInTheDocument();
+    });
+
     it('waits out the import rate limit between parts and then continues by itself', async () => {
         await ready();
         api.post.mockResolvedValueOnce(part({ importedRows: 3, startRow: 0, nextRow: 3, prefixHash: 'h1' }))

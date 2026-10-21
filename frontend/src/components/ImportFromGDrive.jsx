@@ -4,6 +4,7 @@ import api from '@/services/api';
 import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS, IMPORT_UNIT_REQUIRED } from '@/lib/google-sheets-import';
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import ImportRowReport from '@/components/ImportRowReport';
 import { useAppConfig } from '@/context/app-config-context';
 
 /**
@@ -264,7 +265,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                     showCloseButton={false}
                     onEscapeKeyDown={(event) => step === 'importing' && event.preventDefault()}
                     onInteractOutside={(event) => step === 'importing' && event.preventDefault()}
-                    className="flex h-[min(90dvh,52rem)] w-full max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+                    className="flex h-[min(90dvh,52rem)] w-full max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
                 >
                     {/* Header */}
                     <div className="flex items-center justify-between border-b bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-4 sm:px-6">
@@ -546,7 +547,8 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                     </div>
                                 </div>
 
-                                {importResult.errors && importResult.errors.length > 0 && (
+                                {importResult.rows?.length > 0 ? <ImportRowReport rows={importResult.rows} type={type} />
+                                    : importResult.errors && importResult.errors.length > 0 && (
                                     <div className="border rounded-lg p-3 max-h-40 overflow-y-auto bg-muted/50">
                                         <p className="text-xs font-medium text-muted-foreground mb-2">Rincian kesalahan:</p>
                                         {importResult.errors.map((err, i) => (

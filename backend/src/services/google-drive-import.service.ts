@@ -22,13 +22,33 @@ const log = createLogger('GoogleDriveImportService');
  * Uses the public CSV export URL (no API key required).
  */
 
+export type ImportRowStatus = 'imported' | 'duplicate' | 'invalid' | 'empty';
+
+/** What happened to one data row, as the source shows it. */
+export interface ImportRowOutcome {
+    /** Data row number from 1: non-empty rows below the header, as in errors and progress notices. */
+    row: number;
+    /** The source's own sequence column ("No"), when mapped. */
+    no: string;
+    nomorSurat: string;
+    /** The date cell as written in the source. */
+    tanggal: string;
+    /** Shortened to REPORTED_PERIHAL_LENGTH characters. */
+    perihal: string;
+    status: ImportRowStatus;
+    reason?: string;
+}
+
 export interface ImportResult {
     success: boolean;
     totalRows: number;
     importedRows: number;
     skippedRows: number;
     duplicateRows: number;
+    /** At most 20; `rows` has the outcome of every row. */
     errors: string[];
+    /** Every data row this request handled, in source order (startRow..nextRow-1 for a part). */
+    rows?: ImportRowOutcome[];
     /** Resumable imports only: counts above cover data rows startRow..nextRow-1 (or to the end). */
     startRow?: number;
     /** The data row to continue from, or null when the sheet is finished. */
@@ -68,6 +88,19 @@ const outgoing: ImportTarget<NewSuratKeluar & { numberingMode: 'manual' }> = {
 type PreparedRecord<T> = { record: T; key: SuratImportIdentityKey };
 /** null: an empty row; error: a row rejected before any write. */
 type PreparedRow<T> = PreparedRecord<T> | { error: unknown } | null;
+type RowSummary = Pick<ImportRowOutcome, 'no' | 'nomorSurat' | 'tanggal' | 'perihal'>;
+
+const REPORTED_PERIHAL_LENGTH = 200;
+const ALREADY_RECORDED = 'Sudah tercatat di SIMSA pada unit ini (termasuk surat yang dihapus).';
+const EMPTY_ROW = 'Nomor surat dan perihal kosong.';
+const IDENTITY_LABELS: Record<string, string> = {
+    nomor: 'Nomor surat dan tahun',
+    counterpart: 'Tanggal, perihal, dan pengirim/tujuan',
+    link: 'Tanggal, perihal, dan tautan dokumen',
+};
+function sameAsEarlierRow(key: SuratImportIdentityKey, row: number): string {
+    return `${IDENTITY_LABELS[key.by] ?? 'Identitas impor'} sama dengan baris data ke-${row} pada sumber ini.`;
+}
 
 export class GoogleDriveImportService {
     /**
@@ -183,10 +216,11 @@ export class GoogleDriveImportService {
         if (rows.length > GOOGLE_SHEETS_LIMITS.dataRows) throw new PayloadTooLargeError('Maksimal 1.000 baris data per impor. Pecah spreadsheet sebelum mencoba lagi.');
     }
 
-    private rowError(error: unknown, row: number): string {
+    /** The public message of a rejected row; internal errors stay generic. Logged like the error list, 20 rows at most. */
+    private rowFailure(error: unknown, row: number, logged: boolean): { message: string; code: string } {
         const failure = publicErrorResponse(error, currentRequestId());
-        log.warn({ event: 'google_sheets_row_rejected', row, publicCode: failure.code }, 'Import row rejected');
-        return `Row ${row}: ${failure.message} (${failure.code})`;
+        if (logged) log.warn({ event: 'google_sheets_row_rejected', row, publicCode: failure.code }, 'Import row rejected');
+        return { message: failure.message, code: failure.code };
     }
     private assertPreviewRows(maxRows: number): void {
         if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > GOOGLE_SHEETS_LIMITS.previewRows) throw new ValidationError('maxRows harus bilangan bulat antara 1 dan 100.');
@@ -269,11 +303,17 @@ export class GoogleDriveImportService {
         const { headerRowIndex, columnMap: colMap } = resolveSheetMapping(allRows, type);
         const dataRows = allRows.slice(headerRowIndex + 1);
         this.assertDataRows(dataRows);
+        const summary = (row: string[]): RowSummary => {
+            const perihal = this.getField(row, colMap, 'perihal');
+            return { no: this.getField(row, colMap, 'noUrut'), nomorSurat: this.getField(row, colMap, 'nomorSurat'),
+                tanggal: this.getField(row, colMap, 'tanggalSurat'),
+                perihal: perihal.length > REPORTED_PERIHAL_LENGTH ? `${perihal.slice(0, REPORTED_PERIHAL_LENGTH - 1)}…` : perihal };
+        };
 
         return type === 'surat-masuk'
-            ? this.importRecords(dataRows, incoming, auditContext, options, resume,
+            ? this.importRecords(dataRows, incoming, auditContext, options, resume, summary,
                 (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext))
-            : this.importRecords(dataRows, outgoing, auditContext, options, resume,
+            : this.importRecords(dataRows, outgoing, auditContext, options, resume, summary,
                 (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext));
     }
 
@@ -369,6 +409,7 @@ export class GoogleDriveImportService {
         auditContext: CriticalAuditContext,
         options: GoogleSheetsRequestOptions,
         resume: ImportResume | undefined,
+        summary: (row: string[]) => RowSummary,
         build: (row: string[], index: number) => T | null,
     ): Promise<ImportResult> {
         // Every row as this import reads it. The resume digest covers exactly
@@ -380,16 +421,30 @@ export class GoogleDriveImportService {
         const readRows = built.map(item => 'error' in item ? { unreadable: true } : item.record);
         const start = resume?.startRow ?? 0;
         if (resume) assertImportResumable(readRows, resume);
-        const prepared = built.slice(start).map((item): PreparedRow<T> => {
+        // Identities of every row, earlier parts included, so a row repeating
+        // an identity can name the row it repeats.
+        const prepared = built.map((item): PreparedRow<T> => {
             if ('error' in item) return item;
             if (!item.record) return null;
             try { return { record: item.record, key: target.importIdentityKey(item.record) }; } catch (error) { return { error }; }
         });
-        const recorded = prepared.flatMap(item => item && 'key' in item ? [item] : []);
+        const firstRowOf = new Map<string, number>();
+        prepared.forEach((item, index) => {
+            const identity = item && 'key' in item ? JSON.stringify(item.key) : undefined;
+            if (identity !== undefined && !firstRowOf.has(identity)) firstRowOf.set(identity, index);
+        });
+        const recorded = prepared.slice(start).flatMap(item => item && 'key' in item ? [item] : []);
         const existing = recorded.length ? await target.existingImportIdentities(recorded.map(item => item.key)) : [];
         const alreadyRecorded = new Set(recorded.filter((_item, index) => existing[index]));
 
         const errors: string[] = [];
+        const rows: ImportRowOutcome[] = [];
+        const report = (i: number, status: ImportRowStatus, reason?: string) =>
+            rows.push({ row: i + 1, ...summary(dataRows[i]), status, ...(reason ? { reason } : {}) });
+        const duplicateReason = (item: PreparedRecord<T>, i: number) => {
+            const first = firstRowOf.get(JSON.stringify(item.key));
+            return first !== undefined && first < i ? sameAsEarlierRow(item.key, first + 1) : ALREADY_RECORDED;
+        };
         let importedRows = 0;
         let skippedRows = 0;
         let duplicateRows = 0;
@@ -399,18 +454,25 @@ export class GoogleDriveImportService {
             if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan; baris yang sudah selesai tetap tercatat.', 499);
             // Every part handles at least one row, so a continuation always advances.
             if (resume && i > start && Date.now() >= resume.deadlineAt) { nextRow = i; break; }
-            const item = prepared[i - start];
-            if (!item) { skippedRows++; continue; }
-            if (alreadyRecorded.has(item as PreparedRecord<T>)) { duplicateRows++; continue; }
+            const item = prepared[i];
+            if (!item) { skippedRows++; report(i, 'empty', EMPTY_ROW); continue; }
+            if (alreadyRecorded.has(item as PreparedRecord<T>)) {
+                duplicateRows++; report(i, 'duplicate', duplicateReason(item as PreparedRecord<T>, i)); continue;
+            }
             try {
                 if ('error' in item) throw item.error;
                 if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan.', 499);
                 await target.createImported(item.record, auditContext, options);
                 importedRows++;
+                report(i, 'imported');
             } catch (error) {
-                if (error instanceof DuplicateSuratImportError) { duplicateRows++; continue; }
-                if (errors.length < 20) errors.push(this.rowError(error, i + 1));
+                if (error instanceof DuplicateSuratImportError) {
+                    duplicateRows++; report(i, 'duplicate', duplicateReason(item as PreparedRecord<T>, i)); continue;
+                }
+                const failure = this.rowFailure(error, i + 1, errors.length < 20);
+                if (errors.length < 20) errors.push(`Row ${i + 1}: ${failure.message} (${failure.code})`);
                 skippedRows++;
+                report(i, 'invalid', failure.message);
             }
         }
 
@@ -421,6 +483,7 @@ export class GoogleDriveImportService {
             skippedRows,
             duplicateRows,
             errors: errors.slice(0, 20), // Limit error list
+            rows,
             ...(resume ? { startRow: start, nextRow, ...(nextRow === null ? {} : { prefixHash: importPrefixHash(readRows, nextRow) }) } : {}),
         };
     }

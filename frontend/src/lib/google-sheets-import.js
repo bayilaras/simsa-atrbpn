@@ -12,7 +12,7 @@ export const IMPORT_PART_TIMEOUT_MS = 120_000;
 const MAX_REPORTED_ERRORS = 20;
 
 export function emptyImportTotals(totalRows) {
-    return { success: true, totalRows, processedRows: 0, importedRows: 0, duplicateRows: 0, skippedRows: 0, errors: [], nextRow: 0 };
+    return { success: true, totalRows, processedRows: 0, importedRows: 0, duplicateRows: 0, skippedRows: 0, errors: [], rows: [], nextRow: 0 };
 }
 
 /**
@@ -30,6 +30,8 @@ export function addImportPart(totals, part) {
         duplicateRows: totals.duplicateRows + (part.duplicateRows || 0),
         skippedRows: totals.skippedRows + (part.skippedRows || 0),
         errors: [...totals.errors, ...(part.errors || [])].slice(0, MAX_REPORTED_ERRORS),
+        // Every row's outcome; an older server reports none.
+        rows: [...(totals.rows || []), ...(Array.isArray(part.rows) ? part.rows : [])],
         nextRow,
         ...(nextRow === null ? {} : { prefixHash: part.prefixHash }),
     };
