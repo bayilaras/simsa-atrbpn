@@ -58,6 +58,7 @@ jobs:
           scripts/operations-recovery-extract.test.mjs
           scripts/operations-recovery-target.test.mjs
           scripts/check-file-integrity.test.mjs
+          scripts/ops/neon-role-rotation.postgres.test.mjs
 
       - name: Install frontend dependencies
         run: npm ci
