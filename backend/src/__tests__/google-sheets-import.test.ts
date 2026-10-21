@@ -224,6 +224,19 @@ describe('resumable import within a time budget', () => {
         expect(written()).toEqual(['SK-4', 'SK-5', 'SK-6']);
     });
 
+    it('continues when an earlier row changed only in mapped columns the import never reads (ID, Status)', async () => {
+        const register = (status: string, id: string) => [['ID', 'Nomor Surat', 'Tanggal Surat', 'Perihal', 'Dari', 'Status'],
+            ...[1, 2, 3].map(n => [n === 1 ? id : `id-${n}`, `SM-${n}`, '12/09/2026', `Perihal ${n}`, 'Kantah A', n === 1 ? status : 'baru'])];
+        mocks.incoming.mockImplementation(async () => { clock += 10_000; return { id: 'incoming' }; });
+        const service = new GoogleDriveImportService();
+        const first = await service.importRows('surat-masuk', register('baru', 'id-1'), 'unit-a', audit, {}, { startRow: 0, deadlineAt: clock + 15_000 });
+        expect(first).toMatchObject({ importedRows: 2, nextRow: 2 });
+        const rest = await service.importRows('surat-masuk', register('sudah dibalas', 'id-1b'), 'unit-a', audit, {},
+            { startRow: first.nextRow!, prefixHash: first.prefixHash, deadlineAt: clock + 15_000 });
+        expect(rest).toMatchObject({ importedRows: 1, startRow: 2, nextRow: null });
+        expect(mocks.incoming.mock.calls.map(([record]) => record.nomorSurat)).toEqual(['SM-1', 'SM-2', 'SM-3']);
+    });
+
     it.each([
         ['an earlier row was edited', (rows: string[][]) => { rows[1][3] = 'Perihal diubah'; return rows; }],
         ['a row was inserted above the position', (rows: string[][]) => [rows[0], ['9', 'SK-9', '12/09/2026', 'Sisipan', 'Kantah A', 'Ditjen'], ...rows.slice(1)]],

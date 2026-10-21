@@ -11,7 +11,9 @@ export function rateLimitSeconds(error) {
 /**
  * Send the parts of a resumable import until the server reports the end.
  * The server stops starting rows after a time budget and returns nextRow and
- * prefixHash; a response without nextRow (an older server) is the whole import.
+ * prefixHash; a response without nextRow is the whole import. (An older CSV
+ * endpoint ignores startRow and answers that way; an older Sheets endpoint
+ * rejects startRow with 400, so the backend must be released first.)
  *
  * The first part is the user's own request, so its failure is thrown as
  * before. A later part's failure ends the run with `interruptedAt` (the first

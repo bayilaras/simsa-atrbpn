@@ -116,12 +116,13 @@ seterusnya juga mengirim `prefixHash` dari respons sebelumnya.
 Respons menambah `startRow`, `nextRow` (baris lanjutan, atau `null` bila selesai),
 dan `prefixHash` (bila `nextRow` tidak `null`). Jumlah dan baris diagnostic pada
 respons hanya mencakup bagian itu. `prefixHash` adalah SHA-256 atas baris sebelum
-`nextRow` (untuk Sheets: hanya kolom yang dibaca impor). Bila baris sebelum
+`nextRow` (untuk Sheets: baris sebagaimana dibaca impor, sehingga kolom yang tidak dibaca seperti ID atau Status sumber boleh berubah). Bila baris sebelum
 `startRow` berubah, disisipkan, atau dihapus, server menolak dengan 409 agar tidak
 ada baris yang terlewat; baris yang ditambahkan di bawah tetap ikut diimpor.
 
 Klien lama yang tidak mengirim `startRow` tetap mengimpor seluruh sumber dalam
-satu permintaan seperti sebelumnya.
+satu permintaan seperti sebelumnya. Sebaliknya endpoint Google Sheets lama menolak
+`startRow` (400, tanpa menulis apa pun), jadi backend harus dirilis sebelum frontend.
 
 ## Batas ekspor
 

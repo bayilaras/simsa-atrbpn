@@ -254,9 +254,9 @@ export class GoogleDriveImportService {
         this.assertDataRows(dataRows);
 
         return type === 'surat-masuk'
-            ? this.importRecords(dataRows, colMap, incoming, auditContext, options, resume,
+            ? this.importRecords(dataRows, incoming, auditContext, options, resume,
                 (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext))
-            : this.importRecords(dataRows, colMap, outgoing, auditContext, options, resume,
+            : this.importRecords(dataRows, outgoing, auditContext, options, resume,
                 (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext));
     }
 
@@ -348,24 +348,25 @@ export class GoogleDriveImportService {
      */
     private async importRecords<T>(
         dataRows: string[][],
-        colMap: Record<string, number>,
         target: ImportTarget<T>,
         auditContext: CriticalAuditContext,
         options: GoogleSheetsRequestOptions,
         resume: ImportResume | undefined,
         build: (row: string[], index: number) => T | null,
     ): Promise<ImportResult> {
-        // Only the columns this import reads identify a row; a volatile
-        // unread column (a formula, a status note) must not block resuming.
-        const fields = Object.keys(colMap).sort();
-        const sourceRows = dataRows.map(row => fields.map(field => this.getField(row, colMap, field)));
+        // Every row as this import reads it. The resume digest covers exactly
+        // these values, so a column the import never reads (a formula, a source
+        // ID or status note) cannot block resuming.
+        const built = dataRows.map((row, i): { record: T | null } | { error: unknown } => {
+            try { return { record: build(row, i) }; } catch (error) { return { error }; }
+        });
+        const readRows = built.map(item => 'error' in item ? { unreadable: true } : item.record);
         const start = resume?.startRow ?? 0;
-        if (resume) assertImportResumable(sourceRows, resume);
-        const prepared = dataRows.slice(start).map((row, offset): PreparedRow<T> => {
-            try {
-                const record = build(row, start + offset);
-                return record ? { record, key: target.importIdentityKey(record) } : null;
-            } catch (error) { return { error }; }
+        if (resume) assertImportResumable(readRows, resume);
+        const prepared = built.slice(start).map((item): PreparedRow<T> => {
+            if ('error' in item) return item;
+            if (!item.record) return null;
+            try { return { record: item.record, key: target.importIdentityKey(item.record) }; } catch (error) { return { error }; }
         });
         const recorded = prepared.flatMap(item => item && 'key' in item ? [item] : []);
         const existing = recorded.length ? await target.existingImportIdentities(recorded.map(item => item.key)) : [];
@@ -403,7 +404,7 @@ export class GoogleDriveImportService {
             skippedRows,
             duplicateRows,
             errors: errors.slice(0, 20), // Limit error list
-            ...(resume ? { startRow: start, nextRow, ...(nextRow === null ? {} : { prefixHash: importPrefixHash(sourceRows, nextRow) }) } : {}),
+            ...(resume ? { startRow: start, nextRow, ...(nextRow === null ? {} : { prefixHash: importPrefixHash(readRows, nextRow) }) } : {}),
         };
     }
 

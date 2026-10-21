@@ -14,8 +14,7 @@ export function emptyImportTotals(totalRows) {
 
 /**
  * Add one part of a resumable import to the running totals. A response
- * without nextRow (an older server importing in one request) covers the
- * whole sheet.
+ * without nextRow covers the whole sheet.
  */
 export function addImportPart(totals, part) {
     const totalRows = part.totalRows ?? totals.totalRows;

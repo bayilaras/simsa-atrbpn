@@ -38,7 +38,7 @@ dan penghitung kueri (`backend/integration/google-sheets-import-throughput.postg
    Uji Postgres membuktikan hasil kueri sama baris demi baris dengan transaksi kanonik.
 3. **Impor per bagian.** Klien yang mengirim `startRow` mendapat batas waktu 25 detik per
    permintaan: server berhenti memulai baris baru, lalu mengembalikan `nextRow` dan
-   `prefixHash` (SHA-256 baris sebelum `nextRow`; untuk Sheets hanya kolom yang dibaca).
+   `prefixHash` (SHA-256 baris sebelum `nextRow`; untuk Sheets baris sebagaimana dibaca impor, jadi kolom ID/Status sumber yang tidak dibaca boleh berubah).
    Bagian berikutnya ditolak 409 bila baris sebelumnya berubah, sehingga tidak ada baris
    yang terlewat diam-diam. Klien lama tanpa `startRow` tetap satu permintaan.
 4. **Dialog jujur.** Impor Google Sheets dan CSV melanjutkan bagian berikutnya sendiri,
@@ -46,6 +46,10 @@ dan penghitung kueri (`backend/integration/google-sheets-import-throughput.postg
    3 impor/menit tercapai, menyediakan "Hentikan setelah bagian ini" (Sheets), dan bila
    satu bagian lanjutan gagal menampilkan "Impor belum selesai" beserta jumlah yang sudah
    tersimpan. Batas waktu per bagian di klien 120 detik (sebelumnya 30 detik).
+
+5. **Sumber agnostik.** `GoogleDriveImportService.importRows(type, rows, …)` menerima baris
+   hasil parse (`string[][]`) dari sumber mana pun; `importSuratMasuk/Keluar` hanya mengambil
+   lembar Google lalu memanggilnya. Impor berkas CSV/XLSX berikutnya memakai jalur yang sama.
 
 Tidak ada migrasi basis data.
 

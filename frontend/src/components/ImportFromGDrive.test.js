@@ -14,7 +14,7 @@ describe('resumable import totals', () => {
         expect(second.errors.at(-1)).toBe('Row 44: b');
     });
 
-    it('treats a response without a resume position as the whole sheet, as older servers send', () => {
+    it('treats a response without a resume position as the whole sheet, as an older CSV endpoint answers', () => {
         expect(addImportPart(emptyImportTotals(3), { success: true, totalRows: 3, importedRows: 3, duplicateRows: 0, skippedRows: 0, errors: [] }))
             .toMatchObject({ processedRows: 3, importedRows: 3, nextRow: null });
     });
