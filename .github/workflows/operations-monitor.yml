@@ -1,9 +1,17 @@
 name: SIMSA Operations Monitor
 
+# Pemicu wake pemindai yang utama adalah Vercel Cron (backend/vercel.json,
+# enam kali sehari); jadwal GitHub di bawah bersifat best-effort dan hanya
+# mendeteksi gangguan. Repositori publik: menit Actions tidak dibatasi.
 on:
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
+    inputs:
+      storage_latency:
+        description: 'Ukur latensi Blob privat dari fungsi produksi (unggah/unduh/hapus 6 objek uji)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,3 +40,8 @@ jobs:
         env:
           OPERATIONS_MONITOR_TOKEN: ${{ secrets.OPERATIONS_MONITOR_TOKEN }}
         run: node scripts/check-operations.mjs
+      - name: Measure private storage latency
+        if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.storage_latency }}
+        env:
+          OPERATIONS_MONITOR_TOKEN: ${{ secrets.OPERATIONS_MONITOR_TOKEN }}
+        run: node scripts/check-operations.mjs --storage-latency
