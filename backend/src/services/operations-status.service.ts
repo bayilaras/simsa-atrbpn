@@ -43,7 +43,7 @@ export function buildOperationsStatus(input: { now: number; readiness: unknown; 
         { id: 'storage', label: 'Penyimpanan dokumen', status: blob.required === false ? 'disabled' : record(blob.runtime).ready === true ? 'healthy' : 'failed', message: blob.required === false ? 'Penyimpanan berkas tidak diaktifkan.' : record(blob.runtime).ready === true ? 'Penyimpanan privat dapat diakses.' : 'Penyimpanan privat belum siap.' },
         { id: 'scanner', label: 'Pemindai keamanan dokumen', status: scanner.state === 'disabled' ? 'disabled' : worker.state === 'not_ready' || scanner.state === 'not_ready' ? 'failed' : worker.state === 'standby' ? 'attention' : worker.state === 'ready' || scanner.state === 'ready' ? 'healthy' : 'unknown',
             message: scanner.state === 'disabled' ? 'Pemindai tidak diaktifkan.' : worker.state === 'not_ready' ? 'Verifikasi pemindai hilang, gagal, atau kedaluwarsa. Jalankan pemeriksaan pemindai.'
-                : worker.state === 'standby' ? 'Pemindai siaga: definisi virus diperbarui pada pemindaian atau pemicu terjadwal berikutnya.' : 'Status mengikuti pemeriksaan mesin dan kesegaran definisi virus.' },
+                : worker.state === 'standby' ? 'Pemindai siaga: berkas baru menunggu pemindaian berikutnya (Vercel Cron tiap 4 jam). Bila belum pulih, jalankan pemeriksaan pemindai.' : 'Status mengikuti pemeriksaan mesin dan kesegaran definisi virus.' },
     ];
     const expiry = date(worker.definitionsExpiresAt), seen = date(worker.lastSeenAt);
     if (Number.isFinite(expiry)) checks[2].expiresAt = new Date(expiry).toISOString();

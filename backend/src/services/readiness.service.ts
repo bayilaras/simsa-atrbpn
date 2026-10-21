@@ -529,9 +529,12 @@ export function evaluateWorkerReadiness(
     };
 }
 
-/** A lapsed lease stays wakeable standby this long; then the wake path itself is broken. */
-const ON_DEMAND_STANDBY_GRACE_MS = 24 * 3_600_000;
-const DEFINITION_LEASE_MS = 24 * 3_600_000;
+/**
+ * Vercel Cron wakes the scanner every four hours (±59 min, backend/vercel.json),
+ * so standby that outlasts eight hours means wakes are not reaching the worker
+ * (a rejected dispatch publishes no heartbeat): report it as a fault.
+ */
+const ON_DEMAND_STANDBY_WINDOW_MS = 8 * 3_600_000;
 
 /**
  * Verified definitions live only in the /tmp of the instance that refreshed
@@ -554,14 +557,14 @@ export function evaluateOnDemandMalwareReadiness(rows: HeartbeatRow[], now: numb
             lastSeenAt, definitionsExpiresAt: proof.definitionsExpiresAt };
     }
     if (onDemand && deploymentId && row.details?.deploymentId !== deploymentId
-        && now - seen <= DEFINITION_LEASE_MS + ON_DEMAND_STANDBY_GRACE_MS) {
+        && now - seen <= ON_DEMAND_STANDBY_WINDOW_MS) {
         return { required: true, state: 'standby' as RuntimeState, reason: 'awaiting_first_run_on_deployment',
             runtime: 'on-demand', lastSeenAt };
     }
     // A structurally valid proof judged just before its own expiry: lapsed, not forged.
     const expires = Date.parse(String((proof as Partial<MalwareEngineEvidence> | undefined)?.definitionsExpiresAt));
     if (onDemand && row.status === 'running' && Number.isFinite(expires) && expires <= now
-        && now - expires <= ON_DEMAND_STANDBY_GRACE_MS && isCurrentMalwareEngineEvidence(proof, expires - 1)
+        && now - expires <= ON_DEMAND_STANDBY_WINDOW_MS && isCurrentMalwareEngineEvidence(proof, expires - 1)
         && Date.parse(proof.definitionsVerifiedAt) <= seen) {
         return { required: true, state: 'standby' as RuntimeState, reason: 'definitions_lease_expired',
             runtime: 'on-demand', lastSeenAt, definitionsExpiresAt: proof.definitionsExpiresAt };

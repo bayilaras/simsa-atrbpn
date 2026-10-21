@@ -14,10 +14,12 @@ Definisi yang sudah diperbarui hanya ada di `/tmp` instance yang memperbaruinya.
 | `malwareWorker.state` | `reason` | `/ready` | Arti |
 |---|---|---|---|
 | `ready` | — | 200 `ready` | Run terakhir membuktikan definisi masih dalam lease 24 jam |
-| `standby` | `definitions_lease_expired` | 200 `degraded` | Run terakhir sukses, lease habis kurang dari 24 jam lalu; pemindaian/cron berikutnya memperbarui definisi |
-| `standby` | `awaiting_first_run_on_deployment` | 200 `degraded` | Run terakhir (sukses atau gagal) dicatat deployment lain, mis. sebelum promosi; deployment ini belum pernah dibangunkan |
-| `not_ready` | `on_demand_refresh_failed` | 503 | Run terakhir deployment ini gagal (mis. Freshclam gagal) |
-| `not_ready` | `on_demand_verification_missing_or_expired` | 503 | Belum ada run, bukti tidak sah, atau lease habis lebih dari 24 jam tanpa wake (jalur wake rusak) |
+| `standby` | `definitions_lease_expired` | 200 `degraded` | Run terakhir sukses, lease habis paling lama 8 jam lalu; pemindaian/cron berikutnya memperbarui definisi |
+| `standby` | `awaiting_first_run_on_deployment` | 200 `degraded` | Heartbeat terbaru (paling lama 8 jam lalu, sukses atau gagal) dicatat deployment lain, mis. sebelum promosi; deployment ini belum menjalankan pemindai |
+| `not_ready` | `on_demand_refresh_failed` | 503 | Run terakhir deployment ini gagal, termasuk gagal sebelum mengunci antrean (koneksi, peran DB, kunci) atau saat inisialisasi pemindai; atau heartbeat gagal deployment lain lebih dari 8 jam tanpa run deployment ini |
+| `not_ready` | `on_demand_verification_missing_or_expired` | 503 | Tidak ada heartbeat sama sekali, bukti tidak sah, lease habis lebih dari 8 jam, atau heartbeat sukses deployment lain sudah kedaluwarsa lebih dari 8 jam |
+
+Batas 8 jam = dua jadwal Vercel Cron (tiap 4 jam, ±59 menit). Kegagalan sebelum worker berjalan tidak dapat dicatat sebagai heartbeat: validasi environment atau impor modul gagal (sengaja tanpa memuat modul database), deadline invocation terlalu pendek, atau dispatch dari API ditolak (`MALWARE_SCAN_DISPATCH_TOKEN`, `VERCEL_URL`, proteksi deployment; peran API tidak boleh menulis heartbeat). Untuk kasus itu `scanner-wake` menjawab `unavailable` atau wake gagal di log, monitor gagal karena cek `scanner` tetap `attention`, dan `/ready` menjadi 503 paling lambat 8 jam setelah heartbeat terakhir.
 
 Heartbeat pemindai menyimpan `deploymentId` (`VERCEL_DEPLOYMENT_ID`). Cek `scanner` di Operations Monitor dan panel Super Admin bernilai `attention` saat `standby`; monitor tetap membangunkan pemindai lebih dulu dan gagal bila wake tidak memulihkannya. Berkas baru tetap dikarantina sampai pemindaian membuktikannya bersih, apa pun status `/ready`.
 

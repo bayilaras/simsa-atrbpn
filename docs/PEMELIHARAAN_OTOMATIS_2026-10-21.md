@@ -66,8 +66,8 @@ build C56 + 24 jam, walau wake monitor #185 berjalan 13:18 (lease mengikuti buil
 
 | Lapisan | Perubahan | Alasan |
 |---|---|---|
-| Kesiapan (`readiness.service.ts`) | Status `standby` (HTTP 200, `/ready` `degraded`) untuk lease yang habis < 24 jam setelah run sukses, dan untuk heartbeat terbaru dari deployment lain (≤ 48 jam). `not_ready` (503) tetap untuk run gagal **deployment ini** (`on_demand_refresh_failed`), tanpa run, bukti tidak sah, atau lease habis > 24 jam | Membedakan "dingin tapi bisa dibangunkan" dari gangguan nyata. Keamanan tidak berubah: berkas tetap dikarantina sampai pemindaian membuktikannya bersih |
-| Worker (`malware-scan-on-demand.ts`) | Heartbeat menyimpan `deploymentId` (`VERCEL_DEPLOYMENT_ID`) | Agar kegagalan deployment lama tidak dibebankan ke deployment yang baru dipromosikan |
+| Kesiapan (`readiness.service.ts`) | Status `standby` (HTTP 200, `/ready` `degraded`) untuk lease yang habis ≤ 8 jam setelah run sukses, dan untuk heartbeat terbaru dari deployment lain (≤ 8 jam). `not_ready` (503) tetap untuk run gagal **deployment ini** (`on_demand_refresh_failed`), tanpa heartbeat, bukti tidak sah, atau siaga > 8 jam | Membedakan "dingin tapi bisa dibangunkan" dari gangguan nyata. 8 jam = dua jadwal cron; siaga lebih lama berarti wake tidak sampai ke worker. Keamanan tidak berubah: berkas tetap dikarantina sampai pemindaian membuktikannya bersih |
+| Worker (`malware-scan-on-demand.ts`) | Heartbeat menyimpan `deploymentId` (`VERCEL_DEPLOYMENT_ID`). Kegagalan sebelum kunci antrean (koneksi, peran DB, kunci) dan inisialisasi pemindai kini juga mencatat heartbeat `degraded`; `busy` tidak | Agar kegagalan deployment lama tidak dibebankan ke deployment baru, dan kegagalan deployment baru tidak tersembunyi di balik `standby`. Gagal validasi env/impor (sengaja tanpa memuat database) dan dispatch API yang ditolak tidak bisa dicatat: tertangkap monitor dan batas 8 jam |
 | Vercel Cron (`backend/vercel.json`) | 6 entri harian, tiap 4 jam (03, 07, 11, 15, 19, 23 :07) | Sesuai Hobby (tiap entri 1×/hari, maks 100 entri). Jendela refresh 13 jam kini berisi 3 percobaan; refresh gagal dicoba ulang ≤ ±5 jam; deployment baru dibuktikan ≤ ±5 jam setelah promosi |
 | Monitor (`check-operations.mjs`) | Mencetak id + status cek yang bermasalah, mis. `(scanner: attention, backup: failed)` | Deret gagal berikutnya bisa didiagnosis dari log run |
 
@@ -82,6 +82,14 @@ build C56 + 24 jam, walau wake monitor #185 berjalan 13:18 (lease mengikuti buil
   (1 kueri DB + 1 `list` Blob, ±1 s). Pemindai hanya dibangunkan bila lease < 13 jam atau siaga,
   sehingga dalam kondisi normal tetap ±2 run pemindai per hari; tambahan hanya saat refresh gagal.
   Tambahan operasi Blob ±4 `list`/hari (±120/bulan).
+- *Percobaan Freshclam lebih sering saat refresh gagal.* Wake hanya membangunkan pemindai bila lease
+  tersisa < 13 jam atau siaga, dan hampir selalu di instance dingin. Bila refresh dini gagal, setiap
+  wake berikutnya mengunduh ulang `daily.cvd` penuh (±23 MB): dari cron kini sampai 3 percobaan per
+  jendela 13 jam (dulu 1), ditambah wake dari monitor GitHub (tiap run, sudah ada sebelumnya) dan
+  pemindaian unggahan. Pembatasnya: jarak antar-cron 4 jam; `EARLY_REFRESH_RETRY_MS` (1 jam) hanya
+  berlaku di instance hangat; dan 6×/hari masih di bawah bawaan Freshclam (`Checks 12`/hari). Tidak ada
+  backoff lintas instance; bila mirror ClamAV mulai membatasi (HTTP 429), jalan keluarnya cache definisi
+  atau redeploy berkala (lihat di bawah), bukan menambah pemicu.
 - *`/ready` 200 saat siaga.* `/ready` tidak dipakai untuk routing Vercel; hanya sinyal operator,
   monitor, dan `verify-cloud-access.mjs` (yang tetap menuntut `status: ready`). Status `degraded`
   plus `malwareWorker.state` di body tetap jujur. Setelah promosi, `/ready` 200 `degraded` dengan
@@ -106,7 +114,9 @@ API kontrol Blob (`list`/`put`/`head`/`del`), bukan jarak ke store.
 **Pengukuran baru.** `POST /api/operations/storage-latency` (token monitor, tanpa sesi, satu
 pengukuran per instance) mengukur dari fungsi produksi: unggah, `head`, unduh (dengan cek SHA-256),
 dan hapus objek uji 16 KiB dan 1 MiB masing-masing 3 kali, plus `list`. Objek uji memakai prefiks
-`__simsa_latency_probe__/` dan selalu dihapus; tidak ada catatan DB yang merujuknya, dan backup
+`__simsa_latency_probe__/` dan dihapus di setiap putaran; di awal dan akhir setiap run, objek uji yang
+berumur > 5 menit (sisa `put` yang timeout setelah tersimpan, hapus yang gagal, atau fungsi yang
+terhenti) ikut dihapus dan jumlahnya dilaporkan. Tidak ada catatan DB yang merujuknya, dan backup
 memakai rujukan DB sehingga tidak ikut. Jalankan lewat **Actions → SIMSA Operations Monitor → Run
 workflow → centang "Ukur latensi Blob privat"**; hasil (median per operasi) tercetak di langkah
 "Measure private storage latency". Endpoint baru tersedia setelah backend dirilis.

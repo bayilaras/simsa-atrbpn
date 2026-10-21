@@ -71,8 +71,9 @@ describe('on-demand native scanner readiness', () => {
             reason: 'definitions_lease_expired', runtime: 'on-demand', lastSeenAt: new Date(now - 86_400_001 + 1000).toISOString(),
             definitionsExpiresAt: new Date(now - 1).toISOString() });
     });
-    it('stops treating a lapsed lease as standby once no wake has refreshed it for a further day', () => {
-        expect(evaluateOnDemandMalwareReadiness([leased(2 * 86_400_000 + 1)], now)).toMatchObject({ state: 'not_ready',
+    it('stops treating a lapsed lease as standby once four-hourly wakes have not refreshed it for eight hours', () => {
+        expect(evaluateOnDemandMalwareReadiness([leased(86_400_000 + 8 * 3_600_000)], now)).toMatchObject({ state: 'standby' });
+        expect(evaluateOnDemandMalwareReadiness([leased(86_400_000 + 8 * 3_600_000 + 1)], now)).toMatchObject({ state: 'not_ready',
             reason: 'on_demand_verification_missing_or_expired' });
     });
     it('reports a newer failed run of this deployment as a refresh failure even while an older lease is valid', () => {
@@ -88,16 +89,23 @@ describe('on-demand native scanner readiness', () => {
         expect(evaluateOnDemandMalwareReadiness([leased(30 * 3_600_000), failure(3_600_000, details)], now, 'dpl_current123'))
             .toEqual({ required: true, state: 'standby', reason: 'awaiting_first_run_on_deployment', runtime: 'on-demand',
                 lastSeenAt: new Date(now - 3_600_000).toISOString() });
-        expect(evaluateOnDemandMalwareReadiness([leased(30 * 3_600_000, details)], now, 'dpl_current123'))
+        // A superseded deployment's last run used build-time definitions that have since lapsed.
+        const stale = leased(25 * 3_600_000, details); stale.last_seen_at = new Date(now - 3_600_000);
+        expect(evaluateOnDemandMalwareReadiness([stale], now, 'dpl_current123'))
             .toMatchObject({ state: 'standby', reason: 'awaiting_first_run_on_deployment' });
     });
     it('keeps a valid lease from a superseded deployment ready', () => {
         expect(evaluateOnDemandMalwareReadiness([leased(3_600_000, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
             .toMatchObject({ state: 'ready' });
     });
-    it('reports a superseded deployment failure as a fault once the scanner has been silent for two days', () => {
-        expect(evaluateOnDemandMalwareReadiness([failure(2 * 86_400_000 + 1, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
+    it('reports a new deployment that has not run its scanner within eight hours as a fault', () => {
+        // E.g. its wake dispatch is rejected before the worker can publish anything.
+        expect(evaluateOnDemandMalwareReadiness([failure(8 * 3_600_000, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
+            .toMatchObject({ state: 'standby' });
+        expect(evaluateOnDemandMalwareReadiness([failure(8 * 3_600_000 + 1, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
             .toMatchObject({ state: 'not_ready', reason: 'on_demand_refresh_failed' });
+        expect(evaluateOnDemandMalwareReadiness([leased(9 * 3_600_000, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
+            .toMatchObject({ state: 'ready' });
     });
 });
 
