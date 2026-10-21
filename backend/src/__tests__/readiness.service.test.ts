@@ -42,17 +42,62 @@ describe('on-demand native scanner readiness', () => {
             definitionsExpiresAt: new Date(now - 3_600_000 + 86_400_000).toISOString(), definitionsDigest: 'a'.repeat(64),
             databases: ['main', 'daily', 'bytecode'].map(name => ({ name, version: 1, sha256: 'b'.repeat(64), signatureSha256: 'c'.repeat(64) })),
         } } });
+    // A row whose 24-hour lease started `verifiedAgoMs` before now.
+    const leased = (verifiedAgoMs: number, details: Record<string, unknown> = {}) => {
+        const candidate = row();
+        const verifiedAt = now - verifiedAgoMs;
+        candidate.last_seen_at = new Date(verifiedAt + 1000);
+        Object.assign(candidate.details.engineEvidence, { definitionsVerifiedAt: new Date(verifiedAt).toISOString(),
+            definitionsExpiresAt: new Date(verifiedAt + 86_400_000).toISOString() });
+        Object.assign(candidate.details, details);
+        return candidate;
+    };
+    const failure = (seenAgoMs: number, details: Record<string, unknown> = {}) => ({ worker: 'malware-scan' as const,
+        status: 'degraded' as const, last_seen_at: new Date(now - seenAgoMs),
+        details: { runtime: 'on-demand', reason: 'invocation_failed', ...details } });
     it('accepts real verification until its definition lease expires without a 60-second timer heartbeat', () => {
         expect(evaluateOnDemandMalwareReadiness([row()], now)).toMatchObject({ required: true, state: 'ready' });
     });
-    it.each(['missing', 'expired', 'future', 'wrong-runtime', 'newer-failure'])('rejects %s proof without invoking an engine', variant => {
+    it.each(['missing', 'future', 'wrong-runtime'])('rejects %s proof without invoking an engine', variant => {
         const candidate = row();
-        if (variant === 'expired') candidate.details.engineEvidence.definitionsExpiresAt = new Date(now - 1).toISOString();
         if (variant === 'future') candidate.details.engineEvidence.definitionsVerifiedAt = new Date(now + 1000).toISOString();
         if (variant === 'wrong-runtime') candidate.details.runtime = 'external';
         const rows = variant === 'missing' ? [] : [candidate];
-        if (variant === 'newer-failure') rows.push({ ...row(), status: 'degraded' as never, last_seen_at: new Date(now - 1000) });
-        expect(evaluateOnDemandMalwareReadiness(rows, now)).toMatchObject({ state: 'not_ready' });
+        expect(evaluateOnDemandMalwareReadiness(rows, now)).toEqual({ required: true, state: 'not_ready',
+            reason: 'on_demand_verification_missing_or_expired' });
+    });
+    it('reports a lapsed lease after a successful run as wakeable standby, not as a fault', () => {
+        expect(evaluateOnDemandMalwareReadiness([leased(86_400_001)], now)).toEqual({ required: true, state: 'standby',
+            reason: 'definitions_lease_expired', runtime: 'on-demand', lastSeenAt: new Date(now - 86_400_001 + 1000).toISOString(),
+            definitionsExpiresAt: new Date(now - 1).toISOString() });
+    });
+    it('stops treating a lapsed lease as standby once no wake has refreshed it for a further day', () => {
+        expect(evaluateOnDemandMalwareReadiness([leased(2 * 86_400_000 + 1)], now)).toMatchObject({ state: 'not_ready',
+            reason: 'on_demand_verification_missing_or_expired' });
+    });
+    it('reports a newer failed run of this deployment as a refresh failure even while an older lease is valid', () => {
+        const rows = [row(), failure(1000, { deploymentId: 'dpl_current123' })];
+        expect(evaluateOnDemandMalwareReadiness(rows, now, 'dpl_current123')).toEqual({ required: true, state: 'not_ready',
+            reason: 'on_demand_refresh_failed' });
+        expect(evaluateOnDemandMalwareReadiness([row(), failure(1000)], now)).toMatchObject({ reason: 'on_demand_refresh_failed' });
+    });
+    it.each([
+        ['a superseded deployment', { deploymentId: 'dpl_previous12' }],
+        ['code that predates deployment tagging', {}],
+    ])('does not blame a freshly promoted deployment for a failure recorded by %s', (_label, details) => {
+        expect(evaluateOnDemandMalwareReadiness([leased(30 * 3_600_000), failure(3_600_000, details)], now, 'dpl_current123'))
+            .toEqual({ required: true, state: 'standby', reason: 'awaiting_first_run_on_deployment', runtime: 'on-demand',
+                lastSeenAt: new Date(now - 3_600_000).toISOString() });
+        expect(evaluateOnDemandMalwareReadiness([leased(30 * 3_600_000, details)], now, 'dpl_current123'))
+            .toMatchObject({ state: 'standby', reason: 'awaiting_first_run_on_deployment' });
+    });
+    it('keeps a valid lease from a superseded deployment ready', () => {
+        expect(evaluateOnDemandMalwareReadiness([leased(3_600_000, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
+            .toMatchObject({ state: 'ready' });
+    });
+    it('reports a superseded deployment failure as a fault once the scanner has been silent for two days', () => {
+        expect(evaluateOnDemandMalwareReadiness([failure(2 * 86_400_000 + 1, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
+            .toMatchObject({ state: 'not_ready', reason: 'on_demand_refresh_failed' });
     });
 });
 
@@ -75,6 +120,9 @@ describe('collectReadiness', () => {
             const ready = await collectReadiness(dependencies);
             expect(ready.status).toBe('ready'); expect(ready.dependencies.malwareScanner.state).toBe('on_demand');
             expect((await collectReadiness({ ...dependencies, readHeartbeats: async () => [] })).status).toBe('not_ready');
+            // A lapsed lease serves traffic (HTTP 200) but is reported as degraded.
+            const lapsed = await collectReadiness({ ...dependencies, now: () => now + 86_400_000 });
+            expect(lapsed.status).toBe('degraded'); expect(lapsed.dependencies.malwareWorker.state).toBe('standby');
             expect(embedded).not.toHaveBeenCalled();
         } finally {
             malwareScanConfig.mode = prior.mode; malwareScanConfig.workerEnabled = prior.workerEnabled;
