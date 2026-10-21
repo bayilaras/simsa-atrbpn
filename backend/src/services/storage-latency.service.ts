@@ -6,6 +6,8 @@ import { del, get, head, list, put } from '@vercel/blob';
 export const STORAGE_LATENCY_PREFIX = '__simsa_latency_probe__/';
 const MAX_PROBE_BYTES = 4 * 1024 * 1024;
 const MAX_ROUNDS = 5;
+/** Longer than any run: an older probe object can only be a leftover. */
+const LEFTOVER_AGE_MS = 5 * 60_000;
 
 export interface StorageLatencyClient {
     now(): number;
@@ -13,7 +15,7 @@ export interface StorageLatencyClient {
     head(url: string): Promise<void>;
     get(url: string): Promise<Buffer>;
     del(url: string): Promise<void>;
-    list(prefix: string): Promise<void>;
+    list(prefix: string): Promise<Array<{ url: string; uploadedAt: Date }>>;
 }
 
 type Timing = { median: number; samples: number[] };
@@ -30,12 +32,35 @@ const sha256 = (value: Buffer) => createHash('sha256').update(value).digest('hex
  * to accept, describe, return and delete a probe object of each size, plus the
  * readiness probe's `list`. Operator-triggered only; it never touches records.
  */
-export async function measureStorageLatency(client: StorageLatencyClient, options: { sizes: number[]; rounds: number }) {
-    const { sizes, rounds } = options;
+export async function measureStorageLatency(client: StorageLatencyClient,
+    options: { sizes: number[]; rounds: number; now?: () => number }) {
+    const { sizes, rounds, now = Date.now } = options;
     if (sizes.length < 1 || sizes.length > 4 || !sizes.every(size => Number.isSafeInteger(size) && size >= 1 && size <= MAX_PROBE_BYTES)
         || !Number.isSafeInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) {
         throw new Error('Invalid storage latency probe');
     }
+    // Best effort, before and after each run: a put that timed out after
+    // committing, a failed delete, or a killed function can leave objects.
+    let removedLeftovers = 0;
+    const sweep = async () => {
+        try {
+            for (const blob of await client.list(STORAGE_LATENCY_PREFIX)) {
+                if (now() - blob.uploadedAt.getTime() <= LEFTOVER_AGE_MS) continue;
+                await client.del(blob.url).then(() => { removedLeftovers += 1; }, () => undefined);
+            }
+        } catch { /* The next run sweeps again. */ }
+    };
+    await sweep();
+    let measured: Awaited<ReturnType<typeof measure>>;
+    try {
+        measured = await measure(client, sizes, rounds);
+    } finally {
+        await sweep();
+    }
+    return { rounds, removedLeftovers, ...measured };
+}
+
+async function measure(client: StorageLatencyClient, sizes: number[], rounds: number) {
     const timed = async <T>(samples: number[], operation: () => Promise<T>): Promise<T> => {
         const startedAt = client.now();
         const result = await operation();
@@ -63,7 +88,7 @@ export async function measureStorageLatency(client: StorageLatencyClient, option
         results.push({ bytes, uploadMs: timing(upload), headMs: timing(metadata), downloadMs: timing(download), deleteMs: timing(removal) });
     }
     for (let round = 0; round < rounds; round++) await timed(listSamples, () => client.list(STORAGE_LATENCY_PREFIX));
-    return { rounds, listMs: timing(listSamples), sizes: results };
+    return { listMs: timing(listSamples), sizes: results };
 }
 
 /** The same SDK calls and options the Vercel Blob adapter uses for attachments. */
@@ -88,5 +113,9 @@ export const vercelBlobLatencyClient: StorageLatencyClient = {
         return Buffer.concat(chunks);
     },
     async del(url) { await del(url); },
-    async list(prefix) { await list({ prefix, limit: 1 }); },
+    async list(prefix) {
+        // Same page size as the readiness probe's listFiles().
+        const result = await list({ prefix, limit: 100 });
+        return result.blobs.map(blob => ({ url: blob.url, uploadedAt: blob.uploadedAt }));
+    },
 };

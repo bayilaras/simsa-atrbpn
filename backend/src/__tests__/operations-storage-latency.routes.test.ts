@@ -10,6 +10,9 @@ vi.mock('../services/operations-status.service.js', () => ({ getOperationsStatus
 vi.mock('../config/database.js', () => ({ pool: { totalCount: 0, idleCount: 0, waitingCount: 0 } }));
 vi.mock('../config/blob-storage.js', () => ({ getObjectStorageConfigurationStatus: io.storage }));
 vi.mock('../services/storage-latency.service.js', () => ({ measureStorageLatency: io.measure, vercelBlobLatencyClient: { client: 'blob' } }));
+// Session-authenticated routes after the bearer endpoints: reject without a session lookup.
+vi.mock('../middlewares/auth.middleware.js', () => ({ authMiddleware: (_req: unknown, res: { status(code: number): { json(body: unknown): void } }) => res.status(401).json({}) }));
+vi.mock('../middlewares/role.middleware.js', () => ({ roleMiddleware: () => (_req: unknown, _res: unknown, next: () => void) => next() }));
 
 const token = 'x'.repeat(64);
 const app = express();
@@ -30,7 +33,7 @@ describe('POST /api/operations/storage-latency', () => {
         await request(app).post('/api/operations/storage-latency').expect(401);
         await request(app).post('/api/operations/storage-latency').set('Authorization', 'Bearer wrong').expect(401);
         // Only POST measures; GET falls through to the session-authenticated routes.
-        expect((await request(app).get('/api/operations/storage-latency').set('Authorization', `Bearer ${token}`)).status).not.toBe(200);
+        await request(app).get('/api/operations/storage-latency').set('Authorization', `Bearer ${token}`).expect(401);
         expect(io.measure).not.toHaveBeenCalled();
     });
 

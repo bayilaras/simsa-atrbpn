@@ -107,6 +107,7 @@ test('storage latency is requested from the deployed function and printed as med
         '- 1024 KiB: unggah 700 ms, metadata 125 ms, unduh 160 ms, hapus 210 ms',
         '- list (probe /ready): 410 ms',
     ]);
+    assert.equal(formatStorageLatency({ ...result, removedLeftovers: 2 }).at(-1), '- objek uji tertinggal dari run sebelumnya dihapus: 2');
     for (const response of [{ status: 503, text: async () => '{"status":"failed"}' },
         { status: 200, text: async () => JSON.stringify({ ...measured, functionRegion: 'sin1; rm -rf' }) }]) {
         const failed = await requestStorageLatency({ OPERATIONS_MONITOR_TOKEN: 'x'.repeat(64) }, async () => response);

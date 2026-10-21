@@ -82,7 +82,9 @@ export function formatStorageLatency(result) {
     const ms = value => `${Math.round(value.median)} ms`;
     return [`Latensi penyimpanan dari fungsi ${result.functionRegion} (${result.provider}), median ${result.rounds} putaran:`,
         ...result.sizes.map(size => `- ${Math.round(size.bytes / 1024)} KiB: unggah ${ms(size.uploadMs)}, metadata ${ms(size.headMs)}, unduh ${ms(size.downloadMs)}, hapus ${ms(size.deleteMs)}`),
-        `- list (probe /ready): ${ms(result.listMs)}`];
+        `- list (probe /ready): ${ms(result.listMs)}`,
+        ...(Number.isInteger(result.removedLeftovers) && result.removedLeftovers > 0
+            ? [`- objek uji tertinggal dari run sebelumnya dihapus: ${result.removedLeftovers}`] : [])];
 }
 
 export async function runMonitor(source = process.env, fetcher = fetch, sleep = ms => new Promise(done => setTimeout(done, ms))) {
