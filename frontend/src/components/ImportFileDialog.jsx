@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAppConfig } from '@/context/app-config-context'
 import api from '@/services/api'
-import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
+import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS, IMPORT_UNIT_REQUIRED } from '@/lib/google-sheets-import'
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import'
 
 /**
@@ -274,9 +274,18 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
 
 export default function ImportFileDialog({ type, unitKerjaId, onImportComplete }) {
     const { mode } = useAppConfig()
+    const unitHintId = useId()
     const [open, setOpen] = useState(false)
     const [busy, setBusy] = useState(false)
-    if (mode === 'metadata-demo' || !labels[type] || !unitKerjaId || unitKerjaId === 'all') return null
+    if (mode === 'metadata-demo' || !labels[type]) return null
+    // Without a concrete unit the button stays focusable and says what is missing.
+    if (!unitKerjaId || unitKerjaId === 'all') return <>
+        <Button variant="outline" size="sm" className="h-9 cursor-not-allowed opacity-50" aria-disabled="true"
+            aria-describedby={unitHintId} title={IMPORT_UNIT_REQUIRED}>
+            <FileSpreadsheet aria-hidden="true" className="mr-2 h-3.5 w-3.5" />Impor CSV/XLSX
+        </Button>
+        <span id={unitHintId} hidden>{IMPORT_UNIT_REQUIRED}</span>
+    </>
     const keepOpen = event => { if (busy) event.preventDefault() }
     return <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value) }}>
         <Button variant="outline" size="sm" className="h-9" onClick={() => setOpen(true)}>

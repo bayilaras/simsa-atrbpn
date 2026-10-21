@@ -179,10 +179,19 @@ describe('CSV/XLSX import dialog', () => {
         expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     })
 
-    it.each([['metadata-demo', 'unit-a'], ['full', 'all'], ['full', '']])('is not offered in mode %s for unit %j', (mode, unit) => {
-        mocks.mode = mode
-        render(<ImportFileDialog type="surat-masuk" unitKerjaId={unit} />)
+    it('is not offered in mode metadata-demo', () => {
+        mocks.mode = 'metadata-demo'
+        render(<ImportFileDialog type="surat-masuk" unitKerjaId="unit-a" />)
         expect(screen.queryByRole('button', { name: 'Impor CSV/XLSX' })).not.toBeInTheDocument()
+    })
+
+    it.each(['all', '', undefined])('asks for a concrete unit before opening for unit %j', unit => {
+        render(<ImportFileDialog type="surat-masuk" unitKerjaId={unit} />)
+        const button = screen.getByRole('button', { name: 'Impor CSV/XLSX' })
+        expect(button).toHaveAttribute('aria-disabled', 'true')
+        expect(button).toHaveAccessibleDescription('Pilih unit kerja terlebih dahulu')
+        fireEvent.click(button)
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
     it('is not offered for archives, which keep the CSV import', () => {

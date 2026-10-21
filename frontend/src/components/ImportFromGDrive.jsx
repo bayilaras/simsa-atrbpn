@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/services/api';
-import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import';
+import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS, IMPORT_UNIT_REQUIRED } from '@/lib/google-sheets-import';
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useAppConfig } from '@/context/app-config-context';
@@ -18,7 +18,7 @@ import { useAppConfig } from '@/context/app-config-context';
  * 
  * Props:
  * - type: 'surat-masuk' | 'surat-keluar'
- * - unitKerjaId: concrete destination unit (required)
+ * - unitKerjaId: concrete destination unit; without one the button explains that a unit must be chosen first
  * - onImportComplete: () => void (callback to refresh data)
  *
  * Long sheets are imported in parts: the server stops starting rows after a
@@ -27,6 +27,7 @@ import { useAppConfig } from '@/context/app-config-context';
  */
 const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const { capabilities } = useAppConfig();
+    const unitHintId = useId();
     const [isOpen, setIsOpen] = useState(false);
     const [step, setStep] = useState('input'); // input, sheets, preview, importing, result
     const [spreadsheetUrl, setSpreadsheetUrl] = useState('');
@@ -245,15 +246,19 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
 
     return (
         <>
+            {/* Without a concrete unit the button stays focusable and says what is missing. */}
             <button
                 type="button"
                 onClick={handleOpen}
-                disabled={!unitKerjaId}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-disabled={unitKerjaId ? undefined : 'true'}
+                aria-describedby={unitKerjaId ? undefined : unitHintId}
+                title={unitKerjaId ? undefined : IMPORT_UNIT_REQUIRED}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
             >
                 <Upload aria-hidden="true" className="w-4 h-4" />
                 Impor dari Google Sheets
             </button>
+            {!unitKerjaId && <span id={unitHintId} hidden>{IMPORT_UNIT_REQUIRED}</span>}
             <Dialog open={isOpen} onOpenChange={(open) => !open && step !== 'importing' && handleClose()}>
                 <DialogContent
                     showCloseButton={false}

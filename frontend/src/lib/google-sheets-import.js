@@ -1,5 +1,8 @@
+// Every import writes into one concrete unit; shown where an import cannot start yet.
+export const IMPORT_UNIT_REQUIRED = 'Pilih unit kerja terlebih dahulu';
+
 export function buildGoogleSheetsImportPayload(spreadsheetUrl, gid, unitKerjaId) {
-    if (!unitKerjaId) throw new Error('Pilih unit kerja terlebih dahulu');
+    if (!unitKerjaId) throw new Error(IMPORT_UNIT_REQUIRED);
     return { spreadsheetUrl, gid, unitKerjaId };
 }
 
