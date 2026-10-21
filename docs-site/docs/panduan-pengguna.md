@@ -188,11 +188,11 @@ Pembuat tidak dapat menyetujui suratnya sendiri. Selama status **Menunggu Perset
 
 Jangan menghapus surat hanya untuk memperbaiki kesalahan kecil. Gunakan fungsi edit/koreksi yang tersedia agar jejak aktivitas tetap dapat ditelusuri. Penghapusan hanya dilakukan oleh petugas berwenang setelah memastikan dampaknya.
 
-### Impor daftar CSV
+### Impor daftar CSV atau XLSX
 
-Admin dapat memilih **Impor CSV** pada daftar Surat Masuk, Surat Keluar, atau Arsip Aktif. Super Admin memilih satu unit kerja terlebih dahulu. Pilih CSV lalu **Pratinjau**, koreksi baris yang ditolak pada sumbernya, dan klik **Impor data valid** setelah memeriksa hasil.
+Admin dapat memilih **Impor CSV/XLSX** pada daftar Surat Masuk atau Surat Keluar. Super Admin memilih satu unit kerja terlebih dahulu. Pilih berkas `.csv` atau `.xlsx`, klik **Pratinjau** (untuk XLSX dengan beberapa lembar, pilih lembar kerja lalu **Pratinjau** lagi), periksa pemetaan kolom dan contoh baris, lalu klik **Impor**. Judul kolom dikenali seperti impor Google Sheets, misalnya `Hal` → Perihal dan `Get link` → Tautan dokumen. Maksimal 1.000 baris data dan 4 MiB per berkas; berkas panjang diimpor per bagian secara otomatis, dan baris yang sudah tersimpan dikenali sebagai duplikat saat impor ulang.
 
-Kolom utama surat: `Nomor Surat`, `Tanggal Surat`, `Perihal`, `Dari`, `Kepada`. Kolom utama arsip: `Nomor Berkas`, `Tanggal`, `Uraian`, `Jenis Arsip` (`masuk` atau `keluar`). Gunakan tanggal `YYYY-MM-DD` atau `DD/MM/YYYY`, maksimal 1.000 rekod dan 10 MiB per CSV. Baris yang berhasil tetap tersimpan bila baris lain gagal; periksa hasil sebelum mengulang.
+Pada Arsip Aktif, **Impor CSV** memakai kolom `Nomor Berkas`, `Tanggal`, `Uraian`, `Jenis Arsip` (`masuk` atau `keluar`) dengan tanggal `YYYY-MM-DD` atau `DD/MM/YYYY`, maksimal 1.000 rekod dan 10 MiB per CSV. Pilih CSV lalu **Pratinjau**, koreksi baris yang ditolak pada sumbernya, dan klik **Impor data valid** setelah memeriksa hasil. Baris yang berhasil tetap tersimpan bila baris lain gagal; periksa hasil sebelum mengulang.
 
 Impor ini mencatat metadata, bukan mengunggah berkas digital. Impor arsip belum memetakan kolom lokasi terstruktur; catatan lokasi dapat ditempatkan pada `Keterangan`. Klasifikasi/JRA hasil impor perlu dicocokkan melalui rekonsiliasi, tidak otomatis terverifikasi. Lihat [langkah inventaris fisik](./mulai-inventaris-internal.md).
 

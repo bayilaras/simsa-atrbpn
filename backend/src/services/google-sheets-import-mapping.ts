@@ -40,12 +40,28 @@ export function normalizeSheetHeader(value: string): string {
 }
 
 export interface SheetColumnMapping { field: string; label: string; columnIndex: number; header: string }
+
+/** The header is the first of the first five rows with at least three recognised titles; -1 when none. */
+function findHeaderRow(rows: string[][], definitions: Record<string, Column>): number {
+    const recognized = new Set(Object.values(definitions).flatMap(column => column.aliases));
+    return rows.slice(0, 5).findIndex(row =>
+        new Set(row.map(normalizeSheetHeader).filter(header => recognized.has(header))).size >= 3);
+}
+
+/** The header row and every column titled as a document link (none for incoming letters). */
+export function linkColumns(rows: string[][], importType: GoogleSheetsImportType): { headerRowIndex: number; columns: number[] } {
+    const definitions = columns[importType];
+    const link = definitions?.linkDokumen;
+    const headerRowIndex = definitions ? findHeaderRow(rows, definitions) : -1;
+    if (!link || headerRowIndex < 0) return { headerRowIndex, columns: [] };
+    return { headerRowIndex, columns: rows[headerRowIndex].flatMap((header, index) =>
+        link.aliases.includes(normalizeSheetHeader(header)) ? [index] : []) };
+}
+
 export function resolveSheetMapping(rows: string[][], importType: GoogleSheetsImportType) {
     const definitions = columns[importType];
     if (!definitions) throw new ValidationError('Jenis impor Google Sheets tidak valid.');
-    const recognized = new Set(Object.values(definitions).flatMap(column => column.aliases));
-    const headerRowIndex = rows.slice(0, 5).findIndex(row =>
-        new Set(row.map(normalizeSheetHeader).filter(header => recognized.has(header))).size >= 3);
+    const headerRowIndex = findHeaderRow(rows, definitions);
     if (headerRowIndex < 0) throw new ValidationError('Header sheet tidak dikenali. Gunakan nama kolom surat yang jelas pada lima baris pertama.');
     const headers = rows[headerRowIndex];
     const normalized = headers.map(normalizeSheetHeader);
@@ -54,9 +70,14 @@ export function resolveSheetMapping(rows: string[][], importType: GoogleSheetsIm
     for (const [field, definition] of Object.entries(definitions)) {
         let matches = normalized.flatMap((header, index) => definition.aliases.includes(header) ? [index] : []);
         // Registers often pair a "file" label column with the URL column under one heading.
+        // In a downloaded workbook the label may itself link to the file, so the link column
+        // is the one holding every URL the other columns hold, row by row.
         if (field === 'linkDokumen' && matches.length > 1) {
-            const withUrls = matches.filter(index => rows.slice(headerRowIndex + 1).some(row => isWebAddress(row[index])));
-            if (withUrls.length === 1) matches = withUrls;
+            const dataRows = rows.slice(headerRowIndex + 1);
+            const withUrls = matches.filter(index => dataRows.some(row => isWebAddress(row[index])));
+            const covering = withUrls.filter(index => dataRows.every(row => withUrls.every(other =>
+                !isWebAddress(row[other]) || row[index]?.trim() === row[other].trim())));
+            if (covering.length) matches = [covering[0]];
         }
         if (matches.length > 1) throw new ValidationError(
             `Pemetaan ${definition.label} ambigu pada kolom ${matches.map(index => index + 1).join(', ')}. Sisakan satu kolom yang sesuai.`,

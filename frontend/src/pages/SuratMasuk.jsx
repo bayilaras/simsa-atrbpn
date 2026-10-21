@@ -14,7 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
-import ImportCsvDialog from '@/components/ImportCsvDialog';
+import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
 import { DistributeDialog } from '@/components/DistributeDialog';
 import {
@@ -353,7 +353,7 @@ export default function SuratMasuk() {
                         />
                     )}
 
-                    {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="surat-masuk" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
+                    {isAdmin && resolvedUnitKerjaId && <ImportFileDialog type="surat-masuk" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
 
                     {canExportReports(user?.role) && (
                         <ExportButton

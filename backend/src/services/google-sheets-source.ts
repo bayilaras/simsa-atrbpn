@@ -195,7 +195,10 @@ export class GoogleSheetsSource {
     }
 }
 
-export function parseBoundedSheetCsv(csv: string): string[][] {
+/** The field separators a CSV import accepts; Google Sheets always exports ",". */
+export type CsvDelimiter = ',' | ';' | '\t';
+
+export function parseBoundedSheetCsv(csv: string, delimiter: CsvDelimiter = ','): string[][] {
     if (Buffer.byteLength(csv, 'utf8') > GOOGLE_SHEETS_LIMITS.responseBytes) {
         throw new PayloadTooLargeError('CSV melebihi batas 5 MiB.');
     }
@@ -203,15 +206,21 @@ export function parseBoundedSheetCsv(csv: string): string[][] {
     let row: string[] = [];
     let field = '';
     let state: 'start' | 'text' | 'quoted' | 'closed' = 'start';
-    let recordCount = 0;
+    // Spreadsheet programs pad a CSV with empty cells and records up to the formatted
+    // range; only filled ones count toward the row and column limits (padding still
+    // counts toward the byte limit).
     const addField = () => {
-        if (row.length >= GOOGLE_SHEETS_LIMITS.columns) throw new PayloadTooLargeError('CSV melebihi batas 64 kolom.');
         if (Buffer.byteLength(field, 'utf8') > GOOGLE_SHEETS_LIMITS.fieldBytes) throw new PayloadTooLargeError('Field CSV melebihi batas 16 KiB.');
-        row.push(field.trim()); field = ''; state = 'start';
+        const value = field.trim();
+        field = ''; state = 'start';
+        if (row.length < GOOGLE_SHEETS_LIMITS.columns) row.push(value);
+        else if (value) throw new PayloadTooLargeError('CSV melebihi batas 64 kolom.');
     };
     const addRow = () => {
-        if (++recordCount > GOOGLE_SHEETS_LIMITS.rows) throw new PayloadTooLargeError('CSV melebihi batas 1.005 baris termasuk judul.');
-        if (row.some(value => value !== '')) rows.push(row);
+        if (row.some(value => value !== '')) {
+            if (rows.length >= GOOGLE_SHEETS_LIMITS.rows) throw new PayloadTooLargeError('CSV melebihi batas 1.005 baris berisi termasuk judul.');
+            rows.push(row);
+        }
         row = [];
     };
     const text = csv.replace(/^\uFEFF/, '');
@@ -222,7 +231,7 @@ export function parseBoundedSheetCsv(csv: string): string[][] {
             if (char === '"' && text[i + 1] === '"') { field += '"'; i++; }
             else if (char === '"') state = 'closed';
             else field += char;
-        } else if (char === ',') { addField(); }
+        } else if (char === delimiter) { addField(); }
         else if (char === '\n' || char === '\r') {
             addField(); addRow();
             if (char === '\r' && text[i + 1] === '\n') i++;

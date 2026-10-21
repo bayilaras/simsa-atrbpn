@@ -14,7 +14,7 @@ import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import { sifatSuratKeluarLabel } from '@/lib/sifat-surat-keluar';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
-import ImportCsvDialog from '@/components/ImportCsvDialog';
+import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
 import {
     Select,
@@ -365,7 +365,7 @@ export default function SuratKeluar() {
                         />
                     )}
 
-                    {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="surat-keluar" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
+                    {isAdmin && resolvedUnitKerjaId && <ImportFileDialog type="surat-keluar" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
 
                     {canExportReports(user?.role) && (
                         <ExportButton

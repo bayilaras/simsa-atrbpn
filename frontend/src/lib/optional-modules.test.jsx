@@ -35,6 +35,7 @@ vi.mock('@/pages/ArsipTerjaga', () => ({ default: () => <h1>Reporting module mou
 vi.mock('@/pages/ArsipElektronik', () => ({ default: () => <h1>Manual electronic archive mounted</h1> }))
 vi.mock('@/components/ExportButton', () => ({ ExportButton: () => null }))
 vi.mock('@/components/ImportCsvDialog', () => ({ default: () => null }))
+vi.mock('@/components/ImportFileDialog', () => ({ default: () => null }))
 vi.mock('@/components/ArchiveLifecycleWidget', () => ({ ArchiveLifecycleWidget: () => null }))
 vi.mock('react-chartjs-2', () => ({ Line: () => null, Bar: () => null, Doughnut: () => null }))
 vi.mock('@/services/arsip.service', () => ({ arsipService: {

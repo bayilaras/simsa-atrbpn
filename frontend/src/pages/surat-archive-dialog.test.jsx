@@ -22,6 +22,7 @@ vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }
 vi.mock('@/components/ExportButton', () => ({ ExportButton: () => null }))
 vi.mock('@/components/ImportFromGDrive', () => ({ default: () => null }))
 vi.mock('@/components/ImportCsvDialog', () => ({ default: () => null }))
+vi.mock('@/components/ImportFileDialog', () => ({ default: () => null }))
 vi.mock('@/components/DistributeDialog', () => ({ DistributeDialog: () => null }))
 vi.mock('@/components/surat-masuk/FilePreviewSection', () => ({ FilePreviewSection: () => null }))
 // Keep the real page actions and ArchiveDialog form. The catalog itself has

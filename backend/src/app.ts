@@ -67,6 +67,7 @@ import mappingRoutes from './routes/mapping.routes';
 import approvalRoutes from './routes/approval.routes';
 import securityRoutes from './routes/security.routes';
 import googleDriveImportRoutes from './routes/google-drive-import.routes';
+import fileImportRoutes from './routes/file-import.routes';
 import clientUploadRoutes from './routes/client-upload.routes';
 import fileAccessRoutes from './routes/file-access.routes';
 import srikandiRoutes from './routes/srikandi.routes';
@@ -390,6 +391,7 @@ app.use('/api/supervision', supervisionRoutes);
 app.use('/api/mapping', mappingRoutes);
 app.use('/api/security', securityRoutes); // Security utilities (password check, etc.)
 app.use('/api/operations', operationsRoutes);
+app.use('/api/import/berkas', fileImportRoutes); // CSV/XLSX metadata import with the Sheets mapping
 app.use('/api/import', googleDriveImportRoutes); // Public Google Sheets metadata import
 if (cloudPlatformConfig.storageProvider === 'gcs') {
     app.use('/api/object-uploads', gcsUploadRoutes);

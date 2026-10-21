@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/services/api';
 import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import';
-import { outcomeUnknown, runResumableImport } from '@/lib/resumable-import';
+import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useAppConfig } from '@/context/app-config-context';
 
@@ -25,20 +25,6 @@ import { useAppConfig } from '@/context/app-config-context';
  * time budget and returns where to continue, and the dialog sends the next
  * part until the server reports the end.
  */
-const CONTINUE_LATER = 'Jalankan impor lagi untuk melanjutkan; baris yang sudah tersimpan akan dikenali sebagai duplikat.';
-
-/** Why a resumable import ended early; empty when it finished. Row numbers count data rows from 1. */
-function unfinishedNotice(outcome, totals) {
-    if (outcome.stoppedAt !== undefined) return `Impor dihentikan sebelum baris data ke-${outcome.stoppedAt + 1}. ${CONTINUE_LATER}`;
-    if (outcome.interruptedAt === undefined) return '';
-    // Rows of earlier parts are saved; the failed part's own outcome may be unknown.
-    const part = `Bagian mulai baris data ke-${outcome.interruptedAt + 1}`;
-    const result = outcomeUnknown(outcome.error)
-        ? `${part} belum terkonfirmasi; sebagian barisnya mungkin sudah tersimpan.`
-        : `${part} gagal: ${outcome.error?.message || 'permintaan tidak berhasil.'}`;
-    return `${result} ${totals.importedRows} baris dari bagian sebelumnya sudah tersimpan. ${CONTINUE_LATER}`;
-}
-
 const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const { capabilities } = useAppConfig();
     const [isOpen, setIsOpen] = useState(false);
@@ -229,7 +215,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                 isCurrent: () => request === requestRef.current,
             });
             if (outcome.cancelled) return;
-            const notice = unfinishedNotice(outcome, totals);
+            const notice = unfinishedImportNotice(outcome, totals);
             const result = notice ? { ...totals, notice } : totals;
             setImportResult(result);
             setStep('result');
