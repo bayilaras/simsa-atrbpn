@@ -38,8 +38,18 @@ tanggal.
 - Duplikat menyebut sebabnya: bila identitas impor sama dengan baris sumber
   sebelumnya (termasuk dari bagian sebelumnya, karena identitas dihitung untuk semua
   baris, bukan hanya bagian berjalan) → "Nomor surat dan tahun sama dengan baris data
-  ke-N pada sumber ini." (atau tanggal+perihal+pengirim/tujuan/tautan); selain itu
-  "Sudah tercatat di SIMSA pada unit ini (termasuk surat yang dihapus)."
+  ke-N pada sumber ini." (atau tanggal+perihal+pengirim/tujuan/tautan); bila semua
+  surat yang cocok sudah dihapus → "Surat dengan identitas ini sudah dihapus di SIMSA;
+  impor tidak membuat ulang, memulihkan, atau mengubahnya."; selain itu "Sudah
+  tercatat di SIMSA pada unit ini." Jenisnya juga dikirim sebagai data:
+  `duplicate: 'source' | 'recorded' | 'deleted'`, sehingga klien tidak mencocokkan teks.
+- Pencarian satu kueri per bagian kini selalu `matchSuratImportIdentities` (dengan atau
+  tanpa sinkron), karena hanya kueri itu yang tahu surat yang cocok sudah dihapus;
+  `existingImportIdentities` tetap dipakai impor CSV lama (`/api/migration`).
+- Kolom "No" register: judul register pada ekspor CSV Google menyatu dengan judul
+  kolom pertama ("SURAT KELUAR 2026 No"), sehingga alias persis `no` tidak cocok.
+  Bila tidak ada judul nomor urut yang persis, kolom pertama yang judulnya diakhiri
+  kata "No" setelah kata lain dipetakan sebagai nomor urut sumber.
 - Baris ditolak memakai pesan publik (`publicErrorResponse`); galat internal tetap
   "Terjadi kesalahan pada server." `errors` (maks. 20) dipertahankan untuk klien lama,
   dan log penolakan tetap dibatasi 20 baris per permintaan.
@@ -48,8 +58,10 @@ tanggal.
   tidak dapat dipastikan. Karena itu laporan juga memuat kolom "No" sumber.
 - Ukuran respons: ±150 B per baris, maksimal ±200 KB untuk 1.000 baris.
 - Dialog (`ImportRowReport`): tabel "Rincian hasil impor per baris" dengan filter
-  (bawaan "Perlu dicek" = duplikat, ditolak, tidak diperbarui) dan **Unduh laporan
-  (CSV)**: UTF-8 dengan BOM, pemisah koma, sel yang diawali `= + @` tab/CR atau `-`
+  (bawaan "Perlu dicek" = baris yang perlu tindakan: ganda di sumber, cocok dengan
+  surat yang dihapus, ditolak, tidak diperbarui; surat yang sudah tercatat tanpa
+  perubahan tidak termasuk) dan **Unduh laporan (CSV)**: UTF-8 dengan BOM, pemisah
+  titik koma (pemisah daftar Windows berpengaturan Indonesia), sel yang diawali `= + @` tab/CR atau `-`
   diikuti karakter lain diberi awalan `'` agar tidak dijalankan sebagai rumus (nomor
   "-" untuk surat tanpa nomor tetap apa adanya). Server lama tanpa `rows` tetap
   menampilkan daftar galat lama.
@@ -89,7 +101,7 @@ duplikat, jadi perubahan di sheet sesudah impor diabaikan. Contoh nyata: perihal
   Nilai sumber dibaca seperti saat membuat rekod (tanggal di-parse, sifat
   dinormalisasi, tautan hanya `http(s)://`).
 - Satu kueri (`matchSuratImportIdentities`) mengembalikan surat yang cocok beserta
-  status dan nilai field per bagian, menggantikan cek keberadaan pada mode sinkron.
+  status dan nilai field per bagian (dipakai juga tanpa sinkron, lihat butir 2).
   Kueri ini dan `existingSuratImportIdentities` kini berbagi pembentuk probe
   (`identityProbes`) sehingga keduanya membandingkan kolom yang sama dengan
   `suratImportIdentityWhere`.
@@ -114,10 +126,10 @@ duplikat, jadi perubahan di sheet sesudah impor diabaikan. Contoh nyata: perihal
   `before` audit diambil dari pencarian awal bagian).
 - Tidak ada uji coba tanpa menulis (dry run); laporan per baris menampilkan apa yang
   berubah. Dapat menjadi tindak lanjut bila diperlukan.
-- Laporan CSV memakai pemisah koma (standar; Google Sheets mendeteksinya). Excel
-  dengan pengaturan regional Indonesia (pemisah daftar `;`) dapat menampilkannya
-  dalam satu kolom; buka lewat Data → From Text/CSV. Pemisah `;` adalah alternatif
-  bila pengguna lebih sering membuka laporan di Excel.
+- Laporan CSV memakai pemisah titik koma karena pemisah daftar Windows pengguna
+  (`HKCU\Control Panel\International\sList`) adalah `;`. Excel berpengaturan
+  regional Inggris (AS) akan menampilkannya dalam satu kolom; buka lewat Data → From
+  Text/CSV. Google Sheets mendeteksi pemisahnya otomatis.
 - Pembuatan surat lewat impor (bukan sinkron) masih menyimpan teks sumber apa adanya
   tanpa sanitizer permintaan; perilaku lama ini tidak diubah di branch ini.
 
@@ -128,7 +140,18 @@ tinggi; temuan sedang/rendah yang ditindaklanjuti: nomor sama dengan pengirim/tu
 lain, teks tidak disanitasi, galat pemeriksaan menggagalkan bagian, judul hasil
 "Semua data sudah ada" saat perubahan ditolak, dua identitas untuk satu surat, tabel
 laporan di dalam live region, petunjuk unit hanya untuk pembaca layar/tetikus, dan
-jumlah surat pada pesan identitas ganda. Pemisah CSV dibiarkan koma (lihat batasan).
+jumlah surat pada pesan identitas ganda.
+
+## Uji manual (2026-10-22)
+
+Uji UI di aplikasi lokal dengan register asli (oleh sesi induk): tombol, laporan,
+unduhan CSV, dan sinkron berjalan. Lima temuan ditindaklanjuti: kolom "No" kosong
+karena judul "SURAT KELUAR 2026 No"; "Perlu dicek" memuat semua surat yang sudah
+tercatat (195 dari 198 pada sinkron ulang tab 2026) → jenis duplikat
+`source/recorded/deleted` dan filter hanya untuk baris yang perlu tindakan; ringkasan
+"duplikat dilewati (sudah ada di sistem)" dipisah menjadi sudah tercatat / ganda di
+sumber / surat dihapus; kartu statistik tidak diperbarui setelah impor (halaman kini
+memanggil `refreshAll`); pemisah CSV diganti `;`.
 
 ## Kompatibilitas dan rilis
 

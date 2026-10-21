@@ -148,6 +148,7 @@ Kolom dikenali dari judulnya pada lima baris pertama, tidak pernah dari posisi.
 | Perihal | Perihal, Hal, Subject | Ya |
 | Pengirim (surat masuk) | Dari, Asal, Pengirim, From | Ya, surat masuk |
 | Kepada | Kepada, Tujuan, Penerima, To | Tidak |
+| No (nomor urut sumber, hanya untuk laporan) | No, Nomor Urut, No Urut; juga judul kolom pertama yang diakhiri kata "No" bila judul register menyatu dengannya (mis. `SURAT KELUAR 2026 No` pada ekspor CSV Google) | Tidak |
 | Sifat surat | Sifat Surat, Sifat | Tidak |
 | Tautan dokumen (surat keluar) | Link Dokumen, Link, URL, Get link | Tidak |
 
@@ -206,14 +207,19 @@ satu permintaan seperti sebelumnya. Sebaliknya endpoint Google Sheets lama menol
 Setelah impor, dialog menampilkan **Rincian hasil impor per baris** untuk semua
 baris dari semua bagian: nomor baris data (dihitung dari 1 setelah judul kolom,
 baris kosong tidak dihitung), kolom "No" sumber, nomor surat, tanggal seperti
-tertulis, perihal, status, dan keterangan. Filter bawaan "Perlu dicek" menampilkan
-baris duplikat, ditolak, dan tidak diperbarui. **Unduh laporan (CSV)** menyimpan
-semua baris (UTF-8 dengan BOM, pemisah koma).
+tertulis, perihal, status, dan keterangan. Filter bawaan "Perlu dicek" hanya
+menampilkan baris yang perlu ditindaklanjuti: ganda di sumber, cocok dengan surat
+yang sudah dihapus, ditolak, dan tidak diperbarui; surat yang sudah tercatat (tanpa
+perubahan) tidak termasuk. Ringkasan memisahkan baris yang sudah tercatat di SIMSA,
+ganda di sumber, dan cocok dengan surat yang dihapus. **Unduh laporan (CSV)**
+menyimpan semua baris (UTF-8 dengan BOM, pemisah titik koma `;` agar Excel dengan
+pengaturan regional Indonesia langsung memisahkan kolom; Google Sheets mendeteksinya
+otomatis).
 
 | Status | Arti |
 |---|---|
 | Tersimpan | Surat baru dibuat. |
-| Duplikat | Identitas impor sama dengan baris sumber sebelumnya (disebut nomor barisnya) atau sudah tercatat di unit ini, termasuk surat yang dihapus. |
+| Duplikat | Tidak ditulis: identitas impor sama dengan baris sumber sebelumnya (disebut nomor barisnya; `duplicate: source`), sudah tercatat di unit ini (`recorded`), atau cocok dengan surat yang sudah dihapus (`deleted`; tidak dibuat ulang). |
 | Ditolak | Baris tidak dapat disimpan, misalnya tanggal kosong/tidak valid atau surat tanpa nomor yang tidak punya pengirim/tujuan. |
 | Kosong | Nomor surat dan perihal kosong. |
 | Diperbarui | (Sinkron) surat yang sudah tercatat diubah; keterangan memuat nilai lama → baru. |
@@ -243,7 +249,8 @@ sumber mengubahnya:
 
 API: `sinkron: true` (JSON Google Sheets) atau field `sinkron=true` (berkas). Respons
 menambah `updatedRows` dan `rows[]` berisi `{ row, no, nomorSurat, tanggal, perihal,
-status: imported|updated|duplicate|locked|invalid|empty, reason?, changes? }`; pada
+status: imported|updated|duplicate|locked|invalid|empty, duplicate?: source|recorded|deleted,
+reason?, changes? }`; pada
 impor per bagian `rows` hanya mencakup bagian itu. `errors` (maks. 20) tetap ada untuk
 klien lama.
 
