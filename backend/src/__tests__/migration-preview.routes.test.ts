@@ -30,6 +30,26 @@ describe('migration preview boundary', () => {
             .attach('file', Buffer.from('Tanggal\n2026-09-11'), 'import.csv').expect(400);
         expect(mocks.import).not.toHaveBeenCalled();
     });
+    it.each(['surat-masuk', 'surat-keluar', 'arsip'])('gives a resumable %s import a time budget and its resume position', async type => {
+        const prefixHash = 'b'.repeat(64);
+        const before = Date.now();
+        await request(app).post(`/api/migration/${type}`).field('unitKerjaId', 'unit-a').field('startRow', '40').field('prefixHash', prefixHash)
+            .attach('file', Buffer.from('Tanggal\n2026-09-11'), 'import.csv').expect(200);
+        const options = mocks.import.mock.calls[0][3];
+        expect(options).toMatchObject({ dryRun: false, resume: { startRow: 40, prefixHash } });
+        expect(options.resume.deadlineAt - before).toBeGreaterThanOrEqual(20_000);
+        expect(options.resume.deadlineAt - Date.now()).toBeLessThanOrEqual(30_000);
+    });
+    it.each([
+        { startRow: '3' }, { startRow: '-1', prefixHash: 'b'.repeat(64) }, { startRow: '1.5', prefixHash: 'b'.repeat(64) },
+        { startRow: '1001', prefixHash: 'b'.repeat(64) }, { startRow: '3', prefixHash: 'nope' }, { prefixHash: 'b'.repeat(64) },
+        { startRow: '0', dryRun: 'true' },
+    ])('rejects an invalid resume position %j before importing', async fields => {
+        let call = request(app).post('/api/migration/surat-keluar').field('unitKerjaId', 'unit-a');
+        for (const [name, value] of Object.entries(fields)) call = call.field(name, value);
+        await call.attach('file', Buffer.from('Tanggal\n2026-09-11'), 'import.csv').expect(400);
+        expect(mocks.import).not.toHaveBeenCalled();
+    });
     it('preserves the default import mode when dryRun is omitted', async () => {
         await request(app).post('/api/migration/arsip').field('unitKerjaId', 'unit-a')
             .attach('file', Buffer.from('Tanggal\n2026-09-11'), 'import.csv').expect(200);

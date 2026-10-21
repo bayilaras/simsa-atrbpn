@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/services/api';
-import { buildGoogleSheetsImportPayload } from '@/lib/google-sheets-import';
+import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import';
+import { outcomeUnknown, runResumableImport } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useAppConfig } from '@/context/app-config-context';
 
@@ -19,7 +20,25 @@ import { useAppConfig } from '@/context/app-config-context';
  * - type: 'surat-masuk' | 'surat-keluar'
  * - unitKerjaId: concrete destination unit (required)
  * - onImportComplete: () => void (callback to refresh data)
+ *
+ * Long sheets are imported in parts: the server stops starting rows after a
+ * time budget and returns where to continue, and the dialog sends the next
+ * part until the server reports the end.
  */
+const CONTINUE_LATER = 'Jalankan impor lagi untuk melanjutkan; baris yang sudah tersimpan akan dikenali sebagai duplikat.';
+
+/** Why a resumable import ended early; empty when it finished. Row numbers count data rows from 1. */
+function unfinishedNotice(outcome, totals) {
+    if (outcome.stoppedAt !== undefined) return `Impor dihentikan sebelum baris data ke-${outcome.stoppedAt + 1}. ${CONTINUE_LATER}`;
+    if (outcome.interruptedAt === undefined) return '';
+    // Rows of earlier parts are saved; the failed part's own outcome may be unknown.
+    const part = `Bagian mulai baris data ke-${outcome.interruptedAt + 1}`;
+    const result = outcomeUnknown(outcome.error)
+        ? `${part} belum terkonfirmasi; sebagian barisnya mungkin sudah tersimpan.`
+        : `${part} gagal: ${outcome.error?.message || 'permintaan tidak berhasil.'}`;
+    return `${result} ${totals.importedRows} baris dari bagian sebelumnya sudah tersimpan. ${CONTINUE_LATER}`;
+}
+
 const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const { capabilities } = useAppConfig();
     const [isOpen, setIsOpen] = useState(false);
@@ -35,12 +54,18 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const busyRef = useRef(false);
     const [retryUntil, setRetryUntil] = useState({ sheets: 0, preview: 0, import: 0 });
     const [now, setNow] = useState(() => Date.now());
+    const [progress, setProgress] = useState(null);
+    // When a rate-limited later part is sent again automatically.
+    const [continueAt, setContinueAt] = useState(0);
+    const [stopping, setStopping] = useState(false);
+    const stopRef = useRef(false);
     const action = step === 'input' ? 'sheets' : step === 'sheets' ? 'preview' : 'import';
     const retrySeconds = Math.max(0, Math.ceil((retryUntil[action] - now) / 1000));
+    const continueSeconds = Math.max(0, Math.ceil((continueAt - now) / 1000));
 
     useEffect(() => () => { requestRef.current += 1; }, []);
     useEffect(() => {
-        const until = Math.max(...Object.values(retryUntil));
+        const until = Math.max(...Object.values(retryUntil), continueAt);
         if (!isOpen || until <= Date.now()) return;
         const timer = window.setInterval(() => {
             const time = Date.now();
@@ -48,7 +73,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
             if (time >= until) window.clearInterval(timer);
         }, 1000);
         return () => window.clearInterval(timer);
-    }, [isOpen, retryUntil]);
+    }, [isOpen, retryUntil, continueAt]);
 
     const typeLabel = type === 'surat-masuk' ? 'Surat Masuk' : 'Surat Keluar';
     const selectedName = sheets.find(sheet => sheet.gid === selectedGid)?.name || '';
@@ -186,16 +211,26 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
         if (busyRef.current || retryUntil.import > Date.now() || previewData?.importType !== type) return;
         const request = ++requestRef.current;
         busyRef.current = true;
+        stopRef.current = false;
+        setStopping(false);
         setStep('importing');
         setError('');
+        const source = buildGoogleSheetsImportPayload(spreadsheetUrl, selectedGid, unitKerjaId);
+        let totals = emptyImportTotals(previewData.totalRows);
+        setProgress(totals);
 
         try {
-            const result = await api.post(
-                `/api/import/google-drive/${type}`,
-                buildGoogleSheetsImportPayload(spreadsheetUrl, selectedGid, unitKerjaId),
-            );
-
-            if (request !== requestRef.current) return;
+            const outcome = await runResumableImport({
+                sendPart: position => api.post(`/api/import/google-drive/${type}`, { ...source, ...position },
+                    { timeoutMs: IMPORT_PART_TIMEOUT_MS }),
+                onPart: part => { totals = addImportPart(totals, part); setProgress(totals); },
+                onWait: until => { setNow(Date.now()); setContinueAt(until); },
+                shouldStop: () => stopRef.current,
+                isCurrent: () => request === requestRef.current,
+            });
+            if (outcome.cancelled) return;
+            const notice = unfinishedNotice(outcome, totals);
+            const result = notice ? { ...totals, notice } : totals;
             setImportResult(result);
             setStep('result');
 
@@ -208,8 +243,16 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                 setStep('preview');
             }
         } finally {
-            if (request === requestRef.current) busyRef.current = false;
+            if (request === requestRef.current) {
+                busyRef.current = false;
+                setContinueAt(0);
+            }
         }
+    };
+
+    const requestStop = () => {
+        stopRef.current = true;
+        setStopping(true);
     };
 
     if (!capabilities.externalIntegrations) return null;
@@ -443,29 +486,58 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
 
                         {/* Step: Importing */}
                         {step === 'importing' && (
-                            <div role="status" aria-live="polite" className="flex flex-col items-center py-12">
+                            <div className="flex flex-col items-center py-12">
                                 <div aria-hidden="true" className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-                                <p className="text-sm text-muted-foreground font-medium">Mengimpor data...</p>
-                                <p className="text-xs text-muted-foreground mt-1">Harap tunggu, proses ini mungkin memakan waktu</p>
+                                <div role="status" aria-live="polite" className="flex w-full flex-col items-center text-center">
+                                    <p className="text-sm text-muted-foreground font-medium">Mengimpor data...</p>
+                                    {progress && <>
+                                        <div role="progressbar" aria-label="Kemajuan impor" aria-valuemin={0}
+                                            aria-valuemax={progress.totalRows} aria-valuenow={progress.processedRows}
+                                            className="mt-4 h-2 w-full max-w-sm overflow-hidden rounded-full bg-muted">
+                                            <div className="h-full bg-primary transition-[width]"
+                                                style={{ width: `${progress.totalRows ? Math.round(progress.processedRows / progress.totalRows * 100) : 0}%` }} />
+                                        </div>
+                                        <p className="mt-2 text-sm text-foreground">{`${progress.processedRows} dari ${progress.totalRows} baris diproses`}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {`Tersimpan ${progress.importedRows} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}
+                                        </p>
+                                    </>}
+                                    {continueSeconds > 0 && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                                        Batas permintaan impor tercapai; dilanjutkan otomatis dalam {continueSeconds} detik.
+                                    </p>}
+                                </div>
+                                <p className="mt-3 max-w-sm text-center text-xs text-muted-foreground">
+                                    Biarkan jendela ini terbuka. Lembar yang panjang diimpor per bagian; baris yang sudah tersimpan tetap tercatat bila impor dihentikan.
+                                </p>
+                                <button type="button" onClick={requestStop} disabled={stopping}
+                                    className="mt-4 min-h-11 rounded-lg border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50">
+                                    {stopping ? 'Menghentikan setelah bagian ini…' : 'Hentikan setelah bagian ini'}
+                                </button>
                             </div>
                         )}
 
                         {/* Step: Result */}
                         {step === 'result' && importResult && (
                             <div role="status" aria-live="polite" className="space-y-4">
-                                <div className={`flex items-start gap-3 p-4 rounded-lg ${resultCompleted
-                                    ? 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200'
-                                    : 'bg-red-50 dark:bg-red-500/15 border border-red-200'
+                                <div className={`flex items-start gap-3 p-4 rounded-lg ${importResult.notice
+                                    ? 'bg-amber-50 dark:bg-amber-500/15 border border-amber-200'
+                                    : resultCompleted
+                                        ? 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200'
+                                        : 'bg-red-50 dark:bg-red-500/15 border border-red-200'
                                     }`}>
-                                    {resultCompleted ? (
+                                    {resultCompleted && !importResult.notice ? (
                                         <CheckCircle2 aria-hidden="true" className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                                     ) : (
-                                        <AlertCircle aria-hidden="true" className="w-5 h-5 text-red-600 mt-0.5" />
+                                        <AlertCircle aria-hidden="true" className={`w-5 h-5 mt-0.5 ${importResult.notice ? 'text-amber-600' : 'text-red-600'}`} />
                                     )}
                                     <div>
                                         <p className="font-medium text-foreground">
-                                            {duplicateOnly ? 'Semua data sudah ada' : importResult.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}
+                                            {importResult.notice ? 'Impor belum selesai'
+                                                : duplicateOnly ? 'Semua data sudah ada' : importResult.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}
                                         </p>
+                                        {importResult.notice && (
+                                            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{importResult.notice}</p>
+                                        )}
                                         <p className="text-sm text-muted-foreground mt-1">
                                             {duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
                                                 : `${importResult.importedRows} dari ${importResult.totalRows} baris berhasil diimpor`}

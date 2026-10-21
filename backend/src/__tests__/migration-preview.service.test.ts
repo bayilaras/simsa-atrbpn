@@ -1,15 +1,26 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
     const queue: any[] = [];
     const chain: any = {};
     for (const method of ['select', 'from', 'where']) chain[method] = vi.fn(() => chain);
     chain.limit = vi.fn(async () => queue.shift() || []);
-    return { chain, queue, masuk: vi.fn(), keluar: vi.fn(), arsip: vi.fn() };
+    // The surat bulk lookup answers from the same queue as a per-row lookup would.
+    const existing = vi.fn(async (keys: unknown[]) => keys.map(() => (queue.shift() || []).length > 0));
+    return { chain, queue, existing, masuk: vi.fn(), keluar: vi.fn(), arsip: vi.fn() };
 });
+const identity = () => vi.importActual<typeof import('../services/surat-import-identity.js')>('../services/surat-import-identity.js');
 vi.mock('../config/database', () => ({ db: mocks.chain }));
-vi.mock('../services/surat-masuk.service.js', () => ({ suratMasukService: { createImported: mocks.masuk } }));
-vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: { createImported: mocks.keluar } }));
+vi.mock('../services/surat-masuk.service.js', async () => {
+    const { suratImportIdentityKey } = await identity();
+    return { suratMasukService: { createImported: mocks.masuk,
+        importIdentityKey: (data: any) => suratImportIdentityKey('masuk', data), existingImportIdentities: mocks.existing } };
+});
+vi.mock('../services/surat-keluar.service.js', async () => {
+    const { suratImportIdentityKey } = await identity();
+    return { suratKeluarService: { createImported: mocks.keluar,
+        importIdentityKey: (data: any) => suratImportIdentityKey('keluar', data), existingImportIdentities: mocks.existing } };
+});
 vi.mock('../services/arsip.service.js', () => ({ arsipService: { create: mocks.arsip } }));
 const { migrationService } = await import('../services/migration.service');
 const actor = { userId: 'operator-a', userEmail: 'operator@example.test', ipAddress: '127.0.0.1' };
@@ -108,6 +119,56 @@ describe('CSV date fidelity and mutation-free preview', () => {
         expect(result).toMatchObject({ success: false, imported: 0, rows: [] });
         expect(result.errors[0]).toContain('1.000');
         expect(mocks.chain.select).not.toHaveBeenCalled();
+    });
+
+    it.each([['importSuratMasuk', 'masuk'], ['importSuratKeluar', 'keluar']] as const)(
+        '%s checks the whole file against recorded letters in one lookup', async (method, create) => {
+            const source = ['Nomor Surat,Tanggal Surat,Perihal,Dari,Kepada', 'S-1,2026-09-11,Satu,Unit A,Unit B',
+                'S-2,2026-09-11,Dua,Unit A,Unit B', 'S-3,2026-09-11,Tiga,Unit A,Unit B'].join('\n');
+            mocks.existing.mockResolvedValueOnce([false, true, false]);
+            const result = await migrationService[method](source, 'unit-a', actor);
+            expect(result).toMatchObject({ success: true, imported: 2, duplicates: 1 });
+            expect(result.rows.map(row => row.status)).toEqual(['imported', 'duplicate', 'imported']);
+            expect(mocks.existing).toHaveBeenCalledTimes(1);
+            expect(mocks.existing.mock.calls[0][0]).toHaveLength(3);
+            expect(mocks[create].mock.calls.map(([record]) => record.perihal)).toEqual(['Satu', 'Tiga']);
+            expect(mocks.chain.select).not.toHaveBeenCalled();
+        });
+
+    describe('resumable import within a time budget', () => {
+        let clock = 0;
+        const records = (count: number) => ['Nomor Surat,Tanggal Surat,Perihal,Dari',
+            ...Array.from({ length: count }, (_, i) => `SM-${i + 1},2026-09-11,Arsip ${i + 1},Unit A`)];
+        const run = (lines: string[], resume: { startRow: number; prefixHash?: string }) => migrationService.importSuratMasuk(
+            lines.join('\n'), 'unit-a', actor, { resume: { ...resume, deadlineAt: clock + 25_000 } });
+        beforeEach(() => {
+            clock = 5_000_000;
+            vi.spyOn(Date, 'now').mockImplementation(() => clock);
+            // Each canonical write takes ten seconds on this synthetic clock.
+            mocks.masuk.mockImplementation(async () => { clock += 10_000; return { id: 'written' }; });
+        });
+        afterEach(() => { vi.mocked(Date.now).mockRestore(); });
+
+        it('stops once the budget is spent, then continues from the returned record', async () => {
+            const first = await run(records(5), { startRow: 0 });
+            expect(first).toMatchObject({ success: true, imported: 3, startRow: 0, nextRow: 3 });
+            expect(first.rows.map(row => row.row)).toEqual([2, 3, 4]);
+            expect(first.prefixHash).toMatch(/^[a-f0-9]{64}$/);
+            vi.clearAllMocks();
+            const rest = await run(records(5), { startRow: first.nextRow!, prefixHash: first.prefixHash });
+            expect(rest).toMatchObject({ success: true, imported: 2, startRow: 3, nextRow: null });
+            expect(rest.rows.map(row => [row.row, row.status])).toEqual([[5, 'imported'], [6, 'imported']]);
+            expect(mocks.masuk.mock.calls.map(([record]) => record.nomorSurat)).toEqual(['SM-4', 'SM-5']);
+        });
+
+        it('refuses to continue when an earlier record of the file changed', async () => {
+            const first = await run(records(5), { startRow: 0 });
+            const edited = records(5);
+            edited[2] = 'SM-2,2026-09-11,Arsip diubah,Unit A';
+            vi.clearAllMocks();
+            await expect(run(edited, { startRow: first.nextRow!, prefixHash: first.prefixHash })).rejects.toMatchObject({ statusCode: 409 });
+            expect(mocks.masuk).not.toHaveBeenCalled();
+        });
     });
 
     it('accepts UTF-8 BOM, quoted delimiters, and embedded newlines on the patched parser', async () => {

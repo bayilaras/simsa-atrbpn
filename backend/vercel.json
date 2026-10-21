@@ -2,6 +2,7 @@
     "version": 2,
     "framework": null,
     "fluid": true,
+    "regions": ["sin1"],
     "git": {
         "deploymentEnabled": {
             "main": false

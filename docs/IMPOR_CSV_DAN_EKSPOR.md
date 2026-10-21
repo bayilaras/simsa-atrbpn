@@ -48,6 +48,9 @@ Hasil parsial tetap dikembalikan dalam respons 200 dengan `success=false` dan
 jumlah rekod yang benar-benar tersimpan. Diagnostic tersedia pada respons;
 sumber CSV dan seluruh diagnostic tidak disimpan sebagai batch permanen.
 
+Impor (bukan pratinjau) dapat berjalan **per bagian**; lihat
+[Impor panjang per bagian](#impor-panjang-per-bagian).
+
 ## Impor Google Sheets
 
 Tombol **Impor dari Google Sheets** membaca spreadsheet yang dibagikan dengan
@@ -77,6 +80,49 @@ satu-satunya kolom yang berisi alamat web; hanya nilai `http(s)://` yang
 disimpan. Baris tanpa nomor surat (kosong atau "-") memerlukan Pengirim (surat
 masuk), atau Kepada maupun tautan dokumen (surat keluar), agar dapat dikenali
 saat impor ulang; baris tanpa keduanya ditolak per baris.
+
+## Impor panjang per bagian
+
+Lembar Google Sheets dan berkas CSV yang panjang diimpor per bagian dalam satu
+kali klik. Server berhenti memulai baris baru setelah ±25 detik per permintaan
+dan memberi tahu baris lanjutan; dialog langsung mengirim bagian berikutnya
+sampai selesai, sambil menampilkan jumlah baris yang sudah diproses, tersimpan,
+duplikat, dan dilewati.
+
+- **Hentikan setelah bagian ini** (Google Sheets) menyelesaikan bagian yang
+  sedang berjalan lalu berhenti. Hasil menyebut baris tempat impor berhenti.
+- Bila satu bagian lanjutan gagal atau habis waktu, dialog menampilkan
+  **Impor belum selesai** beserta jumlah baris dari bagian sebelumnya yang
+  sudah tersimpan. Hasil bagian yang gagal mungkin sebagian tersimpan.
+- Dalam semua kasus itu, jalankan impor lagi dari awal. Baris yang sudah
+  tersimpan dikenali sebagai duplikat dalam satu kueri, jadi pengulangan
+  hanya menulis baris yang belum ada.
+- Bila batas 3 permintaan impor per menit tercapai di tengah impor, dialog
+  menunggu lalu melanjutkan sendiri.
+
+Untuk surat masuk dan surat keluar, duplikat diperiksa sekali untuk seluruh
+lembar/berkas sebelum penulisan (termasuk surat yang sudah dihapus); arsip CSV
+masih diperiksa per rekod. Pemeriksaan sekaligus ini hanya mempercepat:
+setiap baris yang belum ada tetap melewati transaksi kanonik yang memeriksa
+ulang identitas di bawah kunci penomoran unit, lalu menyimpan surat dan audit.
+
+### Kontrak API
+
+Klien mengirim `startRow` (0–1.000, indeks baris data/rekod) untuk meminta impor
+per bagian: JSON pada `POST /api/import/google-drive/surat-{masuk,keluar}`, field
+multipart pada `POST /api/migration/*` (tidak untuk `dryRun=true`). Bagian kedua dan
+seterusnya juga mengirim `prefixHash` dari respons sebelumnya.
+
+Respons menambah `startRow`, `nextRow` (baris lanjutan, atau `null` bila selesai),
+dan `prefixHash` (bila `nextRow` tidak `null`). Jumlah dan baris diagnostic pada
+respons hanya mencakup bagian itu. `prefixHash` adalah SHA-256 atas baris sebelum
+`nextRow` (untuk Sheets: baris sebagaimana dibaca impor, sehingga kolom yang tidak dibaca seperti ID atau Status sumber boleh berubah). Bila baris sebelum
+`startRow` berubah, disisipkan, atau dihapus, server menolak dengan 409 agar tidak
+ada baris yang terlewat; baris yang ditambahkan di bawah tetap ikut diimpor.
+
+Klien lama yang tidak mengirim `startRow` tetap mengimpor seluruh sumber dalam
+satu permintaan seperti sebelumnya. Sebaliknya endpoint Google Sheets lama menolak
+`startRow` (400, tanpa menulis apa pun), jadi backend harus dirilis sebelum frontend.
 
 ## Batas ekspor
 

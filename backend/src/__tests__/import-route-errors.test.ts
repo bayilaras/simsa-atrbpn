@@ -82,6 +82,34 @@ describe('HTTP error boundaries for import, attachments and electronic archives'
         expect(unit.status).toBe(400);
         expect(mocks.incoming).not.toHaveBeenCalled();
     });
+    it.each(['surat-masuk', 'surat-keluar'])('gives a resumable %s import a time budget and its resume position', async path => {
+        const importer = path === 'surat-masuk' ? mocks.incoming : mocks.outgoing;
+        importer.mockResolvedValue({ success: true, totalRows: 2, importedRows: 1, skippedRows: 0, duplicateRows: 0, errors: [], startRow: 1, nextRow: null });
+        const prefixHash = 'a'.repeat(64);
+        const before = Date.now();
+        const response = await request(app).post(`/api/import/google-drive/${path}`)
+            .send({ spreadsheetUrl: url, gid: '7', unitKerjaId: 'ditjen', startRow: 1, prefixHash });
+        expect(response.status).toBe(200);
+        expect(response.body).toMatchObject({ nextRow: null, startRow: 1 });
+        const resume = importer.mock.calls[0][5];
+        expect(resume).toMatchObject({ startRow: 1, prefixHash });
+        // Well inside the 300 s function limit, with room for the sheet download and one last row.
+        expect(resume.deadlineAt - before).toBeGreaterThanOrEqual(20_000);
+        expect(resume.deadlineAt - Date.now()).toBeLessThanOrEqual(30_000);
+    });
+    it('keeps a single unbudgeted import for clients that do not ask to resume', async () => {
+        mocks.outgoing.mockResolvedValue({ success: true, totalRows: 1, importedRows: 1, skippedRows: 0, duplicateRows: 0, errors: [] });
+        expect((await request(app).post('/api/import/google-drive/surat-keluar').send({ spreadsheetUrl: url, unitKerjaId: 'ditjen' })).status).toBe(200);
+        expect(mocks.outgoing.mock.calls[0][5]).toBeUndefined();
+    });
+    it.each([
+        { startRow: 3 }, { startRow: -1, prefixHash: 'a'.repeat(64) }, { startRow: 1.5, prefixHash: 'a'.repeat(64) },
+        { startRow: 1001, prefixHash: 'a'.repeat(64) }, { startRow: 3, prefixHash: 'not-a-hash' }, { prefixHash: 'a'.repeat(64) },
+    ])('rejects an invalid resume position %j before reading the sheet', async resume => {
+        const response = await request(app).post('/api/import/google-drive/surat-keluar').send({ spreadsheetUrl: url, unitKerjaId: 'ditjen', ...resume });
+        expect(response.status).toBe(400);
+        expect(mocks.outgoing).not.toHaveBeenCalled();
+    });
     it('sanitizes attachment listing errors and retains access denial', async () => {
         const response = await request(app).get(`/api/upload/arsip/${id}`);
         expect(response.status).toBe(500);

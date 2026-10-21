@@ -20,7 +20,10 @@ import fileAttachmentService, {
 } from './file-attachment.service.js';
 import { settingsService } from './settings.service.js';
 import { hasSuratRuleSelection, hydrateSuratRuleSelections, prepareSuratRuleSelection } from './surat-rule-selection.service';
-import { assertImportConnected, DuplicateSuratImportError, suratImportIdentity, type SuratImportOptions } from './surat-import-identity.js';
+import {
+    assertImportConnected, DuplicateSuratImportError, existingSuratImportIdentities, suratImportIdentityKey, suratImportIdentityWhere,
+    type SuratImportIdentityKey, type SuratImportOptions,
+} from './surat-import-identity.js';
 import {
     resolveSuratCalendar,
     type SuratNumberContext,
@@ -170,6 +173,17 @@ export class SuratMasukService {
         return this.create(data as CreateSuratMasukInput, auditContext, undefined, undefined, options);
     }
 
+    /** The identity createImported checks under the unit lock; throws when the row cannot have one. */
+    importIdentityKey(data: Pick<NewSuratMasuk, 'unitKerjaId' | 'tahun' | 'nomorSurat' | 'tanggalSurat' | 'perihal' | 'dari'>): SuratImportIdentityKey {
+        const { tahun } = resolveSuratCalendar({ tahun: data.tahun, tanggalSurat: data.tanggalSurat });
+        return suratImportIdentityKey('masuk', { ...data, tahun });
+    }
+
+    /** Advisory bulk lookup; createImported stays the authority. */
+    async existingImportIdentities(keys: SuratImportIdentityKey[]): Promise<boolean[]> {
+        return existingSuratImportIdentities(db, 'masuk', keys);
+    }
+
     async create(
         input: CreateSuratMasukInput,
         auditContext?: CriticalAuditContext,
@@ -187,7 +201,7 @@ export class SuratMasukService {
             tanggalSurat: data.tanggalSurat,
         });
         const tahun = calendar.tahun;
-        const importIdentity = importOptions ? suratImportIdentity('masuk', { ...data, tahun }) : undefined;
+        const importIdentity = importOptions ? suratImportIdentityWhere('masuk', this.importIdentityKey(data)) : undefined;
         if (
             attachment
             && (

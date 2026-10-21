@@ -32,10 +32,56 @@ describe('CSV preview before import', () => {
         const [previewCall, importCall] = mocks.post.mock.calls
         expect(previewCall[0]).toBe('/api/migration/surat-masuk')
         expect(previewCall[1].get('dryRun')).toBe('true')
+        expect(previewCall[1].get('startRow')).toBeNull()
         expect(importCall[1].get('dryRun')).toBe('false')
         expect(importCall[1].get('unitKerjaId')).toBe('unit-a')
         expect(importCall[1].get('file')).toBe(previewCall[1].get('file'))
+        expect(importCall[1].get('startRow')).toBe('0')
+        expect(importCall[2]).toEqual({ timeoutMs: 120_000 })
         expect(screen.getByRole('button', { name: 'Impor data valid' })).toBeDisabled()
+    })
+
+    describe('a long file imported in parts', () => {
+        const row = (number, status) => ({ row: number, status, sourceDate: '2026-09-11', normalizedDate: '2026-09-11' })
+        const fivePreview = { ...preview, valid: 5, rows: [2, 3, 4, 5, 6].map(number => row(number, 'valid')) }
+        const part = fields => ({ data: { success: true, dryRun: false, valid: 0, imported: 0, skipped: 0, duplicates: 0, errors: [], rows: [], ...fields } })
+        const previewed = async (onImportComplete = vi.fn()) => {
+            mocks.post.mockResolvedValueOnce({ data: fivePreview })
+            render(<ImportCsvDialog type="surat-keluar" unitKerjaId="unit-a" onImportComplete={onImportComplete} />)
+            await openWithFile()
+            fireEvent.click(screen.getByRole('button', { name: 'Pratinjau' }))
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Impor data valid' })).toBeEnabled())
+            return onImportComplete
+        }
+
+        it('sends the same file part by part and shows every processed record', async () => {
+            const onImportComplete = await previewed()
+            let finishFirst
+            mocks.post.mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve }))
+                .mockResolvedValueOnce(part({ valid: 2, imported: 2, rows: [row(5, 'imported'), row(6, 'imported')], startRow: 3, nextRow: null }))
+            fireEvent.click(screen.getByRole('button', { name: 'Impor data valid' }))
+            await act(async () => finishFirst(part({ valid: 3, imported: 3, rows: [2, 3, 4].map(number => row(number, 'imported')), startRow: 0, nextRow: 3, prefixHash: 'h1' })))
+            await waitFor(() => expect(onImportComplete).toHaveBeenCalledOnce())
+            const [, first, second] = mocks.post.mock.calls
+            expect([first[1].get('startRow'), first[1].get('prefixHash')]).toEqual(['0', null])
+            expect([second[1].get('startRow'), second[1].get('prefixHash')]).toEqual(['3', 'h1'])
+            expect(second[1].get('file')).toBe(first[1].get('file'))
+            expect(screen.getByText('Hasil impor: 5 valid, 5 diimpor, 0 duplikat, 0 perlu koreksi.')).toBeInTheDocument()
+            expect(screen.getAllByText('Diimpor')).toHaveLength(5)
+        })
+
+        it('keeps the saved records and says what to do when a later part cannot be confirmed', async () => {
+            const onImportComplete = await previewed()
+            mocks.post.mockResolvedValueOnce(part({ valid: 3, imported: 3, rows: [2, 3, 4].map(number => row(number, 'imported')), startRow: 0, nextRow: 3, prefixHash: 'h1' }))
+                .mockRejectedValueOnce(Object.assign(new Error('Waktu tunggu permintaan habis.'), { code: 'REQUEST_TIMEOUT', mutationOutcomeUnknown: true }))
+            fireEvent.click(screen.getByRole('button', { name: 'Impor data valid' }))
+            const alert = await screen.findByText(/belum terkonfirmasi/)
+            expect(alert).toHaveTextContent('Bagian mulai baris 5 belum terkonfirmasi')
+            expect(alert).toHaveTextContent('3 rekod dari bagian sebelumnya sudah tersimpan')
+            expect(alert).toHaveTextContent('Jalankan pratinjau lalu impor lagi')
+            expect(screen.getByText('Hasil impor: 3 valid, 3 diimpor, 0 duplikat, 0 perlu koreksi.')).toBeInTheDocument()
+            expect(onImportComplete).toHaveBeenCalledOnce()
+        })
     })
 
     it.each(['file', 'type', 'unit'])('invalidates the preview after changing %s', async change => {

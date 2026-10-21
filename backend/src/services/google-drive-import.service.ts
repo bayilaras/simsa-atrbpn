@@ -10,7 +10,8 @@ import { currentRequestId } from '../utils/request-context.js';
 import { GOOGLE_SHEETS_LIMITS, GoogleSheetsAccessError, GoogleSheetsSource, assertSheetName, assertSpreadsheetId, parseBoundedSheetCsv, parseSheetTabs, type GoogleSheetsRequestOptions, type SheetTab } from './google-sheets-source.js';
 
 import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
-import { DuplicateSuratImportError } from './surat-import-identity.js';
+import { DuplicateSuratImportError, type SuratImportIdentityKey } from './surat-import-identity.js';
+import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat } from './sifat-surat.js';
 
 const log = createLogger('GoogleDriveImportService');
@@ -28,10 +29,37 @@ interface ImportResult {
     skippedRows: number;
     duplicateRows: number;
     errors: string[];
+    /** Resumable imports only: counts above cover data rows startRow..nextRow-1 (or to the end). */
+    startRow?: number;
+    /** The data row to continue from, or null when the sheet is finished. */
+    nextRow?: number | null;
+    /** Send back with nextRow; proves the rows before it are unchanged. */
+    prefixHash?: string;
 }
 
 /** A tab by gid, or by name for older clients. */
 export type SheetSelector = string | { gid: string };
+
+/** Canonical creation plus the identity it checks; implemented by the surat services. */
+interface ImportTarget<T> {
+    importIdentityKey(record: T): SuratImportIdentityKey;
+    existingImportIdentities(keys: SuratImportIdentityKey[]): Promise<boolean[]>;
+    createImported(record: T, auditContext: CriticalAuditContext, options: GoogleSheetsRequestOptions): Promise<unknown>;
+}
+// Imported rows are written only by the canonical surat services.
+const incoming: ImportTarget<NewSuratMasuk> = {
+    importIdentityKey: record => suratMasukService.importIdentityKey(record),
+    existingImportIdentities: keys => suratMasukService.existingImportIdentities(keys),
+    createImported: (record, auditContext, options) => suratMasukService.createImported(record, auditContext, options),
+};
+const outgoing: ImportTarget<NewSuratKeluar & { numberingMode: 'manual' }> = {
+    importIdentityKey: record => suratKeluarService.importIdentityKey(record),
+    existingImportIdentities: keys => suratKeluarService.existingImportIdentities(keys),
+    createImported: (record, auditContext, options) => suratKeluarService.createImported(record, auditContext, options),
+};
+type PreparedRecord<T> = { record: T; key: SuratImportIdentityKey };
+/** null: an empty row; error: a row rejected before any write. */
+type PreparedRow<T> = PreparedRecord<T> | { error: unknown } | null;
 
 export class GoogleDriveImportService {
     /**
@@ -183,67 +211,184 @@ export class GoogleDriveImportService {
         unitKerjaId: string,
         auditContext: CriticalAuditContext,
         options: GoogleSheetsRequestOptions = {},
+        resume?: ImportResume,
     ): Promise<ImportResult> {
         const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
-        const allRows = this.parseCSV(csvText);
+        return this.importRows('surat-masuk', this.parseCSV(csvText), unitKerjaId, auditContext, options, resume);
+    }
 
+    /**
+     * Import Surat Keluar from Google Spreadsheet
+     */
+    async importSuratKeluar(
+        spreadsheetId: string,
+        sheet: SheetSelector,
+        unitKerjaId: string,
+        auditContext: CriticalAuditContext,
+        options: GoogleSheetsRequestOptions = {},
+        resume?: ImportResume,
+    ): Promise<ImportResult> {
+        const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
+        return this.importRows('surat-keluar', this.parseCSV(csvText), unitKerjaId, auditContext, options, resume);
+    }
+
+    /**
+     * Import already-parsed rows from any source (Google Sheets, a CSV or XLSX
+     * file): detect the header row, map columns by their titles, then run the
+     * bounded row loop below, optionally as one time-budgeted part.
+     */
+    async importRows(
+        type: GoogleSheetsImportType,
+        allRows: string[][],
+        unitKerjaId: string,
+        auditContext: CriticalAuditContext,
+        options: GoogleSheetsRequestOptions = {},
+        resume?: ImportResume,
+    ): Promise<ImportResult> {
         if (allRows.length < 2) {
             return { success: false, totalRows: 0, importedRows: 0, skippedRows: 0, duplicateRows: 0, errors: ['No data found'] };
         }
 
-        const { headerRowIndex, columnMap: colMap } = resolveSheetMapping(allRows, 'surat-masuk');
+        const { headerRowIndex, columnMap: colMap } = resolveSheetMapping(allRows, type);
         const dataRows = allRows.slice(headerRowIndex + 1);
         this.assertDataRows(dataRows);
+
+        return type === 'surat-masuk'
+            ? this.importRecords(dataRows, incoming, auditContext, options, resume,
+                (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext))
+            : this.importRecords(dataRows, outgoing, auditContext, options, resume,
+                (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext));
+    }
+
+    private incomingRecord(row: string[], i: number, colMap: Record<string, number>, unitKerjaId: string,
+        auditContext: CriticalAuditContext): NewSuratMasuk | null {
+        const nomorSurat = this.getField(row, colMap, 'nomorSurat');
+        const perihal = this.getField(row, colMap, 'perihal');
+        // Only skip if BOTH nomor surat and perihal are empty (truly empty row)
+        if (!nomorSurat && !perihal) return null;
+
+        const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
+        const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
+        const parsedDate = this.parseDate(tanggalStr);
+        const dari = this.getField(row, colMap, 'dari');
+        const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
+        const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
+
+        const disposisiRaw = this.getField(row, colMap, 'disposisi');
+        const disposisiArr = disposisiRaw ? disposisiRaw.split(/[,;]/).map(d => d.trim()).filter(Boolean) : [];
+
+        const newSurat: NewSuratMasuk = {
+            unitKerjaId,
+            noUrut: noUrut,
+            tahun: effectiveTahun,
+            jenisSurat: this.getField(row, colMap, 'jenisSurat') || 'Surat Dinas',
+            sifatSurat: this.getField(row, colMap, 'sifatSurat') || 'Biasa',
+            nomorSurat: nomorSurat || '-',
+            tanggalSurat: parsedDate,
+            perihal: this.getField(row, colMap, 'perihal') || '',
+            dari,
+            kepada: this.getField(row, colMap, 'kepada') || '',
+            status: 'belum_dibalas',
+            disposisi: disposisiArr.length > 0 ? disposisiArr : null,
+            createdBy: auditContext.userId,
+        };
+        return newSurat;
+    }
+
+    private outgoingRecord(row: string[], i: number, colMap: Record<string, number>, unitKerjaId: string,
+        auditContext: CriticalAuditContext): NewSuratKeluar & { numberingMode: 'manual' } | null {
+        const nomorSurat = this.getField(row, colMap, 'nomorSurat');
+        const perihal = this.getField(row, colMap, 'perihal');
+        // Only skip if BOTH nomor surat and perihal are empty
+        if (!nomorSurat && !perihal) return null;
+
+        const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
+        const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
+        const parsedDate = this.parseDate(tanggalStr);
+        const kepada = this.getField(row, colMap, 'kepada');
+        const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
+        const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
+
+        const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
+        const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
+        const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
+        const link = this.getField(row, colMap, 'linkDokumen');
+
+        const newSurat: NewSuratKeluar & { numberingMode: 'manual' } = {
+            unitKerjaId,
+            noUrut: noUrut,
+            tahun: effectiveTahun,
+            naskahDinas: this.getField(row, colMap, 'naskahDinas') || 'Surat Dinas',
+            sifatSurat: normalizeSifatSurat(this.getField(row, colMap, 'sifatSurat')),
+            numberingMode: 'manual',
+            nomorSurat: nomorSurat || '-',
+            tanggalSurat: parsedDate,
+            perihal: this.getField(row, colMap, 'perihal') || '',
+            kepada,
+            linkDokumen: isWebAddress(link) ? link : null,
+            klasifikasiFasilitatif: klasifikasiJenis === 'fasilitatif' ? klasifikasiArsip : null,
+            klasifikasiFasilitatifKode: klasifikasiJenis === 'fasilitatif' ? klasifikasiKode : null,
+            klasifikasiSubstantif: klasifikasiJenis === 'substantif' ? klasifikasiArsip : null,
+            klasifikasiSubstantifKode: klasifikasiJenis === 'substantif' ? klasifikasiKode : null,
+            createdBy: auditContext.userId,
+        };
+        return newSurat;
+    }
+
+    /**
+     * Import prepared rows in sheet order. One advisory lookup finds rows that
+     * are already recorded; every other row goes through canonical creation,
+     * which owns numbering, the authoritative duplicate check, audit
+     * persistence, and the gated SRIKANDI outbox in one transaction. A failed
+     * audit or producer therefore rolls that row back instead of creating an
+     * unaudited import.
+     *
+     * With `resume`, the import starts at resume.startRow and starts no new
+     * row after resume.deadlineAt; the result says where to continue.
+     */
+    private async importRecords<T>(
+        dataRows: string[][],
+        target: ImportTarget<T>,
+        auditContext: CriticalAuditContext,
+        options: GoogleSheetsRequestOptions,
+        resume: ImportResume | undefined,
+        build: (row: string[], index: number) => T | null,
+    ): Promise<ImportResult> {
+        // Every row as this import reads it. The resume digest covers exactly
+        // these values, so a column the import never reads (a formula, a source
+        // ID or status note) cannot block resuming.
+        const built = dataRows.map((row, i): { record: T | null } | { error: unknown } => {
+            try { return { record: build(row, i) }; } catch (error) { return { error }; }
+        });
+        const readRows = built.map(item => 'error' in item ? { unreadable: true } : item.record);
+        const start = resume?.startRow ?? 0;
+        if (resume) assertImportResumable(readRows, resume);
+        const prepared = built.slice(start).map((item): PreparedRow<T> => {
+            if ('error' in item) return item;
+            if (!item.record) return null;
+            try { return { record: item.record, key: target.importIdentityKey(item.record) }; } catch (error) { return { error }; }
+        });
+        const recorded = prepared.flatMap(item => item && 'key' in item ? [item] : []);
+        const existing = recorded.length ? await target.existingImportIdentities(recorded.map(item => item.key)) : [];
+        const alreadyRecorded = new Set(recorded.filter((_item, index) => existing[index]));
 
         const errors: string[] = [];
         let importedRows = 0;
         let skippedRows = 0;
         let duplicateRows = 0;
+        let nextRow: number | null = null;
 
-        for (let i = 0; i < dataRows.length; i++) {
+        for (let i = start; i < dataRows.length; i++) {
             if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan; baris yang sudah selesai tetap tercatat.', 499);
-            const row = dataRows[i];
+            // Every part handles at least one row, so a continuation always advances.
+            if (resume && i > start && Date.now() >= resume.deadlineAt) { nextRow = i; break; }
+            const item = prepared[i - start];
+            if (!item) { skippedRows++; continue; }
+            if (alreadyRecorded.has(item as PreparedRecord<T>)) { duplicateRows++; continue; }
             try {
-                const nomorSurat = this.getField(row, colMap, 'nomorSurat');
-                const perihal = this.getField(row, colMap, 'perihal');
-                // Only skip if BOTH nomor surat and perihal are empty (truly empty row)
-                if (!nomorSurat && !perihal) {
-                    skippedRows++;
-                    continue;
-                }
-
-                const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
-                const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
-                const parsedDate = this.parseDate(tanggalStr);
-                const dari = this.getField(row, colMap, 'dari');
-                const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
-                const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
-
-                const disposisiRaw = this.getField(row, colMap, 'disposisi');
-                const disposisiArr = disposisiRaw ? disposisiRaw.split(/[,;]/).map(d => d.trim()).filter(Boolean) : [];
-
-                const newSurat: NewSuratMasuk = {
-                    unitKerjaId,
-                    noUrut: noUrut,
-                    tahun: effectiveTahun,
-                    jenisSurat: this.getField(row, colMap, 'jenisSurat') || 'Surat Dinas',
-                    sifatSurat: this.getField(row, colMap, 'sifatSurat') || 'Biasa',
-                    nomorSurat: nomorSurat || '-',
-                    tanggalSurat: parsedDate,
-                    perihal: this.getField(row, colMap, 'perihal') || '',
-                    dari,
-                    kepada: this.getField(row, colMap, 'kepada') || '',
-                    status: 'belum_dibalas',
-                    disposisi: disposisiArr.length > 0 ? disposisiArr : null,
-                    createdBy: auditContext.userId,
-                };
-
-                // Canonical creation owns numbering, audit persistence, and the
-                // gated SRIKANDI outbox in one transaction. A failed audit or
-                // producer therefore rolls this row back instead of creating an
-                // unaudited import.
+                if ('error' in item) throw item.error;
                 if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan.', 499);
-                await suratMasukService.createImported(newSurat, auditContext, options);
+                await target.createImported(item.record, auditContext, options);
                 importedRows++;
             } catch (error) {
                 if (error instanceof DuplicateSuratImportError) { duplicateRows++; continue; }
@@ -259,95 +404,7 @@ export class GoogleDriveImportService {
             skippedRows,
             duplicateRows,
             errors: errors.slice(0, 20), // Limit error list
-        };
-    }
-
-    /**
-     * Import Surat Keluar from Google Spreadsheet
-     */
-    async importSuratKeluar(
-        spreadsheetId: string,
-        sheet: SheetSelector,
-        unitKerjaId: string,
-        auditContext: CriticalAuditContext,
-        options: GoogleSheetsRequestOptions = {},
-    ): Promise<ImportResult> {
-        const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
-        const allRows = this.parseCSV(csvText);
-
-        if (allRows.length < 2) {
-            return { success: false, totalRows: 0, importedRows: 0, skippedRows: 0, duplicateRows: 0, errors: ['No data found'] };
-        }
-
-        const { headerRowIndex, columnMap: colMap } = resolveSheetMapping(allRows, 'surat-keluar');
-        const dataRows = allRows.slice(headerRowIndex + 1);
-        this.assertDataRows(dataRows);
-
-        const errors: string[] = [];
-        let importedRows = 0;
-        let skippedRows = 0;
-        let duplicateRows = 0;
-
-        for (let i = 0; i < dataRows.length; i++) {
-            if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan; baris yang sudah selesai tetap tercatat.', 499);
-            const row = dataRows[i];
-            try {
-                const nomorSurat = this.getField(row, colMap, 'nomorSurat');
-                const perihal = this.getField(row, colMap, 'perihal');
-                // Only skip if BOTH nomor surat and perihal are empty
-                if (!nomorSurat && !perihal) {
-                    skippedRows++;
-                    continue;
-                }
-
-                const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
-                const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
-                const parsedDate = this.parseDate(tanggalStr);
-                const kepada = this.getField(row, colMap, 'kepada');
-                const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
-                const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
-
-                const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
-                const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
-                const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
-                const link = this.getField(row, colMap, 'linkDokumen');
-
-                const newSurat: NewSuratKeluar & { numberingMode: 'manual' } = {
-                    unitKerjaId,
-                    noUrut: noUrut,
-                    tahun: effectiveTahun,
-                    naskahDinas: this.getField(row, colMap, 'naskahDinas') || 'Surat Dinas',
-                    sifatSurat: normalizeSifatSurat(this.getField(row, colMap, 'sifatSurat')),
-                    numberingMode: 'manual',
-                    nomorSurat: nomorSurat || '-',
-                    tanggalSurat: parsedDate,
-                    perihal: this.getField(row, colMap, 'perihal') || '',
-                    kepada,
-                    linkDokumen: isWebAddress(link) ? link : null,
-                    klasifikasiFasilitatif: klasifikasiJenis === 'fasilitatif' ? klasifikasiArsip : null,
-                    klasifikasiFasilitatifKode: klasifikasiJenis === 'fasilitatif' ? klasifikasiKode : null,
-                    klasifikasiSubstantif: klasifikasiJenis === 'substantif' ? klasifikasiArsip : null,
-                    klasifikasiSubstantifKode: klasifikasiJenis === 'substantif' ? klasifikasiKode : null,
-                    createdBy: auditContext.userId,
-                };
-
-                if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan.', 499);
-                await suratKeluarService.createImported(newSurat, auditContext, options);
-                importedRows++;
-            } catch (error) {
-                if (error instanceof DuplicateSuratImportError) { duplicateRows++; continue; }
-                if (errors.length < 20) errors.push(this.rowError(error, i + 1));
-                skippedRows++;
-            }
-        }
-
-        return {
-            success: errors.length === 0,
-            totalRows: dataRows.length,
-            importedRows,
-            skippedRows,
-            duplicateRows,
-            errors: errors.slice(0, 20),
+            ...(resume ? { startRow: start, nextRow, ...(nextRow === null ? {} : { prefixHash: importPrefixHash(readRows, nextRow) }) } : {}),
         };
     }
 

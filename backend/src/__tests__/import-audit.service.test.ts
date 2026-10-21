@@ -14,18 +14,25 @@ const mocks = vi.hoisted(() => {
         createKeluar: vi.fn(),
         ordinaryCreate: vi.fn(),
         createArsip: vi.fn(),
+        existing: vi.fn(),
         logs: vi.fn(),
     };
 });
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: mocks.logs, error: mocks.logs }) }));
 
 vi.mock('../config/database', () => ({ db: mocks.chain }));
-vi.mock('../services/surat-masuk.service.js', () => ({
-    suratMasukService: { create: mocks.ordinaryCreate, createImported: mocks.createMasuk },
-}));
-vi.mock('../services/surat-keluar.service.js', () => ({
-    suratKeluarService: { create: mocks.ordinaryCreate, createImported: mocks.createKeluar },
-}));
+// Real identity keys; the advisory bulk lookup finds nothing unless a test says otherwise.
+const identity = () => vi.importActual<typeof import('../services/surat-import-identity.js')>('../services/surat-import-identity.js');
+vi.mock('../services/surat-masuk.service.js', async () => {
+    const { suratImportIdentityKey } = await identity();
+    return { suratMasukService: { create: mocks.ordinaryCreate, createImported: mocks.createMasuk,
+        importIdentityKey: (data: any) => suratImportIdentityKey('masuk', data), existingImportIdentities: mocks.existing } };
+});
+vi.mock('../services/surat-keluar.service.js', async () => {
+    const { suratImportIdentityKey } = await identity();
+    return { suratKeluarService: { create: mocks.ordinaryCreate, createImported: mocks.createKeluar,
+        importIdentityKey: (data: any) => suratImportIdentityKey('keluar', data), existingImportIdentities: mocks.existing } };
+});
 vi.mock('../services/arsip.service.js', () => ({
     arsipService: { create: mocks.createArsip },
 }));
@@ -48,6 +55,7 @@ describe('fail-closed canonical imports', () => {
         mocks.createMasuk.mockResolvedValue({ id: 'surat-masuk-1' });
         mocks.createKeluar.mockResolvedValue({ id: 'surat-keluar-1' });
         mocks.createArsip.mockResolvedValue({ id: 'arsip-1' });
+        mocks.existing.mockImplementation(async (keys: unknown[]) => keys.map(() => false));
     });
 
     it('rejects excessive preview and CSV data before any network or database work', async () => {
@@ -222,7 +230,7 @@ describe('fail-closed canonical imports', () => {
             'No,Nomor Surat,Tanggal Surat,Perihal,Dari,Kepada',
             '99,-,28/08/2026,Permohonan Data,Kantah A,Ditjen',
         ].join('\n');
-        mocks.selectQueue.push([], [{ id: 'already-imported' }]);
+        mocks.existing.mockResolvedValueOnce([false]).mockResolvedValueOnce([true]);
 
         const first = await migrationService.importSuratMasuk(csv, 'unit-a', auditContext);
         const retry = await migrationService.importSuratMasuk(csv, 'unit-a', auditContext);
