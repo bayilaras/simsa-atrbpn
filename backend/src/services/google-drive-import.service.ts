@@ -214,49 +214,7 @@ export class GoogleDriveImportService {
         resume?: ImportResume,
     ): Promise<ImportResult> {
         const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
-        const allRows = this.parseCSV(csvText);
-
-        if (allRows.length < 2) {
-            return { success: false, totalRows: 0, importedRows: 0, skippedRows: 0, duplicateRows: 0, errors: ['No data found'] };
-        }
-
-        const { headerRowIndex, columnMap: colMap } = resolveSheetMapping(allRows, 'surat-masuk');
-        const dataRows = allRows.slice(headerRowIndex + 1);
-        this.assertDataRows(dataRows);
-
-        return this.importRecords(dataRows, colMap, incoming, auditContext, options, resume, (row, i) => {
-            const nomorSurat = this.getField(row, colMap, 'nomorSurat');
-            const perihal = this.getField(row, colMap, 'perihal');
-            // Only skip if BOTH nomor surat and perihal are empty (truly empty row)
-            if (!nomorSurat && !perihal) return null;
-
-            const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
-            const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
-            const parsedDate = this.parseDate(tanggalStr);
-            const dari = this.getField(row, colMap, 'dari');
-            const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
-            const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
-
-            const disposisiRaw = this.getField(row, colMap, 'disposisi');
-            const disposisiArr = disposisiRaw ? disposisiRaw.split(/[,;]/).map(d => d.trim()).filter(Boolean) : [];
-
-            const newSurat: NewSuratMasuk = {
-                unitKerjaId,
-                noUrut: noUrut,
-                tahun: effectiveTahun,
-                jenisSurat: this.getField(row, colMap, 'jenisSurat') || 'Surat Dinas',
-                sifatSurat: this.getField(row, colMap, 'sifatSurat') || 'Biasa',
-                nomorSurat: nomorSurat || '-',
-                tanggalSurat: parsedDate,
-                perihal: this.getField(row, colMap, 'perihal') || '',
-                dari,
-                kepada: this.getField(row, colMap, 'kepada') || '',
-                status: 'belum_dibalas',
-                disposisi: disposisiArr.length > 0 ? disposisiArr : null,
-                createdBy: auditContext.userId,
-            };
-            return newSurat;
-        });
+        return this.importRows('surat-masuk', this.parseCSV(csvText), unitKerjaId, auditContext, options, resume);
     }
 
     /**
@@ -271,54 +229,110 @@ export class GoogleDriveImportService {
         resume?: ImportResume,
     ): Promise<ImportResult> {
         const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
-        const allRows = this.parseCSV(csvText);
+        return this.importRows('surat-keluar', this.parseCSV(csvText), unitKerjaId, auditContext, options, resume);
+    }
 
+    /**
+     * Import already-parsed rows from any source (Google Sheets, a CSV or XLSX
+     * file): detect the header row, map columns by their titles, then run the
+     * bounded row loop below, optionally as one time-budgeted part.
+     */
+    async importRows(
+        type: GoogleSheetsImportType,
+        allRows: string[][],
+        unitKerjaId: string,
+        auditContext: CriticalAuditContext,
+        options: GoogleSheetsRequestOptions = {},
+        resume?: ImportResume,
+    ): Promise<ImportResult> {
         if (allRows.length < 2) {
             return { success: false, totalRows: 0, importedRows: 0, skippedRows: 0, duplicateRows: 0, errors: ['No data found'] };
         }
 
-        const { headerRowIndex, columnMap: colMap } = resolveSheetMapping(allRows, 'surat-keluar');
+        const { headerRowIndex, columnMap: colMap } = resolveSheetMapping(allRows, type);
         const dataRows = allRows.slice(headerRowIndex + 1);
         this.assertDataRows(dataRows);
 
-        return this.importRecords(dataRows, colMap, outgoing, auditContext, options, resume, (row, i) => {
-            const nomorSurat = this.getField(row, colMap, 'nomorSurat');
-            const perihal = this.getField(row, colMap, 'perihal');
-            // Only skip if BOTH nomor surat and perihal are empty
-            if (!nomorSurat && !perihal) return null;
+        return type === 'surat-masuk'
+            ? this.importRecords(dataRows, colMap, incoming, auditContext, options, resume,
+                (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext))
+            : this.importRecords(dataRows, colMap, outgoing, auditContext, options, resume,
+                (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext));
+    }
 
-            const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
-            const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
-            const parsedDate = this.parseDate(tanggalStr);
-            const kepada = this.getField(row, colMap, 'kepada');
-            const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
-            const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
+    private incomingRecord(row: string[], i: number, colMap: Record<string, number>, unitKerjaId: string,
+        auditContext: CriticalAuditContext): NewSuratMasuk | null {
+        const nomorSurat = this.getField(row, colMap, 'nomorSurat');
+        const perihal = this.getField(row, colMap, 'perihal');
+        // Only skip if BOTH nomor surat and perihal are empty (truly empty row)
+        if (!nomorSurat && !perihal) return null;
 
-            const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
-            const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
-            const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
-            const link = this.getField(row, colMap, 'linkDokumen');
+        const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
+        const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
+        const parsedDate = this.parseDate(tanggalStr);
+        const dari = this.getField(row, colMap, 'dari');
+        const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
+        const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
 
-            const newSurat: NewSuratKeluar & { numberingMode: 'manual' } = {
-                unitKerjaId,
-                noUrut: noUrut,
-                tahun: effectiveTahun,
-                naskahDinas: this.getField(row, colMap, 'naskahDinas') || 'Surat Dinas',
-                sifatSurat: normalizeSifatSurat(this.getField(row, colMap, 'sifatSurat')),
-                numberingMode: 'manual',
-                nomorSurat: nomorSurat || '-',
-                tanggalSurat: parsedDate,
-                perihal: this.getField(row, colMap, 'perihal') || '',
-                kepada,
-                linkDokumen: isWebAddress(link) ? link : null,
-                klasifikasiFasilitatif: klasifikasiJenis === 'fasilitatif' ? klasifikasiArsip : null,
-                klasifikasiFasilitatifKode: klasifikasiJenis === 'fasilitatif' ? klasifikasiKode : null,
-                klasifikasiSubstantif: klasifikasiJenis === 'substantif' ? klasifikasiArsip : null,
-                klasifikasiSubstantifKode: klasifikasiJenis === 'substantif' ? klasifikasiKode : null,
-                createdBy: auditContext.userId,
-            };
-            return newSurat;
-        });
+        const disposisiRaw = this.getField(row, colMap, 'disposisi');
+        const disposisiArr = disposisiRaw ? disposisiRaw.split(/[,;]/).map(d => d.trim()).filter(Boolean) : [];
+
+        const newSurat: NewSuratMasuk = {
+            unitKerjaId,
+            noUrut: noUrut,
+            tahun: effectiveTahun,
+            jenisSurat: this.getField(row, colMap, 'jenisSurat') || 'Surat Dinas',
+            sifatSurat: this.getField(row, colMap, 'sifatSurat') || 'Biasa',
+            nomorSurat: nomorSurat || '-',
+            tanggalSurat: parsedDate,
+            perihal: this.getField(row, colMap, 'perihal') || '',
+            dari,
+            kepada: this.getField(row, colMap, 'kepada') || '',
+            status: 'belum_dibalas',
+            disposisi: disposisiArr.length > 0 ? disposisiArr : null,
+            createdBy: auditContext.userId,
+        };
+        return newSurat;
+    }
+
+    private outgoingRecord(row: string[], i: number, colMap: Record<string, number>, unitKerjaId: string,
+        auditContext: CriticalAuditContext): NewSuratKeluar & { numberingMode: 'manual' } | null {
+        const nomorSurat = this.getField(row, colMap, 'nomorSurat');
+        const perihal = this.getField(row, colMap, 'perihal');
+        // Only skip if BOTH nomor surat and perihal are empty
+        if (!nomorSurat && !perihal) return null;
+
+        const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
+        const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
+        const parsedDate = this.parseDate(tanggalStr);
+        const kepada = this.getField(row, colMap, 'kepada');
+        const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
+        const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
+
+        const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
+        const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
+        const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
+        const link = this.getField(row, colMap, 'linkDokumen');
+
+        const newSurat: NewSuratKeluar & { numberingMode: 'manual' } = {
+            unitKerjaId,
+            noUrut: noUrut,
+            tahun: effectiveTahun,
+            naskahDinas: this.getField(row, colMap, 'naskahDinas') || 'Surat Dinas',
+            sifatSurat: normalizeSifatSurat(this.getField(row, colMap, 'sifatSurat')),
+            numberingMode: 'manual',
+            nomorSurat: nomorSurat || '-',
+            tanggalSurat: parsedDate,
+            perihal: this.getField(row, colMap, 'perihal') || '',
+            kepada,
+            linkDokumen: isWebAddress(link) ? link : null,
+            klasifikasiFasilitatif: klasifikasiJenis === 'fasilitatif' ? klasifikasiArsip : null,
+            klasifikasiFasilitatifKode: klasifikasiJenis === 'fasilitatif' ? klasifikasiKode : null,
+            klasifikasiSubstantif: klasifikasiJenis === 'substantif' ? klasifikasiArsip : null,
+            klasifikasiSubstantifKode: klasifikasiJenis === 'substantif' ? klasifikasiKode : null,
+            createdBy: auditContext.userId,
+        };
+        return newSurat;
     }
 
     /**

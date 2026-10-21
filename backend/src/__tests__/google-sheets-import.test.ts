@@ -143,6 +143,39 @@ describe('exact Google Sheets column mapping before writes', () => {
     });
 });
 
+describe('importing already-parsed rows from any source', () => {
+    it.each([['surat-masuk', mocks.incoming], ['surat-keluar', mocks.outgoing]] as const)(
+        'maps and imports %s rows without fetching a sheet', async (type, create) => {
+            const service = new GoogleDriveImportService();
+            const fetch = vi.spyOn(service, 'fetchSheetAsCSV');
+            const result = await service.importRows(type, [['Daftar surat 2026'], headers, data], 'unit-a', audit);
+            expect(result).toMatchObject({ success: true, totalRows: 1, importedRows: 1, duplicateRows: 0, errors: [] });
+            expect(create).toHaveBeenCalledWith(expect.objectContaining({
+                unitKerjaId: 'unit-a', noUrut: 7, nomorSurat: 'SM-2026-actual', tanggalSurat: '2026-09-12', perihal: 'Permohonan data',
+            }), audit, {});
+            expect(fetch).not.toHaveBeenCalled();
+        });
+
+    it('imports parsed rows in resumable parts', async () => {
+        const service = new GoogleDriveImportService();
+        const second = ['8', 'SK-2026-next', '13/09/2026', 'Undangan rapat', 'Kantah B', 'Ditjen'];
+        const rows = [headers, data, second];
+        // An already-spent budget: each part imports exactly one row.
+        const first = await service.importRows('surat-keluar', rows, 'unit-a', audit, {}, { startRow: 0, deadlineAt: Date.now() - 1 });
+        expect(first).toMatchObject({ importedRows: 1, startRow: 0, nextRow: 1 });
+        const rest = await service.importRows('surat-keluar', rows, 'unit-a', audit, {},
+            { startRow: first.nextRow!, prefixHash: first.prefixHash, deadlineAt: Date.now() - 1 });
+        expect(rest).toMatchObject({ importedRows: 1, startRow: 1, nextRow: null });
+        expect(mocks.outgoing.mock.calls.map(([record]) => record.nomorSurat)).toEqual(['SM-2026-actual', 'SK-2026-next']);
+    });
+
+    it('reports a source without data rows', async () => {
+        expect(await new GoogleDriveImportService().importRows('surat-keluar', [headers], 'unit-a', audit))
+            .toMatchObject({ success: false, totalRows: 0, importedRows: 0, errors: ['No data found'] });
+        expect(mocks.outgoing).not.toHaveBeenCalled();
+    });
+});
+
 describe('resumable import within a time budget', () => {
     // Outgoing rows; the Dari column is not read by a surat keluar import.
     const outgoingRows = (count: number) => Array.from({ length: count }, (_, i) =>
