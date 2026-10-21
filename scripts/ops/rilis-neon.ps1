@@ -50,8 +50,12 @@ if ($Action -in 'backup', 'diag-backup' -and -not $PgBin) {
     if (Test-Path (Join-Path $standard 'pg_dump.exe')) { $PgBin = $standard } else { throw 'Isi -PgBin (folder bin PostgreSQL 18).' }
 }
 
-$arguments = @((Join-Path $PSScriptRoot 'rilis-neon.mjs'), $Action, '--host', $NeonHost, '--database', $Database,
-    '--checkout', (Resolve-Path $Checkout).Path)
+$checkoutPath = (Resolve-Path $Checkout).Path
+# Check before the prompt, so a secret is never typed for a run that cannot start.
+if (-not (Test-Path (Join-Path $checkoutPath 'backend\node_modules\pg\package.json'))) {
+    throw "Dependensi backend checkout belum terpasang. Jalankan dulu: npm ci --prefix `"$(Join-Path $checkoutPath 'backend')`" --ignore-scripts"
+}
+$arguments = @((Join-Path $PSScriptRoot 'rilis-neon.mjs'), $Action, '--host', $NeonHost, '--database', $Database, '--checkout', $checkoutPath)
 if ($Action -in 'rotate-migrate', 'rotate-role') { $arguments += '--owner', $Owner }
 if ($Role) { $arguments += '--role', $Role }
 if ($Action -in 'backup', 'diag-backup') {

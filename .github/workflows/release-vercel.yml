@@ -236,7 +236,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           if [ -z "$SMOKE_PROTECTION_BYPASS" ]; then
-            echo '::notice::VERCEL_BACKEND_BYPASS_SECRET is not set; candidate HTTP smoke skipped (production smoke still runs after promotion).'
+            echo '::warning::VERCEL_BACKEND_BYPASS_SECRET is not set: backend candidate HTTP smoke skipped. The first HTTP check runs after promotion and rolls back automatically on failure.'
+            printf '\n> **Warning:** backend candidate smoke skipped (no `VERCEL_BACKEND_BYPASS_SECRET`). The first HTTP check runs after promotion; a failure there rolls back automatically.\n' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           node scripts/ops/release-smoke.mjs backend "$CANDIDATE_URL"
@@ -338,7 +339,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           if [ -z "$SMOKE_PROTECTION_BYPASS" ]; then
-            echo '::notice::VERCEL_FRONTEND_BYPASS_SECRET is not set; candidate HTTP smoke skipped (production smoke still runs after promotion).'
+            echo '::warning::VERCEL_FRONTEND_BYPASS_SECRET is not set: frontend candidate HTTP smoke skipped. The first HTTP check runs after promotion and rolls back automatically on failure.'
+            printf '\n> **Warning:** frontend candidate smoke skipped (no `VERCEL_FRONTEND_BYPASS_SECRET`). The first HTTP check runs after promotion; a failure there rolls back automatically.\n' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # The candidate proxies /api to the production backend alias.
@@ -421,8 +423,12 @@ jobs:
               exit 1
             fi
           done
-          echo "backend=$backend_state" >> "$GITHUB_OUTPUT"
-          echo "frontend=$frontend_state" >> "$GITHUB_OUTPUT"
+          {
+            echo "backend=$backend_state"
+            echo "frontend=$frontend_state"
+            echo "backend_target=${BACKEND_REPLACES:-$backend_now}"
+            echo "frontend_target=${FRONTEND_REPLACES:-$frontend_now}"
+          } >> "$GITHUB_OUTPUT"
           {
             echo '### Rollback targets'
             echo
@@ -435,6 +441,7 @@ jobs:
           } | tee "$evidence/rollback.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Promote backend candidate
+        id: promote_backend
         if: env.BACKEND_RELEASED == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -446,17 +453,23 @@ jobs:
           if [ "$STATE" = promote ]; then vercel promote "$BACKEND_CANDIDATE" --yes --timeout 5m; else echo 'Backend candidate already serving (re-run); not promoted again.'; fi
           node scripts/ops/vercel-release.mjs serving --component backend --deployment "$BACKEND_CANDIDATE" | tee "$RUNNER_TEMP/release-evidence/promoted-backend.json"
 
+      # Mainly wakes the on-demand scanner before /ready is checked (C55 needed
+      # this). Its probe also covers backup/fixity, which a release does not
+      # change, so it warns; the backend smoke below is the rollback gate.
       - name: Wake the scanner and probe operations through the frontend proxy
         if: env.BACKEND_RELEASED == 'true'
+        continue-on-error: true
         env:
           OPERATIONS_MONITOR_TOKEN: ${{ secrets.OPERATIONS_MONITOR_TOKEN }}
-        run: node scripts/check-operations.mjs
+        run: node scripts/check-operations.mjs || { echo '::warning::Operations probe is not healthy after the backend promotion; continuing to the backend smoke.'; exit 1; }
 
       - name: Smoke production backend
+        id: smoke_backend
         if: env.BACKEND_RELEASED == 'true'
         run: node scripts/ops/release-smoke.mjs backend https://simsa-backend.vercel.app
 
       - name: Promote frontend candidate
+        id: promote_frontend
         if: env.FRONTEND_RELEASED == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -469,13 +482,74 @@ jobs:
           node scripts/ops/vercel-release.mjs serving --component frontend --deployment "$FRONTEND_CANDIDATE" | tee "$RUNNER_TEMP/release-evidence/promoted-frontend.json"
 
       - name: Smoke production frontend
+        id: smoke_frontend
         if: env.FRONTEND_RELEASED == 'true'
         run: node scripts/ops/release-smoke.mjs frontend https://simsa-frontend.vercel.app
+
+      # Restores the exact pre-release pair whenever a promotion, alias check or
+      # production smoke fails: every component still serving its candidate goes
+      # back to the recorded deployment, frontend before backend. Always fails.
+      - name: Roll back automatically after a failed promotion or smoke check
+        if: >-
+          failure() && (steps.promote_backend.outcome == 'failure' || steps.smoke_backend.outcome == 'failure'
+          || steps.promote_frontend.outcome == 'failure' || steps.smoke_frontend.outcome == 'failure')
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          BACKEND_PROJECT: ${{ vars.VERCEL_BACKEND_PROJECT_ID }}
+          FRONTEND_PROJECT: ${{ vars.VERCEL_FRONTEND_PROJECT_ID }}
+          BACKEND_TARGET: ${{ steps.previous.outputs.backend_target }}
+          FRONTEND_TARGET: ${{ steps.previous.outputs.frontend_target }}
+        run: |
+          set -Euo pipefail
+          evidence="$RUNNER_TEMP/release-evidence"
+          failed=0
+          rolled=()
+          rollback() {
+            local component=$1 candidate=$2 target=$3 project=$4 serving
+            [ -n "$candidate" ] || return 0
+            if ! serving="$(node scripts/ops/vercel-release.mjs current --component "$component" | jq -r .id)"; then
+              echo "::error::Cannot read the $component alias; check it manually and run: vercel promote $target --yes"
+              failed=1
+              return 0
+            fi
+            [ "$serving" = "$candidate" ] || return 0 # Candidate is not serving: nothing to undo.
+            if [[ "$target" =~ ^dpl_ ]] && VERCEL_PROJECT_ID="$project" vercel promote "$target" --yes --timeout 5m \
+              && node scripts/ops/vercel-release.mjs serving --component "$component" --deployment "$target" > "$evidence/rolled-back-$component.json"; then
+              rolled+=("$component -> $target")
+            else
+              echo "::error::AUTOMATIC ROLLBACK OF $component FAILED. Run now: vercel promote $target --yes"
+              failed=1
+            fi
+          }
+          rollback frontend "$FRONTEND_CANDIDATE" "$FRONTEND_TARGET" "$FRONTEND_PROJECT"
+          rollback backend "$BACKEND_CANDIDATE" "$BACKEND_TARGET" "$BACKEND_PROJECT"
+          if [ "${#rolled[@]}" -gt 0 ]; then
+            node scripts/ops/release-smoke.mjs backend https://simsa-backend.vercel.app || { echo '::error::Backend smoke still fails after rollback.'; failed=1; }
+            node scripts/ops/release-smoke.mjs frontend https://simsa-frontend.vercel.app || { echo '::error::Frontend smoke still fails after rollback.'; failed=1; }
+          fi
+          {
+            echo
+            echo '## Release FAILED and was rolled back automatically'
+            echo
+            echo "Rolled back: ${rolled[*]:-nothing}. Rollback result: $([ "$failed" = 0 ] && echo verified || echo 'INCOMPLETE - act manually using rollback.md')."
+            echo 'If a `vercel promote` timed out, re-check both aliases: Vercel may finish a timed-out promotion in the background.'
+          } | tee "$evidence/rollback-result.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$failed" = 0 ]; then
+            echo "::error::Post-promotion check failed; production was rolled back (${rolled[*]:-no candidate was serving}). See the job summary."
+          else
+            echo '::error::Post-promotion check failed and the AUTOMATIC ROLLBACK DID NOT COMPLETE. Act now using rollback.md in the job summary.'
+          fi
+          exit 1
 
       - name: Final operations probe
         env:
           OPERATIONS_MONITOR_TOKEN: ${{ secrets.OPERATIONS_MONITOR_TOKEN }}
-        run: node scripts/check-operations.mjs
+        run: |
+          node scripts/check-operations.mjs || {
+            echo '::error::Operations probe is unhealthy after the release. Smoke checks passed, so the new deployments were kept; check the Super Admin panel and use rollback.md if the release caused it.'
+            exit 1
+          }
 
       - name: Upload promotion evidence
         if: always()

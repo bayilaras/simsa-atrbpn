@@ -4,7 +4,9 @@ import { EventEmitter } from 'node:events';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { OpsError } from './neon-credential.mjs';
-import { childEnvironment, describeFailure, planOperation, runOperation, takeCredentials } from './rilis-neon.mjs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { assertCheckoutDependencies, childEnvironment, describeFailure, planOperation, runOperation, takeCredentials } from './rilis-neon.mjs';
 import { redact } from './diag-neon-backup.mjs';
 
 const host = 'ep-synthetic-123.c-3.ap-southeast-1.aws.neon.tech';
@@ -34,6 +36,17 @@ test('plans pin the target, map each action to one login role and reject ambiguo
     ['migrate', ...pins, '--checkout', join(repository, 'docs')]]) {
     assert.throws(() => plan(...args), OpsError, args.join(' '));
   }
+});
+
+test('a git-archive checkout without backend dependencies is refused with the npm ci command', () => {
+  const checkout = mkdtempSync(join(tmpdir(), 'simsa-checkout-'));
+  try {
+    assert.throws(() => assertCheckoutDependencies(checkout), error => error instanceof OpsError
+      && error.message.includes(`npm ci --prefix "${join(checkout, 'backend')}" --ignore-scripts`));
+    mkdirSync(join(checkout, 'backend', 'node_modules', 'pg'), { recursive: true });
+    writeFileSync(join(checkout, 'backend', 'node_modules', 'pg', 'package.json'), '{}');
+    assert.doesNotThrow(() => assertCheckoutDependencies(checkout));
+  } finally { rmSync(checkout, { recursive: true, force: true }); }
 });
 
 test('credentials leave the environment before any child process starts and never reach other variables', () => {
@@ -117,6 +130,11 @@ test('rotate-role sets the operator-supplied password, proves the new login and 
   assert.equal(run.calls.length, 0);
   assert.match(run.logs.join('\n'), /NEON_BACKUP_DATABASE_URL/);
   assert.ok(run.logs.every(line => !line.includes(fresh)));
+  class ProofFails extends fakeClient([]) {
+    async connect() { if (this.config.user === 'simsa_backup') throw Object.assign(new Error(`timeout ${fresh}`), { code: 'ETIMEDOUT' }); }
+  }
+  await assert.rejects(runOperation(plan, { credential: owner, newPassword: fresh }, { ...run, Client: ProofFails }),
+    error => /SUDAH berlaku.*ETIMEDOUT/.test(error.message) && !error.message.includes(fresh));
   for (const newPassword of [undefined, 'short', owner]) {
     await assert.rejects(runOperation(plan, { credential: owner, newPassword }, { ...run, Client: fakeClient([]) }), OpsError);
   }

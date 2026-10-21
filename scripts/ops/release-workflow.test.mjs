@@ -43,6 +43,20 @@ test('candidates deploy backend then frontend without a domain; only the approve
   assert.match(promote, /release-smoke\.mjs backend https:\/\/simsa-backend\.vercel\.app/);
   assert.match(promote, /release-smoke\.mjs frontend https:\/\/simsa-frontend\.vercel\.app/);
   assert.match(promote, /check-operations\.mjs/);
+  // A failed promotion, alias check or production smoke restores the recorded pair, frontend first.
+  const rollback = steps('promote').find(step => /Roll back automatically/.test(step.name ?? ''));
+  for (const id of ['promote_backend', 'smoke_backend', 'promote_frontend', 'smoke_frontend']) {
+    assert.ok(steps('promote').some(step => step.id === id), id); assert.match(rollback.if, new RegExp(`steps\\.${id}\\.outcome == 'failure'`));
+  }
+  assert.match(rollback.if, /^failure\(\) && /);
+  assert.ok(rollback.run.indexOf('rollback frontend') < rollback.run.indexOf('rollback backend'));
+  assert.match(rollback.run, /exit 1\s*$/);
+  const final = steps('promote').indexOf(rollback);
+  assert.ok(steps('promote').findIndex(step => step.id === 'smoke_frontend') < final);
+  for (const name of ['backend-candidate', 'frontend-candidate']) {
+    const skipped = steps(name).find(step => /bypass secret/.test(step.name ?? '')).run;
+    assert.match(skipped, /::warning::/); assert.match(skipped, /GITHUB_STEP_SUMMARY/);
+  }
   assert.match(runs('source'), /check-gcp-backend-production-gate\.py/);
   assert.doesNotMatch(runs('source') + runs('promote'), /vercel deploy/);
 });

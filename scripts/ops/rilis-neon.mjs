@@ -64,6 +64,13 @@ export function planOperation(argv, environment = process.env) {
     keyDirectory: action === 'backup' ? resolve(values['key-directory'] ?? join(homedir(), '.simsa-recovery-private', 'keys')) : undefined };
 }
 
+/** A git-archive source has no node_modules; every helper loads pg from the checkout's backend. */
+export function assertCheckoutDependencies(checkout) {
+  if (!existsSync(join(checkout, 'backend', 'node_modules', 'pg', 'package.json'))) {
+    throw new OpsError(`Dependensi backend checkout belum terpasang. Jalankan dulu: npm ci --prefix "${join(checkout, 'backend')}" --ignore-scripts`);
+  }
+}
+
 /** Moves the credentials out of the environment so no child process inherits them. */
 export function takeCredentials(environment = process.env) {
   const credentials = { credential: environment.SIMSA_OPS_CREDENTIAL, newPassword: environment.SIMSA_OPS_NEW_PASSWORD };
@@ -115,8 +122,12 @@ export async function runOperation(plan, { credential, newPassword }, { spawn = 
   await withClient(PgClient, plan, plan.login, password, client => rotateLoginRole(client, { role: plan.rotate, password: fresh }));
   log(`rotasi ${plan.rotate}: ok (password tidak ditampilkan${plan.action === 'rotate-migrate' ? ' dan tidak disimpan' : ''})`);
   if (plan.action === 'rotate-migrate') return helper('scripts/neon-database.mjs', ['migrate', '--apply'], 'simsa_migration', fresh);
-  const session = await withClient(PgClient, plan, plan.rotate, fresh, async client => (await client.query('SELECT session_user AS role')).rows[0]?.role);
-  if (session !== plan.rotate) throw new OpsError('Login dengan password baru tidak menghasilkan role yang diharapkan.');
+  // The ALTER is already committed here: say so, the caller must not assume the old password still works.
+  const applied = `Password baru ${plan.rotate} SUDAH berlaku`;
+  let session;
+  try { session = await withClient(PgClient, plan, plan.rotate, fresh, async client => (await client.query('SELECT session_user AS role')).rows[0]?.role); }
+  catch (error) { throw new OpsError(`${applied}, tetapi bukti login gagal (${describeFailure(error)}). Lanjutkan langkah berikut atau kembalikan password lama dengan rotate-role.`); }
+  if (session !== plan.rotate) throw new OpsError(`${applied}, tetapi login tidak menghasilkan role yang diharapkan.`);
   log(`login ${plan.rotate} dengan password baru: ok`);
   log(`langkah berikut: ${ROTATION_FOLLOW_UP[plan.rotate]}`);
   return 0;
@@ -140,6 +151,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   else {
     try {
       const plan = planOperation(process.argv.slice(2));
+      assertCheckoutDependencies(plan.checkout);
       console.log(`== ${plan.action}: login ${plan.login}${plan.rotate ? `, rotasi ${plan.rotate}` : ''}, host ${plan.host}, db ${plan.database}, checkout ${plan.checkout}`);
       code = await runOperation(plan, credentials);
     } catch (error) { console.error(describeFailure(error)); }
