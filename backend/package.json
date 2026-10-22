@@ -132,6 +132,9 @@
     "esbuild": "0.28.2",
     "@vercel/cli-config": {
       "zod": "$zod"
+    },
+    "better-auth": {
+      "vitest": "$vitest"
     }
   }
 }
