@@ -8,6 +8,8 @@ import { getOperationsStatus } from '../services/operations-status.service.js';
 import { getReadiness } from '../services/readiness.service.js';
 import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
 import { MALWARE_DEFINITION_REFRESH_BEFORE_MS } from '../services/malware-scanner.service.js';
+import { getObjectStorageConfigurationStatus } from '../config/blob-storage.js';
+import { measureStorageLatency, vercelBlobLatencyClient } from '../services/storage-latency.service.js';
 
 const router = Router();
 // Dedicated automation credentials, never an application session.
@@ -71,6 +73,34 @@ router.get('/scanner-wake', async (req, res) => {
         return;
     }
     await wakeScannerIfDue(res);
+});
+// Operator-dispatched measurement (Operations Monitor input), never scheduled:
+// each run writes, reads and deletes six small private probe objects.
+let storageLatencyInFlight = false;
+router.post('/storage-latency', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!monitorAuthorized(req.get('authorization') || '')) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+    }
+    const storage = getObjectStorageConfigurationStatus();
+    if (storage.provider !== 'vercel-blob-private' || !storage.ready) {
+        res.json({ status: 'not_supported' });
+        return;
+    }
+    if (storageLatencyInFlight) {
+        res.status(429).json({ status: 'busy' });
+        return;
+    }
+    storageLatencyInFlight = true;
+    try {
+        const measurement = await measureStorageLatency(vercelBlobLatencyClient, { sizes: [16 * 1024, 1024 * 1024], rounds: 3 });
+        res.json({ status: 'measured', provider: storage.provider, functionRegion: process.env.VERCEL_REGION || null, ...measurement });
+    } catch {
+        res.status(503).json({ status: 'failed' });
+    } finally {
+        storageLatencyInFlight = false;
+    }
 });
 router.use(authMiddleware);
 router.use(roleMiddleware(['super_admin']));

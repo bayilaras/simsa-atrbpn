@@ -10,7 +10,8 @@ import { getSrikandiConfigurationStatus, srikandiConfig } from '../config/srikan
 import type { OperationalWorker } from '../db/schema/operational-heartbeats.js';
 import { blobStorageService } from './blob-storage.service.js';
 import { createLogger } from '../utils/logger.js';
-import { isCurrentMalwareEngineEvidence } from './malware-scanner.service.js';
+import { vercelDeploymentId } from '../utils/deployment-identity.js';
+import { isCurrentMalwareEngineEvidence, type MalwareEngineEvidence } from './malware-scanner.service.js';
 
 const log = createLogger('ReadinessService');
 
@@ -353,7 +354,7 @@ export const DATABASE_SCHEMA_READINESS_SQL = `
     FROM column_state, constraint_state, trigger_state, index_state, membership_state, privilege_state
 `;
 
-type RuntimeState = 'ready' | 'not_ready' | 'disabled';
+type RuntimeState = 'ready' | 'standby' | 'not_ready' | 'disabled';
 
 export interface HeartbeatRow {
     worker: OperationalWorker;
@@ -528,19 +529,48 @@ export function evaluateWorkerReadiness(
     };
 }
 
-export function evaluateOnDemandMalwareReadiness(rows: HeartbeatRow[], now: number) {
+/**
+ * Vercel Cron wakes the scanner every four hours (±59 min, backend/vercel.json),
+ * so standby that outlasts eight hours means wakes are not reaching the worker
+ * (a rejected dispatch publishes no heartbeat): report it as a fault.
+ */
+const ON_DEMAND_STANDBY_WINDOW_MS = 8 * 3_600_000;
+
+/**
+ * Verified definitions live only in the /tmp of the instance that refreshed
+ * them, so the 24-hour lease lapses on an idle day and a superseded deployment
+ * may have recorded the newest (failed) run. Neither is a fault of this
+ * deployment: report `standby` (served, scanner refreshes on its next run).
+ * A failed run of this deployment, or no run at all, stays `not_ready`.
+ */
+export function evaluateOnDemandMalwareReadiness(rows: HeartbeatRow[], now: number, deploymentId = vercelDeploymentId()) {
     const candidates = rows.filter(row => row.worker === 'malware-scan')
         .sort((left, right) => new Date(right.last_seen_at).getTime() - new Date(left.last_seen_at).getTime());
     const row = candidates[0];
     const seen = row ? new Date(row.last_seen_at).getTime() : NaN;
     const proof = row?.details?.engineEvidence;
-    if (!row || row.status !== 'running' || row.details?.runtime !== 'on-demand'
-        || !Number.isFinite(seen) || seen > now || !isCurrentMalwareEngineEvidence(proof, now)
-        || Date.parse(proof.definitionsVerifiedAt) > seen) {
-        return { required: true, state: 'not_ready' as RuntimeState, reason: 'on_demand_verification_missing_or_expired' };
+    const onDemand = row?.details?.runtime === 'on-demand' && Number.isFinite(seen) && seen <= now;
+    const lastSeenAt = onDemand ? new Date(seen).toISOString() : undefined;
+    if (onDemand && row.status === 'running' && isCurrentMalwareEngineEvidence(proof, now)
+        && Date.parse(proof.definitionsVerifiedAt) <= seen) {
+        return { required: true, state: 'ready' as RuntimeState, runtime: 'on-demand',
+            lastSeenAt, definitionsExpiresAt: proof.definitionsExpiresAt };
     }
-    return { required: true, state: 'ready' as RuntimeState, runtime: 'on-demand',
-        lastSeenAt: new Date(seen).toISOString(), definitionsExpiresAt: proof.definitionsExpiresAt };
+    if (onDemand && deploymentId && row.details?.deploymentId !== deploymentId
+        && now - seen <= ON_DEMAND_STANDBY_WINDOW_MS) {
+        return { required: true, state: 'standby' as RuntimeState, reason: 'awaiting_first_run_on_deployment',
+            runtime: 'on-demand', lastSeenAt };
+    }
+    // A structurally valid proof judged just before its own expiry: lapsed, not forged.
+    const expires = Date.parse(String((proof as Partial<MalwareEngineEvidence> | undefined)?.definitionsExpiresAt));
+    if (onDemand && row.status === 'running' && Number.isFinite(expires) && expires <= now
+        && now - expires <= ON_DEMAND_STANDBY_WINDOW_MS && isCurrentMalwareEngineEvidence(proof, expires - 1)
+        && Date.parse(proof.definitionsVerifiedAt) <= seen) {
+        return { required: true, state: 'standby' as RuntimeState, reason: 'definitions_lease_expired',
+            runtime: 'on-demand', lastSeenAt, definitionsExpiresAt: proof.definitionsExpiresAt };
+    }
+    return { required: true, state: 'not_ready' as RuntimeState,
+        reason: onDemand && row.status === 'degraded' ? 'on_demand_refresh_failed' : 'on_demand_verification_missing_or_expired' };
 }
 
 export async function collectReadiness(
@@ -629,9 +659,12 @@ export async function collectReadiness(
         && srikandiWorker.state !== 'not_ready';
     const optionalConfigurationInvalid = emailConfiguration.validationErrors.length > 0
         || srikandiConfiguration.validationErrors.length > 0;
+    // Uploads stay quarantined until a scan proves them; a standby scanner only
+    // delays that proof, so the API keeps serving and reports itself degraded.
+    const degraded = optionalConfigurationInvalid || malwareWorker.state === 'standby';
 
     return {
-        status: requiredReady ? (optionalConfigurationInvalid ? 'degraded' : 'ready') : 'not_ready',
+        status: requiredReady ? (degraded ? 'degraded' : 'ready') : 'not_ready',
         timestamp: new Date(dependencies.now()).toISOString(),
         dependencies: {
             database,
