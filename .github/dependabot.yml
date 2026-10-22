@@ -29,6 +29,14 @@ updates:
     groups:
       backend-minor-patch:
         update-types: ["minor", "patch"]
+        # Better Auth >= 1.7.3 mengganti identitas akun (issuer, accountId)
+        # menjadi (providerId, accountId) dan menolak kolom wajib yang tidak
+        # ditulisnya (accounts.issuer, migrasi 0015). Kenaikannya butuh migrasi
+        # skema yang dirilis lebih dulu, jadi datang sebagai PR tersendiri dan
+        # tidak menahan grup ini. Bukan `ignore`: PR keamanan tetap tiba.
+        exclude-patterns:
+          - "better-auth"
+          - "@better-auth/*"
 
   - package-ecosystem: "npm"
     directory: "/frontend"
