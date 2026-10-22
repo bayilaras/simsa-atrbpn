@@ -5,7 +5,7 @@ import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware
 import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 import { importLimiter, importDiscoveryLimiter, importPreviewLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { validateBody, validateQuery } from '../middlewares/validate.middleware.js';
-import { resolveImportUnit, withImportRequest } from './import-request.js';
+import { importSync, resolveImportUnit, withImportRequest } from './import-request.js';
 import { ValidationError } from '../utils/errors.js';
 import { GOOGLE_SHEETS_LIMITS, extractSheetGid } from '../services/google-sheets-source.js';
 import { IMPORT_TIME_BUDGET_MS, type ImportResume } from '../services/import-resume.js';
@@ -30,6 +30,8 @@ const importInput = z.object({
     // its first data row and the prefixHash the previous part returned.
     startRow: z.number().int().min(0).max(GOOGLE_SHEETS_LIMITS.dataRows).optional(),
     prefixHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    // Update letters already recorded when the source changed them (see import-sync).
+    sinkron: z.boolean().optional(),
 }).strict().refine(body => body.startRow === undefined
     ? body.prefixHash === undefined
     : body.startRow === 0 || body.prefixHash !== undefined, {
@@ -99,9 +101,10 @@ for (const kind of ['masuk', 'keluar'] as const) {
             // Older clients send one request for the whole sheet and get the previous behaviour.
             const resume: ImportResume | undefined = req.body.startRow === undefined ? undefined
                 : { startRow: req.body.startRow, prefixHash: req.body.prefixHash, deadlineAt: Date.now() + IMPORT_TIME_BUDGET_MS };
+            const sync = importSync(req, req.body.sinkron);
             const result = await withImportRequest(req, res, options => kind === 'masuk'
-                ? googleDriveImportService.importSuratMasuk(id, sheet, unitKerjaId, audit, options, resume)
-                : googleDriveImportService.importSuratKeluar(id, sheet, unitKerjaId, audit, options, resume));
+                ? googleDriveImportService.importSuratMasuk(id, sheet, unitKerjaId, audit, options, resume, sync)
+                : googleDriveImportService.importSuratKeluar(id, sheet, unitKerjaId, audit, options, resume, sync));
             if (!res.destroyed) res.json({ ...result, ...(res.locals.requestId ? { requestId: res.locals.requestId } : {}) });
         } catch (error) { next(error); }
     });

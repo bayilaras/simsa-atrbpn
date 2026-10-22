@@ -106,6 +106,7 @@ const GUIDE_SECTIONS = [
             'Cari dahulu berdasarkan nomor, perihal, pengirim, atau penerima untuk mencegah pencatatan ganda.',
             'Isi metadata dari dokumen sumber secara lengkap dan periksa kembali tanggal serta nomor surat.',
             'Untuk daftar CSV atau XLSX, pilih unit kerja konkret lalu Impor CSV/XLSX dan Pratinjau (pilih lembar kerja bila ada beberapa). Periksa pemetaan kolom, lalu Impor; perbaiki judul atau baris yang ditolak pada berkas sumber dan periksa hasil karena sebagian baris dapat berhasil saat baris lain gagal.',
+            'Periksa Rincian hasil impor per baris (filter Perlu dicek) atau unduh laporannya sebagai CSV. Bila sumber diubah setelah diimpor, centang Sinkronkan surat yang sudah tercatat sebelum mengimpor ulang; perubahan dicatat di log audit, sel kosong tidak menghapus data, dan surat yang sudah disetujui, diarsipkan, atau dihapus tidak diubah.',
             'Simpan metadata dan pastikan detailnya dapat dibuka. Tambahkan lampiran hanya bila fasilitas penyimpanan file tersedia dan berkasnya memang terkait; arsip fisik tidak memerlukan unggahan pengganti.',
             'Gunakan Distribusi bila menu tersebut tersedia dan tindak lanjut memang diperlukan.',
         ],

@@ -53,7 +53,16 @@ describe('file import routes', () => {
         const response = await post(`/surat-${kind}`, { unitKerjaId: 'unit-a', sheet: '2026' }).expect(200);
         expect(response.body).toEqual({ success: true, importedRows: 1 });
         expect(mocks.importSurat).toHaveBeenCalledWith(`surat-${kind}`, expect.objectContaining({ originalname: 'register.xlsx' }), '2026', 'unit-a',
-            { userId: 'synthetic-user', userEmail: undefined, ipAddress: expect.any(String) }, { signal: expect.any(AbortSignal) }, undefined);
+            { userId: 'synthetic-user', userEmail: undefined, ipAddress: expect.any(String) }, { signal: expect.any(AbortSignal) }, undefined, undefined);
+    });
+
+    it('asks the import to sinkron recorded letters for the importing user only when sent', async () => {
+        await post('/surat-keluar', { unitKerjaId: 'unit-a', sinkron: 'true' }).expect(200);
+        expect(mocks.importSurat.mock.calls[0][7]).toEqual({ actor: { id: 'synthetic-user', role: 'super_admin', unitKerjaId: 'unit-a' } });
+        await post('/surat-keluar', { unitKerjaId: 'unit-a', sinkron: 'false' }).expect(200);
+        expect(mocks.importSurat.mock.calls[1][7]).toBeUndefined();
+        await post('/surat-keluar', { unitKerjaId: 'unit-a', sinkron: 'ya' }).expect(400);
+        expect(mocks.importSurat).toHaveBeenCalledTimes(2);
     });
 
     it('imports a later part from the position and digest of the previous one', async () => {
@@ -106,7 +115,7 @@ describe('file import routes', () => {
         expect(mocks.importSurat).not.toHaveBeenCalled();
         mocks.user = { id: 'synthetic-user', role: 'admin_unit', unitKerjaId: 'unit-a' };
         await post('/surat-keluar', { unitKerjaId: 'unit-b' }).expect(200);
-        expect(mocks.importSurat).toHaveBeenCalledWith('surat-keluar', expect.anything(), undefined, 'unit-a', expect.anything(), expect.anything(), undefined);
+        expect(mocks.importSurat).toHaveBeenCalledWith('surat-keluar', expect.anything(), undefined, 'unit-a', expect.anything(), expect.anything(), undefined, undefined);
     });
 
     it('needs write permission before receiving the file', async () => {
