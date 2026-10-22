@@ -45,6 +45,8 @@ describe('POST /api/operations/scanner-wake', () => {
     it.each([
         ['expiring within thirteen hours', { state: 'ready', definitionsExpiresAt: new Date(now + 12 * 3600_000).toISOString() }],
         ['expired or missing', { state: 'not_ready', reason: 'on_demand_verification_missing_or_expired' }],
+        ['in standby after its lease lapsed', { state: 'standby', reason: 'definitions_lease_expired' }],
+        ['in standby on a newly promoted deployment', { state: 'standby', reason: 'awaiting_first_run_on_deployment' }],
         ['malformed expiry', { state: 'ready', definitionsExpiresAt: 'tomorrow' }],
     ])('schedules a wake when verification is %s', async (_label, malwareWorker) => {
         io.readiness.mockResolvedValue(worker(malwareWorker));

@@ -78,9 +78,10 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
         return next();
     }
 
-    // The monitor's scanner wake is authenticated only by its bearer token,
-    // never by an ambient browser cookie, so cookie CSRF does not apply.
-    if (req.path === '/operations/scanner-wake') {
+    // The monitor's scanner wake and storage latency probe are authenticated
+    // only by its bearer token, never by an ambient browser cookie, so cookie
+    // CSRF does not apply.
+    if (req.path === '/operations/scanner-wake' || req.path === '/operations/storage-latency') {
         return next();
     }
 

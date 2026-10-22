@@ -1,0 +1,101 @@
+# Pembaruan dependensi otomatis. Kontrak diuji oleh
+# .github/scripts/dependabot-config.test.mjs (job Security Audit): setiap
+# proyek yang diaudit gerbang npm audit di ci.yml wajib tercantum di sini.
+#
+# - Versi minor/patch digabung menjadi satu PR per proyek; versi major tetap
+#   PR tersendiri karena perlu ditinjau perubahan perilakunya.
+# - Pembaruan keamanan (Dependabot security updates) tidak masuk grup mana pun,
+#   sehingga tiba sebagai PR tersendiri secepatnya, di luar jadwal dan cooldown.
+#   `ignore` sengaja tidak dipakai: aturan itu juga menahan PR keamanan.
+# - Cooldown 5 hari hanya berlaku untuk pembaruan versi (bukan keamanan),
+#   memberi waktu rilis npm yang bermasalah ditarik sebelum diusulkan.
+# - Lockfile npm (lockfileVersion 3) diperbarui oleh Dependabot sendiri; CI
+#   menjalankan `npm ci` dan gerbang audit yang sama seperti PR lain.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "Asia/Jakarta"
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      backend-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "Asia/Jakarta"
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      frontend-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Edisi Firebase Spark dan situs dokumentasi juga diaudit gerbang CI, tetapi
+  # jarang berubah: pembaruan versi bulanan; pembaruan keamanan tetap segera.
+  - package-ecosystem: "npm"
+    directory: "/spark"
+    schedule:
+      interval: "monthly"
+      time: "02:00"
+      timezone: "Asia/Jakarta"
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      spark-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "npm"
+    directory: "/docs-site"
+    schedule:
+      interval: "monthly"
+      time: "02:00"
+      timezone: "Asia/Jakarta"
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      docs-site-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Action dipin ke SHA dengan komentar versi (`# v4`); Dependabot memperbarui
+  # SHA dan komentarnya bersama-sama.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "02:00"
+      timezone: "Asia/Jakarta"
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]

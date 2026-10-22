@@ -44,6 +44,16 @@ describe('operational alert aggregation', () => {
         expect(result.checks.find(c => c.id === 'scanner')?.status).toBe('failed');
         expect(result.checks.find(c => c.id === 'scan_queue')?.status).toBe('attention');
     });
+    it('reports a wakeable standby scanner as needing attention, not as healthy or failed', () => {
+        const result = buildOperationsStatus({ now, readiness: { ...readiness, status: 'degraded', dependencies: { ...readiness.dependencies,
+            malwareWorker: { state: 'standby', required: true, reason: 'definitions_lease_expired',
+                definitionsExpiresAt: new Date(now - 60_000).toISOString() } } },
+            queues, recovery: { backup: proof(), restore: proof() } });
+        const scanner = result.checks.find(c => c.id === 'scanner');
+        expect(result.status).toBe('attention');
+        expect(scanner).toMatchObject({ status: 'attention', expiresAt: new Date(now - 60_000).toISOString() });
+        expect(scanner?.message).toMatch(/siaga/i);
+    });
     it('reports failed queries as unknown and never as an empty healthy queue', () => {
         const result = buildOperationsStatus({ now, readiness, queues: null, recovery: null });
         expect(result.status).toBe('attention');

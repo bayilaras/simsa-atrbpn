@@ -75,3 +75,43 @@ test('a fresh scanner or a failed wake request gets exactly one probe', async ()
         assert.equal(probes, 1);
     }
 });
+
+test('an unhealthy probe names the failing check ids and statuses, nothing else', async () => {
+    const lines = [];
+    const body = payload(); body.status = 'attention';
+    body.checks[2].status = 'attention'; body.checks[5].status = 'failed';
+    body.checks.push({ id: 'Bearer secret-value', status: 'failed' }, { id: 'storage', status: '<script>' });
+    const healthy = await runOperationsProbe({ OPERATIONS_MONITOR_TOKEN: 'x'.repeat(64) },
+        async () => ({ status: 503, text: async () => JSON.stringify(body) }), line => lines.push(line));
+    assert.equal(healthy, false);
+    assert.deepEqual(lines, ['Monitoring operasional: perlu tindakan (scanner: attention, backup: failed). Periksa panel Super Admin.']);
+});
+
+test('storage latency is requested from the deployed function and printed as medians only', async () => {
+    const { requestStorageLatency, formatStorageLatency } = await import('./check-operations.mjs');
+    await assert.rejects(requestStorageLatency({}, () => assert.fail('must not fetch')));
+    const timing = median => ({ median, samples: [median, median + 1, median - 1] });
+    const measured = { status: 'measured', provider: 'vercel-blob-private', functionRegion: 'sin1', rounds: 3, listMs: timing(410),
+        sizes: [{ bytes: 16384, uploadMs: timing(300), headMs: timing(120), downloadMs: timing(90), deleteMs: timing(200) },
+            { bytes: 1048576, uploadMs: timing(700), headMs: timing(125), downloadMs: timing(160), deleteMs: timing(210) }] };
+    const result = await requestStorageLatency({ OPERATIONS_MONITOR_TOKEN: 'x'.repeat(64) }, async (url, options) => {
+        assert.equal(url, 'https://simsa-frontend.vercel.app/api/operations/storage-latency');
+        assert.equal(options.method, 'POST');
+        assert.equal(options.redirect, 'error');
+        assert.equal(options.headers.Authorization, `Bearer ${'x'.repeat(64)}`);
+        return { status: 200, text: async () => JSON.stringify(measured) };
+    });
+    assert.deepEqual(formatStorageLatency(result), [
+        'Latensi penyimpanan dari fungsi sin1 (vercel-blob-private), median 3 putaran:',
+        '- 16 KiB: unggah 300 ms, metadata 120 ms, unduh 90 ms, hapus 200 ms',
+        '- 1024 KiB: unggah 700 ms, metadata 125 ms, unduh 160 ms, hapus 210 ms',
+        '- list (probe /ready): 410 ms',
+    ]);
+    assert.equal(formatStorageLatency({ ...result, removedLeftovers: 2 }).at(-1), '- objek uji tertinggal dari run sebelumnya dihapus: 2');
+    for (const response of [{ status: 503, text: async () => '{"status":"failed"}' },
+        { status: 200, text: async () => JSON.stringify({ ...measured, functionRegion: 'sin1; rm -rf' }) }]) {
+        const failed = await requestStorageLatency({ OPERATIONS_MONITOR_TOKEN: 'x'.repeat(64) }, async () => response);
+        assert.notEqual(failed.status, 'measured');
+        assert.deepEqual(formatStorageLatency(failed), [`Latensi penyimpanan tidak terukur (${failed.status}).`]);
+    }
+});

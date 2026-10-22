@@ -942,8 +942,8 @@ jobs:
       #   audit penuh tetap dicetak sebagai informasi;
       # - docs-site: semua dependensi, dengan pengecualian sementara bertanggal
       #   kedaluwarsa untuk advisori yang belum memiliki versi perbaikan.
-      - name: Test gerbang audit
-        run: node --test .github/scripts/npm-audit-gate.test.mjs
+      - name: Test gerbang audit dan cakupan Dependabot
+        run: node --test .github/scripts/npm-audit-gate.test.mjs .github/scripts/dependabot-config.test.mjs
 
       - name: Audit backend
         run: node .github/scripts/npm-audit-gate.mjs backend
