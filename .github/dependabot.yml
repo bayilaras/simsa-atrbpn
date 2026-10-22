@@ -54,6 +54,13 @@ updates:
     groups:
       frontend-minor-patch:
         update-types: ["minor", "patch"]
+        # eslint-plugin-react-hooks >= 7.1 mempertajam validasi React Compiler
+        # (set-state-in-effect, refs, static-components, ...) dan menemukan 78
+        # pelanggaran di kode yang ada, sehingga `npm run lint` merah. Migrasinya
+        # mengubah perilaku komponen, jadi datang sebagai PR tersendiri dan tidak
+        # menahan grup ini. Bukan `ignore`: PR keamanan tetap tiba.
+        exclude-patterns:
+          - "eslint-plugin-react-hooks"
 
   # Edisi Firebase Spark dan situs dokumentasi juga diaudit gerbang CI, tetapi
   # jarang berubah: pembaruan versi bulanan; pembaruan keamanan tetap segera.
