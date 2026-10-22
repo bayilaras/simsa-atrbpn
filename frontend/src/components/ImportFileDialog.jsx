@@ -1,7 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import ImportRowReport from '@/components/ImportRowReport'
+import ImportSyncOption from '@/components/ImportSyncOption'
+import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton'
+import { importResultSummary } from '@/lib/import-report'
 import { useAppConfig } from '@/context/app-config-context'
 import api from '@/services/api'
 import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
@@ -42,6 +46,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
     const [now, setNow] = useState(() => Date.now())
     const [stopping, setStopping] = useState(false)
     const stopRef = useRef(false)
+    const [sinkron, setSinkron] = useState(false)
     const version = useRef(0)
     useEffect(() => () => { version.current++; onBusyChange(false) }, [onBusyChange])
     useEffect(() => {
@@ -115,7 +120,8 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
         setBusy(true)
         setError('')
         setStep('importing')
-        const source = { sheet: xlsx ? sheet : undefined, unitKerjaId }
+        // Sent only when chosen, so a backend without sinkron still accepts the request.
+        const source = { sheet: xlsx ? sheet : undefined, unitKerjaId, sinkron: sinkron ? 'true' : undefined }
         let totals = emptyImportTotals(preview.totalRows)
         setProgress(totals)
         try {
@@ -131,7 +137,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
             const notice = unfinishedImportNotice(outcome, totals)
             setResult(notice ? { ...totals, notice } : totals)
             setStep('result')
-            if (totals.importedRows > 0) onImportComplete?.()
+            if (totals.importedRows > 0 || totals.updatedRows > 0) onImportComplete?.()
         } catch (failure) {
             if (isCurrent()) {
                 setError(failure?.message || 'Impor gagal. Periksa koneksi dan coba kembali.')
@@ -145,9 +151,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
         }
     }
 
-    const duplicateOnly = result?.success === true && result.importedRows === 0
-        && result.duplicateRows > 0 && !result.skippedRows && !result.errors?.length
-    const completed = result?.importedRows > 0 || duplicateOnly
+    const summary = result ? importResultSummary(result) : null
 
     return <div className="min-w-0 space-y-4">
         {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/15 dark:text-red-300">
@@ -217,6 +221,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     </tr>)}</tbody>
                 </table>
             </div>
+            <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} disabled={busy} />
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => { version.current++; setPreview(null); setError(''); setStep('file') }} disabled={busy}>Kembali</Button>
                 <Button onClick={handleImport} disabled={busy || preview.totalRows < 1}>
@@ -234,7 +239,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                         style={{ width: `${progress.totalRows ? Math.round(progress.processedRows / progress.totalRows * 100) : 0}%` }} />
                 </div>
                 <p className="mt-2 text-sm">{`${progress.processedRows} dari ${progress.totalRows} baris diproses`}</p>
-                <p className="text-xs text-muted-foreground">{`Tersimpan ${progress.importedRows} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}</p>
+                <p className="text-xs text-muted-foreground">{`Tersimpan ${progress.importedRows}${sinkron ? ` · diperbarui ${progress.updatedRows}` : ''} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}</p>
                 {continueSeconds > 0 && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
                     Batas permintaan impor tercapai; dilanjutkan otomatis dalam {continueSeconds} detik.
                 </p>}
@@ -247,23 +252,25 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
             </Button>
         </div>}
 
-        {step === 'result' && result && <div role="status" aria-live="polite" className="space-y-4">
-            <div className={`flex items-start gap-3 rounded-lg border p-4 ${result.notice ? 'border-amber-200 bg-amber-50 dark:bg-amber-500/15'
-                : completed ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-500/15' : 'border-red-200 bg-red-50 dark:bg-red-500/15'}`}>
-                {completed && !result.notice
+        {step === 'result' && result && <div className="space-y-4">
+            {/* Only the summary is announced; the row table below is not a live region. */}
+            <div role="status" aria-live="polite" className={`flex items-start gap-3 rounded-lg border p-4 ${summary.tone === 'warning' ? 'border-amber-200 bg-amber-50 dark:bg-amber-500/15'
+                : summary.tone === 'success' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-500/15' : 'border-red-200 bg-red-50 dark:bg-red-500/15'}`}>
+                {summary.tone === 'success'
                     ? <CheckCircle2 aria-hidden="true" className="mt-0.5 h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                    : <AlertCircle aria-hidden="true" className={`mt-0.5 h-5 w-5 ${result.notice ? 'text-amber-600' : 'text-red-600'}`} />}
+                    : <AlertCircle aria-hidden="true" className={`mt-0.5 h-5 w-5 ${summary.tone === 'warning' ? 'text-amber-600' : 'text-red-600'}`} />}
                 <div>
-                    <p className="font-medium">{result.notice ? 'Impor belum selesai'
-                        : duplicateOnly ? 'Semua data sudah ada' : result.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}</p>
+                    <p className="font-medium">{summary.title}</p>
                     {result.notice && <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">{result.notice}</p>}
-                    <p className="mt-1 text-sm text-muted-foreground">{duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
+                    <p className="mt-1 text-sm text-muted-foreground">{summary.duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
                         : `${result.importedRows} dari ${result.totalRows} baris berhasil diimpor`}</p>
+                    {result.updatedRows > 0 && <p className="mt-1 text-sm text-blue-600">{`${result.updatedRows} baris diperbarui dari sumber`}</p>}
+                    {summary.lockedRows > 0 && <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">{`${summary.lockedRows} baris tidak diperbarui; lihat rincian di bawah.`}</p>}
                     {result.skippedRows > 0 && <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">{result.skippedRows} baris dilewati (data tidak valid/kosong)</p>}
-                    {result.duplicateRows > 0 && <p className="mt-1 text-sm text-blue-600">{result.duplicateRows} baris duplikat dilewati (sudah ada di sistem)</p>}
+                    {summary.duplicateLines.map(line => <p key={line} className="mt-1 text-sm text-blue-600">{line}</p>)}
                 </div>
             </div>
-            {result.errors?.length > 0 && <div className="max-h-40 overflow-y-auto rounded-lg border bg-muted/50 p-3">
+            {result.rows?.length > 0 ? <ImportRowReport rows={result.rows} type={type} /> : result.errors?.length > 0 && <div className="max-h-40 overflow-y-auto rounded-lg border bg-muted/50 p-3">
                 <p className="mb-2 text-xs font-medium text-muted-foreground">Rincian kesalahan (nomor baris menghitung baris data):</p>
                 {result.errors.map((message, index) => <p key={index} className="text-xs leading-relaxed text-red-600">{message}</p>)}
             </div>}
@@ -276,7 +283,10 @@ export default function ImportFileDialog({ type, unitKerjaId, onImportComplete }
     const { mode } = useAppConfig()
     const [open, setOpen] = useState(false)
     const [busy, setBusy] = useState(false)
-    if (mode === 'metadata-demo' || !labels[type] || !unitKerjaId || unitKerjaId === 'all') return null
+    if (mode === 'metadata-demo' || !labels[type]) return null
+    if (!unitKerjaId || unitKerjaId === 'all') return <ImportUnitRequiredButton className={`${buttonVariants({ variant: 'outline', size: 'sm' })} h-9`}>
+        <FileSpreadsheet aria-hidden="true" className="mr-2 h-3.5 w-3.5" />Impor CSV/XLSX
+    </ImportUnitRequiredButton>
     const keepOpen = event => { if (busy) event.preventDefault() }
     return <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value) }}>
         <Button variant="outline" size="sm" className="h-9" onClick={() => setOpen(true)}>

@@ -357,15 +357,15 @@ export default function SuratKeluar() {
                         Refresh
                     </Button>
 
-                    {isAdmin && resolvedUnitKerjaId && (
+                    {isAdmin && (
                         <ImportFromGDrive
                             type="surat-keluar"
                             unitKerjaId={resolvedUnitKerjaId}
-                            onImportComplete={fetchData}
+                            onImportComplete={refreshAll}
                         />
                     )}
 
-                    {isAdmin && resolvedUnitKerjaId && <ImportFileDialog type="surat-keluar" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
+                    {isAdmin && <ImportFileDialog type="surat-keluar" unitKerjaId={resolvedUnitKerjaId} onImportComplete={refreshAll} />}
 
                     {canExportReports(user?.role) && (
                         <ExportButton

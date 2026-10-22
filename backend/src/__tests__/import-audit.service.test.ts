@@ -26,12 +26,12 @@ const identity = () => vi.importActual<typeof import('../services/surat-import-i
 vi.mock('../services/surat-masuk.service.js', async () => {
     const { suratImportIdentityKey } = await identity();
     return { suratMasukService: { create: mocks.ordinaryCreate, createImported: mocks.createMasuk,
-        importIdentityKey: (data: any) => suratImportIdentityKey('masuk', data), existingImportIdentities: mocks.existing } };
+        importIdentityKey: (data: any) => suratImportIdentityKey('masuk', data), existingImportIdentities: mocks.existing, importMatches: async (keys: any) => (await import("./helpers/import-matches.js")).recordedMatches(await mocks.existing(keys)) } };
 });
 vi.mock('../services/surat-keluar.service.js', async () => {
     const { suratImportIdentityKey } = await identity();
     return { suratKeluarService: { create: mocks.ordinaryCreate, createImported: mocks.createKeluar,
-        importIdentityKey: (data: any) => suratImportIdentityKey('keluar', data), existingImportIdentities: mocks.existing } };
+        importIdentityKey: (data: any) => suratImportIdentityKey('keluar', data), existingImportIdentities: mocks.existing, importMatches: async (keys: any) => (await import("./helpers/import-matches.js")).recordedMatches(await mocks.existing(keys)) } };
 });
 vi.mock('../services/arsip.service.js', () => ({
     arsipService: { create: mocks.createArsip },

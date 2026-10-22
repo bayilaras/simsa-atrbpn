@@ -3,6 +3,7 @@ import type { AuthRequest } from '../middlewares/auth.middleware';
 import { canAccessUnit, type Role } from '../config/permissions.js';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import type { GoogleSheetsRequestOptions } from '../services/google-sheets-source.js';
+import type { ImportSync } from '../services/import-sync.js';
 
 /** The unit an import writes into; answers 400/403 and returns null when it cannot. */
 export function resolveImportUnit(req: AuthRequest, res: Response): string | null {
@@ -15,6 +16,12 @@ export function resolveImportUnit(req: AuthRequest, res: Response): string | nul
         return null;
     }
     return unitKerjaId;
+}
+
+/** Sinkron is opt-in per request; record access for the updates is checked for the importing user. */
+export function importSync(req: AuthRequest, requested: boolean | undefined): ImportSync | undefined {
+    if (!requested || !req.user) return undefined;
+    return { actor: { id: req.user.id, role: req.user.role, unitKerjaId: req.user.unitKerjaId ?? null } };
 }
 
 /** The response close event detects disconnects after the request body is read. */

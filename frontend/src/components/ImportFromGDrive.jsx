@@ -4,6 +4,10 @@ import api from '@/services/api';
 import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import';
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import ImportRowReport from '@/components/ImportRowReport';
+import ImportSyncOption from '@/components/ImportSyncOption';
+import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton';
+import { importResultSummary } from '@/lib/import-report';
 import { useAppConfig } from '@/context/app-config-context';
 
 /**
@@ -18,7 +22,7 @@ import { useAppConfig } from '@/context/app-config-context';
  * 
  * Props:
  * - type: 'surat-masuk' | 'surat-keluar'
- * - unitKerjaId: concrete destination unit (required)
+ * - unitKerjaId: concrete destination unit; without one the button explains that a unit must be chosen first
  * - onImportComplete: () => void (callback to refresh data)
  *
  * Long sheets are imported in parts: the server stops starting rows after a
@@ -45,6 +49,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const [continueAt, setContinueAt] = useState(0);
     const [stopping, setStopping] = useState(false);
     const stopRef = useRef(false);
+    const [sinkron, setSinkron] = useState(false);
     const action = step === 'input' ? 'sheets' : step === 'sheets' ? 'preview' : 'import';
     const retrySeconds = Math.max(0, Math.ceil((retryUntil[action] - now) / 1000));
     const continueSeconds = Math.max(0, Math.ceil((continueAt - now) / 1000));
@@ -63,9 +68,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
 
     const typeLabel = type === 'surat-masuk' ? 'Surat Masuk' : 'Surat Keluar';
     const selectedName = sheets.find(sheet => sheet.gid === selectedGid)?.name || '';
-    const duplicateOnly = importResult?.success === true && importResult.importedRows === 0
-        && importResult.duplicateRows > 0 && !importResult.skippedRows && !importResult.errors?.length;
-    const resultCompleted = importResult?.importedRows > 0 || duplicateOnly;
+    const summary = importResult ? importResultSummary(importResult) : null;
 
     const invalidatePreview = () => {
         requestRef.current += 1;
@@ -98,6 +101,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
         setIsLoading(false);
         setError('');
         setNow(Date.now());
+        setSinkron(false);
     };
 
     const handleOpen = () => {
@@ -201,7 +205,8 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
         setStopping(false);
         setStep('importing');
         setError('');
-        const source = buildGoogleSheetsImportPayload(spreadsheetUrl, selectedGid, unitKerjaId);
+        // Sent only when chosen, so a backend without sinkron still accepts the request.
+        const source = { ...buildGoogleSheetsImportPayload(spreadsheetUrl, selectedGid, unitKerjaId), ...(sinkron ? { sinkron: true } : {}) };
         let totals = emptyImportTotals(previewData.totalRows);
         setProgress(totals);
 
@@ -220,7 +225,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
             setImportResult(result);
             setStep('result');
 
-            if (result.importedRows > 0 && onImportComplete) {
+            if ((result.importedRows > 0 || result.updatedRows > 0) && onImportComplete) {
                 onImportComplete();
             }
         } catch (err) {
@@ -245,21 +250,27 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
 
     return (
         <>
-            <button
-                type="button"
-                onClick={handleOpen}
-                disabled={!unitKerjaId}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-                <Upload aria-hidden="true" className="w-4 h-4" />
-                Impor dari Google Sheets
-            </button>
+            {unitKerjaId ? (
+                <button
+                    type="button"
+                    onClick={handleOpen}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80"
+                >
+                    <Upload aria-hidden="true" className="w-4 h-4" />
+                    Impor dari Google Sheets
+                </button>
+            ) : (
+                <ImportUnitRequiredButton className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm">
+                    <Upload aria-hidden="true" className="w-4 h-4" />
+                    Impor dari Google Sheets
+                </ImportUnitRequiredButton>
+            )}
             <Dialog open={isOpen} onOpenChange={(open) => !open && step !== 'importing' && handleClose()}>
                 <DialogContent
                     showCloseButton={false}
                     onEscapeKeyDown={(event) => step === 'importing' && event.preventDefault()}
                     onInteractOutside={(event) => step === 'importing' && event.preventDefault()}
-                    className="flex h-[min(90dvh,52rem)] w-full max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+                    className="flex h-[min(90dvh,52rem)] w-full max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
                 >
                     {/* Header */}
                     <div className="flex items-center justify-between border-b bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-4 sm:px-6">
@@ -449,6 +460,8 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                     </table>
                                 </div>
 
+                                <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} />
+
                                 <div className="flex flex-col-reverse gap-3 sm:flex-row">
                                     <button
                                         type="button"
@@ -485,7 +498,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                         </div>
                                         <p className="mt-2 text-sm text-foreground">{`${progress.processedRows} dari ${progress.totalRows} baris diproses`}</p>
                                         <p className="text-xs text-muted-foreground">
-                                            {`Tersimpan ${progress.importedRows} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}
+                                            {`Tersimpan ${progress.importedRows}${sinkron ? ` · diperbarui ${progress.updatedRows}` : ''} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}
                                         </p>
                                     </>}
                                     {continueSeconds > 0 && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
@@ -504,44 +517,45 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
 
                         {/* Step: Result */}
                         {step === 'result' && importResult && (
-                            <div role="status" aria-live="polite" className="space-y-4">
-                                <div className={`flex items-start gap-3 p-4 rounded-lg ${importResult.notice
+                            <div className="space-y-4">
+                                {/* Only the summary is announced; the row table below is not a live region. */}
+                                <div role="status" aria-live="polite" className={`flex items-start gap-3 p-4 rounded-lg ${summary.tone === 'warning'
                                     ? 'bg-amber-50 dark:bg-amber-500/15 border border-amber-200'
-                                    : resultCompleted
+                                    : summary.tone === 'success'
                                         ? 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200'
                                         : 'bg-red-50 dark:bg-red-500/15 border border-red-200'
                                     }`}>
-                                    {resultCompleted && !importResult.notice ? (
+                                    {summary.tone === 'success' ? (
                                         <CheckCircle2 aria-hidden="true" className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                                     ) : (
-                                        <AlertCircle aria-hidden="true" className={`w-5 h-5 mt-0.5 ${importResult.notice ? 'text-amber-600' : 'text-red-600'}`} />
+                                        <AlertCircle aria-hidden="true" className={`w-5 h-5 mt-0.5 ${summary.tone === 'warning' ? 'text-amber-600' : 'text-red-600'}`} />
                                     )}
                                     <div>
-                                        <p className="font-medium text-foreground">
-                                            {importResult.notice ? 'Impor belum selesai'
-                                                : duplicateOnly ? 'Semua data sudah ada' : importResult.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}
-                                        </p>
+                                        <p className="font-medium text-foreground">{summary.title}</p>
                                         {importResult.notice && (
                                             <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{importResult.notice}</p>
                                         )}
                                         <p className="text-sm text-muted-foreground mt-1">
-                                            {duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
+                                            {summary.duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
                                                 : `${importResult.importedRows} dari ${importResult.totalRows} baris berhasil diimpor`}
                                         </p>
+                                        {importResult.updatedRows > 0 && (
+                                            <p className="text-sm text-blue-600 mt-1">{`${importResult.updatedRows} baris diperbarui dari sumber`}</p>
+                                        )}
+                                        {summary.lockedRows > 0 && (
+                                            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{`${summary.lockedRows} baris tidak diperbarui; lihat rincian di bawah.`}</p>
+                                        )}
                                         {importResult.skippedRows > 0 && (
                                             <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
                                                 {importResult.skippedRows} baris dilewati (data tidak valid/kosong)
                                             </p>
                                         )}
-                                        {importResult.duplicateRows > 0 && (
-                                            <p className="text-sm text-blue-600 mt-1">
-                                                {importResult.duplicateRows} baris duplikat dilewati (sudah ada di sistem)
-                                            </p>
-                                        )}
+                                        {summary.duplicateLines.map(line => <p key={line} className="text-sm text-blue-600 mt-1">{line}</p>)}
                                     </div>
                                 </div>
 
-                                {importResult.errors && importResult.errors.length > 0 && (
+                                {importResult.rows?.length > 0 ? <ImportRowReport rows={importResult.rows} type={type} />
+                                    : importResult.errors && importResult.errors.length > 0 && (
                                     <div className="border rounded-lg p-3 max-h-40 overflow-y-auto bg-muted/50">
                                         <p className="text-xs font-medium text-muted-foreground mb-2">Rincian kesalahan:</p>
                                         {importResult.errors.map((err, i) => (

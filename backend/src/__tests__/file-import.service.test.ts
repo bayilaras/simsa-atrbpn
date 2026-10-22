@@ -5,9 +5,9 @@ import { ConflictError } from '../utils/errors.js';
 const mocks = vi.hoisted(() => ({ incoming: vi.fn(), outgoing: vi.fn(), existing: vi.fn(),
     identityKey: (data: { nomorSurat?: string; linkDokumen?: string | null }) => ({ nomor: data.nomorSurat, link: data.linkDokumen }) }));
 vi.mock('../services/surat-masuk.service.js', () => ({ suratMasukService: {
-    createImported: mocks.incoming, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing } }));
+    createImported: mocks.incoming, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing, importMatches: async (keys: any) => (await import("./helpers/import-matches.js")).recordedMatches(await mocks.existing(keys)) } }));
 vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: {
-    createImported: mocks.outgoing, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing } }));
+    createImported: mocks.outgoing, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing, importMatches: async (keys: any) => (await import("./helpers/import-matches.js")).recordedMatches(await mocks.existing(keys)) } }));
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
 import { GoogleDriveImportService, googleDriveImportService } from '../services/google-drive-import.service.js';
 import { fileImportService } from '../services/file-import.service.js';

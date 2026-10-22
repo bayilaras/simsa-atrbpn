@@ -7,9 +7,9 @@ import { DuplicateSuratImportError, suratImportIdentity } from '../services/sura
 const mocks = vi.hoisted(() => ({ incoming: vi.fn(), outgoing: vi.fn(), existing: vi.fn(),
     identityKey: (data: { nomorSurat?: string }) => ({ nomor: data.nomorSurat }) }));
 vi.mock('../services/surat-masuk.service.js', () => ({ suratMasukService: {
-    createImported: mocks.incoming, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing } }));
+    createImported: mocks.incoming, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing, importMatches: async (keys: any) => (await import("./helpers/import-matches.js")).recordedMatches(await mocks.existing(keys)) } }));
 vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: {
-    createImported: mocks.outgoing, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing } }));
+    createImported: mocks.outgoing, importIdentityKey: mocks.identityKey, existingImportIdentities: mocks.existing, importMatches: async (keys: any) => (await import("./helpers/import-matches.js")).recordedMatches(await mocks.existing(keys)) } }));
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
 import { GoogleDriveImportService } from '../services/google-drive-import.service.js';
 
@@ -57,6 +57,24 @@ describe('exact Google Sheets column mapping before writes', () => {
         await expect(service.previewData('sheet', 'Data')).rejects.toMatchObject({ statusCode: 400 });
         await expect(service.importSuratMasuk('sheet', 'Data', 'unit-a', audit)).rejects.toMatchObject({ statusCode: 400 });
         expect(mocks.incoming).not.toHaveBeenCalled(); expect(mocks.outgoing).not.toHaveBeenCalled();
+    });
+
+    it.each(['SURAT KELUAR 2026 No', 'SURAT KELUAR 2025 No', 'SURAT KELUAR 2024 No.'])(
+        'reads the sequence column of a register whose title ran into its first header: %s', first => {
+            const header = [first, 'Nomor Surat', 'Tanggal Surat', 'Tanggal TTE', 'Hal', 'Sifat Surat', 'Posisi', 'Get link', 'Get link'];
+            const row = ['1', '87/SK-600/I/2026', '05/01/2026', '', 'Tim peneliti', 'Segera', '', '', 'https://drive.google.com/file/d/synthetic-a/view'];
+            const { columnMap, mapping } = resolveSheetMapping([header, row], 'surat-keluar');
+            expect(columnMap.noUrut).toBe(0);
+            expect(mapping).toContainEqual({ field: 'noUrut', label: 'Nomor urut sumber', columnIndex: 0, header: first });
+        });
+
+    it('keeps the sequence column to exact titles elsewhere and to a title ending in the word No in the first column', () => {
+        expect(resolveSheetMapping([['Nomor Surat', 'Tanggal', 'Hal', 'No']], 'surat-keluar').columnMap.noUrut).toBe(3);
+        expect(resolveSheetMapping([['Nomor Surat', 'Tanggal', 'Hal', 'Lampiran No']], 'surat-keluar').columnMap).not.toHaveProperty('noUrut');
+        expect(resolveSheetMapping([['Keterangan', 'Nomor Surat', 'Tanggal', 'Hal']], 'surat-keluar').columnMap).not.toHaveProperty('noUrut');
+        expect(resolveSheetMapping([['Casino', 'Nomor Surat', 'Tanggal', 'Hal']], 'surat-keluar').columnMap).not.toHaveProperty('noUrut');
+        // An exact title wins; the first column is then not a second candidate.
+        expect(resolveSheetMapping([['REGISTER No', 'No', 'Nomor Surat', 'Tanggal', 'Hal']], 'surat-keluar').columnMap.noUrut).toBe(1);
     });
 
     it('does not infer an unknown header by its position or substring', () => {

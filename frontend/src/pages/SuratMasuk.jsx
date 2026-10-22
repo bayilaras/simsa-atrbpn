@@ -345,15 +345,15 @@ export default function SuratMasuk() {
                         Refresh
                     </Button>
 
-                    {isAdmin && resolvedUnitKerjaId && (
+                    {isAdmin && (
                         <ImportFromGDrive
                             type="surat-masuk"
                             unitKerjaId={resolvedUnitKerjaId}
-                            onImportComplete={fetchData}
+                            onImportComplete={refreshAll}
                         />
                     )}
 
-                    {isAdmin && resolvedUnitKerjaId && <ImportFileDialog type="surat-masuk" unitKerjaId={resolvedUnitKerjaId} onImportComplete={fetchData} />}
+                    {isAdmin && <ImportFileDialog type="surat-masuk" unitKerjaId={resolvedUnitKerjaId} onImportComplete={refreshAll} />}
 
                     {canExportReports(user?.role) && (
                         <ExportButton

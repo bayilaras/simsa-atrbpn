@@ -3,6 +3,7 @@ import { googleDriveImportService } from './google-drive-import.service.js';
 import { linkColumns, type GoogleSheetsImportType } from './google-sheets-import-mapping.js';
 import type { GoogleSheetsRequestOptions } from './google-sheets-source.js';
 import type { ImportResume } from './import-resume.js';
+import type { ImportSync } from './import-sync.js';
 import { listImportFileSheets, readImportFile, type ImportFileContent, type ImportFileUpload } from './import-file-reader.js';
 
 /**
@@ -41,8 +42,8 @@ export const fileImportService = {
     },
 
     async importSurat(type: GoogleSheetsImportType, file: ImportFileUpload, sheet: string | undefined, unitKerjaId: string,
-        auditContext: CriticalAuditContext, options: GoogleSheetsRequestOptions = {}, resume?: ImportResume) {
+        auditContext: CriticalAuditContext, options: GoogleSheetsRequestOptions = {}, resume?: ImportResume, sync?: ImportSync) {
         const content = await readImportFile(file, sheet);
-        return googleDriveImportService.importRows(type, sourceRows(content, type), unitKerjaId, auditContext, options, resume);
+        return googleDriveImportService.importRows(type, sourceRows(content, type), unitKerjaId, auditContext, options, resume, sync);
     },
 };
