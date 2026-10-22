@@ -88,6 +88,14 @@ export function resolveSheetMapping(rows: string[][], importType: GoogleSheetsIm
             mapping.push({ field, label: definition.label, columnIndex, header: headers[columnIndex] });
         }
     }
+    // A register's title can run into its first header ("SURAT KELUAR 2026 No" in a
+    // Google Sheets CSV export). Without an exact sequence title, a first column whose
+    // title ends in the word "No" after other words is the sequence column.
+    const first = normalized[0] ?? '';
+    if (columnMap.noUrut === undefined && / no$/.test(first) && !Object.values(columnMap).includes(0)) {
+        columnMap.noUrut = 0;
+        mapping.push({ field: 'noUrut', label: definitions.noUrut.label, columnIndex: 0, header: headers[0] });
+    }
     // Outgoing registers often omit the recipient; incoming letters always need a sender.
     const required = ['nomorSurat', 'tanggalSurat', 'perihal', ...(importType === 'surat-masuk' ? ['dari'] : [])];
     const missing = required.filter(field => columnMap[field] === undefined);

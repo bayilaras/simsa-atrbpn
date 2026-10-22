@@ -42,7 +42,17 @@ describe('Google Sheets routes select tabs by gid', () => {
         await request(app).post(`/google-drive/surat-${kind}`).send({ spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a' }).expect(200);
         // Without startRow the request is a single, unbudgeted import (no resume position).
         expect(kind === 'masuk' ? mocks.incoming : mocks.outgoing).toHaveBeenCalledWith(
-            'synthetic-sheet', { gid: '0' }, 'unit-a', expect.any(Object), expect.any(Object), undefined);
+            'synthetic-sheet', { gid: '0' }, 'unit-a', expect.any(Object), expect.any(Object), undefined, undefined);
+    });
+
+    it.each(['masuk', 'keluar'])('asks a surat %s import to sinkron recorded letters for the importing user only when sent', async kind => {
+        const importer = kind === 'masuk' ? mocks.incoming : mocks.outgoing;
+        await request(app).post(`/google-drive/surat-${kind}`).send({ spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a', startRow: 0, sinkron: true }).expect(200);
+        expect(importer.mock.calls[0][6]).toEqual({ actor: { id: 'synthetic-user', role: 'super_admin', unitKerjaId: 'unit-a' } });
+        await request(app).post(`/google-drive/surat-${kind}`).send({ spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a', sinkron: false }).expect(200);
+        expect(importer.mock.calls[1][6]).toBeUndefined();
+        await request(app).post(`/google-drive/surat-${kind}`).send({ spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a', sinkron: 'ya' }).expect(400);
+        expect(importer).toHaveBeenCalledTimes(2);
     });
 
     it('keeps accepting a sheet name from older clients', async () => {

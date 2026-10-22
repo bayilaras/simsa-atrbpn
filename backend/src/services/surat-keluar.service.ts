@@ -19,8 +19,8 @@ import fileAttachmentService, {
 import { settingsService } from './settings.service.js';
 import { hasSuratRuleSelection, hydrateSuratRuleSelections, prepareSuratRuleSelection } from './surat-rule-selection.service';
 import {
-    assertImportConnected, DuplicateSuratImportError, existingSuratImportIdentities, suratImportIdentityKey, suratImportIdentityWhere,
-    type SuratImportIdentityKey, type SuratImportOptions,
+    assertImportConnected, DuplicateSuratImportError, existingSuratImportIdentities, matchSuratImportIdentities, suratImportIdentityKey,
+    suratImportIdentityWhere, type SuratImportIdentityKey, type SuratImportMatch, type SuratImportOptions,
 } from './surat-import-identity.js';
 import {
     resolveSuratCalendar,
@@ -164,6 +164,16 @@ export class SuratKeluarService {
     /** Advisory bulk lookup; createImported stays the authority. */
     async existingImportIdentities(keys: SuratImportIdentityKey[]): Promise<boolean[]> {
         return existingSuratImportIdentities(db, 'keluar', keys);
+    }
+
+    /** Sinkron import: the letters each identity matches, with the source fields it may change. update() stays the authority. */
+    async importMatches(keys: SuratImportIdentityKey[]): Promise<SuratImportMatch[][]> {
+        return matchSuratImportIdentities(db, 'keluar', keys, {
+            perihal: suratKeluar.perihal, tanggalSurat: suratKeluar.tanggalSurat, sifatSurat: suratKeluar.sifatSurat,
+            linkDokumen: suratKeluar.linkDokumen, naskahDinas: suratKeluar.naskahDinas,
+            // Compared with the source, never written by an import.
+            kepada: suratKeluar.kepada,
+        });
     }
 
     async create(
@@ -369,6 +379,8 @@ export class SuratKeluarService {
         clientBlobClaim?: ClaimClientBlobUpload,
         auditContext?: CriticalAuditContext,
         attachment?: RegisterSuratAttachmentData,
+        /** Extra audit detail, such as the values before a sinkron import. */
+        auditDetails?: Record<string, unknown>,
     ) {
         const conditions = [
             scopedRecordByIdWhere(
@@ -433,6 +445,7 @@ export class SuratKeluarService {
                     entityType: 'surat_keluar',
                     entityId: id,
                     changes: {
+                        ...auditDetails,
                         after: {
                             nomorSurat: result.nomorSurat,
                             tanggalSurat: result.tanggalSurat,

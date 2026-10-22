@@ -7,7 +7,9 @@ memilih satu unit tujuan lalu membuka **Impor CSV/XLSX**. Berkas diperlakukan
 persis seperti impor Google Sheets: kolom dikenali dari judulnya (tabel pada
 [Impor Google Sheets](#impor-google-sheets)), sifat surat, identitas impor,
 pemeriksaan duplikat sekaligus, impor per bagian, dan audit memakai jalur yang
-sama (`importRows`). Fitur ini tidak ditampilkan pada demo metadata.
+sama (`importRows`). Fitur ini tidak ditampilkan pada demo metadata. Selama
+pemilih unit menunjukkan "Semua Unit Kerja", tombol impor tetap tampil tetapi
+nonaktif dengan petunjuk "Pilih unit kerja terlebih dahulu".
 
 1. Pilih berkas `.csv` atau `.xlsx` (maksimal 4 MiB, 1.000 baris data, 64 kolom,
    16 KiB per sel). Batas 4 MiB berada di bawah batas badan permintaan Vercel.
@@ -60,14 +62,15 @@ multipart dengan satu `file`:
 |---|---|---|
 | `POST /lembar` | — | daftar lembar, 3/menit |
 | `POST /preview` | `type` (`surat-masuk`/`surat-keluar`), `sheet`, `maxRows` (1–100, bawaan 10) | pratinjau, 3/menit |
-| `POST /surat-masuk`, `POST /surat-keluar` | `sheet`, `unitKerjaId`, `startRow`, `prefixHash` | impor, 3/menit |
+| `POST /surat-masuk`, `POST /surat-keluar` | `sheet`, `unitKerjaId`, `startRow`, `prefixHash`, `sinkron` (`true`/`false`) | impor, 3/menit |
 
 `/lembar` mengembalikan `{ format, sheets: [{ name, hidden }] }` (CSV: `sheets`
 kosong). `/preview` mengembalikan `format`, `sheets`, `sheet`, ditambah bentuk
 pratinjau Google Sheets (`headers`, `rows`, `totalRows`, `importType`,
 `headerRow`, `mapping`). Impor mengembalikan bentuk hasil Google Sheets
-(`totalRows`, `importedRows`, `duplicateRows`, `skippedRows`, `errors`, serta
-`startRow`/`nextRow`/`prefixHash` bila per bagian). `sheet` wajib untuk XLSX
+(`totalRows`, `importedRows`, `updatedRows`, `duplicateRows`, `skippedRows`,
+`errors`, `rows`, serta `startRow`/`nextRow`/`prefixHash` bila per bagian; lihat
+[Laporan per baris dan sinkron](#laporan-per-baris-dan-sinkron)). `sheet` wajib untuk XLSX
 berlembar banyak dan dicocokkan persis.
 
 ## Impor CSV arsip (dan endpoint CSV lama)
@@ -145,6 +148,7 @@ Kolom dikenali dari judulnya pada lima baris pertama, tidak pernah dari posisi.
 | Perihal | Perihal, Hal, Subject | Ya |
 | Pengirim (surat masuk) | Dari, Asal, Pengirim, From | Ya, surat masuk |
 | Kepada | Kepada, Tujuan, Penerima, To | Tidak |
+| No (nomor urut sumber, hanya untuk laporan) | No, Nomor Urut, No Urut; juga judul kolom pertama yang diakhiri kata "No" bila judul register menyatu dengannya (mis. `SURAT KELUAR 2026 No` pada ekspor CSV Google) | Tidak |
 | Sifat surat | Sifat Surat, Sifat | Tidak |
 | Tautan dokumen (surat keluar) | Link Dokumen, Link, URL, Get link | Tidak |
 
@@ -197,6 +201,58 @@ ada baris yang terlewat; baris yang ditambahkan di bawah tetap ikut diimpor.
 Klien lama yang tidak mengirim `startRow` tetap mengimpor seluruh sumber dalam
 satu permintaan seperti sebelumnya. Sebaliknya endpoint Google Sheets lama menolak
 `startRow` (400, tanpa menulis apa pun), jadi backend harus dirilis sebelum frontend.
+
+## Laporan per baris dan sinkron
+
+Setelah impor, dialog menampilkan **Rincian hasil impor per baris** untuk semua
+baris dari semua bagian: nomor baris data (dihitung dari 1 setelah judul kolom,
+baris kosong tidak dihitung), kolom "No" sumber, nomor surat, tanggal seperti
+tertulis, perihal, status, dan keterangan. Filter bawaan "Perlu dicek" hanya
+menampilkan baris yang perlu ditindaklanjuti: ganda di sumber, cocok dengan surat
+yang sudah dihapus, ditolak, dan tidak diperbarui; surat yang sudah tercatat (tanpa
+perubahan) tidak termasuk. Ringkasan memisahkan baris yang sudah tercatat di SIMSA,
+ganda di sumber, dan cocok dengan surat yang dihapus. **Unduh laporan (CSV)**
+menyimpan semua baris (UTF-8 dengan BOM, pemisah titik koma `;` agar Excel dengan
+pengaturan regional Indonesia langsung memisahkan kolom; Google Sheets mendeteksinya
+otomatis).
+
+| Status | Arti |
+|---|---|
+| Tersimpan | Surat baru dibuat. |
+| Duplikat | Tidak ditulis: identitas impor sama dengan baris sumber sebelumnya (disebut nomor barisnya; `duplicate: source`), sudah tercatat di unit ini (`recorded`), atau cocok dengan surat yang sudah dihapus (`deleted`; tidak dibuat ulang). |
+| Ditolak | Baris tidak dapat disimpan, misalnya tanggal kosong/tidak valid atau surat tanpa nomor yang tidak punya pengirim/tujuan. |
+| Kosong | Nomor surat dan perihal kosong. |
+| Diperbarui | (Sinkron) surat yang sudah tercatat diubah; keterangan memuat nilai lama → baru. |
+| Tidak diperbarui | (Sinkron) sumber berbeda tetapi surat tidak boleh diubah; keterangan menyebut sebabnya. |
+
+**Sinkronkan surat yang sudah tercatat** (kotak centang pada pratinjau, mati secara
+bawaan) memperbarui surat yang identitas impornya sudah tercatat di unit tujuan bila
+sumber mengubahnya:
+
+- Surat keluar: perihal, tanggal, sifat, tautan dokumen, jenis naskah. Surat masuk:
+  perihal, tanggal, jenis surat. **Sifat surat masuk tidak pernah diubah** karena
+  menentukan klasifikasi keamanan.
+- Hanya kolom yang dipetakan; sel kosong tidak menghapus nilai.
+- Tidak diubah: surat keluar yang sedang/telah disetujui, surat yang diarsipkan atau
+  dihapus, surat yang tidak boleh diubah pengimpor (klasifikasi terbatas ke atas tanpa
+  izin kelola), surat masuk dalam rangkaian yang perubahannya memerlukan alasan, dan
+  identitas yang cocok dengan lebih dari satu surat. Bila nomor yang sama muncul
+  beberapa kali di sumber, hanya baris pertamanya yang dipakai.
+- Bila sumber menyebut pengirim (surat masuk) atau tujuan (surat keluar) yang berbeda
+  dari yang tercatat, surat tidak diubah: nomor yang sama mungkin milik surat lain.
+- Teks sumber disimpan seperti dari formulir (tag dibuang, spasi dirapatkan); beda
+  format saja tidak dianggap perubahan.
+- Setiap surat yang berubah mendapat satu entri log audit `update` dengan nilai lama
+  dan baru serta `sumber: impor_sinkron`.
+- Untuk surat tanpa nomor, tanggal dan perihal adalah bagian identitas; mengubahnya
+  di sumber membuat baris dianggap surat baru.
+
+API: `sinkron: true` (JSON Google Sheets) atau field `sinkron=true` (berkas). Respons
+menambah `updatedRows` dan `rows[]` berisi `{ row, no, nomorSurat, tanggal, perihal,
+status: imported|updated|duplicate|locked|invalid|empty, duplicate?: source|recorded|deleted,
+reason?, changes? }`; pada
+impor per bagian `rows` hanya mencakup bagian itu. `errors` (maks. 20) tetap ada untuk
+klien lama.
 
 ## Batas ekspor
 
