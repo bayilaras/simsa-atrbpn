@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
-import { collectAdvisories, evaluate, validateAllowlist } from './npm-audit-gate.mjs';
+import { classifyAuditRun, collectAdvisories, evaluate, runAuditWithRetry, validateAllowlist } from './npm-audit-gate.mjs';
 
 const advisory = (name, ghsa, severity) => ({
     source: 1, name, title: `${name} advisory`, severity,
@@ -62,6 +62,48 @@ test('allowlist tanpa alasan atau tanggal ditolak', () => {
     assert.ok(validateAllowlist({}).length > 0);
     const result = evaluate(report, { entries: [entry({ reason: '' })] }, 'docs-site', '2026-10-03');
     assert.ok(result.errors.length > 0);
+});
+
+test('laporan audit yang terbaca diteruskan apa adanya, termasuk yang berisi advisori', () => {
+    const run = classifyAuditRun({ status: 1, stdout: JSON.stringify(report), stderr: '' });
+    assert.equal(run.ok, true);
+    assert.deepEqual(run.report, report);
+});
+
+test('gangguan registry dan jaringan dianggap sementara; galat konfigurasi tidak', () => {
+    // CI 22 Okt: langkah spark berjalan 4,5 menit lalu "npm audit gagal untuk spark: " (ringkasan kosong).
+    const empty = classifyAuditRun({ status: 1, stdout: JSON.stringify({ error: { code: null, summary: '', detail: '' } }), stderr: '' });
+    assert.deepEqual([empty.ok, empty.transient], [false, true]);
+    for (const code of ['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'E503', 'E429']) {
+        const run = classifyAuditRun({ status: 1, stdout: JSON.stringify({ error: { code, summary: `request failed ${code}` } }), stderr: '' });
+        assert.equal(run.transient, true, code);
+    }
+    const timedOut = classifyAuditRun({ status: null, error: Object.assign(new Error('spawnSync npm ETIMEDOUT'), { code: 'ETIMEDOUT' }), stdout: '', stderr: '' });
+    assert.deepEqual([timedOut.ok, timedOut.transient], [false, true]);
+    const notJson = classifyAuditRun({ status: 1, stdout: 'npm error network socket hang up', stderr: 'npm error code ECONNRESET' });
+    assert.equal(notJson.transient, true);
+    const noLock = classifyAuditRun({ status: 1, stdout: JSON.stringify({ error: { code: 'ENOLOCK', summary: 'This command requires an existing lockfile.' } }), stderr: '' });
+    assert.deepEqual([noLock.ok, noLock.transient], [false, false]);
+    assert.match(noLock.message, /ENOLOCK/);
+});
+
+test('audit diulang hanya untuk gangguan sementara, paling banyak tiga kali', () => {
+    const transient = { status: 1, stdout: JSON.stringify({ error: { code: 'ETIMEDOUT', summary: 'timeout' } }), stderr: '' };
+    const good = { status: 0, stdout: JSON.stringify({ vulnerabilities: {} }), stderr: '' };
+    const waits = [];
+    const runs = [transient, good];
+    const recovered = runAuditWithRetry(() => runs.shift(), { attempts: 3, wait: (ms) => waits.push(ms), log: () => {} });
+    assert.equal(recovered.ok, true);
+    assert.equal(waits.length, 1);
+
+    let calls = 0;
+    const exhausted = runAuditWithRetry(() => { calls += 1; return transient; }, { attempts: 3, wait: () => {}, log: () => {} });
+    assert.deepEqual([exhausted.ok, calls], [false, 3]);
+
+    calls = 0;
+    const fatal = { status: 1, stdout: JSON.stringify({ error: { code: 'ENOLOCK', summary: 'no lockfile' } }), stderr: '' };
+    const stopped = runAuditWithRetry(() => { calls += 1; return fatal; }, { attempts: 3, wait: () => {}, log: () => {} });
+    assert.deepEqual([stopped.ok, calls], [false, 1]);
 });
 
 test('allowlist repositori valid dan setiap entri kedaluwarsa paling lama 90 hari', () => {
