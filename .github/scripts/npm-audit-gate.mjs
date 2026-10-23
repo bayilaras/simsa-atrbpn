@@ -15,6 +15,57 @@ import { pathToFileURL } from 'node:url';
 
 const BLOCKING = new Set(['high', 'critical']);
 const GHSA = /GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}/;
+// Gangguan registry/jaringan, bukan hasil audit: `npm audit` yang menggantung
+// lalu berakhir dengan galat kosong (CI 22 Okt, spark 4,5 menit) termasuk di sini.
+const TRANSIENT_CODES = /^(ETIMEDOUT|ESOCKETTIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|EPIPE|E429|E5\d\d)$/;
+const TRANSIENT_TEXT = /timed? ?out|socket hang up|network|ECONNRESET|ETIMEDOUT|EAI_AGAIN|audit endpoint|503|502|504|429/i;
+const ATTEMPT_TIMEOUT_MS = 120_000;
+const RETRY_WAIT_MS = [15_000, 45_000];
+
+/**
+ * Golongkan satu hasil spawnSync `npm audit --json`.
+ * @returns {{ ok: true, report: object } | { ok: false, transient: boolean, message: string }}
+ */
+export function classifyAuditRun(result) {
+    if (result.error) {
+        return { ok: false, transient: true, message: `npm audit tidak selesai: ${result.error.code ?? result.error.message}` };
+    }
+    let report;
+    try { report = JSON.parse(result.stdout); } catch {
+        const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim();
+        return {
+            ok: false,
+            // Tanpa JSON, npm hampir selalu mati di jaringan; selain itu tetap dicoba ulang
+            // karena advisori sungguhan selalu datang sebagai JSON.
+            transient: true,
+            message: `npm audit tidak menghasilkan JSON (exit ${result.status}). ${output.slice(0, 2000)}`,
+        };
+    }
+    if (report?.error) {
+        const { code, summary, detail } = report.error;
+        const text = `${summary ?? ''} ${detail ?? ''}`.trim();
+        const transient = !code && !text ? true : TRANSIENT_CODES.test(code ?? '') || TRANSIENT_TEXT.test(text);
+        return { ok: false, transient, message: `npm audit gagal (${code ?? 'tanpa kode'}): ${text || JSON.stringify(report.error)}` };
+    }
+    return { ok: true, report };
+}
+
+/** Jalankan audit, ulangi bila gagalnya karena gangguan sementara. */
+export function runAuditWithRetry(runOnce, { attempts = 3, wait, log = console.error } = {}) {
+    let outcome;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        outcome = classifyAuditRun(runOnce());
+        if (outcome.ok || !outcome.transient || attempt === attempts) return outcome;
+        const ms = RETRY_WAIT_MS[Math.min(attempt - 1, RETRY_WAIT_MS.length - 1)];
+        log(`${outcome.message} — gangguan sementara, coba lagi (${attempt + 1}/${attempts}) dalam ${ms / 1000} detik.`);
+        wait(ms);
+    }
+    return outcome;
+}
+
+function sleep(ms) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 
 /** Kumpulkan advisori langsung (objek `via`) dari laporan `npm audit --json`. */
 export function collectAdvisories(report) {
@@ -83,19 +134,14 @@ function main(argv) {
     const [command, commandArgs] = process.platform === 'win32'
         ? ['cmd.exe', ['/d', '/c', 'npm', ...args]]
         : ['npm', args];
-    const result = spawnSync(command, commandArgs, {
-        cwd: resolve(root, project), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
-    });
-    let report;
-    try { report = JSON.parse(result.stdout); } catch {
-        console.error(`npm audit tidak menghasilkan JSON untuk ${project} (exit ${result.status}).`);
-        console.error(result.stderr);
+    const outcome = runAuditWithRetry(() => spawnSync(command, commandArgs, {
+        cwd: resolve(root, project), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: ATTEMPT_TIMEOUT_MS,
+    }), { wait: sleep });
+    if (!outcome.ok) {
+        console.error(`Audit ${project}: ${outcome.message}`);
         return 1;
     }
-    if (report.error) {
-        console.error(`npm audit gagal untuk ${project}: ${report.error.summary ?? JSON.stringify(report.error)}`);
-        return 1;
-    }
+    const { report } = outcome;
     const today = new Date().toISOString().slice(0, 10);
     const { blocking, allowed, expired, errors } = evaluate(report, allowlist, project, today);
     const scope = flags.includes('--omit=dev') ? 'dependensi produksi' : 'semua dependensi';
