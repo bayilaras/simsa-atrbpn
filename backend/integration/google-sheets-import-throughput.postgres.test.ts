@@ -37,6 +37,7 @@ const target = new URL(url); target.pathname = `/${databaseName}`;
 const administrator = new Client({ connectionString: url.toString(), connectionTimeoutMillis: 5000 });
 let created = false;
 let pool: Pool;
+const poolClosed: Promise<void>[] = [];
 const userId = randomUUID();
 const audit = { userId, userEmail: `throughput-${suffix}@example.test` };
 
@@ -75,17 +76,30 @@ beforeAll(async () => {
 
 afterAll(async () => {
     pg.Client.prototype.query = originalQuery;
-    await pool?.end();
+    await endPool();
     if (created && /^simsa_import_test_[a-f0-9]{12}$/.test(databaseName)) await administrator.query(`DROP DATABASE ${databaseName} WITH (FORCE)`);
     await administrator.end();
 });
 
 /** Connect as the API runtime role, through an optional latency proxy. */
 async function usePool(port = Number(target.port)) {
-    await pool?.end();
+    await endPool();
     const connection = new URL(target); connection.port = String(port);
     pool = new Pool({ connectionString: connection.toString(), max: 3, options: '-c role=simsa_api_runtime -c timezone=UTC' });
+    pool.on('connect', client => { poolClosed.push(new Promise(resolve => client.once('end', () => resolve()))); });
     dbState.db = drizzle(pool);
+}
+
+/**
+ * Pool.end() resolves once its clients are told to disconnect, not once they have. A session
+ * still open when afterAll's forced DROP DATABASE runs is terminated (FATAL 57P01), and the
+ * ended pool re-emits that as an uncaught 'error'; so also wait for every socket to close.
+ */
+async function endPool() {
+    const ending = pool;
+    pool = undefined as unknown as Pool;
+    await ending?.end();
+    await Promise.all(poolClosed.splice(0));
 }
 
 async function newUnit(label: string) {
@@ -170,6 +184,6 @@ describe('Google Sheets import database round trips', () => {
             console.info(`[import bench rtt=${rtt.toFixed(1)}ms rows=${benchRows}] new: ${(first.ms / benchRows).toFixed(1)} ms/row `
                 + `(${first.queries} queries, ${(first.ms / 1000).toFixed(1)} s); duplicate: ${(again.ms / benchRows).toFixed(1)} ms/row `
                 + `(${again.queries} queries, ${(again.ms / 1000).toFixed(1)} s)`);
-        } finally { await pool.end(); pool = undefined as unknown as Pool; await proxy?.close(); }
+        } finally { await endPool(); await proxy?.close(); }
     }, 1_800_000);
 });
