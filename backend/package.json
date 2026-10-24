@@ -88,7 +88,7 @@
     "tsx": "^4.23.13",
     "typescript": "^5.9.3",
     "vite": "7.3.7",
-    "vitest": "4.1.11"
+    "vitest": "5.0.5"
   },
   "dependencies": {
     "@google-cloud/storage": "^8.0.1",
