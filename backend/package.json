@@ -88,7 +88,7 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "8.3.4",
-    "vitest": "4.1.11"
+    "vitest": "5.0.5"
   },
   "dependencies": {
     "@google-cloud/storage": "^8.4.0",
@@ -132,6 +132,9 @@
     "esbuild": "0.28.2",
     "@vercel/cli-config": {
       "zod": "$zod"
+    },
+    "better-auth": {
+      "vitest": "$vitest"
     }
   }
 }
