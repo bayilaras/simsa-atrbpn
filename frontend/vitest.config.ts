@@ -16,7 +16,7 @@ export default defineConfig({
         setupFiles: './src/test/setup.ts',
         include: ['src/**/*.{test,spec}.{js,jsx,ts,tsx}'],
         alias: {
-            '@': path.resolve(__dirname, './src'),
+            '@': path.resolve(import.meta.dirname, './src'),
         },
     },
 });
