@@ -1,7 +1,8 @@
 {
     "git": {
         "deploymentEnabled": {
-            "main": false
+            "main": false,
+            "dependabot/**": false
         }
     },
     "buildCommand": "npm run build",

@@ -2,7 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
     "deploymentEnabled": {
-      "main": false
+      "main": false,
+      "dependabot/**": false
     }
   },
   "buildCommand": "npm --prefix docs-site run build",
