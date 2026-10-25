@@ -22,6 +22,14 @@ for (const relativePath of ['vercel.json', 'docs-site/vercel.json', 'scripts/cla
         assert.equal(configuration.git?.deploymentEnabled?.['dependabot/**'], false);
     });
 }
+// The probe endpoint answers only on Preview (VERCEL_ENV=preview), so a
+// Production build from every merge to main is a deployment that cannot run.
+test('skips main branch deployments for the antivirus probe', () => {
+    const configuration = JSON.parse(readFileSync(new URL('../scripts/clamav-on-demand-poc/vercel.json', import.meta.url), 'utf8'));
+    assert.equal(configuration.git?.deploymentEnabled?.main, false);
+    const handler = readFileSync(new URL('../scripts/clamav-on-demand-poc/api/index.mjs', import.meta.url), 'utf8');
+    assert.match(handler, /process\.env\.VERCEL_ENV!=='preview'/);
+});
 
 test('Vercel routes explicitly use the gated Node function and Fluid Compute', () => {
     const config = JSON.parse(readFileSync(new URL('../backend/vercel.json', import.meta.url), 'utf8'));
